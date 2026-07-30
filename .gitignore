@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.pnpm-store/
+coverage/
+dist/
+
+tsconfig.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+*.log
+
+stitch_universal_gaming_hub.zip
+pnpm-workspace.yaml
