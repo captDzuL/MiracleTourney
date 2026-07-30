@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CAPTAIN
+  ADMIN
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  REGISTRATION_CLOSED
+  ONGOING
+  FINISHED
+}
+
+enum TournamentFormat {
+  SINGLE_ELIMINATION
+  LEAGUE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  role         UserRole
+  teams        Team[]   @relation("CaptainTeams")
+  createdEvents Event[] @relation("EventCreator")
+}
+
+model Game {
+  id        String     @id @default(cuid())
+  name      String
+  slug      String     @unique
+  modes     GameMode[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model GameMode {
+  id              String   @id @default(cuid())
+  gameId          String
+  name            String
+  slug            String   @unique
+  teamSize        Int
+  maxRosterSize   Int
+  positions       Json
+  playerStatKeys  Json
+  game            Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  events          Event[]
+}
+
+model Event {
+  id                 String            @id @default(cuid())
+  name               String
+  slug               String            @unique
+  description        String
+  gameModeId         String
+  format             TournamentFormat
+  status             EventStatus
+  participantCap     Int
+  registrationOpensAt DateTime?
+  registrationClosesAt DateTime?
+  startsAt           DateTime?
+  creatorId          String?
+  streamPlatform     String?
+  streamUrl          String?
+  streamLabel        String?
+  streamEnabled      Boolean           @default(false)
+  streamLive         Boolean           @default(false)
+  gameMode           GameMode          @relation(fields: [gameModeId], references: [id])
+  creator            User?             @relation("EventCreator", fields: [creatorId], references: [id])
+  registrations      Registration[]
+  stages             TournamentStage[]
+}
+
+model Team {
+  id            String         @id @default(cuid())
+  name          String
+  slug          String         @unique
+  logoUrl       String?
+  captainId     String
+  captain       User           @relation("CaptainTeams", fields: [captainId], references: [id])
+  registrations Registration[]
+  roster        RosterEntry[]
+}
+
+model Player {
+  id           String         @id @default(cuid())
+  displayName  String
+  nickname     String
+  primaryPosition String
+  rosterEntries RosterEntry[]
+  matchStats   PlayerMatchStat[]
+}
+
+model Registration {
+  id        String   @id @default(cuid())
+  eventId   String
+  teamId    String
+  approved  Boolean  @default(true)
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, teamId])
+}
+
+model RosterEntry {
+  id         String   @id @default(cuid())
+  eventId     String
+  teamId      String
+  playerId    String
+  jerseyNumber Int?
+  position    String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+}
+
+model TournamentStage {
+  id        String            @id @default(cuid())
+  eventId    String
+  name       String
+  format     TournamentFormat
+  event      Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matches    Match[]
+}
+
+model Match {
+  id          String   @id @default(cuid())
+  stageId     String
+  roundNumber Int
+  sequence    Int
+  homeTeamId  String?
+  awayTeamId  String?
+  homeScore   Int?
+  awayScore   Int?
+  stage       TournamentStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  playerStats PlayerMatchStat[]
+}
+
+model PlayerMatchStat {
+  id         String @id @default(cuid())
+  matchId    String
+  playerId   String
+  stats      Json
+  match      Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player     Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+}
