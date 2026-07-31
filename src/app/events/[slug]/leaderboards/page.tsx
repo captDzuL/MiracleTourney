@@ -10,7 +10,7 @@ export default async function LeaderboardsPage({
 }) {
   const { slug } = await params;
   const event = getEventBySlug(slug);
-  if (!event) notFound();
+  if (!event || event.status === "Draft") notFound();
 
   const leaderboard = getLeaderboardForEvent(event.id);
 

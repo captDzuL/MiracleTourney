@@ -10,19 +10,20 @@ export default async function StandingsPage({
 }) {
   const { slug } = await params;
   const event = getEventBySlug(slug);
-  if (!event) notFound();
+  if (!event || event.status === "Draft") notFound();
 
   const standings = getTeamStandings(event.id);
 
   return (
-    <Section title={`${event.name} standings`} description="Standard league scoring: win = 3, loss = 0.">
+    <Section title={`${event.name} standings`} description="Standard league scoring: win = 3, draw = 1, loss = 0.">
       <DataTable
-        columns={["#", "Team", "P", "W", "L", "Pts", "For", "Against", "Diff"]}
+        columns={["#", "Team", "P", "W", "D", "L", "Pts", "For", "Against", "Diff"]}
         rows={standings.map((standing) => [
           standing.rank,
           standing.teamName,
           standing.played,
           standing.wins,
+          standing.draws,
           standing.losses,
           standing.points,
           standing.scoreFor,

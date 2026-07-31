@@ -25,6 +25,7 @@ export type TeamStanding = {
   teamName: string;
   played: number;
   wins: number;
+  draws: number;
   losses: number;
   points: number;
   scoreFor: number;

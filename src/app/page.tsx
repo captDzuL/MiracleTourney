@@ -2,10 +2,10 @@ import Link from "next/link";
 import { ArrowRight, CalendarDays, Medal, Shield, Video } from "lucide-react";
 
 import { Pill, Section, StatCard } from "@/components/ui";
-import { getEvents, getGameForEvent } from "@/lib/platform/demo-store";
+import { getGameForEvent, getPublicEvents } from "@/lib/platform/demo-store";
 
 export default function HomePage() {
-  const events = getEvents();
+  const events = getPublicEvents();
   const highlighted = events.slice(0, 2);
 
   return (

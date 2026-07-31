@@ -116,6 +116,7 @@ export function buildLeagueStandings(teams: TeamSeed[], results: MatchResultInpu
       teamName: team.name,
       played: 0,
       wins: 0,
+      draws: 0,
       losses: 0,
       points: 0,
       scoreFor: 0,
@@ -139,7 +140,12 @@ export function buildLeagueStandings(teams: TeamSeed[], results: MatchResultInpu
     away.scoreFor += result.awayScore;
     away.scoreAgainst += result.homeScore;
 
-    if (result.homeScore > result.awayScore) {
+    if (result.homeScore === result.awayScore) {
+      home.draws += 1;
+      away.draws += 1;
+      home.points += 1;
+      away.points += 1;
+    } else if (result.homeScore > result.awayScore) {
       home.wins += 1;
       home.points += 3;
       away.losses += 1;

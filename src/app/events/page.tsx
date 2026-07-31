@@ -2,10 +2,10 @@ import Link from "next/link";
 import { CalendarDays, Trophy, Users } from "lucide-react";
 
 import { Pill, Section } from "@/components/ui";
-import { getEvents, getGameForEvent } from "@/lib/platform/demo-store";
+import { getGameForEvent, getPublicEvents } from "@/lib/platform/demo-store";
 
 export default function EventsPage() {
-  const events = getEvents();
+  const events = getPublicEvents();
 
   return (
     <Section

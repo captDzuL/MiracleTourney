@@ -7,6 +7,11 @@ import {
   generateSingleEliminationBracket,
   getLiveStreamPresentation,
 } from "./engine";
+import {
+  getLeaderboardForEvent,
+  getPublicEvents,
+  getTeamStandings,
+} from "../platform/demo-store";
 import type {
   MatchResultInput,
   PlayerMatchStatInput,
@@ -165,5 +170,32 @@ describe("getLiveStreamPresentation", () => {
       platform: "tiktok",
       shouldEmbed: false,
     });
+  });
+});
+
+describe("launch visibility", () => {
+  it("hides draft events from public lists", () => {
+    const events = getPublicEvents();
+
+    expect(events.some((event) => event.status === "Draft")).toBe(false);
+  });
+
+  it("keeps leaderboard scoped to the selected event", () => {
+    const leaderboard = getLeaderboardForEvent("event-flashpeak-open");
+
+    expect(
+      leaderboard.every((entry) =>
+        ["player-rin", "player-bima", "player-dino", "player-eko", "player-faris"].includes(entry.playerId),
+      ),
+    ).toBe(true);
+  });
+
+  it("awards one point each for a draw in league standings", () => {
+    const standings = getTeamStandings("event-flashpeak-open");
+    const vortex = standings.find((team) => team.teamName === "Vortex");
+    const scorch = standings.find((team) => team.teamName === "Scorch FC");
+
+    expect(vortex?.points).toBe(1);
+    expect(scorch?.points).toBe(1);
   });
 });

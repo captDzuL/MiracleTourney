@@ -148,6 +148,10 @@ export function getEvents() {
   return getStore().events;
 }
 
+export function getPublicEvents() {
+  return getStore().events.filter((event) => event.status !== "Draft");
+}
+
 export function getEventBySlug(slug: string) {
   return getStore().events.find((event) => event.slug === slug);
 }
@@ -177,6 +181,7 @@ export function getMatchesForEvent(eventId: string) {
 }
 
 export function getLeaderboardForEvent(eventId: string) {
+  const matchIds = new Set(getMatchesForEvent(eventId).map((match) => match.id));
   const event = getStore().events.find((item) => item.id === eventId);
 
   if (!event) return [];
@@ -185,7 +190,7 @@ export function getLeaderboardForEvent(eventId: string) {
   const metric = game.slug === "flashpeak" ? "goals" : "points";
 
   return aggregatePlayerLeaderboard(
-    getStore().playerStats.filter((stat) => stat.gameSlug === game.slug),
+    getStore().playerStats.filter((stat) => matchIds.has(stat.matchId)),
     metric,
   );
 }

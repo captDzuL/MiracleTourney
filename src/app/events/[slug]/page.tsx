@@ -21,7 +21,7 @@ export default async function EventDetailPage({
   const { slug } = await params;
   const event = getEventBySlug(slug);
 
-  if (!event) notFound();
+  if (!event || event.status === "Draft") notFound();
 
   const game = getGameForEvent(event);
   const mode = getModeForEvent(event);
