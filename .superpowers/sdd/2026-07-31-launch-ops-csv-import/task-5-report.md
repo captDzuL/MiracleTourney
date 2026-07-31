@@ -113,3 +113,22 @@ CAPTAIN_ERROR The operation has timed out.
 ```
 
 The background-job launch could not expose a reachable captain route in this restricted environment, so no claim of a successful rendered captain response is made. The code-level captain verification passed, and the previous `corepack pnpm dev` startup evidence remains valid; a real browser/session-authenticated captain check still requires a functioning long-lived dev process.
+
+## Round 3 rendered captain verification
+
+Rendered browser verification was completed in the local browser session against the running dev server at `http://localhost:3000`.
+
+1. Opened `http://localhost:3000/login`.
+2. Clicked the unique button `Continue as captain`.
+3. Landed at `http://localhost:3000/captain`.
+
+The rendered captain-page snapshot visibly included:
+
+- `Captain dashboard · Riko Aida`
+- `Roster completion is a post-launch follow-up; launch-week registration remains in Google Form.`
+- `This captain area is reserved for roster completion after the site is live.`
+- `Launch-week registration`
+- `Registration remains in Google Form for this launch week.`
+- `Admins publish approved teams through CSV import. Once your team is published, return here for post-launch roster completion.`
+
+The old in-app registration form was not present in the rendered page. The page showed the replacement launch-week registration section instead.
