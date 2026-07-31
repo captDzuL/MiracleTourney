@@ -168,6 +168,11 @@ export function getTeamsForEvent(eventId: string) {
   return getStore().teams.filter((team) => team.eventId === eventId);
 }
 
+export function importTeams(teams: Team[]) {
+  getStore().teams.push(...teams);
+  return { importedCount: teams.length };
+}
+
 export function getPlayersForTeam(teamId: string) {
   return getStore().players.filter((player) => player.teamId === teamId);
 }

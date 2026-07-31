@@ -65,6 +65,8 @@ export type Team = {
   name: string;
   logoText: string;
   tag: string;
+  captainName?: string;
+  captainContact?: string;
 };
 
 export type Player = {
