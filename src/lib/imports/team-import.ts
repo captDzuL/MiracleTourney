@@ -14,6 +14,11 @@ export type TeamImportError = {
   message: string;
 };
 
+export type ParsedTeamImportCsv = {
+  rows: TeamImportRow[];
+  errors: TeamImportError[];
+};
+
 const requiredHeaders = [
   "event_slug",
   "team_name",
@@ -35,47 +40,130 @@ export function buildTeamTag(teamName: string) {
   );
 }
 
-export function parseTeamImportCsv(csvText: string): TeamImportRow[] {
+function buildHeaderErrors(headers: string[]) {
+  const errors: TeamImportError[] = [];
+  const missingHeaders = requiredHeaders.filter((header) => !headers.includes(header));
+  const unsupportedHeaders = headers.filter(
+    (header) => !supportedHeaders.includes(header as never),
+  );
+
+  if (missingHeaders.length > 0) {
+    errors.push({
+      rowNumber: 1,
+      message: `Row 1: missing required CSV columns: ${missingHeaders.join(", ")}`,
+    });
+  }
+
+  if (unsupportedHeaders.length > 0) {
+    errors.push({
+      rowNumber: 1,
+      message: `Row 1: unsupported CSV columns: ${unsupportedHeaders.join(", ")}`,
+    });
+  }
+
+  return errors;
+}
+
+function parseCsvLine(line: string) {
+  const cells: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+
+    if (character === '"') {
+      if (inQuotes && line[index + 1] === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (character === "," && !inQuotes) {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += character;
+  }
+
+  if (inQuotes) {
+    return { cells: [], error: "has an unmatched quote" };
+  }
+
+  cells.push(current.trim());
+  return { cells, error: null as string | null };
+}
+
+export function parseTeamImportCsv(csvText: string): ParsedTeamImportCsv {
   const lines = csvText
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
 
   if (lines.length === 0) {
-    return [];
+    return { rows: [], errors: [] };
   }
 
-  const headers = lines[0].split(",").map((header) => header.trim());
+  const parsedHeader = parseCsvLine(lines[0]);
+  if (parsedHeader.error) {
+    return {
+      rows: [],
+      errors: [{ rowNumber: 1, message: `Row 1: ${parsedHeader.error}` }],
+    };
+  }
 
-  for (const header of requiredHeaders) {
-    if (!headers.includes(header)) {
-      throw new Error(`Missing required CSV column "${header}"`);
+  const headers = parsedHeader.cells;
+  const headerErrors = buildHeaderErrors(headers);
+  const rows: TeamImportRow[] = [];
+  const errors: TeamImportError[] = [...headerErrors];
+
+  if (headerErrors.length > 0) {
+    return { rows, errors };
+  }
+
+  for (const [index, line] of lines.slice(1).entries()) {
+    const rowNumber = index + 2;
+    const parsedRow = parseCsvLine(line);
+
+    if (parsedRow.error) {
+      errors.push({
+        rowNumber,
+        message: `Row ${rowNumber}: ${parsedRow.error}`,
+      });
+      continue;
     }
-  }
 
-  const unsupportedHeaders = headers.filter((header) => !supportedHeaders.includes(header as never));
-  if (unsupportedHeaders.length > 0) {
-    throw new Error(`Unsupported CSV columns: ${unsupportedHeaders.join(", ")}`);
-  }
+    if (parsedRow.cells.length !== headers.length) {
+      errors.push({
+        rowNumber,
+        message: `Row ${rowNumber}: expected ${headers.length} columns but found ${parsedRow.cells.length}`,
+      });
+      continue;
+    }
 
-  return lines.slice(1).map((line) => {
-    const cells = line.split(",").map((cell) => cell.trim());
     const getValue = (header: string) => {
-      const index = headers.indexOf(header);
-      return index >= 0 ? (cells[index] ?? "") : "";
+      const headerIndex = headers.indexOf(header);
+      return headerIndex >= 0 ? (parsedRow.cells[headerIndex] ?? "") : "";
     };
 
     const teamName = getValue("team_name");
     const rawTeamTag = getValue("team_tag");
 
-    return {
+    rows.push({
       eventSlug: getValue("event_slug"),
       teamName,
       teamTag: rawTeamTag || buildTeamTag(teamName),
       captainName: getValue("captain_name"),
       captainContact: getValue("captain_contact"),
-    };
-  });
+    });
+  }
+
+  return { rows, errors };
 }
 
 export function validateTeamImportRows(

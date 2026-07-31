@@ -139,3 +139,140 @@ What I specifically reviewed:
 ## Commit
 
 - Commit created after verification: `feat: add launch csv team import pipeline`
+
+---
+
+## Fix round 1: CSV parser safety and structured parse errors
+
+### Findings addressed
+
+- High: replaced comma-split parsing with a small quoted-field parser and explicit row-width rejection.
+- Medium: header failures now return structured `TeamImportError` entries instead of throwing.
+- Low: added coverage for quoted fields, malformed row width, missing headers, and unsupported headers.
+
+### Scope of the fix
+
+- Kept the work scoped to Task 2 only.
+- Did not add a new CSV dependency.
+- Changed `parseTeamImportCsv` to return structured parse output:
+  - `rows`
+  - `errors`
+- Preserved whole-file validation and atomic import behavior.
+
+### TDD evidence for fix round 1
+
+#### RED
+
+Added failing tests for:
+
+- quoted field parsing with embedded commas
+- malformed row width rejection
+- missing required header rejection through structured errors
+- unsupported header rejection through structured errors
+
+RED verification command:
+
+```powershell
+& 'C:\Program Files\nodejs\node.exe' 'E:\dev\MiracleTourney-gitnative\node_modules\vitest\vitest.mjs' run src/lib/imports/team-import.test.ts
+```
+
+RED output:
+
+```text
+RUN  v3.2.7 E:/dev/MiracleTourney-gitnative
+
+❯ src/lib/imports/team-import.test.ts (7 tests | 7 failed)
+  × team import pipeline > collects all CSV validation errors in one pass
+    → parsed.errors is not iterable
+  × team import pipeline > auto-generates a team tag when team_tag is empty
+    → parsed.errors is not iterable
+  × team import pipeline > imports valid rows atomically after full-file validation passes
+    → parsed.errors is not iterable
+  × team import pipeline > parses quoted fields instead of splitting on embedded commas
+    → parsed.errors is not iterable
+  × team import pipeline > returns structured errors for malformed rows with the wrong column count
+    → parsed.errors is not iterable
+  × team import pipeline > returns structured header errors instead of throwing for missing required columns
+    → Missing required CSV column "captain_contact"
+  × team import pipeline > returns structured header errors for unsupported columns
+    → Unsupported CSV columns: captain_email
+
+Test Files  1 failed (1)
+Tests       7 failed (7)
+```
+
+This showed the exact root cause:
+
+- parser contract still returned rows only
+- header failures still threw instead of entering the validation error pipeline
+
+#### GREEN
+
+Implemented:
+
+- a small stateful CSV line parser with quoted-field support
+- unmatched-quote detection
+- explicit row-width checks
+- structured row 1 header errors for missing and unsupported columns
+- structured parse result returned from `parseTeamImportCsv`
+
+GREEN verification command:
+
+```powershell
+& 'C:\Program Files\nodejs\node.exe' 'E:\dev\MiracleTourney-gitnative\node_modules\vitest\vitest.mjs' run src/lib/imports/team-import.test.ts
+```
+
+GREEN output:
+
+```text
+RUN  v3.2.7 E:/dev/MiracleTourney-gitnative
+
+✓ src/lib/imports/team-import.test.ts (7 tests) 17ms
+
+Test Files  1 passed (1)
+Tests       7 passed (7)
+```
+
+### Verification after fix round 1
+
+Focused import test verification:
+
+```powershell
+& 'C:\Program Files\nodejs\node.exe' 'E:\dev\MiracleTourney-gitnative\node_modules\vitest\vitest.mjs' run src/lib/imports/team-import.test.ts
+```
+
+Result:
+
+- pass
+- `7 passed` tests
+
+TypeScript verification:
+
+```powershell
+& 'C:\Program Files\nodejs\node.exe' 'E:\dev\MiracleTourney-gitnative\node_modules\typescript\bin\tsc' --noEmit --incremental false
+```
+
+Result:
+
+- pass
+- exit code `0`
+
+### Files changed in fix round 1
+
+- `src/lib/imports/team-import.ts`
+- `src/lib/imports/team-import.test.ts`
+
+### Self-review for fix round 1
+
+- Confirmed quoted commas are accepted inside quoted fields.
+- Confirmed malformed rows are rejected clearly instead of being silently shifted.
+- Confirmed header failures are returned as structured errors compatible with the import pipeline.
+- Confirmed existing Task 2 behaviors still pass:
+  - whole-file validation
+  - atomic import
+  - duplicate detection
+  - auto-generated team tags
+
+### Concerns after fix round 1
+
+- The launch-safe parser now supports quoted commas and escaped quotes, but it still intentionally stays narrow and line-based; it does not attempt multi-line quoted cell support because that was outside Friday, July 31, 2026 launch scope.

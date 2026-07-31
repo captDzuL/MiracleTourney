@@ -41,10 +41,10 @@ function restoreStore(state: DemoStoreState) {
 
 function parseAndValidateTeamImport(csvText: string, state: DemoStoreState) {
   restoreStore(state);
-  const rows = parseTeamImportCsv(csvText);
+  const parsed = parseTeamImportCsv(csvText);
   const events = getEvents();
   const teams = events.flatMap((event) => getTeamsForEvent(event.id));
-  const errors = validateTeamImportRows(rows, events, teams);
+  const errors = [...parsed.errors, ...validateTeamImportRows(parsed.rows, events, teams)];
 
   if (errors.length > 0) {
     return {
@@ -55,7 +55,7 @@ function parseAndValidateTeamImport(csvText: string, state: DemoStoreState) {
 
   return {
     ok: true as const,
-    rows,
+    rows: parsed.rows,
   };
 }
 
@@ -146,6 +146,79 @@ describe("team import pipeline", () => {
         captainName: "Salsa",
         captainContact: "08189",
       }),
+    ]);
+  });
+
+  it("parses quoted fields instead of splitting on embedded commas", () => {
+    const csv = [
+      "event_slug,team_name,team_tag,captain_name,captain_contact",
+      'flashpeak-open-league,"Orbit, United",,Nanda,08188',
+    ].join("\n");
+
+    const result = parseAndValidateTeamImport(csv, baselineStore);
+    expect(result.ok).toBe(true);
+
+    if (!result.ok) {
+      throw new Error(`Expected valid quoted CSV row, got: ${result.errors.join(", ")}`);
+    }
+
+    expect(result.rows[0]).toMatchObject({
+      teamName: "Orbit, United",
+      teamTag: "OU",
+    });
+  });
+
+  it("returns structured errors for malformed rows with the wrong column count", () => {
+    const csv = [
+      "event_slug,team_name,team_tag,captain_name,captain_contact",
+      "flashpeak-open-league,Orbit United,,Nanda,08188,unexpected",
+    ].join("\n");
+
+    const result = parseAndValidateTeamImport(csv, baselineStore);
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected malformed CSV row to be rejected");
+    }
+
+    expect(result.errors).toEqual([
+      'Row 2: expected 5 columns but found 6',
+    ]);
+  });
+
+  it("returns structured header errors instead of throwing for missing required columns", () => {
+    const csv = [
+      "event_slug,team_name,captain_name",
+      "flashpeak-open-league,Orbit United,Nanda",
+    ].join("\n");
+
+    const result = parseAndValidateTeamImport(csv, baselineStore);
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected missing required header to be rejected");
+    }
+
+    expect(result.errors).toEqual([
+      'Row 1: missing required CSV columns: captain_contact',
+    ]);
+  });
+
+  it("returns structured header errors for unsupported columns", () => {
+    const csv = [
+      "event_slug,team_name,team_tag,captain_name,captain_contact,captain_email",
+      "flashpeak-open-league,Orbit United,,Nanda,08188,nanda@example.com",
+    ].join("\n");
+
+    const result = parseAndValidateTeamImport(csv, baselineStore);
+    expect(result.ok).toBe(false);
+
+    if (result.ok) {
+      throw new Error("Expected unsupported header to be rejected");
+    }
+
+    expect(result.errors).toEqual([
+      'Row 1: unsupported CSV columns: captain_email',
     ]);
   });
 });
