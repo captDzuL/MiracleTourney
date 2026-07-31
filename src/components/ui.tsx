@@ -1,3 +1,4 @@
+import React from "react";
 import Link from "next/link";
 import { ExternalLink, Radio } from "lucide-react";
 
@@ -92,6 +93,52 @@ export function DataTable({
       </table>
     </div>
   );
+}
+
+export function ImportResultBanner({
+  success,
+  count,
+  importError,
+  error,
+}: {
+  success?: string;
+  count?: string;
+  importError?: string;
+  error?: string;
+}) {
+  if (importError) {
+    return (
+      <p className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        Team import failed: {importError}
+      </p>
+    );
+  }
+
+  if (error === "csv-file-required") {
+    return (
+      <p className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        Upload a CSV file before starting the team import.
+      </p>
+    );
+  }
+
+  if (success === "teams-imported") {
+    return (
+      <p className="mb-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+        Team import completed: {count ?? "0"} teams imported.
+      </p>
+    );
+  }
+
+  if (success) {
+    return (
+      <p className="mb-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+        Demo action completed: {success.replaceAll("-", " ")}.
+      </p>
+    );
+  }
+
+  return null;
 }
 
 export function LiveStreamCard({

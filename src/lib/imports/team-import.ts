@@ -19,6 +19,21 @@ export type ParsedTeamImportCsv = {
   errors: TeamImportError[];
 };
 
+export type DemoStateLike = {
+  events: Event[];
+  teams: Team[];
+};
+
+export type ParseResult =
+  | {
+      ok: true;
+      rows: TeamImportRow[];
+    }
+  | {
+      ok: false;
+      errors: string[];
+    };
+
 const requiredHeaders = [
   "event_slug",
   "team_name",
@@ -216,6 +231,29 @@ export function validateTeamImportRows(
   });
 
   return errors;
+}
+
+export function parseAndValidateTeamImport(
+  csvText: string,
+  storeSnapshot: DemoStateLike,
+): ParseResult {
+  const parsed = parseTeamImportCsv(csvText);
+  const errors = [
+    ...parsed.errors,
+    ...validateTeamImportRows(parsed.rows, storeSnapshot.events, storeSnapshot.teams),
+  ];
+
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      errors: errors.map((error) => error.message),
+    };
+  }
+
+  return {
+    ok: true,
+    rows: parsed.rows,
+  };
 }
 
 export function importTeamsFromRows(rows: TeamImportRow[]) {

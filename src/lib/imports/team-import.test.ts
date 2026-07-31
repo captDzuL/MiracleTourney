@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("next/navigation", () => ({
+  redirect: (destination: string) => {
+    throw new Error(`NEXT_REDIRECT:${destination}`);
+  },
+}));
+
+import { adminImportTeamsCsvAction } from "../actions";
 
 import {
   getEvents,
@@ -70,6 +78,25 @@ afterEach(() => {
 });
 
 describe("team import pipeline", () => {
+  it("rejects CSV uploads with validation errors and preserves store state", async () => {
+    const formData = new FormData();
+    formData.set(
+      "csvFile",
+      new File(
+        [
+          "event_slug,team_name,team_tag,captain_name,captain_contact\nmissing-event,New Team,,Ari,0812",
+        ],
+        "teams.csv",
+        { type: "text/csv" },
+      ),
+    );
+
+    await expect(adminImportTeamsCsvAction(formData)).rejects.toThrow(
+      "NEXT_REDIRECT:/admin?importError=",
+    );
+    expect(getTeamsForEvent("event-flashpeak-open")).toHaveLength(4);
+  });
+
   it("collects all CSV validation errors in one pass", () => {
     const csv = [
       "event_slug,team_name,team_tag,captain_name,captain_contact",

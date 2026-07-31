@@ -3,8 +3,18 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import {
+  importTeamsFromRows,
+  parseAndValidateTeamImport,
+} from "@/lib/imports/team-import";
 import { signInDemo, signOutDemo } from "@/lib/auth/session";
-import { addPlayer, createEvent, registerTeam, updateEventStream } from "@/lib/platform/demo-store";
+import {
+  addPlayer,
+  createEvent,
+  getImportSnapshot,
+  registerTeam,
+  updateEventStream,
+} from "@/lib/platform/demo-store";
 
 export async function loginAction(formData: FormData) {
   const email = z.string().email().parse(formData.get("email"));
@@ -90,4 +100,22 @@ export async function adminUpdateStreamAction(formData: FormData) {
 
   updateEventStream(input.eventId, input.url, input.label);
   redirect("/admin?success=stream-updated");
+}
+
+export async function adminImportTeamsCsvAction(formData: FormData) {
+  const file = formData.get("csvFile");
+
+  if (!(file instanceof File)) {
+    redirect("/admin?error=csv-file-required");
+  }
+
+  const csvText = await file.text();
+  const result = parseAndValidateTeamImport(csvText, getImportSnapshot());
+
+  if (!result.ok) {
+    redirect(`/admin?importError=${encodeURIComponent(result.errors.join(" | "))}`);
+  }
+
+  const imported = importTeamsFromRows(result.rows);
+  redirect(`/admin?success=teams-imported&count=${imported.importedCount}`);
 }
