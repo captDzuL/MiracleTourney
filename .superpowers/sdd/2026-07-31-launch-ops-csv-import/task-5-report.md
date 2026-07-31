@@ -90,3 +90,26 @@ git diff --check: passed
 ### Round 1 commit
 
 The fix is committed separately from the original Task 5 commits. The unrelated pre-existing modification to `src/lib/tournament/engine.test.ts` remains untouched.
+
+## Round 2 verification evidence
+
+The captain page source was checked after the dev-server verification attempt:
+
+```text
+$captainSource = Get-Content -Raw 'src/app/captain/page.tsx'; ...
+Captain launch-copy checks passed
+```
+
+I also attempted the required live rendered request while starting the dev server in a background PowerShell job:
+
+```text
+$devJob2 = Start-Job -ScriptBlock { Set-Location 'E:\dev\MiracleTourney-gitnative'; $env:Path = 'C:\Program Files\nodejs;' + $env:Path; & 'C:\Program Files\nodejs\corepack.cmd' pnpm dev }; Start-Sleep -Seconds 8; Invoke-WebRequest -UseBasicParsing 'http://localhost:3000/captain' -MaximumRedirection 0 -TimeoutSec 10
+```
+
+Output:
+
+```text
+CAPTAIN_ERROR The operation has timed out.
+```
+
+The background-job launch could not expose a reachable captain route in this restricted environment, so no claim of a successful rendered captain response is made. The code-level captain verification passed, and the previous `corepack pnpm dev` startup evidence remains valid; a real browser/session-authenticated captain check still requires a functioning long-lived dev process.
