@@ -13,6 +13,9 @@ export default async function LoginPage({
       <p className="mt-2 text-sm text-slate-400">
         This MVP ships with seeded captain and admin accounts so we can validate the full UX before wiring production auth.
       </p>
+      <p className="mt-3 text-sm leading-6 text-cyan-100">
+        Demo captain access is a later-stage workflow for roster completion after the site is live.
+      </p>
 
       {resolvedSearchParams?.error ? (
         <p className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">

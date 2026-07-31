@@ -22,8 +22,11 @@ export default async function CaptainPage({
     <div className="space-y-6">
       <Section
         title={`Captain dashboard · ${user.name}`}
-        description="Register teams, manage rosters, and keep your event participation tidy."
+        description="Roster completion is a post-launch follow-up; launch-week registration remains in Google Form."
       >
+        <p className="mb-4 text-sm leading-6 text-cyan-100">
+          This captain area is reserved for roster completion after the site is live.
+        </p>
         {resolvedSearchParams?.success ? (
           <p className="mb-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
             Demo action completed: {resolvedSearchParams.success.replaceAll("-", " ")}.
@@ -57,7 +60,7 @@ export default async function CaptainPage({
       </Section>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Section title="Register new team" description="Captain-side registration stays simple in MVP.">
+        <Section title="Register new team" description="Post-launch captain workflow; admins publish launch-week teams through CSV import.">
           <form action={captainRegisterTeamAction} className="grid gap-4">
             <input type="hidden" name="captainId" value={user.id} />
             <label className="grid gap-2 text-sm text-slate-300">

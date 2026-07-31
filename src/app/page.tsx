@@ -21,6 +21,9 @@ export default function HomePage() {
               Miracle FC League now has a public event hub, captain roster management, admin operations, bracket generation,
               league standings, player leaderboards, and event-level live stream support.
             </p>
+            <p className="max-w-2xl text-sm leading-6 text-cyan-100">
+              Registration remains in Google Form for this launch week. Admins publish approved teams through CSV import.
+            </p>
           </div>
           <div className="flex flex-wrap gap-3">
             <Link className="rounded-full bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950" href="/events">
