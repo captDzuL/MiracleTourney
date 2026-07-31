@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { captainAddPlayerAction, captainRegisterTeamAction } from "@/lib/actions";
+import { captainAddPlayerAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { getCaptainTeams, getEvents, getGameForEvent, getPlayersForTeam } from "@/lib/platform/demo-store";
 import { DataTable, Pill, Section } from "@/components/ui";
@@ -60,30 +60,10 @@ export default async function CaptainPage({
       </Section>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Section title="Register new team" description="Post-launch captain workflow; admins publish launch-week teams through CSV import.">
-          <form action={captainRegisterTeamAction} className="grid gap-4">
-            <input type="hidden" name="captainId" value={user.id} />
-            <label className="grid gap-2 text-sm text-slate-300">
-              Event
-              <select className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3" name="eventId" defaultValue="">
-                <option value="" disabled>Select an event</option>
-                {events.filter((event) => event.status === "Published").map((event) => (
-                  <option key={event.id} value={event.id}>{event.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-2 text-sm text-slate-300">
-              Team name
-              <input className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3" name="name" placeholder="Miracle Wolves" />
-            </label>
-            <label className="grid gap-2 text-sm text-slate-300">
-              Team tag
-              <input className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 uppercase" name="tag" placeholder="MWF" />
-            </label>
-            <button className="rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950" type="submit">
-              Register team
-            </button>
-          </form>
+        <Section title="Launch-week registration" description="Registration remains in Google Form for this launch week.">
+          <p className="text-sm leading-6 text-slate-300">
+            Admins publish approved teams through CSV import. Once your team is published, return here for post-launch roster completion.
+          </p>
         </Section>
 
         <Section title="Roster manager" description="Add players to your main roster before event lock-in.">
@@ -121,7 +101,7 @@ export default async function CaptainPage({
               </div>
             </>
           ) : (
-            <p className="text-sm text-slate-400">Register a team first to start managing a roster.</p>
+            <p className="text-sm text-slate-400">An admin must publish your approved team before roster completion is available.</p>
           )}
         </Section>
       </div>

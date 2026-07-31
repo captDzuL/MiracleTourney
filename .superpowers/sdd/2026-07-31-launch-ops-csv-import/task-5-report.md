@@ -25,3 +25,68 @@ Implemented and committed Task 5 on `codex/miracle-mvp`.
 ## Concerns
 
 Node/corepack availability prevents runtime and browser verification in this environment. The working tree still contains an unrelated pre-existing modification to `src/lib/tournament/engine.test.ts`.
+
+## Round 1 fix report
+
+### Findings addressed
+
+- Removed the captain page's live `Register new team` form and `Register team` submit button.
+- Replaced the registration section with launch-week guidance: Google Form registration, admin CSV publication, and post-launch roster completion.
+- Replaced the fallback `Register a team first to start managing a roster.` with admin-publication guidance.
+
+### Doc-first/checklist-first evidence
+
+The original Task 5 sequence was followed and is now recorded explicitly: the operations document was created first with the four-item launch copy review checklist, then populated with exact CSV guidance, then the three page copy changes were made. This round-1 fix followed that review sequence by checking the open finding against the captain page, changing only the captain page, and re-running the focused copy checks before committing.
+
+### Verification commands and output
+
+Command:
+
+```text
+$env:Path = 'C:\Program Files\nodejs;' + $env:Path; corepack pnpm lint; corepack pnpm test --run
+```
+
+Output:
+
+```text
+error TS5033: Could not write file 'E:/dev/MiracleTourney-gitnative/tsconfig.tsbuildinfo': EPERM: operation not permitted
+✓ src/lib/tournament/engine.test.ts (8 tests)
+Test Files 1 passed (1)
+Tests 8 passed (8)
+```
+
+The test suite passed. TypeScript checking reached the compiler but could not write the existing build-info file due to filesystem permissions.
+
+Required launch command:
+
+```text
+$env:Path = 'C:\Program Files\nodejs;' + $env:Path; corepack pnpm dev
+```
+
+Output:
+
+```text
+▲ Next.js 15.5.22
+- Local: http://localhost:3001
+✓ Starting...
+⚠ Port 3000 is in use by process 22404, using available port 3001 instead.
+```
+
+Rendered checks against the available server:
+
+```text
+HOME 200
+LOGIN 200
+Rendered launch copy checks passed
+```
+
+Focused captain source check:
+
+```text
+Captain registration promotion checks passed
+git diff --check: passed
+```
+
+### Round 1 commit
+
+The fix is committed separately from the original Task 5 commits. The unrelated pre-existing modification to `src/lib/tournament/engine.test.ts` remains untouched.
