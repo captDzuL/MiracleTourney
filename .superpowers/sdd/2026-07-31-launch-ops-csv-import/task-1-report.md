@@ -94,3 +94,72 @@ Planned commit message:
 ## Concerns
 
 - The current brief scoped draft guards to the public list, event detail, leaderboard, and standings pages. Direct draft access on other public event subpages such as participants or bracket was not changed in this task because those files were outside the specified modification list.
+
+---
+
+## Round 1 fix report: strengthen leaderboard-scoping TDD evidence
+
+### Finding addressed
+
+- Medium: The TDD/quality evidence is incomplete for the leaderboard-scoping requirement.
+
+### What changed
+
+- Strengthened `keeps leaderboard scoped to the selected event` in `src/lib/tournament/engine.test.ts`.
+- The test now injects a second `flashpeak` event with:
+  - its own event record,
+  - a separate team,
+  - a separate player,
+  - a separate completed match,
+  - and a high-scoring `player-outsider` stat line.
+- The assertion now proves `getLeaderboardForEvent("event-flashpeak-open")` returns only the selected event’s player IDs in order and excludes `player-outsider`.
+- The test restores the demo-store global state after execution so it does not leak fixture changes into other tests.
+
+### Explicit RED evidence for leaderboard scoping
+
+To prove the new test really catches the old bug, `getLeaderboardForEvent()` was temporarily reverted to the pre-fix implementation that filtered by `gameSlug` instead of event match IDs, then the focused suite was run.
+
+Command:
+
+`C:\Program Files\nodejs\node.exe .\node_modules\vitest\vitest.mjs run src/lib/tournament/engine.test.ts`
+
+Result:
+
+- 1 test file failed
+- 1 test failed, 7 passed
+- Failing test: `launch visibility > keeps leaderboard scoped to the selected event`
+
+Observed failure:
+
+- Received leaderboard IDs began with `player-outsider`, proving same-game stats from a different event leaked into `event-flashpeak-open` under the old selector.
+
+### Explicit GREEN evidence after restoring the fix
+
+After restoring the event-match filter in `getLeaderboardForEvent()`, the same focused suite was rerun.
+
+Command:
+
+`C:\Program Files\nodejs\node.exe .\node_modules\vitest\vitest.mjs run src/lib/tournament/engine.test.ts`
+
+Result:
+
+- 1 test file passed
+- 8 tests passed
+- 0 failed
+
+### Verification
+
+Type check command:
+
+`C:\Program Files\nodejs\node.exe .\node_modules\typescript\bin\tsc --noEmit --incremental false`
+
+Result:
+
+- Passed with exit code 0
+
+### Scope confirmation
+
+- Task scope remained inside Task 1.
+- No route shapes changed.
+- No database work was introduced.
+- The production behavior change remained the existing event-match leaderboard filter; this round only strengthened the regression proof and appended the evidence.

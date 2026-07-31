@@ -12,11 +12,23 @@ import {
   getPublicEvents,
   getTeamStandings,
 } from "../platform/demo-store";
+import type { Event, Match, Player, Team } from "../platform/types";
 import type {
   MatchResultInput,
   PlayerMatchStatInput,
   TeamSeed,
 } from "./types";
+
+type DemoStoreState = {
+  users: unknown[];
+  events: Event[];
+  teams: Team[];
+  players: Player[];
+  matches: Match[];
+  playerStats: PlayerMatchStatInput[];
+};
+
+const demoStoreGlobal = globalThis as typeof globalThis & { __mflStore?: DemoStoreState };
 
 const teams: TeamSeed[] = [
   { id: "team-a", name: "Team A" },
@@ -181,13 +193,74 @@ describe("launch visibility", () => {
   });
 
   it("keeps leaderboard scoped to the selected event", () => {
-    const leaderboard = getLeaderboardForEvent("event-flashpeak-open");
+    getPublicEvents();
+    const originalState = structuredClone(demoStoreGlobal.__mflStore!);
 
-    expect(
-      leaderboard.every((entry) =>
-        ["player-rin", "player-bima", "player-dino", "player-eko", "player-faris"].includes(entry.playerId),
-      ),
-    ).toBe(true);
+    try {
+      demoStoreGlobal.__mflStore!.events.push({
+        id: "event-flashpeak-invitational",
+        slug: "flashpeak-invitational",
+        name: "Flashpeak Invitational",
+        description: "Secondary Flashpeak event used to verify event-scoped leaderboard reads.",
+        gameId: "game-flashpeak",
+        gameModeId: "mode-flashpeak-5v5",
+        format: "League",
+        status: "Published",
+        participantCap: 8,
+        registrationWindow: "August 1, 2026 - August 5, 2026",
+        startsAt: "August 7, 2026",
+        venue: "Invitational Arena",
+      });
+      demoStoreGlobal.__mflStore!.teams.push({
+        id: "team-outsider",
+        eventId: "event-flashpeak-invitational",
+        captainId: "captain-seirin",
+        name: "Outsider FC",
+        logoText: "OF",
+        tag: "OUT",
+      });
+      demoStoreGlobal.__mflStore!.players.push({
+        id: "player-outsider",
+        teamId: "team-outsider",
+        eventId: "event-flashpeak-invitational",
+        displayName: "Outside Scorer",
+        nickname: "Outsider",
+        position: "Forward",
+        jerseyNumber: 99,
+      });
+      demoStoreGlobal.__mflStore!.matches.push({
+        id: "match-flash-extra-1",
+        eventId: "event-flashpeak-invitational",
+        roundLabel: "Matchday 1",
+        homeTeamId: "team-outsider",
+        awayTeamId: "team-miracle",
+        homeScore: 9,
+        awayScore: 0,
+        status: "Completed",
+      });
+      demoStoreGlobal.__mflStore!.playerStats.push({
+        matchId: "match-flash-extra-1",
+        playerId: "player-outsider",
+        playerName: "Outside Scorer",
+        teamId: "team-outsider",
+        position: "Forward",
+        gameSlug: "flashpeak",
+        stats: { goals: 9, assists: 0, tackles: 0, blocks: 0 },
+      });
+
+      const leaderboard = getLeaderboardForEvent("event-flashpeak-open");
+
+      expect(leaderboard.map((entry) => entry.playerId)).toEqual([
+        "player-rin",
+        "player-eko",
+        "player-faris",
+        "player-bima",
+        "player-dino",
+      ]);
+      expect(leaderboard.some((entry) => entry.playerId === "player-outsider")).toBe(false);
+    } finally {
+      demoStoreGlobal.__mflStore = originalState;
+    }
   });
 
   it("awards one point each for a draw in league standings", () => {
