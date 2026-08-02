@@ -19,11 +19,11 @@ describe("public bracket page", () => {
   beforeEach(resetDemoStore);
   afterEach(resetDemoStore);
 
-  test("reads public-visible bracket data instead of the raw full projection", () => {
+  test("uses the public-visible projection for rendering and full projection for labels", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
 
     expect(source).toContain("getPublicVisibleBracketPreview");
-    expect(source).not.toContain("getBracketPreview(event.id)");
+    expect(source).toContain("getBracketPreview(event.id)");
   });
 
   it("hides unresolved downstream rounds for a single-elimination bracket with byes", async () => {
@@ -49,6 +49,31 @@ describe("public bracket page", () => {
 
     expect(markup).toContain("Auto-advance");
     expect(markup).not.toContain("Semifinal");
+  });
+
+  it("keeps early visible rounds labeled from the full bracket shape", async () => {
+    const event = createEvent({
+      name: "Flashpeak 24",
+      slug: "flashpeak-24-round-label-test",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      participantCap: 24,
+    });
+    setEventStatus(event.id, "Published");
+    importTeams(
+      Array.from({ length: 24 }, (_, index) => ({
+        eventId: event.id,
+        teamName: `Team ${index + 1}`,
+        teamTag: `X${String(index + 1).padStart(2, "0")}`,
+        captainName: `Captain ${index + 1}`,
+        captainContact: `captain-${index + 1}@example.test`,
+      })),
+    );
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain("Round of 16");
+    expect(markup).not.toContain(">Final<");
   });
 
   it("does not show a completed score on a projected matchup with different teams", async () => {

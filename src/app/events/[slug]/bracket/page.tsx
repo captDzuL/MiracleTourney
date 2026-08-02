@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { DataTable, Pill, Section } from "@/components/ui";
 import {
   getMatchesForEvent,
+  getBracketPreview,
   getPublicEventBySlug,
   getPublicVisibleBracketPreview,
   getTeamsForEvent,
@@ -18,7 +19,7 @@ function getRoundName(round: number, totalRounds: number) {
   if (roundsRemaining === 1) return "Final";
   if (roundsRemaining === 2) return "Semifinal";
   if (roundsRemaining === 3) return "Quarterfinal";
-  if (roundsRemaining === 4) return "Round of 16";
+  if (roundsRemaining >= 4) return "Round of 16";
 
   return `Round ${round}`;
 }
@@ -153,9 +154,16 @@ export default async function BracketPage({
   }
 
   const bracketMatches = items as BracketMatch[];
-  const totalRounds = Math.max(...bracketMatches.map((match) => match.round), 1);
-  const matchesByRound = Array.from({ length: totalRounds }, (_, index) =>
-    bracketMatches.filter((match) => match.round === index + 1),
+  const fullBracket = event.format === "Single Elimination"
+    ? (getBracketPreview(event.id) as BracketMatch[])
+    : [];
+  const totalRounds = Math.max(
+    ...(event.format === "Single Elimination" ? fullBracket : bracketMatches).map((match) => match.round),
+    1,
+  );
+  const visibleRounds = [...new Set(bracketMatches.map((match) => match.round))];
+  const matchesByRound = visibleRounds.map((round) =>
+    bracketMatches.filter((match) => match.round === round),
   );
   const recordedByRound = buildRecordedMatchLookup(recordedMatches);
 
@@ -172,7 +180,7 @@ export default async function BracketPage({
                 <div key={roundIndex} className="flex min-w-[280px] flex-col gap-4">
                   <div>
                     <p className="mono text-xs uppercase tracking-[0.24em] text-cyan-600">
-                      {getRoundName(roundIndex + 1, totalRounds)}
+                      {getRoundName(visibleRounds[roundIndex], totalRounds)}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">
                       {roundMatches.length} match{roundMatches.length > 1 ? "es" : ""}
