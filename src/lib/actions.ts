@@ -87,7 +87,13 @@ export async function captainAddPlayerAction(formData: FormData) {
     position: formData.get("position"),
   });
 
-  await addPlayer(input);
+  const jerseyRaw = formData.get("jerseyNumber");
+  const jerseyNumber =
+    jerseyRaw && String(jerseyRaw).trim() !== ""
+      ? parseInt(String(jerseyRaw), 10)
+      : undefined;
+
+  await addPlayer({ ...input, jerseyNumber });
   redirect("/captain?success=player-added");
 }
 

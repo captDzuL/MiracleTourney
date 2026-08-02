@@ -603,6 +603,7 @@ export async function addPlayer(input: {
   displayName: string;
   nickname: string;
   position: string;
+  jerseyNumber?: number;
 }): Promise<Player> {
   const row = await prisma.player.create({ data: input });
   return mapPlayer(row);
