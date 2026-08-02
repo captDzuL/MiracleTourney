@@ -352,7 +352,7 @@ export function getBracketPreview(eventId: string) {
   return generateRoundRobinSchedule(teamSeeds);
 }
 
-export function getPublicVisibleBracketPreview(eventId: string): BracketMatch[] {
+export function getPublicVisibleBracketPreview(eventId: string): ReturnType<typeof getBracketPreview> {
   const event = getStore().events.find((item) => item.id === eventId);
   if (!event || event.format !== "Single Elimination") return getBracketPreview(eventId);
 
