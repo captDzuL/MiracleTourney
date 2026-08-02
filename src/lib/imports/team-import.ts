@@ -1,5 +1,5 @@
 type ImportSnapshot = {
-  events: Array<{ id: string; slug: string; participantCap: number }>;
+  events: Array<{ id: string; slug: string; participantCap: number; bracketLocked: boolean }>;
   teams: Array<{ eventId: string; name: string; tag: string }>;
 };
 
@@ -117,6 +117,10 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
     const event = eventsBySlug.get(eventSlug);
     if (!event) {
       return fail(`Row ${rowNumber}: unknown event_slug "${eventSlug}".`);
+    }
+
+    if (event.bracketLocked) {
+      return fail(`Event "${eventSlug}" already has recorded match results, so additional teams cannot be imported.`);
     }
 
     const teamTag = teamTagRaw.toUpperCase();

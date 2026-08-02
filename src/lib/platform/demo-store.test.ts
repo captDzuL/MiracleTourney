@@ -4,6 +4,7 @@ import {
   createEvent,
   getBracketManageableMatches,
   getBracketPreview,
+  isEventBracketLocked,
   importTeams,
   resetDemoStore,
   setMatchResult,
@@ -74,6 +75,13 @@ describe("demo-store bracket operations", () => {
     const final = preview.find((match) => match.round === 3 && match.slot === 1);
 
     expect(final?.homeTeamId).toBe("team-seirin");
+  });
+
+  it("treats a single-elimination event as locked after the first completed result", () => {
+    resetDemoStore();
+
+    const lockedBefore = isEventBracketLocked("event-kuroko-summer");
+    expect(lockedBefore).toBe(true);
   });
 });
 

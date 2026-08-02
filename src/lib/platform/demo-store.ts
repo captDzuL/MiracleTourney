@@ -191,6 +191,13 @@ export function getMatchesForEvent(eventId: string) {
   return getStore().matches.filter((match) => match.eventId === eventId);
 }
 
+export function isEventBracketLocked(eventId: string) {
+  const event = getStore().events.find((item) => item.id === eventId);
+  if (!event || event.format !== "Single Elimination") return false;
+
+  return getMatchesForEvent(eventId).some((match) => match.status === "Completed");
+}
+
 function getBracketRoundLabel(round: number, totalRounds: number) {
   const roundsRemaining = totalRounds - round + 1;
 
@@ -368,6 +375,7 @@ export function getImportSnapshot() {
       id: event.id,
       slug: event.slug,
       participantCap: event.participantCap,
+      bracketLocked: isEventBracketLocked(event.id),
     })),
     teams: store.teams.map((team) => ({ eventId: team.eventId, name: team.name, tag: team.tag })),
   };

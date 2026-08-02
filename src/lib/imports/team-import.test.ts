@@ -74,6 +74,24 @@ describe("parseAndValidateTeamImport", () => {
     expect(result.message).toContain("unknown-event");
   });
 
+  it("rejects CSV import when the target event already has completed match results", () => {
+    resetStore();
+
+    const result = parseAndValidateTeamImport(
+      [
+        "event_slug,team_name,team_tag,captain_name,captain_contact",
+        "kuroko-summer-cup,Late Arrival,LAR,Hanamichi,0800001",
+      ].join("\n"),
+      getImportSnapshot(),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failed result");
+    expect(result.message).toBe(
+      'Event "kuroko-summer-cup" already has recorded match results, so additional teams cannot be imported.',
+    );
+  });
+
   it("rejects duplicate team tags inside the same event", () => {
     const result = parseAndValidateTeamImport(
       [
