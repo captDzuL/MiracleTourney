@@ -6,6 +6,7 @@ import {
   getBracketPreview,
   isEventBracketLocked,
   importTeams,
+  registerTeam,
   resetDemoStore,
   setMatchResult,
 } from "./demo-store";
@@ -98,6 +99,34 @@ describe("demo-store bracket operations", () => {
     ).toThrow(
       'Event "kuroko-summer-cup" already has recorded match results, so additional teams cannot be imported.',
     );
+  });
+
+  it("rejects direct captain registration after a single-elimination event is locked", () => {
+    expect(() =>
+      registerTeam({
+        eventId: "event-kuroko-summer",
+        captainId: "captain-seirin",
+        name: "Late Captain Team",
+        tag: "LCT",
+      }),
+    ).toThrow(
+      'Event "kuroko-summer-cup" already has recorded match results, so additional teams cannot be registered.',
+    );
+  });
+
+  it("allows direct captain registration before kickoff", () => {
+    const team = registerTeam({
+      eventId: "event-flashpeak-open",
+      captainId: "captain-seirin",
+      name: "Pre-Kickoff Team",
+      tag: "PKT",
+    });
+
+    expect(team).toMatchObject({
+      eventId: "event-flashpeak-open",
+      captainId: "captain-seirin",
+      name: "Pre-Kickoff Team",
+    });
   });
 
   it("rebuilds the projected bracket when more teams are imported before kickoff", () => {

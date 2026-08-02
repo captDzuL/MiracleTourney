@@ -74,6 +74,33 @@ describe("public bracket page", () => {
 
     expect(markup).not.toContain(">Final<");
     expect(markup).not.toContain("Semifinal");
+    expect(markup).toContain("Play-in Round");
+    expect(markup).not.toContain("Round of 16");
+  });
+
+  it("labels the visible 12-team opening round as a play-in round", async () => {
+    const event = createEvent({
+      name: "Kuroko 12",
+      slug: "kuroko-12-round-label-test",
+      gameModeId: "mode-kuroko-3v3",
+      format: "Single Elimination",
+      participantCap: 12,
+    });
+    setEventStatus(event.id, "Published");
+    importTeams(
+      Array.from({ length: 12 }, (_, index) => ({
+        eventId: event.id,
+        teamName: `Team ${index + 1}`,
+        teamTag: `K${String(index + 1).padStart(2, "0")}`,
+        captainName: `Captain ${index + 1}`,
+        captainContact: `captain-${index + 1}@example.test`,
+      })),
+    );
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain("Play-in Round");
+    expect(markup).not.toContain("Quarterfinal");
   });
 
   it("does not show a completed score on a projected matchup with different teams", async () => {

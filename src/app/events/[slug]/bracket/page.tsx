@@ -13,7 +13,15 @@ import type { BracketMatch } from "@/lib/tournament/types";
 
 export const dynamic = "force-dynamic";
 
-function getRoundName(round: number, totalRounds: number) {
+function getRoundName(
+  round: number,
+  totalRounds: number,
+  options?: {
+    playInRound?: number | null;
+  },
+) {
+  if (options?.playInRound === round) return "Play-in Round";
+
   const roundsRemaining = totalRounds - round + 1;
 
   if (roundsRemaining === 1) return "Final";
@@ -162,6 +170,10 @@ export default async function BracketPage({
     1,
   );
   const visibleRounds = [...new Set(bracketMatches.map((match) => match.round))];
+  const playInRound =
+    visibleRounds.find((round) =>
+      bracketMatches.some((match) => match.round === round && Boolean(match.byeForTeamId)),
+    ) ?? null;
   const matchesByRound = visibleRounds.map((round) =>
     bracketMatches.filter((match) => match.round === round),
   );
@@ -180,7 +192,7 @@ export default async function BracketPage({
                 <div key={roundIndex} className="flex min-w-[280px] flex-col gap-4">
                   <div>
                     <p className="mono text-xs uppercase tracking-[0.24em] text-cyan-600">
-                      {getRoundName(visibleRounds[roundIndex], totalRounds)}
+                      {getRoundName(visibleRounds[roundIndex], totalRounds, { playInRound })}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">
                       {roundMatches.length} match{roundMatches.length > 1 ? "es" : ""}
@@ -204,7 +216,9 @@ export default async function BracketPage({
                           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                             <div>
                               <p className="text-sm font-medium text-slate-900">Match {match.slot}</p>
-                              <p className="text-xs text-slate-500">{getRoundName(match.round, totalRounds)}</p>
+                              <p className="text-xs text-slate-500">
+                                {getRoundName(match.round, totalRounds, { playInRound })}
+                              </p>
                             </div>
                             <Pill tone={state.tone}>{state.status}</Pill>
                           </div>
@@ -246,7 +260,7 @@ export default async function BracketPage({
             const state = getBracketMatchState(match, event.startsAt, recordedByRound);
 
             return [
-              getRoundName(match.round, totalRounds),
+              getRoundName(match.round, totalRounds, { playInRound }),
               `Match ${match.slot}`,
               `${renderTeamName(teamLookup, match.homeTeamId, "TBD")} vs ${renderTeamName(
                 teamLookup,

@@ -27,6 +27,16 @@ async function requireAdminSession() {
   return user;
 }
 
+async function requireCaptainSession() {
+  const user = await requireRole("captain");
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  return user;
+}
+
 export async function loginAction(formData: FormData) {
   const email = z.string().email().parse(formData.get("email"));
   const result = await signInDemo(email);
@@ -44,23 +54,24 @@ export async function logoutAction() {
 }
 
 export async function captainRegisterTeamAction(formData: FormData) {
+  const captain = await requireCaptainSession();
   const input = z.object({
     eventId: z.string().min(1),
-    captainId: z.string().min(1),
     name: z.string().min(2),
     tag: z.string().min(2).max(4),
   }).parse({
     eventId: formData.get("eventId"),
-    captainId: formData.get("captainId"),
     name: formData.get("name"),
     tag: formData.get("tag"),
   });
 
-  registerTeam(input);
+  registerTeam({ ...input, captainId: captain.id });
   redirect("/captain?success=team-created");
 }
 
 export async function captainAddPlayerAction(formData: FormData) {
+  await requireCaptainSession();
+
   const input = z.object({
     teamId: z.string().min(1),
     eventId: z.string().min(1),

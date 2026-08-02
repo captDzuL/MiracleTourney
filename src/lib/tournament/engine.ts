@@ -97,6 +97,7 @@ function getResolvedWinner(
   match: BracketMatch,
   resultsById: Map<string, Match>,
   resultsByPosition: Map<string, Match>,
+  allowSingleTeamAutoAdvance: boolean,
 ) {
   if (match.byeForTeamId) return match.byeForTeamId;
 
@@ -110,8 +111,12 @@ function getResolvedWinner(
   ) {
     return result.winnerTeamId;
   }
-  if (match.homeTeamId && !match.awayTeamId) return match.homeTeamId;
-  if (!match.homeTeamId && match.awayTeamId) return match.awayTeamId;
+  if (allowSingleTeamAutoAdvance && match.homeTeamId && !match.awayTeamId) {
+    return match.homeTeamId;
+  }
+  if (allowSingleTeamAutoAdvance && !match.homeTeamId && match.awayTeamId) {
+    return match.awayTeamId;
+  }
 
   return null;
 }
@@ -128,9 +133,16 @@ export function projectSingleEliminationBracket(input: {
       .filter((match) => match.round !== undefined && match.slot !== undefined)
       .map((match) => [`${match.round}:${match.slot}`, match]),
   );
+  const sourceCanProduceTeam = new Map<string, boolean>();
 
   for (const match of base.filter((item) => item.round === 1)) {
-    match.resolvedWinnerTeamId = getResolvedWinner(match, resultsById, resultsByPosition);
+    sourceCanProduceTeam.set(match.id, Boolean(match.homeTeamId || match.awayTeamId));
+    match.resolvedWinnerTeamId = getResolvedWinner(
+      match,
+      resultsById,
+      resultsByPosition,
+      true,
+    );
   }
 
   for (const match of base.filter((item) => item.round > 1)) {
@@ -144,7 +156,19 @@ export function projectSingleEliminationBracket(input: {
     match.sourceMatchIds = [leftSource?.id ?? null, rightSource?.id ?? null];
     match.homeTeamId = leftSource?.resolvedWinnerTeamId ?? null;
     match.awayTeamId = rightSource?.resolvedWinnerTeamId ?? null;
-    match.resolvedWinnerTeamId = getResolvedWinner(match, resultsById, resultsByPosition);
+    const leftCanProduceTeam = Boolean(
+      leftSource && sourceCanProduceTeam.get(leftSource.id),
+    );
+    const rightCanProduceTeam = Boolean(
+      rightSource && sourceCanProduceTeam.get(rightSource.id),
+    );
+    sourceCanProduceTeam.set(match.id, leftCanProduceTeam || rightCanProduceTeam);
+    match.resolvedWinnerTeamId = getResolvedWinner(
+      match,
+      resultsById,
+      resultsByPosition,
+      leftCanProduceTeam !== rightCanProduceTeam,
+    );
   }
 
   return base;
@@ -155,26 +179,16 @@ export function getPublicVisibleSingleEliminationBracket(input: {
   slotCount: 8 | 12 | 16 | 24;
   results: Match[];
 }): BracketMatch[] {
-  const visibilityByMatchId = new Map<string, boolean>();
-
   return projectSingleEliminationBracket(input)
     .map((match) => {
       const bothTeamsKnown = Boolean(match.homeTeamId && match.awayTeamId);
       const isAutoAdvanceLeaf = Boolean(match.byeForTeamId && match.round === 1);
-      const sourceMatchesArePublic =
-        match.round === 1 ||
-        match.sourceMatchIds?.every(
-          (sourceMatchId) => Boolean(sourceMatchId && visibilityByMatchId.get(sourceMatchId)),
-        ) === true;
-      const isPublicVisible =
-        (bothTeamsKnown || isAutoAdvanceLeaf) && sourceMatchesArePublic;
+      const isPublicVisible = bothTeamsKnown || isAutoAdvanceLeaf;
       const visibility: BracketVisibility = isAutoAdvanceLeaf
         ? "auto-advance"
         : isPublicVisible
           ? "ready"
           : "hidden";
-
-      visibilityByMatchId.set(match.id, isPublicVisible);
 
       return { ...match, visibility, isPublicVisible };
     })

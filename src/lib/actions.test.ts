@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { revalidatePath, requireRole, setMatchResult } = vi.hoisted(() => ({
+const { addPlayer, registerTeam, revalidatePath, requireRole, setMatchResult } = vi.hoisted(() => ({
+  addPlayer: vi.fn(),
+  registerTeam: vi.fn(),
   revalidatePath: vi.fn(),
   requireRole: vi.fn(),
   setMatchResult: vi.fn(),
@@ -14,9 +16,13 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/auth/session", () => ({ requireRole }));
 vi.mock("@/lib/imports/team-import", () => ({}));
-vi.mock("@/lib/platform/demo-store", () => ({ setMatchResult }));
+vi.mock("@/lib/platform/demo-store", () => ({ addPlayer, registerTeam, setMatchResult }));
 
-import { adminUpdateMatchResultAction } from "./actions";
+import {
+  adminUpdateMatchResultAction,
+  captainAddPlayerAction,
+  captainRegisterTeamAction,
+} from "./actions";
 
 function resultFormData() {
   const formData = new FormData();
@@ -26,6 +32,61 @@ function resultFormData() {
   formData.set("awayScore", "18");
   return formData;
 }
+
+function registrationFormData() {
+  const formData = new FormData();
+  formData.set("eventId", "event-flashpeak-open");
+  formData.set("captainId", "captain-attacker-controlled");
+  formData.set("name", "Session United");
+  formData.set("tag", "SES");
+  return formData;
+}
+
+function playerFormData() {
+  const formData = new FormData();
+  formData.set("teamId", "team-seirin");
+  formData.set("eventId", "event-kuroko-summer");
+  formData.set("displayName", "Authenticated Player");
+  formData.set("nickname", "Auth");
+  formData.set("position", "Guard");
+  return formData;
+}
+
+describe("captain actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue({ id: "captain-session", role: "captain" });
+  });
+
+  it("requires a captain session before registering a team", async () => {
+    requireRole.mockResolvedValue(null);
+
+    await expect(captainRegisterTeamAction(registrationFormData())).rejects.toThrow(
+      "REDIRECT:/login",
+    );
+    expect(registerTeam).not.toHaveBeenCalled();
+  });
+
+  it("derives the registering captain from the authenticated session", async () => {
+    await expect(captainRegisterTeamAction(registrationFormData())).rejects.toThrow(
+      "REDIRECT:/captain?success=team-created",
+    );
+    expect(requireRole).toHaveBeenCalledWith("captain");
+    expect(registerTeam).toHaveBeenCalledWith({
+      eventId: "event-flashpeak-open",
+      captainId: "captain-session",
+      name: "Session United",
+      tag: "SES",
+    });
+  });
+
+  it("requires a captain session before adding a player", async () => {
+    requireRole.mockResolvedValue(null);
+
+    await expect(captainAddPlayerAction(playerFormData())).rejects.toThrow("REDIRECT:/login");
+    expect(addPlayer).not.toHaveBeenCalled();
+  });
+});
 
 describe("adminUpdateMatchResultAction", () => {
   beforeEach(() => {

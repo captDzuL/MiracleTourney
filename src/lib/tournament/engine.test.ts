@@ -155,6 +155,50 @@ describe("projectSingleEliminationBracket", () => {
 });
 
 describe("getPublicVisibleSingleEliminationBracket", () => {
+  it("shows the resolved final in an 8-slot bracket with only two teams", () => {
+    const visible = getPublicVisibleSingleEliminationBracket({
+      teams: teams.slice(0, 2),
+      slotCount: 8,
+      results: [],
+    });
+
+    expect(visible.find((match) => match.id === "bracket-r3-m1")).toMatchObject({
+      homeTeamId: "team-a",
+      awayTeamId: "team-b",
+      visibility: "ready",
+      isPublicVisible: true,
+    });
+  });
+
+  it("shows a ready 12-slot semifinal when one team arrives through chained byes", () => {
+    const visible = getPublicVisibleSingleEliminationBracket({
+      teams: teams.slice(0, 7),
+      slotCount: 12,
+      results: [
+        {
+          id: "bracket-r2-m2",
+          eventId: "event-1",
+          roundLabel: "Quarterfinal",
+          homeTeamId: "team-d",
+          awayTeamId: "team-e",
+          homeScore: 21,
+          awayScore: 10,
+          status: "Completed",
+          round: 2,
+          slot: 2,
+          winnerTeamId: "team-d",
+        },
+      ],
+    });
+
+    expect(visible.find((match) => match.id === "bracket-r3-m1")).toMatchObject({
+      homeTeamId: "team-a",
+      awayTeamId: "team-d",
+      visibility: "ready",
+      isPublicVisible: true,
+    });
+  });
+
   it("hides downstream rounds until both sides are known", () => {
     const teams = [
       { id: "team-1", name: "One" },

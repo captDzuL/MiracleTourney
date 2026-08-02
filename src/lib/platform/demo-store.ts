@@ -440,6 +440,14 @@ export function registerTeam(input: {
   name: string;
   tag: string;
 }) {
+  const event = getStore().events.find((item) => item.id === input.eventId);
+
+  if (event && isEventBracketLocked(input.eventId)) {
+    throw new Error(
+      `Event "${event.slug}" already has recorded match results, so additional teams cannot be registered.`,
+    );
+  }
+
   const team: Team = {
     id: `team-${Date.now()}`,
     eventId: input.eventId,
