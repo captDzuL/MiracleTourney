@@ -10,6 +10,8 @@ export type BracketMatch = {
   homeTeamId: string | null;
   awayTeamId: string | null;
   byeForTeamId?: string;
+  sourceMatchIds?: [string | null, string | null];
+  resolvedWinnerTeamId?: string | null;
 };
 
 export type MatchResultInput = {

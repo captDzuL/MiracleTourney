@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { DataTable, Section } from "@/components/ui";
-import { getEventBySlug, getPlayersForTeam, getTeamsForEvent } from "@/lib/platform/demo-store";
+import { getPlayersForTeam, getPublicEventBySlug, getTeamsForEvent } from "@/lib/platform/demo-store";
 
 export default async function ParticipantsPage({
   params,
@@ -9,7 +9,7 @@ export default async function ParticipantsPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const event = getEventBySlug(slug);
+  const event = getPublicEventBySlug(slug);
   if (!event) notFound();
 
   const teams = getTeamsForEvent(event.id);
@@ -21,9 +21,12 @@ export default async function ParticipantsPage({
         rows={teams.map((team) => [
           team.name,
           team.tag,
-          getPlayersForTeam(team.id)
-            .map((player) => `${player.nickname} (${player.position})`)
-            .join(", "),
+          (() => {
+            const players = getPlayersForTeam(team.id);
+            return players.length
+              ? players.map((player) => `${player.nickname} (${player.position})`).join(", ")
+              : "Roster pending";
+          })(),
         ])}
       />
     </Section>

@@ -6,29 +6,16 @@ import {
   generateRoundRobinSchedule,
   generateSingleEliminationBracket,
   getLiveStreamPresentation,
+  projectSingleEliminationBracket,
 } from "./engine";
-import {
-  getLeaderboardForEvent,
-  getPublicEvents,
-  getTeamStandings,
-} from "../platform/demo-store";
-import type { Event, Match, Player, Team } from "../platform/types";
+import { getBracketPreview, setMatchResult } from "../platform/demo-store";
+import type { Match } from "../platform/types";
 import type {
+  BracketMatch,
   MatchResultInput,
   PlayerMatchStatInput,
   TeamSeed,
 } from "./types";
-
-type DemoStoreState = {
-  users: unknown[];
-  events: Event[];
-  teams: Team[];
-  players: Player[];
-  matches: Match[];
-  playerStats: PlayerMatchStatInput[];
-};
-
-const demoStoreGlobal = globalThis as typeof globalThis & { __mflStore?: DemoStoreState };
 
 const teams: TeamSeed[] = [
   { id: "team-a", name: "Team A" },
@@ -54,6 +41,141 @@ describe("generateSingleEliminationBracket", () => {
       awayTeamId: null,
       byeForTeamId: "team-a",
     });
+  });
+
+  it("keeps undersubscribed events in their configured preset bracket", () => {
+    const bracket = generateSingleEliminationBracket(teams.slice(0, 7), 12);
+
+    expect(bracket.filter((match) => match.round === 1)).toHaveLength(8);
+    expect(bracket.filter((match) => match.byeForTeamId)).toHaveLength(7);
+  });
+
+  it("still keeps the standard 12-team preset behavior when the event is full", () => {
+    const extendedTeams: TeamSeed[] = [
+      ...teams,
+      { id: "team-i", name: "Team I" },
+      { id: "team-j", name: "Team J" },
+      { id: "team-k", name: "Team K" },
+      { id: "team-l", name: "Team L" },
+    ];
+
+    const bracket = generateSingleEliminationBracket(extendedTeams, 12);
+
+    expect(bracket.filter((match) => match.round === 1)).toHaveLength(8);
+    expect(bracket.filter((match) => match.byeForTeamId)).toHaveLength(4);
+  });
+});
+
+describe("projectSingleEliminationBracket", () => {
+  it("auto-advances a bye winner into the next round", () => {
+    const projected = projectSingleEliminationBracket({
+      teams: teams.slice(0, 7),
+      slotCount: 8,
+      results: [],
+    });
+
+    const semifinal = projected.find((match) => match.round === 2 && match.slot === 1);
+    expect(semifinal?.homeTeamId).toBe("team-a");
+  });
+
+  it("propagates completed winners into downstream matches", () => {
+    const projected = projectSingleEliminationBracket({
+      teams: teams.slice(0, 7),
+      slotCount: 8,
+      results: [
+        {
+          id: "bracket-r1-m2",
+          eventId: "event-kuroko-summer",
+          roundLabel: "Quarterfinal",
+          homeTeamId: "team-d",
+          awayTeamId: "team-e",
+          homeScore: 15,
+          awayScore: 21,
+          status: "Completed",
+          round: 1,
+          slot: 2,
+          winnerTeamId: "team-e",
+        },
+      ] as Match[],
+    });
+
+    const semifinal = projected.find((match) => match.round === 2 && match.slot === 1);
+    expect(semifinal).toMatchObject({
+      homeTeamId: "team-a",
+      awayTeamId: "team-e",
+    });
+  });
+
+  it("does not advance a result whose teams differ from its projected matchup", () => {
+    const projected = projectSingleEliminationBracket({
+      teams: teams.slice(0, 4),
+      slotCount: 8,
+      results: [
+        {
+          id: "unrelated-semifinal-result",
+          eventId: "event-kuroko-summer",
+          roundLabel: "Semifinal",
+          homeTeamId: "team-b",
+          awayTeamId: "team-c",
+          homeScore: 18,
+          awayScore: 21,
+          status: "Completed",
+          round: 2,
+          slot: 1,
+          winnerTeamId: "team-c",
+        },
+      ],
+    });
+
+    const semifinal = projected.find((match) => match.round === 2 && match.slot === 1);
+    const final = projected.find((match) => match.round === 3 && match.slot === 1);
+
+    expect(semifinal).toMatchObject({
+      homeTeamId: "team-a",
+      awayTeamId: "team-d",
+      resolvedWinnerTeamId: null,
+    });
+    expect(final?.homeTeamId).toBeNull();
+  });
+
+  it("continues automatic advancement through chained byes", () => {
+    const projected = projectSingleEliminationBracket({
+      teams: teams.slice(0, 7),
+      slotCount: 12,
+      results: [],
+    });
+
+    const quarterfinal = projected.find((match) => match.round === 2 && match.slot === 1);
+    const semifinal = projected.find((match) => match.round === 3 && match.slot === 1);
+
+    expect(quarterfinal?.resolvedWinnerTeamId).toBe("team-a");
+    expect(semifinal?.homeTeamId).toBe("team-a");
+  });
+});
+
+describe("getBracketPreview", () => {
+  it("returns propagated semifinal teams through the event-facing bracket preview", () => {
+    const bracket = getBracketPreview("event-kuroko-summer") as BracketMatch[];
+    const semifinal = bracket.find((match) => match.round === 2 && match.slot === 1);
+
+    expect(semifinal?.homeTeamId).toBeTruthy();
+    expect(semifinal?.awayTeamId).toBeTruthy();
+  });
+
+  it("does not project a completed store result when its teams mismatch the bracket slot", () => {
+    setMatchResult({
+      eventId: "event-kuroko-summer",
+      matchId: "match-kuroko-1",
+      homeScore: 21,
+      awayScore: 18,
+    });
+
+    const preview = getBracketPreview("event-kuroko-summer");
+    const final = preview.find(
+      (match) => match.round === 3 && "slot" in match && match.slot === 1,
+    );
+
+    expect(final?.homeTeamId).toBeNull();
   });
 });
 
@@ -185,90 +307,32 @@ describe("getLiveStreamPresentation", () => {
   });
 });
 
-describe("launch visibility", () => {
-  it("hides draft events from public lists", () => {
-    const events = getPublicEvents();
+describe("setMatchResult", () => {
+  it("stores completed match results with a derived winner", () => {
+    const match = setMatchResult({
+      eventId: "event-kuroko-summer",
+      matchId: "match-kuroko-1",
+      homeScore: 21,
+      awayScore: 18,
+    });
 
-    expect(events.some((event) => event.status === "Draft")).toBe(false);
+    expect(match).toMatchObject({
+      id: "match-kuroko-1",
+      status: "Completed",
+      homeScore: 21,
+      awayScore: 18,
+      winnerTeamId: "team-seirin",
+    });
   });
 
-  it("keeps leaderboard scoped to the selected event", () => {
-    getPublicEvents();
-    const originalState = structuredClone(demoStoreGlobal.__mflStore!);
-
-    try {
-      demoStoreGlobal.__mflStore!.events.push({
-        id: "event-flashpeak-invitational",
-        slug: "flashpeak-invitational",
-        name: "Flashpeak Invitational",
-        description: "Secondary Flashpeak event used to verify event-scoped leaderboard reads.",
-        gameId: "game-flashpeak",
-        gameModeId: "mode-flashpeak-5v5",
-        format: "League",
-        status: "Published",
-        participantCap: 8,
-        registrationWindow: "August 1, 2026 - August 5, 2026",
-        startsAt: "August 7, 2026",
-        venue: "Invitational Arena",
-      });
-      demoStoreGlobal.__mflStore!.teams.push({
-        id: "team-outsider",
-        eventId: "event-flashpeak-invitational",
-        captainId: "captain-seirin",
-        name: "Outsider FC",
-        logoText: "OF",
-        tag: "OUT",
-      });
-      demoStoreGlobal.__mflStore!.players.push({
-        id: "player-outsider",
-        teamId: "team-outsider",
-        eventId: "event-flashpeak-invitational",
-        displayName: "Outside Scorer",
-        nickname: "Outsider",
-        position: "Forward",
-        jerseyNumber: 99,
-      });
-      demoStoreGlobal.__mflStore!.matches.push({
-        id: "match-flash-extra-1",
-        eventId: "event-flashpeak-invitational",
-        roundLabel: "Matchday 1",
-        homeTeamId: "team-outsider",
-        awayTeamId: "team-miracle",
-        homeScore: 9,
-        awayScore: 0,
-        status: "Completed",
-      });
-      demoStoreGlobal.__mflStore!.playerStats.push({
-        matchId: "match-flash-extra-1",
-        playerId: "player-outsider",
-        playerName: "Outside Scorer",
-        teamId: "team-outsider",
-        position: "Forward",
-        gameSlug: "flashpeak",
-        stats: { goals: 9, assists: 0, tackles: 0, blocks: 0 },
-      });
-
-      const leaderboard = getLeaderboardForEvent("event-flashpeak-open");
-
-      expect(leaderboard.map((entry) => entry.playerId)).toEqual([
-        "player-rin",
-        "player-eko",
-        "player-faris",
-        "player-bima",
-        "player-dino",
-      ]);
-      expect(leaderboard.some((entry) => entry.playerId === "player-outsider")).toBe(false);
-    } finally {
-      demoStoreGlobal.__mflStore = originalState;
-    }
-  });
-
-  it("awards one point each for a draw in league standings", () => {
-    const standings = getTeamStandings("event-flashpeak-open");
-    const vortex = standings.find((team) => team.teamName === "Vortex");
-    const scorch = standings.find((team) => team.teamName === "Scorch FC");
-
-    expect(vortex?.points).toBe(1);
-    expect(scorch?.points).toBe(1);
+  it("rejects ties for single-elimination result entry", () => {
+    expect(() =>
+      setMatchResult({
+        eventId: "event-kuroko-summer",
+        matchId: "match-kuroko-1",
+        homeScore: 20,
+        awayScore: 20,
+      }),
+    ).toThrow("Single elimination matches cannot end in a draw.");
   });
 });

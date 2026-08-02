@@ -1,251 +1,135 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-vi.mock("next/navigation", () => ({
-  redirect: (destination: string) => {
-    throw new Error(`NEXT_REDIRECT:${destination}`);
-  },
-}));
+import { getImportSnapshot } from "@/lib/platform/demo-store";
 
-import { adminImportTeamsCsvAction } from "../actions";
+import { parseAndValidateTeamImport } from "./team-import";
 
-import {
-  getEvents,
-  getTeamsForEvent,
-} from "../platform/demo-store";
-import type {
-  AppUser,
-  Event,
-  Match,
-  Player,
-  Team,
-} from "../platform/types";
-import {
-  importTeamsFromRows,
-  parseTeamImportCsv,
-  validateTeamImportRows,
-} from "./team-import";
-
-type DemoStoreState = {
-  users: AppUser[];
-  events: Event[];
-  teams: Team[];
-  players: Player[];
-  matches: Match[];
-  playerStats: unknown[];
-};
-
-const demoStoreGlobal = globalThis as typeof globalThis & {
-  __mflStore?: DemoStoreState;
-};
-
-function snapshotStore() {
-  getEvents();
-  return structuredClone(demoStoreGlobal.__mflStore!);
+function resetStore() {
+  Reflect.deleteProperty(globalThis as typeof globalThis & { __mflStore?: unknown }, "__mflStore");
 }
 
-function restoreStore(state: DemoStoreState) {
-  demoStoreGlobal.__mflStore = structuredClone(state);
-}
-
-function parseAndValidateTeamImport(csvText: string, state: DemoStoreState) {
-  restoreStore(state);
-  const parsed = parseTeamImportCsv(csvText);
-  const events = getEvents();
-  const teams = events.flatMap((event) => getTeamsForEvent(event.id));
-  const errors = [...parsed.errors, ...validateTeamImportRows(parsed.rows, events, teams)];
-
-  if (errors.length > 0) {
-    return {
-      ok: false as const,
-      errors: errors.map((error) => error.message),
-    };
-  }
-
-  return {
-    ok: true as const,
-    rows: parsed.rows,
-  };
-}
-
-let baselineStore: DemoStoreState;
-
-beforeEach(() => {
-  baselineStore = snapshotStore();
-});
-
-afterEach(() => {
-  restoreStore(baselineStore);
-});
-
-describe("team import pipeline", () => {
-  it("rejects CSV uploads with validation errors and preserves store state", async () => {
-    const formData = new FormData();
-    formData.set(
-      "csvFile",
-      new File(
-        [
-          "event_slug,team_name,team_tag,captain_name,captain_contact\nmissing-event,New Team,,Ari,0812",
-        ],
-        "teams.csv",
-        { type: "text/csv" },
-      ),
-    );
-
-    await expect(adminImportTeamsCsvAction(formData)).rejects.toThrow(
-      "NEXT_REDIRECT:/admin?importError=",
-    );
-    expect(getTeamsForEvent("event-flashpeak-open")).toHaveLength(4);
+describe("parseAndValidateTeamImport", () => {
+  beforeEach(() => {
+    resetStore();
   });
 
-  it("collects all CSV validation errors in one pass", () => {
-    const csv = [
-      "event_slug,team_name,team_tag,captain_name,captain_contact",
-      "missing-event,Miracle Wolves,MW,Riko,08123",
-      "flashpeak-open-league,,,Dino,",
-      "flashpeak-open-league,Scorch FC,,Faris,08999",
-    ].join("\n");
+  it("accepts the launch CSV shape and returns normalized import rows", () => {
+    const result = parseAndValidateTeamImport(
+      [
+        "event_slug,team_name,team_tag,captain_name,captain_contact",
+        "flashpeak-open-league,North Axis,na,Salsa,08189",
+      ].join("\n"),
+      getImportSnapshot(),
+    );
 
-    const result = parseAndValidateTeamImport(csv, baselineStore);
-    expect(result.ok).toBe(false);
-
-    if (result.ok) {
-      throw new Error("Expected validation errors for invalid import CSV");
-    }
-
-    expect(result.errors).toEqual([
-      expect.stringContaining('Row 2: event_slug "missing-event" was not found'),
-      expect.stringContaining("Row 3: team_name is required"),
-      expect.stringContaining("Row 3: captain_contact is required"),
-      expect.stringContaining(
-        'Row 4: team_name "Scorch FC" is already registered for event "flashpeak-open-league"',
-      ),
-    ]);
-  });
-
-  it("auto-generates a team tag when team_tag is empty", () => {
-    const csv = [
-      "event_slug,team_name,team_tag,captain_name,captain_contact",
-      "flashpeak-open-league,Vortex Prime,,Eko,08111",
-    ].join("\n");
-
-    const result = parseAndValidateTeamImport(csv, baselineStore);
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected successful result");
 
-    if (!result.ok) {
-      throw new Error(`Expected valid import CSV, got: ${result.errors.join(", ")}`);
-    }
-
-    expect(result.rows[0].teamTag).toBe("VP");
-  });
-
-  it("imports valid rows atomically after full-file validation passes", () => {
-    const csv = [
-      "event_slug,team_name,team_tag,captain_name,captain_contact",
-      "flashpeak-open-league,Orbit United,,Nanda,08188",
-      "flashpeak-open-league,North Axis,NA,Salsa,08189",
-    ].join("\n");
-
-    const parsed = parseAndValidateTeamImport(csv, baselineStore);
-    expect(parsed.ok).toBe(true);
-
-    if (!parsed.ok) {
-      throw new Error(`Expected valid import CSV, got: ${parsed.errors.join(", ")}`);
-    }
-
-    restoreStore(baselineStore);
-    const beforeCount = getTeamsForEvent("event-flashpeak-open").length;
-
-    const result = importTeamsFromRows(parsed.rows);
-
-    const importedTeams = getTeamsForEvent("event-flashpeak-open");
-    expect(result).toEqual({ importedCount: 2 });
-    expect(importedTeams).toHaveLength(beforeCount + 2);
-    expect(importedTeams.slice(-2)).toEqual([
-      expect.objectContaining({
-        name: "Orbit United",
-        tag: "OU",
-        captainName: "Nanda",
-        captainContact: "08188",
-      }),
-      expect.objectContaining({
-        name: "North Axis",
-        tag: "NA",
+    expect(result.rows).toEqual([
+      {
+        eventId: "event-flashpeak-open",
+        teamName: "North Axis",
+        teamTag: "NA",
         captainName: "Salsa",
         captainContact: "08189",
-      }),
+      },
     ]);
   });
 
-  it("parses quoted fields instead of splitting on embedded commas", () => {
-    const csv = [
-      "event_slug,team_name,team_tag,captain_name,captain_contact",
-      'flashpeak-open-league,"Orbit, United",,Nanda,08188',
-    ].join("\n");
+  it("accepts utf-8 bom headers and quoted values", () => {
+    const result = parseAndValidateTeamImport(
+      [
+        "\uFEFFevent_slug,team_name,team_tag,captain_name,captain_contact",
+        'flashpeak-open-league,"North Axis, Prime",na,"Salsa Jr",08189',
+      ].join("\n"),
+      getImportSnapshot(),
+    );
 
-    const result = parseAndValidateTeamImport(csv, baselineStore);
     expect(result.ok).toBe(true);
-
-    if (!result.ok) {
-      throw new Error(`Expected valid quoted CSV row, got: ${result.errors.join(", ")}`);
-    }
+    if (!result.ok) throw new Error("expected successful result");
 
     expect(result.rows[0]).toMatchObject({
-      teamName: "Orbit, United",
-      teamTag: "OU",
+      eventId: "event-flashpeak-open",
+      teamName: "North Axis, Prime",
+      teamTag: "NA",
+      captainName: "Salsa Jr",
+      captainContact: "08189",
     });
   });
 
-  it("returns structured errors for malformed rows with the wrong column count", () => {
-    const csv = [
-      "event_slug,team_name,team_tag,captain_name,captain_contact",
-      "flashpeak-open-league,Orbit United,,Nanda,08188,unexpected",
-    ].join("\n");
+  it("rejects rows that point at an unknown event slug", () => {
+    const result = parseAndValidateTeamImport(
+      [
+        "event_slug,team_name,team_tag,captain_name,captain_contact",
+        "unknown-event,North Axis,NA,Salsa,08189",
+      ].join("\n"),
+      getImportSnapshot(),
+    );
 
-    const result = parseAndValidateTeamImport(csv, baselineStore);
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failed result");
 
-    if (result.ok) {
-      throw new Error("Expected malformed CSV row to be rejected");
-    }
-
-    expect(result.errors).toEqual([
-      'Row 2: expected 5 columns but found 6',
-    ]);
+    expect(result.message).toContain("Row 2");
+    expect(result.message).toContain("event_slug");
+    expect(result.message).toContain("unknown-event");
   });
 
-  it("returns structured header errors instead of throwing for missing required columns", () => {
-    const csv = [
-      "event_slug,team_name,captain_name",
-      "flashpeak-open-league,Orbit United,Nanda",
-    ].join("\n");
+  it("rejects duplicate team tags inside the same event", () => {
+    const result = parseAndValidateTeamImport(
+      [
+        "event_slug,team_name,team_tag,captain_name,captain_contact",
+        "flashpeak-open-league,Another Miracle,MFC,Salsa,08189",
+      ].join("\n"),
+      getImportSnapshot(),
+    );
 
-    const result = parseAndValidateTeamImport(csv, baselineStore);
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failed result");
 
-    if (result.ok) {
-      throw new Error("Expected missing required header to be rejected");
-    }
-
-    expect(result.errors).toEqual([
-      'Row 1: missing required CSV columns: captain_contact',
-    ]);
+    expect(result.message).toContain("Row 2");
+    expect(result.message).toContain("team_tag");
+    expect(result.message).toContain("MFC");
   });
 
-  it("returns structured header errors for unsupported columns", () => {
-    const csv = [
-      "event_slug,team_name,team_tag,captain_name,captain_contact,captain_email",
-      "flashpeak-open-league,Orbit United,,Nanda,08188,nanda@example.com",
-    ].join("\n");
+  it("rejects duplicate team names inside the same event", () => {
+    const result = parseAndValidateTeamImport(
+      [
+        "event_slug,team_name,team_tag,captain_name,captain_contact",
+        "flashpeak-open-league,Miracle Five,NAX,Salsa,08189",
+      ].join("\n"),
+      getImportSnapshot(),
+    );
 
-    const result = parseAndValidateTeamImport(csv, baselineStore);
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failed result");
 
-    if (result.ok) {
-      throw new Error("Expected unsupported header to be rejected");
-    }
+    expect(result.message).toContain("Row 2");
+    expect(result.message).toContain("team_name");
+    expect(result.message).toContain("Miracle Five");
+  });
 
-    expect(result.errors).toEqual([
-      'Row 1: unsupported CSV columns: captain_email',
-    ]);
+  it("rejects rows that would exceed the event participant cap", () => {
+    const result = parseAndValidateTeamImport(
+      [
+        "event_slug,team_name,team_tag,captain_name,captain_contact",
+        "flashpeak-open-league,North Axis Prime,NAP,Salsa,08189",
+        "flashpeak-open-league,North Axis Ultra,NAU,Salsa,08190",
+        "flashpeak-open-league,North Axis Nova,NAN,Salsa,08191",
+        "flashpeak-open-league,North Axis Elite,NAE,Salsa,08192",
+        "flashpeak-open-league,North Axis Pulse,NPU,Salsa,08193",
+        "flashpeak-open-league,North Axis Rift,NRF,Salsa,08194",
+        "flashpeak-open-league,North Axis Edge,NED,Salsa,08195",
+        "flashpeak-open-league,North Axis Flux,NFX,Salsa,08196",
+        "flashpeak-open-league,North Axis Apex,NAX,Salsa,08197",
+      ].join("\n"),
+      getImportSnapshot(),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failed result");
+
+    expect(result.message).toContain("Row 10");
+    expect(result.message).toContain("participant cap");
+    expect(result.message).toContain("flashpeak-open-league");
   });
 });

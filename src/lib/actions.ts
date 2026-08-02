@@ -1,20 +1,31 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import {
-  importTeamsFromRows,
-  parseAndValidateTeamImport,
-} from "@/lib/imports/team-import";
-import { signInDemo, signOutDemo } from "@/lib/auth/session";
+import { requireRole, signInDemo, signOutDemo } from "@/lib/auth/session";
+import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import {
   addPlayer,
   createEvent,
   getImportSnapshot,
+  importTeams,
   registerTeam,
+  setEventStatus,
+  setMatchResult,
   updateEventStream,
 } from "@/lib/platform/demo-store";
+
+async function requireAdminSession() {
+  const user = await requireRole("admin");
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  return user;
+}
 
 export async function loginAction(formData: FormData) {
   const email = z.string().email().parse(formData.get("email"));
@@ -69,6 +80,8 @@ export async function captainAddPlayerAction(formData: FormData) {
 }
 
 export async function adminCreateEventAction(formData: FormData) {
+  await requireAdminSession();
+
   const input = z.object({
     name: z.string().min(3),
     slug: z.string().min(3),
@@ -84,10 +97,83 @@ export async function adminCreateEventAction(formData: FormData) {
   });
 
   createEvent(input);
+  revalidatePath("/", "layout");
   redirect("/admin?success=event-created");
 }
 
+export async function adminUpdateEventStatusAction(formData: FormData) {
+  await requireAdminSession();
+
+  const input = z.object({
+    eventId: z.string().min(1),
+    status: z.enum(["Draft", "Published", "Registration Closed", "Ongoing", "Finished"]),
+  }).parse({
+    eventId: formData.get("eventId"),
+    status: formData.get("status"),
+  });
+
+  const event = setEventStatus(input.eventId, input.status);
+
+  if (!event) {
+    redirect("/admin?error=Event%20not%20found.");
+  }
+
+  revalidatePath("/", "layout");
+  redirect(`/admin?success=event-status-updated&event=${event.slug}`);
+}
+
+export async function adminUpdateMatchResultAction(formData: FormData) {
+  await requireAdminSession();
+
+  const input = z.object({
+    eventId: z.string().min(1),
+    matchId: z.string().min(1),
+    homeScore: z.coerce.number().int().min(0),
+    awayScore: z.coerce.number().int().min(0),
+  }).parse({
+    eventId: formData.get("eventId"),
+    matchId: formData.get("matchId"),
+    homeScore: formData.get("homeScore"),
+    awayScore: formData.get("awayScore"),
+  });
+
+  let match;
+
+  try {
+    match = setMatchResult(input);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to save match result.";
+    redirect(`/admin?error=${encodeURIComponent(message)}`);
+  }
+
+  if (!match) redirect("/admin?error=Match%20not%20found.");
+  revalidatePath("/", "layout");
+  redirect(`/admin?success=match-result-updated&match=${match.id}`);
+}
+
+export async function adminImportTeamsCsvAction(formData: FormData) {
+  await requireAdminSession();
+
+  const file = formData.get("csv");
+
+  if (!(file instanceof File) || file.size === 0) {
+    redirect("/admin?error=Please%20choose%20a%20CSV%20file%20before%20importing.");
+  }
+
+  const result = parseAndValidateTeamImport(await file.text(), getImportSnapshot());
+
+  if (!result.ok) {
+    redirect(`/admin?error=${encodeURIComponent(result.message)}`);
+  }
+
+  importTeams(result.rows);
+  revalidatePath("/", "layout");
+  redirect(`/admin?success=teams-imported&count=${result.rows.length}`);
+}
+
 export async function adminUpdateStreamAction(formData: FormData) {
+  await requireAdminSession();
+
   const input = z.object({
     eventId: z.string().min(1),
     url: z.string().url(),
@@ -99,23 +185,6 @@ export async function adminUpdateStreamAction(formData: FormData) {
   });
 
   updateEventStream(input.eventId, input.url, input.label);
+  revalidatePath("/", "layout");
   redirect("/admin?success=stream-updated");
-}
-
-export async function adminImportTeamsCsvAction(formData: FormData) {
-  const file = formData.get("csvFile");
-
-  if (!(file instanceof File)) {
-    redirect("/admin?error=csv-file-required");
-  }
-
-  const csvText = await file.text();
-  const result = parseAndValidateTeamImport(csvText, getImportSnapshot());
-
-  if (!result.ok) {
-    redirect(`/admin?importError=${encodeURIComponent(result.errors.join(" | "))}`);
-  }
-
-  const imported = importTeamsFromRows(result.rows);
-  redirect(`/admin?success=teams-imported&count=${imported.importedCount}`);
 }

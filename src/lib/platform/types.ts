@@ -47,6 +47,8 @@ export type Event = {
   slug: string;
   name: string;
   description: string;
+  logoUrl?: string;
+  gameImageUrl?: string;
   gameId: string;
   gameModeId: string;
   format: TournamentFormat;
@@ -67,6 +69,7 @@ export type Team = {
   tag: string;
   captainName?: string;
   captainContact?: string;
+  source?: "demo" | "csv-import";
 };
 
 export type Player = {
@@ -88,4 +91,8 @@ export type Match = {
   homeScore: number;
   awayScore: number;
   status: "Scheduled" | "Completed";
+  slot?: number;
+  round?: number;
+  winnerTeamId?: string | null;
+  scheduledLabel?: string;
 };

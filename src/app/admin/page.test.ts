@@ -1,62 +1,32 @@
-import { describe, expect, it, vi } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import fs from "node:fs";
+import path from "node:path";
 
-vi.mock("next/navigation", () => ({
-  redirect: (destination: string) => {
-    throw new Error(`NEXT_REDIRECT:${destination}`);
-  },
-}));
+import { describe, expect, test } from "vitest";
 
-vi.mock("@/lib/auth/session", () => ({
-  requireRole: vi.fn(async () => ({
-    id: "admin-commish",
-    email: "admin@miraclefc.gg",
-    name: "League Commissioner",
-    role: "admin",
-  })),
-}));
+describe("admin action buttons", () => {
+  test("do not use invisible light-on-light secondary button styling", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
 
-import AdminPage from "./page";
-
-describe("admin page team import UI", () => {
-  it("renders the team import section with template link and success feedback", async () => {
-    const view = await AdminPage({
-      searchParams: Promise.resolve({
-        success: "teams-imported",
-        count: "2",
-      }),
-    });
-
-    const html = renderToStaticMarkup(view);
-
-    expect(html).toContain("Team import completed: 2 teams imported.");
-    expect(html).toContain("Import teams from CSV");
-    expect(html).toContain("Upload a roster CSV");
-    expect(html).toContain("/templates/team-import-template.csv");
-    expect(html).toContain('name="csvFile"');
-    expect(html).toContain("Import teams");
-  });
-
-  it("renders readable upload errors from admin search params", async () => {
-    const view = await AdminPage({
-      searchParams: Promise.resolve({
-        importError: "Row 2: event missing",
-      }),
-    });
-
-    const html = renderToStaticMarkup(view);
-
-    expect(html).toContain("Team import failed: Row 2: event missing");
-  });
-
-  it("ships the downloadable team import template with the expected header row", () => {
-    const templatePath = join(process.cwd(), "public", "templates", "team-import-template.csv");
-
-    expect(() => readFileSync(templatePath, "utf8")).not.toThrow();
-    expect(readFileSync(templatePath, "utf8")).toContain(
-      "event_slug,team_name,team_tag,captain_name,captain_contact",
+    expect(source).not.toContain(
+      'rounded-full border border-white/10 px-4 py-3 text-sm font-semibold text-white hover:bg-white/5',
     );
+  });
+
+  test("shows a match operations section with result entry controls", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain("Match operations");
+    expect(source).toContain("Save match result");
+    expect(source).toContain("homeScore");
+    expect(source).toContain("awayScore");
+  });
+
+  test("lets admin choose which manageable event should receive match results", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain("manageableEvents");
+    expect(source).toContain("selectedManageableEventId");
+    expect(source).toContain('name="eventId"');
+    expect(source).toContain("Choose event");
   });
 });

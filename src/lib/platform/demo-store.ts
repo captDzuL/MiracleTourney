@@ -6,8 +6,9 @@ import {
   generateRoundRobinSchedule,
   generateSingleEliminationBracket,
   getLiveStreamPresentation,
+  projectSingleEliminationBracket,
 } from "@/lib/tournament/engine";
-import type { MatchResultInput, PlayerMatchStatInput } from "@/lib/tournament/types";
+import type { BracketMatch, MatchResultInput, PlayerMatchStatInput } from "@/lib/tournament/types";
 
 type DemoState = {
   users: AppUser[];
@@ -17,6 +18,8 @@ type DemoState = {
   matches: Match[];
   playerStats: PlayerMatchStatInput[];
 };
+
+const PUBLIC_EVENT_STATUSES = new Set<Event["status"]>(["Published", "Registration Closed", "Ongoing", "Finished"]);
 
 const initialState: DemoState = {
   users: [
@@ -73,14 +76,14 @@ const initialState: DemoState = {
     },
   ],
   teams: [
-    { id: "team-seirin", eventId: "event-kuroko-summer", captainId: "captain-seirin", name: "Seirin", logoText: "SR", tag: "SER" },
-    { id: "team-kaijo", eventId: "event-kuroko-summer", captainId: "captain-seirin", name: "Kaijo", logoText: "KJ", tag: "KAI" },
-    { id: "team-rakuzan", eventId: "event-kuroko-summer", captainId: "captain-seirin", name: "Rakuzan", logoText: "RZ", tag: "RAK" },
-    { id: "team-shutoku", eventId: "event-kuroko-summer", captainId: "captain-seirin", name: "Shutoku", logoText: "ST", tag: "SHU" },
-    { id: "team-miracle", eventId: "event-flashpeak-open", captainId: "captain-seirin", name: "Miracle Five", logoText: "M5", tag: "MFC" },
-    { id: "team-thunder", eventId: "event-flashpeak-open", captainId: "captain-seirin", name: "Thunder Street", logoText: "TS", tag: "THS" },
-    { id: "team-vortex", eventId: "event-flashpeak-open", captainId: "captain-seirin", name: "Vortex", logoText: "VX", tag: "VTX" },
-    { id: "team-scorch", eventId: "event-flashpeak-open", captainId: "captain-seirin", name: "Scorch FC", logoText: "SC", tag: "SCR" },
+    { id: "team-seirin", eventId: "event-kuroko-summer", captainId: "captain-seirin", name: "Seirin", logoText: "SR", tag: "SER", source: "demo" },
+    { id: "team-kaijo", eventId: "event-kuroko-summer", captainId: "captain-seirin", name: "Kaijo", logoText: "KJ", tag: "KAI", source: "demo" },
+    { id: "team-rakuzan", eventId: "event-kuroko-summer", captainId: "captain-seirin", name: "Rakuzan", logoText: "RZ", tag: "RAK", source: "demo" },
+    { id: "team-shutoku", eventId: "event-kuroko-summer", captainId: "captain-seirin", name: "Shutoku", logoText: "ST", tag: "SHU", source: "demo" },
+    { id: "team-miracle", eventId: "event-flashpeak-open", captainId: "captain-seirin", name: "Miracle Five", logoText: "M5", tag: "MFC", source: "demo" },
+    { id: "team-thunder", eventId: "event-flashpeak-open", captainId: "captain-seirin", name: "Thunder Street", logoText: "TS", tag: "THS", source: "demo" },
+    { id: "team-vortex", eventId: "event-flashpeak-open", captainId: "captain-seirin", name: "Vortex", logoText: "VX", tag: "VTX", source: "demo" },
+    { id: "team-scorch", eventId: "event-flashpeak-open", captainId: "captain-seirin", name: "Scorch FC", logoText: "SC", tag: "SCR", source: "demo" },
   ],
   players: [
     { id: "player-kagami", teamId: "team-seirin", eventId: "event-kuroko-summer", displayName: "Taiga Kagami", nickname: "Kagami", position: "Forward", jerseyNumber: 10 },
@@ -97,8 +100,8 @@ const initialState: DemoState = {
     { id: "player-faris", teamId: "team-scorch", eventId: "event-flashpeak-open", displayName: "Faris", nickname: "Faris", position: "Forward", jerseyNumber: 10 },
   ],
   matches: [
-    { id: "match-kuroko-1", eventId: "event-kuroko-summer", roundLabel: "Quarterfinal", homeTeamId: "team-seirin", awayTeamId: "team-kaijo", homeScore: 21, awayScore: 16, status: "Completed" },
-    { id: "match-kuroko-2", eventId: "event-kuroko-summer", roundLabel: "Quarterfinal", homeTeamId: "team-rakuzan", awayTeamId: "team-shutoku", homeScore: 18, awayScore: 20, status: "Completed" },
+    { id: "match-kuroko-1", eventId: "event-kuroko-summer", roundLabel: "Quarterfinal", homeTeamId: "team-seirin", awayTeamId: "team-kaijo", homeScore: 21, awayScore: 16, status: "Completed", round: 2, slot: 1, winnerTeamId: "team-seirin" },
+    { id: "match-kuroko-2", eventId: "event-kuroko-summer", roundLabel: "Quarterfinal", homeTeamId: "team-rakuzan", awayTeamId: "team-shutoku", homeScore: 18, awayScore: 20, status: "Completed", round: 2, slot: 2, winnerTeamId: "team-shutoku" },
     { id: "match-flash-1", eventId: "event-flashpeak-open", roundLabel: "Matchday 1", homeTeamId: "team-miracle", awayTeamId: "team-thunder", homeScore: 4, awayScore: 2, status: "Completed" },
     { id: "match-flash-2", eventId: "event-flashpeak-open", roundLabel: "Matchday 1", homeTeamId: "team-vortex", awayTeamId: "team-scorch", homeScore: 1, awayScore: 1, status: "Completed" },
   ],
@@ -136,6 +139,10 @@ function getStore() {
   return globalStore.__mflStore;
 }
 
+export function resetDemoStore() {
+  globalStore.__mflStore = cloneState(initialState);
+}
+
 export function getAllGames() {
   return games;
 }
@@ -149,11 +156,15 @@ export function getEvents() {
 }
 
 export function getPublicEvents() {
-  return getStore().events.filter((event) => event.status !== "Draft");
+  return getStore().events.filter((event) => PUBLIC_EVENT_STATUSES.has(event.status));
 }
 
 export function getEventBySlug(slug: string) {
   return getStore().events.find((event) => event.slug === slug);
+}
+
+export function getPublicEventBySlug(slug: string) {
+  return getStore().events.find((event) => event.slug === slug && PUBLIC_EVENT_STATUSES.has(event.status));
 }
 
 export function getGameForEvent(event: Event) {
@@ -168,20 +179,6 @@ export function getTeamsForEvent(eventId: string) {
   return getStore().teams.filter((team) => team.eventId === eventId);
 }
 
-export function getImportSnapshot() {
-  const store = getStore();
-
-  return {
-    events: [...store.events],
-    teams: [...store.teams],
-  };
-}
-
-export function importTeams(teams: Team[]) {
-  getStore().teams.push(...teams);
-  return { importedCount: teams.length };
-}
-
 export function getPlayersForTeam(teamId: string) {
   return getStore().players.filter((player) => player.teamId === teamId);
 }
@@ -194,17 +191,118 @@ export function getMatchesForEvent(eventId: string) {
   return getStore().matches.filter((match) => match.eventId === eventId);
 }
 
+function getBracketRoundLabel(round: number, totalRounds: number) {
+  const roundsRemaining = totalRounds - round + 1;
+
+  if (roundsRemaining === 1) return "Final";
+  if (roundsRemaining === 2) return "Semifinal";
+  if (roundsRemaining === 3) return "Quarterfinal";
+  if (roundsRemaining === 4) return "Round of 16";
+
+  return `Round ${round}`;
+}
+
+function matchesProjectedPairing(
+  match: Pick<Match, "homeTeamId" | "awayTeamId">,
+  projected: Pick<BracketMatch, "homeTeamId" | "awayTeamId">,
+) {
+  return match.homeTeamId === projected.homeTeamId && match.awayTeamId === projected.awayTeamId;
+}
+
+function getProjectedBracketMatches(event: Event): Match[] {
+  const teamSeeds = getTeamsForEvent(event.id).map((team) => ({ id: team.id, name: team.name }));
+  const bracket = projectSingleEliminationBracket({
+    teams: teamSeeds,
+    slotCount: event.participantCap,
+    results: getMatchesForEvent(event.id),
+  }) as BracketMatch[];
+  const existingById = new Map(getMatchesForEvent(event.id).map((match) => [match.id, match]));
+  const totalRounds = Math.max(...bracket.map((match) => match.round), 1);
+
+  return bracket
+    .filter((match) => Boolean(match.homeTeamId && match.awayTeamId))
+    .map((match) => {
+      const existing = existingById.get(match.id);
+      const alignedExisting = existing && matchesProjectedPairing(existing, match) ? existing : null;
+
+      return {
+        id: match.id,
+        eventId: event.id,
+        roundLabel: getBracketRoundLabel(match.round, totalRounds),
+        homeTeamId: match.homeTeamId!,
+        awayTeamId: match.awayTeamId!,
+        homeScore: alignedExisting?.homeScore ?? 0,
+        awayScore: alignedExisting?.awayScore ?? 0,
+        status: alignedExisting?.status ?? "Scheduled",
+        round: match.round,
+        slot: match.slot,
+        winnerTeamId: alignedExisting?.winnerTeamId ?? null,
+      } satisfies Match;
+    })
+    .sort((left, right) => (left.round! - right.round!) || (left.slot! - right.slot!));
+}
+
+export function getBracketManageableMatches(eventId: string) {
+  const event = getStore().events.find((item) => item.id === eventId);
+  if (!event) return [];
+
+  if (event.format === "Single Elimination") {
+    return getProjectedBracketMatches(event);
+  }
+
+  return getMatchesForEvent(eventId)
+    .filter((match) => match.round != null && match.slot != null)
+    .sort((left, right) => (left.round! - right.round!) || (left.slot! - right.slot!));
+}
+
+export function setMatchResult(input: {
+  eventId: string;
+  matchId: string;
+  homeScore: number;
+  awayScore: number;
+}) {
+  const store = getStore();
+  const event = store.events.find((item) => item.id === input.eventId);
+  let match = store.matches.find(
+    (item) => item.id === input.matchId && item.eventId === input.eventId,
+  );
+
+  if (!event) return null;
+  if (event.format === "Single Elimination" && input.homeScore === input.awayScore) {
+    throw new Error("Single elimination matches cannot end in a draw.");
+  }
+
+  if (!match && event.format === "Single Elimination") {
+    const projectedMatch = getProjectedBracketMatches(event).find((item) => item.id === input.matchId);
+    if (!projectedMatch) return null;
+
+    match = { ...projectedMatch };
+    store.matches.push(match);
+  }
+
+  if (!match) return null;
+
+  match.homeScore = input.homeScore;
+  match.awayScore = input.awayScore;
+  match.status = "Completed";
+  match.winnerTeamId =
+    input.homeScore > input.awayScore ? match.homeTeamId : match.awayTeamId;
+
+  return match;
+}
+
+
 export function getLeaderboardForEvent(eventId: string) {
-  const matchIds = new Set(getMatchesForEvent(eventId).map((match) => match.id));
   const event = getStore().events.find((item) => item.id === eventId);
 
   if (!event) return [];
 
   const game = getGameForEvent(event);
   const metric = game.slug === "flashpeak" ? "goals" : "points";
+  const playerIds = new Set(getPlayersForEvent(eventId).map((player) => player.id));
 
   return aggregatePlayerLeaderboard(
-    getStore().playerStats.filter((stat) => matchIds.has(stat.matchId)),
+    getStore().playerStats.filter((stat) => stat.gameSlug === game.slug && playerIds.has(stat.playerId)),
     metric,
   );
 }
@@ -236,7 +334,11 @@ export function getBracketPreview(eventId: string) {
   const teamSeeds = getTeamsForEvent(eventId).map((team) => ({ id: team.id, name: team.name }));
 
   if (event.format === "Single Elimination") {
-    return generateSingleEliminationBracket(teamSeeds, event.participantCap);
+    return projectSingleEliminationBracket({
+      teams: teamSeeds,
+      slotCount: event.participantCap,
+      results: getMatchesForEvent(eventId),
+    });
   }
 
   return generateRoundRobinSchedule(teamSeeds);
@@ -256,6 +358,23 @@ export function getCaptainTeams(userId: string | undefined) {
   if (!userId) return [];
 
   return getStore().teams.filter((team) => team.captainId === userId);
+}
+
+export function getImportSnapshot() {
+  const store = getStore();
+
+  return {
+    events: store.events.map((event) => ({
+      id: event.id,
+      slug: event.slug,
+      participantCap: event.participantCap,
+    })),
+    teams: store.teams.map((team) => ({ eventId: team.eventId, name: team.name, tag: team.tag })),
+  };
+}
+
+export function getImportedTeams() {
+  return getStore().teams.filter((team) => team.source === "csv-import");
 }
 
 export function createEvent(input: {
@@ -284,6 +403,15 @@ export function createEvent(input: {
   return event;
 }
 
+export function setEventStatus(eventId: string, status: Event["status"]) {
+  const event = getStore().events.find((item) => item.id === eventId);
+
+  if (!event) return null;
+
+  event.status = status;
+  return event;
+}
+
 export function registerTeam(input: {
   eventId: string;
   captainId: string;
@@ -297,10 +425,40 @@ export function registerTeam(input: {
     name: input.name,
     logoText: input.tag.slice(0, 2).toUpperCase(),
     tag: input.tag.toUpperCase(),
+    source: "demo",
   };
 
   getStore().teams.push(team);
   return team;
+}
+
+export function importTeams(input: Array<{
+  eventId: string;
+  teamName: string;
+  teamTag: string;
+  captainName: string;
+  captainContact: string;
+}>) {
+  const createdTeams: Team[] = [];
+
+  input.forEach((row, index) => {
+    const team: Team = {
+      id: `team-import-${Date.now()}-${index}`,
+      eventId: row.eventId,
+      captainId: `imported-${row.eventId}-${row.teamTag.toLowerCase()}`,
+      name: row.teamName,
+      logoText: row.teamTag.slice(0, 2).toUpperCase(),
+      tag: row.teamTag.toUpperCase(),
+      captainName: row.captainName,
+      captainContact: row.captainContact,
+      source: "csv-import",
+    };
+
+    getStore().teams.push(team);
+    createdTeams.push(team);
+  });
+
+  return createdTeams;
 }
 
 export function addPlayer(input: {

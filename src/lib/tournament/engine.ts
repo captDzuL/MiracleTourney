@@ -7,6 +7,7 @@ import type {
   TeamSeed,
   TeamStanding,
 } from "./types";
+import type { Match } from "../platform/types";
 
 function createMatchId(prefix: string, round: number, slot: number) {
   return `${prefix}-r${round}-m${slot}`;
@@ -41,10 +42,16 @@ export function generateSingleEliminationBracket(
   teams: TeamSeed[],
   slotCount: 8 | 12 | 16 | 24,
 ): BracketMatch[] {
-  const bracketSize = getBracketSize(slotCount);
-  const seededEntries: (TeamSeed | null)[] = [...teams.slice(0, slotCount)];
+  const entrants = teams.slice(0, slotCount);
 
-  while (seededEntries.length < slotCount) {
+  if (!entrants.length) {
+    return [];
+  }
+
+  const bracketSize = getBracketSize(slotCount);
+  const seededEntries: (TeamSeed | null)[] = [...entrants];
+
+  while (seededEntries.length < bracketSize) {
     seededEntries.push(null);
   }
 
@@ -83,6 +90,63 @@ export function generateSingleEliminationBracket(
   }
 
   return bracket;
+}
+
+function getResolvedWinner(
+  match: BracketMatch,
+  resultsById: Map<string, Match>,
+  resultsByPosition: Map<string, Match>,
+) {
+  if (match.byeForTeamId) return match.byeForTeamId;
+
+  const result =
+    resultsById.get(match.id) ?? resultsByPosition.get(`${match.round}:${match.slot}`);
+
+  if (
+    result?.winnerTeamId &&
+    match.homeTeamId === result.homeTeamId &&
+    match.awayTeamId === result.awayTeamId
+  ) {
+    return result.winnerTeamId;
+  }
+  if (match.homeTeamId && !match.awayTeamId) return match.homeTeamId;
+  if (!match.homeTeamId && match.awayTeamId) return match.awayTeamId;
+
+  return null;
+}
+
+export function projectSingleEliminationBracket(input: {
+  teams: TeamSeed[];
+  slotCount: 8 | 12 | 16 | 24;
+  results: Match[];
+}): BracketMatch[] {
+  const base = generateSingleEliminationBracket(input.teams, input.slotCount);
+  const resultsById = new Map(input.results.map((match) => [match.id, match]));
+  const resultsByPosition = new Map(
+    input.results
+      .filter((match) => match.round !== undefined && match.slot !== undefined)
+      .map((match) => [`${match.round}:${match.slot}`, match]),
+  );
+
+  for (const match of base.filter((item) => item.round === 1)) {
+    match.resolvedWinnerTeamId = getResolvedWinner(match, resultsById, resultsByPosition);
+  }
+
+  for (const match of base.filter((item) => item.round > 1)) {
+    const previousRound = match.round - 1;
+    const sourceSlotStart = (match.slot - 1) * 2 + 1;
+    const leftSource =
+      base.find((item) => item.round === previousRound && item.slot === sourceSlotStart) ?? null;
+    const rightSource =
+      base.find((item) => item.round === previousRound && item.slot === sourceSlotStart + 1) ?? null;
+
+    match.sourceMatchIds = [leftSource?.id ?? null, rightSource?.id ?? null];
+    match.homeTeamId = leftSource?.resolvedWinnerTeamId ?? null;
+    match.awayTeamId = rightSource?.resolvedWinnerTeamId ?? null;
+    match.resolvedWinnerTeamId = getResolvedWinner(match, resultsById, resultsByPosition);
+  }
+
+  return base;
 }
 
 export function generateRoundRobinSchedule(teams: TeamSeed[]) {
@@ -140,12 +204,7 @@ export function buildLeagueStandings(teams: TeamSeed[], results: MatchResultInpu
     away.scoreFor += result.awayScore;
     away.scoreAgainst += result.homeScore;
 
-    if (result.homeScore === result.awayScore) {
-      home.draws += 1;
-      away.draws += 1;
-      home.points += 1;
-      away.points += 1;
-    } else if (result.homeScore > result.awayScore) {
+    if (result.homeScore > result.awayScore) {
       home.wins += 1;
       home.points += 3;
       away.losses += 1;
@@ -153,6 +212,11 @@ export function buildLeagueStandings(teams: TeamSeed[], results: MatchResultInpu
       away.wins += 1;
       away.points += 3;
       home.losses += 1;
+    } else {
+      home.draws += 1;
+      away.draws += 1;
+      home.points += 1;
+      away.points += 1;
     }
   }
 

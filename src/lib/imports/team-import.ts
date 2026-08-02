@@ -1,104 +1,62 @@
-import { getEvents, importTeams } from "../platform/demo-store";
-import type { Event, Team } from "../platform/types";
+type ImportSnapshot = {
+  events: Array<{ id: string; slug: string; participantCap: number }>;
+  teams: Array<{ eventId: string; name: string; tag: string }>;
+};
 
-export type TeamImportRow = {
-  eventSlug: string;
+type ImportRow = {
+  eventId: string;
   teamName: string;
   teamTag: string;
   captainName: string;
   captainContact: string;
 };
 
-export type TeamImportError = {
-  rowNumber: number;
+type ImportSuccess = {
+  ok: true;
+  rows: ImportRow[];
+};
+
+type ImportFailure = {
+  ok: false;
   message: string;
 };
 
-export type ParsedTeamImportCsv = {
-  rows: TeamImportRow[];
-  errors: TeamImportError[];
-};
+export type ParseTeamImportResult = ImportSuccess | ImportFailure;
 
-export type DemoStateLike = {
-  events: Event[];
-  teams: Team[];
-};
-
-export type ParseResult =
-  | {
-      ok: true;
-      rows: TeamImportRow[];
-    }
-  | {
-      ok: false;
-      errors: string[];
-    };
-
-const requiredHeaders = [
+const REQUIRED_HEADERS = [
   "event_slug",
   "team_name",
+  "team_tag",
   "captain_name",
   "captain_contact",
 ] as const;
 
-const optionalHeaders = ["team_tag"] as const;
-const supportedHeaders = [...requiredHeaders, ...optionalHeaders];
-
-export function buildTeamTag(teamName: string) {
-  return (
-    teamName
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 3)
-      .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("") || teamName.slice(0, 2).toUpperCase()
-  );
-}
-
-function buildHeaderErrors(headers: string[]) {
-  const errors: TeamImportError[] = [];
-  const missingHeaders = requiredHeaders.filter((header) => !headers.includes(header));
-  const unsupportedHeaders = headers.filter(
-    (header) => !supportedHeaders.includes(header as never),
-  );
-
-  if (missingHeaders.length > 0) {
-    errors.push({
-      rowNumber: 1,
-      message: `Row 1: missing required CSV columns: ${missingHeaders.join(", ")}`,
-    });
-  }
-
-  if (unsupportedHeaders.length > 0) {
-    errors.push({
-      rowNumber: 1,
-      message: `Row 1: unsupported CSV columns: ${unsupportedHeaders.join(", ")}`,
-    });
-  }
-
-  return errors;
+function fail(message: string): ImportFailure {
+  return { ok: false, message };
 }
 
 function parseCsvLine(line: string) {
-  const cells: string[] = [];
+  const values: string[] = [];
   let current = "";
   let inQuotes = false;
 
   for (let index = 0; index < line.length; index += 1) {
     const character = line[index];
+    const nextCharacter = line[index + 1];
 
-    if (character === '"') {
-      if (inQuotes && line[index + 1] === '"') {
-        current += '"';
+    if (character === "\"") {
+      if (inQuotes && nextCharacter === "\"") {
+        current += "\"";
         index += 1;
-      } else {
-        inQuotes = !inQuotes;
+        continue;
       }
+
+      inQuotes = !inQuotes;
       continue;
     }
 
     if (character === "," && !inQuotes) {
-      cells.push(current.trim());
+      values.push(current.trim());
       current = "";
       continue;
     }
@@ -106,172 +64,93 @@ function parseCsvLine(line: string) {
     current += character;
   }
 
-  if (inQuotes) {
-    return { cells: [], error: "has an unmatched quote" };
-  }
-
-  cells.push(current.trim());
-  return { cells, error: null as string | null };
+  values.push(current.trim());
+  return values;
 }
 
-export function parseTeamImportCsv(csvText: string): ParsedTeamImportCsv {
+export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnapshot): ParseTeamImportResult {
   const lines = csvText
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
 
-  if (lines.length === 0) {
-    return { rows: [], errors: [] };
+  if (lines.length < 2) {
+    return fail("CSV must include a header row and at least one team row.");
   }
 
-  const parsedHeader = parseCsvLine(lines[0]);
-  if (parsedHeader.error) {
-    return {
-      rows: [],
-      errors: [{ rowNumber: 1, message: `Row 1: ${parsedHeader.error}` }],
-    };
+  const headers = parseCsvLine(lines[0].replace(/^\uFEFF/, ""));
+
+  if (headers.length !== REQUIRED_HEADERS.length || headers.some((header, index) => header !== REQUIRED_HEADERS[index])) {
+    return fail(
+      `CSV header must be exactly: ${REQUIRED_HEADERS.join(", ")}`,
+    );
   }
 
-  const headers = parsedHeader.cells;
-  const headerErrors = buildHeaderErrors(headers);
-  const rows: TeamImportRow[] = [];
-  const errors: TeamImportError[] = [...headerErrors];
-
-  if (headerErrors.length > 0) {
-    return { rows, errors };
+  const eventsBySlug = new Map(snapshot.events.map((event) => [event.slug, event]));
+  const existingTags = new Set(snapshot.teams.map((team) => `${team.eventId}::${team.tag.toUpperCase()}`));
+  const existingNames = new Set(snapshot.teams.map((team) => `${team.eventId}::${team.name.trim().toLowerCase()}`));
+  const existingTeamCounts = new Map<string, number>();
+  for (const team of snapshot.teams) {
+    existingTeamCounts.set(team.eventId, (existingTeamCounts.get(team.eventId) ?? 0) + 1);
   }
+  const stagedTeamCounts = new Map<string, number>();
+  const stagedTags = new Set<string>();
+  const stagedNames = new Set<string>();
+  const rows: ImportRow[] = [];
 
-  for (const [index, line] of lines.slice(1).entries()) {
-    const rowNumber = index + 2;
-    const parsedRow = parseCsvLine(line);
+  for (let index = 1; index < lines.length; index += 1) {
+    const rowNumber = index + 1;
+    const values = parseCsvLine(lines[index]);
 
-    if (parsedRow.error) {
-      errors.push({
-        rowNumber,
-        message: `Row ${rowNumber}: ${parsedRow.error}`,
-      });
-      continue;
+    if (values.length !== REQUIRED_HEADERS.length) {
+      return fail(`Row ${rowNumber}: expected ${REQUIRED_HEADERS.length} columns, received ${values.length}.`);
     }
 
-    if (parsedRow.cells.length !== headers.length) {
-      errors.push({
-        rowNumber,
-        message: `Row ${rowNumber}: expected ${headers.length} columns but found ${parsedRow.cells.length}`,
-      });
-      continue;
+    const [eventSlug, teamName, teamTagRaw, captainName, captainContact] = values;
+
+    if (!eventSlug) return fail(`Row ${rowNumber}: event_slug is required.`);
+    if (!teamName) return fail(`Row ${rowNumber}: team_name is required.`);
+    if (!teamTagRaw) return fail(`Row ${rowNumber}: team_tag is required.`);
+    if (!captainName) return fail(`Row ${rowNumber}: captain_name is required.`);
+    if (!captainContact) return fail(`Row ${rowNumber}: captain_contact is required.`);
+
+    const event = eventsBySlug.get(eventSlug);
+    if (!event) {
+      return fail(`Row ${rowNumber}: unknown event_slug "${eventSlug}".`);
     }
 
-    const getValue = (header: string) => {
-      const headerIndex = headers.indexOf(header);
-      return headerIndex >= 0 ? (parsedRow.cells[headerIndex] ?? "") : "";
-    };
+    const teamTag = teamTagRaw.toUpperCase();
+    const duplicateKey = `${event.id}::${teamTag}`;
+    const duplicateNameKey = `${event.id}::${teamName.trim().toLowerCase()}`;
 
-    const teamName = getValue("team_name");
-    const rawTeamTag = getValue("team_tag");
+    if (existingTags.has(duplicateKey) || stagedTags.has(duplicateKey)) {
+      return fail(`Row ${rowNumber}: team_tag "${teamTag}" already exists for event_slug "${eventSlug}".`);
+    }
 
+    if (existingNames.has(duplicateNameKey) || stagedNames.has(duplicateNameKey)) {
+      return fail(`Row ${rowNumber}: team_name "${teamName}" already exists for event_slug "${eventSlug}".`);
+    }
+
+    const nextTeamCount =
+      (existingTeamCounts.get(event.id) ?? 0) + (stagedTeamCounts.get(event.id) ?? 0) + 1;
+
+    if (nextTeamCount > event.participantCap) {
+      return fail(
+        `Row ${rowNumber}: event_slug "${eventSlug}" would exceed its participant cap of ${event.participantCap} teams.`,
+      );
+    }
+
+    stagedTags.add(duplicateKey);
+    stagedNames.add(duplicateNameKey);
+    stagedTeamCounts.set(event.id, (stagedTeamCounts.get(event.id) ?? 0) + 1);
     rows.push({
-      eventSlug: getValue("event_slug"),
+      eventId: event.id,
       teamName,
-      teamTag: rawTeamTag || buildTeamTag(teamName),
-      captainName: getValue("captain_name"),
-      captainContact: getValue("captain_contact"),
+      teamTag,
+      captainName,
+      captainContact,
     });
   }
 
-  return { rows, errors };
-}
-
-export function validateTeamImportRows(
-  rows: TeamImportRow[],
-  events: Event[],
-  teams: Team[],
-) {
-  const errors: TeamImportError[] = [];
-  const seenKeys = new Set<string>();
-
-  rows.forEach((row, index) => {
-    const rowNumber = index + 2;
-    const event = events.find((item) => item.slug === row.eventSlug);
-
-    if (!event) {
-      errors.push({
-        rowNumber,
-        message: `Row ${rowNumber}: event_slug "${row.eventSlug}" was not found`,
-      });
-      return;
-    }
-
-    if (!row.teamName) {
-      errors.push({ rowNumber, message: `Row ${rowNumber}: team_name is required` });
-    }
-
-    if (!row.captainName) {
-      errors.push({ rowNumber, message: `Row ${rowNumber}: captain_name is required` });
-    }
-
-    if (!row.captainContact) {
-      errors.push({ rowNumber, message: `Row ${rowNumber}: captain_contact is required` });
-    }
-
-    const key = `${event.id}::${row.teamName.toLowerCase()}`;
-    const duplicateExists = teams.some(
-      (team) =>
-        team.eventId === event.id &&
-        team.name.toLowerCase() === row.teamName.toLowerCase(),
-    );
-
-    if (seenKeys.has(key) || duplicateExists) {
-      errors.push({
-        rowNumber,
-        message: `Row ${rowNumber}: team_name "${row.teamName}" is already registered for event "${row.eventSlug}"`,
-      });
-    }
-
-    seenKeys.add(key);
-  });
-
-  return errors;
-}
-
-export function parseAndValidateTeamImport(
-  csvText: string,
-  storeSnapshot: DemoStateLike,
-): ParseResult {
-  const parsed = parseTeamImportCsv(csvText);
-  const errors = [
-    ...parsed.errors,
-    ...validateTeamImportRows(parsed.rows, storeSnapshot.events, storeSnapshot.teams),
-  ];
-
-  if (errors.length > 0) {
-    return {
-      ok: false,
-      errors: errors.map((error) => error.message),
-    };
-  }
-
-  return {
-    ok: true,
-    rows: parsed.rows,
-  };
-}
-
-export function importTeamsFromRows(rows: TeamImportRow[]) {
-  const events = getEvents();
-  const importedTeams: Team[] = rows.map((row, index) => {
-    const event = events.find((item) => item.slug === row.eventSlug)!;
-
-    return {
-      id: `team-${event.slug}-${Date.now()}-${index}`,
-      eventId: event.id,
-      captainId: `imported-${event.id}-${index}`,
-      name: row.teamName,
-      logoText: row.teamTag.slice(0, 2).toUpperCase(),
-      tag: row.teamTag.toUpperCase(),
-      captainName: row.captainName,
-      captainContact: row.captainContact,
-    };
-  });
-
-  return importTeams(importedTeams);
+  return { ok: true, rows };
 }

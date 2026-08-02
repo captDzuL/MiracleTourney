@@ -5,10 +5,10 @@ import { CalendarDays, ListTree, Trophy, Users } from "lucide-react";
 import { LiveStreamCard, Pill, Section, StatCard } from "@/components/ui";
 import {
   getBracketPreview,
-  getEventBySlug,
   getGameForEvent,
   getLeaderboardForEvent,
   getModeForEvent,
+  getPublicEventBySlug,
   getTeamsForEvent,
 } from "@/lib/platform/demo-store";
 import { getLiveStreamPresentation } from "@/lib/tournament/engine";
@@ -19,9 +19,9 @@ export default async function EventDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const event = getEventBySlug(slug);
+  const event = getPublicEventBySlug(slug);
 
-  if (!event || event.status === "Draft") notFound();
+  if (!event) notFound();
 
   const game = getGameForEvent(event);
   const mode = getModeForEvent(event);
@@ -62,7 +62,15 @@ export default async function EventDetailPage({
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
-            <StatCard label="Bracket / fixtures" value={bracket.length} hint="Generated from event format" />
+            <StatCard
+              label="Bracket / fixtures"
+              value={bracket.length}
+              hint={
+                event.format === "Single Elimination"
+                  ? "Projected from teams and completed match outcomes"
+                  : "Generated from event format"
+              }
+            />
             <StatCard label="Tracked positions" value={mode.positions.length} hint={mode.positions.join(", ")} />
             <StatCard label="Leaderboard entries" value={leaderboard.length} hint="Aggregated from player match stats" />
           </div>
@@ -118,7 +126,9 @@ export default async function EventDetailPage({
               </p>
             </div>
           ) : (
-            <p className="text-sm text-slate-400">No player stats recorded yet.</p>
+            <p className="text-sm text-slate-400">
+              Player stats will appear after roster and match-stat entry is recorded.
+            </p>
           )}
         </Section>
       </div>

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { DataTable, Section } from "@/components/ui";
-import { getEventBySlug, getTeamStandings } from "@/lib/platform/demo-store";
+import { getPublicEventBySlug, getTeamStandings } from "@/lib/platform/demo-store";
 
 export default async function StandingsPage({
   params,
@@ -9,8 +9,8 @@ export default async function StandingsPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const event = getEventBySlug(slug);
-  if (!event || event.status === "Draft") notFound();
+  const event = getPublicEventBySlug(slug);
+  if (!event) notFound();
 
   const standings = getTeamStandings(event.id);
 
