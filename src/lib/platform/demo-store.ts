@@ -447,6 +447,16 @@ export function importTeams(input: Array<{
   captainName: string;
   captainContact: string;
 }>) {
+  input.forEach((row) => {
+    const event = getStore().events.find((item) => item.id === row.eventId);
+
+    if (event && isEventBracketLocked(row.eventId)) {
+      throw new Error(
+        `Event "${event.slug}" already has recorded match results, so additional teams cannot be imported.`,
+      );
+    }
+  });
+
   const createdTeams: Team[] = [];
 
   input.forEach((row, index) => {

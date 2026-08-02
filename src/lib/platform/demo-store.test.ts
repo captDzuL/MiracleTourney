@@ -83,5 +83,67 @@ describe("demo-store bracket operations", () => {
     const lockedBefore = isEventBracketLocked("event-kuroko-summer");
     expect(lockedBefore).toBe(true);
   });
+
+  it("rejects direct imports after a single-elimination event is locked", () => {
+    expect(() =>
+      importTeams([
+        {
+          eventId: "event-kuroko-summer",
+          teamName: "Late Entrants",
+          teamTag: "LATE",
+          captainName: "Late Captain",
+          captainContact: "0800",
+        },
+      ]),
+    ).toThrow(
+      'Event "kuroko-summer-cup" already has recorded match results, so additional teams cannot be imported.',
+    );
+  });
+
+  it("rebuilds the projected bracket when more teams are imported before kickoff", () => {
+    resetDemoStore();
+
+    const created = createEvent({
+      name: "Flashpeak 24",
+      slug: "flashpeak-24",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      participantCap: 24,
+    });
+
+    importTeams(Array.from({ length: 22 }, (_, index) => ({
+      eventId: created.id,
+      teamName: `Team ${index + 1}`,
+      teamTag: `T${String(index + 1).padStart(2, "0")}`,
+      captainName: `Captain ${index + 1}`,
+      captainContact: `08${index + 1}`,
+    })));
+
+    const before = getBracketPreview(created.id);
+
+    importTeams([
+      {
+        eventId: created.id,
+        teamName: "Team 23",
+        teamTag: "T23",
+        captainName: "Captain 23",
+        captainContact: "0823",
+      },
+      {
+        eventId: created.id,
+        teamName: "Team 24",
+        teamTag: "T24",
+        captainName: "Captain 24",
+        captainContact: "0824",
+      },
+    ]);
+
+    const after = getBracketPreview(created.id);
+
+    expect(after).not.toEqual(before);
+    expect(after.filter((match) => match.round === 1).length).toBeGreaterThanOrEqual(
+      before.filter((match) => match.round === 1).length,
+    );
+  });
 });
 
