@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 
 import {
+  adminApproveStatAction,
   adminCreateEventAction,
   adminImportTeamsCsvAction,
+  adminRejectStatAction,
   adminUpdateEventStatusAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
@@ -17,6 +19,8 @@ import {
   getImportedTeams,
   getLeaderboardForEvent,
   getMatchesForEvent,
+  getPendingStatSubmissionCount,
+  getPendingStatSubmissions,
   getTeamsForEvent,
 } from "@/lib/platform/repository";
 import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
@@ -66,9 +70,19 @@ export default async function AdminPage({
   const selectedManageableEvent = manageableEvents.find(({ event }) => event.id === selectedManageableEventId);
   const manageableMatches = selectedManageableEvent?.manageableMatches ?? [];
 
-  const [featuredMatches, featuredLeaderboard] = featuredEvent
-    ? await Promise.all([getMatchesForEvent(featuredEvent.id), getLeaderboardForEvent(featuredEvent.id)])
-    : [[], []];
+  const [featuredMatches, featuredLeaderboard, pendingSubmissions, pendingCount] = featuredEvent
+    ? await Promise.all([
+        getMatchesForEvent(featuredEvent.id),
+        getLeaderboardForEvent(featuredEvent.id),
+        getPendingStatSubmissions(),
+        getPendingStatSubmissionCount(),
+      ])
+    : await Promise.all([
+        Promise.resolve([] as Awaited<ReturnType<typeof getMatchesForEvent>>),
+        Promise.resolve([] as Awaited<ReturnType<typeof getLeaderboardForEvent>>),
+        getPendingStatSubmissions(),
+        getPendingStatSubmissionCount(),
+      ]);
 
   const importedTeams = importedTeamsRaw
     .map((team) => ({
@@ -428,6 +442,92 @@ export default async function AdminPage({
             featuredEvent?.id === event.id ? featuredMatches.length : 0,
           ])}
         />
+      </Section>
+
+      <Section
+        title={`Stat Submissions${pendingCount > 0 ? ` · ${pendingCount} pending` : ""}`}
+        description="Captain-submitted match stats awaiting review. Approve to publish to leaderboard, or reject with a note."
+      >
+        {pendingSubmissions.length === 0 ? (
+          <p className="text-sm text-slate-400">No pending submissions.</p>
+        ) : (
+          <div className="space-y-3">
+            {pendingSubmissions.map((sub) => (
+              <details key={sub.id} className="rounded-2xl border border-slate-200 bg-slate-50">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {sub.matchLabel} · {sub.teamName}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {sub.eventName} · Submitted by {sub.captainEmail} ·{" "}
+                      {new Date(sub.submittedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                    Pending
+                  </span>
+                </summary>
+
+                <div className="border-t border-slate-200 p-4">
+                  {/* Stats preview */}
+                  <div className="mb-4 overflow-x-auto">
+                    <table className="w-full text-xs text-slate-700">
+                      <thead>
+                        <tr>
+                          <th className="py-1 text-left font-semibold uppercase tracking-widest text-slate-500">
+                            Player ID
+                          </th>
+                          <th className="px-2 py-1 text-left font-semibold uppercase tracking-widest text-slate-500">
+                            Stats
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(sub.stats).map(([playerId, stats]) => (
+                          <tr key={playerId} className="border-t border-slate-100">
+                            <td className="mono py-1.5 pr-3 text-slate-400">{playerId.slice(0, 12)}…</td>
+                            <td className="py-1.5">
+                              {Object.entries(stats).map(([k, v]) => (
+                                <span key={k} className="mr-2 inline-block">
+                                  <span className="text-slate-500">{k}:</span>{" "}
+                                  <span className="text-slate-900">{v}</span>
+                                </span>
+                              ))}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    {/* Approve */}
+                    <form action={adminApproveStatAction}>
+                      <input type="hidden" name="submissionId" value={sub.id} />
+                      <button className={buttonStyles.primary} type="submit">
+                        Approve
+                      </button>
+                    </form>
+
+                    {/* Reject */}
+                    <form action={adminRejectStatAction} className="flex gap-2">
+                      <input type="hidden" name="submissionId" value={sub.id} />
+                      <input
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400"
+                        name="rejectionNote"
+                        placeholder="Rejection note (optional)"
+                      />
+                      <button className={buttonStyles.secondary} type="submit">
+                        Reject
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
       </Section>
     </div>
   );
