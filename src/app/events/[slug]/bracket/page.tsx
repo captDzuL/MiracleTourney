@@ -7,7 +7,7 @@ import {
   getPublicEventBySlug,
   getPublicVisibleBracketPreview,
   getTeamsForEvent,
-} from "@/lib/platform/demo-store";
+} from "@/lib/platform/repository";
 import type { Match } from "@/lib/platform/types";
 import type { BracketMatch } from "@/lib/tournament/types";
 
@@ -128,13 +128,15 @@ export default async function BracketPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const event = getPublicEventBySlug(slug);
+  const event = await getPublicEventBySlug(slug);
   if (!event) notFound();
 
-  const teams = getTeamsForEvent(event.id);
+  const [teams, items, recordedMatches] = await Promise.all([
+    getTeamsForEvent(event.id),
+    getPublicVisibleBracketPreview(event.id),
+    getMatchesForEvent(event.id),
+  ]);
   const teamLookup = new Map(teams.map((team) => [team.id, team.name]));
-  const items = getPublicVisibleBracketPreview(event.id);
-  const recordedMatches = getMatchesForEvent(event.id);
 
   if (event.format === "League") {
     return (
@@ -163,7 +165,7 @@ export default async function BracketPage({
 
   const bracketMatches = items as BracketMatch[];
   const fullBracket = event.format === "Single Elimination"
-    ? (getBracketPreview(event.id) as BracketMatch[])
+    ? (await getBracketPreview(event.id) as BracketMatch[])
     : [];
   const totalRounds = Math.max(
     ...(event.format === "Single Elimination" ? fullBracket : bracketMatches).map((match) => match.round),

@@ -1,97 +1,237 @@
 import Link from "next/link";
-import { ArrowRight, CalendarDays, Medal, Shield, Video } from "lucide-react";
+import { CalendarDays, ImagePlus, Trophy, Users } from "lucide-react";
 
-import { Pill, Section, StatCard } from "@/components/ui";
-import { getGameForEvent, getPublicEvents } from "@/lib/platform/demo-store";
+import { getAllGames, getGameForEvent, getPublicEvents } from "@/lib/platform/repository";
+import type { Event, Game } from "@/lib/platform/types";
 
-export default function HomePage() {
-  const events = getPublicEvents();
-  const highlighted = events.slice(0, 2);
+export const dynamic = "force-dynamic";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function getInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+const gameArt: Record<string, { bg: string; orb1: string; orb2: string; ring: string; label: string }> = {
+  "game-kuroko": {
+    bg: "linear-gradient(135deg, #0c1445 0%, #1e3a8a 50%, #1e40af 100%)",
+    orb1: "rgba(96,165,250,0.18)",
+    orb2: "rgba(147,197,253,0.10)",
+    ring: "rgba(147,197,253,0.12)",
+    label: "KNB",
+  },
+  "game-flashpeak": {
+    bg: "linear-gradient(135deg, #052e16 0%, #14532d 50%, #166534 100%)",
+    orb1: "rgba(74,222,128,0.18)",
+    orb2: "rgba(134,239,172,0.10)",
+    ring: "rgba(134,239,172,0.12)",
+    label: "FP",
+  },
+};
+
+const statusConfig: Record<string, { label: string; class: string; dot?: boolean }> = {
+  Published: { label: "Registration Open", class: "bg-blue-500 text-white" },
+  "Registration Closed": { label: "Reg. Closed", class: "bg-amber-500 text-white" },
+  Ongoing: { label: "Live", class: "bg-rose-500 text-white", dot: true },
+  Finished: { label: "Finished", class: "bg-slate-500 text-white" },
+  Draft: { label: "Draft", class: "bg-slate-300 text-slate-700" },
+};
+
+function ctaLabel(event: Event) {
+  if (event.status === "Ongoing") return event.stream?.enabled ? "Watch Stream" : "View Bracket";
+  if (event.status === "Finished") return "View Standings";
+  return "View Event";
+}
+
+function ctaHref(event: Event) {
+  if (event.status === "Ongoing" && !event.stream?.enabled) return `/events/${event.slug}/bracket` as `/events/${string}/bracket`;
+  if (event.status === "Finished") return `/events/${event.slug}/standings` as `/events/${string}/standings`;
+  return `/events/${event.slug}` as `/events/${string}`;
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function GameArt({ gameId, logoUrl, eventName }: { gameId: string; logoUrl?: string; eventName: string }) {
+  const art = gameArt[gameId] ?? gameArt["game-kuroko"];
+  const initials = getInitials(eventName) || "EV";
+
+  return (
+    <div className="relative h-44 overflow-hidden rounded-t-2xl" style={{ background: art.bg }}>
+      {/* Decorative orbs */}
+      <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full" style={{ background: art.orb1 }} />
+      <div className="absolute -right-4 bottom-0 h-28 w-28 rounded-full" style={{ background: art.orb2 }} />
+      <div className="absolute left-8 top-8 h-20 w-20 rounded-full border" style={{ borderColor: art.ring }} />
+      <div className="absolute left-14 top-14 h-10 w-10 rounded-full border" style={{ borderColor: art.ring }} />
+      {/* Watermark label */}
+      <span className="absolute bottom-2 right-3 select-none text-6xl font-black" style={{ color: "rgba(255,255,255,0.05)", lineHeight: 1 }}>
+        {art.label}
+      </span>
+
+      {/* Event logo badge — overlaps bottom edge */}
+      <div className="absolute bottom-0 left-4 translate-y-1/2">
+        {logoUrl ? (
+          <img src={logoUrl} alt={eventName} className="h-14 w-14 rounded-xl border-2 border-white object-cover shadow-md" />
+        ) : (
+          <div
+            className="group relative flex h-14 w-14 items-center justify-center rounded-xl border-2 border-white shadow-md"
+            style={{ background: art.bg }}
+            title="Upload event logo"
+          >
+            <span className="text-sm font-bold text-white">{initials}</span>
+            <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+              <ImagePlus className="h-4 w-4 text-white" />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: Event["status"] }) {
+  const cfg = statusConfig[status] ?? statusConfig.Draft;
+  return (
+    <span className={`absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${cfg.class}`}>
+      {cfg.dot && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />}
+      {cfg.label}
+    </span>
+  );
+}
+
+function EventCard({ event, game }: { event: Event; game: Game }) {
+  const mode = game.id === "game-kuroko" ? "3v3" : "5v5";
+
+  return (
+    <article className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className="relative">
+        <GameArt gameId={event.gameId} logoUrl={event.logoUrl} eventName={event.name} />
+        <StatusBadge status={event.status} />
+      </div>
+
+      <div className="flex flex-1 flex-col gap-4 p-5 pt-10">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+            {game.name} · {mode}
+          </p>
+          <h2 className="mt-1 text-lg font-bold leading-snug text-slate-900">{event.name}</h2>
+        </div>
+
+        <div className="grid gap-2 text-sm text-slate-500">
+          <span className="inline-flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-blue-400" />
+            {event.startsAt}
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <Users className="h-4 w-4 text-blue-400" />
+            Up to {event.participantCap} teams · {event.venue}
+          </span>
+        </div>
+
+        <div className="mt-auto">
+          <Link
+            href={ctaHref(event)}
+            className="block w-full rounded-xl bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            {ctaLabel(event)}
+          </Link>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ game?: string }>;
+}) {
+  const resolved = await searchParams;
+  const gameFilter = resolved?.game ?? "all";
+
+  const [events, games] = await Promise.all([getPublicEvents(), Promise.resolve(getAllGames())]);
+
+  const filteredEvents =
+    gameFilter === "all" ? events : events.filter((e) => e.gameId === gameFilter);
 
   return (
     <div className="space-y-8">
-      <section className="grid gap-6 rounded-[2rem] border border-cyan-400/15 bg-slate-950/40 p-8 lg:grid-cols-[1.4fr_0.9fr]">
-        <div className="space-y-5">
-          <Pill tone="success">Next.js MVP web platform</Pill>
-          <div className="space-y-3">
-            <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-              Run multiple esports-style tournament events from one responsive control panel.
-            </h1>
-            <p className="max-w-2xl text-base leading-7 text-slate-300">
-              Miracle FC League now has a public event hub, captain roster management, admin operations, bracket generation,
-              league standings, player leaderboards, and event-level live stream support.
-            </p>
-            <p className="max-w-2xl text-sm leading-6 text-cyan-100">
-              Registration remains in Google Form for this launch week. Admins publish approved teams through CSV import.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Link className="rounded-full bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950" href="/events">
-              Explore events
-            </Link>
-            <Link className="rounded-full border border-white/10 px-5 py-3 text-sm font-semibold text-white hover:bg-white/5" href="/login">
-              Enter captain/admin demo
-            </Link>
-          </div>
+      {/* Hero */}
+      <section className="relative overflow-hidden rounded-3xl p-8 sm:p-10" style={{ background: "linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 60%, #312e81 100%)" }}>
+        {/* Background geometry */}
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full" style={{ background: "rgba(255,255,255,0.04)" }} />
+          <div className="absolute bottom-0 right-24 h-48 w-48 rounded-full" style={{ background: "rgba(255,255,255,0.03)" }} />
+          <div className="absolute left-1/2 top-4 h-px w-96 -translate-x-1/2" style={{ background: "rgba(255,255,255,0.08)" }} />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-          <StatCard label="Game support" value="2" hint="Kuroko Street Rival 3v3 + Flashpeak 5v5" />
-          <StatCard label="Competition modes" value="2" hint="Single elimination and full league standings" />
-          <StatCard label="Role model" value="3" hint="Public viewer, captain, and admin" />
+        <div className="relative max-w-2xl">
+          <span className="inline-block rounded-full border border-blue-300/30 bg-blue-300/10 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-blue-200">
+            Season 1 · Miracle FC
+          </span>
+          <h1 className="mt-4 text-4xl font-black leading-none tracking-tight text-white sm:text-5xl" style={{ textWrap: "balance" }}>
+            Discover Your Next Victory
+          </h1>
+          <p className="mt-4 max-w-lg text-base leading-relaxed text-blue-100">
+            Compete in Kuroko no Basket and Flashpeak tournaments — from open brackets to season finals, your journey starts here.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              href="/login"
+              className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
+            >
+              Register Your Team
+            </Link>
+            <Link
+              href="/events"
+              className="rounded-full border border-white/20 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+            >
+              All Events
+            </Link>
+          </div>
         </div>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Section title="Why this MVP works" description="Built around clarity, speed, and future scale.">
-          <div className="space-y-4 text-sm text-slate-300">
-            <div className="flex gap-3">
-              <Shield className="mt-0.5 h-4 w-4 text-cyan-300" />
-              <p>One event = one game mode, so every bracket, roster, and leaderboard stays understandable.</p>
-            </div>
-            <div className="flex gap-3">
-              <Medal className="mt-0.5 h-4 w-4 text-cyan-300" />
-              <p>Game-specific player stats keep Kuroko and Flashpeak feeling distinct without fragmenting the platform.</p>
-            </div>
-            <div className="flex gap-3">
-              <Video className="mt-0.5 h-4 w-4 text-cyan-300" />
-              <p>Live stream support stays lightweight by linking or embedding only at the event level.</p>
-            </div>
-          </div>
-        </Section>
+      {/* Filter tabs */}
+      <div className="flex flex-wrap items-center gap-2">
+        {([{ id: "all", name: "All Games" }, ...games] as { id: string; name: string }[]).map((g) => (
+          <Link
+            key={g.id}
+            href={(g.id === "all" ? "/" : `/?game=${g.id}`) as "/"}
+            className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+              gameFilter === g.id
+                ? "border-blue-600 bg-blue-600 text-white"
+                : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-600"
+            }`}
+          >
+            {g.name}
+          </Link>
+        ))}
 
-        <Section title="Highlighted events" description="Pulled from the public event hub." className="lg:col-span-2">
-          <div className="grid gap-4 md:grid-cols-2">
-            {highlighted.map((event) => {
-              const game = getGameForEvent(event);
-              return (
-                <Link
-                  key={event.id}
-                  href={`/events/${event.slug}`}
-                  className="rounded-2xl border border-white/8 bg-white/5 p-5 transition hover:border-cyan-400/30 hover:bg-white/7"
-                >
-                  <div className="flex items-center justify-between">
-                    <Pill>{game.name}</Pill>
-                    {event.stream?.enabled && event.stream.isLive ? <Pill tone="live">Live now</Pill> : null}
-                  </div>
-                  <h3 className="mt-4 text-xl font-semibold text-white">{event.name}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-400">{event.description}</p>
-                  <div className="mt-4 flex items-center justify-between text-sm text-slate-300">
-                    <span className="inline-flex items-center gap-2">
-                      <CalendarDays className="h-4 w-4" />
-                      {event.startsAt}
-                    </span>
-                    <span className="inline-flex items-center gap-2 font-medium text-cyan-300">
-                      Open event
-                      <ArrowRight className="h-4 w-4" />
-                    </span>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </Section>
+        <span className="ml-auto text-sm text-slate-400">
+          {filteredEvents.length} {filteredEvents.length === 1 ? "event" : "events"}
+        </span>
       </div>
+
+      {/* Event grid */}
+      {filteredEvents.length > 0 ? (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredEvents.map((event) => (
+            <EventCard key={event.id} event={event} game={getGameForEvent(event)} />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 py-16 text-center">
+          <Trophy className="mx-auto h-8 w-8 text-slate-300" />
+          <p className="mt-3 text-sm text-slate-500">No public events yet for this game.</p>
+        </div>
+      )}
     </div>
   );
 }

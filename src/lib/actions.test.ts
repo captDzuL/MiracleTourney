@@ -16,7 +16,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/auth/session", () => ({ requireRole }));
 vi.mock("@/lib/imports/team-import", () => ({}));
-vi.mock("@/lib/platform/demo-store", () => ({ addPlayer, registerTeam, setMatchResult }));
+vi.mock("@/lib/platform/repository", () => ({ addPlayer, registerTeam, setMatchResult }));
 
 import {
   adminUpdateMatchResultAction,

@@ -3,153 +3,115 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-enum UserRole {
-  CAPTAIN
-  ADMIN
-}
-
-enum EventStatus {
-  DRAFT
-  PUBLISHED
-  REGISTRATION_CLOSED
-  ONGOING
-  FINISHED
-}
-
-enum TournamentFormat {
-  SINGLE_ELIMINATION
-  LEAGUE
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
   name         String
-  role         UserRole
-  teams        Team[]   @relation("CaptainTeams")
-  createdEvents Event[] @relation("EventCreator")
-}
-
-model Game {
-  id        String     @id @default(cuid())
-  name      String
-  slug      String     @unique
-  modes     GameMode[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-}
-
-model GameMode {
-  id              String   @id @default(cuid())
-  gameId          String
-  name            String
-  slug            String   @unique
-  teamSize        Int
-  maxRosterSize   Int
-  positions       Json
-  playerStatKeys  Json
-  game            Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  events          Event[]
+  role         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model Event {
-  id                 String            @id @default(cuid())
+  id                 String       @id @default(cuid())
+  slug               String       @unique
   name               String
-  slug               String            @unique
   description        String
+  logoUrl            String?
+  gameImageUrl       String?
+  gameId             String
   gameModeId         String
-  format             TournamentFormat
-  status             EventStatus
+  format             String
+  status             String
   participantCap     Int
-  registrationOpensAt DateTime?
-  registrationClosesAt DateTime?
-  startsAt           DateTime?
-  creatorId          String?
-  streamPlatform     String?
-  streamUrl          String?
-  streamLabel        String?
-  streamEnabled      Boolean           @default(false)
-  streamLive         Boolean           @default(false)
-  gameMode           GameMode          @relation(fields: [gameModeId], references: [id])
-  creator            User?             @relation("EventCreator", fields: [creatorId], references: [id])
-  registrations      Registration[]
-  stages             TournamentStage[]
+  registrationWindow String
+  startsAt           String
+  venue              String
+  stream             EventStream?
+  teams              Team[]
+  matches            Match[]
+  players            Player[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+model EventStream {
+  id       String  @id @default(cuid())
+  eventId  String  @unique
+  event    Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  platform String
+  url      String
+  label    String
+  enabled  Boolean @default(true)
+  isLive   Boolean @default(false)
 }
 
 model Team {
-  id            String         @id @default(cuid())
-  name          String
-  slug          String         @unique
-  logoUrl       String?
-  captainId     String
-  captain       User           @relation("CaptainTeams", fields: [captainId], references: [id])
-  registrations Registration[]
-  roster        RosterEntry[]
+  id             String   @id @default(cuid())
+  eventId        String
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  captainId      String?
+  name           String
+  logoText       String
+  tag            String
+  captainName    String?
+  captainContact String?
+  source         String   @default("demo")
+  players        Player[]
+  createdAt      DateTime @default(now())
+
+  @@unique([eventId, tag])
+  @@unique([eventId, name])
 }
 
 model Player {
-  id           String         @id @default(cuid())
+  id           String       @id @default(cuid())
+  teamId       String
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  eventId      String
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
   displayName  String
   nickname     String
-  primaryPosition String
-  rosterEntries RosterEntry[]
-  matchStats   PlayerMatchStat[]
-}
-
-model Registration {
-  id        String   @id @default(cuid())
-  eventId   String
-  teamId    String
-  approved  Boolean  @default(true)
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-
-  @@unique([eventId, teamId])
-}
-
-model RosterEntry {
-  id         String   @id @default(cuid())
-  eventId     String
-  teamId      String
-  playerId    String
+  position     String
   jerseyNumber Int?
-  position    String
-  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
-}
-
-model TournamentStage {
-  id        String            @id @default(cuid())
-  eventId    String
-  name       String
-  format     TournamentFormat
-  event      Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  matches    Match[]
+  stats        PlayerStat[]
+  createdAt    DateTime     @default(now())
 }
 
 model Match {
-  id          String   @id @default(cuid())
-  stageId     String
-  roundNumber Int
-  sequence    Int
-  homeTeamId  String?
-  awayTeamId  String?
-  homeScore   Int?
-  awayScore   Int?
-  stage       TournamentStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
-  playerStats PlayerMatchStat[]
+  id             String       @id @default(cuid())
+  eventId        String
+  event          Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  roundLabel     String
+  homeTeamId     String
+  awayTeamId     String
+  homeScore      Int          @default(0)
+  awayScore      Int          @default(0)
+  status         String       @default("Scheduled")
+  slot           Int?
+  round          Int?
+  winnerTeamId   String?
+  scheduledLabel String?
+  playerStats    PlayerStat[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 }
 
-model PlayerMatchStat {
-  id         String @id @default(cuid())
+model PlayerStat {
+  id         String  @id @default(cuid())
   matchId    String
-  playerId   String
-  stats      Json
   match      Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerId   String
   player     Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerName String
+  teamId     String
+  position   String
+  gameSlug   String
+  stats      Json
 }

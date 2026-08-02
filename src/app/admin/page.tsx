@@ -18,7 +18,7 @@ import {
   getLeaderboardForEvent,
   getMatchesForEvent,
   getTeamsForEvent,
-} from "@/lib/platform/demo-store";
+} from "@/lib/platform/repository";
 import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -39,23 +39,38 @@ export default async function AdminPage({
   if (!user) redirect("/login");
 
   const resolvedSearchParams = await searchParams;
-  const events = getEvents();
-  const manageableEvents = events
-    .map((event) => ({
+  const events = await getEvents();
+  const gameModes = getGameModes();
+
+  const [allTeamsByEventArr, featuredEventFromSlug, importedTeamsRaw] = await Promise.all([
+    Promise.all(events.map(async (event) => ({ eventId: event.id, teams: await getTeamsForEvent(event.id) }))),
+    getEventBySlug("kuroko-summer-cup"),
+    getImportedTeams(),
+  ]);
+
+  const allTeamsByEvent = new Map(allTeamsByEventArr.map(({ eventId, teams }) => [eventId, teams]));
+  const allTeams = [...allTeamsByEvent.values()].flat();
+  const teamName = (teamId: string | undefined) => allTeams.find((team) => team.id === teamId)?.name ?? "TBD";
+  const featuredEvent = featuredEventFromSlug ?? events[0];
+
+  const manageableEventsRaw = await Promise.all(
+    events.map(async (event) => ({
       event,
-      manageableMatches: getBracketManageableMatches(event.id),
-    }))
-    .filter(({ manageableMatches }) => manageableMatches.length > 0);
+      manageableMatches: await getBracketManageableMatches(event.id),
+    })),
+  );
+  const manageableEvents = manageableEventsRaw.filter(({ manageableMatches }) => manageableMatches.length > 0);
   const selectedManageableEventId =
     manageableEvents.find(({ event }) => event.id === resolvedSearchParams?.matchEventId)?.event.id
     ?? manageableEvents[0]?.event.id;
   const selectedManageableEvent = manageableEvents.find(({ event }) => event.id === selectedManageableEventId);
   const manageableMatches = selectedManageableEvent?.manageableMatches ?? [];
-  const teamName = (teamId: string | undefined) =>
-    events.flatMap((event) => getTeamsForEvent(event.id)).find((team) => team.id === teamId)?.name ?? "TBD";
-  const featuredEvent = getEventBySlug("kuroko-summer-cup") ?? events[0];
-  const gameModes = getGameModes();
-  const importedTeams = getImportedTeams()
+
+  const [featuredMatches, featuredLeaderboard] = featuredEvent
+    ? await Promise.all([getMatchesForEvent(featuredEvent.id), getLeaderboardForEvent(featuredEvent.id)])
+    : [[], []];
+
+  const importedTeams = importedTeamsRaw
     .map((team) => ({
       ...team,
       eventName: events.find((event) => event.id === team.eventId)?.name ?? "Unknown event",
@@ -83,17 +98,17 @@ export default async function AdminPage({
           <StatCard label="Tracked events" value={events.length} hint="Draft + public + ongoing" />
           <StatCard
             label="Featured teams"
-            value={featuredEvent ? getTeamsForEvent(featuredEvent.id).length : 0}
+            value={featuredEvent ? (allTeamsByEvent.get(featuredEvent.id)?.length ?? 0) : 0}
             hint="Registration and roster scope"
           />
           <StatCard
             label="Recorded matches"
-            value={featuredEvent ? getMatchesForEvent(featuredEvent.id).length : 0}
+            value={featuredMatches.length}
             hint="Current event operations"
           />
           <StatCard
             label="Player leaderboard rows"
-            value={featuredEvent ? getLeaderboardForEvent(featuredEvent.id).length : 0}
+            value={featuredLeaderboard.length}
             hint="Only appears after player stats are recorded"
           />
         </div>
@@ -362,7 +377,7 @@ export default async function AdminPage({
               <Pill key={`${event.id}-import-status`} tone={event.status === "Ongoing" ? "live" : "default"}>
                 {event.status}
               </Pill>,
-              getTeamsForEvent(event.id).length,
+              allTeamsByEvent.get(event.id)?.length ?? 0,
             ])}
           />
         </Section>
@@ -398,8 +413,8 @@ export default async function AdminPage({
               {event.status}
             </Pill>,
             event.format,
-            getTeamsForEvent(event.id).length,
-            getMatchesForEvent(event.id).length,
+            allTeamsByEvent.get(event.id)?.length ?? 0,
+            featuredEvent?.id === event.id ? featuredMatches.length : 0,
           ])}
         />
       </Section>

@@ -3,10 +3,21 @@ import path from "node:path";
 
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, test, vi } from "vitest";
 
 import { createEvent, importTeams, resetDemoStore, setEventStatus } from "@/lib/platform/demo-store";
 import BracketPage from "./page";
+
+vi.mock("@/lib/platform/repository", async () => {
+  const store = await import("@/lib/platform/demo-store");
+  return {
+    getPublicEventBySlug: (slug: string) => Promise.resolve(store.getPublicEventBySlug(slug)),
+    getTeamsForEvent: (eventId: string) => Promise.resolve(store.getTeamsForEvent(eventId)),
+    getPublicVisibleBracketPreview: (eventId: string) => Promise.resolve(store.getPublicVisibleBracketPreview(eventId)),
+    getMatchesForEvent: (eventId: string) => Promise.resolve(store.getMatchesForEvent(eventId)),
+    getBracketPreview: (eventId: string) => Promise.resolve(store.getBracketPreview(eventId)),
+  };
+});
 
 Object.assign(globalThis, { React });
 

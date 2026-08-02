@@ -10,7 +10,7 @@ import {
   getModeForEvent,
   getPublicEventBySlug,
   getTeamsForEvent,
-} from "@/lib/platform/demo-store";
+} from "@/lib/platform/repository";
 import { getLiveStreamPresentation } from "@/lib/tournament/engine";
 
 export default async function EventDetailPage({
@@ -19,15 +19,17 @@ export default async function EventDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const event = getPublicEventBySlug(slug);
+  const event = await getPublicEventBySlug(slug);
 
   if (!event) notFound();
 
   const game = getGameForEvent(event);
   const mode = getModeForEvent(event);
-  const teams = getTeamsForEvent(event.id);
-  const bracket = getBracketPreview(event.id);
-  const leaderboard = getLeaderboardForEvent(event.id);
+  const [teams, bracket, leaderboard] = await Promise.all([
+    getTeamsForEvent(event.id),
+    getBracketPreview(event.id),
+    getLeaderboardForEvent(event.id),
+  ]);
   const liveView = event.stream?.enabled ? getLiveStreamPresentation(event.stream.url) : null;
 
   return (

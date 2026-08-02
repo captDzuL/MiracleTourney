@@ -2,7 +2,7 @@ import Link from "next/link";
 import { CalendarDays, Trophy, Users } from "lucide-react";
 
 import { Pill, Section } from "@/components/ui";
-import { getGameForEvent, getPublicEvents } from "@/lib/platform/demo-store";
+import { getGameForEvent, getPublicEvents } from "@/lib/platform/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +15,8 @@ function getInitials(name: string) {
     .join("");
 }
 
-export default function EventsPage() {
-  const events = getPublicEvents();
+export default async function EventsPage() {
+  const events = await getPublicEvents();
 
   return (
     <Section

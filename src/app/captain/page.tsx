@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { captainAddPlayerAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
-import { getCaptainTeams, getEvents, getGameForEvent, getPlayersForTeam } from "@/lib/platform/demo-store";
+import { getCaptainTeams, getEvents, getGameForEvent, getPlayersForTeam } from "@/lib/platform/repository";
 import { DataTable, Pill, Section } from "@/components/ui";
 
 export default async function CaptainPage({
@@ -14,9 +14,9 @@ export default async function CaptainPage({
   if (!user) redirect("/login");
   const resolvedSearchParams = await searchParams;
 
-  const teams = getCaptainTeams(user.id);
-  const events = getEvents();
+  const [teams, events] = await Promise.all([getCaptainTeams(user.id), getEvents()]);
   const primaryTeam = teams[0];
+  const primaryTeamPlayers = primaryTeam ? await getPlayersForTeam(primaryTeam.id) : [];
 
   return (
     <div className="space-y-6">
@@ -92,7 +92,7 @@ export default async function CaptainPage({
               <div className="mt-5">
                 <DataTable
                   columns={["Player", "Nickname", "Position"]}
-                  rows={getPlayersForTeam(primaryTeam.id).map((player) => [
+                  rows={primaryTeamPlayers.map((player) => [
                     player.displayName,
                     player.nickname,
                     player.position,

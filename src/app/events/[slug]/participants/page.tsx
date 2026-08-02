@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { DataTable, Section } from "@/components/ui";
-import { getPlayersForTeam, getPublicEventBySlug, getTeamsForEvent } from "@/lib/platform/demo-store";
+import { getPlayersForTeam, getPublicEventBySlug, getTeamsForEvent } from "@/lib/platform/repository";
 
 export default async function ParticipantsPage({
   params,
@@ -9,24 +9,27 @@ export default async function ParticipantsPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const event = getPublicEventBySlug(slug);
+  const event = await getPublicEventBySlug(slug);
   if (!event) notFound();
 
-  const teams = getTeamsForEvent(event.id);
+  const teams = await getTeamsForEvent(event.id);
+  const teamsWithPlayers = await Promise.all(
+    teams.map(async (team) => ({
+      ...team,
+      players: await getPlayersForTeam(team.id),
+    })),
+  );
 
   return (
     <Section title={`${event.name} participants`} description="Registered teams and current roster snapshot.">
       <DataTable
         columns={["Team", "Tag", "Roster"]}
-        rows={teams.map((team) => [
+        rows={teamsWithPlayers.map((team) => [
           team.name,
           team.tag,
-          (() => {
-            const players = getPlayersForTeam(team.id);
-            return players.length
-              ? players.map((player) => `${player.nickname} (${player.position})`).join(", ")
-              : "Roster pending";
-          })(),
+          team.players.length
+            ? team.players.map((player) => `${player.nickname} (${player.position})`).join(", ")
+            : "Roster pending",
         ])}
       />
     </Section>

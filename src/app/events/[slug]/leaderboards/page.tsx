@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { DataTable, Section } from "@/components/ui";
-import { getEventBySlug, getLeaderboardForEvent } from "@/lib/platform/demo-store";
+import { getEventBySlug, getLeaderboardForEvent } from "@/lib/platform/repository";
 
 export default async function LeaderboardsPage({
   params,
@@ -9,10 +9,10 @@ export default async function LeaderboardsPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const event = getEventBySlug(slug);
+  const event = await getEventBySlug(slug);
   if (!event || event.status === "Draft") notFound();
 
-  const leaderboard = getLeaderboardForEvent(event.id);
+  const leaderboard = await getLeaderboardForEvent(event.id);
 
   return (
     <Section title={`${event.name} player leaderboard`} description="Event-scoped aggregation of personal statistics.">

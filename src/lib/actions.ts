@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { requireRole, signInDemo, signOutDemo } from "@/lib/auth/session";
+import { requireRole, signIn, signOut } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import {
   addPlayer,
@@ -15,7 +15,7 @@ import {
   setEventStatus,
   setMatchResult,
   updateEventStream,
-} from "@/lib/platform/demo-store";
+} from "@/lib/platform/repository";
 
 async function requireAdminSession() {
   const user = await requireRole("admin");
@@ -39,7 +39,8 @@ async function requireCaptainSession() {
 
 export async function loginAction(formData: FormData) {
   const email = z.string().email().parse(formData.get("email"));
-  const result = await signInDemo(email);
+  const password = z.string().min(1).parse(formData.get("password"));
+  const result = await signIn(email, password);
 
   if (!result.ok) {
     redirect("/login?error=invalid");
@@ -49,7 +50,7 @@ export async function loginAction(formData: FormData) {
 }
 
 export async function logoutAction() {
-  await signOutDemo();
+  await signOut();
   redirect("/");
 }
 
@@ -65,7 +66,7 @@ export async function captainRegisterTeamAction(formData: FormData) {
     tag: formData.get("tag"),
   });
 
-  registerTeam({ ...input, captainId: captain.id });
+  await registerTeam({ ...input, captainId: captain.id });
   redirect("/captain?success=team-created");
 }
 
@@ -86,7 +87,7 @@ export async function captainAddPlayerAction(formData: FormData) {
     position: formData.get("position"),
   });
 
-  addPlayer(input);
+  await addPlayer(input);
   redirect("/captain?success=player-added");
 }
 
@@ -107,7 +108,7 @@ export async function adminCreateEventAction(formData: FormData) {
     participantCap: Number(formData.get("participantCap")),
   });
 
-  createEvent(input);
+  await createEvent(input);
   revalidatePath("/", "layout");
   redirect("/admin?success=event-created");
 }
@@ -123,7 +124,7 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
     status: formData.get("status"),
   });
 
-  const event = setEventStatus(input.eventId, input.status);
+  const event = await setEventStatus(input.eventId, input.status);
 
   if (!event) {
     redirect("/admin?error=Event%20not%20found.");
@@ -151,7 +152,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   let match;
 
   try {
-    match = setMatchResult(input);
+    match = await setMatchResult(input);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save match result.";
     redirect(`/admin?error=${encodeURIComponent(message)}`);
@@ -171,13 +172,13 @@ export async function adminImportTeamsCsvAction(formData: FormData) {
     redirect("/admin?error=Please%20choose%20a%20CSV%20file%20before%20importing.");
   }
 
-  const result = parseAndValidateTeamImport(await file.text(), getImportSnapshot());
+  const result = parseAndValidateTeamImport(await file.text(), await getImportSnapshot());
 
   if (!result.ok) {
     redirect(`/admin?error=${encodeURIComponent(result.message)}`);
   }
 
-  importTeams(result.rows);
+  await importTeams(result.rows);
   revalidatePath("/", "layout");
   redirect(`/admin?success=teams-imported&count=${result.rows.length}`);
 }
@@ -195,7 +196,7 @@ export async function adminUpdateStreamAction(formData: FormData) {
     label: formData.get("label"),
   });
 
-  updateEventStream(input.eventId, input.url, input.label);
+  await updateEventStream(input.eventId, input.url, input.label);
   revalidatePath("/", "layout");
   redirect("/admin?success=stream-updated");
 }

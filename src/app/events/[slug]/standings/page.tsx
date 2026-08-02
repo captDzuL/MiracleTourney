@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { DataTable, Section } from "@/components/ui";
-import { getPublicEventBySlug, getTeamStandings } from "@/lib/platform/demo-store";
+import { getPublicEventBySlug, getTeamStandings } from "@/lib/platform/repository";
 
 export default async function StandingsPage({
   params,
@@ -9,10 +9,10 @@ export default async function StandingsPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const event = getPublicEventBySlug(slug);
+  const event = await getPublicEventBySlug(slug);
   if (!event) notFound();
 
-  const standings = getTeamStandings(event.id);
+  const standings = await getTeamStandings(event.id);
 
   return (
     <Section title={`${event.name} standings`} description="Standard league scoring: win = 3, draw = 1, loss = 0.">
