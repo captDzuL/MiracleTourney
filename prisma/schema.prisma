@@ -38,6 +38,7 @@ model Event {
   teams              Team[]
   matches            Match[]
   players            Player[]
+  statSubmissions    StatSubmission[]
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 }
@@ -86,22 +87,23 @@ model Player {
 }
 
 model Match {
-  id             String       @id @default(cuid())
-  eventId        String
-  event          Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  roundLabel     String
-  homeTeamId     String
-  awayTeamId     String
-  homeScore      Int          @default(0)
-  awayScore      Int          @default(0)
-  status         String       @default("Scheduled")
-  slot           Int?
-  round          Int?
-  winnerTeamId   String?
-  scheduledLabel String?
-  playerStats    PlayerStat[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id              String           @id @default(cuid())
+  eventId         String
+  event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  roundLabel      String
+  homeTeamId      String
+  awayTeamId      String
+  homeScore       Int              @default(0)
+  awayScore       Int              @default(0)
+  status          String           @default("Scheduled")
+  slot            Int?
+  round           Int?
+  winnerTeamId    String?
+  scheduledLabel  String?
+  playerStats     PlayerStat[]
+  statSubmissions StatSubmission[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 }
 
 model PlayerStat {
@@ -115,4 +117,24 @@ model PlayerStat {
   position   String
   gameSlug   String
   stats      Json
+
+  @@unique([matchId, playerId])
+}
+
+model StatSubmission {
+  id            String    @id @default(cuid())
+  matchId       String
+  match         Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  teamId        String
+  eventId       String
+  event         Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  submittedBy   String
+  status        String    @default("pending")
+  rejectionNote String?
+  stats         Json
+  submittedAt   DateTime  @default(now())
+  reviewedAt    DateTime?
+  reviewedBy    String?
+
+  @@unique([matchId, teamId])
 }

@@ -39,7 +39,7 @@ export const gameModes: GameMode[] = [
     teamSize: 3,
     maxRosterSize: 5,
     positions: ["Guard", "Forward", "Center"],
-    statKeys: ["points", "assists", "rebounds", "steals", "blocks"],
+    statKeys: ["points", "assists", "rebounds", "steals", "blocks", "flb"],
   },
   {
     id: "mode-flashpeak-5v5",
