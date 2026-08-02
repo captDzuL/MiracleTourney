@@ -1,5 +1,6 @@
 import type {
   BracketMatch,
+  BracketVisibility,
   MatchResultInput,
   PlayerLeaderboardEntry,
   PlayerMatchStatInput,
@@ -147,6 +148,37 @@ export function projectSingleEliminationBracket(input: {
   }
 
   return base;
+}
+
+export function getPublicVisibleSingleEliminationBracket(input: {
+  teams: TeamSeed[];
+  slotCount: 8 | 12 | 16 | 24;
+  results: Match[];
+}): BracketMatch[] {
+  const visibilityByMatchId = new Map<string, boolean>();
+
+  return projectSingleEliminationBracket(input)
+    .map((match) => {
+      const bothTeamsKnown = Boolean(match.homeTeamId && match.awayTeamId);
+      const isAutoAdvanceLeaf = Boolean(match.byeForTeamId && match.round === 1);
+      const sourceMatchesArePublic =
+        match.round === 1 ||
+        match.sourceMatchIds?.every(
+          (sourceMatchId) => Boolean(sourceMatchId && visibilityByMatchId.get(sourceMatchId)),
+        ) === true;
+      const isPublicVisible =
+        (bothTeamsKnown || isAutoAdvanceLeaf) && sourceMatchesArePublic;
+      const visibility: BracketVisibility = isAutoAdvanceLeaf
+        ? "auto-advance"
+        : isPublicVisible
+          ? "ready"
+          : "hidden";
+
+      visibilityByMatchId.set(match.id, isPublicVisible);
+
+      return { ...match, visibility, isPublicVisible };
+    })
+    .filter((match) => match.isPublicVisible);
 }
 
 export function generateRoundRobinSchedule(teams: TeamSeed[]) {

@@ -5,6 +5,7 @@ import {
   buildLeagueStandings,
   generateRoundRobinSchedule,
   generateSingleEliminationBracket,
+  getPublicVisibleSingleEliminationBracket,
   getLiveStreamPresentation,
   projectSingleEliminationBracket,
 } from "./engine";
@@ -150,6 +151,56 @@ describe("projectSingleEliminationBracket", () => {
 
     expect(quarterfinal?.resolvedWinnerTeamId).toBe("team-a");
     expect(semifinal?.homeTeamId).toBe("team-a");
+  });
+});
+
+describe("getPublicVisibleSingleEliminationBracket", () => {
+  it("hides downstream rounds until both sides are known", () => {
+    const teams = [
+      { id: "team-1", name: "One" },
+      { id: "team-2", name: "Two" },
+      { id: "team-3", name: "Three" },
+      { id: "team-4", name: "Four" },
+      { id: "team-5", name: "Five" },
+      { id: "team-6", name: "Six" },
+    ];
+
+    const visible = getPublicVisibleSingleEliminationBracket({
+      teams,
+      slotCount: 8,
+      results: [],
+    });
+
+    expect(visible.every((match) => match.round === 1)).toBe(true);
+  });
+
+  it("shows a semifinal only after both quarterfinal winners are known", () => {
+    const teams = Array.from({ length: 8 }, (_, index) => ({
+      id: `team-${index + 1}`,
+      name: `Team ${index + 1}`,
+    }));
+
+    const visible = getPublicVisibleSingleEliminationBracket({
+      teams,
+      slotCount: 8,
+      results: [
+        {
+          id: "bracket-r1-m1",
+          eventId: "event-1",
+          roundLabel: "Quarterfinal",
+          homeTeamId: "team-1",
+          awayTeamId: "team-8",
+          homeScore: 21,
+          awayScore: 10,
+          status: "Completed",
+          round: 1,
+          slot: 1,
+          winnerTeamId: "team-1",
+        },
+      ],
+    });
+
+    expect(visible.some((match) => match.round === 2)).toBe(false);
   });
 });
 

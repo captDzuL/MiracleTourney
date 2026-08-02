@@ -3,6 +3,8 @@ export type TeamSeed = {
   name: string;
 };
 
+export type BracketVisibility = "hidden" | "ready" | "auto-advance";
+
 export type BracketMatch = {
   id: string;
   round: number;
@@ -12,6 +14,8 @@ export type BracketMatch = {
   byeForTeamId?: string;
   sourceMatchIds?: [string | null, string | null];
   resolvedWinnerTeamId?: string | null;
+  visibility?: BracketVisibility;
+  isPublicVisible?: boolean;
 };
 
 export type MatchResultInput = {
