@@ -19,7 +19,7 @@ function getRoundName(round: number, totalRounds: number) {
   if (roundsRemaining === 1) return "Final";
   if (roundsRemaining === 2) return "Semifinal";
   if (roundsRemaining === 3) return "Quarterfinal";
-  if (roundsRemaining >= 4) return "Round of 16";
+  if (roundsRemaining === 4) return "Round of 16";
 
   return `Round ${round}`;
 }

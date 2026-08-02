@@ -51,7 +51,7 @@ describe("public bracket page", () => {
     expect(markup).not.toContain("Semifinal");
   });
 
-  it("keeps early visible rounds labeled from the full bracket shape", async () => {
+  it("does not label the visible 24-team opening round as the final", async () => {
     const event = createEvent({
       name: "Flashpeak 24",
       slug: "flashpeak-24-round-label-test",
@@ -72,8 +72,8 @@ describe("public bracket page", () => {
 
     const markup = await renderBracket(event.slug);
 
-    expect(markup).toContain("Round of 16");
     expect(markup).not.toContain(">Final<");
+    expect(markup).not.toContain("Semifinal");
   });
 
   it("does not show a completed score on a projected matchup with different teams", async () => {
