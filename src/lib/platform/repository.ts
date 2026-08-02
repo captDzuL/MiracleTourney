@@ -609,6 +609,265 @@ export async function addPlayer(input: {
   return mapPlayer(row);
 }
 
+// ── Stat Submissions (captain) ────────────────────────────────────────────────
+
+export type CompletedMatchRow = {
+  matchId: string;
+  matchLabel: string;
+  slot: number | null;
+  eventId: string;
+  eventName: string;
+  gameId: string;
+  gameModeId: string;
+  teamId: string;
+  teamName: string;
+  opponentName: string;
+  homeScore: number;
+  awayScore: number;
+  submission: {
+    id: string;
+    status: string;
+    rejectionNote: string | null;
+    stats: Record<string, Record<string, number>>;
+  } | null;
+};
+
+export async function getCompletedMatchesForCaptain(captainId: string): Promise<CompletedMatchRow[]> {
+  const captainTeams = await prisma.team.findMany({
+    where: { captainId },
+    select: { id: true, name: true, eventId: true },
+  });
+  if (captainTeams.length === 0) return [];
+
+  const teamIds = captainTeams.map((t) => t.id);
+  const eventIds = [...new Set(captainTeams.map((t) => t.eventId))];
+
+  const [matches, events, allTeams, submissions] = await Promise.all([
+    prisma.match.findMany({
+      where: {
+        eventId: { in: eventIds },
+        status: "Completed",
+        OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }],
+      },
+      orderBy: [{ round: "asc" }, { slot: "asc" }],
+    }),
+    prisma.event.findMany({
+      where: { id: { in: eventIds } },
+      select: { id: true, name: true, gameId: true, gameModeId: true },
+    }),
+    prisma.team.findMany({
+      where: { eventId: { in: eventIds } },
+      select: { id: true, name: true, eventId: true },
+    }),
+    prisma.statSubmission.findMany({
+      where: { teamId: { in: teamIds } },
+    }),
+  ]);
+
+  const eventMap = new Map(events.map((e) => [e.id, e]));
+  const teamMap = new Map(allTeams.map((t) => [t.id, t]));
+  const submissionMap = new Map(submissions.map((s) => [`${s.matchId}::${s.teamId}`, s]));
+
+  return matches.flatMap((match) => {
+    const rows: CompletedMatchRow[] = [];
+    for (const team of captainTeams) {
+      const isHome = match.homeTeamId === team.id;
+      const isAway = match.awayTeamId === team.id;
+      if (!isHome && !isAway) continue;
+
+      const event = eventMap.get(match.eventId);
+      if (!event) continue;
+
+      const opponentId = isHome ? match.awayTeamId : match.homeTeamId;
+      const opponent = teamMap.get(opponentId);
+      const submission = submissionMap.get(`${match.id}::${team.id}`) ?? null;
+
+      rows.push({
+        matchId: match.id,
+        matchLabel: match.roundLabel,
+        slot: match.slot,
+        eventId: event.id,
+        eventName: event.name,
+        gameId: event.gameId,
+        gameModeId: event.gameModeId,
+        teamId: team.id,
+        teamName: team.name,
+        opponentName: opponent?.name ?? "Unknown",
+        homeScore: match.homeScore,
+        awayScore: match.awayScore,
+        submission: submission
+          ? {
+              id: submission.id,
+              status: submission.status,
+              rejectionNote: submission.rejectionNote,
+              stats: submission.stats as Record<string, Record<string, number>>,
+            }
+          : null,
+      });
+    }
+    return rows;
+  });
+}
+
+export async function upsertStatSubmission(input: {
+  matchId: string;
+  teamId: string;
+  eventId: string;
+  submittedBy: string;
+  stats: Record<string, Record<string, number>>;
+}): Promise<void> {
+  await prisma.statSubmission.upsert({
+    where: { matchId_teamId: { matchId: input.matchId, teamId: input.teamId } },
+    update: {
+      status: "pending",
+      rejectionNote: null,
+      stats: input.stats,
+      submittedBy: input.submittedBy,
+      submittedAt: new Date(),
+    },
+    create: {
+      matchId: input.matchId,
+      teamId: input.teamId,
+      eventId: input.eventId,
+      submittedBy: input.submittedBy,
+      status: "pending",
+      stats: input.stats,
+    },
+  });
+}
+
+// ── Stat Submissions (admin) ──────────────────────────────────────────────────
+
+export async function getPendingStatSubmissionCount(): Promise<number> {
+  return prisma.statSubmission.count({ where: { status: "pending" } });
+}
+
+export type StatSubmissionRow = {
+  id: string;
+  matchId: string;
+  teamId: string;
+  eventId: string;
+  submittedBy: string;
+  status: string;
+  rejectionNote: string | null;
+  stats: Record<string, Record<string, number>>;
+  submittedAt: Date;
+  matchLabel: string;
+  teamName: string;
+  captainEmail: string;
+  eventName: string;
+};
+
+export async function getPendingStatSubmissions(): Promise<StatSubmissionRow[]> {
+  const rows = await prisma.statSubmission.findMany({
+    where: { status: "pending" },
+    orderBy: { submittedAt: "asc" },
+  });
+  if (rows.length === 0) return [];
+
+  const [matches, teams, events, captains] = await Promise.all([
+    prisma.match.findMany({
+      where: { id: { in: rows.map((r) => r.matchId) } },
+      select: { id: true, roundLabel: true, slot: true },
+    }),
+    prisma.team.findMany({
+      where: { id: { in: rows.map((r) => r.teamId) } },
+      select: { id: true, name: true },
+    }),
+    prisma.event.findMany({
+      where: { id: { in: rows.map((r) => r.eventId) } },
+      select: { id: true, name: true },
+    }),
+    prisma.user.findMany({
+      where: { id: { in: rows.map((r) => r.submittedBy) } },
+      select: { id: true, email: true },
+    }),
+  ]);
+
+  const matchMap = new Map(matches.map((m) => [m.id, m]));
+  const teamMap = new Map(teams.map((t) => [t.id, t]));
+  const eventMap = new Map(events.map((e) => [e.id, e]));
+  const captainMap = new Map(captains.map((u) => [u.id, u]));
+
+  return rows.map((row) => ({
+    id: row.id,
+    matchId: row.matchId,
+    teamId: row.teamId,
+    eventId: row.eventId,
+    submittedBy: row.submittedBy,
+    status: row.status,
+    rejectionNote: row.rejectionNote,
+    stats: row.stats as Record<string, Record<string, number>>,
+    submittedAt: row.submittedAt,
+    matchLabel: (() => {
+      const m = matchMap.get(row.matchId);
+      return m ? `${m.roundLabel}${m.slot != null ? ` · Match ${m.slot}` : ""}` : row.matchId;
+    })(),
+    teamName: teamMap.get(row.teamId)?.name ?? row.teamId,
+    captainEmail: captainMap.get(row.submittedBy)?.email ?? row.submittedBy,
+    eventName: eventMap.get(row.eventId)?.name ?? row.eventId,
+  }));
+}
+
+export async function approveStatSubmission(submissionId: string, adminId: string): Promise<void> {
+  const submission = await prisma.statSubmission.findUnique({ where: { id: submissionId } });
+  if (!submission) throw new Error("Submission not found");
+
+  const event = await prisma.event.findUnique({
+    where: { id: submission.eventId },
+    select: { gameId: true },
+  });
+  const game = games.find((g) => g.id === event?.gameId);
+  const gameSlug = game?.slug ?? "unknown";
+
+  const statsMap = submission.stats as Record<string, Record<string, number>>;
+
+  await prisma.$transaction(async (tx) => {
+    for (const [playerId, playerStats] of Object.entries(statsMap)) {
+      const player = await tx.player.findUnique({
+        where: { id: playerId },
+        select: { displayName: true, position: true },
+      });
+      if (!player) continue;
+
+      await tx.playerStat.upsert({
+        where: { matchId_playerId: { matchId: submission.matchId, playerId } },
+        update: { stats: playerStats as object },
+        create: {
+          matchId: submission.matchId,
+          playerId,
+          playerName: player.displayName,
+          teamId: submission.teamId,
+          position: player.position,
+          gameSlug,
+          stats: playerStats as object,
+        },
+      });
+    }
+
+    await tx.statSubmission.update({
+      where: { id: submissionId },
+      data: { status: "approved", reviewedAt: new Date(), reviewedBy: adminId },
+    });
+  });
+}
+
+export async function rejectStatSubmission(
+  submissionId: string,
+  adminId: string,
+  note: string,
+): Promise<void> {
+  await prisma.statSubmission.update({
+    where: { id: submissionId },
+    data: {
+      status: "rejected",
+      rejectionNote: note,
+      reviewedAt: new Date(),
+      reviewedBy: adminId,
+    },
+  });
+}
+
 export async function updateEventStream(eventId: string, url: string, label: string): Promise<Event | null> {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) return null;
