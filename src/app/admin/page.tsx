@@ -77,6 +77,8 @@ export default async function AdminPage({
     }))
     .reverse();
 
+  const importedEventIds = new Set(importedTeamsRaw.map((t) => t.eventId));
+
   return (
     <div className="space-y-6">
       <Section
@@ -370,7 +372,7 @@ export default async function AdminPage({
       <div className="grid gap-6 lg:grid-cols-2">
         <Section title="Import-ready event slugs" description="Use one of these slugs in your CSV so registrations land in the right event.">
           <DataTable
-            columns={["Event", "event_slug", "Status", "Teams"]}
+            columns={["Event", "event_slug", "Status", "Teams", ""]}
             rows={events.map((event) => [
               event.name,
               <span key={`${event.id}-slug`} className="mono text-xs text-slate-700">{event.slug}</span>,
@@ -378,6 +380,15 @@ export default async function AdminPage({
                 {event.status}
               </Pill>,
               allTeamsByEvent.get(event.id)?.length ?? 0,
+              importedEventIds.has(event.id) ? (
+                <a
+                  key={`${event.id}-creds`}
+                  className="whitespace-nowrap text-xs text-cyan-400 hover:text-cyan-300"
+                  href={`/api/admin/captain-credentials?eventId=${event.id}`}
+                >
+                  Download credentials
+                </a>
+              ) : null,
             ])}
           />
         </Section>

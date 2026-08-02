@@ -1,4 +1,8 @@
-﻿import { games, gameModes } from "@/lib/platform/config";
+﻿import { randomBytes } from "node:crypto";
+
+import bcrypt from "bcryptjs";
+
+import { games, gameModes } from "@/lib/platform/config";
 import type { AppUser, Event, EventStatus, EventStream, Match, Player, Team, TournamentFormat } from "@/lib/platform/types";
 import {
   aggregatePlayerLeaderboard,
@@ -84,6 +88,23 @@ function mapMatch(row: {
     ...(row.winnerTeamId ? { winnerTeamId: row.winnerTeamId } : {}),
     ...(row.scheduledLabel ? { scheduledLabel: row.scheduledLabel } : {}),
   };
+}
+
+// ── Credential helpers ────────────────────────────────────────────────────────
+
+function generateTempPassword(): string {
+  return randomBytes(6).toString("base64url").slice(0, 8);
+}
+
+function generateCaptainEmail(tag: string, usedInBatch: Set<string>): string {
+  let candidate = `${tag.toLowerCase()}@miraclefc.gg`;
+  let n = 2;
+  while (usedInBatch.has(candidate)) {
+    candidate = `${tag.toLowerCase()}${n}@miraclefc.gg`;
+    n++;
+  }
+  usedInBatch.add(candidate);
+  return candidate;
 }
 
 // ── Static config ─────────────────────────────────────────────────────────────
@@ -425,6 +446,30 @@ export async function getImportedTeams(): Promise<Team[]> {
   return rows.map(mapTeam);
 }
 
+export async function getCaptainCredentialsForEvent(eventId: string) {
+  const teams = await prisma.team.findMany({
+    where: { eventId, source: "csv-import" },
+    orderBy: { createdAt: "asc" },
+  });
+  const captainIds = teams.map((t) => t.captainId).filter(Boolean) as string[];
+  const users = captainIds.length
+    ? await prisma.user.findMany({ where: { id: { in: captainIds } } })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  return teams.map((team) => {
+    const user = team.captainId ? userMap.get(team.captainId) : null;
+    return {
+      teamName: team.name,
+      teamTag: team.tag,
+      captainName: team.captainName ?? "",
+      captainContact: team.captainContact ?? "",
+      email: user?.email ?? "",
+      tempPassword: user?.tempPassword ?? "",
+    };
+  });
+}
+
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
 export async function createEvent(input: {
@@ -506,22 +551,48 @@ export async function importTeams(input: Array<{
     }),
   );
 
-  const rows = await prisma.$transaction(
-    input.map((row) =>
-      prisma.team.create({
+  // Phase 1: pre-generate credentials outside the transaction (bcrypt is slow)
+  const usedEmails = new Set<string>();
+  const preparedRows = await Promise.all(
+    input.map(async (row) => {
+      const email = generateCaptainEmail(row.teamTag, usedEmails);
+      const tempPassword = generateTempPassword();
+      const passwordHash = await bcrypt.hash(tempPassword, 10);
+      return { ...row, email, tempPassword, passwordHash };
+    }),
+  );
+
+  // Phase 2: upsert Users + create Teams atomically
+  const rows = await prisma.$transaction(async (tx) => {
+    const results = [];
+    for (const prep of preparedRows) {
+      const captain = await tx.user.upsert({
+        where: { email: prep.email },
+        update: { name: prep.captainName, passwordHash: prep.passwordHash, tempPassword: prep.tempPassword },
+        create: {
+          email: prep.email,
+          name: prep.captainName,
+          role: "captain",
+          passwordHash: prep.passwordHash,
+          tempPassword: prep.tempPassword,
+        },
+      });
+      const team = await tx.team.create({
         data: {
-          eventId: row.eventId,
-          captainId: `imported-${row.eventId}-${row.teamTag.toLowerCase()}`,
-          name: row.teamName,
-          logoText: row.teamTag.slice(0, 2).toUpperCase(),
-          tag: row.teamTag.toUpperCase(),
-          captainName: row.captainName,
-          captainContact: row.captainContact,
+          eventId: prep.eventId,
+          captainId: captain.id,
+          name: prep.teamName,
+          logoText: prep.teamTag.slice(0, 2).toUpperCase(),
+          tag: prep.teamTag.toUpperCase(),
+          captainName: prep.captainName,
+          captainContact: prep.captainContact,
           source: "csv-import",
         },
-      }),
-    ),
-  );
+      });
+      results.push(team);
+    }
+    return results;
+  }, { timeout: 15000 });
 
   return rows.map(mapTeam);
 }
