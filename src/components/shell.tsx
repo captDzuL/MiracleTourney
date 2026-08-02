@@ -3,9 +3,11 @@ import { LogOut, ShieldCheck, Trophy, Users } from "lucide-react";
 
 import { logoutAction } from "@/lib/actions";
 import { getSessionUser } from "@/lib/auth/session";
+import { getPendingStatSubmissionCount } from "@/lib/platform/repository";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
+  const pendingCount = user?.role === "admin" ? await getPendingStatSubmissionCount() : 0;
 
   return (
     <div className="min-h-screen">
@@ -30,8 +32,18 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
             <Link className="rounded-full px-3 py-2 hover:bg-blue-50" href="/captain">
               Captain
             </Link>
-            <Link className="rounded-full px-3 py-2 hover:bg-blue-50" href="/admin">
+            {user?.role === "captain" && (
+              <Link className="rounded-full px-3 py-2 hover:bg-blue-50" href="/captain/stats">
+                Match Stats
+              </Link>
+            )}
+            <Link className="relative rounded-full px-3 py-2 hover:bg-blue-50" href="/admin">
               Admin
+              {pendingCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                  {pendingCount}
+                </span>
+              )}
             </Link>
             {user ? (
               <form action={logoutAction}>

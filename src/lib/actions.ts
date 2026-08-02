@@ -8,13 +8,16 @@ import { requireRole, signIn, signOut } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import {
   addPlayer,
+  approveStatSubmission,
   createEvent,
   getImportSnapshot,
   importTeams,
   registerTeam,
+  rejectStatSubmission,
   setEventStatus,
   setMatchResult,
   updateEventStream,
+  upsertStatSubmission,
 } from "@/lib/platform/repository";
 
 async function requireAdminSession() {
@@ -205,4 +208,44 @@ export async function adminUpdateStreamAction(formData: FormData) {
   await updateEventStream(input.eventId, input.url, input.label);
   revalidatePath("/", "layout");
   redirect("/admin?success=stream-updated");
+}
+
+export async function captainSubmitStatsAction(formData: FormData) {
+  const user = await requireRole("captain");
+  if (!user) redirect("/login");
+
+  const matchId = formData.get("matchId") as string;
+  const teamId = formData.get("teamId") as string;
+  const eventId = formData.get("eventId") as string;
+
+  // Collect all stat keys in form: stat_{playerId}_{statKey}
+  const stats: Record<string, Record<string, number>> = {};
+  for (const [key, value] of formData.entries()) {
+    const m = key.match(/^stat_(.+)_(.+)$/);
+    if (!m) continue;
+    const [, playerId, statKey] = m;
+    if (!stats[playerId]) stats[playerId] = {};
+    stats[playerId][statKey] = parseInt(value as string, 10) || 0;
+  }
+
+  await upsertStatSubmission({ matchId, teamId, eventId, submittedBy: user.id, stats });
+  revalidatePath("/captain/stats");
+}
+
+export async function adminApproveStatAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const submissionId = formData.get("submissionId") as string;
+  await approveStatSubmission(submissionId, user.id);
+  revalidatePath("/", "layout");
+  redirect("/admin?success=stat-approved");
+}
+
+export async function adminRejectStatAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const submissionId = formData.get("submissionId") as string;
+  const note =
+    (formData.get("rejectionNote") as string)?.trim() || "Please review and resubmit.";
+  await rejectStatSubmission(submissionId, user.id, note);
+  revalidatePath("/", "layout");
+  redirect("/admin?success=stat-rejected");
 }
