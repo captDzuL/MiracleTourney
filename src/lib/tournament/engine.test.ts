@@ -171,7 +171,32 @@ describe("getPublicVisibleSingleEliminationBracket", () => {
       results: [],
     });
 
+    expect(visible).toHaveLength(4);
     expect(visible.every((match) => match.round === 1)).toBe(true);
+    expect(visible.find((match) => match.id === "bracket-r1-m2")).toMatchObject({
+      homeTeamId: "team-4",
+      awayTeamId: "team-5",
+      visibility: "ready",
+      isPublicVisible: true,
+    });
+    expect(visible.filter((match) => match.byeForTeamId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "bracket-r1-m1",
+          byeForTeamId: "team-1",
+          visibility: "auto-advance",
+          isPublicVisible: true,
+        }),
+        expect.objectContaining({
+          id: "bracket-r1-m3",
+          byeForTeamId: "team-2",
+          visibility: "auto-advance",
+          isPublicVisible: true,
+        }),
+      ]),
+    );
+    expect(visible.find((match) => match.id === "bracket-r2-m1")).toBeUndefined();
+    expect(visible.find((match) => match.id === "bracket-r2-m2")).toBeUndefined();
   });
 
   it("shows a semifinal only after both quarterfinal winners are known", () => {
@@ -180,27 +205,53 @@ describe("getPublicVisibleSingleEliminationBracket", () => {
       name: `Team ${index + 1}`,
     }));
 
+    const firstQuarterfinal = {
+      id: "bracket-r1-m1",
+      eventId: "event-1",
+      roundLabel: "Quarterfinal",
+      homeTeamId: "team-1",
+      awayTeamId: "team-8",
+      homeScore: 21,
+      awayScore: 10,
+      status: "Completed" as const,
+      round: 1,
+      slot: 1,
+      winnerTeamId: "team-1",
+    };
+    const partiallyVisible = getPublicVisibleSingleEliminationBracket({
+      teams,
+      slotCount: 8,
+      results: [firstQuarterfinal],
+    });
+    expect(partiallyVisible.some((match) => match.round === 2)).toBe(false);
+
     const visible = getPublicVisibleSingleEliminationBracket({
       teams,
       slotCount: 8,
       results: [
+        firstQuarterfinal,
         {
-          id: "bracket-r1-m1",
+          id: "bracket-r1-m2",
           eventId: "event-1",
           roundLabel: "Quarterfinal",
-          homeTeamId: "team-1",
-          awayTeamId: "team-8",
+          homeTeamId: "team-4",
+          awayTeamId: "team-5",
           homeScore: 21,
           awayScore: 10,
           status: "Completed",
           round: 1,
-          slot: 1,
-          winnerTeamId: "team-1",
+          slot: 2,
+          winnerTeamId: "team-4",
         },
       ],
     });
 
-    expect(visible.some((match) => match.round === 2)).toBe(false);
+    expect(visible.find((match) => match.id === "bracket-r2-m1")).toMatchObject({
+      homeTeamId: "team-1",
+      awayTeamId: "team-4",
+      visibility: "ready",
+      isPublicVisible: true,
+    });
   });
 });
 
