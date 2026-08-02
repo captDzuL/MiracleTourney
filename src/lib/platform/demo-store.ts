@@ -5,6 +5,7 @@ import {
   buildLeagueStandings,
   generateRoundRobinSchedule,
   generateSingleEliminationBracket,
+  getPublicVisibleSingleEliminationBracket,
   getLiveStreamPresentation,
   projectSingleEliminationBracket,
 } from "@/lib/tournament/engine";
@@ -349,6 +350,19 @@ export function getBracketPreview(eventId: string) {
   }
 
   return generateRoundRobinSchedule(teamSeeds);
+}
+
+export function getPublicVisibleBracketPreview(eventId: string): BracketMatch[] {
+  const event = getStore().events.find((item) => item.id === eventId);
+  if (!event || event.format !== "Single Elimination") return getBracketPreview(eventId);
+
+  const teamSeeds = getTeamsForEvent(eventId).map((team) => ({ id: team.id, name: team.name }));
+
+  return getPublicVisibleSingleEliminationBracket({
+    teams: teamSeeds,
+    slotCount: event.participantCap,
+    results: getMatchesForEvent(eventId),
+  });
 }
 
 export function getCaptainById(userId: string | undefined) {

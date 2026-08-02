@@ -2,9 +2,9 @@ import { notFound } from "next/navigation";
 
 import { DataTable, Pill, Section } from "@/components/ui";
 import {
-  getBracketPreview,
   getMatchesForEvent,
   getPublicEventBySlug,
+  getPublicVisibleBracketPreview,
   getTeamsForEvent,
 } from "@/lib/platform/demo-store";
 import type { Match } from "@/lib/platform/types";
@@ -124,7 +124,7 @@ export default async function BracketPage({
 
   const teams = getTeamsForEvent(event.id);
   const teamLookup = new Map(teams.map((team) => [team.id, team.name]));
-  const items = getBracketPreview(event.id);
+  const items = getPublicVisibleBracketPreview(event.id);
   const recordedMatches = getMatchesForEvent(event.id);
 
   if (event.format === "League") {
