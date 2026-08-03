@@ -105,7 +105,7 @@ function mapMatch(row: {
 // would render a full 5-round bracket instead of an 8-slot / 3-round one.
 function getBracketSlotCount(teamCount: number): 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256 {
   const safeCount = Math.max(teamCount, 1);
-  return Math.pow(2, Math.ceil(Math.log2(safeCount === 1 ? 2 : safeCount)));
+  return Math.pow(2, Math.ceil(Math.log2(safeCount === 1 ? 2 : safeCount))) as 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
 }
 
 // ── Credential helpers ────────────────────────────────────────────────────────
