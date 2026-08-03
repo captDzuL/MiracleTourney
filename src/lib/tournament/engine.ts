@@ -41,7 +41,7 @@ function getSeedOrder(size: number): number[] {
 
 export function generateSingleEliminationBracket(
   teams: TeamSeed[],
-  slotCount: 8 | 12 | 16 | 24,
+  slotCount: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256,
 ): BracketMatch[] {
   const entrants = teams.slice(0, slotCount);
 
@@ -123,7 +123,7 @@ function getResolvedWinner(
 
 export function projectSingleEliminationBracket(input: {
   teams: TeamSeed[];
-  slotCount: 8 | 12 | 16 | 24;
+  slotCount: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
   results: Match[];
 }): BracketMatch[] {
   const base = generateSingleEliminationBracket(input.teams, input.slotCount);
@@ -176,7 +176,7 @@ export function projectSingleEliminationBracket(input: {
 
 export function getPublicVisibleSingleEliminationBracket(input: {
   teams: TeamSeed[];
-  slotCount: 8 | 12 | 16 | 24;
+  slotCount: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
   results: Match[];
 }): BracketMatch[] {
   return projectSingleEliminationBracket(input)
