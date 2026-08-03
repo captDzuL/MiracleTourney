@@ -122,6 +122,72 @@ function renderTeamName(teamLookup: Map<string, string>, teamId: string | null, 
   return teamLookup.get(teamId) ?? fallback;
 }
 
+// Kelompokkan match yang berdekatan dalam satu round menjadi pasangan,
+// karena 2 match yang berdampingan itu yang hasilnya maju ke 1 slot
+// di round berikutnya. Asumsi: `roundMatches` sudah terurut berdasar slot.
+function chunkIntoPairs<T>(items: T[]): T[][] {
+  const pairs: T[][] = [];
+  for (let i = 0; i < items.length; i += 2) {
+    pairs.push(items.slice(i, i + 2));
+  }
+  return pairs;
+}
+
+function MatchCard({
+  match,
+  totalRounds,
+  playInRound,
+  eventStartsAt,
+  recordedByRound,
+  teamLookup,
+  connect,
+}: {
+  match: BracketMatch;
+  totalRounds: number;
+  playInRound: number | null;
+  eventStartsAt: string;
+  recordedByRound: Map<string, Match>;
+  teamLookup: Map<string, string>;
+  connect: boolean;
+}) {
+  const state = getBracketMatchState(match, eventStartsAt, recordedByRound);
+  const homeName = renderTeamName(teamLookup, match.homeTeamId, "TBD");
+  const awayName = renderTeamName(teamLookup, match.awayTeamId, match.byeForTeamId ? "BYE" : "TBD");
+
+  return (
+    <article
+      className={`bracket-match relative rounded-2xl border border-slate-200 bg-white shadow-sm ${
+        connect ? "bracket-match--connect" : ""
+      }`}
+    >
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <div>
+          <p className="text-sm font-medium text-slate-900">Match {match.slot}</p>
+          <p className="text-xs text-slate-500">
+            {getRoundName(match.round, totalRounds, { playInRound })}
+          </p>
+        </div>
+        <Pill tone={state.tone}>{state.status}</Pill>
+      </div>
+
+      <div className="divide-y divide-slate-200">
+        <div className="flex items-center justify-between px-4 py-3">
+          <span className="font-medium text-slate-900">{homeName}</span>
+          <span className="mono text-xs text-slate-500">HOME</span>
+        </div>
+        <div className="flex items-center justify-between px-4 py-3">
+          <span className="font-medium text-slate-900">{awayName}</span>
+          <span className="mono text-xs text-slate-500">AWAY</span>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
+        Schedule: {state.schedule}
+      </div>
+    </article>
+  );
+}
+
 export default async function BracketPage({
   params,
 }: {
@@ -183,68 +249,107 @@ export default async function BracketPage({
 
   return (
     <div className="space-y-6">
+      {/* Style garis penghubung bracket. Di-scope lewat class
+          .bracket-match / .bracket-pair di bawah. */}
+      <style>{`
+        .bracket-match--connect::after {
+          content: "";
+          position: absolute;
+          top: 50%;
+          left: 100%;
+          width: 0.625rem;
+          height: 2px;
+          background: #cbd5e1;
+          transform: translateY(-50%);
+        }
+        .bracket-pair {
+          position: relative;
+        }
+        .bracket-pair::before {
+          content: "";
+          position: absolute;
+          top: 25%;
+          bottom: 25%;
+          left: calc(100% + 0.625rem);
+          width: 2px;
+          background: #cbd5e1;
+        }
+        .bracket-pair::after {
+          content: "";
+          position: absolute;
+          top: 50%;
+          left: calc(100% + 0.625rem);
+          width: 0.625rem;
+          height: 2px;
+          background: #cbd5e1;
+          transform: translateY(-50%);
+        }
+      `}</style>
+
       <Section
         title={`${event.name} bracket`}
-        description="Single-elimination events now render as a proper round-by-round bracket so byes and advancing slots are easier to read."
+        description="Single-elimination events now render as a proper round-by-round bracket, connected with tree lines so it's clear how each pairing advances."
       >
         {bracketMatches.length ? (
           <div className="overflow-x-auto pb-2">
             <div className="flex min-w-max gap-5">
-              {matchesByRound.map((roundMatches, roundIndex) => (
-                <div key={roundIndex} className="flex min-w-[280px] flex-col gap-4">
-                  <div>
-                    <p className="mono text-xs uppercase tracking-[0.24em] text-cyan-600">
-                      {getRoundName(visibleRounds[roundIndex], totalRounds, { playInRound })}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {roundMatches.length} match{roundMatches.length > 1 ? "es" : ""}
-                    </p>
+              {matchesByRound.map((roundMatches, roundIndex) => {
+                // "Next round" di sini artinya kolom berikutnya yang benar-benar
+                // dirender (visibleRounds), bukan totalRounds — karena play-in
+                // round bisa membuat visibleRounds tidak berurutan penuh.
+                const hasNextRound = roundIndex < matchesByRound.length - 1;
+
+                return (
+                  <div key={roundIndex} className="flex min-w-[280px] flex-col gap-4">
+                    <div>
+                      <p className="mono text-xs uppercase tracking-[0.24em] text-cyan-600">
+                        {getRoundName(visibleRounds[roundIndex], totalRounds, { playInRound })}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {roundMatches.length} match{roundMatches.length > 1 ? "es" : ""}
+                      </p>
+                    </div>
+
+                    <div
+                      className="flex flex-1 flex-col justify-around gap-4"
+                      style={{ paddingTop: `${roundIndex * 2.5}rem`, paddingBottom: `${roundIndex * 2.5}rem` }}
+                    >
+                      {hasNextRound
+                        ? chunkIntoPairs(roundMatches).map((pair, pairIndex) => (
+                            <div
+                              key={`pair-${roundIndex}-${pairIndex}`}
+                              className="bracket-pair flex flex-1 flex-col justify-around gap-4"
+                            >
+                              {pair.map((match) => (
+                                <MatchCard
+                                  key={match.id}
+                                  match={match}
+                                  totalRounds={totalRounds}
+                                  playInRound={playInRound}
+                                  eventStartsAt={event.startsAt}
+                                  recordedByRound={recordedByRound}
+                                  teamLookup={teamLookup}
+                                  connect
+                                />
+                              ))}
+                            </div>
+                          ))
+                        : roundMatches.map((match) => (
+                            <MatchCard
+                              key={match.id}
+                              match={match}
+                              totalRounds={totalRounds}
+                              playInRound={playInRound}
+                              eventStartsAt={event.startsAt}
+                              recordedByRound={recordedByRound}
+                              teamLookup={teamLookup}
+                              connect={false}
+                            />
+                          ))}
+                    </div>
                   </div>
-
-                  <div
-                    className="flex flex-1 flex-col justify-around gap-4"
-                    style={{ paddingTop: `${roundIndex * 2.5}rem`, paddingBottom: `${roundIndex * 2.5}rem` }}
-                  >
-                    {roundMatches.map((match) => {
-                      const state = getBracketMatchState(match, event.startsAt, recordedByRound);
-                      const homeName = renderTeamName(teamLookup, match.homeTeamId, "TBD");
-                      const awayName = renderTeamName(teamLookup, match.awayTeamId, match.byeForTeamId ? "BYE" : "TBD");
-
-                      return (
-                        <article
-                          key={match.id}
-                          className="rounded-2xl border border-slate-200 bg-white shadow-sm"
-                        >
-                          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                            <div>
-                              <p className="text-sm font-medium text-slate-900">Match {match.slot}</p>
-                              <p className="text-xs text-slate-500">
-                                {getRoundName(match.round, totalRounds, { playInRound })}
-                              </p>
-                            </div>
-                            <Pill tone={state.tone}>{state.status}</Pill>
-                          </div>
-
-                          <div className="divide-y divide-slate-200">
-                            <div className="flex items-center justify-between px-4 py-3">
-                              <span className="font-medium text-slate-900">{homeName}</span>
-                              <span className="mono text-xs text-slate-500">HOME</span>
-                            </div>
-                            <div className="flex items-center justify-between px-4 py-3">
-                              <span className="font-medium text-slate-900">{awayName}</span>
-                              <span className="mono text-xs text-slate-500">AWAY</span>
-                            </div>
-                          </div>
-
-                          <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
-                            Schedule: {state.schedule}
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : (

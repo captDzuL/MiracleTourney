@@ -108,7 +108,7 @@ export async function adminCreateEventAction(formData: FormData) {
     slug: z.string().min(3),
     gameModeId: z.string().min(1),
     format: z.enum(["Single Elimination", "League"]),
-    participantCap: z.union([z.literal(8), z.literal(12), z.literal(16), z.literal(24)]),
+    participantCap: z.union([z.literal(8), z.literal(12), z.literal(16), z.literal(24), z.literal(32)]),
   }).parse({
     name: formData.get("name"),
     slug: formData.get("slug"),
