@@ -597,25 +597,30 @@ export async function importTeams(input: Array<{
     }),
   );
 
-  // Phase 2: upsert Users + create Teams atomically
-  const rows = await prisma.$transaction(async (tx) => {
-    const results = [];
-    for (const prep of preparedRows) {
-      const captain = await tx.user.upsert({
-        where: { email: prep.email },
-        update: { name: prep.captainName, passwordHash: prep.passwordHash, tempPassword: prep.tempPassword },
-        create: {
-          email: prep.email,
-          name: prep.captainName,
-          role: "captain",
-          passwordHash: prep.passwordHash,
-          tempPassword: prep.tempPassword,
-        },
-      });
-      const team = await tx.team.create({
+  // Phase 2: upsert Users then create Teams — sequential non-transactional calls
+  // avoid interactive $transaction which requires a persistent connection (breaks on Neon PgBouncer)
+  const captainIds: Array<{ id: string; prep: (typeof preparedRows)[number] }> = [];
+  for (const prep of preparedRows) {
+    const captain = await prisma.user.upsert({
+      where: { email: prep.email },
+      update: { name: prep.captainName, passwordHash: prep.passwordHash, tempPassword: prep.tempPassword },
+      create: {
+        email: prep.email,
+        name: prep.captainName,
+        role: "captain",
+        passwordHash: prep.passwordHash,
+        tempPassword: prep.tempPassword,
+      },
+    });
+    captainIds.push({ id: captain.id, prep });
+  }
+
+  const rows = await prisma.$transaction(
+    captainIds.map(({ id, prep }) =>
+      prisma.team.create({
         data: {
           eventId: prep.eventId,
-          captainId: captain.id,
+          captainId: id,
           name: prep.teamName,
           logoText: prep.teamTag.slice(0, 2).toUpperCase(),
           tag: prep.teamTag.toUpperCase(),
@@ -623,11 +628,9 @@ export async function importTeams(input: Array<{
           captainContact: prep.captainContact,
           source: "csv-import",
         },
-      });
-      results.push(team);
-    }
-    return results;
-  }, { timeout: 15000 });
+      }),
+    ),
+  );
 
   return rows.map(mapTeam);
 }
