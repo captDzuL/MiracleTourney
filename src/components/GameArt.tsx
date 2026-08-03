@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { ImagePlus } from "lucide-react";
 
 export interface GameArtTheme {
@@ -79,9 +80,11 @@ export function GameArt({
       </span>
       <div className="absolute bottom-0 left-4 translate-y-1/2">
         {logoUrl ? (
-          <img
+          <Image
             src={logoUrl}
             alt={entityName}
+            width={56}
+            height={56}
             className="h-14 w-14 rounded-xl border-2 border-white object-cover shadow-md"
           />
         ) : (

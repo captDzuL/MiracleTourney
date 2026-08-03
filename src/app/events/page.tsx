@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { CalendarDays, Trophy, Users } from "lucide-react";
 
@@ -37,10 +38,13 @@ export default async function EventsPage() {
                   <div className="grid gap-3">
                     <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-white text-slate-400 shadow-sm">
                       {event.logoUrl ? (
-                        <img
+                        <Image
                           src={event.logoUrl}
                           alt={`${event.name} logo`}
+                          width={120}
+                          height={120}
                           className="h-full w-full object-contain"
+                          priority
                         />
                       ) : (
                         <div className="text-center">
