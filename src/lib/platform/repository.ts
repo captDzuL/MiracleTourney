@@ -103,7 +103,7 @@ function mapMatch(row: {
 // up to the nearest power of two (byes fill the remaining slots). Using
 // `participantCap` directly here was the bug: a 32-cap event with only 7 teams
 // would render a full 5-round bracket instead of an 8-slot / 3-round one.
-function getBracketSlotCount(teamCount: number): number {
+function getBracketSlotCount(teamCount: number): 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256 {
   const safeCount = Math.max(teamCount, 1);
   return Math.pow(2, Math.ceil(Math.log2(safeCount === 1 ? 2 : safeCount)));
 }
