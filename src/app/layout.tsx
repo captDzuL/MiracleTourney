@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
 
+import { SpeedInsights } from "@vercel/speed-insights/next";
+
 import { AppShell } from "@/components/shell";
 import "./globals.css";
 
@@ -29,6 +31,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body className={`${jakarta.variable} ${inter.variable} ${mono.variable}`}>
         <AppShell>{children}</AppShell>
+        <SpeedInsights />
       </body>
     </html>
   );
