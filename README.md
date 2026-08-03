@@ -1,315 +1,239 @@
 # MiracleTourney (Internal README)
 
-Last updated: Sunday, August 2, 2026.
+Last updated: Sunday, August 3, 2026.
 
 ## Purpose
 
-MiracleTourney is the current MVP web app for running lightweight multi-game community tournaments with a strong launch-week bias toward speed, readability, and operator control.
+MiracleTourney is the MVP web app for running lightweight multi-game community tournaments. The app is now past the demo-only phase — it runs on real Postgres persistence, real JWT auth, and a two-tier stat submission flow between captains and admins.
 
-The current MVP scope is intentionally narrow:
-- web only
-- Next.js app router
-- demo/in-memory persistence
-- admin-operated results and event lifecycle
-- CSV-based team registration import
-- public event hub with bracket, standings, participants, leaderboard, and livestream support
+This README is for internal developers only.
 
-The current two supported game modes are:
-- Kuroko no Basket Street Rival (3v3)
-- Flashpeak (5v5)
-
-This README is for internal developers only. It is not written as a public-facing project overview.
+---
 
 ## Current MVP status
 
-As of Sunday, August 2, 2026, the following launch-critical flows are implemented and verified locally:
+As of August 3, 2026, the following flows are implemented and verified:
 
 ### Public surface
-- `/events` event hub
-- `/events/[slug]` event detail
+- `/events` — event hub (public lifecycle states only)
+- `/events/[slug]` — event detail with game/mode/format pills, registration window, venue, livestream
 - `/events/[slug]/participants`
 - `/events/[slug]/bracket`
 - `/events/[slug]/standings`
 - `/events/[slug]/leaderboards`
-- event-level livestream rendering with YouTube embed and external fallback behavior
+- Event-level livestream rendering (YouTube embed + external fallback)
+
+### Captain surface
+- `/captain` — Team hero card (GameArt gradient + logo badge), 3-column player grid with jersey badges, add-player form
+- `/captain/stats` — Submit per-match player stats for completed matches; resubmit after admin rejection
+- Captain accounts are auto-provisioned on CSV import — no manual setup needed
 
 ### Admin surface
-- create draft event
-- update event lifecycle/status
-- import team registrations from CSV
-- review imported team + PIC rows
-- update event livestream metadata
-- enter match results from admin panel
+- Create and manage draft events
+- Publish/update event lifecycle status
+- Import team registrations from CSV → auto-creates captain `User` accounts
+- Download captain credentials CSV (`login_email` + `temp_password`) per event
+- Update event livestream metadata
+- Enter match results
+- Review and approve/reject captain stat submissions
+- Pending stat submission count badge on nav
 
 ### Tournament behavior
-- single-elimination bracket generation for 8 / 12 / 16 / 24 presets
-- preset slot count is authoritative; brackets do not auto-compress
-- deterministic advancement from completed results
-- chained bye propagation
-- round-robin fixture generation for league events
-- team standings aggregation for league events
+- Single-elimination bracket generation for 8 / 12 / 16 / 24 presets
+- Deterministic advancement from completed results, chained bye propagation
+- Round-robin fixture generation + league standings aggregation
+- Player leaderboard aggregation from approved `PlayerStat` records
 
-### Testing and QA support
-- Vitest coverage for tournament, import, and action logic
-- Playwright smoke coverage for the critical admin -> public flow
-- reusable CSV testing datasets under `public/templates/testing`
+### Stat submission flow (new)
+1. Captain navigates to `/captain/stats` and sees completed matches
+2. Captain fills per-player stat grid and submits → creates a `StatSubmission` record (status: `pending`)
+3. Admin sees pending count badge on "Admin" nav link
+4. Admin expands submission, previews stats, then approves or rejects with a note
+5. On approval: system creates `PlayerStat` records → leaderboard updates automatically
+6. On rejection: captain sees the note and can resubmit
+
+---
 
 ## Tech stack
 
-- Next.js 15 App Router
-- React 19
-- TypeScript
-- Tailwind CSS 4
-- Zod for server-action/form validation
-- Vitest for unit/integration tests
-- Playwright for browser smoke coverage
+| Layer | Choice |
+|---|---|
+| Framework | Next.js 15 App Router, React 19 |
+| Language | TypeScript (strict mode, `typedRoutes: true`) |
+| Styling | Tailwind CSS 4 |
+| ORM | Prisma 6 |
+| Database | Neon Postgres (serverless) |
+| Auth | JWT via `jose` (HS256, 7-day), bcryptjs, httpOnly cookie |
+| Validation | Zod |
+| Tests | Vitest (unit/integration) |
+| E2E | Playwright |
 
-Notes:
-- `@prisma/client` and `prisma` are installed but the current MVP still runs on an in-memory demo store.
-- Neon/Postgres remains the intended next persistence target, but it is not wired yet.
+---
 
 ## How the app works
 
-At a high level, the app currently uses a simple read/write split:
+```
+src/app/**          → server-rendered routes (async Server Components)
+src/lib/actions.ts  → all server mutations (Server Actions)
+src/lib/platform/
+  repository.ts     → Prisma data-access layer (repository pattern)
+  config.ts         → game/mode definitions, stat keys
+  types.ts          → shared TypeScript types
+src/lib/auth/
+  session.ts        → JWT sign/verify, requireRole(), getSessionUser()
+src/lib/tournament/
+  engine.ts         → pure bracket/standings/leaderboard logic
+src/lib/imports/
+  team-import.ts    → CSV parsing and validation
+src/components/
+  GameArt.tsx       → shared game hero gradient, StatusBadge (used on homepage + captain page)
+  ui.tsx            → DataTable, Section, StatCard, Pill, buttonStyles
+  shell.tsx         → AppShell nav with role-aware links and pending badge
+prisma/
+  schema.prisma     → Prisma schema (db push, no migration history)
+  seed.ts           → seeds admin + captain accounts with bcrypt hashes
+```
 
-1. UI routes in `src/app/**` render server components.
-2. Mutations are performed through server actions in `src/lib/actions.ts`.
-3. Those actions mutate the in-memory store in `src/lib/platform/demo-store.ts`.
-4. Tournament projections and aggregations are computed by pure helpers in `src/lib/tournament/engine.ts`.
-5. Public pages consume derived state from the store and tournament engine.
+Mutations flow: Server Action → `src/lib/platform/repository.ts` → Prisma → Neon Postgres.
+Reads flow: Server Component → repository function → Prisma.
 
-That gives us a fast MVP loop without database setup, but it also means state persistence is process-local and reset-sensitive.
+---
 
 ## Architecture breakdown
 
-### 1. Route layer (`src/app/**`)
+### Route layer (`src/app/**`)
 
-Main route groups:
-- `src/app/page.tsx` landing page
-- `src/app/login/page.tsx` demo auth entry
-- `src/app/admin/page.tsx` admin operations surface
-- `src/app/captain/page.tsx` captain surface
-- `src/app/events/page.tsx` public event hub
-- `src/app/events/[slug]/**` event sub-pages
+| Route | Description |
+|---|---|
+| `/` | Landing page with event cards |
+| `/login` | JWT login form |
+| `/events/[slug]/**` | Public event sub-pages |
+| `/captain` | Captain dashboard (team hero + roster) |
+| `/captain/stats` | Stat submission for completed matches |
+| `/admin` | Full admin operations surface |
+| `/api/admin/captain-credentials` | GET → downloads credentials CSV for an event |
 
-All major UI is currently server-rendered via the App Router.
-
-### 2. Server action layer (`src/lib/actions.ts`)
-
-This is the write-path entry point.
-
-Current action responsibilities include:
-- demo login/logout
-- captain team registration and player add flow
-- admin event creation
-- admin event status update
-- admin CSV team import
-- admin match result entry
-- admin livestream metadata update
-
-Important property:
-- actions redirect after mutation and use `revalidatePath("/", "layout")` to refresh public/admin views.
-
-### 3. Demo store (`src/lib/platform/demo-store.ts`)
-
-This is the current source of truth for runtime state.
-
-It holds:
-- users
-- events
-- teams
-- players
-- matches
-- player stats
-
-Key characteristics:
-- initialized from `initialState`
-- stored on `globalThis.__mflStore`
-- cloned once per server process boot
-- mutable at runtime
-- resets when the dev server process restarts
-
-This file currently provides both:
-- raw selectors (`getEvents`, `getTeamsForEvent`, `getMatchesForEvent`, etc.)
-- domain mutations (`createEvent`, `importTeams`, `setEventStatus`, `setMatchResult`, etc.)
-
-This is acceptable for the MVP but should eventually be split behind a real repository/data-access boundary.
-
-### 4. Tournament engine (`src/lib/tournament/engine.ts`)
-
-This file contains the core pure tournament logic.
+### Server action layer (`src/lib/actions.ts`)
 
 Current responsibilities:
-- single-elimination bracket generation
-- single-elimination bracket projection from results
-- bye resolution and chained advancement
-- round-robin schedule generation
-- league standings aggregation
-- player leaderboard aggregation
-- livestream platform parsing/presentation helpers
+- `loginAction` / `logoutAction`
+- `captainRegisterTeamAction` — register team for an event
+- `captainAddPlayerAction` — add player with optional jersey number
+- `captainSubmitStatsAction` — submit per-match stats (creates/upserts StatSubmission)
+- `adminCreateEventAction`
+- `adminSetEventStatusAction`
+- `adminImportTeamsAction` — CSV import + captain account auto-creation
+- `adminSetMatchResultAction`
+- `adminUpdateLivestreamAction`
+- `adminApproveStatAction` — approves submission, creates PlayerStat records
+- `adminRejectStatAction` — rejects with a note, captain can resubmit
 
-Important current rule:
-- for single elimination, the configured participant cap is authoritative; the engine does not compress undersubscribed brackets into smaller live brackets.
+### Repository layer (`src/lib/platform/repository.ts`)
 
-### 5. Tournament types (`src/lib/tournament/types.ts`) and platform types (`src/lib/platform/types.ts`)
+Key exports:
+- `getEvents()`, `getEventBySlug()`, `getEvent()` — event reads
+- `importTeams()` — two-phase: pre-compute bcrypt hashes outside tx, then upsert user + create team in Prisma interactive transaction (`timeout: 15000`)
+- `getCaptainCredentialsForEvent(eventId)` — for admin CSV download
+- `getCaptainTeams(captainId)`, `getPlayersForTeam(teamId)`, `addPlayer()`
+- `getCompletedMatchesForCaptain(captainId)` — with submission status left-joined
+- `upsertStatSubmission()` — idempotent on `@@unique([matchId, teamId])`
+- `getPendingStatSubmissions()`, `getPendingStatSubmissionCount()`
+- `approveStatSubmission()` — Prisma transaction: upserts PlayerStat per player, marks approved
+- `rejectStatSubmission()`
+- `getLeaderboard()`, `getStandings()`, `getBracket()`
 
-These define the operational contracts between:
-- demo store state
-- engine functions
-- public rendering
-- admin mutation flows
+### Auth layer (`src/lib/auth/session.ts`)
 
-Notable match metadata now in use:
-- `round`
-- `slot`
-- `winnerTeamId`
-- `scheduledLabel` (optional)
+- `signIn(email, password)` → bcrypt compare → sign JWT → set httpOnly cookie `mfl_token`
+- `getSessionUser()` → verify JWT → return `AppUser | null`
+- `requireRole(role)` → returns user or null (caller redirects)
 
-These fields are important because they allow bracket projection and admin match operations to share a stable operational model.
+Roles: `admin` | `captain` | `public`
 
-### 6. CSV import pipeline (`src/lib/imports/team-import.ts`)
+### CSV import + captain provisioning
 
-Import contract:
-- one CSV row = one team registration
-- required header order is exact
-- import attaches to an existing `event_slug`
-- imported data currently creates event participation at team + PIC level only
+1. CSV row → validate → `importTeams()` called
+2. Per team: generate email `{tag}@miraclefc.gg` (numeric suffix on collision), random 8-char temp password
+3. Pre-compute bcrypt hash outside transaction
+4. Prisma interactive transaction: `user.upsert` + `team.create`
+5. `captainId` on Team is set to the real User.id
+6. Admin downloads `captain-credentials-{eventId}.csv` with login email + temp password
 
-Required CSV header:
+### Database schema (key models)
 
-```csv
-event_slug,team_name,team_tag,captain_name,captain_contact
+```
+User          — id, email, name, role, passwordHash, tempPassword?
+Event         — id, slug, name, gameId, gameModeId, format, status, ...
+Team          — id, eventId, captainId (→ User.id), name, tag, source
+Player        — id, teamId, eventId, displayName, nickname, position, jerseyNumber?
+Match         — id, eventId, homeTeamId, awayTeamId, round, slot, status, scores
+PlayerStat    — id, matchId, playerId, teamId, stats (Json) — @@unique([matchId, playerId])
+StatSubmission — id, matchId, teamId, eventId, submittedBy, status, stats (Json), rejectionNote?
+               — @@unique([matchId, teamId])
 ```
 
-Current validation behavior includes:
-- exact header validation
-- row length validation
-- required field validation
-- unknown `event_slug` rejection
-- duplicate `team_tag` rejection within the same event
-- duplicate `team_name` rejection within the same event
+Schema is managed with `pnpm prisma db push` (no migration history — started with db push, must stay that way).
 
-### 7. Demo auth/session (`src/lib/auth/**`)
+### Shared `GameArt` component (`src/components/GameArt.tsx`)
 
-Auth is still demo-mode and role-based.
+Exports: `GameArtTheme`, `gameArtConfig`, `GameArt`, `StatusBadge`
 
-Current roles:
-- `admin`
-- `captain`
+Used on:
+- `/` homepage event cards
+- `/captain` team hero sections
 
-This is enough for local MVP flow testing, but not enough for production identity management.
+Gradients are keyed by `gameId`: blue for `game-kuroko`, green for `game-flashpeak`.
 
-## Implemented feature brief
+### `DataTable` component (`src/components/ui.tsx`)
 
-### Public event hub
-The public event hub only exposes events in public lifecycle states:
-- Published
-- Registration Closed
-- Ongoing
-- Finished
+Uses `overflow-x-auto` on the wrapper — tables scroll horizontally on mobile instead of clipping.
 
-`Draft` is admin-only.
+---
 
-### Event detail
-Event detail provides:
-- game + mode + format pills
-- registration window, participant count, venue
-- bracket/fixture count snapshot
-- leaderboard summary
-- livestream section if enabled
+## Supported game modes and stat keys
 
-### Participants
-Participants are event-scoped and use the same public visibility guard as the rest of the public event surface.
+| Game | Mode | Stat keys |
+|---|---|---|
+| Kuroko no Basket Street Rival | 3v3 | points, assists, rebounds, steals, blocks, flb |
+| Flashpeak | 5v5 | goals, assists, tackles, blocks |
 
-### Bracket / fixtures
-Single elimination:
-- projected from team seeds + recorded results
-- byes auto-advance
-- result propagation is guarded so unrelated recorded matches do not incorrectly advance winners
-
-League:
-- fixtures display completed state rather than static placeholders
-
-### Standings
-League standings are recalculated from completed match results using:
-1. points
-2. score difference
-3. score for
-
-### Leaderboards
-Current leaderboard support is event-scoped.
-
-Supported stat families:
-- Kuroko: points, assists, rebounds, steals, blocks
-- Flashpeak: goals, assists, tackles, blocks
-
-Important current product behavior:
-- if an event only has team + PIC import data and no player stat data, the UI degrades gracefully with an empty state instead of fabricating player rows.
-
-### Admin operations
-The admin page currently exposes:
-- event creation
-- event publish/status control
-- livestream metadata update
-- CSV import
-- imported registration review
-- match result entry
-- high-level operations overview
-
-### Browser smoke coverage
-Current smoke coverage validates the critical operational loop:
-- admin login
-- lifecycle mutation
-- CSV import
-- match result entry
-- public state change confirmation
-
-## Folder map
-
-These are the main folders a second developer should care about first:
-
-- `src/app/`
-  - route layer and server-rendered UI
-- `src/components/`
-  - shared presentation components
-- `src/lib/actions.ts`
-  - all current server-side mutations
-- `src/lib/platform/`
-  - config, types, demo-store
-- `src/lib/tournament/`
-  - pure tournament and aggregation logic
-- `src/lib/imports/`
-  - CSV parsing and validation
-- `tests/e2e/`
-  - Playwright smoke tests
-- `public/templates/testing/`
-  - reusable CSV import datasets
-- `docs/operations/`
-  - operator notes for datasets/import
-- `docs/superpowers/`
-  - design and execution artifacts from the overnight MVP push
+---
 
 ## Local development
 
 ### Prerequisites
-- Node.js 24.x is currently what the environment has been using successfully
+- Node.js 24.x
 - Corepack enabled
-- pnpm available through Corepack
+- pnpm via Corepack
+- A Neon Postgres database URL in `.env` as `DATABASE_URL`
 
-### Install
+### `.env` required variables
+
+```
+DATABASE_URL=postgresql://...neon.tech/...
+JWT_SECRET=some-random-32-char-string
+```
+
+### Setup
 
 ```powershell
 corepack pnpm install
+pnpm prisma db push
+pnpm prisma generate
+pnpm tsx prisma/seed.ts       # creates admin + captain seed accounts
 ```
 
-### Run the app
+Seed credentials:
+- Admin: `admin@miraclefc.gg` / `Miracle2026!`
+- Captain: `captain@miraclefc.gg` / `Miracle2026!`
+
+### Run
 
 ```powershell
 corepack pnpm dev
 ```
 
-Default local URL:
-- `http://127.0.0.1:3000`
+Default: `http://localhost:3000`
 
 ### Type-check
 
@@ -317,26 +241,29 @@ Default local URL:
 corepack pnpm lint
 ```
 
-### Unit/integration tests
+### Unit tests
 
 ```powershell
 corepack pnpm test
 ```
 
-### Browser smoke test
+49 tests. Must stay green. Run after every change to repository/actions/engine.
+
+### E2E smoke
 
 ```powershell
 corepack pnpm test:e2e
 ```
 
-Notes for E2E:
-- the Playwright run is now configured to own a fresh app lifecycle per invocation
-- port `3000` should be free before running `test:e2e`
-- do not rely on a manually running dirty dev server for repeatable smoke verification
+Notes:
+- Port 3000 must be free before running
+- Playwright manages its own app lifecycle
+
+---
 
 ## QA assets
 
-Reusable datasets live here:
+Reusable CSV datasets:
 - `public/templates/testing/master-multievent-teams.csv`
 - `public/templates/testing/miracle-league-8.csv`
 - `public/templates/testing/miracle-league-12.csv`
@@ -348,89 +275,91 @@ Operational notes:
 - `docs/operations/testing-datasets.md`
 - `docs/operations/team-import-template-notes.md`
 
-## Known limitations
+---
 
-These are real current limitations, not future nice-to-haves:
+## Known current limitations
 
-1. Persistence is in-memory only.
-   - Restarting the app process resets operational data to `initialState`.
-   - This is the single biggest technical limitation right now.
+1. **No partial stat approval.** Admin must reject the whole submission if any stat is wrong; captain resubmits the full set.
 
-2. Auth is still demo auth.
-   - No production-grade identity, session hardening, or admin authorization boundary beyond current app flow.
+2. **No deadline enforcement on stat submission.** The system accepts submissions at any time after a match is completed. Deadline gating is out of scope until discussed with the team.
 
-3. CSV import is the only registration ingestion path.
-   - There is no live Google Form integration yet.
-   - Captain self-service roster/account provisioning is not production-ready.
+3. **No WhatsApp/Telegram delivery for captain credentials.** Admin downloads the CSV and distributes manually.
 
-4. Database libraries are present, but DB persistence is not wired.
-   - The app is not yet using Prisma/Neon for runtime state.
+4. **No logo upload.** The `GameArt` component shows initials + hover placeholder. Actual file upload is not wired yet.
 
-5. Some branch history/worktree hygiene is still mid-cleanup.
-   - The current overnight MVP push landed through multiple overlapping working-tree changes.
-   - Logic is tested and reviewed, but commit history still needs a proper cleanup pass before public handoff.
+5. **CSV import is the only registration ingestion path.** No live Google Form integration.
 
-6. The Playwright smoke flow is intentionally narrow.
-   - It covers the critical happy path, not a full regression matrix.
+6. **`pnpm prisma migrate dev` is not usable.** Schema was bootstrapped with `db push` — there is no migration history. All schema changes must use `db push`. Running `migrate dev` will throw a drift error.
+
+7. **Playwright smoke coverage is narrow.** It covers the critical happy path only, not a full regression matrix.
+
+---
 
 ## Recommended next workstreams
 
-Recommended order from here:
+1. **Logo upload** — wire `GameArt` placeholder to a real file upload (Cloudflare R2 or Vercel Blob)
+2. **Deadline enforcement** — add submission cutoff per event, decided with team
+3. **WhatsApp/Telegram delivery** — send captain credentials automatically on CSV import
+4. **Broader E2E coverage** — captain login → stat submit → admin approval flow
+5. **PR cleanup** — squash branch into a clean diff for handoff review
 
-1. Branch cleanup and integration hygiene
-   - consolidate the current working tree into reviewable commits
-   - remove residual generated artifacts from source control candidates
-   - prepare a clean PR-ready diff
+---
 
-2. Replace demo-store with real persistence
-   - Prisma + Neon/Postgres
-   - durable events, teams, imports, matches, and stats
+## Folder map
 
-3. Real auth and role enforcement
-   - production login/session model
-   - admin authorization at mutation boundaries
-   - captain account lifecycle
-
-4. P1 event media polish
-   - event logo / game art hooks
-   - stronger event card readability on public pages
-
-5. Expand test depth
-   - more negative-path E2E
-   - broader public/admin route assertions
-   - import edge-case coverage with real operator files
-
-## Internal branch hygiene note
-
-What I cleaned in this pass:
-- added this internal `README.md`
-- marked `test-results/` as generated output to ignore
-- removed the current generated `test-results/` artifact from the working tree
-
-What is intentionally not claimed yet:
-- the branch is not fully commit/PR-clean yet
-- there are still many intentional MVP source changes in the working tree that need a dedicated cleanup/integration pass
+```
+src/
+  app/                      route layer and server-rendered pages
+    admin/
+    captain/
+      stats/
+    events/[slug]/
+    login/
+  components/
+    GameArt.tsx             shared game hero + StatusBadge
+    shell.tsx               AppShell nav with role-aware links + badge
+    ui.tsx                  DataTable, Section, StatCard, Pill, buttonStyles
+  lib/
+    actions.ts              all server mutations
+    auth/session.ts         JWT auth
+    platform/
+      config.ts             game/mode definitions
+      repository.ts         Prisma data-access layer
+      types.ts              shared types
+    tournament/
+      engine.ts             pure bracket/standings/leaderboard logic
+    imports/
+      team-import.ts        CSV parsing
+prisma/
+  schema.prisma
+  seed.ts
+docs/
+  operations/               operator notes
+  superpowers/
+    specs/                  feature specs
+    plans/                  implementation plans
+tests/e2e/                  Playwright smoke tests
+public/templates/testing/   reusable CSV datasets
+```
 
 ## Quick start for the next developer
 
-If you are the next developer touching this repo, do this first:
-
-1. Read this file fully.
+1. Read this file.
 2. Read `docs/operations/testing-datasets.md`.
-3. Run:
+3. Set up `.env` with `DATABASE_URL` and `JWT_SECRET`.
+4. Run:
 
 ```powershell
 corepack pnpm install
+pnpm prisma db push
+pnpm prisma generate
+pnpm tsx prisma/seed.ts
 corepack pnpm lint
 corepack pnpm test
-corepack pnpm test:e2e
 ```
 
-4. Open these files next:
-- `src/app/admin/page.tsx`
-- `src/lib/actions.ts`
-- `src/lib/platform/demo-store.ts`
-- `src/lib/tournament/engine.ts`
-- `tests/e2e/overnight-smoke.spec.ts`
-
-That should be enough to understand both the current runtime model and the riskiest operational paths.
+5. Open these files:
+   - `src/app/admin/page.tsx`
+   - `src/lib/actions.ts`
+   - `src/lib/platform/repository.ts`
+   - `src/lib/tournament/engine.ts`
