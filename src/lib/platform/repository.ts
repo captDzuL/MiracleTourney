@@ -17,6 +17,12 @@ import { prisma } from "./db";
 
 const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration Closed", "Ongoing", "Finished"]);
 
+//link staic image
+const GAME_LOGO_URLS: Record<string, string> = {
+  "game-flashpeak": "https://lh3.googleusercontent.com/d/1m01dWpxKA6qXRzfFRrEovFzho1nTnV9B",
+  "game-kuroko": "https://lh3.googleusercontent.com/d/1nuG9zliyCINk1KXWNPYv_j9fmdQcWMXA",
+};
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function mapEvent(row: {
@@ -35,7 +41,8 @@ function mapEvent(row: {
     participantCap: row.participantCap as Event["participantCap"],
     registrationWindow: row.registrationWindow, startsAt: row.startsAt, venue: row.venue,
   };
-  if (row.logoUrl) event.logoUrl = row.logoUrl;
+  const logoUrl = row.logoUrl ?? GAME_LOGO_URLS[row.gameId];
+  if (logoUrl) event.logoUrl = logoUrl;
   if (row.gameImageUrl) event.gameImageUrl = row.gameImageUrl;
   if (row.stream) {
     event.stream = {
@@ -88,6 +95,17 @@ function mapMatch(row: {
     ...(row.winnerTeamId ? { winnerTeamId: row.winnerTeamId } : {}),
     ...(row.scheduledLabel ? { scheduledLabel: row.scheduledLabel } : {}),
   };
+}
+
+// ── Bracket sizing ─────────────────────────────────────────────────────────────
+// `event.participantCap` is only the *maximum* registration allowed. The actual
+// bracket must be sized to the number of teams that really registered, rounded
+// up to the nearest power of two (byes fill the remaining slots). Using
+// `participantCap` directly here was the bug: a 32-cap event with only 7 teams
+// would render a full 5-round bracket instead of an 8-slot / 3-round one.
+function getBracketSlotCount(teamCount: number): number {
+  const safeCount = Math.max(teamCount, 1);
+  return Math.pow(2, Math.ceil(Math.log2(safeCount === 1 ? 2 : safeCount)));
 }
 
 // ── Credential helpers ────────────────────────────────────────────────────────
@@ -217,7 +235,7 @@ async function getProjectedBracketMatches(event: Event): Promise<Match[]> {
   const teamSeeds = teams.map((team) => ({ id: team.id, name: team.name }));
   const bracket = projectSingleEliminationBracket({
     teams: teamSeeds,
-    slotCount: event.participantCap,
+    slotCount: getBracketSlotCount(teams.length),
     results: existingMatches,
   }) as BracketMatch[];
   const existingById = new Map(existingMatches.map((match) => [match.id, match]));
@@ -374,7 +392,11 @@ export async function getBracketPreview(eventId: string) {
   const teamSeeds = teams.map((team) => ({ id: team.id, name: team.name }));
 
   if (event.format === "Single Elimination") {
-    return projectSingleEliminationBracket({ teams: teamSeeds, slotCount: event.participantCap as Event["participantCap"], results: matches });
+    return projectSingleEliminationBracket({
+      teams: teamSeeds,
+      slotCount: getBracketSlotCount(teams.length),
+      results: matches,
+    });
   }
 
   return generateRoundRobinSchedule(teamSeeds);
@@ -387,10 +409,23 @@ export async function getPublicVisibleBracketPreview(eventId: string) {
   const teams = await getTeamsForEvent(eventId);
   const matches = await getMatchesForEvent(eventId);
   const teamSeeds = teams.map((team) => ({ id: team.id, name: team.name }));
+  const slotCount = getBracketSlotCount(teams.length);
+
+  // Once the event is live (or finished), the bracket is locked in — show the
+  // fully projected bracket so every round's cards render (including TBD
+  // placeholders for rounds that haven't been decided yet), instead of the
+  // "only reveal what's already determined" view used before kickoff.
+  if (event.status === "Ongoing" || event.status === "Finished") {
+    return projectSingleEliminationBracket({
+      teams: teamSeeds,
+      slotCount,
+      results: matches,
+    });
+  }
 
   return getPublicVisibleSingleEliminationBracket({
     teams: teamSeeds,
-    slotCount: event.participantCap as Event["participantCap"],
+    slotCount,
     results: matches,
   });
 }

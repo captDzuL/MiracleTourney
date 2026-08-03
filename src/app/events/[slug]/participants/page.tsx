@@ -23,10 +23,11 @@ export default async function ParticipantsPage({
   return (
     <Section title={`${event.name} participants`} description="Registered teams and current roster snapshot.">
       <DataTable
-        columns={["Team", "Tag", "Roster"]}
+        columns={["Team", "Tag", "Captain", "Roster"]}
         rows={teamsWithPlayers.map((team) => [
           team.name,
           team.tag,
+          team.captainName ?? "Unassigned",
           team.players.length
             ? team.players.map((player) => `${player.nickname} (${player.position})`).join(", ")
             : "Roster pending",

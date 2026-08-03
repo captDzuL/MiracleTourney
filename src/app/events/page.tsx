@@ -35,9 +35,13 @@ export default async function EventsPage() {
               <div>
                 <div className="grid gap-4 md:grid-cols-[120px_minmax(0,1fr)]">
                   <div className="grid gap-3">
-                    <div className="flex aspect-square items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white text-slate-400 shadow-sm">
+                    <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-white text-slate-400 shadow-sm">
                       {event.logoUrl ? (
-                        <span className="text-xs font-medium text-slate-500">Logo ready</span>
+                        <img
+                          src={event.logoUrl}
+                          alt={`${event.name} logo`}
+                          className="h-full w-full object-contain"
+                        />
                       ) : (
                         <div className="text-center">
                           <p className="text-lg font-semibold text-slate-700">{getInitials(event.name) || "EV"}</p>
