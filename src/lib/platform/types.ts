@@ -53,7 +53,7 @@ export type Event = {
   gameModeId: string;
   format: TournamentFormat;
   status: EventStatus;
-  participantCap: 8 | 12 | 16 | 24;
+  participantCap: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
   registrationWindow: string;
   startsAt: string;
   venue: string;
