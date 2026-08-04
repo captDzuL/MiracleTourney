@@ -1,4 +1,5 @@
-﻿import { SignJWT, jwtVerify } from "jose";
+﻿import { cache } from "react";
+import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 
@@ -29,7 +30,7 @@ async function verifyToken(token: string): Promise<{ sub: string; role: string }
   }
 }
 
-export async function getSessionUser(): Promise<AppUser | null> {
+export const getSessionUser = cache(async (): Promise<AppUser | null> => {
   const store = await cookies();
   const token = store.get(JWT_COOKIE)?.value;
   if (!token) return null;
@@ -38,7 +39,7 @@ export async function getSessionUser(): Promise<AppUser | null> {
   if (!claims) return null;
 
   return getCaptainById(claims.sub) ?? getUserByEmail(claims.sub) ?? null;
-}
+});
 
 export async function signIn(email: string, password: string) {
   const user = await getUserWithPasswordByEmail(email);

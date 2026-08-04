@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { DataTable, Section } from "@/components/ui";
-import { getPlayersForTeam, getPublicEventBySlug, getTeamsForEvent } from "@/lib/platform/repository";
+import { getPlayersForTeams, getPublicEventBySlug, getTeamsForEvent } from "@/lib/platform/repository";
 
 export default async function ParticipantsPage({
   params,
@@ -13,12 +13,9 @@ export default async function ParticipantsPage({
   if (!event) notFound();
 
   const teams = await getTeamsForEvent(event.id);
-  const teamsWithPlayers = await Promise.all(
-    teams.map(async (team) => ({
-      ...team,
-      players: await getPlayersForTeam(team.id),
-    })),
-  );
+  const allPlayers = await getPlayersForTeams(teams.map((t) => t.id));
+  const playersByTeam = new Map(teams.map((t) => [t.id, allPlayers.filter((p) => p.teamId === t.id)]));
+  const teamsWithPlayers = teams.map((team) => ({ ...team, players: playersByTeam.get(team.id) ?? [] }));
 
   return (
     <Section title={`${event.name} participants`} description="Registered teams and current roster snapshot.">

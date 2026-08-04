@@ -12,7 +12,7 @@ export default async function LeaderboardsPage({
   const event = await getEventBySlug(slug);
   if (!event || event.status === "Draft") notFound();
 
-  const leaderboard = await getLeaderboardForEvent(event.id);
+  const leaderboard = await getLeaderboardForEvent(event.id, event.gameId);
 
   return (
     <Section title={`${event.name} player leaderboard`} description="Event-scoped aggregation of personal statistics.">

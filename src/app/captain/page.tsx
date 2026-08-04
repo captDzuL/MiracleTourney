@@ -10,7 +10,7 @@ import {
   getEvents,
   getGameForEvent,
   getModeForEvent,
-  getPlayersForTeam,
+  getPlayersForTeams,
 } from "@/lib/platform/repository";
 import type { Event, Game, GameMode, Player, Team } from "@/lib/platform/types";
 import { buttonStyles } from "@/components/ui";
@@ -20,9 +20,11 @@ export default async function CaptainPage() {
   if (!user) redirect("/login");
 
   const [teams, events] = await Promise.all([getCaptainTeams(user.id), getEvents()]);
-  const teamsWithPlayers = await Promise.all(
-    teams.map(async (team) => ({ team, players: await getPlayersForTeam(team.id) })),
-  );
+  const allPlayers = await getPlayersForTeams(teams.map((t) => t.id));
+  const teamsWithPlayers = teams.map((team) => ({
+    team,
+    players: allPlayers.filter((p) => p.teamId === team.id),
+  }));
 
   return (
     <div className="space-y-8">

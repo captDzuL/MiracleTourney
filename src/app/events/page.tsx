@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import Image from "next/image";
 import Link from "next/link";
 import { CalendarDays, Trophy, Users } from "lucide-react";
@@ -5,7 +6,7 @@ import { CalendarDays, Trophy, Users } from "lucide-react";
 import { Pill, Section } from "@/components/ui";
 import { getGameForEvent, getPublicEvents } from "@/lib/platform/repository";
 
-export const dynamic = "force-dynamic";
+const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });
 
 function getInitials(name: string) {
   return name
@@ -17,7 +18,7 @@ function getInitials(name: string) {
 }
 
 export default async function EventsPage() {
-  const events = await getPublicEvents();
+  const events = await getCachedPublicEvents();
 
   return (
     <Section

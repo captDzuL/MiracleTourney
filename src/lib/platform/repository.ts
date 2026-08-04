@@ -1,4 +1,5 @@
 ﻿import { randomBytes } from "node:crypto";
+import { cache } from "react";
 
 import bcrypt from "bcryptjs";
 
@@ -174,10 +175,10 @@ export async function getPublicEventBySlug(slug: string): Promise<Event | null> 
 
 // ── Teams ─────────────────────────────────────────────────────────────────────
 
-export async function getTeamsForEvent(eventId: string): Promise<Team[]> {
+export const getTeamsForEvent = cache(async (eventId: string): Promise<Team[]> => {
   const rows = await prisma.team.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
   return rows.map(mapTeam);
-}
+});
 
 export async function getCaptainTeams(userId: string | undefined): Promise<Team[]> {
   if (!userId) return [];
@@ -192,6 +193,15 @@ export async function getPlayersForTeam(teamId: string): Promise<Player[]> {
   return rows.map(mapPlayer);
 }
 
+export async function getPlayersForTeams(teamIds: string[]): Promise<Player[]> {
+  if (!teamIds.length) return [];
+  const rows = await prisma.player.findMany({
+    where: { teamId: { in: teamIds } },
+    orderBy: [{ teamId: "asc" }, { jerseyNumber: "asc" }],
+  });
+  return rows.map(mapPlayer);
+}
+
 export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
   const rows = await prisma.player.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
   return rows.map(mapPlayer);
@@ -199,10 +209,10 @@ export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
 
 // ── Matches ───────────────────────────────────────────────────────────────────
 
-export async function getMatchesForEvent(eventId: string): Promise<Match[]> {
+export const getMatchesForEvent = cache(async (eventId: string): Promise<Match[]> => {
   const rows = await prisma.match.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
   return rows.map(mapMatch);
-}
+});
 
 export async function isEventBracketLocked(eventId: string): Promise<boolean> {
   const event = await prisma.event.findUnique({ where: { id: eventId }, select: { format: true } });
@@ -337,11 +347,11 @@ export async function setMatchResult(input: {
 
 // ── Leaderboard / standings ───────────────────────────────────────────────────
 
-export async function getLeaderboardForEvent(eventId: string) {
-  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { gameId: true } });
-  if (!event) return [];
+export async function getLeaderboardForEvent(eventId: string, gameId?: string) {
+  const resolvedGameId = gameId ?? (await prisma.event.findUnique({ where: { id: eventId }, select: { gameId: true } }))?.gameId;
+  if (!resolvedGameId) return [];
 
-  const game = games.find((g) => g.id === event.gameId);
+  const game = games.find((g) => g.id === resolvedGameId);
   if (!game) return [];
 
   const metric = game.slug === "flashpeak" ? "goals" : "points";
@@ -387,8 +397,7 @@ export async function getBracketPreview(eventId: string) {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) return [];
 
-  const teams = await getTeamsForEvent(eventId);
-  const matches = await getMatchesForEvent(eventId);
+  const [teams, matches] = await Promise.all([getTeamsForEvent(eventId), getMatchesForEvent(eventId)]);
   const teamSeeds = teams.map((team) => ({ id: team.id, name: team.name }));
 
   if (event.format === "Single Elimination") {
@@ -406,8 +415,7 @@ export async function getPublicVisibleBracketPreview(eventId: string) {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event || event.format !== "Single Elimination") return getBracketPreview(eventId);
 
-  const teams = await getTeamsForEvent(eventId);
-  const matches = await getMatchesForEvent(eventId);
+  const [teams, matches] = await Promise.all([getTeamsForEvent(eventId), getMatchesForEvent(eventId)]);
   const teamSeeds = teams.map((team) => ({ id: team.id, name: team.name }));
   const slotCount = getBracketSlotCount(teams.length);
 
@@ -776,9 +784,9 @@ export async function upsertStatSubmission(input: {
 
 // ── Stat Submissions (admin) ──────────────────────────────────────────────────
 
-export async function getPendingStatSubmissionCount(): Promise<number> {
+export const getPendingStatSubmissionCount = cache(async (): Promise<number> => {
   return prisma.statSubmission.count({ where: { status: "pending" } });
-}
+});
 
 export type StatSubmissionRow = {
   id: string;

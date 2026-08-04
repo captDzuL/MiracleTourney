@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import Link from "next/link";
 import { CalendarDays, Trophy, Users } from "lucide-react";
 
@@ -5,7 +6,7 @@ import { getAllGames, getGameForEvent, getPublicEvents } from "@/lib/platform/re
 import type { Event, Game } from "@/lib/platform/types";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 
-export const dynamic = "force-dynamic";
+const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });
 
 
 function ctaLabel(event: Event) {
@@ -74,7 +75,7 @@ export default async function HomePage({
   const resolved = await searchParams;
   const gameFilter = resolved?.game ?? "all";
 
-  const [events, games] = await Promise.all([getPublicEvents(), Promise.resolve(getAllGames())]);
+  const [events, games] = await Promise.all([getCachedPublicEvents(), Promise.resolve(getAllGames())]);
 
   const filteredEvents =
     gameFilter === "all" ? events : events.filter((e) => e.gameId === gameFilter);
