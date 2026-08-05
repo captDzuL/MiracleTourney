@@ -380,7 +380,8 @@ export default async function AdminPage({
           </button>
         </form>
         <p className="mt-3 text-sm text-slate-400">
-          Required columns: <span className="mono">event_slug,team_name,team_tag,captain_name,captain_contact</span>
+          Required: <span className="mono">event_slug,team_name,team_tag,captain_name,captain_contact</span>
+          {" · "}Optional: <span className="mono">captain_email</span>
         </p>
         <a className="mt-3 inline-flex text-sm text-cyan-300 hover:text-cyan-200" href="/templates/team-import-template.csv">
           Download CSV template

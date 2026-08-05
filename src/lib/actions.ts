@@ -1,5 +1,6 @@
 "use server";
 
+import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -10,13 +11,17 @@ import {
   addPlayer,
   approveStatSubmission,
   createEvent,
+  deletePlayer,
   getImportSnapshot,
+  getUserPasswordHashById,
   importTeams,
   registerTeam,
   rejectStatSubmission,
   setEventStatus,
   setMatchResult,
+  updateCaptainPassword,
   updateEventStream,
+  updatePlayer,
   upsertStatSubmission,
 } from "@/lib/platform/repository";
 
@@ -73,6 +78,36 @@ export async function captainRegisterTeamAction(formData: FormData) {
   redirect("/captain?success=team-created");
 }
 
+export async function changePasswordAction(formData: FormData) {
+  const user = await requireCaptainSession();
+
+  const currentPassword = String(formData.get("currentPassword") ?? "");
+  const newPassword = String(formData.get("newPassword") ?? "");
+  const confirmPassword = String(formData.get("confirmPassword") ?? "");
+
+  const settingsError = (msg: string) =>
+    redirect(`/captain/settings?error=${encodeURIComponent(msg)}` as never);
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    settingsError("Semua field harus diisi.");
+  }
+  if (newPassword.length < 8) {
+    settingsError("Password baru minimal 8 karakter.");
+  }
+  if (newPassword !== confirmPassword) {
+    settingsError("Konfirmasi password tidak cocok.");
+  }
+
+  const currentHash = await getUserPasswordHashById(user.id);
+  if (!currentHash) settingsError("Terjadi kesalahan. Coba lagi.");
+
+  const valid = await bcrypt.compare(currentPassword, currentHash!);
+  if (!valid) settingsError("Password saat ini tidak tepat.");
+
+  await updateCaptainPassword(user.id, await bcrypt.hash(newPassword, 10));
+  redirect("/captain?success=password-changed");
+}
+
 export async function captainAddPlayerAction(formData: FormData) {
   await requireCaptainSession();
 
@@ -98,6 +133,47 @@ export async function captainAddPlayerAction(formData: FormData) {
 
   await addPlayer({ ...input, jerseyNumber });
   redirect("/captain?success=player-added");
+}
+
+export async function captainUpdatePlayerAction(formData: FormData) {
+  const user = await requireCaptainSession();
+
+  const id = z.string().min(1).parse(formData.get("playerId"));
+  const jerseyRaw = formData.get("jerseyNumber");
+  const jerseyNumber =
+    jerseyRaw && String(jerseyRaw).trim() !== ""
+      ? parseInt(String(jerseyRaw), 10)
+      : null;
+
+  const data = {
+    displayName: z.string().min(2).parse(formData.get("displayName")),
+    nickname: z.string().min(2).parse(formData.get("nickname")),
+    position: z.string().min(2).parse(formData.get("position")),
+    jerseyNumber: jerseyNumber ?? undefined,
+  };
+
+  try {
+    await updatePlayer(id, user.id, data);
+  } catch {
+    redirect("/captain?error=Tidak+dapat+mengedit+pemain+ini.");
+  }
+
+  revalidatePath("/captain");
+  redirect("/captain?success=player-updated");
+}
+
+export async function captainDeletePlayerAction(formData: FormData) {
+  const user = await requireCaptainSession();
+  const id = z.string().min(1).parse(formData.get("playerId"));
+
+  try {
+    await deletePlayer(id, user.id);
+  } catch {
+    redirect("/captain?error=Tidak+dapat+menghapus+pemain+ini.");
+  }
+
+  revalidatePath("/captain");
+  redirect("/captain?success=player-deleted");
 }
 
 export async function adminCreateEventAction(formData: FormData) {

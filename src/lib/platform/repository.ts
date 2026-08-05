@@ -115,7 +115,11 @@ function generateTempPassword(): string {
   return randomBytes(6).toString("base64url").slice(0, 8);
 }
 
-function generateCaptainEmail(tag: string, usedInBatch: Set<string>): string {
+function generateCaptainEmail(tag: string, usedInBatch: Set<string>, explicitEmail?: string): string {
+  if (explicitEmail) {
+    usedInBatch.add(explicitEmail);
+    return explicitEmail;
+  }
   let candidate = `${tag.toLowerCase()}@miraclefc.gg`;
   let n = 2;
   while (usedInBatch.has(candidate)) {
@@ -459,6 +463,23 @@ export async function getUserWithPasswordByEmail(email: string): Promise<(AppUse
   return { id: row.id, email: row.email, name: row.name, role: row.role as AppUser["role"], passwordHash: row.passwordHash };
 }
 
+export async function getUserPasswordHashById(userId: string): Promise<string | null> {
+  const row = await prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
+  return row?.passwordHash ?? null;
+}
+
+export async function hasTempPassword(userId: string): Promise<boolean> {
+  const row = await prisma.user.findUnique({ where: { id: userId }, select: { tempPassword: true } });
+  return row?.tempPassword != null;
+}
+
+export async function updateCaptainPassword(userId: string, newHash: string): Promise<void> {
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash: newHash, tempPassword: null },
+  });
+}
+
 // ── Import snapshot ───────────────────────────────────────────────────────────
 
 export async function getImportSnapshot() {
@@ -580,6 +601,7 @@ export async function importTeams(input: Array<{
   teamTag: string;
   captainName: string;
   captainContact: string;
+  captainEmail?: string;
 }>): Promise<Team[]> {
   const eventIds = [...new Set(input.map((row) => row.eventId))];
   await Promise.all(
@@ -598,7 +620,7 @@ export async function importTeams(input: Array<{
   const usedEmails = new Set<string>();
   const preparedRows = await Promise.all(
     input.map(async (row) => {
-      const email = generateCaptainEmail(row.teamTag, usedEmails);
+      const email = generateCaptainEmail(row.teamTag, usedEmails, row.captainEmail);
       const tempPassword = generateTempPassword();
       const passwordHash = await bcrypt.hash(tempPassword, 10);
       return { ...row, email, tempPassword, passwordHash };
@@ -653,6 +675,33 @@ export async function addPlayer(input: {
 }): Promise<Player> {
   const row = await prisma.player.create({ data: input });
   return mapPlayer(row);
+}
+
+export async function updatePlayer(
+  id: string,
+  captainUserId: string,
+  data: { displayName?: string; nickname?: string; position?: string; jerseyNumber?: number | null },
+): Promise<Player> {
+  const player = await prisma.player.findUnique({
+    where: { id },
+    include: { team: { select: { captainId: true } } },
+  });
+  if (!player || player.team.captainId !== captainUserId) {
+    throw new Error("Not authorized to edit this player.");
+  }
+  const row = await prisma.player.update({ where: { id }, data });
+  return mapPlayer(row);
+}
+
+export async function deletePlayer(id: string, captainUserId: string): Promise<void> {
+  const player = await prisma.player.findUnique({
+    where: { id },
+    include: { team: { select: { captainId: true } } },
+  });
+  if (!player || player.team.captainId !== captainUserId) {
+    throw new Error("Not authorized to delete this player.");
+  }
+  await prisma.player.delete({ where: { id } });
 }
 
 // ── Stat Submissions (captain) ────────────────────────────────────────────────

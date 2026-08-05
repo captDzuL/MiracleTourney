@@ -9,6 +9,7 @@ type ImportRow = {
   teamTag: string;
   captainName: string;
   captainContact: string;
+  captainEmail?: string;
 };
 
 type ImportSuccess = {
@@ -30,6 +31,8 @@ const REQUIRED_HEADERS = [
   "captain_name",
   "captain_contact",
 ] as const;
+
+const OPTIONAL_HEADERS = ["captain_email"] as const;
 
 function fail(message: string): ImportFailure {
   return { ok: false, message };
@@ -80,9 +83,15 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
 
   const headers = parseCsvLine(lines[0].replace(/^\uFEFF/, ""));
 
-  if (headers.length !== REQUIRED_HEADERS.length || headers.some((header, index) => header !== REQUIRED_HEADERS[index])) {
+  const hasOptionalEmail = headers.length === REQUIRED_HEADERS.length + 1 &&
+    headers[REQUIRED_HEADERS.length] === OPTIONAL_HEADERS[0];
+
+  if (
+    (headers.length !== REQUIRED_HEADERS.length && !hasOptionalEmail) ||
+    REQUIRED_HEADERS.some((h, i) => headers[i] !== h)
+  ) {
     return fail(
-      `CSV header must be exactly: ${REQUIRED_HEADERS.join(", ")}`,
+      `CSV header must start with: ${REQUIRED_HEADERS.join(", ")} (optional extra column: captain_email)`,
     );
   }
 
@@ -102,11 +111,13 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
     const rowNumber = index + 1;
     const values = parseCsvLine(lines[index]);
 
-    if (values.length !== REQUIRED_HEADERS.length) {
-      return fail(`Row ${rowNumber}: expected ${REQUIRED_HEADERS.length} columns, received ${values.length}.`);
+    const expectedColumns = hasOptionalEmail ? REQUIRED_HEADERS.length + 1 : REQUIRED_HEADERS.length;
+    if (values.length !== expectedColumns) {
+      return fail(`Row ${rowNumber}: expected ${expectedColumns} columns, received ${values.length}.`);
     }
 
-    const [eventSlug, teamName, teamTagRaw, captainName, captainContact] = values;
+    const [eventSlug, teamName, teamTagRaw, captainName, captainContact, captainEmailRaw] = values;
+    const captainEmail = captainEmailRaw?.trim() || undefined;
 
     if (!eventSlug) return fail(`Row ${rowNumber}: event_slug is required.`);
     if (!teamName) return fail(`Row ${rowNumber}: team_name is required.`);
@@ -153,6 +164,7 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
       teamTag,
       captainName,
       captainContact,
+      captainEmail,
     });
   }
 
