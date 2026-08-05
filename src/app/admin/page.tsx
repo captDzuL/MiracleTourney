@@ -11,7 +11,7 @@ import {
 } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import {
-  getBracketManageableMatches,
+  getBracketManageableMatchesForEvent,
   getEventBySlug,
   getEvents,
   getGameForEvent,
@@ -60,7 +60,7 @@ export default async function AdminPage({
   const manageableEventsRaw = await Promise.all(
     events.map(async (event) => ({
       event,
-      manageableMatches: await getBracketManageableMatches(event.id),
+      manageableMatches: await getBracketManageableMatchesForEvent(event),
     })),
   );
   const manageableEvents = manageableEventsRaw.filter(({ manageableMatches }) => manageableMatches.length > 0);
@@ -73,7 +73,7 @@ export default async function AdminPage({
   const [featuredMatches, featuredLeaderboard, pendingSubmissions, pendingCount] = featuredEvent
     ? await Promise.all([
         getMatchesForEvent(featuredEvent.id),
-        getLeaderboardForEvent(featuredEvent.id),
+        getLeaderboardForEvent(featuredEvent.id, featuredEvent.gameId),
         getPendingStatSubmissions(),
         getPendingStatSubmissionCount(),
       ])

@@ -23,13 +23,13 @@ function ctaHref(event: Event) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function EventCard({ event, game }: { event: Event; game: Game }) {
+function EventCard({ event, game, priority = false }: { event: Event; game: Game; priority?: boolean }) {
   const mode = game.id === "game-kuroko" ? "3v3" : "5v5";
 
   return (
     <article className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <div className="relative">
-        <GameArt gameId={event.gameId} logoUrl={event.logoUrl} entityName={event.name} />
+        <GameArt gameId={event.gameId} logoUrl={event.logoUrl} entityName={event.name} priority={priority} />
         <StatusBadge status={event.status} />
       </div>
 
@@ -142,8 +142,8 @@ export default async function HomePage({
       {/* Event grid */}
       {filteredEvents.length > 0 ? (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredEvents.map((event) => (
-            <EventCard key={event.id} event={event} game={getGameForEvent(event)} />
+          {filteredEvents.map((event, i) => (
+            <EventCard key={event.id} event={event} game={getGameForEvent(event)} priority={i === 0} />
           ))}
         </div>
       ) : (

@@ -11,7 +11,7 @@ import {
 import type { Match } from "@/lib/platform/types";
 import type { BracketMatch } from "@/lib/tournament/types";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 function getRoundName(
   round: number,
@@ -230,9 +230,12 @@ export default async function BracketPage({
   }
 
   const bracketMatches = items as BracketMatch[];
-  const fullBracket = event.format === "Single Elimination"
+  // For Ongoing/Finished events, getPublicVisibleBracketPreview already returns the full projected bracket.
+  // Only call getBracketPreview separately for pre-start events where public view shows fewer rounds.
+  const fullBracket = event.format === "Single Elimination" &&
+    event.status !== "Ongoing" && event.status !== "Finished"
     ? (await getBracketPreview(event.id) as BracketMatch[])
-    : [];
+    : bracketMatches;
   const totalRounds = Math.max(
     ...(event.format === "Single Elimination" ? fullBracket : bracketMatches).map((match) => match.round),
     1,

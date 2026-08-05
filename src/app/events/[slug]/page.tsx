@@ -28,7 +28,7 @@ export default async function EventDetailPage({
   const [teams, bracket, leaderboard] = await Promise.all([
     getTeamsForEvent(event.id),
     getBracketPreview(event.id),
-    getLeaderboardForEvent(event.id),
+    getLeaderboardForEvent(event.id, event.gameId),
   ]);
   const liveView = event.stream?.enabled ? getLiveStreamPresentation(event.stream.url) : null;
 

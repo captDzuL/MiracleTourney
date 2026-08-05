@@ -47,10 +47,12 @@ export function GameArt({
   gameId,
   logoUrl,
   entityName,
+  priority = false,
 }: {
   gameId: string;
   logoUrl?: string;
   entityName: string;
+  priority?: boolean;
 }) {
   const art = gameArtConfig[gameId] ?? gameArtConfig["game-kuroko"];
   const initials = getInitials(entityName) || "EV";
@@ -85,6 +87,8 @@ export function GameArt({
             alt={entityName}
             width={56}
             height={56}
+            sizes="56px"
+            priority={priority}
             className="h-14 w-14 rounded-xl border-2 border-white object-cover shadow-md"
           />
         ) : (
