@@ -17,6 +17,7 @@ import {
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
+  autoTransitionEventToOngoing,
   importTeams,
   registerTeam,
   rejectStatSubmission,
@@ -290,6 +291,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   }
 
   if (!match) redirect(`/admin?matchEventId=${matchEventId}&error=Match%20not%20found.` as never);
+  await autoTransitionEventToOngoing(input.eventId);
   revalidateTag("teams");
   revalidatePath("/", "layout");
   redirect(`/admin?matchEventId=${matchEventId}&success=match-result-updated` as never);
@@ -417,6 +419,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
     redirect(`/admin?matchEventId=${matchEventId}&error=${encodeURIComponent(message)}` as never);
   }
 
+  await autoTransitionEventToOngoing(matchEventId);
   revalidateTag("teams");
   revalidatePath("/", "layout");
   redirect(`/admin?matchEventId=${matchEventId}&success=match-games-saved` as never);

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { addPlayer, registerTeam, revalidatePath, revalidateTag, requireRole, setMatchResult } = vi.hoisted(() => ({
+const { addPlayer, autoTransitionEventToOngoing, registerTeam, revalidatePath, revalidateTag, requireRole, setMatchResult } = vi.hoisted(() => ({
   addPlayer: vi.fn(),
+  autoTransitionEventToOngoing: vi.fn(),
   registerTeam: vi.fn(),
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
@@ -17,7 +18,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/auth/session", () => ({ requireRole }));
 vi.mock("@/lib/imports/team-import", () => ({}));
-vi.mock("@/lib/platform/repository", () => ({ addPlayer, registerTeam, setMatchResult }));
+vi.mock("@/lib/platform/repository", () => ({ addPlayer, autoTransitionEventToOngoing, registerTeam, setMatchResult }));
 
 import {
   adminUpdateMatchResultAction,
@@ -110,6 +111,7 @@ describe("adminUpdateMatchResultAction", () => {
       "REDIRECT:/admin?matchEventId=event-kuroko-summer&success=match-result-updated",
     );
     expect(requireRole).toHaveBeenCalledWith("admin");
+    expect(autoTransitionEventToOngoing).toHaveBeenCalledWith("event-kuroko-summer");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 

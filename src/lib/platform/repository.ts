@@ -616,6 +616,13 @@ export async function setEventStatus(eventId: string, status: Event["status"]): 
   return mapEvent(row);
 }
 
+export async function autoTransitionEventToOngoing(eventId: string): Promise<void> {
+  await prisma.event.updateMany({
+    where: { id: eventId, status: { in: ["Published", "Registration Closed"] } },
+    data: { status: "Ongoing" },
+  });
+}
+
 export async function registerTeam(input: {
   eventId: string;
   captainId: string;
