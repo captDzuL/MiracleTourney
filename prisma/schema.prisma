@@ -20,8 +20,8 @@ model User {
 }
 
 model Event {
-  id                 String       @id @default(cuid())
-  slug               String       @unique
+  id                 String              @id @default(cuid())
+  slug               String              @unique
   name               String
   description        String
   logoUrl            String?
@@ -39,8 +39,9 @@ model Event {
   matches            Match[]
   players            Player[]
   statSubmissions    StatSubmission[]
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  roundConfigs       EventRoundConfig[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 }
 
 model EventStream {
@@ -102,8 +103,30 @@ model Match {
   scheduledLabel  String?
   playerStats     PlayerStat[]
   statSubmissions StatSubmission[]
+  games           MatchGame[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
+}
+
+model EventRoundConfig {
+  id         String   @id @default(cuid())
+  eventId    String
+  roundLabel String
+  bestOf     Int      @default(1)
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, roundLabel])
+}
+
+model MatchGame {
+  id         String   @id @default(cuid())
+  matchId    String
+  gameNumber Int
+  homeScore  Int
+  awayScore  Int
+  match      Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, gameNumber])
 }
 
 model PlayerStat {

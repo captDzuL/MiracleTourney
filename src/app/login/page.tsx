@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { loginAction } from "@/lib/actions";
 
 export default async function LoginPage({
@@ -55,6 +57,13 @@ export default async function LoginPage({
           Sign in
         </button>
       </form>
+
+      <p className="mt-6 text-center text-sm text-slate-400">
+        Belum punya akun?{" "}
+        <Link href={"/register" as never} className="text-cyan-400 hover:text-cyan-300">
+          Daftar di sini
+        </Link>
+      </p>
     </div>
   );
 }

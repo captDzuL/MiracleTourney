@@ -16,6 +16,7 @@ vi.mock("@/lib/platform/repository", async () => {
     getPublicVisibleBracketPreview: (eventId: string) => Promise.resolve(store.getPublicVisibleBracketPreview(eventId)),
     getMatchesForEvent: (eventId: string) => Promise.resolve(store.getMatchesForEvent(eventId)),
     getBracketPreview: (eventId: string) => Promise.resolve(store.getBracketPreview(eventId)),
+    getEventRoundConfigs: () => Promise.resolve([]),
   };
 });
 

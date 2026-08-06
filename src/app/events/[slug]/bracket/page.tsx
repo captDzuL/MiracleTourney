@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { DataTable, Pill, Section } from "@/components/ui";
 import {
+  getEventRoundConfigs,
   getMatchesForEvent,
   getBracketPreview,
   getPublicEventBySlug,
@@ -43,23 +44,11 @@ function buildRecordedMatchLookup(matches: Match[]) {
   return lookup;
 }
 
-function isRecordedForMatch(
-  match: Pick<BracketMatch, "homeTeamId" | "awayTeamId">,
-  recorded: Match | undefined,
-) {
-  return Boolean(
-    recorded &&
-      match.homeTeamId &&
-      match.awayTeamId &&
-      match.homeTeamId === recorded.homeTeamId &&
-      match.awayTeamId === recorded.awayTeamId,
-  );
-}
-
 function getBracketMatchState(
   match: BracketMatch,
   eventStartsAt: string,
   recordedMatches: Map<string, Match>,
+  roundConfigMap: Map<string, number>,
 ) {
   if (match.byeForTeamId) {
     return {
@@ -70,11 +59,36 @@ function getBracketMatchState(
   }
 
   const candidate = recordedMatches.get(`${match.round}:${match.slot}`);
-  const recorded = isRecordedForMatch(match, candidate) ? candidate : undefined;
+
+  // Verify that the recorded match's teams match the projected teams — required to guard
+  // against showing stale scores when the projection has TBD or different teams at this
+  // slot. Also accept the swapped order to handle non-deterministic home/away assignment
+  // that can occur when team cache ordering changes between requests.
+  const teamsExact =
+    candidate &&
+    match.homeTeamId &&
+    match.awayTeamId &&
+    candidate.homeTeamId === match.homeTeamId &&
+    candidate.awayTeamId === match.awayTeamId;
+  const teamsSwapped =
+    !teamsExact &&
+    candidate &&
+    match.homeTeamId &&
+    match.awayTeamId &&
+    candidate.homeTeamId === match.awayTeamId &&
+    candidate.awayTeamId === match.homeTeamId;
+  const recorded = (teamsExact || teamsSwapped) ? candidate : undefined;
 
   if (recorded?.status === "Completed") {
+    const bestOf = roundConfigMap.get(recorded.roundLabel) ?? 1;
+    const homeScore = teamsSwapped ? recorded.awayScore : recorded.homeScore;
+    const awayScore = teamsSwapped ? recorded.homeScore : recorded.awayScore;
+    const scoreLabel =
+      bestOf > 1
+        ? `${homeScore} - ${awayScore} (BO${bestOf})`
+        : `${homeScore} - ${awayScore}`;
     return {
-      status: `${recorded.homeScore} - ${recorded.awayScore}`,
+      status: scoreLabel,
       schedule: recorded.roundLabel,
       tone: "default" as const,
     };
@@ -100,7 +114,14 @@ function getLeagueMatchState(
   eventStartsAt: string,
   recordedMatches: Match[],
 ) {
-  const recorded = recordedMatches.find((candidate) => isRecordedForMatch(match, candidate));
+  const recorded = recordedMatches.find(
+    (candidate) =>
+      candidate &&
+      match.homeTeamId &&
+      match.awayTeamId &&
+      candidate.homeTeamId === match.homeTeamId &&
+      candidate.awayTeamId === match.awayTeamId,
+  );
 
   if (recorded?.status === "Completed") {
     return {
@@ -140,6 +161,7 @@ function MatchCard({
   eventStartsAt,
   recordedByRound,
   teamLookup,
+  roundConfigMap,
   connect,
 }: {
   match: BracketMatch;
@@ -148,9 +170,10 @@ function MatchCard({
   eventStartsAt: string;
   recordedByRound: Map<string, Match>;
   teamLookup: Map<string, string>;
+  roundConfigMap: Map<string, number>;
   connect: boolean;
 }) {
-  const state = getBracketMatchState(match, eventStartsAt, recordedByRound);
+  const state = getBracketMatchState(match, eventStartsAt, recordedByRound, roundConfigMap);
   const homeName = renderTeamName(teamLookup, match.homeTeamId, "TBD");
   const awayName = renderTeamName(teamLookup, match.awayTeamId, match.byeForTeamId ? "BYE" : "TBD");
 
@@ -197,11 +220,13 @@ export default async function BracketPage({
   const event = await getPublicEventBySlug(slug);
   if (!event) notFound();
 
-  const [teams, items, recordedMatches] = await Promise.all([
+  const [teams, items, recordedMatches, roundConfigs] = await Promise.all([
     getTeamsForEvent(event.id),
     getPublicVisibleBracketPreview(event.id),
     getMatchesForEvent(event.id),
+    getEventRoundConfigs(event.id),
   ]);
+  const roundConfigMap = new Map(roundConfigs.map((c) => [c.roundLabel, c.bestOf]));
   const teamLookup = new Map(teams.map((team) => [team.id, team.name]));
 
   if (event.format === "League") {
@@ -249,6 +274,16 @@ export default async function BracketPage({
     bracketMatches.filter((match) => match.round === round),
   );
   const recordedByRound = buildRecordedMatchLookup(recordedMatches);
+
+  // Build a set of child-pair keys → parent match IDs among VISIBLE matches only.
+  // A pair [A, B] has a visible parent when a visible round-N+1 match lists both
+  // A.id and B.id in its sourceMatchIds.  Used to suppress tree-line connectors
+  // for pairs whose parent is hidden (e.g. a round-2 slot that awaits a real match).
+  const visibleParentPairs = new Set<string>();
+  for (const match of bracketMatches) {
+    const [left, right] = match.sourceMatchIds ?? [];
+    if (left && right) visibleParentPairs.add([left, right].sort().join("|"));
+  }
 
   return (
     <div className="space-y-6">
@@ -318,25 +353,30 @@ export default async function BracketPage({
                       style={{ paddingTop: `${roundIndex * 2.5}rem`, paddingBottom: `${roundIndex * 2.5}rem` }}
                     >
                       {hasNextRound
-                        ? chunkIntoPairs(roundMatches).map((pair, pairIndex) => (
-                            <div
-                              key={`pair-${roundIndex}-${pairIndex}`}
-                              className="bracket-pair flex flex-1 flex-col justify-around gap-4"
-                            >
-                              {pair.map((match) => (
-                                <MatchCard
-                                  key={match.id}
-                                  match={match}
-                                  totalRounds={totalRounds}
-                                  playInRound={playInRound}
-                                  eventStartsAt={event.startsAt}
-                                  recordedByRound={recordedByRound}
-                                  teamLookup={teamLookup}
-                                  connect
-                                />
-                              ))}
-                            </div>
-                          ))
+                        ? chunkIntoPairs(roundMatches).map((pair, pairIndex) => {
+                            const pairKey = pair.map((m) => m.id).sort().join("|");
+                            const hasVisibleParent = pair.length === 2 && visibleParentPairs.has(pairKey);
+                            return (
+                              <div
+                                key={`pair-${roundIndex}-${pairIndex}`}
+                                className={`${hasVisibleParent ? "bracket-pair" : ""} flex flex-1 flex-col justify-around gap-4`}
+                              >
+                                {pair.map((match) => (
+                                  <MatchCard
+                                    key={match.id}
+                                    match={match}
+                                    totalRounds={totalRounds}
+                                    playInRound={playInRound}
+                                    eventStartsAt={event.startsAt}
+                                    recordedByRound={recordedByRound}
+                                    teamLookup={teamLookup}
+                                    roundConfigMap={roundConfigMap}
+                                    connect={hasVisibleParent}
+                                  />
+                                ))}
+                              </div>
+                            );
+                          })
                         : roundMatches.map((match) => (
                             <MatchCard
                               key={match.id}
@@ -346,6 +386,7 @@ export default async function BracketPage({
                               eventStartsAt={event.startsAt}
                               recordedByRound={recordedByRound}
                               teamLookup={teamLookup}
+                              roundConfigMap={roundConfigMap}
                               connect={false}
                             />
                           ))}
@@ -367,7 +408,7 @@ export default async function BracketPage({
         <DataTable
           columns={["Round", "Match", "Teams", "Status", "Schedule"]}
           rows={bracketMatches.map((match) => {
-            const state = getBracketMatchState(match, event.startsAt, recordedByRound);
+            const state = getBracketMatchState(match, event.startsAt, recordedByRound, roundConfigMap);
 
             return [
               getRoundName(match.round, totalRounds, { playInRound }),

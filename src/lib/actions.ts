@@ -1,7 +1,7 @@
 "use server";
 
 import bcrypt from "bcryptjs";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -10,18 +10,23 @@ import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import {
   addPlayer,
   approveStatSubmission,
+  createCaptainWithTeam,
   createEvent,
   deletePlayer,
   getImportSnapshot,
+  getPublishedEvents,
+  getUserByEmail,
   getUserPasswordHashById,
   importTeams,
   registerTeam,
   rejectStatSubmission,
   setEventStatus,
+  setMatchGames,
   setMatchResult,
   updateCaptainPassword,
   updateEventStream,
   updatePlayer,
+  upsertRoundConfig,
   upsertStatSubmission,
 } from "@/lib/platform/repository";
 
@@ -43,6 +48,46 @@ async function requireCaptainSession() {
   }
 
   return user;
+}
+
+export async function captainSignUpAction(formData: FormData) {
+  const signUpError = (msg: string) =>
+    redirect(`/register?error=${encodeURIComponent(msg)}` as never);
+
+  const fullName = String(formData.get("fullName") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const teamName = String(formData.get("teamName") ?? "").trim();
+  const teamTag = String(formData.get("teamTag") ?? "").trim().toUpperCase();
+
+  if (!fullName || fullName.length < 2) signUpError("Nama lengkap minimal 2 karakter.");
+  if (!z.string().email().safeParse(email).success) signUpError("Format email tidak valid.");
+  if (password.length < 8) signUpError("Password minimal 8 karakter.");
+  if (!eventId) signUpError("Pilih event terlebih dahulu.");
+  if (teamName.length < 2) signUpError("Nama tim minimal 2 karakter.");
+  if (teamTag.length < 2 || teamTag.length > 4) signUpError("Tag tim harus 2-4 karakter.");
+
+  const existingUser = await getUserByEmail(email);
+  if (existingUser) signUpError("Email ini sudah terdaftar. Coba login.");
+
+  const publishedEvents = await getPublishedEvents();
+  if (!publishedEvents.find((e) => e.id === eventId)) signUpError("Event tidak valid atau sudah tidak tersedia.");
+
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  try {
+    await createCaptainWithTeam({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Gagal membuat akun.";
+    if (msg.includes("Unique constraint")) signUpError("Tag atau nama tim sudah digunakan di event ini.");
+    signUpError(msg);
+  }
+
+  const result = await signIn(email, password);
+  if (!result.ok) signUpError("Akun berhasil dibuat, tapi login gagal. Silakan login manual.");
+
+  redirect("/captain?success=registered" as never);
 }
 
 export async function loginAction(formData: FormData) {
@@ -222,6 +267,7 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
 export async function adminUpdateMatchResultAction(formData: FormData) {
   await requireAdminSession();
 
+  const matchEventId = z.string().min(1).parse(formData.get("matchEventId"));
   const input = z.object({
     eventId: z.string().min(1),
     matchId: z.string().min(1),
@@ -240,12 +286,13 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
     match = await setMatchResult(input);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save match result.";
-    redirect(`/admin?error=${encodeURIComponent(message)}`);
+    redirect(`/admin?matchEventId=${matchEventId}&error=${encodeURIComponent(message)}` as never);
   }
 
-  if (!match) redirect("/admin?error=Match%20not%20found.");
+  if (!match) redirect(`/admin?matchEventId=${matchEventId}&error=Match%20not%20found.` as never);
+  revalidateTag("teams");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=match-result-updated&match=${match.id}`);
+  redirect(`/admin?matchEventId=${matchEventId}&success=match-result-updated` as never);
 }
 
 export async function adminImportTeamsCsvAction(formData: FormData) {
@@ -324,4 +371,53 @@ export async function adminRejectStatAction(formData: FormData) {
   await rejectStatSubmission(submissionId, user.id, note);
   revalidatePath("/", "layout");
   redirect("/admin?success=stat-rejected");
+}
+
+export async function adminSetRoundConfigAction(formData: FormData) {
+  await requireAdminSession();
+
+  const input = z.object({
+    eventId: z.string().min(1),
+    roundLabel: z.string().min(1),
+    bestOf: z.coerce.number().int().refine((n) => [1, 3, 5].includes(n), { message: "bestOf must be 1, 3, or 5" }),
+  }).parse({
+    eventId: formData.get("eventId"),
+    roundLabel: formData.get("roundLabel"),
+    bestOf: formData.get("bestOf"),
+  });
+
+  await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
+  revalidatePath("/", "layout");
+  redirect(`/admin?matchEventId=${input.eventId}&success=round-config-saved` as never);
+}
+
+export async function adminSetMatchGamesAction(formData: FormData) {
+  await requireAdminSession();
+
+  const matchId = z.string().min(1).parse(formData.get("matchId"));
+  const matchEventId = z.string().min(1).parse(formData.get("matchEventId"));
+  const bestOf = z.coerce.number().int().min(1).max(5).parse(formData.get("bestOf"));
+
+  const games: { gameNumber: number; homeScore: number; awayScore: number }[] = [];
+  for (let i = 1; i <= bestOf; i++) {
+    const homeRaw = formData.get(`game${i}_home`);
+    const awayRaw = formData.get(`game${i}_away`);
+    if (homeRaw === null || homeRaw === "" || awayRaw === null || awayRaw === "") continue;
+    const homeScore = z.coerce.number().int().min(0).parse(homeRaw);
+    const awayScore = z.coerce.number().int().min(0).parse(awayRaw);
+    games.push({ gameNumber: i, homeScore, awayScore });
+  }
+
+  if (games.length === 0) redirect(`/admin?matchEventId=${matchEventId}&error=Masukkan+skor+minimal+1+game.` as never);
+
+  try {
+    await setMatchGames(matchId, matchEventId, games, bestOf);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to save match games.";
+    redirect(`/admin?matchEventId=${matchEventId}&error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidateTag("teams");
+  revalidatePath("/", "layout");
+  redirect(`/admin?matchEventId=${matchEventId}&success=match-games-saved` as never);
 }

@@ -16,7 +16,7 @@ describe("admin action buttons", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
 
     expect(source).toContain("Match operations");
-    expect(source).toContain("Save match result");
+    expect(source).toContain("Simpan hasil match");
     expect(source).toContain("homeScore");
     expect(source).toContain("awayScore");
   });
@@ -27,6 +27,6 @@ describe("admin action buttons", () => {
     expect(source).toContain("manageableEvents");
     expect(source).toContain("selectedManageableEventId");
     expect(source).toContain('name="eventId"');
-    expect(source).toContain("Choose event");
+    expect(source).toContain("Ganti event");
   });
 });

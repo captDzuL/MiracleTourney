@@ -5,6 +5,8 @@ import {
   adminCreateEventAction,
   adminImportTeamsCsvAction,
   adminRejectStatAction,
+  adminSetMatchGamesAction,
+  adminSetRoundConfigAction,
   adminUpdateEventStatusAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
@@ -13,11 +15,13 @@ import { requireRole } from "@/lib/auth/session";
 import {
   getBracketManageableMatchesForEvent,
   getEventBySlug,
+  getEventRoundConfigs,
   getEvents,
   getGameForEvent,
   getGameModes,
   getImportedTeams,
   getLeaderboardForEvent,
+  getMatchGames,
   getMatchesForEvent,
   getPendingStatSubmissionCount,
   getPendingStatSubmissions,
@@ -32,6 +36,7 @@ type AdminSearchParams = {
   error?: string;
   count?: string;
   matchEventId?: string;
+  matchId?: string;
 };
 
 export default async function AdminPage({
@@ -63,7 +68,12 @@ export default async function AdminPage({
       manageableMatches: await getBracketManageableMatchesForEvent(event),
     })),
   );
-  const manageableEvents = manageableEventsRaw.filter(({ manageableMatches }) => manageableMatches.length > 0);
+  const manageableEvents = manageableEventsRaw
+    .map(({ event, manageableMatches }) => ({
+      event,
+      manageableMatches: manageableMatches.filter((m) => m.status !== "Completed"),
+    }))
+    .filter(({ manageableMatches }) => manageableMatches.length > 0);
   const selectedManageableEventId =
     manageableEvents.find(({ event }) => event.id === resolvedSearchParams?.matchEventId)?.event.id
     ?? manageableEvents[0]?.event.id;
@@ -92,6 +102,18 @@ export default async function AdminPage({
     .reverse();
 
   const importedEventIds = new Set(importedTeamsRaw.map((t) => t.eventId));
+
+  // Best of N data
+  const selectedMatchId = resolvedSearchParams?.matchId;
+  const [roundConfigs, selectedMatchGames] = await Promise.all([
+    selectedManageableEvent ? getEventRoundConfigs(selectedManageableEvent.event.id) : Promise.resolve([]),
+    selectedMatchId ? getMatchGames(selectedMatchId) : Promise.resolve([]),
+  ]);
+  const roundConfigMap = new Map(roundConfigs.map((c) => [c.roundLabel, c.bestOf]));
+  const selectedMatch = selectedMatchId
+    ? manageableMatches.find((m) => m.id === selectedMatchId)
+    : undefined;
+  const selectedMatchBestOf = selectedMatch ? (roundConfigMap.get(selectedMatch.roundLabel) ?? 1) : 1;
 
   return (
     <div className="space-y-6">
@@ -130,7 +152,7 @@ export default async function AdminPage({
         </div>
       </Section>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-2">
         <Section className="h-full" title="Create event" description="Admin event bootstrap for one game mode at a time.">
           <form action={adminCreateEventAction} className="grid h-full content-start gap-4">
             <label className="grid gap-2 text-sm text-slate-300">
@@ -283,86 +305,230 @@ export default async function AdminPage({
           )}
         </Section>
 
-        <Section
-          className="h-full"
-          title="Match operations"
-          description="Record match outcomes and drive bracket advancement from the admin panel."
-        >
-          {selectedManageableEvent ? (
-            <div className="grid h-full content-start gap-4">
-              <form action="/admin" className="grid gap-4">
-                <label className="grid gap-2 text-sm text-slate-300">
-                  Choose event
-                  <select
-                    className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                    name="matchEventId"
-                    defaultValue={selectedManageableEvent.event.id}
-                  >
-                    {manageableEvents.map(({ event, manageableMatches: eventMatches }) => (
-                      <option key={event.id} value={event.id}>
-                        {event.name} · {eventMatches.length} manageable matches
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button className={`${buttonStyles.secondary} w-full sm:w-auto`} type="submit">
-                  Load event matches
-                </button>
-              </form>
-
-              <form action={adminUpdateMatchResultAction} className="grid gap-4">
-                <input type="hidden" name="eventId" value={selectedManageableEvent.event.id} />
-                <p className="text-sm text-slate-300">
-                  Event: <span className="font-medium text-white">{selectedManageableEvent.event.name}</span>
-                </p>
-                <label className="grid gap-2 text-sm text-slate-300">
-                  Match
-                  <select
-                    className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                    name="matchId"
-                    defaultValue={manageableMatches[0]?.id}
-                  >
-                    {manageableMatches.map((match) => (
-                      <option key={match.id} value={match.id}>
-                        {match.roundLabel} · Match {match.slot} · {teamName(match.homeTeamId)} vs {teamName(match.awayTeamId)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="grid gap-2 text-sm text-slate-300">
-                    Home score
-                    <input
-                      className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                      name="homeScore"
-                      type="number"
-                      min="0"
-                      defaultValue="0"
-                    />
-                  </label>
-                  <label className="grid gap-2 text-sm text-slate-300">
-                    Away score
-                    <input
-                      className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                      name="awayScore"
-                      type="number"
-                      min="0"
-                      defaultValue="0"
-                    />
-                  </label>
-                </div>
-                <div className="pt-2">
-                  <button className={`${buttonStyles.secondary} w-full sm:w-auto`} type="submit">
-                    Save match result
-                  </button>
-                </div>
-              </form>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400">Create a bracket event with manageable matches first.</p>
-          )}
-        </Section>
       </div>
+
+      {/* Match operations — full-width, two-step: pick match, then enter result */}
+      <Section
+        title="Match operations"
+        description="Pilih match dari list, lalu masukkan hasil sesuai format (langsung untuk BO1, per-game untuk BO3/BO5)."
+      >
+        {selectedManageableEvent ? (
+          <div className="grid gap-6">
+            {/* Event selector */}
+            <form action="/admin" className="flex flex-wrap items-end gap-3">
+              <label className="grid gap-2 text-sm text-slate-300">
+                Event
+                <select
+                  className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
+                  name="matchEventId"
+                  defaultValue={selectedManageableEvent.event.id}
+                >
+                  {manageableEvents.map(({ event, manageableMatches: eventMatches }) => (
+                    <option key={event.id} value={event.id}>
+                      {event.name} · {eventMatches.length} match tersisa
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className={buttonStyles.secondary} type="submit">
+                Ganti event
+              </button>
+            </form>
+
+            {/* Match list — semua match yang belum selesai, klik untuk pilih */}
+            <div className="grid gap-3">
+              <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                {selectedManageableEvent.event.name} · {manageableMatches.length} match tersisa
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {manageableMatches.map((match) => {
+                  const bo = roundConfigMap.get(match.roundLabel) ?? 1;
+                  const isSelected = selectedMatch?.id === match.id;
+                  return (
+                    <a
+                      key={match.id}
+                      href={`/admin?matchEventId=${selectedManageableEvent.event.id}&matchId=${match.id}`}
+                      className={`group flex flex-col gap-1 rounded-2xl border px-4 py-3 transition ${
+                        isSelected
+                          ? "border-cyan-400/40 bg-cyan-500/10"
+                          : "border-white/10 hover:border-white/20 hover:bg-white/5"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-xs font-semibold uppercase tracking-widest ${isSelected ? "text-cyan-400" : "text-slate-500"}`}>
+                          {match.roundLabel} · Match {match.slot}
+                        </span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${bo > 1 ? "bg-amber-500/20 text-amber-300" : "bg-slate-700 text-slate-400"}`}>
+                          BO{bo}
+                        </span>
+                      </div>
+                      <span className={`text-sm font-medium ${isSelected ? "text-white" : "text-slate-300 group-hover:text-white"}`}>
+                        {teamName(match.homeTeamId)} <span className="text-slate-500">vs</span> {teamName(match.awayTeamId)}
+                      </span>
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Result entry — muncul setelah match dipilih */}
+            {selectedMatch ? (
+              <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
+                {/* Header match yang dipilih */}
+                <div className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                      {selectedMatch.roundLabel} · Match {selectedMatch.slot}
+                    </p>
+                    <p className="mt-1 text-base font-semibold text-white">
+                      {teamName(selectedMatch.homeTeamId)}{" "}
+                      <span className="text-slate-400">vs</span>{" "}
+                      {teamName(selectedMatch.awayTeamId)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`rounded-full px-3 py-1 text-sm font-semibold ${selectedMatchBestOf > 1 ? "bg-amber-500/20 text-amber-300" : "bg-slate-700 text-slate-300"}`}>
+                      Best of {selectedMatchBestOf}
+                    </span>
+                    <a
+                      href={`/admin?matchEventId=${selectedManageableEvent.event.id}`}
+                      className="text-sm text-slate-500 hover:text-slate-300"
+                    >
+                      ✕ Batal
+                    </a>
+                  </div>
+                </div>
+
+                {/* BO1: langsung masukkan skor */}
+                {selectedMatchBestOf === 1 && (
+                  <form action={adminUpdateMatchResultAction} className="grid gap-4">
+                    <input type="hidden" name="eventId" value={selectedManageableEvent.event.id} />
+                    <input type="hidden" name="matchEventId" value={selectedManageableEvent.event.id} />
+                    <input type="hidden" name="matchId" value={selectedMatch.id} />
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="grid gap-2 text-sm text-slate-300">
+                        {teamName(selectedMatch.homeTeamId)} (Home)
+                        <input
+                          className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-lg font-semibold"
+                          name="homeScore"
+                          type="number"
+                          min="0"
+                          defaultValue="0"
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm text-slate-300">
+                        {teamName(selectedMatch.awayTeamId)} (Away)
+                        <input
+                          className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-lg font-semibold"
+                          name="awayScore"
+                          type="number"
+                          min="0"
+                          defaultValue="0"
+                        />
+                      </label>
+                    </div>
+                    <div className="pt-1">
+                      <button className={buttonStyles.primary} type="submit">
+                        Simpan hasil match
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* BO3/BO5: per-game entry */}
+                {selectedMatchBestOf > 1 && (
+                  <form action={adminSetMatchGamesAction} className="grid gap-4">
+                    <input type="hidden" name="matchId" value={selectedMatch.id} />
+                    <input type="hidden" name="matchEventId" value={selectedManageableEvent.event.id} />
+                    <input type="hidden" name="bestOf" value={selectedMatchBestOf} />
+                    <div className="grid gap-3">
+                      {/* Column headers */}
+                      <div className="grid grid-cols-[3rem_1fr_1fr] gap-3">
+                        <div />
+                        <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{teamName(selectedMatch.homeTeamId)}</p>
+                        <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{teamName(selectedMatch.awayTeamId)}</p>
+                      </div>
+                      {Array.from({ length: selectedMatchBestOf }, (_, i) => {
+                        const gameNum = i + 1;
+                        const existingGame = selectedMatchGames.find((g) => g.gameNumber === gameNum);
+                        return (
+                          <div key={gameNum} className="grid grid-cols-[3rem_1fr_1fr] items-center gap-3">
+                            <p className="text-xs font-semibold text-slate-500">G{gameNum}</p>
+                            <input
+                              className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-2.5 text-center text-base font-semibold"
+                              name={`game${gameNum}_home`}
+                              type="number"
+                              min="0"
+                              defaultValue={existingGame?.homeScore ?? ""}
+                              placeholder="—"
+                            />
+                            <input
+                              className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-2.5 text-center text-base font-semibold"
+                              name={`game${gameNum}_away`}
+                              type="number"
+                              min="0"
+                              defaultValue={existingGame?.awayScore ?? ""}
+                              placeholder="—"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="pt-1">
+                      <button className={buttonStyles.primary} type="submit">
+                        Simpan hasil games
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">← Pilih match di atas untuk memasukkan hasilnya.</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">Belum ada bracket event dengan match yang perlu dikelola.</p>
+        )}
+      </Section>
+
+      {/* Best of N round configuration */}
+      {selectedManageableEvent && (() => {
+        const distinctRoundLabels = [...new Set(selectedManageableEvent.manageableMatches.map((m) => m.roundLabel))];
+        if (distinctRoundLabels.length === 0) return null;
+        return (
+          <Section
+            title="Best of N Configuration"
+            description={`Configure how many games per round for ${selectedManageableEvent.event.name}. Default is Best of 1.`}
+          >
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {distinctRoundLabels.map((label) => {
+                const currentBestOf = roundConfigMap.get(label) ?? 1;
+                return (
+                  <form key={label} action={adminSetRoundConfigAction} className="grid gap-2">
+                    <input type="hidden" name="eventId" value={selectedManageableEvent.event.id} />
+                    <input type="hidden" name="roundLabel" value={label} />
+                    <label className="grid gap-2 text-sm text-slate-300">
+                      {label}
+                      <select
+                        name="bestOf"
+                        defaultValue={currentBestOf}
+                        className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
+                      >
+                        <option value="1">Best of 1</option>
+                        <option value="3">Best of 3</option>
+                        <option value="5">Best of 5</option>
+                      </select>
+                    </label>
+                    <button className={`${buttonStyles.secondary} w-full`} type="submit">
+                      Save
+                    </button>
+                  </form>
+                );
+              })}
+            </div>
+          </Section>
+        );
+      })()}
 
       <Section title="Import teams from CSV" description="One row = one team. Use an existing event_slug and import team + PIC data only.">
         <form action={adminImportTeamsCsvAction} className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">

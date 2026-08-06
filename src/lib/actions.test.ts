@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { addPlayer, registerTeam, revalidatePath, requireRole, setMatchResult } = vi.hoisted(() => ({
+const { addPlayer, registerTeam, revalidatePath, revalidateTag, requireRole, setMatchResult } = vi.hoisted(() => ({
   addPlayer: vi.fn(),
   registerTeam: vi.fn(),
   revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
   requireRole: vi.fn(),
   setMatchResult: vi.fn(),
 }));
 
-vi.mock("next/cache", () => ({ revalidatePath }));
+vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
 vi.mock("next/navigation", () => ({
   redirect: (url: string): never => {
     throw new Error(`REDIRECT:${url}`);
@@ -27,6 +28,7 @@ import {
 function resultFormData() {
   const formData = new FormData();
   formData.set("eventId", "event-kuroko-summer");
+  formData.set("matchEventId", "event-kuroko-summer");
   formData.set("matchId", "match-kuroko-1");
   formData.set("homeScore", "21");
   formData.set("awayScore", "18");
@@ -105,7 +107,7 @@ describe("adminUpdateMatchResultAction", () => {
     setMatchResult.mockReturnValue({ id: "match-kuroko-1" });
 
     await expect(adminUpdateMatchResultAction(resultFormData())).rejects.toThrow(
-      "REDIRECT:/admin?success=match-result-updated&match=match-kuroko-1",
+      "REDIRECT:/admin?matchEventId=event-kuroko-summer&success=match-result-updated",
     );
     expect(requireRole).toHaveBeenCalledWith("admin");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
@@ -115,7 +117,7 @@ describe("adminUpdateMatchResultAction", () => {
     setMatchResult.mockReturnValue(null);
 
     await expect(adminUpdateMatchResultAction(resultFormData())).rejects.toThrow(
-      "REDIRECT:/admin?error=Match%20not%20found.",
+      "REDIRECT:/admin?matchEventId=event-kuroko-summer&error=Match%20not%20found.",
     );
   });
 });

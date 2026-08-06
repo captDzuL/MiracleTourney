@@ -5,7 +5,7 @@ import { unstable_cache } from "next/cache";
 import bcrypt from "bcryptjs";
 
 import { games, gameModes } from "@/lib/platform/config";
-import type { AppUser, Event, EventStatus, EventStream, Match, Player, Team, TournamentFormat } from "@/lib/platform/types";
+import type { AppUser, Event, EventRoundConfig, EventStatus, EventStream, Match, MatchGame, Player, Team, TournamentFormat } from "@/lib/platform/types";
 import {
   aggregatePlayerLeaderboard,
   buildLeagueStandings,
@@ -165,6 +165,15 @@ export async function getPublicEvents(): Promise<Event[]> {
   return rows.map(mapEvent);
 }
 
+export async function getPublishedEvents(): Promise<Event[]> {
+  const rows = await prisma.event.findMany({
+    where: { status: "Published" },
+    include: { stream: true },
+    orderBy: { startsAt: "asc" },
+  });
+  return rows.map(mapEvent);
+}
+
 export async function getEventBySlug(slug: string): Promise<Event | null> {
   const row = await prisma.event.findUnique({ where: { slug }, include: { stream: true } });
   return row ? mapEvent(row) : null;
@@ -189,7 +198,7 @@ export const getPublicEventBySlug = cache(
 export const getTeamsForEvent = cache(
   unstable_cache(
     async (eventId: string): Promise<Team[]> => {
-      const rows = await prisma.team.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
+      const rows = await prisma.team.findMany({ where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
       return rows.map(mapTeam);
     },
     ["teams-for-event"],
@@ -227,14 +236,10 @@ export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
 // ── Matches ───────────────────────────────────────────────────────────────────
 
 export const getMatchesForEvent = cache(
-  unstable_cache(
-    async (eventId: string): Promise<Match[]> => {
-      const rows = await prisma.match.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
-      return rows.map(mapMatch);
-    },
-    ["matches-for-event"],
-    { revalidate: 30, tags: ["matches"] },
-  ),
+  async (eventId: string): Promise<Match[]> => {
+    const rows = await prisma.match.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
+    return rows.map(mapMatch);
+  },
 );
 
 export async function isEventBracketLocked(eventId: string): Promise<boolean> {
@@ -271,14 +276,20 @@ async function getProjectedBracketMatches(event: Event): Promise<Match[]> {
     slotCount: getBracketSlotCount(teams.length),
     results: existingMatches,
   }) as BracketMatch[];
-  const existingById = new Map(existingMatches.map((match) => [match.id, match]));
+  const existingBySlot = new Map(
+    existingMatches
+      .filter((m) => m.round != null && m.slot != null)
+      .map((m) => [`${m.round}:${m.slot}`, m]),
+  );
   const totalRounds = Math.max(...bracket.map((match) => match.round), 1);
 
   return bracket
     .filter((match) => Boolean(match.homeTeamId && match.awayTeamId))
     .map((match) => {
-      const existing = existingById.get(match.id);
-      const aligned = existing && matchesProjectedPairing(existing, match) ? existing : null;
+      const existing = match.round != null && match.slot != null
+        ? existingBySlot.get(`${match.round}:${match.slot}`)
+        : undefined;
+      const aligned = existing ?? null;
       return {
         id: match.id, eventId: event.id,
         roundLabel: getBracketRoundLabel(match.round, totalRounds),
@@ -1013,4 +1024,130 @@ export async function updateEventStream(eventId: string, url: string, label: str
 
   const updated = await prisma.event.findUnique({ where: { id: eventId }, include: { stream: true } });
   return updated ? mapEvent(updated) : null;
+}
+
+// ── Captain self sign-up ──────────────────────────────────────────────────────
+
+export async function createCaptainWithTeam(input: {
+  email: string;
+  name: string;
+  passwordHash: string;
+  eventId: string;
+  teamName: string;
+  teamTag: string;
+}): Promise<{ userId: string; teamId: string }> {
+  const tag = input.teamTag.toUpperCase();
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        email: input.email,
+        name: input.name,
+        role: "captain",
+        passwordHash: input.passwordHash,
+      },
+    });
+    const team = await tx.team.create({
+      data: {
+        eventId: input.eventId,
+        captainId: user.id,
+        name: input.teamName,
+        tag,
+        logoText: tag,
+        source: "registration",
+      },
+    });
+    return { userId: user.id, teamId: team.id };
+  });
+}
+
+// ── Round config (Best of N) ──────────────────────────────────────────────────
+
+export async function getEventRoundConfigs(eventId: string): Promise<EventRoundConfig[]> {
+  const rows = await prisma.eventRoundConfig.findMany({ where: { eventId } });
+  return rows.map((r) => ({ id: r.id, eventId: r.eventId, roundLabel: r.roundLabel, bestOf: r.bestOf }));
+}
+
+export async function upsertRoundConfig(eventId: string, roundLabel: string, bestOf: number): Promise<void> {
+  await prisma.eventRoundConfig.upsert({
+    where: { eventId_roundLabel: { eventId, roundLabel } },
+    update: { bestOf },
+    create: { eventId, roundLabel, bestOf },
+  });
+}
+
+// ── Match games (Best of N results) ──────────────────────────────────────────
+
+export async function getMatchGames(matchId: string): Promise<MatchGame[]> {
+  const rows = await prisma.matchGame.findMany({ where: { matchId }, orderBy: { gameNumber: "asc" } });
+  return rows.map((r) => ({ id: r.id, matchId: r.matchId, gameNumber: r.gameNumber, homeScore: r.homeScore, awayScore: r.awayScore }));
+}
+
+export async function setMatchGames(
+  matchId: string,
+  eventId: string,
+  games: { gameNumber: number; homeScore: number; awayScore: number }[],
+  bestOf: number,
+): Promise<void> {
+  let homeTeamId: string;
+  let awayTeamId: string;
+  let roundLabel: string;
+  let round: number | null = null;
+  let slot: number | null = null;
+
+  const existingRow = await prisma.match.findFirst({ where: { id: matchId, eventId } });
+  if (existingRow) {
+    homeTeamId = existingRow.homeTeamId;
+    awayTeamId = existingRow.awayTeamId;
+    roundLabel = existingRow.roundLabel;
+    round = existingRow.round;
+    slot = existingRow.slot;
+  } else {
+    const fullEvent = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!fullEvent) throw new Error("Event not found");
+    const projected = await getProjectedBracketMatches(mapEvent({ ...fullEvent, stream: null }));
+    const projMatch = projected.find((m) => m.id === matchId);
+    if (!projMatch) throw new Error("Match not found");
+    homeTeamId = projMatch.homeTeamId;
+    awayTeamId = projMatch.awayTeamId;
+    roundLabel = projMatch.roundLabel;
+    round = projMatch.round ?? null;
+    slot = projMatch.slot ?? null;
+  }
+
+  const winsNeeded = Math.ceil(bestOf / 2);
+  let homeWins = 0;
+  let awayWins = 0;
+  const playedGames: typeof games = [];
+
+  for (const game of games.sort((a, b) => a.gameNumber - b.gameNumber)) {
+    if (homeWins >= winsNeeded || awayWins >= winsNeeded) break;
+    playedGames.push(game);
+    if (game.homeScore > game.awayScore) homeWins++;
+    else if (game.awayScore > game.homeScore) awayWins++;
+  }
+
+  const winnerTeamId =
+    homeWins >= winsNeeded ? homeTeamId : awayWins >= winsNeeded ? awayTeamId : null;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.match.upsert({
+      where: { id: matchId },
+      update: {
+        homeScore: homeWins,
+        awayScore: awayWins,
+        status: winnerTeamId ? "Completed" : "Scheduled",
+        winnerTeamId,
+      },
+      create: {
+        id: matchId, eventId, roundLabel, homeTeamId, awayTeamId,
+        homeScore: homeWins, awayScore: awayWins,
+        status: winnerTeamId ? "Completed" : "Scheduled",
+        round, slot, winnerTeamId,
+      },
+    });
+    await tx.matchGame.deleteMany({ where: { matchId } });
+    await tx.matchGame.createMany({
+      data: playedGames.map((g) => ({ matchId, gameNumber: g.gameNumber, homeScore: g.homeScore, awayScore: g.awayScore })),
+    });
+  });
 }

@@ -96,3 +96,18 @@ export type Match = {
   winnerTeamId?: string | null;
   scheduledLabel?: string;
 };
+
+export type EventRoundConfig = {
+  id: string;
+  eventId: string;
+  roundLabel: string;
+  bestOf: number;
+};
+
+export type MatchGame = {
+  id: string;
+  matchId: string;
+  gameNumber: number;
+  homeScore: number;
+  awayScore: number;
+};
