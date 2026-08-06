@@ -1082,6 +1082,20 @@ export async function getMatchGames(matchId: string): Promise<MatchGame[]> {
   return rows.map((r) => ({ id: r.id, matchId: r.matchId, gameNumber: r.gameNumber, homeScore: r.homeScore, awayScore: r.awayScore }));
 }
 
+export async function getMatchGamesForEvent(eventId: string): Promise<Map<string, MatchGame[]>> {
+  const rows = await prisma.matchGame.findMany({
+    where: { match: { eventId } },
+    orderBy: { gameNumber: "asc" },
+  });
+  const map = new Map<string, MatchGame[]>();
+  for (const row of rows) {
+    const list = map.get(row.matchId) ?? [];
+    list.push({ id: row.id, matchId: row.matchId, gameNumber: row.gameNumber, homeScore: row.homeScore, awayScore: row.awayScore });
+    map.set(row.matchId, list);
+  }
+  return map;
+}
+
 export async function setMatchGames(
   matchId: string,
   eventId: string,

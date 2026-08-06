@@ -17,6 +17,7 @@ vi.mock("@/lib/platform/repository", async () => {
     getMatchesForEvent: (eventId: string) => Promise.resolve(store.getMatchesForEvent(eventId)),
     getBracketPreview: (eventId: string) => Promise.resolve(store.getBracketPreview(eventId)),
     getEventRoundConfigs: () => Promise.resolve([]),
+    getMatchGamesForEvent: () => Promise.resolve(new Map()),
   };
 });
 

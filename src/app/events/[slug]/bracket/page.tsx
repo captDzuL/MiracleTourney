@@ -4,12 +4,13 @@ import { DataTable, Pill, Section } from "@/components/ui";
 import {
   getEventRoundConfigs,
   getMatchesForEvent,
+  getMatchGamesForEvent,
   getBracketPreview,
   getPublicEventBySlug,
   getPublicVisibleBracketPreview,
   getTeamsForEvent,
 } from "@/lib/platform/repository";
-import type { Match } from "@/lib/platform/types";
+import type { Match, MatchGame } from "@/lib/platform/types";
 import type { BracketMatch } from "@/lib/tournament/types";
 
 export const revalidate = 30;
@@ -162,6 +163,7 @@ function MatchCard({
   recordedByRound,
   teamLookup,
   roundConfigMap,
+  gamesMap,
   connect,
 }: {
   match: BracketMatch;
@@ -171,11 +173,26 @@ function MatchCard({
   recordedByRound: Map<string, Match>;
   teamLookup: Map<string, string>;
   roundConfigMap: Map<string, number>;
+  gamesMap: Map<string, MatchGame[]>;
   connect: boolean;
 }) {
   const state = getBracketMatchState(match, eventStartsAt, recordedByRound, roundConfigMap);
   const homeName = renderTeamName(teamLookup, match.homeTeamId, "TBD");
   const awayName = renderTeamName(teamLookup, match.awayTeamId, match.byeForTeamId ? "BYE" : "TBD");
+
+  const candidate = recordedByRound.get(`${match.round}:${match.slot}`);
+  const games = candidate ? (gamesMap.get(candidate.id) ?? []) : [];
+  const bestOf = candidate ? (roundConfigMap.get(candidate.roundLabel) ?? 1) : 1;
+  const teamsSwapped =
+    candidate &&
+    match.homeTeamId &&
+    match.awayTeamId &&
+    candidate.homeTeamId === match.awayTeamId &&
+    candidate.awayTeamId === match.homeTeamId;
+  const homeSeriesWins = teamsSwapped ? (candidate?.awayScore ?? 0) : (candidate?.homeScore ?? 0);
+  const awaySeriesWins = teamsSwapped ? (candidate?.homeScore ?? 0) : (candidate?.awayScore ?? 0);
+
+  const showDetail = bestOf > 1 && games.length > 0 && state.tone === "default" && state.status !== "Ready" && state.status !== "Waiting";
 
   return (
     <article
@@ -204,9 +221,42 @@ function MatchCard({
         </div>
       </div>
 
-      <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
-        Schedule: {state.schedule}
-      </div>
+      {showDetail ? (
+        <details className="group border-t border-slate-200">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2 text-xs text-slate-500 hover:text-slate-700 [&::-webkit-details-marker]:hidden">
+            <span>Game detail</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-[11px] leading-none text-slate-400 group-open:border-slate-600 group-open:text-slate-600">
+              ⓘ
+            </span>
+          </summary>
+          <div className="border-t border-slate-100 px-4 pb-3 pt-2">
+            {games.map((game) => {
+              const homeWon = teamsSwapped
+                ? game.awayScore > game.homeScore
+                : game.homeScore > game.awayScore;
+              const displayHome = teamsSwapped ? game.awayScore : game.homeScore;
+              const displayAway = teamsSwapped ? game.homeScore : game.awayScore;
+              return (
+                <div key={game.gameNumber} className="flex items-center gap-2 border-b border-slate-100 py-1 text-xs last:border-0">
+                  <span className="w-5 font-mono text-slate-400">G{game.gameNumber}</span>
+                  <span className={homeWon ? "font-medium text-slate-900" : "text-slate-400"}>{displayHome}</span>
+                  <span className="text-slate-300">–</span>
+                  <span className={!homeWon ? "font-medium text-slate-900" : "text-slate-400"}>{displayAway}</span>
+                  <span className="ml-auto max-w-[90px] truncate text-slate-400">{homeWon ? homeName : awayName} wins</span>
+                </div>
+              );
+            })}
+            <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 text-xs font-medium text-slate-600">
+              <span>Series</span>
+              <span>{homeSeriesWins} – {awaySeriesWins}</span>
+            </div>
+          </div>
+        </details>
+      ) : (
+        <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
+          Schedule: {state.schedule}
+        </div>
+      )}
     </article>
   );
 }
@@ -220,11 +270,12 @@ export default async function BracketPage({
   const event = await getPublicEventBySlug(slug);
   if (!event) notFound();
 
-  const [teams, items, recordedMatches, roundConfigs] = await Promise.all([
+  const [teams, items, recordedMatches, roundConfigs, gamesMap] = await Promise.all([
     getTeamsForEvent(event.id),
     getPublicVisibleBracketPreview(event.id),
     getMatchesForEvent(event.id),
     getEventRoundConfigs(event.id),
+    getMatchGamesForEvent(event.id),
   ]);
   const roundConfigMap = new Map(roundConfigs.map((c) => [c.roundLabel, c.bestOf]));
   const teamLookup = new Map(teams.map((team) => [team.id, team.name]));
@@ -371,6 +422,7 @@ export default async function BracketPage({
                                     recordedByRound={recordedByRound}
                                     teamLookup={teamLookup}
                                     roundConfigMap={roundConfigMap}
+                                    gamesMap={gamesMap}
                                     connect={hasVisibleParent}
                                   />
                                 ))}
@@ -387,6 +439,7 @@ export default async function BracketPage({
                               recordedByRound={recordedByRound}
                               teamLookup={teamLookup}
                               roundConfigMap={roundConfigMap}
+                              gamesMap={gamesMap}
                               connect={false}
                             />
                           ))}
