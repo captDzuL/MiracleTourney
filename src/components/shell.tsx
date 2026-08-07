@@ -1,8 +1,7 @@
-import { Suspense } from "react";
 import Link from "next/link";
 import { ShieldCheck, Trophy, Users } from "lucide-react";
 
-import { SessionNav, SessionNavSkeleton } from "@/components/session-nav";
+import { SessionNav } from "@/components/session-nav";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -28,9 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link className="rounded-full px-3 py-2 hover:bg-blue-50" href="/captain">
               Captain
             </Link>
-            <Suspense fallback={<SessionNavSkeleton />}>
-              <SessionNav />
-            </Suspense>
+            <SessionNav />
           </nav>
         </div>
       </header>
