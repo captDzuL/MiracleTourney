@@ -260,12 +260,20 @@ export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
 
 // ── Matches ───────────────────────────────────────────────────────────────────
 
-/** Request-memoised (React cache only, no ISR) match list for an event. Used by bracket projection and admin views. */
+/**
+ * Cached (30s, tag "teams") match list for an event. Busted alongside teams so bracket
+ * projection always reflects fresh results after any match mutation.
+ * Also memoised per-request via React cache.
+ */
 export const getMatchesForEvent = cache(
-  async (eventId: string): Promise<Match[]> => {
-    const rows = await prisma.match.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
-    return rows.map(mapMatch);
-  },
+  unstable_cache(
+    async (eventId: string): Promise<Match[]> => {
+      const rows = await prisma.match.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
+      return rows.map(mapMatch);
+    },
+    ["matches-for-event"],
+    { revalidate: 30, tags: ["teams"] },
+  ),
 );
 
 /**
@@ -1192,11 +1200,17 @@ export async function createCaptainWithTeam(input: {
 
 // ── Round config (Best of N) ──────────────────────────────────────────────────
 
-/** Returns all Best-of-N round configurations for an event (one per round label). */
-export async function getEventRoundConfigs(eventId: string): Promise<EventRoundConfig[]> {
-  const rows = await prisma.eventRoundConfig.findMany({ where: { eventId } });
-  return rows.map((r) => ({ id: r.id, eventId: r.eventId, roundLabel: r.roundLabel, bestOf: r.bestOf }));
-}
+/** Returns all Best-of-N round configurations for an event (one per round label). Cached 30s under tag "teams". */
+export const getEventRoundConfigs = cache(
+  unstable_cache(
+    async (eventId: string): Promise<EventRoundConfig[]> => {
+      const rows = await prisma.eventRoundConfig.findMany({ where: { eventId } });
+      return rows.map((r) => ({ id: r.id, eventId: r.eventId, roundLabel: r.roundLabel, bestOf: r.bestOf }));
+    },
+    ["event-round-configs"],
+    { revalidate: 30, tags: ["teams"] },
+  ),
+);
 
 /** Creates or updates the Best-of-N setting for a specific round label within an event. */
 export async function upsertRoundConfig(eventId: string, roundLabel: string, bestOf: number): Promise<void> {
@@ -1215,22 +1229,32 @@ export async function getMatchGames(matchId: string): Promise<MatchGame[]> {
   return rows.map((r) => ({ id: r.id, matchId: r.matchId, gameNumber: r.gameNumber, homeScore: r.homeScore, awayScore: r.awayScore }));
 }
 
+const _getMatchGamesForEventCached = cache(
+  unstable_cache(
+    async (eventId: string): Promise<Array<{ matchId: string; games: MatchGame[] }>> => {
+      const rows = await prisma.matchGame.findMany({
+        where: { match: { eventId } },
+        orderBy: { gameNumber: "asc" },
+      });
+      const acc: Record<string, MatchGame[]> = {};
+      for (const row of rows) {
+        (acc[row.matchId] ??= []).push({ id: row.id, matchId: row.matchId, gameNumber: row.gameNumber, homeScore: row.homeScore, awayScore: row.awayScore });
+      }
+      return Object.entries(acc).map(([matchId, games]) => ({ matchId, games }));
+    },
+    ["match-games-for-event"],
+    { revalidate: 30, tags: ["teams"] },
+  ),
+);
+
 /**
  * Fetches all per-game scores for every match in an event in one query.
  * Returns a Map keyed by matchId for O(1) lookup during bracket page rendering.
+ * Cached 30s under tag "teams" so score detail panels stay fresh after match saves.
  */
 export async function getMatchGamesForEvent(eventId: string): Promise<Map<string, MatchGame[]>> {
-  const rows = await prisma.matchGame.findMany({
-    where: { match: { eventId } },
-    orderBy: { gameNumber: "asc" },
-  });
-  const map = new Map<string, MatchGame[]>();
-  for (const row of rows) {
-    const list = map.get(row.matchId) ?? [];
-    list.push({ id: row.id, matchId: row.matchId, gameNumber: row.gameNumber, homeScore: row.homeScore, awayScore: row.awayScore });
-    map.set(row.matchId, list);
-  }
-  return map;
+  const entries = await _getMatchGamesForEventCached(eventId);
+  return new Map(entries.map((e) => [e.matchId, e.games]));
 }
 
 /**
