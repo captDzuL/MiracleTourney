@@ -1,0 +1,182 @@
+import { redirect } from "next/navigation";
+
+import { captainSubmitStatsAction } from "@/lib/actions";
+import { requireRole } from "@/lib/auth/session";
+import {
+  getCompletedMatchesForCaptain,
+  getGameModes,
+  getPlayersForTeam,
+} from "@/lib/platform/repository";
+import { Section } from "@/components/ui";
+
+export const dynamic = "force-dynamic";
+
+const statusLabel: Record<string, { label: string; class: string }> = {
+  pending: { label: "Pending review", class: "bg-amber-100 text-amber-700" },
+  approved: { label: "Approved", class: "bg-emerald-100 text-emerald-700" },
+  rejected: { label: "Rejected", class: "bg-red-100 text-red-700" },
+};
+
+export default async function CaptainStatsPage() {
+  const user = await requireRole("captain");
+  if (!user) redirect("/login");
+
+  const matchRows = await getCompletedMatchesForCaptain(user.id);
+  const gameModes = getGameModes();
+
+  // Pre-fetch players for each team (deduplicated)
+  const teamIds = [...new Set(matchRows.map((r) => r.teamId))];
+  const playersByTeam = new Map(
+    await Promise.all(teamIds.map(async (id) => [id, await getPlayersForTeam(id)] as const)),
+  );
+
+  if (matchRows.length === 0) {
+    return (
+      <Section
+        title="Match Stats"
+        description="No completed matches yet for your teams."
+      >
+        <p className="text-sm text-slate-400">
+          Stats submission becomes available after admin records match results.
+        </p>
+      </Section>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <Section
+        title="Match Stats"
+        description="Submit player stats for completed matches. Admin will review before they appear on leaderboards."
+      >
+        <div className="space-y-4">
+          {matchRows.map((row) => {
+            const mode = gameModes.find((m) => m.id === row.gameModeId);
+            const statKeys = mode?.statKeys ?? [];
+            const players = playersByTeam.get(row.teamId) ?? [];
+            const sub = row.submission;
+            const canSubmit = !sub || sub.status === "rejected";
+
+            return (
+              <details
+                key={`${row.matchId}::${row.teamId}`}
+                className="rounded-2xl border border-slate-200 bg-white"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {row.matchLabel}
+                      {row.slot != null ? ` · Match ${row.slot}` : ""}
+                      {" — "}
+                      <span className="text-slate-500">
+                        {row.teamName} vs {row.opponentName}
+                      </span>
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {row.eventName} · Score: {row.homeScore}–{row.awayScore}
+                    </p>
+                    {sub?.status === "rejected" && sub.rejectionNote && (
+                      <p className="mt-1 text-xs text-red-600">
+                        Rejected: {sub.rejectionNote}
+                      </p>
+                    )}
+                  </div>
+                  {sub ? (
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusLabel[sub.status]?.class}`}
+                    >
+                      {statusLabel[sub.status]?.label}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                      Not submitted
+                    </span>
+                  )}
+                </summary>
+
+                {canSubmit && players.length > 0 && (
+                  <form
+                    action={captainSubmitStatsAction}
+                    className="border-t border-slate-100 p-4"
+                  >
+                    <input type="hidden" name="matchId" value={row.matchId} />
+                    <input type="hidden" name="teamId" value={row.teamId} />
+                    <input type="hidden" name="eventId" value={row.eventId} />
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr>
+                            <th className="py-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-400">
+                              Player
+                            </th>
+                            {statKeys.map((k) => (
+                              <th
+                                key={k}
+                                className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-widest text-slate-400"
+                              >
+                                {k}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {players.map((player) => (
+                            <tr key={player.id} className="border-t border-slate-50">
+                              <td className="py-2 pr-3">
+                                <p className="font-medium text-slate-900">{player.displayName}</p>
+                                <p className="text-xs text-slate-400">{player.position}</p>
+                              </td>
+                              {statKeys.map((k) => (
+                                <td key={k} className="px-2 py-2">
+                                  <input
+                                    type="number"
+                                    name={`stat_${player.id}_${k}`}
+                                    min={0}
+                                    defaultValue={sub?.stats?.[player.id]?.[k] ?? 0}
+                                    className="w-16 rounded-lg border border-slate-200 px-2 py-1 text-center text-sm"
+                                  />
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="mt-4">
+                      <button
+                        type="submit"
+                        className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                      >
+                        {sub?.status === "rejected" ? "Resubmit stats" : "Submit stats"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {sub?.status === "approved" && (
+                  <div className="border-t border-slate-100 p-4 text-sm text-emerald-600">
+                    Stats approved and live on leaderboard.
+                  </div>
+                )}
+
+                {!canSubmit && sub?.status === "pending" && (
+                  <div className="border-t border-slate-100 p-4 text-sm text-amber-600">
+                    Awaiting admin review.
+                  </div>
+                )}
+
+                {players.length === 0 && canSubmit && (
+                  <div className="border-t border-slate-100 p-4 text-sm text-slate-400">
+                    Add players to your roster first before submitting stats.
+                  </div>
+                )}
+              </details>
+            );
+          })}
+        </div>
+      </Section>
+    </div>
+  );
+}

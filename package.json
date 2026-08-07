@@ -1,0 +1,45 @@
+{
+  "name": "miracle-fc-league",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "db:seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.1",
+    "jose": "^6.2.6",
+    "lucide-react": "^0.539.0",
+    "next": "^15.4.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwind-merge": "^3.3.1",
+    "zod": "^4.0.17"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@tailwindcss/postcss": "^4.1.12",
+    "@types/bcryptjs": "^3.0.0",
+    "@types/node": "^24.2.0",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "eslint": "^9.34.0",
+    "eslint-config-next": "^15.4.0",
+    "jsdom": "^26.1.0",
+    "postcss": "^8.5.6",
+    "prisma": "^6.0.0",
+    "tailwindcss": "^4.1.12",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  role         String
+  passwordHash String
+  tempPassword String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Event {
+  id                 String       @id @default(cuid())
+  slug               String       @unique
+  name               String
+  description        String
+  logoUrl            String?
+  gameImageUrl       String?
+  gameId             String
+  gameModeId         String
+  format             String
+  status             String
+  participantCap     Int
+  registrationWindow String
+  startsAt           String
+  venue              String
+  stream             EventStream?
+  teams              Team[]
+  matches            Match[]
+  players            Player[]
+  statSubmissions    StatSubmission[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+model EventStream {
+  id       String  @id @default(cuid())
+  eventId  String  @unique
+  event    Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  platform String
+  url      String
+  label    String
+  enabled  Boolean @default(true)
+  isLive   Boolean @default(false)
+}
+
+model Team {
+  id             String   @id @default(cuid())
+  eventId        String
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  captainId      String?
+  name           String
+  logoText       String
+  tag            String
+  captainName    String?
+  captainContact String?
+  source         String   @default("demo")
+  players        Player[]
+  createdAt      DateTime @default(now())
+
+  @@unique([eventId, tag])
+  @@unique([eventId, name])
+}
+
+model Player {
+  id           String       @id @default(cuid())
+  teamId       String
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  eventId      String
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  displayName  String
+  nickname     String
+  position     String
+  jerseyNumber Int?
+  stats        PlayerStat[]
+  createdAt    DateTime     @default(now())
+}
+
+model Match {
+  id              String           @id @default(cuid())
+  eventId         String
+  event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  roundLabel      String
+  homeTeamId      String
+  awayTeamId      String
+  homeScore       Int              @default(0)
+  awayScore       Int              @default(0)
+  status          String           @default("Scheduled")
+  slot            Int?
+  round           Int?
+  winnerTeamId    String?
+  scheduledLabel  String?
+  playerStats     PlayerStat[]
+  statSubmissions StatSubmission[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model PlayerStat {
+  id         String  @id @default(cuid())
+  matchId    String
+  match      Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerId   String
+  player     Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerName String
+  teamId     String
+  position   String
+  gameSlug   String
+  stats      Json
+
+  @@unique([matchId, playerId])
+}
+
+model StatSubmission {
+  id            String    @id @default(cuid())
+  matchId       String
+  match         Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  teamId        String
+  eventId       String
+  event         Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  submittedBy   String
+  status        String    @default("pending")
+  rejectionNote String?
+  stats         Json
+  submittedAt   DateTime  @default(now())
+  reviewedAt    DateTime?
+  reviewedBy    String?
+
+  @@unique([matchId, teamId])
+}
