@@ -28,7 +28,7 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Miracle FC League",
+  title: "Miracle League",
   description: "Responsive MVP for multi-game tournament operations.",
 };
 

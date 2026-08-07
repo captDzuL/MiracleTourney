@@ -93,7 +93,7 @@ export default async function HomePage({
 
         <div className="relative max-w-2xl">
           <span className="inline-block rounded-full border border-blue-300/30 bg-blue-300/10 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-blue-200">
-            Season 1 · Miracle FC
+            Season 1 · Miracle League
           </span>
           <h1 className="mt-4 text-4xl font-black leading-none tracking-tight text-white sm:text-5xl" style={{ textWrap: "balance" }}>
             Discover Your Next Victory

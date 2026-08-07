@@ -14,7 +14,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <div>
               <p className="mono text-sm font-semibold tracking-[0.2em] text-blue-700 uppercase">
-                Miracle FC League
+                Miracle League
               </p>
               <p className="text-xs text-slate-500">Tournament control platform</p>
             </div>
