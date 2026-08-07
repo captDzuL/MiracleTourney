@@ -1,13 +1,59 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { addPlayer, autoTransitionEventToOngoing, registerTeam, revalidatePath, revalidateTag, requireRole, setMatchResult } = vi.hoisted(() => ({
+const {
+  addPlayer,
+  approveStatSubmission,
+  autoTransitionEventToOngoing,
+  createCaptainWithTeam,
+  createEvent,
+  deletePlayer,
+  getImportSnapshot,
+  getPublishedEvents,
+  getUserByEmail,
+  getUserPasswordHashById,
+  importTeams,
+  rejectStatSubmission,
+  registerTeam,
+  revalidatePath,
+  revalidateTag,
+  requireRole,
+  setEventStatus,
+  setMatchGames,
+  setMatchResult,
+  signIn,
+  signOut,
+  updateCaptainPassword,
+  updateEventStream,
+  updatePlayer,
+  upsertRoundConfig,
+  upsertStatSubmission,
+} = vi.hoisted(() => ({
   addPlayer: vi.fn(),
+  approveStatSubmission: vi.fn(),
   autoTransitionEventToOngoing: vi.fn(),
+  createCaptainWithTeam: vi.fn(),
+  createEvent: vi.fn(),
+  deletePlayer: vi.fn(),
+  getImportSnapshot: vi.fn(),
+  getPublishedEvents: vi.fn(),
+  getUserByEmail: vi.fn(),
+  getUserPasswordHashById: vi.fn(),
+  importTeams: vi.fn(),
+  rejectStatSubmission: vi.fn(),
   registerTeam: vi.fn(),
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
   requireRole: vi.fn(),
+  setEventStatus: vi.fn(),
+  setMatchGames: vi.fn(),
   setMatchResult: vi.fn(),
+  signIn: vi.fn(),
+  signOut: vi.fn(),
+  updateCaptainPassword: vi.fn(),
+  updateEventStream: vi.fn(),
+  updatePlayer: vi.fn(),
+  upsertRoundConfig: vi.fn(),
+  upsertStatSubmission: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
@@ -16,68 +62,313 @@ vi.mock("next/navigation", () => ({
     throw new Error(`REDIRECT:${url}`);
   },
 }));
-vi.mock("@/lib/auth/session", () => ({ requireRole }));
-vi.mock("@/lib/imports/team-import", () => ({}));
-vi.mock("@/lib/platform/repository", () => ({ addPlayer, autoTransitionEventToOngoing, registerTeam, setMatchResult }));
+vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut }));
+vi.mock("@/lib/imports/team-import", () => ({
+  parseAndValidateTeamImport: vi.fn(),
+}));
+vi.mock("@/lib/platform/repository", () => ({
+  addPlayer,
+  approveStatSubmission,
+  autoTransitionEventToOngoing,
+  createCaptainWithTeam,
+  createEvent,
+  deletePlayer,
+  getImportSnapshot,
+  getPublishedEvents,
+  getUserByEmail,
+  getUserPasswordHashById,
+  importTeams,
+  rejectStatSubmission,
+  registerTeam,
+  setEventStatus,
+  setMatchGames,
+  setMatchResult,
+  updateCaptainPassword,
+  updateEventStream,
+  updatePlayer,
+  upsertRoundConfig,
+  upsertStatSubmission,
+}));
+vi.mock("bcryptjs", () => ({
+  default: {
+    hash: vi.fn().mockResolvedValue("$hashed$"),
+    compare: vi.fn().mockResolvedValue(true),
+  },
+}));
 
+import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
+import bcrypt from "bcryptjs";
 import {
+  adminApproveStatAction,
+  adminCreateEventAction,
+  adminImportTeamsCsvAction,
+  adminRejectStatAction,
+  adminSetMatchGamesAction,
+  adminSetRoundConfigAction,
+  adminUpdateEventStatusAction,
   adminUpdateMatchResultAction,
+  adminUpdateStreamAction,
   captainAddPlayerAction,
+  captainDeletePlayerAction,
   captainRegisterTeamAction,
+  captainSignUpAction,
+  captainSubmitStatsAction,
+  captainUpdatePlayerAction,
+  changePasswordAction,
+  loginAction,
+  logoutAction,
 } from "./actions";
 
-function resultFormData() {
-  const formData = new FormData();
-  formData.set("eventId", "event-kuroko-summer");
-  formData.set("matchEventId", "event-kuroko-summer");
-  formData.set("matchId", "match-kuroko-1");
-  formData.set("homeScore", "21");
-  formData.set("awayScore", "18");
-  return formData;
+// ────────────────────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────────────────────
+
+function fd(pairs: Record<string, string | File>): FormData {
+  const f = new FormData();
+  for (const [k, v] of Object.entries(pairs)) f.set(k, v);
+  return f;
 }
 
-function registrationFormData() {
-  const formData = new FormData();
-  formData.set("eventId", "event-flashpeak-open");
-  formData.set("captainId", "captain-attacker-controlled");
-  formData.set("name", "Session United");
-  formData.set("tag", "SES");
-  return formData;
+function adminSession() {
+  return { id: "admin-1", role: "admin" as const, email: "admin@test.com", name: "Admin" };
 }
 
-function playerFormData() {
-  const formData = new FormData();
-  formData.set("teamId", "team-seirin");
-  formData.set("eventId", "event-kuroko-summer");
-  formData.set("displayName", "Authenticated Player");
-  formData.set("nickname", "Auth");
-  formData.set("position", "Guard");
-  return formData;
+function captainSession() {
+  return { id: "captain-1", role: "captain" as const, email: "cap@test.com", name: "Captain" };
 }
+
+// ────────────────────────────────────────────────────────────
+// loginAction
+// ────────────────────────────────────────────────────────────
+
+describe("loginAction", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("redirects admin to /admin on valid credentials", async () => {
+    signIn.mockResolvedValue({ ok: true, user: { role: "admin" } });
+
+    await expect(loginAction(fd({ email: "admin@test.com", password: "secret123" }))).rejects.toThrow(
+      "REDIRECT:/admin",
+    );
+    expect(signIn).toHaveBeenCalledWith("admin@test.com", "secret123");
+  });
+
+  it("redirects captain to /captain on valid credentials", async () => {
+    signIn.mockResolvedValue({ ok: true, user: { role: "captain" } });
+
+    await expect(loginAction(fd({ email: "cap@test.com", password: "secret123" }))).rejects.toThrow(
+      "REDIRECT:/captain",
+    );
+  });
+
+  it("redirects to /login?error=invalid when credentials are wrong", async () => {
+    signIn.mockResolvedValue({ ok: false, error: "Invalid email or password." });
+
+    await expect(loginAction(fd({ email: "bad@test.com", password: "wrong" }))).rejects.toThrow(
+      "REDIRECT:/login?error=invalid",
+    );
+  });
+
+  it("throws Zod error for invalid email format", async () => {
+    await expect(loginAction(fd({ email: "not-an-email", password: "pass" }))).rejects.toThrow();
+    expect(signIn).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// logoutAction
+// ────────────────────────────────────────────────────────────
+
+describe("logoutAction", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("calls signOut and redirects to home", async () => {
+    await expect(logoutAction()).rejects.toThrow("REDIRECT:/");
+    expect(signOut).toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// captainSignUpAction
+// ────────────────────────────────────────────────────────────
+
+describe("captainSignUpAction", () => {
+  const validData = {
+    fullName: "Budi Santoso",
+    email: "budi@test.com",
+    password: "password123",
+    eventId: "event-abc",
+    teamName: "Tim Budi",
+    teamTag: "TBD",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getUserByEmail.mockResolvedValue(null);
+    getPublishedEvents.mockResolvedValue([{ id: "event-abc" }]);
+    createCaptainWithTeam.mockResolvedValue({ id: "captain-new" });
+    signIn.mockResolvedValue({ ok: true, user: { role: "captain" } });
+  });
+
+  it("creates account and redirects to /captain?success=registered on valid input", async () => {
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/captain?success=registered",
+    );
+    expect(createCaptainWithTeam).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "budi@test.com", teamName: "Tim Budi", teamTag: "TBD" }),
+    );
+  });
+
+  it("hashes password before creating account", async () => {
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:");
+    expect(bcrypt.hash).toHaveBeenCalledWith("password123", 10);
+  });
+
+  it("rejects fullName shorter than 2 characters", async () => {
+    await expect(captainSignUpAction(fd({ ...validData, fullName: "A" }))).rejects.toThrow(
+      "REDIRECT:/register?error=",
+    );
+    expect(createCaptainWithTeam).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid email format", async () => {
+    await expect(captainSignUpAction(fd({ ...validData, email: "notanemail" }))).rejects.toThrow(
+      "REDIRECT:/register?error=",
+    );
+  });
+
+  it("rejects password shorter than 8 characters", async () => {
+    await expect(captainSignUpAction(fd({ ...validData, password: "short" }))).rejects.toThrow(
+      "REDIRECT:/register?error=",
+    );
+  });
+
+  it("rejects missing eventId", async () => {
+    await expect(captainSignUpAction(fd({ ...validData, eventId: "" }))).rejects.toThrow(
+      "REDIRECT:/register?error=",
+    );
+  });
+
+  it("rejects teamTag longer than 4 characters", async () => {
+    await expect(captainSignUpAction(fd({ ...validData, teamTag: "TOOLONG" }))).rejects.toThrow(
+      "REDIRECT:/register?error=",
+    );
+  });
+
+  it("rejects duplicate email", async () => {
+    getUserByEmail.mockResolvedValue({ id: "existing-user" });
+
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/register?error=");
+    expect(createCaptainWithTeam).not.toHaveBeenCalled();
+  });
+
+  it("rejects event not in published list", async () => {
+    getPublishedEvents.mockResolvedValue([{ id: "other-event" }]);
+
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/register?error=");
+  });
+
+  it("redirects with duplicate-tag message when createCaptainWithTeam throws Unique constraint", async () => {
+    createCaptainWithTeam.mockRejectedValue(new Error("Unique constraint failed"));
+
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/register?error=");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// changePasswordAction
+// ────────────────────────────────────────────────────────────
+
+describe("changePasswordAction", () => {
+  const validData = {
+    currentPassword: "oldpass123",
+    newPassword: "newpass123",
+    confirmPassword: "newpass123",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(captainSession());
+    getUserPasswordHashById.mockResolvedValue("$hash$");
+    (bcrypt.compare as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+  });
+
+  it("changes password and redirects to /captain?success=password-changed", async () => {
+    await expect(changePasswordAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/captain?success=password-changed",
+    );
+    expect(updateCaptainPassword).toHaveBeenCalledWith("captain-1", "$hashed$");
+  });
+
+  it("requires captain session", async () => {
+    requireRole.mockResolvedValue(null);
+
+    await expect(changePasswordAction(fd(validData))).rejects.toThrow("REDIRECT:/login");
+    expect(updateCaptainPassword).not.toHaveBeenCalled();
+  });
+
+  it("rejects empty fields", async () => {
+    await expect(
+      changePasswordAction(fd({ currentPassword: "", newPassword: "newpass123", confirmPassword: "newpass123" })),
+    ).rejects.toThrow("REDIRECT:/captain/settings?error=");
+  });
+
+  it("rejects new password shorter than 8 characters", async () => {
+    await expect(
+      changePasswordAction(fd({ ...validData, newPassword: "short", confirmPassword: "short" })),
+    ).rejects.toThrow("REDIRECT:/captain/settings?error=");
+  });
+
+  it("rejects mismatched confirm password", async () => {
+    await expect(
+      changePasswordAction(fd({ ...validData, confirmPassword: "different" })),
+    ).rejects.toThrow("REDIRECT:/captain/settings?error=");
+  });
+
+  it("rejects wrong current password", async () => {
+    (bcrypt.compare as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+    await expect(changePasswordAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/captain/settings?error=",
+    );
+    expect(updateCaptainPassword).not.toHaveBeenCalled();
+  });
+
+  it("redirects with error when no password hash found", async () => {
+    getUserPasswordHashById.mockResolvedValue(null);
+
+    await expect(changePasswordAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/captain/settings?error=",
+    );
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// captain actions (existing + additions)
+// ────────────────────────────────────────────────────────────
 
 describe("captain actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireRole.mockResolvedValue({ id: "captain-session", role: "captain" });
+    requireRole.mockResolvedValue(captainSession());
   });
 
   it("requires a captain session before registering a team", async () => {
     requireRole.mockResolvedValue(null);
 
-    await expect(captainRegisterTeamAction(registrationFormData())).rejects.toThrow(
+    await expect(captainRegisterTeamAction(fd({ eventId: "e1", name: "Team A", tag: "TA" }))).rejects.toThrow(
       "REDIRECT:/login",
     );
     expect(registerTeam).not.toHaveBeenCalled();
   });
 
   it("derives the registering captain from the authenticated session", async () => {
-    await expect(captainRegisterTeamAction(registrationFormData())).rejects.toThrow(
-      "REDIRECT:/captain?success=team-created",
-    );
-    expect(requireRole).toHaveBeenCalledWith("captain");
+    await expect(
+      captainRegisterTeamAction(fd({ eventId: "event-flashpeak-open", name: "Session United", tag: "SES" })),
+    ).rejects.toThrow("REDIRECT:/captain?success=team-created");
     expect(registerTeam).toHaveBeenCalledWith({
       eventId: "event-flashpeak-open",
-      captainId: "captain-session",
+      captainId: "captain-1",
       name: "Session United",
       tag: "SES",
     });
@@ -86,15 +377,200 @@ describe("captain actions", () => {
   it("requires a captain session before adding a player", async () => {
     requireRole.mockResolvedValue(null);
 
-    await expect(captainAddPlayerAction(playerFormData())).rejects.toThrow("REDIRECT:/login");
+    await expect(
+      captainAddPlayerAction(fd({ teamId: "t1", eventId: "e1", displayName: "Player", nickname: "PL", position: "Guard" })),
+    ).rejects.toThrow("REDIRECT:/login");
     expect(addPlayer).not.toHaveBeenCalled();
+  });
+
+  it("adds player and redirects on success", async () => {
+    await expect(
+      captainAddPlayerAction(
+        fd({ teamId: "t1", eventId: "e1", displayName: "Ahmad Dhani", nickname: "Dhani", position: "Forward" }),
+      ),
+    ).rejects.toThrow("REDIRECT:/captain?success=player-added");
+    expect(addPlayer).toHaveBeenCalledWith(
+      expect.objectContaining({ displayName: "Ahmad Dhani", nickname: "Dhani" }),
+    );
   });
 });
 
-describe("adminUpdateMatchResultAction", () => {
+// ────────────────────────────────────────────────────────────
+// captainUpdatePlayerAction
+// ────────────────────────────────────────────────────────────
+
+describe("captainUpdatePlayerAction", () => {
+  const validData = {
+    playerId: "player-1",
+    displayName: "Updated Name",
+    nickname: "Upd",
+    position: "Midfielder",
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
-    requireRole.mockResolvedValue({ id: "admin-1", role: "admin" });
+    requireRole.mockResolvedValue(captainSession());
+  });
+
+  it("requires a captain session", async () => {
+    requireRole.mockResolvedValue(null);
+    await expect(captainUpdatePlayerAction(fd(validData))).rejects.toThrow("REDIRECT:/login");
+  });
+
+  it("updates player and redirects to /captain?success=player-updated", async () => {
+    await expect(captainUpdatePlayerAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/captain?success=player-updated",
+    );
+    expect(updatePlayer).toHaveBeenCalledWith(
+      "player-1",
+      "captain-1",
+      expect.objectContaining({ displayName: "Updated Name" }),
+    );
+  });
+
+  it("redirects with error when updatePlayer throws", async () => {
+    updatePlayer.mockRejectedValue(new Error("Forbidden"));
+
+    await expect(captainUpdatePlayerAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/captain?error=",
+    );
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// captainDeletePlayerAction
+// ────────────────────────────────────────────────────────────
+
+describe("captainDeletePlayerAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(captainSession());
+  });
+
+  it("requires a captain session", async () => {
+    requireRole.mockResolvedValue(null);
+    await expect(captainDeletePlayerAction(fd({ playerId: "p1" }))).rejects.toThrow("REDIRECT:/login");
+  });
+
+  it("deletes player and redirects to /captain?success=player-deleted", async () => {
+    await expect(captainDeletePlayerAction(fd({ playerId: "p1" }))).rejects.toThrow(
+      "REDIRECT:/captain?success=player-deleted",
+    );
+    expect(deletePlayer).toHaveBeenCalledWith("p1", "captain-1");
+  });
+
+  it("redirects with error when deletePlayer throws", async () => {
+    deletePlayer.mockRejectedValue(new Error("Not your player"));
+
+    await expect(captainDeletePlayerAction(fd({ playerId: "p1" }))).rejects.toThrow(
+      "REDIRECT:/captain?error=",
+    );
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// adminCreateEventAction
+// ────────────────────────────────────────────────────────────
+
+describe("adminCreateEventAction", () => {
+  const validData = {
+    name: "New Event 2026",
+    slug: "new-event-2026",
+    gameModeId: "mode-1",
+    format: "Single Elimination",
+    participantCap: "8",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+  });
+
+  it("requires an admin session", async () => {
+    requireRole.mockResolvedValue(null);
+    await expect(adminCreateEventAction(fd(validData))).rejects.toThrow("REDIRECT:/login");
+    expect(createEvent).not.toHaveBeenCalled();
+  });
+
+  it("creates event and redirects to /admin?success=event-created", async () => {
+    await expect(adminCreateEventAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/admin?success=event-created",
+    );
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "New Event 2026", participantCap: 8 }),
+    );
+    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("throws Zod error for invalid format value", async () => {
+    await expect(
+      adminCreateEventAction(fd({ ...validData, format: "Round Robin" })),
+    ).rejects.toThrow();
+    expect(createEvent).not.toHaveBeenCalled();
+  });
+
+  it("throws Zod error for unsupported participantCap", async () => {
+    await expect(
+      adminCreateEventAction(fd({ ...validData, participantCap: "7" })),
+    ).rejects.toThrow();
+    expect(createEvent).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// adminUpdateEventStatusAction
+// ────────────────────────────────────────────────────────────
+
+describe("adminUpdateEventStatusAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+  });
+
+  it("requires an admin session", async () => {
+    requireRole.mockResolvedValue(null);
+    await expect(
+      adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Published" })),
+    ).rejects.toThrow("REDIRECT:/login");
+  });
+
+  it("updates status and redirects with success", async () => {
+    setEventStatus.mockResolvedValue({ slug: "miracle-league" });
+
+    await expect(
+      adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Ongoing" })),
+    ).rejects.toThrow("REDIRECT:/admin?success=event-status-updated&event=miracle-league");
+    expect(setEventStatus).toHaveBeenCalledWith("e1", "Ongoing");
+    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("redirects with error when event not found", async () => {
+    setEventStatus.mockResolvedValue(null);
+
+    await expect(
+      adminUpdateEventStatusAction(fd({ eventId: "e-missing", status: "Published" })),
+    ).rejects.toThrow("REDIRECT:/admin?error=");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// adminUpdateMatchResultAction
+// ────────────────────────────────────────────────────────────
+
+describe("adminUpdateMatchResultAction", () => {
+  function resultFormData() {
+    const formData = new FormData();
+    formData.set("eventId", "event-kuroko-summer");
+    formData.set("matchEventId", "event-kuroko-summer");
+    formData.set("matchId", "match-kuroko-1");
+    formData.set("homeScore", "21");
+    formData.set("awayScore", "18");
+    return formData;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
   });
 
   it("requires an admin session before changing match results", async () => {
@@ -120,6 +596,318 @@ describe("adminUpdateMatchResultAction", () => {
 
     await expect(adminUpdateMatchResultAction(resultFormData())).rejects.toThrow(
       "REDIRECT:/admin?matchEventId=event-kuroko-summer&error=Match%20not%20found.",
+    );
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// adminImportTeamsCsvAction
+// ────────────────────────────────────────────────────────────
+
+describe("adminImportTeamsCsvAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+    getImportSnapshot.mockResolvedValue({ events: [], teams: [] });
+  });
+
+  it("requires an admin session", async () => {
+    requireRole.mockResolvedValue(null);
+    const f = new FormData();
+    f.set("csv", new File(["data"], "teams.csv", { type: "text/csv" }));
+    await expect(adminImportTeamsCsvAction(f)).rejects.toThrow("REDIRECT:/login");
+  });
+
+  it("redirects with error when no file is provided", async () => {
+    await expect(adminImportTeamsCsvAction(fd({}))).rejects.toThrow(
+      "REDIRECT:/admin?error=Please%20choose%20a%20CSV%20file%20before%20importing.",
+    );
+    expect(importTeams).not.toHaveBeenCalled();
+  });
+
+  it("redirects with error when parseAndValidateTeamImport fails", async () => {
+    const f = new FormData();
+    f.set("csv", new File(["bad"], "bad.csv", { type: "text/csv" }));
+    (parseAndValidateTeamImport as ReturnType<typeof vi.fn>).mockReturnValue({
+      ok: false,
+      message: "Invalid header row",
+    });
+
+    await expect(adminImportTeamsCsvAction(f)).rejects.toThrow("REDIRECT:/admin?error=");
+    expect(importTeams).not.toHaveBeenCalled();
+  });
+
+  it("imports teams and redirects with count on success", async () => {
+    const rows = [{ eventId: "e1", teamName: "A", teamTag: "AA", captainName: "C", captainContact: "c@c.com" }];
+    const f = new FormData();
+    f.set("csv", new File(["csv content"], "teams.csv", { type: "text/csv" }));
+    (parseAndValidateTeamImport as ReturnType<typeof vi.fn>).mockReturnValue({ ok: true, rows });
+
+    await expect(adminImportTeamsCsvAction(f)).rejects.toThrow(
+      "REDIRECT:/admin?success=teams-imported&count=1",
+    );
+    expect(importTeams).toHaveBeenCalledWith(rows);
+    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// adminUpdateStreamAction
+// ────────────────────────────────────────────────────────────
+
+describe("adminUpdateStreamAction", () => {
+  const validData = {
+    eventId: "event-1",
+    url: "https://youtube.com/live/abc123",
+    label: "Day 1 Stream",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+  });
+
+  it("requires an admin session", async () => {
+    requireRole.mockResolvedValue(null);
+    await expect(adminUpdateStreamAction(fd(validData))).rejects.toThrow("REDIRECT:/login");
+  });
+
+  it("updates stream and redirects to /admin?success=stream-updated", async () => {
+    await expect(adminUpdateStreamAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/admin?success=stream-updated",
+    );
+    expect(updateEventStream).toHaveBeenCalledWith(
+      "event-1",
+      "https://youtube.com/live/abc123",
+      "Day 1 Stream",
+    );
+    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("throws Zod error for invalid URL", async () => {
+    await expect(
+      adminUpdateStreamAction(fd({ ...validData, url: "not-a-url" })),
+    ).rejects.toThrow();
+    expect(updateEventStream).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// captainSubmitStatsAction
+// ────────────────────────────────────────────────────────────
+
+describe("captainSubmitStatsAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(captainSession());
+  });
+
+  it("requires a captain session", async () => {
+    requireRole.mockResolvedValue(null);
+    await expect(
+      captainSubmitStatsAction(fd({ matchId: "m1", teamId: "t1", eventId: "e1" })),
+    ).rejects.toThrow("REDIRECT:/login");
+  });
+
+  it("parses stat keys and calls upsertStatSubmission", async () => {
+    const f = new FormData();
+    f.set("matchId", "match-1");
+    f.set("teamId", "team-1");
+    f.set("eventId", "event-1");
+    f.set("stat_player-1_goals", "3");
+    f.set("stat_player-1_assists", "1");
+    f.set("stat_player-2_goals", "2");
+
+    await captainSubmitStatsAction(f);
+
+    expect(upsertStatSubmission).toHaveBeenCalledWith({
+      matchId: "match-1",
+      teamId: "team-1",
+      eventId: "event-1",
+      submittedBy: "captain-1",
+      stats: {
+        "player-1": { goals: 3, assists: 1 },
+        "player-2": { goals: 2 },
+      },
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// adminApproveStatAction
+// ────────────────────────────────────────────────────────────
+
+describe("adminApproveStatAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+  });
+
+  it("requires an admin session", async () => {
+    requireRole.mockResolvedValue(null);
+    await expect(adminApproveStatAction(fd({ submissionId: "sub-1" }))).rejects.toThrow(
+      "REDIRECT:/login",
+    );
+  });
+
+  it("approves submission and redirects to /admin?success=stat-approved", async () => {
+    await expect(adminApproveStatAction(fd({ submissionId: "sub-1" }))).rejects.toThrow(
+      "REDIRECT:/admin?success=stat-approved",
+    );
+    expect(approveStatSubmission).toHaveBeenCalledWith("sub-1", "admin-1");
+    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// adminRejectStatAction
+// ────────────────────────────────────────────────────────────
+
+describe("adminRejectStatAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+  });
+
+  it("requires an admin session", async () => {
+    requireRole.mockResolvedValue(null);
+    await expect(
+      adminRejectStatAction(fd({ submissionId: "sub-1", rejectionNote: "Invalid stats" })),
+    ).rejects.toThrow("REDIRECT:/login");
+  });
+
+  it("rejects submission with provided note", async () => {
+    await expect(
+      adminRejectStatAction(fd({ submissionId: "sub-1", rejectionNote: "Please recheck goals" })),
+    ).rejects.toThrow("REDIRECT:/admin?success=stat-rejected");
+    expect(rejectStatSubmission).toHaveBeenCalledWith("sub-1", "admin-1", "Please recheck goals");
+  });
+
+  it("uses default note when rejectionNote is empty", async () => {
+    await expect(
+      adminRejectStatAction(fd({ submissionId: "sub-1", rejectionNote: "" })),
+    ).rejects.toThrow("REDIRECT:/admin?success=stat-rejected");
+    expect(rejectStatSubmission).toHaveBeenCalledWith("sub-1", "admin-1", "Please review and resubmit.");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// adminSetRoundConfigAction
+// ────────────────────────────────────────────────────────────
+
+describe("adminSetRoundConfigAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+  });
+
+  it("requires an admin session", async () => {
+    requireRole.mockResolvedValue(null);
+    await expect(
+      adminSetRoundConfigAction(fd({ eventId: "e1", roundLabel: "Final", bestOf: "3" })),
+    ).rejects.toThrow("REDIRECT:/login");
+  });
+
+  it("saves round config and redirects on success", async () => {
+    await expect(
+      adminSetRoundConfigAction(fd({ eventId: "event-1", roundLabel: "Semifinal", bestOf: "3" })),
+    ).rejects.toThrow("REDIRECT:/admin?matchEventId=event-1&success=round-config-saved");
+    expect(upsertRoundConfig).toHaveBeenCalledWith("event-1", "Semifinal", 3);
+    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("throws Zod error for bestOf value other than 1, 3, or 5", async () => {
+    await expect(
+      adminSetRoundConfigAction(fd({ eventId: "e1", roundLabel: "Final", bestOf: "2" })),
+    ).rejects.toThrow();
+    expect(upsertRoundConfig).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// adminSetMatchGamesAction
+// ────────────────────────────────────────────────────────────
+
+describe("adminSetMatchGamesAction", () => {
+  function bo3FormData(overrides?: Record<string, string>) {
+    return fd({
+      matchId: "match-1",
+      matchEventId: "event-1",
+      bestOf: "3",
+      game1_home: "21",
+      game1_away: "15",
+      game2_home: "10",
+      game2_away: "21",
+      game3_home: "21",
+      game3_away: "18",
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+  });
+
+  it("requires an admin session", async () => {
+    requireRole.mockResolvedValue(null);
+    await expect(adminSetMatchGamesAction(bo3FormData())).rejects.toThrow("REDIRECT:/login");
+  });
+
+  it("saves game scores and redirects with success", async () => {
+    await expect(adminSetMatchGamesAction(bo3FormData())).rejects.toThrow(
+      "REDIRECT:/admin?matchEventId=event-1&success=match-games-saved",
+    );
+    expect(setMatchGames).toHaveBeenCalledWith(
+      "match-1",
+      "event-1",
+      [
+        { gameNumber: 1, homeScore: 21, awayScore: 15 },
+        { gameNumber: 2, homeScore: 10, awayScore: 21 },
+        { gameNumber: 3, homeScore: 21, awayScore: 18 },
+      ],
+      3,
+    );
+    expect(autoTransitionEventToOngoing).toHaveBeenCalledWith("event-1");
+    expect(revalidateTag).toHaveBeenCalledWith("teams");
+    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("redirects with error when no games are entered", async () => {
+    await expect(
+      adminSetMatchGamesAction(fd({ matchId: "m1", matchEventId: "e1", bestOf: "3" })),
+    ).rejects.toThrow("REDIRECT:/admin?matchEventId=e1&error=Masukkan+skor+minimal+1+game.");
+    expect(setMatchGames).not.toHaveBeenCalled();
+  });
+
+  it("skips empty game rows (partial BO5)", async () => {
+    const f = fd({
+      matchId: "match-1",
+      matchEventId: "event-1",
+      bestOf: "5",
+      game1_home: "21",
+      game1_away: "15",
+      game2_home: "10",
+      game2_away: "21",
+      // game3 omitted (no score yet)
+    });
+    await expect(adminSetMatchGamesAction(f)).rejects.toThrow("REDIRECT:");
+    expect(setMatchGames).toHaveBeenCalledWith(
+      "match-1",
+      "event-1",
+      [
+        { gameNumber: 1, homeScore: 21, awayScore: 15 },
+        { gameNumber: 2, homeScore: 10, awayScore: 21 },
+      ],
+      5,
+    );
+  });
+
+  it("redirects with error when setMatchGames throws", async () => {
+    setMatchGames.mockRejectedValue(new Error("Series winner not yet determined"));
+
+    await expect(adminSetMatchGamesAction(bo3FormData())).rejects.toThrow(
+      "REDIRECT:/admin?matchEventId=event-1&error=",
     );
   });
 });

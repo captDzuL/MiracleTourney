@@ -133,29 +133,35 @@ function generateCaptainEmail(tag: string, usedInBatch: Set<string>, explicitEma
 
 // ── Static config ─────────────────────────────────────────────────────────────
 
+/** Returns the static list of all supported games from config. */
 export function getAllGames() {
   return games;
 }
 
+/** Returns the static list of all supported game modes from config. */
 export function getGameModes() {
   return gameModes;
 }
 
+/** Resolves the game definition for a given event. Throws if the game ID is not found in config. */
 export function getGameForEvent(event: Event) {
   return games.find((game) => game.id === event.gameId)!;
 }
 
+/** Resolves the game mode definition for a given event. Throws if the mode ID is not found in config. */
 export function getModeForEvent(event: Event) {
   return gameModes.find((mode) => mode.id === event.gameModeId)!;
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
+/** Returns all events (all statuses), ordered newest first. For admin use only. */
 export async function getEvents(): Promise<Event[]> {
   const rows = await prisma.event.findMany({ include: { stream: true }, orderBy: { createdAt: "desc" } });
   return rows.map(mapEvent);
 }
 
+/** Returns events with publicly visible statuses: Published, Registration Closed, Ongoing, Finished. */
 export async function getPublicEvents(): Promise<Event[]> {
   const rows = await prisma.event.findMany({
     where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
@@ -165,6 +171,11 @@ export async function getPublicEvents(): Promise<Event[]> {
   return rows.map(mapEvent);
 }
 
+/**
+ * Returns events with status "Published" only, ordered by start date ascending.
+ * Used for the captain sign-up event picker — "Ongoing" events are excluded so
+ * captains cannot register once matches have started.
+ */
 export async function getPublishedEvents(): Promise<Event[]> {
   const rows = await prisma.event.findMany({
     where: { status: "Published" },
@@ -174,11 +185,16 @@ export async function getPublishedEvents(): Promise<Event[]> {
   return rows.map(mapEvent);
 }
 
+/** Direct DB lookup by slug with no status filter. For admin pages that need to see Draft events. */
 export async function getEventBySlug(slug: string): Promise<Event | null> {
   const row = await prisma.event.findUnique({ where: { slug }, include: { stream: true } });
   return row ? mapEvent(row) : null;
 }
 
+/**
+ * Cached (60s, tag "events") public event lookup by slug.
+ * Returns null for Draft events. Also memoised per-request via React cache.
+ */
 export const getPublicEventBySlug = cache(
   unstable_cache(
     async (slug: string): Promise<Event | null> => {
@@ -195,6 +211,11 @@ export const getPublicEventBySlug = cache(
 
 // ── Teams ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Cached (30s, tag "teams") team list for an event, ordered by registration time.
+ * Cache is busted by `revalidateTag("teams")` after any team mutation.
+ * Also memoised per-request via React cache to prevent duplicate DB hits within a render.
+ */
 export const getTeamsForEvent = cache(
   unstable_cache(
     async (eventId: string): Promise<Team[]> => {
@@ -206,6 +227,7 @@ export const getTeamsForEvent = cache(
   ),
 );
 
+/** Returns all teams registered by a specific captain across all events. Returns empty array for undefined userId. */
 export async function getCaptainTeams(userId: string | undefined): Promise<Team[]> {
   if (!userId) return [];
   const rows = await prisma.team.findMany({ where: { captainId: userId } });
@@ -214,11 +236,13 @@ export async function getCaptainTeams(userId: string | undefined): Promise<Team[
 
 // ── Players ───────────────────────────────────────────────────────────────────
 
+/** Returns all players for a single team, ordered by registration time. */
 export async function getPlayersForTeam(teamId: string): Promise<Player[]> {
   const rows = await prisma.player.findMany({ where: { teamId }, orderBy: { createdAt: "asc" } });
   return rows.map(mapPlayer);
 }
 
+/** Batch-fetches players for multiple teams in a single query, ordered by team then jersey number. */
 export async function getPlayersForTeams(teamIds: string[]): Promise<Player[]> {
   if (!teamIds.length) return [];
   const rows = await prisma.player.findMany({
@@ -228,6 +252,7 @@ export async function getPlayersForTeams(teamIds: string[]): Promise<Player[]> {
   return rows.map(mapPlayer);
 }
 
+/** Returns all players across all teams registered in a given event. */
 export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
   const rows = await prisma.player.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
   return rows.map(mapPlayer);
@@ -235,6 +260,7 @@ export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
 
 // ── Matches ───────────────────────────────────────────────────────────────────
 
+/** Request-memoised (React cache only, no ISR) match list for an event. Used by bracket projection and admin views. */
 export const getMatchesForEvent = cache(
   async (eventId: string): Promise<Match[]> => {
     const rows = await prisma.match.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
@@ -242,6 +268,11 @@ export const getMatchesForEvent = cache(
   },
 );
 
+/**
+ * Returns true if a single-elimination bracket has at least one completed match.
+ * A locked bracket prevents new team imports and registrations.
+ * Always returns false for league-format events.
+ */
 export async function isEventBracketLocked(eventId: string): Promise<boolean> {
   const event = await prisma.event.findUnique({ where: { id: eventId }, select: { format: true } });
   if (!event || event.format !== "Single Elimination") return false;
@@ -303,6 +334,11 @@ async function getProjectedBracketMatches(event: Event): Promise<Match[]> {
     .sort((l, r) => (l.round! - r.round!) || (l.slot! - r.slot!));
 }
 
+/**
+ * Returns the admin-facing list of bracket matches for an event object.
+ * For single-elimination: projects the bracket and merges recorded results.
+ * For league: returns stored matches with round/slot set.
+ */
 export async function getBracketManageableMatchesForEvent(event: Event): Promise<Match[]> {
   if (event.format === "Single Elimination") {
     return getProjectedBracketMatches(event);
@@ -314,6 +350,7 @@ export async function getBracketManageableMatchesForEvent(event: Event): Promise
   return rows.map(mapMatch);
 }
 
+/** Same as `getBracketManageableMatchesForEvent` but accepts an eventId string, fetching the event internally. */
 export async function getBracketManageableMatches(eventId: string): Promise<Match[]> {
   const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true, format: true, participantCap: true, slug: true, name: true, description: true, gameId: true, gameModeId: true, status: true, registrationWindow: true, startsAt: true, venue: true, logoUrl: true, gameImageUrl: true } });
   if (!event) return [];
@@ -331,6 +368,11 @@ export async function getBracketManageableMatches(eventId: string): Promise<Matc
   return rows.map(mapMatch);
 }
 
+/**
+ * Saves a BO1 match result (direct scores). Draws are rejected for single-elimination.
+ * If the match row doesn't exist yet, it is created from the projected bracket.
+ * Returns null if the event or match is not found.
+ */
 export async function setMatchResult(input: {
   eventId: string;
   matchId: string;
@@ -420,12 +462,17 @@ const _getLeaderboardForEvent = unstable_cache(
   { revalidate: 60, tags: ["stats"] },
 );
 
+/**
+ * Returns the player leaderboard for an event, aggregated from approved stat submissions.
+ * Cached (60s, tag "stats"). Primary metric is "goals" for Flashpeak, "points" for others.
+ */
 export async function getLeaderboardForEvent(eventId: string, gameId?: string) {
   const resolvedGameId = gameId ?? (await prisma.event.findUnique({ where: { id: eventId }, select: { gameId: true } }))?.gameId;
   if (!resolvedGameId) return [];
   return _getLeaderboardForEvent(eventId, resolvedGameId);
 }
 
+/** Computes league standings from completed match results for an event. Ranked by points → score diff → score for. */
 export async function getTeamStandings(eventId: string) {
   const teams = await getTeamsForEvent(eventId);
   const matches = await getMatchesForEvent(eventId);
@@ -445,6 +492,11 @@ export async function getTeamStandings(eventId: string) {
 
 // ── Bracket preview ───────────────────────────────────────────────────────────
 
+/**
+ * Returns the fully projected bracket (all rounds, including downstream TBD slots).
+ * For single-elimination: uses `projectSingleEliminationBracket` with all results applied.
+ * For league: returns the round-robin schedule. Used internally and in the admin bracket view.
+ */
 export async function getBracketPreview(eventId: string) {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) return [];
@@ -463,6 +515,11 @@ export async function getBracketPreview(eventId: string) {
   return generateRoundRobinSchedule(teamSeeds);
 }
 
+/**
+ * Returns the public-visible bracket. Before kickoff (Published/Registration Closed),
+ * hides downstream rounds until both teams are known. After kickoff (Ongoing/Finished),
+ * shows the full projected bracket including TBD placeholders for undecided rounds.
+ */
 export async function getPublicVisibleBracketPreview(eventId: string) {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event || event.format !== "Single Elimination") return getBracketPreview(eventId);
@@ -492,6 +549,7 @@ export async function getPublicVisibleBracketPreview(eventId: string) {
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
+/** Looks up a user by ID. Returns null for undefined input or missing records. Used by session resolution. */
 export async function getCaptainById(userId: string | undefined): Promise<AppUser | null> {
   if (!userId) return null;
   const row = await prisma.user.findUnique({ where: { id: userId } });
@@ -499,28 +557,33 @@ export async function getCaptainById(userId: string | undefined): Promise<AppUse
   return { id: row.id, email: row.email, name: row.name, role: row.role as AppUser["role"] };
 }
 
+/** Looks up a user by email without exposing the password hash. For duplicate-email checks and session resolution. */
 export async function getUserByEmail(email: string): Promise<AppUser | null> {
   const row = await prisma.user.findUnique({ where: { email } });
   if (!row) return null;
   return { id: row.id, email: row.email, name: row.name, role: row.role as AppUser["role"] };
 }
 
+/** Fetches user with passwordHash included. Only used by the sign-in flow for bcrypt comparison. */
 export async function getUserWithPasswordByEmail(email: string): Promise<(AppUser & { passwordHash: string }) | null> {
   const row = await prisma.user.findUnique({ where: { email } });
   if (!row) return null;
   return { id: row.id, email: row.email, name: row.name, role: row.role as AppUser["role"], passwordHash: row.passwordHash };
 }
 
+/** Fetches only the password hash for the change-password flow. Returns null if user not found. */
 export async function getUserPasswordHashById(userId: string): Promise<string | null> {
   const row = await prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
   return row?.passwordHash ?? null;
 }
 
+/** Returns true if the user still has a temporary password set from a CSV import. Used to prompt password change on first login. */
 export async function hasTempPassword(userId: string): Promise<boolean> {
   const row = await prisma.user.findUnique({ where: { id: userId }, select: { tempPassword: true } });
   return row?.tempPassword != null;
 }
 
+/** Updates the captain's password hash and clears the `tempPassword` field in one write. */
 export async function updateCaptainPassword(userId: string, newHash: string): Promise<void> {
   await prisma.user.update({
     where: { id: userId },
@@ -530,6 +593,10 @@ export async function updateCaptainPassword(userId: string, newHash: string): Pr
 
 // ── Import snapshot ───────────────────────────────────────────────────────────
 
+/**
+ * Returns a lightweight snapshot of events and registered teams used by CSV import validation.
+ * Includes `bracketLocked` flag so the validator can reject imports into locked events.
+ */
 export async function getImportSnapshot() {
   const events = await prisma.event.findMany({ select: { id: true, slug: true, participantCap: true } });
   const teams = await prisma.team.findMany({ select: { eventId: true, name: true, tag: true } });
@@ -553,11 +620,16 @@ export async function getImportSnapshot() {
   };
 }
 
+/** Returns all teams created via CSV import (source = "csv-import") across all events. */
 export async function getImportedTeams(): Promise<Team[]> {
   const rows = await prisma.team.findMany({ where: { source: "csv-import" } });
   return rows.map(mapTeam);
 }
 
+/**
+ * Returns captain credentials (email + temp password) for all CSV-imported teams in an event.
+ * Used by the admin panel to distribute login details to captains after import.
+ */
 export async function getCaptainCredentialsForEvent(eventId: string) {
   const teams = await prisma.team.findMany({
     where: { eventId, source: "csv-import" },
@@ -584,6 +656,10 @@ export async function getCaptainCredentialsForEvent(eventId: string) {
 
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
+/**
+ * Creates a new event in "Draft" status. Game ID is resolved from the gameModeId.
+ * Default description, venue ("Online"), and dates ("TBD") are set automatically.
+ */
 export async function createEvent(input: {
   name: string;
   slug: string;
@@ -611,11 +687,16 @@ export async function createEvent(input: {
   return mapEvent(row);
 }
 
+/** Updates an event's lifecycle status. Use `autoTransitionEventToOngoing` for the match-triggered transition. */
 export async function setEventStatus(eventId: string, status: Event["status"]): Promise<Event | null> {
   const row = await prisma.event.update({ where: { id: eventId }, data: { status }, include: { stream: true } });
   return mapEvent(row);
 }
 
+/**
+ * Idempotently transitions an event from "Published" or "Registration Closed" to "Ongoing".
+ * No-op if the event is already "Ongoing" or "Finished". Safe to call on every match save.
+ */
 export async function autoTransitionEventToOngoing(eventId: string): Promise<void> {
   await prisma.event.updateMany({
     where: { id: eventId, status: { in: ["Published", "Registration Closed"] } },
@@ -623,6 +704,10 @@ export async function autoTransitionEventToOngoing(eventId: string): Promise<voi
   });
 }
 
+/**
+ * Registers a team via captain self sign-up (source = "demo").
+ * Throws if the event bracket is already locked (first match recorded).
+ */
 export async function registerTeam(input: {
   eventId: string;
   captainId: string;
@@ -650,6 +735,12 @@ export async function registerTeam(input: {
   return mapTeam(row);
 }
 
+/**
+ * Bulk-imports teams from a validated CSV row list. For each team, generates a captain User
+ * (upserted by email) with a temp password, then creates the Team row.
+ * Bcrypt hashing runs outside the DB transaction to avoid holding a connection during slow crypto.
+ * Throws if any target event's bracket is already locked.
+ */
 export async function importTeams(input: Array<{
   eventId: string;
   teamName: string;
@@ -720,6 +811,7 @@ export async function importTeams(input: Array<{
   return rows.map(mapTeam);
 }
 
+/** Adds a new player to a team. Jersey number is optional and stored as null when not provided. */
 export async function addPlayer(input: {
   teamId: string;
   eventId: string;
@@ -732,6 +824,10 @@ export async function addPlayer(input: {
   return mapPlayer(row);
 }
 
+/**
+ * Updates a player's profile. Throws "Not authorized" if the player's team does not
+ * belong to `captainUserId`. Ownership is enforced at the DB layer, not the action layer.
+ */
 export async function updatePlayer(
   id: string,
   captainUserId: string,
@@ -748,6 +844,10 @@ export async function updatePlayer(
   return mapPlayer(row);
 }
 
+/**
+ * Deletes a player. Throws "Not authorized" if the player's team does not belong to `captainUserId`.
+ * Ownership check mirrors `updatePlayer`.
+ */
 export async function deletePlayer(id: string, captainUserId: string): Promise<void> {
   const player = await prisma.player.findUnique({
     where: { id },
@@ -782,6 +882,10 @@ export type CompletedMatchRow = {
   } | null;
 };
 
+/**
+ * Returns all completed matches where the captain's teams participated, including stat submission status.
+ * Batches event/team/submission lookups in a single `Promise.all` to avoid N+1 queries.
+ */
 export async function getCompletedMatchesForCaptain(captainId: string): Promise<CompletedMatchRow[]> {
   const captainTeams = await prisma.team.findMany({
     where: { captainId },
@@ -859,6 +963,10 @@ export async function getCompletedMatchesForCaptain(captainId: string): Promise<
   });
 }
 
+/**
+ * Creates or replaces a captain's stat submission for a match.
+ * Re-submission resets status to "pending" and clears any prior rejection note.
+ */
 export async function upsertStatSubmission(input: {
   matchId: string;
   teamId: string;
@@ -888,6 +996,7 @@ export async function upsertStatSubmission(input: {
 
 // ── Stat Submissions (admin) ──────────────────────────────────────────────────
 
+/** Request-memoised count of pending stat submissions. Used for the admin notification badge. */
 export const getPendingStatSubmissionCount = cache(async (): Promise<number> => {
   return prisma.statSubmission.count({ where: { status: "pending" } });
 });
@@ -908,6 +1017,7 @@ export type StatSubmissionRow = {
   eventName: string;
 };
 
+/** Returns all pending stat submissions with denormalized display fields (match label, team name, captain email). */
 export async function getPendingStatSubmissions(): Promise<StatSubmissionRow[]> {
   const rows = await prisma.statSubmission.findMany({
     where: { status: "pending" },
@@ -959,6 +1069,10 @@ export async function getPendingStatSubmissions(): Promise<StatSubmissionRow[]> 
   }));
 }
 
+/**
+ * Approves a stat submission: writes `PlayerStat` rows for each player and marks the
+ * submission as "approved" in a single transaction. Skips players not found in the DB.
+ */
 export async function approveStatSubmission(submissionId: string, adminId: string): Promise<void> {
   const submission = await prisma.statSubmission.findUnique({ where: { id: submissionId } });
   if (!submission) throw new Error("Submission not found");
@@ -1002,6 +1116,7 @@ export async function approveStatSubmission(submissionId: string, adminId: strin
   });
 }
 
+/** Rejects a stat submission with a note shown to the captain. Does not delete PlayerStat rows. */
 export async function rejectStatSubmission(
   submissionId: string,
   adminId: string,
@@ -1018,6 +1133,10 @@ export async function rejectStatSubmission(
   });
 }
 
+/**
+ * Sets or replaces the live stream URL for an event. Parses the URL to determine platform
+ * (YouTube, TikTok, or external) and stores it as enabled + live immediately.
+ */
 export async function updateEventStream(eventId: string, url: string, label: string): Promise<Event | null> {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) return null;
@@ -1035,6 +1154,10 @@ export async function updateEventStream(eventId: string, url: string, label: str
 
 // ── Captain self sign-up ──────────────────────────────────────────────────────
 
+/**
+ * Atomically creates a captain User and their first Team in a Prisma transaction.
+ * Used by the self sign-up flow; teamTag is uppercased and used as the logoText.
+ */
 export async function createCaptainWithTeam(input: {
   email: string;
   name: string;
@@ -1069,11 +1192,13 @@ export async function createCaptainWithTeam(input: {
 
 // ── Round config (Best of N) ──────────────────────────────────────────────────
 
+/** Returns all Best-of-N round configurations for an event (one per round label). */
 export async function getEventRoundConfigs(eventId: string): Promise<EventRoundConfig[]> {
   const rows = await prisma.eventRoundConfig.findMany({ where: { eventId } });
   return rows.map((r) => ({ id: r.id, eventId: r.eventId, roundLabel: r.roundLabel, bestOf: r.bestOf }));
 }
 
+/** Creates or updates the Best-of-N setting for a specific round label within an event. */
 export async function upsertRoundConfig(eventId: string, roundLabel: string, bestOf: number): Promise<void> {
   await prisma.eventRoundConfig.upsert({
     where: { eventId_roundLabel: { eventId, roundLabel } },
@@ -1084,11 +1209,16 @@ export async function upsertRoundConfig(eventId: string, roundLabel: string, bes
 
 // ── Match games (Best of N results) ──────────────────────────────────────────
 
+/** Returns per-game scores for a single match, ordered by game number ascending. */
 export async function getMatchGames(matchId: string): Promise<MatchGame[]> {
   const rows = await prisma.matchGame.findMany({ where: { matchId }, orderBy: { gameNumber: "asc" } });
   return rows.map((r) => ({ id: r.id, matchId: r.matchId, gameNumber: r.gameNumber, homeScore: r.homeScore, awayScore: r.awayScore }));
 }
 
+/**
+ * Fetches all per-game scores for every match in an event in one query.
+ * Returns a Map keyed by matchId for O(1) lookup during bracket page rendering.
+ */
 export async function getMatchGamesForEvent(eventId: string): Promise<Map<string, MatchGame[]>> {
   const rows = await prisma.matchGame.findMany({
     where: { match: { eventId } },
@@ -1103,6 +1233,12 @@ export async function getMatchGamesForEvent(eventId: string): Promise<Map<string
   return map;
 }
 
+/**
+ * Saves per-game scores for a Best-of-N match. Automatically stops counting games once
+ * a series winner is reached (`ceil(bestOf / 2)` wins). Upserts the parent Match row
+ * with series win counts and deletes+recreates MatchGame rows atomically.
+ * Throws if the match or event is not found.
+ */
 export async function setMatchGames(
   matchId: string,
   eventId: string,

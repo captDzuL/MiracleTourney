@@ -30,6 +30,7 @@ async function verifyToken(token: string): Promise<{ sub: string; role: string }
   }
 }
 
+/** Returns the currently authenticated user from the JWT cookie, or null if unauthenticated. Result is memoised per request via React cache. */
 export const getSessionUser = cache(async (): Promise<AppUser | null> => {
   const store = await cookies();
   const token = store.get(JWT_COOKIE)?.value;
@@ -41,6 +42,10 @@ export const getSessionUser = cache(async (): Promise<AppUser | null> => {
   return getCaptainById(claims.sub) ?? getUserByEmail(claims.sub) ?? null;
 });
 
+/**
+ * Validates credentials and sets a 7-day HttpOnly JWT cookie on success.
+ * Returns `{ ok: true, user }` or `{ ok: false, error }` — never throws.
+ */
 export async function signIn(email: string, password: string) {
   const user = await getUserWithPasswordByEmail(email);
 
@@ -61,11 +66,13 @@ export async function signIn(email: string, password: string) {
   return { ok: true as const, user: publicUser };
 }
 
+/** Clears the JWT cookie, effectively logging out the current user. */
 export async function signOut() {
   const store = await cookies();
   store.delete(JWT_COOKIE);
 }
 
+/** Returns the session user if they hold `role`, otherwise null. Use in server components and actions to gate access. */
 export async function requireRole(role: Exclude<UserRole, "public">) {
   const user = await getSessionUser();
   if (!user || user.role !== role) return null;

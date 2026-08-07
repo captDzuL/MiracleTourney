@@ -39,6 +39,10 @@ function getSeedOrder(size: number): number[] {
   return next;
 }
 
+/**
+ * Builds the first-round structure of a single-elimination bracket from a seeded team list.
+ * Empty slots become byes; teams are placed using a balanced seed-order algorithm.
+ */
 export function generateSingleEliminationBracket(
   teams: TeamSeed[],
   slotCount: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256,
@@ -121,6 +125,12 @@ function getResolvedWinner(
   return null;
 }
 
+/**
+ * Propagates known match results through the bracket, filling in downstream team slots.
+ * A bye automatically advances its team; a single-team slot advances when the opposing
+ * sub-bracket can never produce a team. Result lookup falls back to `round:slot` when
+ * the stored match ID differs from the projected one (prevents team-order sensitivity).
+ */
 export function projectSingleEliminationBracket(input: {
   teams: TeamSeed[];
   slotCount: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
@@ -174,6 +184,11 @@ export function projectSingleEliminationBracket(input: {
   return base;
 }
 
+/**
+ * Returns only the matches that should be publicly visible: matches where both teams are
+ * known, plus first-round auto-advance (bye) slots. Hides downstream rounds until both
+ * feeding sides are resolved.
+ */
 export function getPublicVisibleSingleEliminationBracket(input: {
   teams: TeamSeed[];
   slotCount: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
@@ -195,6 +210,7 @@ export function getPublicVisibleSingleEliminationBracket(input: {
     .filter((match) => match.isPublicVisible);
 }
 
+/** Generates a full round-robin schedule (every team plays every other team exactly once). */
 export function generateRoundRobinSchedule(teams: TeamSeed[]) {
   const schedule: Array<{
     id: string;
@@ -217,6 +233,11 @@ export function generateRoundRobinSchedule(teams: TeamSeed[]) {
   return schedule;
 }
 
+/**
+ * Computes league standings from completed match results.
+ * Ranked by: points → score difference → score for → team name (alphabetical).
+ * Win = 3 pts, draw = 1 pt, loss = 0 pts.
+ */
 export function buildLeagueStandings(teams: TeamSeed[], results: MatchResultInput[]) {
   const lookup = new Map<string, TeamStanding>();
 
@@ -297,6 +318,11 @@ function mergeStats(current: StatLine, incoming: StatLine) {
   return merged;
 }
 
+/**
+ * Aggregates per-match player stats into a leaderboard sorted by `primaryMetric` descending.
+ * Stats for the same player are summed across all matches. Secondary sorts: matches played,
+ * then player name alphabetically.
+ */
 export function aggregatePlayerLeaderboard(
   playerStats: PlayerMatchStatInput[],
   primaryMetric: string,
@@ -332,6 +358,11 @@ export function aggregatePlayerLeaderboard(
   });
 }
 
+/**
+ * Parses a raw stream URL and returns embed metadata.
+ * YouTube watch URLs and short `youtu.be` links produce an embeddable iframe URL.
+ * TikTok and unknown platforms are marked as non-embeddable.
+ */
 export function getLiveStreamPresentation(streamUrl: string) {
   if (streamUrl.includes("youtube.com/watch?v=")) {
     const url = new URL(streamUrl);

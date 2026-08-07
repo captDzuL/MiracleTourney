@@ -51,6 +51,11 @@ async function requireCaptainSession() {
   return user;
 }
 
+/**
+ * Registers a new captain account and their team in a single atomic transaction.
+ * Validates all fields, checks for duplicate email and team tag, hashes the password,
+ * and signs in automatically after creation. Redirects to /captain on success.
+ */
 export async function captainSignUpAction(formData: FormData) {
   const signUpError = (msg: string) =>
     redirect(`/register?error=${encodeURIComponent(msg)}` as never);
@@ -91,6 +96,7 @@ export async function captainSignUpAction(formData: FormData) {
   redirect("/captain?success=registered" as never);
 }
 
+/** Authenticates a user by email/password and redirects to /admin or /captain based on role. */
 export async function loginAction(formData: FormData) {
   const email = z.string().email().parse(formData.get("email"));
   const password = z.string().min(1).parse(formData.get("password"));
@@ -103,11 +109,13 @@ export async function loginAction(formData: FormData) {
   redirect(result.user.role === "admin" ? "/admin" : "/captain");
 }
 
+/** Clears the session cookie and redirects to the home page. */
 export async function logoutAction() {
   await signOut();
   redirect("/");
 }
 
+/** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
 export async function captainRegisterTeamAction(formData: FormData) {
   const captain = await requireCaptainSession();
   const input = z.object({
@@ -124,6 +132,10 @@ export async function captainRegisterTeamAction(formData: FormData) {
   redirect("/captain?success=team-created");
 }
 
+/**
+ * Changes the captain's password after verifying the current one.
+ * Validates that new and confirm passwords match and meet the 8-character minimum.
+ */
 export async function changePasswordAction(formData: FormData) {
   const user = await requireCaptainSession();
 
@@ -154,6 +166,7 @@ export async function changePasswordAction(formData: FormData) {
   redirect("/captain?success=password-changed");
 }
 
+/** Adds a player to the captain's team. Jersey number is optional; omitted if the field is blank. */
 export async function captainAddPlayerAction(formData: FormData) {
   await requireCaptainSession();
 
@@ -181,6 +194,10 @@ export async function captainAddPlayerAction(formData: FormData) {
   redirect("/captain?success=player-added");
 }
 
+/**
+ * Updates a player's profile. Ownership is enforced server-side via the captain's session ID;
+ * the action redirects with an error if the player does not belong to the authenticated captain.
+ */
 export async function captainUpdatePlayerAction(formData: FormData) {
   const user = await requireCaptainSession();
 
@@ -208,6 +225,10 @@ export async function captainUpdatePlayerAction(formData: FormData) {
   redirect("/captain?success=player-updated");
 }
 
+/**
+ * Removes a player. Ownership check is delegated to the repository layer;
+ * any exception redirects to /captain with an error message.
+ */
 export async function captainDeletePlayerAction(formData: FormData) {
   const user = await requireCaptainSession();
   const id = z.string().min(1).parse(formData.get("playerId"));
@@ -222,6 +243,7 @@ export async function captainDeletePlayerAction(formData: FormData) {
   redirect("/captain?success=player-deleted");
 }
 
+/** Creates a new tournament event. Supported participant caps: 8, 12, 16, 24, 32, 64, 128, 256. */
 export async function adminCreateEventAction(formData: FormData) {
   await requireAdminSession();
 
@@ -244,6 +266,7 @@ export async function adminCreateEventAction(formData: FormData) {
   redirect("/admin?success=event-created");
 }
 
+/** Changes an event's lifecycle status (Draft → Published → Registration Closed → Ongoing → Finished). */
 export async function adminUpdateEventStatusAction(formData: FormData) {
   await requireAdminSession();
 
@@ -265,6 +288,10 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
   redirect(`/admin?success=event-status-updated&event=${event.slug}`);
 }
 
+/**
+ * Records a BO1 match result (direct home/away score). Also auto-transitions the event
+ * status from Published/Registration Closed to Ongoing if it hasn't been set yet.
+ */
 export async function adminUpdateMatchResultAction(formData: FormData) {
   await requireAdminSession();
 
@@ -297,6 +324,11 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   redirect(`/admin?matchEventId=${matchEventId}&success=match-result-updated` as never);
 }
 
+/**
+ * Parses and imports teams from an uploaded CSV file.
+ * Validates file presence, then delegates to `parseAndValidateTeamImport` for structural
+ * and business-rule checks before persisting. Redirects with error on any failure.
+ */
 export async function adminImportTeamsCsvAction(formData: FormData) {
   await requireAdminSession();
 
@@ -317,6 +349,7 @@ export async function adminImportTeamsCsvAction(formData: FormData) {
   redirect(`/admin?success=teams-imported&count=${result.rows.length}`);
 }
 
+/** Updates the live-stream URL and label for an event. URL must be a valid absolute URL. */
 export async function adminUpdateStreamAction(formData: FormData) {
   await requireAdminSession();
 
@@ -335,6 +368,11 @@ export async function adminUpdateStreamAction(formData: FormData) {
   redirect("/admin?success=stream-updated");
 }
 
+/**
+ * Submits per-player match statistics for a captain's team.
+ * Stat keys are parsed from form fields matching the pattern `stat_{playerId}_{statKey}`.
+ * Non-numeric values default to 0.
+ */
 export async function captainSubmitStatsAction(formData: FormData) {
   const user = await requireRole("captain");
   if (!user) redirect("/login");
@@ -357,6 +395,7 @@ export async function captainSubmitStatsAction(formData: FormData) {
   revalidatePath("/captain/stats");
 }
 
+/** Approves a captain's stat submission, making it visible on the public leaderboard. */
 export async function adminApproveStatAction(formData: FormData) {
   const user = await requireAdminSession();
   const submissionId = formData.get("submissionId") as string;
@@ -365,6 +404,7 @@ export async function adminApproveStatAction(formData: FormData) {
   redirect("/admin?success=stat-approved");
 }
 
+/** Rejects a stat submission with an optional rejection note shown to the captain. Defaults to "Please review and resubmit." if no note is provided. */
 export async function adminRejectStatAction(formData: FormData) {
   const user = await requireAdminSession();
   const submissionId = formData.get("submissionId") as string;
@@ -375,6 +415,7 @@ export async function adminRejectStatAction(formData: FormData) {
   redirect("/admin?success=stat-rejected");
 }
 
+/** Sets the Best-of-N configuration for a specific round label in an event. Valid bestOf values are 1, 3, or 5. */
 export async function adminSetRoundConfigAction(formData: FormData) {
   await requireAdminSession();
 
@@ -393,6 +434,11 @@ export async function adminSetRoundConfigAction(formData: FormData) {
   redirect(`/admin?matchEventId=${input.eventId}&success=round-config-saved` as never);
 }
 
+/**
+ * Records per-game scores for a Best-of-N match. Form fields follow the pattern
+ * `game{N}_home` / `game{N}_away`; empty rows are skipped. At least one game score
+ * must be provided. Also auto-transitions the event to Ongoing if needed.
+ */
 export async function adminSetMatchGamesAction(formData: FormData) {
   await requireAdminSession();
 
