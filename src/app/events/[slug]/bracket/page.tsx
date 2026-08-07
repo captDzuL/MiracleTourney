@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { DataTable, Pill, Section } from "@/components/ui";
 import {
   getEventRoundConfigs,
+  getEvents,
   getMatchesForEvent,
   getMatchGamesForEvent,
   getBracketPreview,
@@ -14,6 +15,11 @@ import type { Match, MatchGame } from "@/lib/platform/types";
 import type { BracketMatch } from "@/lib/tournament/types";
 
 export const revalidate = 30;
+
+export async function generateStaticParams() {
+  const events = await getEvents();
+  return events.map((event) => ({ slug: event.slug }));
+}
 
 function getRoundName(
   round: number,

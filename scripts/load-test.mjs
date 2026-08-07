@@ -12,6 +12,12 @@ const routes = [
 
 console.log(`\nLoad test target: ${BASE}`);
 console.log(`Config: ${CONNECTIONS} concurrent users × ${DURATION}s per route\n`);
+
+// Warm up all routes so ISR/CDN cache is populated before the concurrent test
+process.stdout.write("Warming up routes ... ");
+await Promise.all(routes.map((r) => fetch(BASE + r.path).catch(() => {})));
+console.log("done\n");
+
 console.log("=".repeat(60));
 
 const results = [];

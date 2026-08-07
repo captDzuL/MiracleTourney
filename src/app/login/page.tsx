@@ -64,6 +64,32 @@ export default async function LoginPage({
           Daftar di sini
         </Link>
       </p>
+
+      {process.env.NODE_ENV === "development" && (
+        <div className="mt-6 border-t border-white/10 pt-6 space-y-2">
+          <p className="text-center text-xs text-slate-500">Dev shortcuts</p>
+          <form action={loginAction}>
+            <input type="hidden" name="email" value="admin@miraclefc.gg" />
+            <input type="hidden" name="password" value="Miracle2026!" />
+            <button
+              type="submit"
+              className="w-full rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-400 hover:border-white/30 hover:text-white transition"
+            >
+              Continue as admin
+            </button>
+          </form>
+          <form action={loginAction}>
+            <input type="hidden" name="email" value="captain@miraclefc.gg" />
+            <input type="hidden" name="password" value="Miracle2026!" />
+            <button
+              type="submit"
+              className="w-full rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-400 hover:border-white/30 hover:text-white transition"
+            >
+              Continue as captain
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
