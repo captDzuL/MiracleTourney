@@ -1,9 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { loginAsAdmin } from "./helpers/auth";
 
 test("admin can publish, import, enter a result, and see bracket advancement publicly", async ({ page }) => {
-  await page.goto("/login");
-  await page.getByRole("button", { name: "Continue as admin" }).click();
-  await expect(page).toHaveURL(/\/admin/);
+  await loginAsAdmin(page, "id");
 
   // Publish the demo event
   const eventStatusForm = page.locator("form").filter({
@@ -15,7 +14,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   await expect(page).toHaveURL(/\/admin\?success=event-status-updated/);
 
   // Attempt CSV import — may fail if event already has recorded results (test ordering)
-  await page.goto("/admin");
+  await page.goto("/id/admin");
   await page.locator('input[name="csv"]').setInputFiles({
     name: "overnight-smoke.csv",
     mimeType: "text/csv",
@@ -28,7 +27,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   await expect(page).toHaveURL(/\/admin\?(?:success=teams-imported|error=)/);
 
   // Click the first manageable match card to get the result form (if any)
-  await page.goto("/admin");
+  await page.goto("/id/admin");
   const firstMatch = page.locator("a[href*='matchId=']").first();
   if (await firstMatch.count() > 0) {
     await firstMatch.click();
@@ -47,15 +46,13 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   }
 
   // Bracket page loads publicly regardless of match state
-  await page.goto("/events/kuroko-summer-cup/bracket");
+  await page.goto("/id/events/kuroko-summer-cup/bracket");
   await expect(page).not.toHaveURL(/login/);
   await expect(page.getByRole("main")).toBeVisible();
 });
 
 test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff", async ({ page }) => {
-  await page.goto("/login");
-  await page.getByRole("button", { name: "Continue as admin" }).click();
-  await expect(page).toHaveURL(/\/admin/);
+  await loginAsAdmin(page, "id");
 
   const createEventForm = page.locator("form").filter({
     has: page.getByRole("button", { name: "Create draft event" }),
@@ -77,26 +74,26 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   await expect(page).toHaveURL(/\/admin\?success=event-status-updated/);
 
   // Navigate to fresh admin page before importing
-  await page.goto("/admin");
+  await page.goto("/id/admin");
   await page.locator('input[name="csv"]').setInputFiles("tests/fixtures/import-22.csv");
   await page.getByRole("button", { name: /Upload and import/i }).click();
   await page.waitForURL(/\/admin\?success=teams-imported&count=22/, { timeout: 15000 });
 
-  await page.goto("/events/flashpeak-24/bracket");
+  await page.goto("/id/events/flashpeak-24/bracket");
   await expect(page.getByText("Final", { exact: true })).not.toBeVisible();
   await expect(page.getByText(/Semifinal|Quarterfinal/i)).not.toBeVisible();
 
-  await page.goto("/admin");
+  await page.goto("/id/admin");
   await page.locator('input[name="csv"]').setInputFiles("tests/fixtures/import-2-more.csv");
   await page.getByRole("button", { name: /Upload and import/i }).click();
   await page.waitForURL(/\/admin\?success=teams-imported&count=2/, { timeout: 15000 });
 
-  await page.goto("/events/flashpeak-24/bracket");
+  await page.goto("/id/events/flashpeak-24/bracket");
   await expect(page.getByText("Team 23", { exact: true })).toBeVisible();
   await expect(page.getByText("Team 24", { exact: true })).toBeVisible();
 
   // Enter a match result to lock the bracket
-  await page.goto("/admin");
+  await page.goto("/id/admin");
   const firstMatch = page.locator("a[href*='matchId=']").first();
   if (await firstMatch.count() > 0) {
     await firstMatch.click();
@@ -115,7 +112,7 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   }
 
   // Late import should fail — event already has recorded results
-  await page.goto("/admin");
+  await page.goto("/id/admin");
   await page.setInputFiles('input[name="csv"]', "tests/fixtures/late-import-after-lock.csv");
   await page.getByRole("button", { name: /Upload and import/i }).click();
   await expect(page).toHaveURL(/error=/);

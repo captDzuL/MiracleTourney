@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-
+import { redirectToActiveLocale } from "@/i18n/redirect";
 import { getSessionUser } from "@/lib/auth/session";
 import { getPublishedEvents } from "@/lib/platform/repository";
 import { RegisterWizard } from "./RegisterWizard";
@@ -10,7 +9,9 @@ export default async function RegisterPage({
   searchParams?: Promise<{ error?: string }>;
 }) {
   const user = await getSessionUser();
-  if (user) redirect("/captain");
+  if (user) {
+    return redirectToActiveLocale("/captain");
+  }
 
   const resolvedParams = await searchParams;
   const errorMsg = resolvedParams?.error ? decodeURIComponent(resolvedParams.error) : undefined;

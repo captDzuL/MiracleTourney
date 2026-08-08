@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
 
+import { Link } from "@/i18n/navigation";
 import { captainSignUpAction } from "@/lib/actions";
 import type { Event } from "@/lib/platform/types";
 
@@ -11,6 +12,7 @@ const inputCls =
 const labelCls = "block text-sm font-medium text-slate-300";
 
 export function RegisterWizard({ events, errorMsg }: { events: Event[]; errorMsg?: string }) {
+  const t = useTranslations("register");
   const [step, setStep] = useState<1 | 2>(1);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -19,10 +21,10 @@ export function RegisterWizard({ events, errorMsg }: { events: Event[]; errorMsg
   const [clientError, setClientError] = useState("");
 
   function handleNext() {
-    if (fullName.trim().length < 2) { setClientError("Nama lengkap minimal 2 karakter."); return; }
-    if (!email.includes("@") || !email.includes(".")) { setClientError("Format email tidak valid."); return; }
-    if (password.length < 8) { setClientError("Password minimal 8 karakter."); return; }
-    if (password !== confirmPassword) { setClientError("Konfirmasi password tidak cocok."); return; }
+    if (fullName.trim().length < 2) { setClientError(t("errorFullName")); return; }
+    if (!email.includes("@") || !email.includes(".")) { setClientError(t("errorEmail")); return; }
+    if (password.length < 8) { setClientError(t("errorPassword")); return; }
+    if (password !== confirmPassword) { setClientError(t("errorConfirm")); return; }
     setClientError("");
     setStep(2);
   }
@@ -32,9 +34,9 @@ export function RegisterWizard({ events, errorMsg }: { events: Event[]; errorMsg
   return (
     <div className="mx-auto max-w-md rounded-[2rem] border border-white/10 bg-slate-900/70 p-8">
       <div className="mb-6 flex items-center gap-2 text-xs text-slate-500">
-        <span className={step === 1 ? "font-semibold text-cyan-400" : ""}>1. Akun</span>
+        <span className={step === 1 ? "font-semibold text-cyan-400" : ""}>{t("step1")}</span>
         <span>→</span>
-        <span className={step === 2 ? "font-semibold text-cyan-400" : ""}>2. Tim</span>
+        <span className={step === 2 ? "font-semibold text-cyan-400" : ""}>{t("step2")}</span>
       </div>
 
       {displayError && (
@@ -45,49 +47,49 @@ export function RegisterWizard({ events, errorMsg }: { events: Event[]; errorMsg
 
       {step === 1 ? (
         <div className="space-y-4">
-          <h1 className="text-3xl font-semibold text-white">Buat Akun</h1>
-          <p className="text-sm text-slate-400">Langkah 1 dari 2 — informasi akun kamu.</p>
+          <h1 className="text-3xl font-semibold text-white">{t("step1Title")}</h1>
+          <p className="text-sm text-slate-400">{t("step1Desc")}</p>
 
           <div>
-            <label className={labelCls}>Nama lengkap</label>
+            <label className={labelCls}>{t("fullName")}</label>
             <input
               className={inputCls}
               type="text"
               autoComplete="name"
-              placeholder="Nama kamu"
+              placeholder={t("fullNamePlaceholder")}
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
             />
           </div>
           <div>
-            <label className={labelCls}>Email</label>
+            <label className={labelCls}>{t("email")}</label>
             <input
               className={inputCls}
               type="email"
               autoComplete="email"
-              placeholder="kamu@example.com"
+              placeholder={t("emailPlaceholder")}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
           <div>
-            <label className={labelCls}>Password</label>
+            <label className={labelCls}>{t("password")}</label>
             <input
               className={inputCls}
               type="password"
               autoComplete="new-password"
-              placeholder="Minimal 8 karakter"
+              placeholder={t("passwordPlaceholder")}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
           <div>
-            <label className={labelCls}>Konfirmasi password</label>
+            <label className={labelCls}>{t("confirmPassword")}</label>
             <input
               className={inputCls}
               type="password"
               autoComplete="new-password"
-              placeholder="Ulangi password"
+              placeholder={t("confirmPlaceholder")}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
             />
@@ -98,13 +100,13 @@ export function RegisterWizard({ events, errorMsg }: { events: Event[]; errorMsg
             onClick={handleNext}
             className="mt-2 w-full rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
           >
-            Lanjut →
+            {t("next")}
           </button>
 
           <p className="text-center text-sm text-slate-400">
-            Sudah punya akun?{" "}
+            {t("haveAccount")}{" "}
             <Link href="/login" className="text-cyan-400 hover:text-cyan-300">
-              Login di sini
+              {t("loginHere")}
             </Link>
           </p>
         </div>
@@ -114,17 +116,17 @@ export function RegisterWizard({ events, errorMsg }: { events: Event[]; errorMsg
           <input type="hidden" name="email" value={email} />
           <input type="hidden" name="password" value={password} />
 
-          <h1 className="text-3xl font-semibold text-white">Daftarkan Tim</h1>
-          <p className="text-sm text-slate-400">Langkah 2 dari 2 — pilih event dan buat tim.</p>
+          <h1 className="text-3xl font-semibold text-white">{t("step2Title")}</h1>
+          <p className="text-sm text-slate-400">{t("step2Desc")}</p>
 
           {events.length === 0 ? (
             <p className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
-              Tidak ada event yang sedang membuka pendaftaran. Coba lagi nanti.
+              {t("noEvents")}
             </p>
           ) : (
             <>
               <div>
-                <label className={labelCls}>Event</label>
+                <label className={labelCls}>{t("event")}</label>
                 <select
                   name="eventId"
                   className="mt-1 w-full rounded-xl border border-white/10 bg-slate-800 px-4 py-3 text-sm text-white focus:border-cyan-400 focus:outline-none"
@@ -138,23 +140,23 @@ export function RegisterWizard({ events, errorMsg }: { events: Event[]; errorMsg
                 </select>
               </div>
               <div>
-                <label className={labelCls}>Nama tim</label>
+                <label className={labelCls}>{t("teamName")}</label>
                 <input
                   className={inputCls}
                   type="text"
                   name="teamName"
-                  placeholder="Miracle Five"
+                  placeholder={t("teamNamePlaceholder")}
                   minLength={2}
                   required
                 />
               </div>
               <div>
-                <label className={labelCls}>Tag tim (2–4 karakter)</label>
+                <label className={labelCls}>{t("teamTag")}</label>
                 <input
                   className={`${inputCls} uppercase`}
                   type="text"
                   name="teamTag"
-                  placeholder="MFC"
+                  placeholder={t("teamTagPlaceholder")}
                   minLength={2}
                   maxLength={4}
                   required
@@ -168,13 +170,13 @@ export function RegisterWizard({ events, errorMsg }: { events: Event[]; errorMsg
                   onClick={() => { setClientError(""); setStep(1); }}
                   className="flex-1 rounded-full border border-white/10 px-4 py-3 text-sm font-medium text-slate-300 transition hover:border-white/20 hover:text-white"
                 >
-                  ← Kembali
+                  {t("back")}
                 </button>
                 <button
                   type="submit"
                   className="flex-1 rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
                 >
-                  Daftar
+                  {t("submit")}
                 </button>
               </div>
             </>

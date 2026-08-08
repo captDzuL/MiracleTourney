@@ -1,6 +1,9 @@
 import { jwtVerify } from "jose";
+import createMiddleware from "next-intl/middleware";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+
+import { routing } from "./src/i18n/routing";
 
 const JWT_COOKIE = "mfl_token";
 const JWT_SECRET = new TextEncoder().encode(
@@ -8,12 +11,10 @@ const JWT_SECRET = new TextEncoder().encode(
 );
 
 // In-memory rate limiter for login — per edge instance.
-// Provides meaningful protection against single-IP brute-force; not
-// a substitute for a distributed store (Vercel KV) if multi-instance
-// attack resistance is required.
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 10;
+const LOCALE_SEGMENT = /^\/(id|en)(?=\/|$)/;
 
 function checkLoginRateLimit(ip: string): boolean {
   const now = Date.now();
@@ -39,11 +40,30 @@ async function getRole(request: NextRequest): Promise<string | null> {
   }
 }
 
+const intlMiddleware = createMiddleware(routing);
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const localeFromPath = pathname.match(LOCALE_SEGMENT)?.[1] as "id" | "en" | undefined;
+  const normalizedPath = localeFromPath ? pathname.replace(LOCALE_SEGMENT, "") || "/" : pathname;
+  const cookieLocale = request.cookies.get("NEXT_LOCALE")?.value;
+  const activeLocale =
+    localeFromPath
+    ?? (cookieLocale && routing.locales.includes(cookieLocale as "id" | "en")
+      ? (cookieLocale as "id" | "en")
+      : routing.defaultLocale);
+
+  const isStaticAsset = pathname.startsWith("/_next") || /\.[^/]+$/.test(pathname);
+  const isApiRoute = pathname.startsWith("/api");
+
+  if (!localeFromPath && !isApiRoute && !isStaticAsset) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = pathname === "/" ? `/${activeLocale}` : `/${activeLocale}${pathname}`;
+    return NextResponse.redirect(redirectUrl);
+  }
 
   // Rate-limit POST to /login (brute-force protection)
-  if (pathname === "/login" && request.method === "POST") {
+  if (normalizedPath === "/login" && request.method === "POST") {
     const ip =
       request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
       request.headers.get("x-real-ip") ??
@@ -58,18 +78,28 @@ export async function middleware(request: NextRequest) {
   }
 
   // Route protection — verify JWT and check role
-  if (pathname.startsWith("/captain") || pathname.startsWith("/admin")) {
+  if (normalizedPath.startsWith("/captain") || normalizedPath.startsWith("/admin")) {
     const role = await getRole(request);
-    const requiredRole = pathname.startsWith("/admin") ? "admin" : "captain";
+    const requiredRole = normalizedPath.startsWith("/admin") ? "admin" : "captain";
 
     if (role !== requiredRole) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      return NextResponse.redirect(new URL(`/${activeLocale}/login`, request.url));
     }
   }
 
-  return NextResponse.next();
+  // Temporary debug endpoint
+  if (normalizedPath === "/_debug_locale") {
+    return NextResponse.json({
+      cookie: request.cookies.get("NEXT_LOCALE")?.value ?? "(not set)",
+      allCookies: request.headers.get("cookie"),
+    });
+  }
+
+  // Locale detection + cookie management (sets NEXT_LOCALE cookie)
+  return intlMiddleware(request);
 }
 
 export const config = {
-  matcher: ["/login", "/captain/:path*", "/admin/:path*"],
+  // Match all routes except API, Next.js internals, and static files
+  matcher: ["/((?!api|_next|.*\\..*).*)"],
 };

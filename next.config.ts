@@ -1,4 +1,7 @@
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
@@ -12,7 +15,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  typedRoutes: true,
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -27,4 +30,4 @@ const nextConfig: NextConfig = {
   ],
 };
 
-export default nextConfig;
+export default withNextIntl(nextConfig);

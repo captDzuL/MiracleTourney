@@ -2,9 +2,31 @@ import { expect, test } from "@playwright/test";
 
 test.describe("admin event management", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/login");
-    await page.getByRole("button", { name: "Continue as admin" }).click();
-    await expect(page).toHaveURL(/\/admin/);
+    await page.goto("/en/login");
+    await page.getByLabel("Email").fill("admin@miraclefc.gg");
+    await page.getByLabel("Password").fill("Miracle2026!");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).toHaveURL(/\/(en|id)\/admin/);
+  });
+
+  test("admin keeps localized navbar when changing match management event", async ({ page }) => {
+    await page.goto("/id/admin");
+    await expect(page).toHaveURL(/\/id\/admin$/);
+
+    const changeEventButton = page.getByRole("button", { name: /ganti event|change event/i });
+    await expect(changeEventButton).toBeVisible();
+    await expect(page.locator("header")).toBeVisible();
+    await expect(page.getByRole("link", { name: /^Event$/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /^Admin$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /keluar|logout/i })).toBeVisible();
+
+    await changeEventButton.click();
+
+    await expect(page).toHaveURL(/\/id\/admin\?matchEventId=/);
+    await expect(page.locator("header")).toBeVisible();
+    await expect(page.getByRole("link", { name: /^Event$/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /^Admin$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /keluar|logout/i })).toBeVisible();
   });
 
   test("admin can change event status from Draft to Published", async ({ page }) => {

@@ -8,8 +8,8 @@ describe("events page public cards", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
 
     expect(source).toContain("{event.name}");
-    expect(source).toContain("Event logo");
-    expect(source).toContain("Game art");
+    expect(source).toContain("logo");
+    expect(source).toContain("{game.name}");
     expect(source).not.toContain('className="mt-4 text-xl font-semibold text-white">{event.name}</h2>');
   });
 });

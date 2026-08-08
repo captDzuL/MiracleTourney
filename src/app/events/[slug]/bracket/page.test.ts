@@ -5,8 +5,43 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, test, vi } from "vitest";
 
-import { createEvent, importTeams, resetDemoStore, setEventStatus } from "@/lib/platform/demo-store";
+import {
+  createEvent,
+  getPublicVisibleBracketPreview,
+  importTeams,
+  resetDemoStore,
+  setEventStatus,
+} from "@/lib/platform/demo-store";
+import type { EventRoundConfig, Match, MatchGame } from "@/lib/platform/types";
 import BracketPage from "./page";
+
+const {
+  getEventRoundConfigsMock,
+  getMatchGamesForEventMock,
+  getMatchesForEventMock,
+} = vi.hoisted(() => ({
+  getEventRoundConfigsMock: vi.fn(),
+  getMatchGamesForEventMock: vi.fn(),
+  getMatchesForEventMock: vi.fn(),
+}));
+
+vi.mock("next-intl/server", async () => {
+  const en = (await import("../../../../../messages/en.json")) as unknown as Record<string, Record<string, string>>;
+  return {
+    getTranslations: vi.fn().mockImplementation(async (namespace: string) => {
+      const ns = en[namespace] ?? {};
+      return (key: string, values?: Record<string, string | number>) => {
+        let str = ns[key] ?? key;
+        if (values) {
+          for (const [k, v] of Object.entries(values)) {
+            str = str.replace(new RegExp(`\\{${k}\\b[^}]*\\}`, "g"), String(v));
+          }
+        }
+        return str;
+      };
+    }),
+  };
+});
 
 vi.mock("@/lib/platform/repository", async () => {
   const store = await import("@/lib/platform/demo-store");
@@ -14,10 +49,10 @@ vi.mock("@/lib/platform/repository", async () => {
     getPublicEventBySlug: (slug: string) => Promise.resolve(store.getPublicEventBySlug(slug)),
     getTeamsForEvent: (eventId: string) => Promise.resolve(store.getTeamsForEvent(eventId)),
     getPublicVisibleBracketPreview: (eventId: string) => Promise.resolve(store.getPublicVisibleBracketPreview(eventId)),
-    getMatchesForEvent: (eventId: string) => Promise.resolve(store.getMatchesForEvent(eventId)),
+    getMatchesForEvent: (eventId: string) => getMatchesForEventMock(eventId, store),
     getBracketPreview: (eventId: string) => Promise.resolve(store.getBracketPreview(eventId)),
-    getEventRoundConfigs: () => Promise.resolve([]),
-    getMatchGamesForEvent: () => Promise.resolve(new Map()),
+    getEventRoundConfigs: (eventId: string) => getEventRoundConfigsMock(eventId, store),
+    getMatchGamesForEvent: (eventId: string) => getMatchGamesForEventMock(eventId, store),
   };
 });
 
@@ -29,11 +64,31 @@ async function renderBracket(slug: string) {
 }
 
 describe("public bracket page", () => {
+  let roundConfigsByEvent: Map<string, EventRoundConfig[]>;
+  let matchGamesByEvent: Map<string, Map<string, MatchGame[]>>;
+  let matchOverridesByEvent: Map<string, Match[]>;
+
   beforeEach(resetDemoStore);
   afterEach(resetDemoStore);
 
+  beforeEach(() => {
+    roundConfigsByEvent = new Map();
+    matchGamesByEvent = new Map();
+    matchOverridesByEvent = new Map();
+
+    getEventRoundConfigsMock.mockImplementation(async (eventId: string, store: typeof import("@/lib/platform/demo-store")) => (
+      roundConfigsByEvent.get(eventId) ?? []
+    ));
+    getMatchGamesForEventMock.mockImplementation(async (eventId: string, store: typeof import("@/lib/platform/demo-store")) => (
+      matchGamesByEvent.get(eventId) ?? new Map()
+    ));
+    getMatchesForEventMock.mockImplementation(async (eventId: string, store: typeof import("@/lib/platform/demo-store")) => (
+      matchOverridesByEvent.get(eventId) ?? store.getMatchesForEvent(eventId)
+    ));
+  });
+
   test("uses the public-visible projection for rendering and full projection for labels", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+    const source = fs.readFileSync(path.resolve(__dirname, "./bracket-page-content.tsx"), "utf8");
 
     expect(source).toContain("getPublicVisibleBracketPreview");
     expect(source).toContain("getBracketPreview(event.id)");
@@ -128,5 +183,126 @@ describe("public bracket page", () => {
 
     expect(markup).toContain("4 - 2");
     expect(markup).toContain("1 - 1");
+  });
+
+  it("shows per-game BO3 detail for a completed public bracket match", async () => {
+    const event = createEvent({
+      name: "Bracket BO3",
+      slug: "bracket-bo3-test",
+      gameModeId: "mode-kuroko-3v3",
+      format: "Single Elimination",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Ongoing");
+    importTeams(
+      Array.from({ length: 8 }, (_, index) => ({
+        eventId: event.id,
+        teamName: `Team ${index + 1}`,
+        teamTag: `B${index + 1}`,
+        captainName: `Captain ${index + 1}`,
+        captainContact: `captain-${index + 1}@example.test`,
+      })),
+    );
+
+    const [firstMatch] = getPublicVisibleBracketPreview(event.id) as Array<{
+      id: string;
+      round: number;
+      slot: number;
+      homeTeamId: string;
+      awayTeamId: string;
+    }>;
+
+    roundConfigsByEvent.set(event.id, [
+      { id: "cfg-bo3", eventId: event.id, roundLabel: "Final", bestOf: 3 },
+    ]);
+    matchOverridesByEvent.set(event.id, [
+      {
+        id: firstMatch.id,
+        eventId: event.id,
+        roundLabel: "Final",
+        homeTeamId: firstMatch.homeTeamId,
+        awayTeamId: firstMatch.awayTeamId,
+        homeScore: 2,
+        awayScore: 1,
+        status: "Completed",
+        round: firstMatch.round,
+        slot: firstMatch.slot,
+        winnerTeamId: firstMatch.homeTeamId,
+      },
+    ]);
+    matchGamesByEvent.set(event.id, new Map([
+      [firstMatch.id, [
+        { id: "g1", matchId: firstMatch.id, gameNumber: 1, homeScore: 21, awayScore: 15 },
+        { id: "g2", matchId: firstMatch.id, gameNumber: 2, homeScore: 10, awayScore: 21 },
+        { id: "g3", matchId: firstMatch.id, gameNumber: 3, homeScore: 21, awayScore: 18 },
+      ]],
+    ]));
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain("2 - 1 (BO3)");
+    expect(markup).toContain("G1");
+    expect(markup).toContain("G2");
+    expect(markup).toContain("G3");
+    expect(markup).toContain("Series");
+  });
+
+  it("shows partial BO5 detail before the series winner is decided", async () => {
+    const event = createEvent({
+      name: "Bracket BO5",
+      slug: "bracket-bo5-test",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Ongoing");
+    importTeams(
+      Array.from({ length: 8 }, (_, index) => ({
+        eventId: event.id,
+        teamName: `Squad ${index + 1}`,
+        teamTag: `P${index + 1}`,
+        captainName: `Captain ${index + 1}`,
+        captainContact: `captain-${index + 1}@example.test`,
+      })),
+    );
+
+    const [firstMatch] = getPublicVisibleBracketPreview(event.id) as Array<{
+      id: string;
+      round: number;
+      slot: number;
+      homeTeamId: string;
+      awayTeamId: string;
+    }>;
+
+    roundConfigsByEvent.set(event.id, [
+      { id: "cfg-bo5", eventId: event.id, roundLabel: "Final", bestOf: 5 },
+    ]);
+    matchOverridesByEvent.set(event.id, [
+      {
+        id: firstMatch.id,
+        eventId: event.id,
+        roundLabel: "Final",
+        homeTeamId: firstMatch.homeTeamId,
+        awayTeamId: firstMatch.awayTeamId,
+        homeScore: 1,
+        awayScore: 1,
+        status: "Scheduled",
+        round: firstMatch.round,
+        slot: firstMatch.slot,
+        winnerTeamId: null,
+      },
+    ]);
+    matchGamesByEvent.set(event.id, new Map([
+      [firstMatch.id, [
+        { id: "g1", matchId: firstMatch.id, gameNumber: 1, homeScore: 3, awayScore: 1 },
+        { id: "g2", matchId: firstMatch.id, gameNumber: 2, homeScore: 0, awayScore: 2 },
+      ]],
+    ]));
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain("1 - 1 (BO5)");
+    expect(markup).toContain("G1");
+    expect(markup).toContain("G2");
   });
 });

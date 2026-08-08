@@ -1,7 +1,8 @@
-import Link from "next/link";
-import { redirect } from "next/navigation";
 import { CalendarDays, Settings, Users } from "lucide-react";
+import { getTranslations } from "next-intl/server";
 
+import { Link } from "@/i18n/navigation";
+import { redirectToActiveLocale } from "@/i18n/redirect";
 import { captainAddPlayerAction, captainDeletePlayerAction, captainUpdatePlayerAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
@@ -16,14 +17,19 @@ import {
 import type { Event, Game, GameMode, Player, Team } from "@/lib/platform/types";
 import { buttonStyles } from "@/components/ui";
 
+type TFn = (key: string, values?: Record<string, string | number>) => string;
+
 export default async function CaptainPage({
   searchParams,
 }: {
   searchParams?: Promise<{ edit?: string; confirm?: string; success?: string; error?: string }>;
 }) {
   const user = await requireRole("captain");
-  if (!user) redirect("/login");
+  if (!user) {
+    return redirectToActiveLocale("/login");
+  }
 
+  const t = await getTranslations("captain");
   const params = await searchParams;
   const editPlayerId = params?.edit;
   const confirmDeleteId = params?.confirm;
@@ -35,7 +41,7 @@ export default async function CaptainPage({
     getEvents(),
     hasTempPassword(user.id),
   ]);
-  const allPlayers = await getPlayersForTeams(teams.map((t) => t.id));
+  const allPlayers = await getPlayersForTeams(teams.map((team) => team.id));
   const teamsWithPlayers = teams.map((team) => ({
     team,
     players: allPlayers.filter((p) => p.teamId === team.id),
@@ -43,33 +49,37 @@ export default async function CaptainPage({
 
   return (
     <div className="space-y-6">
-      {/* Notifications */}
       {usingTempPassword && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Kamu masih menggunakan password sementara.{" "}
-          <Link href={"/captain/settings" as never} className="font-semibold underline hover:text-amber-900">
-            Ganti sekarang →
+          {t("tempPasswordWarning")}{" "}
+          <Link href="/captain/settings" className="font-semibold underline hover:text-amber-900">
+            {t("changeNow")}
           </Link>
         </div>
       )}
       {success === "password-changed" && (
         <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          Password berhasil diubah.
+          {t("passwordChanged")}
         </div>
       )}
       {success === "player-added" && (
         <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          Pemain berhasil ditambahkan.
+          {t("playerAdded")}
         </div>
       )}
       {success === "player-updated" && (
         <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          Data pemain berhasil diperbarui.
+          {t("playerUpdated")}
         </div>
       )}
       {success === "player-deleted" && (
         <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          Pemain berhasil dihapus.
+          {t("playerDeleted")}
+        </div>
+      )}
+      {success === "registered" && (
+        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {t("registered")}
         </div>
       )}
       {error && (
@@ -78,7 +88,6 @@ export default async function CaptainPage({
         </div>
       )}
 
-      {/* Team sections */}
       <div className="space-y-8">
         {teamsWithPlayers.map(({ team, players }) => {
           const event = events.find((e) => e.id === team.eventId);
@@ -95,6 +104,7 @@ export default async function CaptainPage({
               players={players}
               editPlayerId={editPlayerId}
               confirmDeleteId={confirmDeleteId}
+              t={t as TFn}
             />
           );
         })}
@@ -117,6 +127,7 @@ function TeamSection({
   players,
   editPlayerId,
   confirmDeleteId,
+  t,
 }: {
   team: Team;
   event: Event;
@@ -125,6 +136,7 @@ function TeamSection({
   players: Player[];
   editPlayerId?: string;
   confirmDeleteId?: string;
+  t: TFn;
 }) {
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -149,25 +161,24 @@ function TeamSection({
               </span>
             </div>
             <Link
-              href={"/captain/stats" as "/captain/stats"}
+              href="/captain/stats"
               className="mt-3 inline-block text-sm font-medium text-cyan-600 hover:text-cyan-500"
             >
-              Submit match stats →
+              {t("submitStats")}
             </Link>
           </div>
           <Link
-            href={"/captain/settings" as never}
+            href="/captain/settings"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition hover:border-slate-300 hover:text-slate-600"
-            title="Pengaturan akun"
+            title={t("accountSettings")}
           >
             <Settings className="h-4 w-4" />
           </Link>
         </div>
 
-        {/* Player grid */}
         <div>
           <h3 className="mb-3 text-sm font-semibold text-slate-700">
-            Roster · {players.length} player{players.length !== 1 ? "s" : ""}
+            {t("roster", { count: players.length })}
           </h3>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {players.map((player) => {
@@ -177,21 +188,18 @@ function TeamSection({
                     key={player.id}
                     className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 p-3 text-center"
                   >
-                    <p className="text-xs font-semibold text-red-700">Hapus {player.displayName}?</p>
+                    <p className="text-xs font-semibold text-red-700">{t("deleteConfirm", { name: player.displayName })}</p>
                     <form action={captainDeletePlayerAction}>
                       <input type="hidden" name="playerId" value={player.id} />
                       <button
                         type="submit"
                         className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700"
                       >
-                        Ya, hapus
+                        {t("confirmDelete")}
                       </button>
                     </form>
-                    <Link
-                      href="/captain"
-                      className="text-xs text-slate-500 hover:text-slate-700"
-                    >
-                      Batal
+                    <Link href="/captain" className="text-xs text-slate-500 hover:text-slate-700">
+                      {t("cancelAction")}
                     </Link>
                   </div>
                 );
@@ -205,10 +213,10 @@ function TeamSection({
                     className="col-span-2 rounded-2xl border border-blue-200 bg-blue-50 p-3 sm:col-span-3"
                   >
                     <input type="hidden" name="playerId" value={player.id} />
-                    <p className="mb-3 text-xs font-semibold text-blue-700">Edit {player.displayName}</p>
+                    <p className="mb-3 text-xs font-semibold text-blue-700">{t("editPlayerTitle", { name: player.displayName })}</p>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <label className="grid gap-1 text-xs text-slate-600">
-                        Nama lengkap
+                        {t("displayName")}
                         <input
                           className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
                           name="displayName"
@@ -217,7 +225,7 @@ function TeamSection({
                         />
                       </label>
                       <label className="grid gap-1 text-xs text-slate-600">
-                        Nickname / IGN
+                        {t("nickname")}
                         <input
                           className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
                           name="nickname"
@@ -226,7 +234,7 @@ function TeamSection({
                         />
                       </label>
                       <label className="grid gap-1 text-xs text-slate-600">
-                        Posisi
+                        {t("position")}
                         <select
                           className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
                           name="position"
@@ -238,7 +246,7 @@ function TeamSection({
                         </select>
                       </label>
                       <label className="grid gap-1 text-xs text-slate-600">
-                        Jersey #
+                        {t("jersey")}
                         <input
                           className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
                           name="jerseyNumber"
@@ -254,13 +262,13 @@ function TeamSection({
                         type="submit"
                         className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
                       >
-                        Simpan
+                        {t("save")}
                       </button>
                       <Link
                         href="/captain"
                         className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
                       >
-                        Batal
+                        {t("cancelAction")}
                       </Link>
                     </div>
                   </form>
@@ -286,73 +294,68 @@ function TeamSection({
                   <p className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
                     {player.position}
                   </p>
-                  {/* Edit / Delete controls */}
                   <div className="mt-2 flex gap-1.5">
                     <Link
                       href={`/captain?edit=${player.id}`}
                       className="rounded-md px-2 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-200"
                     >
-                      Edit
+                      {t("edit")}
                     </Link>
                     <Link
                       href={`/captain?confirm=${player.id}`}
                       className="rounded-md px-2 py-0.5 text-[10px] font-medium text-red-400 hover:bg-red-50"
                     >
-                      Hapus
+                      {t("delete")}
                     </Link>
                   </div>
                 </div>
               );
             })}
-            {/* Anchor card */}
             <a
               href="#add-player-form"
               className="flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-200 p-3 text-slate-400 transition hover:border-blue-300 hover:text-blue-400"
             >
               <span className="text-2xl leading-none">+</span>
-              <span className="text-xs">Add player</span>
+              <span className="text-xs">{t("addPlayerAnchor")}</span>
             </a>
           </div>
         </div>
 
-        {/* Add player form */}
         <form id="add-player-form" action={captainAddPlayerAction} className="grid gap-4">
           <input type="hidden" name="teamId" value={team.id} />
           <input type="hidden" name="eventId" value={team.eventId} />
-          <h3 className="text-sm font-semibold text-slate-700">Add player</h3>
+          <h3 className="text-sm font-semibold text-slate-700">{t("addPlayerTitle")}</h3>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1.5 text-sm text-slate-600">
-              Display name
+              {t("displayName")}
               <input
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                 name="displayName"
-                placeholder="Full name"
+                placeholder={t("displayNamePlaceholder")}
               />
             </label>
             <label className="grid gap-1.5 text-sm text-slate-600">
-              Nickname / IGN
+              {t("nickname")}
               <input
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                 name="nickname"
-                placeholder="IGN"
+                placeholder={t("nicknamePlaceholder")}
               />
             </label>
             <label className="grid gap-1.5 text-sm text-slate-600">
-              Position
+              {t("position")}
               <select
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                 name="position"
                 defaultValue={mode.positions[0]}
               >
                 {mode.positions.map((pos) => (
-                  <option key={pos} value={pos}>
-                    {pos}
-                  </option>
+                  <option key={pos} value={pos}>{pos}</option>
                 ))}
               </select>
             </label>
             <label className="grid gap-1.5 text-sm text-slate-600">
-              Jersey # <span className="text-slate-400">(optional)</span>
+              {t("jersey")} <span className="text-slate-400">{t("jerseyOptional")}</span>
               <input
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                 name="jerseyNumber"
@@ -365,7 +368,7 @@ function TeamSection({
           </div>
           <div>
             <button className={`${buttonStyles.primary} text-sm`} type="submit">
-              Add player
+              {t("addPlayerSubmit")}
             </button>
           </div>
         </form>

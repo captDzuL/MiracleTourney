@@ -5,8 +5,11 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { redirectToActiveLocale } from "@/i18n/redirect";
+import { routing } from "@/i18n/routing";
 import { requireRole, signIn, signOut } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
+import type { AppUser } from "@/lib/platform/types";
 import {
   addPlayer,
   approveStatSubmission,
@@ -31,24 +34,35 @@ import {
   upsertStatSubmission,
 } from "@/lib/platform/repository";
 
-async function requireAdminSession() {
+async function requireAdminSession(): Promise<AppUser> {
   const user = await requireRole("admin");
 
   if (!user) {
-    redirect("/login");
+    return redirectToActiveLocale("/login");
   }
 
   return user;
 }
 
-async function requireCaptainSession() {
+async function requireCaptainSession(): Promise<AppUser> {
   const user = await requireRole("captain");
 
   if (!user) {
-    redirect("/login");
+    return redirectToActiveLocale("/login");
   }
 
   return user;
+}
+
+async function redirectToRequestedLocale(path: string, locale?: string): Promise<never> {
+  if (locale && routing.locales.includes(locale as "id" | "en")) {
+    const [pathname, search = ""] = path.split("?");
+    const query = search ? `?${search}` : "";
+    const target = pathname === "/" ? `/${locale}${query}` : `/${locale}${pathname}${query}`;
+    redirect(target);
+  }
+
+  return redirectToActiveLocale(path);
 }
 
 /**
@@ -57,8 +71,8 @@ async function requireCaptainSession() {
  * and signs in automatically after creation. Redirects to /captain on success.
  */
 export async function captainSignUpAction(formData: FormData) {
-  const signUpError = (msg: string) =>
-    redirect(`/register?error=${encodeURIComponent(msg)}` as never);
+  const signUpError = async (msg: string) =>
+    redirectToActiveLocale(`/register?error=${encodeURIComponent(msg)}` as never);
 
   const fullName = String(formData.get("fullName") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -67,18 +81,18 @@ export async function captainSignUpAction(formData: FormData) {
   const teamName = String(formData.get("teamName") ?? "").trim();
   const teamTag = String(formData.get("teamTag") ?? "").trim().toUpperCase();
 
-  if (!fullName || fullName.length < 2) signUpError("Nama lengkap minimal 2 karakter.");
-  if (!z.string().email().safeParse(email).success) signUpError("Format email tidak valid.");
-  if (password.length < 8) signUpError("Password minimal 8 karakter.");
-  if (!eventId) signUpError("Pilih event terlebih dahulu.");
-  if (teamName.length < 2) signUpError("Nama tim minimal 2 karakter.");
-  if (teamTag.length < 2 || teamTag.length > 4) signUpError("Tag tim harus 2-4 karakter.");
+  if (!fullName || fullName.length < 2) await signUpError("Nama lengkap minimal 2 karakter.");
+  if (!z.string().email().safeParse(email).success) await signUpError("Format email tidak valid.");
+  if (password.length < 8) await signUpError("Password minimal 8 karakter.");
+  if (!eventId) await signUpError("Pilih event terlebih dahulu.");
+  if (teamName.length < 2) await signUpError("Nama tim minimal 2 karakter.");
+  if (teamTag.length < 2 || teamTag.length > 4) await signUpError("Tag tim harus 2-4 karakter.");
 
   const existingUser = await getUserByEmail(email);
-  if (existingUser) signUpError("Email ini sudah terdaftar. Coba login.");
+  if (existingUser) await signUpError("Email ini sudah terdaftar. Coba login.");
 
   const publishedEvents = await getPublishedEvents();
-  if (!publishedEvents.find((e) => e.id === eventId)) signUpError("Event tidak valid atau sudah tidak tersedia.");
+  if (!publishedEvents.find((e) => e.id === eventId)) await signUpError("Event tidak valid atau sudah tidak tersedia.");
 
   const passwordHash = await bcrypt.hash(password, 10);
 
@@ -86,33 +100,39 @@ export async function captainSignUpAction(formData: FormData) {
     await createCaptainWithTeam({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal membuat akun.";
-    if (msg.includes("Unique constraint")) signUpError("Tag atau nama tim sudah digunakan di event ini.");
-    signUpError(msg);
+    if (msg.includes("Unique constraint")) await signUpError("Tag atau nama tim sudah digunakan di event ini.");
+    await signUpError(msg);
   }
 
   const result = await signIn(email, password);
-  if (!result.ok) signUpError("Akun berhasil dibuat, tapi login gagal. Silakan login manual.");
+  if (!result.ok) await signUpError("Akun berhasil dibuat, tapi login gagal. Silakan login manual.");
 
-  redirect("/captain?success=registered" as never);
+  await redirectToActiveLocale("/captain?success=registered" as never);
 }
 
 /** Authenticates a user by email/password and redirects to /admin or /captain based on role. */
 export async function loginAction(formData: FormData) {
+  const requestedLocale = String(formData.get("locale") ?? "").trim();
   const email = z.string().email().parse(formData.get("email"));
   const password = z.string().min(1).parse(formData.get("password"));
   const result = await signIn(email, password);
 
   if (!result.ok) {
-    redirect("/login?error=invalid");
+    return await redirectToRequestedLocale("/login?error=invalid", requestedLocale);
   }
 
-  redirect(result.user.role === "admin" ? "/admin" : "/captain");
+  const user = result.user;
+  if (!user) {
+    return await redirectToRequestedLocale("/login?error=invalid", requestedLocale);
+  }
+
+  await redirectToRequestedLocale(user.role === "admin" ? "/admin" : "/captain", requestedLocale);
 }
 
 /** Clears the session cookie and redirects to the home page. */
 export async function logoutAction() {
   await signOut();
-  redirect("/");
+  await redirectToActiveLocale("/");
 }
 
 /** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
@@ -129,7 +149,7 @@ export async function captainRegisterTeamAction(formData: FormData) {
   });
 
   await registerTeam({ ...input, captainId: captain.id });
-  redirect("/captain?success=team-created");
+  await redirectToActiveLocale("/captain?success=team-created");
 }
 
 /**
@@ -143,27 +163,31 @@ export async function changePasswordAction(formData: FormData) {
   const newPassword = String(formData.get("newPassword") ?? "");
   const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
-  const settingsError = (msg: string) =>
-    redirect(`/captain/settings?error=${encodeURIComponent(msg)}` as never);
+  const settingsError = async (msg: string) =>
+    redirectToActiveLocale(`/captain/settings?error=${encodeURIComponent(msg)}` as never);
 
   if (!currentPassword || !newPassword || !confirmPassword) {
-    settingsError("Semua field harus diisi.");
+    await settingsError("Semua field harus diisi.");
   }
   if (newPassword.length < 8) {
-    settingsError("Password baru minimal 8 karakter.");
+    await settingsError("Password baru minimal 8 karakter.");
   }
   if (newPassword !== confirmPassword) {
-    settingsError("Konfirmasi password tidak cocok.");
+    await settingsError("Konfirmasi password tidak cocok.");
   }
 
   const currentHash = await getUserPasswordHashById(user.id);
-  if (!currentHash) settingsError("Terjadi kesalahan. Coba lagi.");
+  if (!currentHash) {
+    return settingsError("Terjadi kesalahan. Coba lagi.");
+  }
 
-  const valid = await bcrypt.compare(currentPassword, currentHash!);
-  if (!valid) settingsError("Password saat ini tidak tepat.");
+  const valid = await bcrypt.compare(currentPassword, currentHash);
+  if (!valid) {
+    return settingsError("Password saat ini tidak tepat.");
+  }
 
   await updateCaptainPassword(user.id, await bcrypt.hash(newPassword, 10));
-  redirect("/captain?success=password-changed");
+  await redirectToActiveLocale("/captain?success=password-changed");
 }
 
 /** Adds a player to the captain's team. Jersey number is optional; omitted if the field is blank. */
@@ -191,7 +215,7 @@ export async function captainAddPlayerAction(formData: FormData) {
       : undefined;
 
   await addPlayer({ ...input, jerseyNumber });
-  redirect("/captain?success=player-added");
+  await redirectToActiveLocale("/captain?success=player-added");
 }
 
 /**
@@ -218,11 +242,11 @@ export async function captainUpdatePlayerAction(formData: FormData) {
   try {
     await updatePlayer(id, user.id, data);
   } catch {
-    redirect("/captain?error=Tidak+dapat+mengedit+pemain+ini.");
+    await redirectToActiveLocale("/captain?error=Tidak+dapat+mengedit+pemain+ini.");
   }
 
   revalidatePath("/captain");
-  redirect("/captain?success=player-updated");
+  await redirectToActiveLocale("/captain?success=player-updated");
 }
 
 /**
@@ -236,11 +260,11 @@ export async function captainDeletePlayerAction(formData: FormData) {
   try {
     await deletePlayer(id, user.id);
   } catch {
-    redirect("/captain?error=Tidak+dapat+menghapus+pemain+ini.");
+    await redirectToActiveLocale("/captain?error=Tidak+dapat+menghapus+pemain+ini.");
   }
 
   revalidatePath("/captain");
-  redirect("/captain?success=player-deleted");
+  await redirectToActiveLocale("/captain?success=player-deleted");
 }
 
 /** Creates a new tournament event. Supported participant caps: 8, 12, 16, 24, 32, 64, 128, 256. */
@@ -263,7 +287,7 @@ export async function adminCreateEventAction(formData: FormData) {
 
   await createEvent(input);
   revalidatePath("/", "layout");
-  redirect("/admin?success=event-created");
+  await redirectToActiveLocale("/admin?success=event-created");
 }
 
 /** Changes an event's lifecycle status (Draft → Published → Registration Closed → Ongoing → Finished). */
@@ -281,11 +305,11 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
   const event = await setEventStatus(input.eventId, input.status);
 
   if (!event) {
-    redirect("/admin?error=Event%20not%20found.");
+    return redirectToActiveLocale("/admin?error=Event%20not%20found.");
   }
 
   revalidatePath("/", "layout");
-  redirect(`/admin?success=event-status-updated&event=${event.slug}`);
+  await redirectToActiveLocale(`/admin?success=event-status-updated&event=${event.slug}`);
 }
 
 /**
@@ -314,14 +338,14 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
     match = await setMatchResult(input);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save match result.";
-    redirect(`/admin?matchEventId=${matchEventId}&error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=${encodeURIComponent(message)}` as never);
   }
 
-  if (!match) redirect(`/admin?matchEventId=${matchEventId}&error=Match%20not%20found.` as never);
+  if (!match) await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=Match%20not%20found.` as never);
   await autoTransitionEventToOngoing(input.eventId);
   revalidateTag("teams");
   revalidatePath("/", "layout");
-  redirect(`/admin?matchEventId=${matchEventId}&success=match-result-updated` as never);
+  await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&success=match-result-updated` as never);
 }
 
 /**
@@ -335,18 +359,18 @@ export async function adminImportTeamsCsvAction(formData: FormData) {
   const file = formData.get("csv");
 
   if (!(file instanceof File) || file.size === 0) {
-    redirect("/admin?error=Please%20choose%20a%20CSV%20file%20before%20importing.");
+    return redirectToActiveLocale("/admin?error=Please%20choose%20a%20CSV%20file%20before%20importing.");
   }
 
   const result = parseAndValidateTeamImport(await file.text(), await getImportSnapshot());
 
   if (!result.ok) {
-    redirect(`/admin?error=${encodeURIComponent(result.message)}`);
+    return redirectToActiveLocale(`/admin?error=${encodeURIComponent(result.message)}`);
   }
 
   await importTeams(result.rows);
   revalidatePath("/", "layout");
-  redirect(`/admin?success=teams-imported&count=${result.rows.length}`);
+  await redirectToActiveLocale(`/admin?success=teams-imported&count=${result.rows.length}`);
 }
 
 /** Updates the live-stream URL and label for an event. URL must be a valid absolute URL. */
@@ -365,7 +389,7 @@ export async function adminUpdateStreamAction(formData: FormData) {
 
   await updateEventStream(input.eventId, input.url, input.label);
   revalidatePath("/", "layout");
-  redirect("/admin?success=stream-updated");
+  await redirectToActiveLocale("/admin?success=stream-updated");
 }
 
 /**
@@ -375,7 +399,9 @@ export async function adminUpdateStreamAction(formData: FormData) {
  */
 export async function captainSubmitStatsAction(formData: FormData) {
   const user = await requireRole("captain");
-  if (!user) redirect("/login");
+  if (!user) {
+    return redirectToActiveLocale("/login");
+  }
 
   const matchId = formData.get("matchId") as string;
   const teamId = formData.get("teamId") as string;
@@ -401,7 +427,7 @@ export async function adminApproveStatAction(formData: FormData) {
   const submissionId = formData.get("submissionId") as string;
   await approveStatSubmission(submissionId, user.id);
   revalidatePath("/", "layout");
-  redirect("/admin?success=stat-approved");
+  await redirectToActiveLocale("/admin?success=stat-approved");
 }
 
 /** Rejects a stat submission with an optional rejection note shown to the captain. Defaults to "Please review and resubmit." if no note is provided. */
@@ -412,7 +438,7 @@ export async function adminRejectStatAction(formData: FormData) {
     (formData.get("rejectionNote") as string)?.trim() || "Please review and resubmit.";
   await rejectStatSubmission(submissionId, user.id, note);
   revalidatePath("/", "layout");
-  redirect("/admin?success=stat-rejected");
+  await redirectToActiveLocale("/admin?success=stat-rejected");
 }
 
 /** Sets the Best-of-N configuration for a specific round label in an event. Valid bestOf values are 1, 3, or 5. */
@@ -431,7 +457,7 @@ export async function adminSetRoundConfigAction(formData: FormData) {
 
   await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
   revalidatePath("/", "layout");
-  redirect(`/admin?matchEventId=${input.eventId}&success=round-config-saved` as never);
+  await redirectToActiveLocale(`/admin?matchEventId=${input.eventId}&success=round-config-saved` as never);
 }
 
 /**
@@ -456,17 +482,17 @@ export async function adminSetMatchGamesAction(formData: FormData) {
     games.push({ gameNumber: i, homeScore, awayScore });
   }
 
-  if (games.length === 0) redirect(`/admin?matchEventId=${matchEventId}&error=Masukkan+skor+minimal+1+game.` as never);
+  if (games.length === 0) await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=Masukkan+skor+minimal+1+game.` as never);
 
   try {
     await setMatchGames(matchId, matchEventId, games, bestOf);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save match games.";
-    redirect(`/admin?matchEventId=${matchEventId}&error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=${encodeURIComponent(message)}` as never);
   }
 
   await autoTransitionEventToOngoing(matchEventId);
   revalidateTag("teams");
   revalidatePath("/", "layout");
-  redirect(`/admin?matchEventId=${matchEventId}&success=match-games-saved` as never);
+  await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&success=match-games-saved` as never);
 }
