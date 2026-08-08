@@ -1,5 +1,6 @@
-import { redirect } from "next/navigation";
+import { getTranslations } from "next-intl/server";
 
+import { redirectToActiveLocale } from "@/i18n/redirect";
 import { captainSubmitStatsAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import {
@@ -11,20 +12,16 @@ import { Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-const statusLabel: Record<string, { label: string; class: string }> = {
-  pending: { label: "Pending review", class: "bg-amber-100 text-amber-700" },
-  approved: { label: "Approved", class: "bg-emerald-100 text-emerald-700" },
-  rejected: { label: "Rejected", class: "bg-red-100 text-red-700" },
-};
-
 export default async function CaptainStatsPage() {
   const user = await requireRole("captain");
-  if (!user) redirect("/login");
+  if (!user) {
+    return redirectToActiveLocale("/login");
+  }
 
+  const t = await getTranslations("captainStats");
   const matchRows = await getCompletedMatchesForCaptain(user.id);
   const gameModes = getGameModes();
 
-  // Pre-fetch players for each team (deduplicated)
   const teamIds = [...new Set(matchRows.map((r) => r.teamId))];
   const playersByTeam = new Map(
     await Promise.all(teamIds.map(async (id) => [id, await getPlayersForTeam(id)] as const)),
@@ -32,23 +29,21 @@ export default async function CaptainStatsPage() {
 
   if (matchRows.length === 0) {
     return (
-      <Section
-        title="Match Stats"
-        description="No completed matches yet for your teams."
-      >
-        <p className="text-sm text-slate-400">
-          Stats submission becomes available after admin records match results.
-        </p>
+      <Section title={t("title")} description={t("noMatches")}>
+        <p className="text-sm text-slate-400">{t("noMatchesDesc")}</p>
       </Section>
     );
   }
 
+  const statusClass: Record<string, { label: string; class: string }> = {
+    pending: { label: t("pendingReview"), class: "bg-amber-100 text-amber-700" },
+    approved: { label: t("approved"), class: "bg-emerald-100 text-emerald-700" },
+    rejected: { label: t("rejected"), class: "bg-red-100 text-red-700" },
+  };
+
   return (
     <div className="space-y-6">
-      <Section
-        title="Match Stats"
-        description="Submit player stats for completed matches. Admin will review before they appear on leaderboards."
-      >
+      <Section title={t("title")} description={t("description")}>
         <div className="space-y-4">
           {matchRows.map((row) => {
             const mode = gameModes.find((m) => m.id === row.gameModeId);
@@ -77,28 +72,25 @@ export default async function CaptainStatsPage() {
                     </p>
                     {sub?.status === "rejected" && sub.rejectionNote && (
                       <p className="mt-1 text-xs text-red-600">
-                        Rejected: {sub.rejectionNote}
+                        {t("rejectedNote", { note: sub.rejectionNote })}
                       </p>
                     )}
                   </div>
                   {sub ? (
                     <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusLabel[sub.status]?.class}`}
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass[sub.status]?.class}`}
                     >
-                      {statusLabel[sub.status]?.label}
+                      {statusClass[sub.status]?.label}
                     </span>
                   ) : (
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
-                      Not submitted
+                      {t("notSubmitted")}
                     </span>
                   )}
                 </summary>
 
                 {canSubmit && players.length > 0 && (
-                  <form
-                    action={captainSubmitStatsAction}
-                    className="border-t border-slate-100 p-4"
-                  >
+                  <form action={captainSubmitStatsAction} className="border-t border-slate-100 p-4">
                     <input type="hidden" name="matchId" value={row.matchId} />
                     <input type="hidden" name="teamId" value={row.teamId} />
                     <input type="hidden" name="eventId" value={row.eventId} />
@@ -149,7 +141,7 @@ export default async function CaptainStatsPage() {
                         type="submit"
                         className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
                       >
-                        {sub?.status === "rejected" ? "Resubmit stats" : "Submit stats"}
+                        {sub?.status === "rejected" ? t("resubmit") : t("submit")}
                       </button>
                     </div>
                   </form>
@@ -157,19 +149,19 @@ export default async function CaptainStatsPage() {
 
                 {sub?.status === "approved" && (
                   <div className="border-t border-slate-100 p-4 text-sm text-emerald-600">
-                    Stats approved and live on leaderboard.
+                    {t("statsApproved")}
                   </div>
                 )}
 
                 {!canSubmit && sub?.status === "pending" && (
                   <div className="border-t border-slate-100 p-4 text-sm text-amber-600">
-                    Awaiting admin review.
+                    {t("awaitingReview")}
                   </div>
                 )}
 
                 {players.length === 0 && canSubmit && (
                   <div className="border-t border-slate-100 p-4 text-sm text-slate-400">
-                    Add players to your roster first before submitting stats.
+                    {t("addPlayersFirst")}
                   </div>
                 )}
               </details>

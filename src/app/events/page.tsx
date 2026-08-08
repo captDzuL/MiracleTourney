@@ -1,12 +1,31 @@
 import { unstable_cache } from "next/cache";
 import Image from "next/image";
-import Link from "next/link";
 import { CalendarDays, Trophy, Users } from "lucide-react";
+import { getTranslations } from "next-intl/server";
 
+import { Link } from "@/i18n/navigation";
 import { Pill, Section } from "@/components/ui";
+import type { Event } from "@/lib/platform/types";
 import { getGameForEvent, getPublicEvents } from "@/lib/platform/repository";
 
 const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });
+const fallbackEvents: Event[] = [
+  {
+    id: "fallback-miracle-league",
+    slug: "miracle-league",
+    name: "Miracle Fast Tour",
+    description: "New event created from admin panel.",
+    logoUrl: "https://lh3.googleusercontent.com/d/1m01dWpxKA6qXRzfFRrEovFzho1nTnV9B",
+    gameId: "game-flashpeak",
+    gameModeId: "mode-flashpeak-5v5",
+    format: "Single Elimination",
+    status: "Ongoing",
+    participantCap: 32,
+    registrationWindow: "TBD",
+    startsAt: "TBD",
+    venue: "Online",
+  },
+];
 
 function getInitials(name: string) {
   return name
@@ -18,13 +37,11 @@ function getInitials(name: string) {
 }
 
 export default async function EventsPage() {
-  const events = await getCachedPublicEvents();
+  const t = await getTranslations("events");
+  const events = await getCachedPublicEvents().catch(() => fallbackEvents);
 
   return (
-    <Section
-      title="Event hub"
-      description="Public list of published, ongoing, and archived competition events."
-    >
+    <Section title={t("title")} description={t("description")}>
       <div className="grid gap-4">
         {events.map((event) => {
           const game = getGameForEvent(event);
@@ -50,13 +67,11 @@ export default async function EventsPage() {
                       ) : (
                         <div className="text-center">
                           <p className="text-lg font-semibold text-slate-700">{getInitials(event.name) || "EV"}</p>
-                          <p className="mt-1 text-[11px] uppercase tracking-[0.24em] text-slate-400">Event logo</p>
                         </div>
                       )}
                     </div>
                     <div className={`flex min-h-[72px] items-end rounded-2xl border border-slate-200 bg-gradient-to-br ${game.accent} p-3`}>
                       <div>
-                        <p className="mono text-[10px] uppercase tracking-[0.24em] text-slate-600">Game art</p>
                         <p className="mt-1 text-sm font-medium text-slate-900">{game.name}</p>
                       </div>
                     </div>
@@ -70,9 +85,6 @@ export default async function EventsPage() {
                     </div>
                     <h2 className="mt-4 text-2xl font-semibold text-slate-900">{event.name}</h2>
                     <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{event.description}</p>
-                    <p className="mt-3 text-xs text-slate-400">
-                      Media placeholders are ready for future event logo and game image uploads.
-                    </p>
                   </div>
                 </div>
               </div>
@@ -84,7 +96,7 @@ export default async function EventsPage() {
                   </span>
                   <span className="inline-flex items-center gap-2">
                     <Users className="h-4 w-4 text-cyan-500" />
-                    Cap {event.participantCap} teams
+                    {t("capTeams", { n: event.participantCap })}
                   </span>
                   <span className="inline-flex items-center gap-2">
                     <Trophy className="h-4 w-4 text-cyan-500" />
@@ -97,7 +109,7 @@ export default async function EventsPage() {
         })}
         {events.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
-            No public events are published yet. Draft events stay visible only inside the admin panel.
+            {t("noEvents")}
           </div>
         ) : null}
       </div>

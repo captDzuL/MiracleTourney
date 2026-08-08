@@ -1,5 +1,6 @@
-import { redirect } from "next/navigation";
+import { getTranslations } from "next-intl/server";
 
+import { redirectToActiveLocale } from "@/i18n/redirect";
 import {
   adminApproveStatAction,
   adminCreateEventAction,
@@ -45,8 +46,11 @@ export default async function AdminPage({
   searchParams?: Promise<AdminSearchParams>;
 }) {
   const user = await requireRole("admin");
-  if (!user) redirect("/login");
+  if (!user) {
+    return redirectToActiveLocale("/login");
+  }
 
+  const t = await getTranslations("admin");
   const resolvedSearchParams = await searchParams;
   const events = await getEvents();
   const gameModes = getGameModes();
@@ -309,13 +313,13 @@ export default async function AdminPage({
 
       {/* Match operations — full-width, two-step: pick match, then enter result */}
       <Section
-        title="Match operations"
-        description="Pilih match dari list, lalu masukkan hasil sesuai format (langsung untuk BO1, per-game untuk BO3/BO5)."
+        title={t("matchTitle")}
+        description={t("matchDescription")}
       >
         {selectedManageableEvent ? (
           <div className="grid gap-6">
             {/* Event selector */}
-            <form action="/admin" className="flex flex-wrap items-end gap-3">
+            <form action="" className="flex flex-wrap items-end gap-3">
               <label className="grid gap-2 text-sm text-slate-300">
                 Event
                 <select
@@ -325,20 +329,20 @@ export default async function AdminPage({
                 >
                   {manageableEvents.map(({ event, manageableMatches: eventMatches }) => (
                     <option key={event.id} value={event.id}>
-                      {event.name} · {eventMatches.length} match tersisa
+                      {event.name} · {t("matchesRemaining", { n: eventMatches.length })}
                     </option>
                   ))}
                 </select>
               </label>
               <button className={buttonStyles.secondary} type="submit">
-                Ganti event
+                {t("changeEvent")}
               </button>
             </form>
 
             {/* Match list — semua match yang belum selesai, klik untuk pilih */}
             <div className="grid gap-3">
               <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-                {selectedManageableEvent.event.name} · {manageableMatches.length} match tersisa
+                {selectedManageableEvent.event.name} · {t("matchesRemaining", { n: manageableMatches.length })}
               </p>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {manageableMatches.map((match) => {
@@ -347,7 +351,7 @@ export default async function AdminPage({
                   return (
                     <a
                       key={match.id}
-                      href={`/admin?matchEventId=${selectedManageableEvent.event.id}&matchId=${match.id}`}
+                      href={`?matchEventId=${selectedManageableEvent.event.id}&matchId=${match.id}`}
                       className={`group flex flex-col gap-1 rounded-2xl border px-4 py-3 transition ${
                         isSelected
                           ? "border-cyan-400/40 bg-cyan-500/10"
@@ -391,10 +395,10 @@ export default async function AdminPage({
                       Best of {selectedMatchBestOf}
                     </span>
                     <a
-                      href={`/admin?matchEventId=${selectedManageableEvent.event.id}`}
+                      href={`?matchEventId=${selectedManageableEvent.event.id}`}
                       className="text-sm text-slate-500 hover:text-slate-300"
                     >
-                      ✕ Batal
+                      {t("cancelAction")}
                     </a>
                   </div>
                 </div>
@@ -429,7 +433,7 @@ export default async function AdminPage({
                     </div>
                     <div className="pt-1">
                       <button className={buttonStyles.primary} type="submit">
-                        Simpan hasil match
+                        {t("saveResult")}
                       </button>
                     </div>
                   </form>
@@ -476,18 +480,18 @@ export default async function AdminPage({
                     </div>
                     <div className="pt-1">
                       <button className={buttonStyles.primary} type="submit">
-                        Simpan hasil games
+                        {t("saveGames")}
                       </button>
                     </div>
                   </form>
                 )}
               </div>
             ) : (
-              <p className="text-sm text-slate-500">← Pilih match di atas untuk memasukkan hasilnya.</p>
+              <p className="text-sm text-slate-500">{t("selectMatch")}</p>
             )}
           </div>
         ) : (
-          <p className="text-sm text-slate-400">Belum ada bracket event dengan match yang perlu dikelola.</p>
+          <p className="text-sm text-slate-400">{t("noMatches")}</p>
         )}
       </Section>
 
@@ -497,8 +501,8 @@ export default async function AdminPage({
         if (distinctRoundLabels.length === 0) return null;
         return (
           <Section
-            title="Best of N Configuration"
-            description={`Configure how many games per round for ${selectedManageableEvent.event.name}. Default is Best of 1.`}
+            title={t("roundConfigTitle")}
+            description={t("roundConfigDesc")}
           >
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {distinctRoundLabels.map((label) => {
@@ -520,7 +524,7 @@ export default async function AdminPage({
                       </select>
                     </label>
                     <button className={`${buttonStyles.secondary} w-full`} type="submit">
-                      Save
+                      {t("saveRoundConfig")}
                     </button>
                   </form>
                 );
@@ -677,7 +681,7 @@ export default async function AdminPage({
                     <form action={adminApproveStatAction}>
                       <input type="hidden" name="submissionId" value={sub.id} />
                       <button className={buttonStyles.primary} type="submit">
-                        Approve
+                        {t("approve")}
                       </button>
                     </form>
 
@@ -687,10 +691,10 @@ export default async function AdminPage({
                       <input
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400"
                         name="rejectionNote"
-                        placeholder="Rejection note (optional)"
+                        placeholder={t("rejectionNote")}
                       />
                       <button className={buttonStyles.secondary} type="submit">
-                        Reject
+                        {t("reject")}
                       </button>
                     </form>
                   </div>

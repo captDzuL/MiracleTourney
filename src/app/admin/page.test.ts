@@ -15,8 +15,8 @@ describe("admin action buttons", () => {
   test("shows a match operations section with result entry controls", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
 
-    expect(source).toContain("Match operations");
-    expect(source).toContain("Simpan hasil match");
+    expect(source).toContain('t("matchTitle")');
+    expect(source).toContain('t("saveResult")');
     expect(source).toContain("homeScore");
     expect(source).toContain("awayScore");
   });
@@ -27,6 +27,16 @@ describe("admin action buttons", () => {
     expect(source).toContain("manageableEvents");
     expect(source).toContain("selectedManageableEventId");
     expect(source).toContain('name="eventId"');
-    expect(source).toContain("Ganti event");
+    expect(source).toContain('t("changeEvent")');
+  });
+
+  test("keeps match management navigation relative to the active locale path", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).not.toContain('action="/admin"');
+    expect(source).not.toContain("href={`/admin?");
+    expect(source).toContain('action=""');
+    expect(source).toContain('href={`?matchEventId=${selectedManageableEvent.event.id}&matchId=${match.id}`}');
+    expect(source).toContain('href={`?matchEventId=${selectedManageableEvent.event.id}`}');
   });
 });
