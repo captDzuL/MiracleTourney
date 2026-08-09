@@ -611,7 +611,7 @@ body::before {
   position: absolute;
   left: 52px;
   right: 52px;
-  bottom: 52px;
+  bottom: 28px;
   z-index: 9;
   display: flex;
   justify-content: space-between;
