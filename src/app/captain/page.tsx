@@ -8,14 +8,17 @@ import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import {
   getCaptainTeams,
+  getCertificateByEvent,
   getEvents,
   getGameForEvent,
   getModeForEvent,
   getPlayersForTeams,
   hasTempPassword,
 } from "@/lib/platform/repository";
+import type { Certificate } from "@/lib/platform/types";
 import type { Event, Game, GameMode, Player, Team } from "@/lib/platform/types";
 import { buttonStyles } from "@/components/ui";
+import { ShareCertificateButton } from "@/components/ShareCertificateButton";
 
 type TFn = (key: string, values?: Record<string, string | number>) => string;
 
@@ -46,6 +49,16 @@ export default async function CaptainPage({
     team,
     players: allPlayers.filter((p) => p.teamId === team.id),
   }));
+
+  // Check if this captain's team has a certificate (is champion)
+  const certificates = new Map<string, Certificate | null>(
+    await Promise.all(
+      teams.map(async (team) => {
+        const cert = await getCertificateByEvent(team.eventId);
+        return [team.id, cert?.teamId === team.id ? cert : null] as const;
+      }),
+    ),
+  );
 
   return (
     <div className="space-y-6">
@@ -94,18 +107,51 @@ export default async function CaptainPage({
           if (!event) return null;
           const game = getGameForEvent(event);
           const mode = getModeForEvent(event);
+          const cert = certificates.get(team.id) ?? null;
           return (
-            <TeamSection
-              key={team.id}
-              team={team}
-              event={event}
-              game={game}
-              mode={mode}
-              players={players}
-              editPlayerId={editPlayerId}
-              confirmDeleteId={confirmDeleteId}
-              t={t as TFn}
-            />
+            <div key={team.id}>
+              {cert && (
+                <div className="mb-4 overflow-hidden rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50">
+                  <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🏆</span>
+                      <div>
+                        <p className="font-bold text-amber-900">Sertifikat Juara Tersedia!</p>
+                        <p className="text-sm text-amber-700">
+                          Tim {team.name} adalah Grand Champion {event.name}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={cert.imageUrl}
+                        download={`certificate-${team.name}.png`}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+                      >
+                        Download PNG
+                      </a>
+                      <ShareCertificateButton imageUrl={cert.imageUrl} teamName={team.name} eventName={event.name} />
+                    </div>
+                  </div>
+                  <div className="border-t border-amber-200 px-4 py-2">
+                    <p className="text-xs text-amber-600">
+                      Bagikan ke Instagram Story, TikTok, atau WhatsApp dengan tombol Share di atas.
+                      Resolusi: 1080×1920 (9:16)
+                    </p>
+                  </div>
+                </div>
+              )}
+              <TeamSection
+                team={team}
+                event={event}
+                game={game}
+                mode={mode}
+                players={players}
+                editPlayerId={editPlayerId}
+                confirmDeleteId={confirmDeleteId}
+                t={t as TFn}
+              />
+            </div>
           );
         })}
       </div>

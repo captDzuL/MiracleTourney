@@ -5,7 +5,7 @@ import { unstable_cache } from "next/cache";
 import bcrypt from "bcryptjs";
 
 import { games, gameModes } from "@/lib/platform/config";
-import type { AppUser, Event, EventRoundConfig, EventStatus, EventStream, Match, MatchGame, Player, Team, TournamentFormat } from "@/lib/platform/types";
+import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventStream, Match, MatchGame, Player, Team, TournamentFormat } from "@/lib/platform/types";
 import {
   aggregatePlayerLeaderboard,
   buildLeagueStandings,
@@ -32,7 +32,7 @@ function mapEvent(row: {
   logoUrl: string | null; gameImageUrl: string | null;
   gameId: string; gameModeId: string; format: string; status: string;
   participantCap: number; registrationWindow: string; startsAt: string;
-  venue: string;
+  venue: string; characterArtUrl?: string | null; accentColor?: string | null;
   stream?: { platform: string; url: string; label: string; enabled: boolean; isLive: boolean; } | null;
 }): Event {
   const event: Event = {
@@ -46,6 +46,8 @@ function mapEvent(row: {
   const logoUrl = row.logoUrl ?? GAME_LOGO_URLS[row.gameId];
   if (logoUrl) event.logoUrl = logoUrl;
   if (row.gameImageUrl) event.gameImageUrl = row.gameImageUrl;
+  if (row.characterArtUrl) event.characterArtUrl = row.characterArtUrl;
+  if (row.accentColor) event.accentColor = row.accentColor;
   if (row.stream) {
     event.stream = {
       platform: row.stream.platform as EventStream["platform"],
@@ -1331,4 +1333,36 @@ export async function setMatchGames(
       data: playedGames.map((g) => ({ matchId, gameNumber: g.gameNumber, homeScore: g.homeScore, awayScore: g.awayScore })),
     });
   });
+}
+
+// ── Certificates ──────────────────────────────────────────────────────────────
+
+/** Updates the character art URL and accent color for an event's certificate assets. */
+export async function updateEventCertificateAssets(
+  eventId: string,
+  updates: { characterArtUrl?: string; accentColor?: string },
+): Promise<void> {
+  await prisma.event.update({ where: { id: eventId }, data: updates });
+}
+
+/** Stores a generated certificate record for an event's champion team. */
+export async function createCertificate(eventId: string, teamId: string, imageUrl: string): Promise<Certificate> {
+  const row = await prisma.certificate.upsert({
+    where: { eventId },
+    update: { teamId, imageUrl },
+    create: { eventId, teamId, imageUrl },
+  });
+  return { id: row.id, eventId: row.eventId, teamId: row.teamId, imageUrl: row.imageUrl, createdAt: row.createdAt };
+}
+
+/** Returns the certificate for an event, or null if none has been generated. */
+export async function getCertificateByEvent(eventId: string): Promise<Certificate | null> {
+  const row = await prisma.certificate.findUnique({ where: { eventId } });
+  if (!row) return null;
+  return { id: row.id, eventId: row.eventId, teamId: row.teamId, imageUrl: row.imageUrl, createdAt: row.createdAt };
+}
+
+/** Counts existing certificates for a given game prefix (e.g. "game-flashpeak") to generate sequential IDs. */
+export async function countCertificatesForGame(gameId: string): Promise<number> {
+  return prisma.certificate.count({ where: { event: { gameId } } });
 }

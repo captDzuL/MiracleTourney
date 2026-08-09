@@ -8,13 +8,16 @@ import {
   adminRejectStatAction,
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
+  adminSetAccentColorAction,
   adminUpdateEventStatusAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
+  adminUploadCharacterArtAction,
 } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import {
   getBracketManageableMatchesForEvent,
+  getCertificateByEvent,
   getEventBySlug,
   getEventRoundConfigs,
   getEvents,
@@ -118,6 +121,11 @@ export default async function AdminPage({
     ? manageableMatches.find((m) => m.id === selectedMatchId)
     : undefined;
   const selectedMatchBestOf = selectedMatch ? (roundConfigMap.get(selectedMatch.roundLabel) ?? 1) : 1;
+
+  // Certificate data per event
+  const certificatesByEvent = new Map(
+    await Promise.all(events.map(async (event) => [event.id, await getCertificateByEvent(event.id)] as const)),
+  );
 
   return (
     <div className="space-y-6">
@@ -602,6 +610,101 @@ export default async function AdminPage({
           )}
         </Section>
       </div>
+
+      <Section
+        title="Certificate Settings"
+        description="Upload character art and set the accent color for each event's champion e-certificate. The certificate is auto-generated when the Final match result is saved."
+      >
+        <div className="space-y-6">
+          {events.map((event) => {
+            const cert = certificatesByEvent.get(event.id);
+            return (
+              <details key={event.id} className="rounded-2xl border border-slate-200 bg-slate-50">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{event.name}</p>
+                    <p className="text-xs text-slate-400">{getGameForEvent(event).name} · {event.status}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {cert ? (
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                        Certificate ready
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                        No certificate
+                      </span>
+                    )}
+                    {event.accentColor && (
+                      <span
+                        className="inline-block h-5 w-5 rounded-full border border-slate-300"
+                        style={{ background: event.accentColor }}
+                      />
+                    )}
+                  </div>
+                </summary>
+                <div className="space-y-4 border-t border-slate-200 p-4">
+                  {/* Character art upload */}
+                  <form action={adminUploadCharacterArtAction} encType="multipart/form-data">
+                    <input type="hidden" name="eventId" value={event.id} />
+                    <p className="mb-2 text-xs font-semibold text-slate-700">Character Art PNG</p>
+                    {event.characterArtUrl && (
+                      <div className="mb-2">
+                        <img
+                          src={event.characterArtUrl}
+                          alt="Character art preview"
+                          className="h-24 w-auto rounded border border-slate-200 object-contain"
+                        />
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <input
+                        type="file"
+                        name="characterArt"
+                        accept="image/png,image/webp,image/jpeg"
+                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700"
+                      />
+                      <button className={buttonStyles.secondary} type="submit">
+                        Upload
+                      </button>
+                    </div>
+                  </form>
+                  {/* Accent color */}
+                  <form action={adminSetAccentColorAction} className="flex items-end gap-3">
+                    <input type="hidden" name="eventId" value={event.id} />
+                    <div>
+                      <p className="mb-2 text-xs font-semibold text-slate-700">Accent Color</p>
+                      <input
+                        type="color"
+                        name="accentColor"
+                        defaultValue={event.accentColor ?? "#2563eb"}
+                        className="h-10 w-16 cursor-pointer rounded border border-slate-200 bg-white p-1"
+                      />
+                    </div>
+                    <button className={buttonStyles.secondary} type="submit">
+                      Save color
+                    </button>
+                  </form>
+                  {/* Existing certificate */}
+                  {cert && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                      <p className="mb-1 text-xs font-semibold text-emerald-700">Champion Certificate</p>
+                      <a
+                        href={cert.imageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-emerald-600 underline break-all"
+                      >
+                        {cert.imageUrl}
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      </Section>
 
       <Section title="Operations overview" description="Everything the public site is currently exposing.">
         <DataTable

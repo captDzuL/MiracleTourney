@@ -29,10 +29,15 @@ import {
   setMatchResult,
   updateCaptainPassword,
   updateEventStream,
+  updateEventCertificateAssets,
   updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
 } from "@/lib/platform/repository";
+import { put } from "@vercel/blob";
+import { generateCertificateIfFinal } from "@/lib/certificate/generate";
+import fs from "fs";
+import path from "path";
 
 async function requireAdminSession(): Promise<AppUser> {
   const user = await requireRole("admin");
@@ -343,6 +348,13 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
 
   if (!match) await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=Match%20not%20found.` as never);
   await autoTransitionEventToOngoing(input.eventId);
+  if (match) {
+    try {
+      await generateCertificateIfFinal(match.id, input.eventId);
+    } catch (err) {
+      console.error("[certificate] generation failed:", err);
+    }
+  }
   revalidateTag("teams");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&success=match-result-updated` as never);
@@ -492,7 +504,59 @@ export async function adminSetMatchGamesAction(formData: FormData) {
   }
 
   await autoTransitionEventToOngoing(matchEventId);
+  try {
+    await generateCertificateIfFinal(matchId, matchEventId);
+  } catch (err) {
+    console.error("[certificate] generation failed:", err);
+  }
   revalidateTag("teams");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&success=match-games-saved` as never);
+}
+
+/** Uploads a character art PNG for an event's certificate to Vercel Blob and stores the URL. */
+export async function adminUploadCharacterArtAction(formData: FormData) {
+  await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const file = formData.get("characterArt");
+  if (!(file instanceof File) || file.size === 0) {
+    redirect(`/admin?error=No+file+uploaded` as never);
+  }
+  try {
+    const bytes = await (file as File).arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    let url: string;
+
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      const result = await put(`character-art/${eventId}-${Date.now()}.png`, buffer, {
+        access: "public",
+        contentType: (file as File).type || "image/png",
+      });
+      url = result.url;
+    } else {
+      // Local dev fallback: write to public/character-art/ and serve as static asset
+      const dir = path.join(process.cwd(), "public", "character-art");
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const filename = `${eventId}-${Date.now()}.png`;
+      fs.writeFileSync(path.join(dir, filename), buffer);
+      url = `/character-art/${filename}`;
+    }
+
+    await updateEventCertificateAssets(eventId, { characterArtUrl: url });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+  }
+  revalidatePath("/admin");
+  redirect(`/admin?success=character-art-uploaded` as never);
+}
+
+/** Updates the accent color for an event's certificate. */
+export async function adminSetAccentColorAction(formData: FormData) {
+  await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const accentColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).parse(formData.get("accentColor"));
+  await updateEventCertificateAssets(eventId, { accentColor });
+  revalidatePath("/admin");
+  redirect(`/admin?success=accent-color-saved` as never);
 }

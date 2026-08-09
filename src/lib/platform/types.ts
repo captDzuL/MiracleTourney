@@ -58,6 +58,16 @@ export type Event = {
   startsAt: string;
   venue: string;
   stream?: EventStream;
+  characterArtUrl?: string;
+  accentColor?: string;
+};
+
+export type Certificate = {
+  id: string;
+  eventId: string;
+  teamId: string;
+  imageUrl: string;
+  createdAt: Date;
 };
 
 export type Team = {

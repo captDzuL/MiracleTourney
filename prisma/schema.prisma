@@ -34,12 +34,15 @@ model Event {
   registrationWindow String
   startsAt           String
   venue              String
+  characterArtUrl    String?
+  accentColor        String?
   stream             EventStream?
   teams              Team[]
   matches            Match[]
   players            Player[]
   statSubmissions    StatSubmission[]
   roundConfigs       EventRoundConfig[]
+  certificate        Certificate?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 }
@@ -56,18 +59,19 @@ model EventStream {
 }
 
 model Team {
-  id             String   @id @default(cuid())
+  id             String        @id @default(cuid())
   eventId        String
-  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event          Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
   captainId      String?
   name           String
   logoText       String
   tag            String
   captainName    String?
   captainContact String?
-  source         String   @default("demo")
+  source         String        @default("demo")
   players        Player[]
-  createdAt      DateTime @default(now())
+  certificates   Certificate[]
+  createdAt      DateTime      @default(now())
 
   @@unique([eventId, tag])
   @@unique([eventId, name])
@@ -160,4 +164,14 @@ model StatSubmission {
   reviewedBy    String?
 
   @@unique([matchId, teamId])
+}
+
+model Certificate {
+  id        String   @id @default(cuid())
+  eventId   String   @unique
+  teamId    String
+  imageUrl  String
+  createdAt DateTime @default(now())
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  team      Team     @relation(fields: [teamId], references: [id])
 }
