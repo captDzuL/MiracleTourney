@@ -33,9 +33,22 @@ const REQUIRED_HEADERS = [
 ] as const;
 
 const OPTIONAL_HEADERS = ["captain_email"] as const;
+const MAX_IMPORT_ROWS = 512;
 
 function fail(message: string): ImportFailure {
   return { ok: false, message };
+}
+
+function hasSpreadsheetFormulaPayload(value: string) {
+  return /^[=+\-@]/.test(value.trimStart());
+}
+
+function validateSafeTextField(rowNumber: number, field: string, value: string): ImportFailure | null {
+  if (hasSpreadsheetFormulaPayload(value)) {
+    return fail(`Row ${rowNumber}: ${field} cannot start with a spreadsheet formula character.`);
+  }
+
+  return null;
 }
 
 function parseCsvLine(line: string) {
@@ -79,6 +92,9 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
 
   if (lines.length < 2) {
     return fail("CSV must include a header row and at least one team row.");
+  }
+  if (lines.length - 1 > MAX_IMPORT_ROWS) {
+    return fail(`CSV has too many rows. Maximum import size is ${MAX_IMPORT_ROWS} team rows.`);
   }
 
   const headers = parseCsvLine(lines[0].replace(/^\uFEFF/, ""));
@@ -124,6 +140,17 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
     if (!teamTagRaw) return fail(`Row ${rowNumber}: team_tag is required.`);
     if (!captainName) return fail(`Row ${rowNumber}: captain_name is required.`);
     if (!captainContact) return fail(`Row ${rowNumber}: captain_contact is required.`);
+
+    for (const [field, value] of [
+      ["team_name", teamName],
+      ["team_tag", teamTagRaw],
+      ["captain_name", captainName],
+      ["captain_contact", captainContact],
+      ["captain_email", captainEmail ?? ""],
+    ] as const) {
+      const unsafeField = validateSafeTextField(rowNumber, field, value);
+      if (unsafeField) return unsafeField;
+    }
 
     const event = eventsBySlug.get(eventSlug);
     if (!event) {

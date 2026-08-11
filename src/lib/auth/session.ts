@@ -7,22 +7,35 @@ import { getUserWithPasswordByEmail, getCaptainById, getUserByEmail } from "@/li
 import type { AppUser, UserRole } from "@/lib/platform/types";
 
 const JWT_COOKIE = "mfl_token";
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? "miracle-tourney-jwt-secret-change-in-production-32chars-min",
-);
-const JWT_EXPIRY = "7d";
+const DEFAULT_JWT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32chars-min";
+const ADMIN_SESSION_MAX_AGE = 60 * 60 * 12;
+const CAPTAIN_SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
-async function signToken(payload: { sub: string; role: string }): Promise<string> {
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET?.trim();
+
+  if (!secret || secret === DEFAULT_JWT_SECRET) {
+    throw new Error("JWT_SECRET must be set to a unique non-default value.");
+  }
+
+  return new TextEncoder().encode(secret);
+}
+
+function getSessionMaxAge(role: string) {
+  return role === "admin" ? ADMIN_SESSION_MAX_AGE : CAPTAIN_SESSION_MAX_AGE;
+}
+
+async function signToken(payload: { sub: string; role: string }, maxAge: number): Promise<string> {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(JWT_EXPIRY)
-    .sign(JWT_SECRET);
+    .setExpirationTime(`${maxAge}s`)
+    .sign(getJwtSecret());
 }
 
 async function verifyToken(token: string): Promise<{ sub: string; role: string } | null> {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     if (typeof payload.sub !== "string" || typeof payload.role !== "string") return null;
     return { sub: payload.sub, role: payload.role };
   } catch {
@@ -58,9 +71,16 @@ export async function signIn(email: string, password: string) {
     return { ok: false as const, error: "Invalid email or password." };
   }
 
-  const token = await signToken({ sub: user.id, role: user.role });
+  const maxAge = getSessionMaxAge(user.role);
+  const token = await signToken({ sub: user.id, role: user.role }, maxAge);
   const store = await cookies();
-  store.set(JWT_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 7 });
+  store.set(JWT_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge,
+  });
 
   const { passwordHash: _, ...publicUser } = user;
   return { ok: true as const, user: publicUser };
@@ -69,7 +89,13 @@ export async function signIn(email: string, password: string) {
 /** Clears the JWT cookie, effectively logging out the current user. */
 export async function signOut() {
   const store = await cookies();
-  store.delete(JWT_COOKIE);
+  store.set(JWT_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
 }
 
 /** Returns the session user if they hold `role`, otherwise null. Use in server components and actions to gate access. */

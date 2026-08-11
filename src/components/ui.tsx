@@ -68,18 +68,20 @@ export function Pill({ children, tone = "default" }: { children: React.ReactNode
 
 export function DataTable({
   columns,
+  minTableWidth = "44rem",
   rows,
 }: {
   columns: string[];
+  minTableWidth?: string;
   rows: Array<Array<React.ReactNode>>;
 }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200">
-      <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+    <div className="w-full overflow-x-auto rounded-2xl border border-slate-200">
+      <table className="w-full divide-y divide-slate-200 text-left text-sm" style={{ minWidth: minTableWidth }}>
         <thead className="bg-slate-50 text-slate-500">
           <tr>
             {columns.map((column) => (
-              <th key={column} className="px-4 py-3 font-medium">
+              <th key={column} className="px-4 py-3 align-top font-medium">
                 {column}
               </th>
             ))}
@@ -89,7 +91,7 @@ export function DataTable({
           {rows.map((row, rowIndex) => (
             <tr key={rowIndex} className={rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50/70"}>
               {row.map((cell, cellIndex) => (
-                <td key={`${rowIndex}-${cellIndex}`} className="px-4 py-3 text-slate-700">
+                <td key={`${rowIndex}-${cellIndex}`} className="px-4 py-3 align-top text-slate-700">
                   {cell}
                 </td>
               ))}

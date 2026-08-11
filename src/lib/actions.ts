@@ -13,6 +13,7 @@ import type { AppUser } from "@/lib/platform/types";
 import {
   addPlayer,
   approveStatSubmission,
+  assertCaptainCanSubmitStats,
   createCaptainWithTeam,
   createEvent,
   deletePlayer,
@@ -38,6 +39,8 @@ import { put } from "@vercel/blob";
 import { generateCertificateIfFinal } from "@/lib/certificate/generate";
 import fs from "fs";
 import path from "path";
+
+const MAX_TEAM_IMPORT_CSV_BYTES = 256 * 1024;
 
 async function requireAdminSession(): Promise<AppUser> {
   const user = await requireRole("admin");
@@ -68,6 +71,61 @@ async function redirectToRequestedLocale(path: string, locale?: string): Promise
   }
 
   return redirectToActiveLocale(path);
+}
+
+function isDatabaseConnectionError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+
+  return (
+    error.name === "PrismaClientInitializationError"
+    || error.message.includes("Can't reach database server")
+  );
+}
+
+function isSafeEntityId(id: string) {
+  return /^[a-zA-Z0-9_-]+$/.test(id);
+}
+
+function getCharacterArtExtension(contentType: string) {
+  if (contentType === "image/png") return "png";
+  if (contentType === "image/jpeg") return "jpg";
+  if (contentType === "image/webp") return "webp";
+  return null;
+}
+
+function hasImageSignature(buffer: Buffer, extension: "png" | "jpg" | "webp") {
+  if (extension === "png") {
+    return buffer.length >= 8
+      && buffer[0] === 0x89
+      && buffer[1] === 0x50
+      && buffer[2] === 0x4e
+      && buffer[3] === 0x47
+      && buffer[4] === 0x0d
+      && buffer[5] === 0x0a
+      && buffer[6] === 0x1a
+      && buffer[7] === 0x0a;
+  }
+  if (extension === "jpg") {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+
+  return buffer.length >= 12
+    && buffer.subarray(0, 4).toString("ascii") === "RIFF"
+    && buffer.subarray(8, 12).toString("ascii") === "WEBP";
+}
+
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isSafeStatToken(value: string) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(value)) return false;
+  return !["__proto__", "constructor", "prototype"].includes(value);
 }
 
 /**
@@ -120,7 +178,17 @@ export async function loginAction(formData: FormData) {
   const requestedLocale = String(formData.get("locale") ?? "").trim();
   const email = z.string().email().parse(formData.get("email"));
   const password = z.string().min(1).parse(formData.get("password"));
-  const result = await signIn(email, password);
+  let result;
+
+  try {
+    result = await signIn(email, password);
+  } catch (error) {
+    if (isDatabaseConnectionError(error)) {
+      return await redirectToRequestedLocale("/login?error=database", requestedLocale);
+    }
+
+    throw error;
+  }
 
   if (!result.ok) {
     return await redirectToRequestedLocale("/login?error=invalid", requestedLocale);
@@ -373,6 +441,9 @@ export async function adminImportTeamsCsvAction(formData: FormData) {
   if (!(file instanceof File) || file.size === 0) {
     return redirectToActiveLocale("/admin?error=Please%20choose%20a%20CSV%20file%20before%20importing.");
   }
+  if (file.size > MAX_TEAM_IMPORT_CSV_BYTES) {
+    return redirectToActiveLocale("/admin?error=CSV%20file%20is%20too%20large.%20Maximum%20size%20is%20256%20KiB.");
+  }
 
   const result = parseAndValidateTeamImport(await file.text(), await getImportSnapshot());
 
@@ -391,7 +462,7 @@ export async function adminUpdateStreamAction(formData: FormData) {
 
   const input = z.object({
     eventId: z.string().min(1),
-    url: z.string().url(),
+    url: z.string().refine(isHttpUrl, "Stream URL must use http or https."),
     label: z.string().min(2),
   }).parse({
     eventId: formData.get("eventId"),
@@ -415,9 +486,15 @@ export async function captainSubmitStatsAction(formData: FormData) {
     return redirectToActiveLocale("/login");
   }
 
-  const matchId = formData.get("matchId") as string;
-  const teamId = formData.get("teamId") as string;
-  const eventId = formData.get("eventId") as string;
+  const { matchId, teamId, eventId } = z.object({
+    matchId: z.string().min(1),
+    teamId: z.string().min(1),
+    eventId: z.string().min(1),
+  }).parse({
+    matchId: formData.get("matchId"),
+    teamId: formData.get("teamId"),
+    eventId: formData.get("eventId"),
+  });
 
   // Collect all stat keys in form: stat_{playerId}_{statKey}
   const stats: Record<string, Record<string, number>> = {};
@@ -425,10 +502,15 @@ export async function captainSubmitStatsAction(formData: FormData) {
     const m = key.match(/^stat_(.+)_(.+)$/);
     if (!m) continue;
     const [, playerId, statKey] = m;
+    if (!isSafeStatToken(playerId) || !isSafeStatToken(statKey)) {
+      throw new Error("Invalid stat field name.");
+    }
+    const parsedValue = z.coerce.number().int().min(0).max(9999).parse(value);
     if (!stats[playerId]) stats[playerId] = {};
-    stats[playerId][statKey] = parseInt(value as string, 10) || 0;
+    stats[playerId][statKey] = parsedValue;
   }
 
+  await assertCaptainCanSubmitStats({ captainId: user.id, matchId, teamId, eventId });
   await upsertStatSubmission({ matchId, teamId, eventId, submittedBy: user.id, stats });
   revalidatePath("/captain/stats");
 }
@@ -519,16 +601,26 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
   await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   const file = formData.get("characterArt");
+  if (!isSafeEntityId(eventId)) {
+    redirect(`/admin?error=${encodeURIComponent("Invalid event ID.")}` as never);
+  }
   if (!(file instanceof File) || file.size === 0) {
     redirect(`/admin?error=No+file+uploaded` as never);
+  }
+  const extension = getCharacterArtExtension((file as File).type);
+  if (!extension) {
+    redirect(`/admin?error=${encodeURIComponent("Character art must be a PNG, JPEG, or WebP image.")}` as never);
   }
   try {
     const bytes = await (file as File).arrayBuffer();
     const buffer = Buffer.from(bytes);
+    if (!hasImageSignature(buffer, extension)) {
+      redirect(`/admin?error=${encodeURIComponent("Character art file content does not match its image type.")}` as never);
+    }
     let url: string;
 
     if (process.env.BLOB_READ_WRITE_TOKEN) {
-      const result = await put(`character-art/${eventId}-${Date.now()}.png`, buffer, {
+      const result = await put(`character-art/${eventId}-${Date.now()}.${extension}`, buffer, {
         access: "public",
         contentType: (file as File).type || "image/png",
       });
@@ -537,7 +629,7 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
       // Local dev fallback: write to public/character-art/ and serve as static asset
       const dir = path.join(process.cwd(), "public", "character-art");
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      const filename = `${eventId}-${Date.now()}.png`;
+      const filename = `${eventId}-${Date.now()}.${extension}`;
       fs.writeFileSync(path.join(dir, filename), buffer);
       url = `/character-art/${filename}`;
     }

@@ -4,6 +4,7 @@ import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { GameArt, StatusBadge } from "@/components/GameArt";
+import { getDefaultModeLabel } from "@/lib/platform/config";
 import { getAllGames, getGameForEvent, getPublicEvents } from "@/lib/platform/repository";
 import type { Event, Game } from "@/lib/platform/types";
 
@@ -30,9 +31,17 @@ function ctaHref(event: Event) {
   return `/events/${event.slug}` as `/events/${string}`;
 }
 
-async function EventCard({ event, game, priority = false }: { event: Event; game: Game; priority?: boolean }) {
+async function EventCard({
+  event,
+  game,
+  priority = false,
+}: {
+  event: Event;
+  game: Game;
+  priority?: boolean;
+}) {
   const t = await getTranslations("home");
-  const mode = game.id === "game-kuroko" ? "3v3" : "5v5";
+  const modeLabel = getDefaultModeLabel(event.gameModeId, event.gameId);
 
   let ctaLabel: string;
   if (event.status === "Ongoing") {
@@ -53,7 +62,7 @@ async function EventCard({ event, game, priority = false }: { event: Event; game
       <div className="flex flex-1 flex-col gap-4 p-5 pt-10">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-            {game.name} · {mode}
+            {game.name} · {modeLabel}
           </p>
           <h2 className="mt-1 text-lg font-bold leading-snug text-slate-900">{event.name}</h2>
         </div>
@@ -153,7 +162,12 @@ export async function HomePageContent({
       {filteredEvents.length > 0 ? (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {filteredEvents.map((event, index) => (
-            <EventCard key={event.id} event={event} game={getGameForEvent(event)} priority={index === 0} />
+            <EventCard
+              key={event.id}
+              event={event}
+              game={getGameForEvent(event)}
+              priority={index === 0}
+            />
           ))}
         </div>
       ) : (

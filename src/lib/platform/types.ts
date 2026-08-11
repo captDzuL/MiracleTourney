@@ -12,6 +12,17 @@ export type Game = {
   name: string;
   slug: string;
   accent: string;
+  defaultModeLabel?: string;
+  fallbackLogoUrl?: string;
+  primaryStatKey?: string;
+  certificateThemeId?: "flashpeak" | "kuroko" | "mlbb" | "hok" | "valorant" | "dota2";
+  artTheme?: {
+    bg: string;
+    orb1: string;
+    orb2: string;
+    ring: string;
+    label: string;
+  };
 };
 
 export type GameMode = {
@@ -19,6 +30,7 @@ export type GameMode = {
   gameId: string;
   name: string;
   slug: string;
+  defaultModeLabel?: string;
   teamSize: 3 | 4 | 5 | 6 | 7;
   maxRosterSize: number;
   positions: string[];

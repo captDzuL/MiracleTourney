@@ -3,11 +3,8 @@ import { getTranslations } from "next-intl/server";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { captainSubmitStatsAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
-import {
-  getCompletedMatchesForCaptain,
-  getGameModes,
-  getPlayersForTeam,
-} from "@/lib/platform/repository";
+import { getStatKeysForMode } from "@/lib/platform/config";
+import { getCompletedMatchesForCaptain, getPlayersForTeam } from "@/lib/platform/repository";
 import { Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +17,6 @@ export default async function CaptainStatsPage() {
 
   const t = await getTranslations("captainStats");
   const matchRows = await getCompletedMatchesForCaptain(user.id);
-  const gameModes = getGameModes();
 
   const teamIds = [...new Set(matchRows.map((r) => r.teamId))];
   const playersByTeam = new Map(
@@ -46,8 +42,7 @@ export default async function CaptainStatsPage() {
       <Section title={t("title")} description={t("description")}>
         <div className="space-y-4">
           {matchRows.map((row) => {
-            const mode = gameModes.find((m) => m.id === row.gameModeId);
-            const statKeys = mode?.statKeys ?? [];
+            const statKeys = getStatKeysForMode(row.gameModeId, row.gameId);
             const players = playersByTeam.get(row.teamId) ?? [];
             const sub = row.submission;
             const canSubmit = !sub || sub.status === "rejected";

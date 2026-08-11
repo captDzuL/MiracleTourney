@@ -150,4 +150,36 @@ describe("parseAndValidateTeamImport", () => {
     expect(result.message).toContain("participant cap");
     expect(result.message).toContain("flashpeak-open-league");
   });
+
+  it("rejects spreadsheet formula payloads in imported text fields", () => {
+    const result = parseAndValidateTeamImport(
+      [
+        "event_slug,team_name,team_tag,captain_name,captain_contact",
+        "flashpeak-open-league,=HYPERLINK(\"https://evil.test\"),EVL,Salsa,08189",
+      ].join("\n"),
+      getImportSnapshot(),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failed result");
+    expect(result.message).toContain("Row 2");
+    expect(result.message).toContain("team_name");
+    expect(result.message).toContain("spreadsheet formula");
+  });
+
+  it("rejects CSV imports with too many rows before expensive validation work", () => {
+    const rows = Array.from(
+      { length: 513 },
+      (_, index) => `flashpeak-open-league,Overflow ${index},O${index},Salsa,08189`,
+    );
+
+    const result = parseAndValidateTeamImport(
+      ["event_slug,team_name,team_tag,captain_name,captain_contact", ...rows].join("\n"),
+      getImportSnapshot(),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failed result");
+    expect(result.message).toContain("too many rows");
+  });
 });

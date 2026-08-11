@@ -5,7 +5,6 @@ import { DataTable, Pill, Section } from "@/components/ui";
 import {
   getBracketPreview,
   getEventRoundConfigs,
-  getEvents,
   getMatchesForEvent,
   getMatchGamesForEvent,
   getPublicEventBySlug,
@@ -14,13 +13,6 @@ import {
 } from "@/lib/platform/repository";
 import type { Match, MatchGame } from "@/lib/platform/types";
 import type { BracketMatch } from "@/lib/tournament/types";
-
-export const bracketRevalidate = 30;
-
-export async function generateBracketStaticParams() {
-  const events = await getEvents();
-  return events.map((event) => ({ slug: event.slug }));
-}
 
 type TFn = (key: string, values?: Record<string, string | number>) => string;
 

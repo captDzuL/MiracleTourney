@@ -1,4 +1,4 @@
-import { CalendarDays, Settings, Users } from "lucide-react";
+import { CalendarDays, Plus, Settings, Trophy, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
@@ -17,10 +17,15 @@ import {
 } from "@/lib/platform/repository";
 import type { Certificate } from "@/lib/platform/types";
 import type { Event, Game, GameMode, Player, Team } from "@/lib/platform/types";
-import { buttonStyles } from "@/components/ui";
 import { ShareCertificateButton } from "@/components/ShareCertificateButton";
 
 type TFn = (key: string, values?: Record<string, string | number>) => string;
+
+const inputClass = "rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100";
+const labelClass = "grid gap-2 text-sm font-medium text-slate-700";
+const quietButton = "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
+const primaryButton = "inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-400 px-3.5 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
+const dangerButton = "inline-flex items-center justify-center rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400";
 
 export default async function CaptainPage({
   searchParams,
@@ -47,10 +52,9 @@ export default async function CaptainPage({
   const allPlayers = await getPlayersForTeams(teams.map((team) => team.id));
   const teamsWithPlayers = teams.map((team) => ({
     team,
-    players: allPlayers.filter((p) => p.teamId === team.id),
+    players: allPlayers.filter((player) => player.teamId === team.id),
   }));
 
-  // Check if this captain's team has a certificate (is champion)
   const certificates = new Map<string, Certificate | null>(
     await Promise.all(
       teams.map(async (team) => {
@@ -62,85 +66,32 @@ export default async function CaptainPage({
 
   return (
     <div className="space-y-6">
-      {usingTempPassword && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      {usingTempPassword ? (
+        <Notice tone="warning">
           {t("tempPasswordWarning")}{" "}
           <Link href="/captain/settings" className="font-semibold underline hover:text-amber-900">
             {t("changeNow")}
           </Link>
-        </div>
-      )}
-      {success === "password-changed" && (
-        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {t("passwordChanged")}
-        </div>
-      )}
-      {success === "player-added" && (
-        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {t("playerAdded")}
-        </div>
-      )}
-      {success === "player-updated" && (
-        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {t("playerUpdated")}
-        </div>
-      )}
-      {success === "player-deleted" && (
-        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {t("playerDeleted")}
-        </div>
-      )}
-      {success === "registered" && (
-        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {t("registered")}
-        </div>
-      )}
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {decodeURIComponent(error)}
-        </div>
-      )}
+        </Notice>
+      ) : null}
+      {success === "password-changed" ? <Notice tone="success">{t("passwordChanged")}</Notice> : null}
+      {success === "player-added" ? <Notice tone="success">{t("playerAdded")}</Notice> : null}
+      {success === "player-updated" ? <Notice tone="success">{t("playerUpdated")}</Notice> : null}
+      {success === "player-deleted" ? <Notice tone="success">{t("playerDeleted")}</Notice> : null}
+      {success === "registered" ? <Notice tone="success">{t("registered")}</Notice> : null}
+      {error ? <Notice tone="danger">{decodeURIComponent(error)}</Notice> : null}
 
       <div className="space-y-8">
         {teamsWithPlayers.map(({ team, players }) => {
-          const event = events.find((e) => e.id === team.eventId);
+          const event = events.find((item) => item.id === team.eventId);
           if (!event) return null;
           const game = getGameForEvent(event);
           const mode = getModeForEvent(event);
           const cert = certificates.get(team.id) ?? null;
+
           return (
-            <div key={team.id}>
-              {cert && (
-                <div className="mb-4 overflow-hidden rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50">
-                  <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">🏆</span>
-                      <div>
-                        <p className="font-bold text-amber-900">Sertifikat Juara Tersedia!</p>
-                        <p className="text-sm text-amber-700">
-                          Tim {team.name} adalah Grand Champion {event.name}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <a
-                        href={cert.imageUrl}
-                        download={`certificate-${team.name}.png`}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
-                      >
-                        Download PNG
-                      </a>
-                      <ShareCertificateButton imageUrl={cert.imageUrl} teamName={team.name} eventName={event.name} />
-                    </div>
-                  </div>
-                  <div className="border-t border-amber-200 px-4 py-2">
-                    <p className="text-xs text-amber-600">
-                      Bagikan ke Instagram Story, TikTok, atau WhatsApp dengan tombol Share di atas.
-                      Resolusi: 1080×1920 (9:16)
-                    </p>
-                  </div>
-                </div>
-              )}
+            <div key={team.id} className="space-y-4">
+              {cert ? <ChampionCertificateBanner cert={cert} event={event} team={team} /> : null}
               <TeamSection
                 team={team}
                 event={event}
@@ -159,10 +110,59 @@ export default async function CaptainPage({
   );
 }
 
-function avatarGradient(position: string) {
-  if (position === "Guard") return "from-[#1e3a8a] to-[#1d4ed8]";
-  if (position === "Forward" || position === "Midfielder") return "from-[#052e16] to-[#14532d]";
-  return "from-[#1e293b] to-[#334155]";
+function Notice({ children, tone }: { children: React.ReactNode; tone: "success" | "warning" | "danger" }) {
+  const toneClass = {
+    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    warning: "border-amber-200 bg-amber-50 text-amber-800",
+    danger: "border-red-200 bg-red-50 text-red-700",
+  }[tone];
+
+  return (
+    <div className={`rounded-xl border px-4 py-3 text-sm font-medium shadow-sm ${toneClass}`}>
+      {children}
+    </div>
+  );
+}
+
+function ChampionCertificateBanner({ cert, event, team }: { cert: Certificate; event: Event; team: Team }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-amber-200 bg-amber-50 shadow-sm">
+      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+            <Trophy className="h-5 w-5" />
+          </span>
+          <div>
+            <p className="font-semibold text-amber-950">Sertifikat Juara Tersedia!</p>
+            <p className="text-sm text-amber-800">
+              Tim {team.name} adalah Grand Champion {event.name}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <a
+            href={cert.imageUrl}
+            download={`certificate-${team.name}.png`}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700"
+          >
+            Download PNG
+          </a>
+          <ShareCertificateButton imageUrl={cert.imageUrl} teamName={team.name} eventName={event.name} />
+        </div>
+      </div>
+      <div className="border-t border-amber-200 px-4 py-2.5">
+        <p className="text-xs font-medium text-amber-800">
+          Bagikan ke Instagram Story, TikTok, atau WhatsApp dengan tombol Share di atas. Resolusi: 1080x1920 (9:16)
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function avatarTone(position: string) {
+  if (position === "Guard") return "bg-cyan-100 text-cyan-800";
+  if (position === "Forward" || position === "Midfielder") return "bg-emerald-100 text-emerald-800";
+  return "bg-slate-100 text-slate-800";
 }
 
 function TeamSection({
@@ -185,37 +185,34 @@ function TeamSection({
   t: TFn;
 }) {
   return (
-    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="relative">
+    <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+      <div className="relative border-b border-slate-200">
         <GameArt gameId={game.id} entityName={team.name} />
         <StatusBadge status={event.status} />
       </div>
 
-      <div className="space-y-6 p-5 pt-10">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-              {game.name} · {mode.name}
+      <div className="space-y-6 p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-slate-500">
+              {game.name} - {mode.name}
             </p>
-            <h2 className="mt-1 text-xl font-black text-slate-900">{team.name}</h2>
-            <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-500">
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays className="h-4 w-4 text-blue-400" /> {event.startsAt}
+            <h2 className="mt-1 text-2xl font-semibold text-slate-950">{team.name}</h2>
+            <div className="mt-3 flex flex-wrap gap-2 text-sm text-slate-600">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1.5 ring-1 ring-slate-200">
+                <CalendarDays className="h-4 w-4 text-cyan-600" /> {event.startsAt}
               </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Users className="h-4 w-4 text-blue-400" /> {event.venue}
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1.5 ring-1 ring-slate-200">
+                <Users className="h-4 w-4 text-cyan-600" /> {event.venue}
               </span>
             </div>
-            <Link
-              href="/captain/stats"
-              className="mt-3 inline-block text-sm font-medium text-cyan-600 hover:text-cyan-500"
-            >
+            <Link href="/captain/stats" className={primaryButton}>
               {t("submitStats")}
             </Link>
           </div>
           <Link
             href="/captain/settings"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition hover:border-slate-300 hover:text-slate-600"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
             title={t("accountSettings")}
           >
             <Settings className="h-4 w-4" />
@@ -223,202 +220,160 @@ function TeamSection({
         </div>
 
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-slate-700">
+          <h3 className="mb-3 text-sm font-semibold text-slate-950">
             {t("roster", { count: players.length })}
           </h3>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {players.map((player) => {
               if (confirmDeleteId === player.id) {
-                return (
-                  <div
-                    key={player.id}
-                    className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 p-3 text-center"
-                  >
-                    <p className="text-xs font-semibold text-red-700">{t("deleteConfirm", { name: player.displayName })}</p>
-                    <form action={captainDeletePlayerAction}>
-                      <input type="hidden" name="playerId" value={player.id} />
-                      <button
-                        type="submit"
-                        className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700"
-                      >
-                        {t("confirmDelete")}
-                      </button>
-                    </form>
-                    <Link href="/captain" className="text-xs text-slate-500 hover:text-slate-700">
-                      {t("cancelAction")}
-                    </Link>
-                  </div>
-                );
+                return <DeletePlayerCard key={player.id} player={player} t={t} />;
               }
 
               if (editPlayerId === player.id) {
-                return (
-                  <form
-                    key={player.id}
-                    action={captainUpdatePlayerAction}
-                    className="col-span-2 rounded-2xl border border-blue-200 bg-blue-50 p-3 sm:col-span-3"
-                  >
-                    <input type="hidden" name="playerId" value={player.id} />
-                    <p className="mb-3 text-xs font-semibold text-blue-700">{t("editPlayerTitle", { name: player.displayName })}</p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <label className="grid gap-1 text-xs text-slate-600">
-                        {t("displayName")}
-                        <input
-                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
-                          name="displayName"
-                          defaultValue={player.displayName}
-                          required
-                        />
-                      </label>
-                      <label className="grid gap-1 text-xs text-slate-600">
-                        {t("nickname")}
-                        <input
-                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
-                          name="nickname"
-                          defaultValue={player.nickname}
-                          required
-                        />
-                      </label>
-                      <label className="grid gap-1 text-xs text-slate-600">
-                        {t("position")}
-                        <select
-                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
-                          name="position"
-                          defaultValue={player.position}
-                        >
-                          {mode.positions.map((pos) => (
-                            <option key={pos} value={pos}>{pos}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="grid gap-1 text-xs text-slate-600">
-                        {t("jersey")}
-                        <input
-                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
-                          name="jerseyNumber"
-                          type="number"
-                          min={1}
-                          max={99}
-                          defaultValue={player.jerseyNumber ?? ""}
-                        />
-                      </label>
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        type="submit"
-                        className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-                      >
-                        {t("save")}
-                      </button>
-                      <Link
-                        href="/captain"
-                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-                      >
-                        {t("cancelAction")}
-                      </Link>
-                    </div>
-                  </form>
-                );
+                return <EditPlayerForm key={player.id} mode={mode} player={player} t={t} />;
               }
 
-              return (
-                <div key={player.id} className="relative rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                  {player.jerseyNumber != null && (
-                    <span className="absolute right-2 top-2 rounded-full bg-slate-700 px-1.5 py-0.5 text-[10px] font-bold text-slate-200">
-                      #{player.jerseyNumber}
-                    </span>
-                  )}
-                  <div
-                    className={`mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br ${avatarGradient(player.position)} text-sm font-bold text-white`}
-                  >
-                    {player.nickname.slice(0, 2).toUpperCase()}
-                  </div>
-                  <p className="truncate text-sm font-semibold text-slate-900">{player.displayName}</p>
-                  <span className="mt-1 inline-block rounded-full bg-cyan-400/15 px-2 py-0.5 text-xs text-cyan-700">
-                    {player.nickname}
-                  </span>
-                  <p className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                    {player.position}
-                  </p>
-                  <div className="mt-2 flex gap-1.5">
-                    <Link
-                      href={`/captain?edit=${player.id}`}
-                      className="rounded-md px-2 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-200"
-                    >
-                      {t("edit")}
-                    </Link>
-                    <Link
-                      href={`/captain?confirm=${player.id}`}
-                      className="rounded-md px-2 py-0.5 text-[10px] font-medium text-red-400 hover:bg-red-50"
-                    >
-                      {t("delete")}
-                    </Link>
-                  </div>
-                </div>
-              );
+              return <PlayerCard key={player.id} player={player} t={t} />;
             })}
             <a
               href="#add-player-form"
-              className="flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-200 p-3 text-slate-400 transition hover:border-blue-300 hover:text-blue-400"
+              className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white p-4 text-slate-500 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700"
             >
-              <span className="text-2xl leading-none">+</span>
-              <span className="text-xs">{t("addPlayerAnchor")}</span>
+              <Plus className="h-5 w-5" />
+              <span className="text-sm font-medium">{t("addPlayerAnchor")}</span>
             </a>
           </div>
         </div>
 
-        <form id="add-player-form" action={captainAddPlayerAction} className="grid gap-4">
+        <form id="add-player-form" action={captainAddPlayerAction} className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <input type="hidden" name="teamId" value={team.id} />
           <input type="hidden" name="eventId" value={team.eventId} />
-          <h3 className="text-sm font-semibold text-slate-700">{t("addPlayerTitle")}</h3>
+          <h3 className="text-sm font-semibold text-slate-950">{t("addPlayerTitle")}</h3>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1.5 text-sm text-slate-600">
+            <label className={labelClass}>
               {t("displayName")}
-              <input
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                name="displayName"
-                placeholder={t("displayNamePlaceholder")}
-              />
+              <input className={inputClass} name="displayName" placeholder={t("displayNamePlaceholder")} />
             </label>
-            <label className="grid gap-1.5 text-sm text-slate-600">
+            <label className={labelClass}>
               {t("nickname")}
-              <input
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                name="nickname"
-                placeholder={t("nicknamePlaceholder")}
-              />
+              <input className={inputClass} name="nickname" placeholder={t("nicknamePlaceholder")} />
             </label>
-            <label className="grid gap-1.5 text-sm text-slate-600">
+            <label className={labelClass}>
               {t("position")}
-              <select
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                name="position"
-                defaultValue={mode.positions[0]}
-              >
+              <select className={inputClass} name="position" defaultValue={mode.positions[0]}>
                 {mode.positions.map((pos) => (
                   <option key={pos} value={pos}>{pos}</option>
                 ))}
               </select>
             </label>
-            <label className="grid gap-1.5 text-sm text-slate-600">
+            <label className={labelClass}>
               {t("jersey")} <span className="text-slate-400">{t("jerseyOptional")}</span>
-              <input
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                name="jerseyNumber"
-                type="number"
-                min={1}
-                max={99}
-                placeholder="10"
-              />
+              <input className={inputClass} name="jerseyNumber" type="number" min={1} max={99} placeholder="10" />
             </label>
           </div>
           <div>
-            <button className={`${buttonStyles.primary} text-sm`} type="submit">
+            <button className={primaryButton} type="submit">
               {t("addPlayerSubmit")}
             </button>
           </div>
         </form>
       </div>
     </article>
+  );
+}
+
+function DeletePlayerCard({ player, t }: { player: Player; t: TFn }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-center">
+      <p className="text-sm font-semibold text-red-700">{t("deleteConfirm", { name: player.displayName })}</p>
+      <form action={captainDeletePlayerAction}>
+        <input type="hidden" name="playerId" value={player.id} />
+        <button type="submit" className={dangerButton}>
+          {t("confirmDelete")}
+        </button>
+      </form>
+      <Link href="/captain" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+        {t("cancelAction")}
+      </Link>
+    </div>
+  );
+}
+
+function EditPlayerForm({ mode, player, t }: { mode: GameMode; player: Player; t: TFn }) {
+  return (
+    <form
+      action={captainUpdatePlayerAction}
+      className="col-span-2 rounded-xl border border-cyan-200 bg-cyan-50 p-4 sm:col-span-3"
+    >
+      <input type="hidden" name="playerId" value={player.id} />
+      <p className="mb-3 text-sm font-semibold text-cyan-900">{t("editPlayerTitle", { name: player.displayName })}</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className={labelClass}>
+          {t("displayName")}
+          <input className={inputClass} name="displayName" defaultValue={player.displayName} required />
+        </label>
+        <label className={labelClass}>
+          {t("nickname")}
+          <input className={inputClass} name="nickname" defaultValue={player.nickname} required />
+        </label>
+        <label className={labelClass}>
+          {t("position")}
+          <select className={inputClass} name="position" defaultValue={player.position}>
+            {mode.positions.map((pos) => (
+              <option key={pos} value={pos}>{pos}</option>
+            ))}
+          </select>
+        </label>
+        <label className={labelClass}>
+          {t("jersey")}
+          <input
+            className={inputClass}
+            name="jerseyNumber"
+            type="number"
+            min={1}
+            max={99}
+            defaultValue={player.jerseyNumber ?? ""}
+          />
+        </label>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="submit" className={primaryButton}>
+          {t("save")}
+        </button>
+        <Link href="/captain" className={quietButton}>
+          {t("cancelAction")}
+        </Link>
+      </div>
+    </form>
+  );
+}
+
+function PlayerCard({ player, t }: { player: Player; t: TFn }) {
+  return (
+    <div className="relative rounded-xl border border-slate-200 bg-slate-50 p-4">
+      {player.jerseyNumber != null ? (
+        <span className="absolute right-3 top-3 rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
+          #{player.jerseyNumber}
+        </span>
+      ) : null}
+      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-lg text-sm font-semibold ${avatarTone(player.position)}`}>
+        {player.nickname.slice(0, 2).toUpperCase()}
+      </div>
+      <p className="truncate text-sm font-semibold text-slate-950">{player.displayName}</p>
+      <span className="mt-2 inline-block rounded-full bg-cyan-100 px-2.5 py-1 text-xs font-medium text-cyan-800">
+        {player.nickname}
+      </span>
+      <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {player.position}
+      </p>
+      <div className="mt-3 flex gap-2">
+        <Link href={`/captain?edit=${player.id}`} className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900">
+          {t("edit")}
+        </Link>
+        <Link href={`/captain?confirm=${player.id}`} className="rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700">
+          {t("delete")}
+        </Link>
+      </div>
+    </div>
   );
 }

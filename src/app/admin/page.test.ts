@@ -36,7 +36,7 @@ describe("admin action buttons", () => {
     expect(source).not.toContain('action="/admin"');
     expect(source).not.toContain("href={`/admin?");
     expect(source).toContain('action=""');
-    expect(source).toContain('href={`?matchEventId=${selectedManageableEvent.event.id}&matchId=${match.id}`}');
-    expect(source).toContain('href={`?matchEventId=${selectedManageableEvent.event.id}`}');
+    expect(source).toContain('href={`?phase=run&matchEventId=${selectedManageableEvent.event.id}&matchId=${match.id}`}');
+    expect(source).toContain('href={`?phase=run&matchEventId=${selectedManageableEvent.event.id}`}');
   });
 });

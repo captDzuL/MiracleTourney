@@ -94,6 +94,19 @@ describe("public bracket page", () => {
     expect(source).toContain("getBracketPreview(event.id)");
   });
 
+  test("bracket routes stay dynamic so production builds do not query the database", () => {
+    const publicRouteSource = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+    const localizedRouteSource = fs.readFileSync(
+      path.resolve(__dirname, "../../../[locale]/events/[slug]/bracket/page.tsx"),
+      "utf8",
+    );
+
+    expect(publicRouteSource).toContain('export const dynamic = "force-dynamic"');
+    expect(publicRouteSource).not.toContain("generateStaticParams");
+    expect(localizedRouteSource).toContain('export const dynamic = "force-dynamic"');
+    expect(localizedRouteSource).not.toContain("generateStaticParams");
+  });
+
   it("hides unresolved downstream rounds for a single-elimination bracket with byes", async () => {
     const event = createEvent({
       name: "Bye path visibility test",

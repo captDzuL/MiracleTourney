@@ -135,6 +135,7 @@
     "emailPlaceholder": "kamu@example.com",
     "passwordLabel": "Password",
     "error": "Email atau password salah.",
+    "databaseError": "Database belum bisa dijangkau. Cek koneksi database lokal sebelum masuk.",
     "submit": "Masuk",
     "noAccount": "Belum punya akun?",
     "registerHere": "Daftar di sini",
@@ -276,6 +277,118 @@
     "statReviewTitle": "Review Statistik",
     "approve": "Setujui",
     "reject": "Tolak",
-    "rejectionNote": "Catatan penolakan (opsional)"
+    "rejectionNote": "Catatan penolakan (opsional)",
+    "consoleTitle": "Konsol organizer · {name}",
+    "consoleDescription": "Kelola turnamen per fase: siapkan event, import registrasi, jalankan hari pertandingan, lalu review yang akan dipublikasi.",
+    "phaseShort": {
+      "prepare": "Setup",
+      "import": "Import",
+      "run": "Hari match",
+      "review": "Review"
+    },
+    "phases": {
+      "prepare": {
+        "title": "1. Siapkan Event",
+        "description": "Buat, atur, publish, stream."
+      },
+      "import": {
+        "title": "2. Import Registrasi",
+        "description": "Upload CSV, slug, kredensial."
+      },
+      "run": {
+        "title": "3. Jalankan Match Day",
+        "description": "Antrian match, skor, format ronde."
+      },
+      "review": {
+        "title": "4. Review & Publish",
+        "description": "Approval statistik dan sertifikat."
+      }
+    },
+    "nextActionByPhase": {
+      "prepare": {
+        "title": "Pastikan event siap",
+        "description": "Lengkapi detail event, metadata stream, dan status sebelum import registrasi."
+      },
+      "import": {
+        "title": "Validasi registrasi",
+        "description": "Gunakan template CSV, cek event_slug, lalu export kredensial."
+      },
+      "run": {
+        "title": "Catat match berikutnya",
+        "description": "Pilih event aktif, pilih satu match, lalu simpan hasil."
+      },
+      "review": {
+        "title": "Bereskan review tertunda",
+        "description": "Setujui statistik pemain dan lengkapi aset sertifikat setelah match."
+      }
+    },
+    "noActiveEvent": "Belum ada event aktif",
+    "pendingReviews": "{count} review tertunda",
+    "trackedEvents": "Event terlacak",
+    "trackedEventsHint": "Draft, publik, berjalan",
+    "activeTeams": "Tim aktif",
+    "activeTeamsHint": "Registrasi event terpilih",
+    "activeEventStatus": "Status event",
+    "activeEventStatusHint": "Status visibilitas publik",
+    "activeGame": "Game aktif",
+    "activeGameHint": "Mode game event terpilih",
+    "organizerPhase": "Fase organizer",
+    "activeEvent": "Event aktif",
+    "switchEvent": "Ganti event",
+    "nextAction": "Aksi berikutnya",
+    "previewPublicPage": "Preview halaman publik",
+    "prepareTitle": "Siapkan Event",
+    "prepareDescription": "Semua kontrol setup event ada di sini, jadi import dan scoring live tidak berebut perhatian.",
+    "createEventDescription": "Buat kerangka event sebelum registrasi dan operasi match dimulai.",
+    "statusDescription": "Ubah event aktif dari draft ke status siap publik.",
+    "streamDescription": "Pasang metadata stream ringan di level event.",
+    "targetEvent": "Target event",
+    "streamLabel": "Label stream",
+    "streamUrl": "URL stream",
+    "importWorkspaceTitle": "Import Registrasi",
+    "importDescription": "Pekerjaan CSV punya meja sendiri: upload, validasi, review baris, dan export kredensial kapten.",
+    "importHelp": "Satu baris sama dengan satu tim. Gunakan event_slug yang tersedia dan import data tim plus PIC saja.",
+    "csvFile": "File CSV",
+    "requiredColumns": "Wajib",
+    "importSlugsTitle": "Slug event siap import",
+    "importSlugsDescription": "Gunakan salah satu slug ini di CSV agar registrasi masuk ke event yang benar.",
+    "teamsLabel": "Tim",
+    "teamLabel": "Tim",
+    "contactLabel": "Kontak",
+    "sourceLabel": "Sumber",
+    "importedRegistrationsTitle": "Registrasi terimport",
+    "importedRegistrationsDescription": "Review data tim dan PIC sebelum membagikan akses kapten.",
+    "noImportedRegistrations": "Belum ada import CSV. Baris tim dan PIC akan muncul setelah upload.",
+    "runTitle": "Jalankan Match Day",
+    "runDescription": "Pekerjaan live menjadi meja skor: event terpilih, match tersedia, input hasil, lalu setting ronde.",
+    "refreshMatchDesk": "Refresh meja match",
+    "matchQueueTitle": "Antrian match",
+    "matchQueueDescription": "Pilih satu match sebelum form skor muncul.",
+    "selectedMatchTitle": "Hasil match terpilih",
+    "selectedMatchDescription": "Input skor tetap fokus dan terpisah dari konfigurasi ronde.",
+    "reviewWorkspaceTitle": "Review & Publish",
+    "reviewDescription": "Tugas setelah match dikelompokkan sebagai antrian: approve stats, reject error, lengkapi sertifikat.",
+    "pending": "tertunda",
+    "statReviewDescription": "Statistik match dari kapten yang menunggu review.",
+    "noPendingSubmissions": "Tidak ada submission tertunda.",
+    "playerId": "Player ID",
+    "statsLabel": "Statistik",
+    "certificateSettingsTitle": "Pengaturan sertifikat",
+    "certificateSettingsDescription": "Upload character art dan atur warna aksen untuk sertifikat champion tiap event.",
+    "certificateReady": "Sertifikat siap",
+    "noCertificate": "Belum ada sertifikat",
+    "characterArt": "Character art",
+    "upload": "Upload",
+    "accentColor": "Warna aksen",
+    "saveColor": "Simpan warna",
+    "championCertificate": "Sertifikat champion",
+    "operationsOverviewTitle": "Ringkasan operasi",
+    "operationsOverviewDescription": "Ringkasan padat dari data yang sedang diekspos situs publik.",
+    "activeMatches": "Match aktif",
+    "activeMatchesHint": "Match untuk event terpilih",
+    "leaderboardRows": "Baris leaderboard",
+    "leaderboardRowsHint": "Baris dari statistik approved",
+    "gameLabel": "Game",
+    "matchesLabel": "Match"
   }
 }

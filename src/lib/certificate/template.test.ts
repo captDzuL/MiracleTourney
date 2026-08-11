@@ -4,6 +4,7 @@ import { buildCertificateHtml } from "./template";
 
 const baseData = {
   eventName: "Miracle Fast Tour",
+  gameId: "game-flashpeak",
   gameName: "Flashpeak",
   teamName: "Quantum Vanguard",
   accentColor: "#16a34a",
@@ -35,15 +36,16 @@ describe("buildCertificateHtml", () => {
     expect(html).not.toContain('class="theme-copy"><span class="heading">Miracle Fast Tour</span>');
   });
 
-  it("renders a Kuroko-specific poster skin", async () => {
+  it("renders a Kuroko-specific poster skin from the game registry id, not the display name", async () => {
     const html = await buildCertificateHtml({
       ...baseData,
-      eventName: "Kuroko Street Rival Summer Cup",
-      gameName: "Kuroko no Basket Street Rival",
+      eventName: "Summer Invitational",
+      gameId: "game-kuroko",
+      gameName: "Summer Invitational Feature Game",
       teamName: "Rakuzan",
       accentColor: "#0369a1",
       certId: "KU-2026-00002",
-      eventSlug: "kuroko-summer-cup",
+      eventSlug: "summer-invitational",
     });
 
     expect(html).toContain('data-theme="kuroko"');
@@ -51,7 +53,37 @@ describe("buildCertificateHtml", () => {
     expect(html).toContain("kuroko-emblem");
     expect(html).toContain("Read the Play");
     expect(html).toContain("Rule the Court");
-    expect(html).not.toContain('class="theme-copy"><span class="heading">Kuroko Street Rival Summer Cup</span>');
+    expect(html).not.toContain('class="theme-copy"><span class="heading">Summer Invitational</span>');
+  });
+
+  it("renders newly onboarded game themes from the registry instead of falling back to legacy skins", async () => {
+    const valorantHtml = await buildCertificateHtml({
+      ...baseData,
+      gameId: "game-valorant",
+      gameName: "Valorant",
+      teamName: "Phantom Protocol",
+      certId: "VLR-2026-00003",
+      eventSlug: "valorant-open",
+      accentColor: "#dc2626",
+    });
+
+    const dotaHtml = await buildCertificateHtml({
+      ...baseData,
+      gameId: "game-dota2",
+      gameName: "DOTA 2",
+      teamName: "Ancient Breakers",
+      certId: "D2-2026-00004",
+      eventSlug: "ancient-series",
+      accentColor: "#b91c1c",
+    });
+
+    expect(valorantHtml).toContain('data-theme="valorant"');
+    expect(valorantHtml).toContain("Hold the Site");
+    expect(valorantHtml).not.toContain('data-theme="flashpeak"');
+
+    expect(dotaHtml).toContain('data-theme="dota2"');
+    expect(dotaHtml).toContain("Break the Ancient");
+    expect(dotaHtml).not.toContain('data-theme="kuroko"');
   });
 
   it("keeps every word of long team names in the foreground lockup", async () => {
