@@ -1,4 +1,12 @@
-import { games, gameModes } from "@/lib/platform/config";
+import {
+  gameModes,
+  games,
+  getFallbackLogoUrl,
+  getGameConfig,
+  getGameIdForMode,
+  getGameModeConfig,
+  getGamePrimaryStatKey,
+} from "@/lib/platform/config";
 import type { AppUser, Event, Match, Player, Team } from "@/lib/platform/types";
 import {
   aggregatePlayerLeaderboard,
@@ -169,11 +177,11 @@ export function getPublicEventBySlug(slug: string) {
 }
 
 export function getGameForEvent(event: Event) {
-  return games.find((game) => game.id === event.gameId)!;
+  return getGameConfig(event.gameId);
 }
 
 export function getModeForEvent(event: Event) {
-  return gameModes.find((mode) => mode.id === event.gameModeId)!;
+  return getGameModeConfig(event.gameModeId);
 }
 
 export function getTeamsForEvent(eventId: string) {
@@ -306,7 +314,7 @@ export function getLeaderboardForEvent(eventId: string) {
   if (!event) return [];
 
   const game = getGameForEvent(event);
-  const metric = game.slug === "flashpeak" ? "goals" : "points";
+  const metric = getGamePrimaryStatKey(game.id);
   const playerIds = new Set(getPlayersForEvent(eventId).map((player) => player.id));
 
   return aggregatePlayerLeaderboard(
@@ -411,7 +419,7 @@ export function createEvent(input: {
     slug: input.slug,
     name: input.name,
     description: "New event created from admin panel demo mode.",
-    gameId: gameModes.find((mode) => mode.id === input.gameModeId)?.gameId ?? "game-kuroko",
+    gameId: getGameIdForMode(input.gameModeId),
     gameModeId: input.gameModeId,
     format: input.format,
     status: "Draft",
@@ -422,6 +430,7 @@ export function createEvent(input: {
   };
 
   getStore().events.unshift(event);
+  event.logoUrl = getFallbackLogoUrl(event.gameId) || undefined;
   return event;
 }
 

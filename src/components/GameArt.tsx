@@ -1,31 +1,7 @@
 import Image from "next/image";
 import { ImagePlus } from "lucide-react";
 import { getTranslations } from "next-intl/server";
-
-export interface GameArtTheme {
-  bg: string;
-  orb1: string;
-  orb2: string;
-  ring: string;
-  label: string;
-}
-
-export const gameArtConfig: Record<string, GameArtTheme> = {
-  "game-kuroko": {
-    bg: "linear-gradient(135deg, #0c1445 0%, #1e3a8a 50%, #1e40af 100%)",
-    orb1: "rgba(96,165,250,0.18)",
-    orb2: "rgba(147,197,253,0.10)",
-    ring: "rgba(147,197,253,0.12)",
-    label: "KNB",
-  },
-  "game-flashpeak": {
-    bg: "linear-gradient(135deg, #052e16 0%, #14532d 50%, #166534 100%)",
-    orb1: "rgba(74,222,128,0.18)",
-    orb2: "rgba(134,239,172,0.10)",
-    ring: "rgba(134,239,172,0.12)",
-    label: "FP",
-  },
-};
+import { getGameArtTheme } from "@/lib/platform/config";
 
 const statusClass: Record<string, { class: string; dot?: boolean; key: string }> = {
   Published: { class: "bg-blue-500 text-white", key: "registrationOpen" },
@@ -55,7 +31,7 @@ export function GameArt({
   entityName: string;
   priority?: boolean;
 }) {
-  const art = gameArtConfig[gameId] ?? gameArtConfig["game-kuroko"];
+  const art = getGameArtTheme(gameId);
   const initials = getInitials(entityName) || "EV";
   return (
     <div className="relative h-44 overflow-hidden rounded-t-2xl" style={{ background: art.bg }}>

@@ -135,6 +135,7 @@
     "emailPlaceholder": "you@example.com",
     "passwordLabel": "Password",
     "error": "Invalid email or password.",
+    "databaseError": "The database is not reachable right now. Check the local database connection before signing in.",
     "submit": "Sign in",
     "noAccount": "Don't have an account?",
     "registerHere": "Register here",
@@ -276,6 +277,118 @@
     "statReviewTitle": "Stat Review",
     "approve": "Approve",
     "reject": "Reject",
-    "rejectionNote": "Rejection note (optional)"
+    "rejectionNote": "Rejection note (optional)",
+    "consoleTitle": "Organizer console · {name}",
+    "consoleDescription": "Work through the tournament in phases: prepare the event, import registrations, run match day, then review what gets published.",
+    "phaseShort": {
+      "prepare": "Prepare",
+      "import": "Import",
+      "run": "Match day",
+      "review": "Review"
+    },
+    "phases": {
+      "prepare": {
+        "title": "1. Prepare Event",
+        "description": "Create, configure, publish, stream."
+      },
+      "import": {
+        "title": "2. Import Registration",
+        "description": "CSV upload, slugs, credentials."
+      },
+      "run": {
+        "title": "3. Run Match Day",
+        "description": "Match queue, scores, round format."
+      },
+      "review": {
+        "title": "4. Review & Publish",
+        "description": "Stats approval and certificates."
+      }
+    },
+    "nextActionByPhase": {
+      "prepare": {
+        "title": "Confirm event readiness",
+        "description": "Finish event details, stream metadata, and status before registration import."
+      },
+      "import": {
+        "title": "Validate registrations",
+        "description": "Use the CSV template, verify event_slug values, then export credentials."
+      },
+      "run": {
+        "title": "Record the next match",
+        "description": "Choose the active event, select one match, and save the result."
+      },
+      "review": {
+        "title": "Clear pending reviews",
+        "description": "Approve player stats and finish certificate assets after matches."
+      }
+    },
+    "noActiveEvent": "No active event",
+    "pendingReviews": "{count} pending reviews",
+    "trackedEvents": "Tracked events",
+    "trackedEventsHint": "Draft, public, ongoing",
+    "activeTeams": "Active teams",
+    "activeTeamsHint": "Current event registrations",
+    "activeEventStatus": "Event status",
+    "activeEventStatusHint": "Public visibility state",
+    "activeGame": "Active game",
+    "activeGameHint": "Game mode for selected event",
+    "organizerPhase": "Organizer phase",
+    "activeEvent": "Active event",
+    "switchEvent": "Switch event",
+    "nextAction": "Next action",
+    "previewPublicPage": "Preview public page",
+    "prepareTitle": "Prepare Event",
+    "prepareDescription": "All event setup controls live here, so import and live scoring do not compete for attention.",
+    "createEventDescription": "Create the event shell before registrations and match operations begin.",
+    "statusDescription": "Move the active event from draft to public-ready states.",
+    "streamDescription": "Attach lightweight stream metadata at event level.",
+    "targetEvent": "Target event",
+    "streamLabel": "Stream label",
+    "streamUrl": "Stream URL",
+    "importWorkspaceTitle": "Import Registration",
+    "importDescription": "CSV work gets its own desk: upload, validate, review rows, and export captain credentials.",
+    "importHelp": "One row equals one team. Use an existing event_slug and import team plus PIC data only.",
+    "csvFile": "CSV file",
+    "requiredColumns": "Required",
+    "importSlugsTitle": "Import-ready event slugs",
+    "importSlugsDescription": "Use one of these slugs in your CSV so registrations land in the right event.",
+    "teamsLabel": "Teams",
+    "teamLabel": "Team",
+    "contactLabel": "Contact",
+    "sourceLabel": "Source",
+    "importedRegistrationsTitle": "Imported registrations",
+    "importedRegistrationsDescription": "Review imported team and PIC data before handing off captain access.",
+    "noImportedRegistrations": "No CSV imports yet. Imported team and PIC rows will appear here after upload.",
+    "runTitle": "Run Match Day",
+    "runDescription": "Live work becomes a score desk: selected event, available match, result entry, then round settings.",
+    "refreshMatchDesk": "Refresh match desk",
+    "matchQueueTitle": "Match queue",
+    "matchQueueDescription": "Choose one match before any score form appears.",
+    "selectedMatchTitle": "Selected match result",
+    "selectedMatchDescription": "Score entry stays focused and separate from round configuration.",
+    "reviewWorkspaceTitle": "Review & Publish",
+    "reviewDescription": "After-match tasks are grouped as a queue: approve stats, reject errors, finish certificates.",
+    "pending": "pending",
+    "statReviewDescription": "Captain-submitted match stats awaiting review.",
+    "noPendingSubmissions": "No pending submissions.",
+    "playerId": "Player ID",
+    "statsLabel": "Stats",
+    "certificateSettingsTitle": "Certificate settings",
+    "certificateSettingsDescription": "Upload character art and set the accent color for each event champion certificate.",
+    "certificateReady": "Certificate ready",
+    "noCertificate": "No certificate",
+    "characterArt": "Character art",
+    "upload": "Upload",
+    "accentColor": "Accent color",
+    "saveColor": "Save color",
+    "championCertificate": "Champion certificate",
+    "operationsOverviewTitle": "Operations overview",
+    "operationsOverviewDescription": "Compact readout of what the public site is currently exposing.",
+    "activeMatches": "Active matches",
+    "activeMatchesHint": "Matches for selected event",
+    "leaderboardRows": "Leaderboard rows",
+    "leaderboardRowsHint": "Rows from approved stats",
+    "gameLabel": "Game",
+    "matchesLabel": "Matches"
   }
 }

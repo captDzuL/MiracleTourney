@@ -3,7 +3,7 @@ import { chromium } from "playwright-core";
 import fs from "fs";
 import path from "path";
 
-import { games } from "@/lib/platform/config";
+import { getGameConfig } from "@/lib/platform/config";
 import { countCertificatesForGame, createCertificate, getCertificateByEvent } from "@/lib/platform/repository";
 import { prisma } from "@/lib/platform/db";
 import { buildCertificateHtml } from "./template";
@@ -29,9 +29,9 @@ export async function generateCertificate(eventId: string, winnerTeamId: string)
   const team = await prisma.team.findFirst({ where: { id: winnerTeamId } });
   if (!team) throw new Error(`Team not found: ${winnerTeamId}`);
 
-  const game = games.find((g) => g.id === event.gameId);
-  const gameName = game?.name ?? event.gameId;
-  const gameSlug = game?.slug ?? event.gameId.replace("game-", "");
+  const game = getGameConfig(event.gameId);
+  const gameName = game.name ?? event.gameId;
+  const gameSlug = game.slug ?? event.gameId.replace("game-", "");
 
   const certCount = await countCertificatesForGame(event.gameId);
   const certId = `${gameSlug.toUpperCase().slice(0, 2)}-${new Date().getFullYear()}-${String(certCount + 1).padStart(5, "0")}`;
@@ -41,6 +41,7 @@ export async function generateCertificate(eventId: string, winnerTeamId: string)
 
   const html = await buildCertificateHtml({
     eventName: event.name,
+    gameId: event.gameId,
     gameName,
     teamName: team.name,
     accentColor: event.accentColor ?? "#2563eb",

@@ -4,7 +4,16 @@ import { unstable_cache } from "next/cache";
 
 import bcrypt from "bcryptjs";
 
-import { games, gameModes } from "@/lib/platform/config";
+import {
+  gameModes,
+  games,
+  findGameConfig,
+  getFallbackLogoUrl,
+  getGameConfig,
+  getGameIdForMode,
+  getGameModeConfig,
+  getGamePrimaryStatKey,
+} from "@/lib/platform/config";
 import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventStream, Match, MatchGame, Player, Team, TournamentFormat } from "@/lib/platform/types";
 import {
   aggregatePlayerLeaderboard,
@@ -18,12 +27,6 @@ import type { BracketMatch, MatchResultInput, PlayerMatchStatInput } from "@/lib
 import { prisma } from "./db";
 
 const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration Closed", "Ongoing", "Finished"]);
-
-//link staic image
-const GAME_LOGO_URLS: Record<string, string> = {
-  "game-flashpeak": "https://lh3.googleusercontent.com/d/1m01dWpxKA6qXRzfFRrEovFzho1nTnV9B",
-  "game-kuroko": "https://lh3.googleusercontent.com/d/1nuG9zliyCINk1KXWNPYv_j9fmdQcWMXA",
-};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,7 +46,7 @@ function mapEvent(row: {
     participantCap: row.participantCap as Event["participantCap"],
     registrationWindow: row.registrationWindow, startsAt: row.startsAt, venue: row.venue,
   };
-  const logoUrl = row.logoUrl ?? GAME_LOGO_URLS[row.gameId];
+  const logoUrl = row.logoUrl ?? getFallbackLogoUrl(row.gameId);
   if (logoUrl) event.logoUrl = logoUrl;
   if (row.gameImageUrl) event.gameImageUrl = row.gameImageUrl;
   if (row.characterArtUrl) event.characterArtUrl = row.characterArtUrl;
@@ -147,12 +150,12 @@ export function getGameModes() {
 
 /** Resolves the game definition for a given event. Throws if the game ID is not found in config. */
 export function getGameForEvent(event: Event) {
-  return games.find((game) => game.id === event.gameId)!;
+  return getGameConfig(event.gameId);
 }
 
 /** Resolves the game mode definition for a given event. Throws if the mode ID is not found in config. */
 export function getModeForEvent(event: Event) {
-  return gameModes.find((mode) => mode.id === event.gameModeId)!;
+  return getGameModeConfig(event.gameModeId);
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -446,10 +449,10 @@ export async function setMatchResult(input: {
 
 const _getLeaderboardForEvent = unstable_cache(
   async (eventId: string, gameId: string) => {
-    const game = games.find((g) => g.id === gameId);
+    const game = findGameConfig(gameId);
     if (!game) return [];
 
-    const metric = game.slug === "flashpeak" ? "goals" : "points";
+    const metric = getGamePrimaryStatKey(game.id);
     const playerIds = (await prisma.player.findMany({ where: { eventId }, select: { id: true } })).map((p) => p.id);
 
     const stats = await prisma.playerStat.findMany({
@@ -677,7 +680,7 @@ export async function createEvent(input: {
   format: Event["format"];
   participantCap: Event["participantCap"];
 }): Promise<Event> {
-  const gameId = gameModes.find((mode) => mode.id === input.gameModeId)?.gameId ?? "game-kuroko";
+  const gameId = getGameIdForMode(input.gameModeId);
   const row = await prisma.event.create({
     data: {
       slug: input.slug,
@@ -974,6 +977,42 @@ export async function getCompletedMatchesForCaptain(captainId: string): Promise<
 }
 
 /**
+ * Verifies that a captain-submitted stat form targets one of their completed matches.
+ * Hidden form IDs are attacker-controlled, so every relationship is rechecked server-side.
+ */
+export async function assertCaptainCanSubmitStats(input: {
+  captainId: string;
+  matchId: string;
+  teamId: string;
+  eventId: string;
+}): Promise<void> {
+  const match = await prisma.match.findFirst({
+    where: {
+      id: input.matchId,
+      eventId: input.eventId,
+      status: "Completed",
+      OR: [{ homeTeamId: input.teamId }, { awayTeamId: input.teamId }],
+    },
+    select: { id: true },
+  });
+  if (!match) {
+    throw new Error("Not authorized");
+  }
+
+  const team = await prisma.team.findFirst({
+    where: {
+      id: input.teamId,
+      eventId: input.eventId,
+      captainId: input.captainId,
+    },
+    select: { id: true },
+  });
+  if (!team) {
+    throw new Error("Not authorized");
+  }
+}
+
+/**
  * Creates or replaces a captain's stat submission for a match.
  * Re-submission resets status to "pending" and clears any prior rejection note.
  */
@@ -1091,7 +1130,7 @@ export async function approveStatSubmission(submissionId: string, adminId: strin
     where: { id: submission.eventId },
     select: { gameId: true },
   });
-  const game = games.find((g) => g.id === event?.gameId);
+  const game = event?.gameId ? getGameConfig(event.gameId) : null;
   const gameSlug = game?.slug ?? "unknown";
 
   const statsMap = submission.stats as Record<string, Record<string, number>>;

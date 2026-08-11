@@ -2,10 +2,16 @@ import { getCaptainCredentialsForEvent } from "@/lib/platform/repository";
 import { requireRole } from "@/lib/auth/session";
 
 function csvEscape(value: string): string {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const safeValue = /^[=+\-@]/.test(value.trimStart()) ? `'${value}` : value;
+
+  if (safeValue.includes(",") || safeValue.includes('"') || safeValue.includes("\n")) {
+    return `"${safeValue.replace(/"/g, '""')}"`;
   }
-  return value;
+  return safeValue;
+}
+
+function isSafeEventId(eventId: string) {
+  return /^[a-zA-Z0-9_-]+$/.test(eventId);
 }
 
 export async function GET(req: Request) {
@@ -15,6 +21,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const eventId = searchParams.get("eventId");
   if (!eventId) return new Response("Missing eventId", { status: 400 });
+  if (!isSafeEventId(eventId)) return new Response("Invalid eventId", { status: 400 });
 
   const credentials = await getCaptainCredentialsForEvent(eventId);
 
@@ -29,8 +36,10 @@ export async function GET(req: Request) {
 
   return new Response(lines.join("\n"), {
     headers: {
+      "Cache-Control": "no-store, max-age=0",
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="captain-credentials-${eventId}.csv"`,
+      "X-Robots-Tag": "noindex, nofollow, noarchive",
     },
   });
 }

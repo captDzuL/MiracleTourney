@@ -174,5 +174,45 @@ describe("demo-store bracket operations", () => {
       before.filter((match) => match.round === 1).length,
     );
   });
+
+  it("rejects event creation when the game mode is unknown", () => {
+    expect(() =>
+      createEvent({
+        name: "Broken Event",
+        slug: "broken-event",
+        gameModeId: "mode-missing",
+        format: "Single Elimination",
+        participantCap: 8,
+      }),
+    ).toThrow("Unknown game mode config: mode-missing");
+  });
+
+  it("creates draft events for newly onboarded games through their mode registry", () => {
+    const mlbbEvent = createEvent({
+      name: "Land of Dawn Cup",
+      slug: "land-of-dawn-cup",
+      gameModeId: "mode-mlbb-5v5",
+      format: "Single Elimination",
+      participantCap: 16,
+    });
+    const valorantEvent = createEvent({
+      name: "Spike Rush Open",
+      slug: "spike-rush-open",
+      gameModeId: "mode-valorant-5v5",
+      format: "Single Elimination",
+      participantCap: 16,
+    });
+
+    expect(mlbbEvent).toMatchObject({
+      gameId: "game-mobile-legends",
+      gameModeId: "mode-mlbb-5v5",
+      status: "Draft",
+    });
+    expect(valorantEvent).toMatchObject({
+      gameId: "game-valorant",
+      gameModeId: "mode-valorant-5v5",
+      status: "Draft",
+    });
+  });
 });
 

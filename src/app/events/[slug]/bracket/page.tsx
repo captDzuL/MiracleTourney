@@ -1,13 +1,6 @@
-import {
-  generateBracketStaticParams,
-  renderBracketPage,
-} from "./bracket-page-content";
+import { renderBracketPage } from "./bracket-page-content";
 
-export const revalidate = 30;
-
-export async function generateStaticParams() {
-  return generateBracketStaticParams();
-}
+export const dynamic = "force-dynamic";
 
 export default async function BracketPage({
   params,

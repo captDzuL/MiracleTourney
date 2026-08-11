@@ -10,5 +10,5 @@ export default async function LocalizedEventDetailPage({
   const { locale, slug } = await params;
   setRequestLocale(locale as "id" | "en");
 
-  return renderEventDetailPage(slug);
+  return renderEventDetailPage(slug, locale as "id" | "en");
 }

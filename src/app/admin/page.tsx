@@ -1,3 +1,22 @@
+import {
+  BadgeCheck,
+  CalendarPlus,
+  Check,
+  Download,
+  Eye,
+  FileSpreadsheet,
+  ImageUp,
+  KeyRound,
+  LinkIcon,
+  Palette,
+  Radio,
+  RefreshCw,
+  Save,
+  Send,
+  SlidersHorizontal,
+  Upload,
+  X,
+} from "lucide-react";
 import { getTranslations } from "next-intl/server";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
@@ -6,9 +25,9 @@ import {
   adminCreateEventAction,
   adminImportTeamsCsvAction,
   adminRejectStatAction,
+  adminSetAccentColorAction,
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
-  adminSetAccentColorAction,
   adminUpdateEventStatusAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
@@ -33,15 +52,47 @@ import {
 } from "@/lib/platform/repository";
 import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
 
+import { type AdminPhase, adminPhases, buildAdminPhaseHref, resolveAdminPhase } from "./admin-flow";
+
 export const dynamic = "force-dynamic";
 
 type AdminSearchParams = {
+  activeEventId?: string;
   success?: string;
   error?: string;
   count?: string;
+  phase?: string;
   matchEventId?: string;
   matchId?: string;
 };
+
+type EventItem = Awaited<ReturnType<typeof getEvents>>[number];
+type GameModeItem = ReturnType<typeof getGameModes>[number];
+type TeamItem = Awaited<ReturnType<typeof getTeamsForEvent>>[number];
+type ImportedTeamItem = Awaited<ReturnType<typeof getImportedTeams>>[number] & { eventName: string };
+type ManageableEventItem = {
+  event: EventItem;
+  manageableMatches: Awaited<ReturnType<typeof getBracketManageableMatchesForEvent>>;
+};
+type MatchItem = ManageableEventItem["manageableMatches"][number];
+type RoundConfigItem = Awaited<ReturnType<typeof getEventRoundConfigs>>[number];
+type MatchGameItem = Awaited<ReturnType<typeof getMatchGames>>[number];
+type PendingSubmissionItem = Awaited<ReturnType<typeof getPendingStatSubmissions>>[number];
+type CertificateItem = Awaited<ReturnType<typeof getCertificateByEvent>>;
+
+type AdminTranslator = Awaited<ReturnType<typeof getTranslations>>;
+
+const phaseIcons = {
+  prepare: CalendarPlus,
+  import: FileSpreadsheet,
+  run: Radio,
+  review: BadgeCheck,
+} satisfies Record<AdminPhase, React.ComponentType<{ className?: string }>>;
+
+const inputClass = "rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100";
+const labelClass = "grid gap-2 text-sm font-medium text-slate-700";
+const quietButton = "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
+const primaryButton = "inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-400 px-3.5 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
 
 export default async function AdminPage({
   searchParams,
@@ -55,6 +106,7 @@ export default async function AdminPage({
 
   const t = await getTranslations("admin");
   const resolvedSearchParams = await searchParams;
+  const activePhase = resolveAdminPhase(resolvedSearchParams?.phase);
   const events = await getEvents();
   const gameModes = getGameModes();
 
@@ -68,6 +120,10 @@ export default async function AdminPage({
   const allTeams = [...allTeamsByEvent.values()].flat();
   const teamName = (teamId: string | undefined) => allTeams.find((team) => team.id === teamId)?.name ?? "TBD";
   const featuredEvent = featuredEventFromSlug ?? events[0];
+  const activeEvent =
+    events.find((event) => event.id === resolvedSearchParams?.activeEventId)
+    ?? featuredEvent
+    ?? events[0];
 
   const manageableEventsRaw = await Promise.all(
     events.map(async (event) => ({
@@ -78,19 +134,20 @@ export default async function AdminPage({
   const manageableEvents = manageableEventsRaw
     .map(({ event, manageableMatches }) => ({
       event,
-      manageableMatches: manageableMatches.filter((m) => m.status !== "Completed"),
+      manageableMatches: manageableMatches.filter((match) => match.status !== "Completed"),
     }))
     .filter(({ manageableMatches }) => manageableMatches.length > 0);
   const selectedManageableEventId =
     manageableEvents.find(({ event }) => event.id === resolvedSearchParams?.matchEventId)?.event.id
+    ?? manageableEvents.find(({ event }) => event.id === activeEvent?.id)?.event.id
     ?? manageableEvents[0]?.event.id;
   const selectedManageableEvent = manageableEvents.find(({ event }) => event.id === selectedManageableEventId);
   const manageableMatches = selectedManageableEvent?.manageableMatches ?? [];
 
-  const [featuredMatches, featuredLeaderboard, pendingSubmissions, pendingCount] = featuredEvent
+  const [activeMatches, activeLeaderboard, pendingSubmissions, pendingCount] = activeEvent
     ? await Promise.all([
-        getMatchesForEvent(featuredEvent.id),
-        getLeaderboardForEvent(featuredEvent.id, featuredEvent.gameId),
+        getMatchesForEvent(activeEvent.id),
+        getLeaderboardForEvent(activeEvent.id, activeEvent.gameId),
         getPendingStatSubmissions(),
         getPendingStatSubmissionCount(),
       ])
@@ -107,706 +164,942 @@ export default async function AdminPage({
       eventName: events.find((event) => event.id === team.eventId)?.name ?? "Unknown event",
     }))
     .reverse();
+  const importedEventIds = new Set(importedTeamsRaw.map((team) => team.eventId));
 
-  const importedEventIds = new Set(importedTeamsRaw.map((t) => t.eventId));
-
-  // Best of N data
   const selectedMatchId = resolvedSearchParams?.matchId;
   const [roundConfigs, selectedMatchGames] = await Promise.all([
     selectedManageableEvent ? getEventRoundConfigs(selectedManageableEvent.event.id) : Promise.resolve([]),
     selectedMatchId ? getMatchGames(selectedMatchId) : Promise.resolve([]),
   ]);
-  const roundConfigMap = new Map(roundConfigs.map((c) => [c.roundLabel, c.bestOf]));
-  const selectedMatch = selectedMatchId
-    ? manageableMatches.find((m) => m.id === selectedMatchId)
-    : undefined;
+  const roundConfigMap = new Map(roundConfigs.map((config) => [config.roundLabel, config.bestOf]));
+  const selectedMatch = selectedMatchId ? manageableMatches.find((match) => match.id === selectedMatchId) : undefined;
   const selectedMatchBestOf = selectedMatch ? (roundConfigMap.get(selectedMatch.roundLabel) ?? 1) : 1;
 
-  // Certificate data per event
   const certificatesByEvent = new Map(
     await Promise.all(events.map(async (event) => [event.id, await getCertificateByEvent(event.id)] as const)),
   );
 
+  const currentQuery = {
+    activeEventId: activeEvent?.id,
+    matchEventId: selectedManageableEvent?.event.id,
+    matchId: selectedMatch?.id,
+  };
+
   return (
     <div className="space-y-6">
-      <Section
-        title={`Admin panel · ${user.name}`}
-        description="Create events, publish them, import registrations, and keep the public tournament surface consistent."
-      >
-        {resolvedSearchParams?.success ? (
-          <p className="mb-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-            Demo action completed: {resolvedSearchParams.success.replaceAll("-", " ")}
-            {resolvedSearchParams.count ? ` (${resolvedSearchParams.count} teams).` : "."}
-          </p>
-        ) : null}
-        {resolvedSearchParams?.error ? (
-          <p className="mb-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-            {resolvedSearchParams.error}
-          </p>
-        ) : null}
-        <div className="grid gap-4 md:grid-cols-4">
-          <StatCard label="Tracked events" value={events.length} hint="Draft + public + ongoing" />
-          <StatCard
-            label="Featured teams"
-            value={featuredEvent ? (allTeamsByEvent.get(featuredEvent.id)?.length ?? 0) : 0}
-            hint="Registration and roster scope"
-          />
-          <StatCard
-            label="Recorded matches"
-            value={featuredMatches.length}
-            hint="Current event operations"
-          />
-          <StatCard
-            label="Player leaderboard rows"
-            value={featuredLeaderboard.length}
-            hint="Only appears after player stats are recorded"
+      <AdminHeader
+        activeEvent={activeEvent}
+        activePhase={activePhase}
+        activeTeamCount={activeEvent ? (allTeamsByEvent.get(activeEvent.id)?.length ?? 0) : 0}
+        events={events}
+        pendingCount={pendingCount}
+        t={t}
+        userName={user.name}
+      />
+
+      {resolvedSearchParams?.success || resolvedSearchParams?.error ? (
+        <ActionFeedback
+          count={resolvedSearchParams.count}
+          error={resolvedSearchParams.error}
+          success={resolvedSearchParams.success}
+        />
+      ) : null}
+
+      <div className="grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <AdminPhaseRail
+          activeEvent={activeEvent}
+          activePhase={activePhase}
+          events={events}
+          pendingCount={pendingCount}
+          query={currentQuery}
+          t={t}
+        />
+
+        <div className="min-w-0 space-y-6">
+          {activePhase === "prepare" ? (
+            <PrepareEventPhase
+              activeEvent={activeEvent}
+              gameModes={gameModes}
+              t={t}
+            />
+          ) : null}
+
+          {activePhase === "import" ? (
+            <ImportRegistrationPhase
+              allTeamsByEvent={allTeamsByEvent}
+              events={events}
+              importedEventIds={importedEventIds}
+              importedTeams={importedTeams}
+              t={t}
+            />
+          ) : null}
+
+          {activePhase === "run" ? (
+            <RunMatchDayPhase
+              manageableEvents={manageableEvents}
+              manageableMatches={manageableMatches}
+              roundConfigMap={roundConfigMap}
+              roundConfigs={roundConfigs}
+              selectedManageableEvent={selectedManageableEvent}
+              selectedMatch={selectedMatch}
+              selectedMatchBestOf={selectedMatchBestOf}
+              selectedMatchGames={selectedMatchGames}
+              t={t}
+              teamName={teamName}
+            />
+          ) : null}
+
+          {activePhase === "review" ? (
+            <ReviewPublishPhase
+              certificatesByEvent={certificatesByEvent}
+              events={events}
+              pendingCount={pendingCount}
+              pendingSubmissions={pendingSubmissions}
+              t={t}
+            />
+          ) : null}
+
+          <OperationsOverview
+            activeEvent={activeEvent}
+            activeMatches={activeMatches}
+            activeLeaderboardCount={activeLeaderboard.length}
+            allTeamsByEvent={allTeamsByEvent}
+            events={events}
+            t={t}
           />
         </div>
-      </Section>
+      </div>
+    </div>
+  );
+}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Section className="h-full" title="Create event" description="Admin event bootstrap for one game mode at a time.">
-          <form action={adminCreateEventAction} className="grid h-full content-start gap-4">
-            <label className="grid gap-2 text-sm text-slate-300">
-              Event name
-              <input
-                className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                name="name"
-                placeholder="Flashpeak Mid-Season Cup"
-              />
-            </label>
-            <label className="grid gap-2 text-sm text-slate-300">
-              Slug
-              <input
-                className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                name="slug"
-                placeholder="flashpeak-mid-season-cup"
-              />
-            </label>
-            <label className="grid gap-2 text-sm text-slate-300">
-              Game mode
-              <select
-                className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                name="gameModeId"
-                defaultValue={gameModes[0]?.id}
-              >
-                {gameModes.map((mode) => (
-                  <option key={mode.id} value={mode.id}>
-                    {mode.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-sm text-slate-300">
-                Format
-                <select
-                  className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                  name="format"
-                  defaultValue="Single Elimination"
-                >
+function AdminHeader({
+  activeEvent,
+  activePhase,
+  activeTeamCount,
+  events,
+  pendingCount,
+  t,
+  userName,
+}: {
+  activeEvent: EventItem | undefined;
+  activePhase: AdminPhase;
+  activeTeamCount: number;
+  events: EventItem[];
+  pendingCount: number;
+  t: AdminTranslator;
+  userName: string;
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+      <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-sm font-medium text-slate-500">{t("title")}</p>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-950">{t("consoleTitle", { name: userName })}</h1>
+          <p className="mt-1 max-w-3xl text-sm text-slate-600">{t("consoleDescription")}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusChip tone="info">{t(`phaseShort.${activePhase}`)}</StatusChip>
+          <StatusChip tone="success">{activeEvent?.name ?? t("noActiveEvent")}</StatusChip>
+          <StatusChip tone={pendingCount > 0 ? "warning" : "default"}>
+            {t("pendingReviews", { count: pendingCount })}
+          </StatusChip>
+        </div>
+      </div>
+      <div className="grid gap-px bg-slate-200 md:grid-cols-4">
+        <HeaderMetric label={t("trackedEvents")} value={events.length} hint={t("trackedEventsHint")} />
+        <HeaderMetric label={t("activeTeams")} value={activeTeamCount} hint={t("activeTeamsHint")} />
+        <HeaderMetric label={t("activeEventStatus")} value={activeEvent?.status ?? "-"} hint={t("activeEventStatusHint")} />
+        <HeaderMetric label={t("activeGame")} value={activeEvent ? getGameForEvent(activeEvent).name : "-"} hint={t("activeGameHint")} />
+      </div>
+    </section>
+  );
+}
+
+function HeaderMetric({ label, value, hint }: { label: string; value: string | number; hint: string }) {
+  return (
+    <div className="bg-white p-4">
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className="mt-2 text-xl font-semibold text-slate-950">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{hint}</p>
+    </div>
+  );
+}
+
+function ActionFeedback({ count, error, success }: { count?: string; error?: string; success?: string }) {
+  if (success) {
+    return (
+      <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+        Demo action completed: {success.replaceAll("-", " ")}
+        {count ? ` (${count} teams).` : "."}
+      </p>
+    );
+  }
+
+  return (
+    <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {error}
+    </p>
+  );
+}
+
+function AdminPhaseRail({
+  activeEvent,
+  activePhase,
+  events,
+  pendingCount,
+  query,
+  t,
+}: {
+  activeEvent: EventItem | undefined;
+  activePhase: AdminPhase;
+  events: EventItem[];
+  pendingCount: number;
+  query: Parameters<typeof buildAdminPhaseHref>[1];
+  t: AdminTranslator;
+}) {
+  return (
+    <aside className="h-fit rounded-xl border border-slate-200 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+      <p className="px-2 pb-2 text-xs font-semibold uppercase text-slate-500">{t("organizerPhase")}</p>
+      <nav className="grid gap-1" aria-label={t("organizerPhase")}>
+        {adminPhases.map((phase) => {
+          const Icon = phaseIcons[phase];
+          const isActive = phase === activePhase;
+          return (
+            <a
+              key={phase}
+              href={buildAdminPhaseHref(phase, query)}
+              className={`grid gap-1 rounded-lg border px-3 py-3 transition ${
+                isActive
+                  ? "border-slate-300 bg-slate-50 text-slate-950"
+                  : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <span className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <Icon className="h-4 w-4 shrink-0 text-cyan-600" />
+                  <span className="truncate text-sm font-semibold">{t(`phases.${phase}.title`)}</span>
+                </span>
+                {phase === "review" && pendingCount > 0 ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                    {pendingCount}
+                  </span>
+                ) : null}
+              </span>
+              <span className="pl-6 text-xs text-slate-500">{t(`phases.${phase}.description`)}</span>
+            </a>
+          );
+        })}
+      </nav>
+
+      <form action="" className="mt-4 border-t border-slate-200 pt-4">
+        <input type="hidden" name="phase" value={activePhase} />
+        <label className={labelClass}>
+          {t("activeEvent")}
+          <select className={inputClass} name="activeEventId" defaultValue={activeEvent?.id}>
+            {events.map((event) => (
+              <option key={event.id} value={event.id}>
+                {event.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className={`${quietButton} mt-3 w-full`} type="submit">
+          <RefreshCw className="h-4 w-4" />
+          {t("switchEvent")}
+        </button>
+      </form>
+
+      <div className="mt-4 border-t border-slate-200 pt-4">
+        <p className="px-2 pb-2 text-xs font-semibold uppercase text-slate-500">{t("nextAction")}</p>
+        <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-3">
+          <p className="text-sm font-semibold text-slate-950">{t(`nextActionByPhase.${activePhase}.title`)}</p>
+          <p className="mt-1 text-xs text-slate-600">{t(`nextActionByPhase.${activePhase}.description`)}</p>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function PrepareEventPhase({
+  activeEvent,
+  gameModes,
+  t,
+}: {
+  activeEvent: EventItem | undefined;
+  gameModes: GameModeItem[];
+  t: AdminTranslator;
+}) {
+  return (
+    <PhaseSection
+      action={
+        <a className={quietButton} href={activeEvent ? `../events/${activeEvent.slug}` : "../events"}>
+          <Eye className="h-4 w-4" />
+          {t("previewPublicPage")}
+        </a>
+      }
+      description={t("prepareDescription")}
+      title={t("prepareTitle")}
+    >
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
+        <Section title={t("createEventTitle")} description={t("createEventDescription")} className="rounded-xl shadow-none">
+          <form action={adminCreateEventAction} className="grid gap-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className={labelClass}>
+                {t("eventNameLabel")}
+                <input className={inputClass} name="name" placeholder="Flashpeak Mid-Season Cup" />
+              </label>
+              <label className={labelClass}>
+                {t("slugLabel")}
+                <input className={inputClass} name="slug" placeholder="flashpeak-mid-season-cup" />
+              </label>
+              <label className={labelClass}>
+                {t("gameModeLabel")}
+                <select className={inputClass} name="gameModeId" defaultValue={gameModes[0]?.id}>
+                  {gameModes.map((mode) => (
+                    <option key={mode.id} value={mode.id}>
+                      {mode.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={labelClass}>
+                {t("formatLabel")}
+                <select className={inputClass} name="format" defaultValue="Single Elimination">
                   <option value="Single Elimination">Single Elimination</option>
                   <option value="League">League</option>
                 </select>
               </label>
-              <label className="grid gap-2 text-sm text-slate-300">
-                Participant cap
-                <select
-                  className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                  name="participantCap"
-                  defaultValue="8"
-                >
-                  <option value="8">8</option>
-                  <option value="12">12</option>
-                  <option value="16">16</option>
-                  <option value="24">24</option>
-                  <option value="32">32</option>
-                  <option value="64">64</option>
-                  <option value="128">128</option>
-                  <option value="256">256</option>
+              <label className={labelClass}>
+                {t("capLabel")}
+                <select className={inputClass} name="participantCap" defaultValue="8">
+                  {["8", "12", "16", "24", "32", "64", "128", "256"].map((cap) => (
+                    <option key={cap} value={cap}>
+                      {cap}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
-            <button className={buttonStyles.primary} type="submit">
-              Create draft event
+            <button className={primaryButton} type="submit">
+              <CalendarPlus className="h-4 w-4" />
+              {t("createEventSubmit")}
             </button>
           </form>
         </Section>
 
-        <Section
-          className="h-full"
-          title="Update event status"
-          description="Draft events stay admin-only until they are published."
-        >
-          {events.length ? (
-            <form action={adminUpdateEventStatusAction} className="grid h-full content-start gap-4">
-              <label className="grid gap-2 text-sm text-slate-300">
-                Event
-                <select
-                  className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                  name="eventId"
-                  defaultValue={events[0]?.id}
-                >
-                  {events.map((event) => (
-                    <option key={event.id} value={event.id}>
-                      {event.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-2 text-sm text-slate-300">
-                Status
-                <select
-                  className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                  name="status"
-                  defaultValue="Published"
-                >
-                  <option value="Draft">Draft</option>
-                  <option value="Published">Published</option>
-                  <option value="Registration Closed">Registration Closed</option>
-                  <option value="Ongoing">Ongoing</option>
-                  <option value="Finished">Finished</option>
-                </select>
-              </label>
-              <div className="pt-2">
-                <button className={`${buttonStyles.secondary} w-full sm:w-auto`} type="submit">
-                  Save event status
+        <div className="grid gap-6">
+          <Section title={t("statusTitle")} description={t("statusDescription")} className="rounded-xl shadow-none">
+            {activeEvent ? (
+              <form action={adminUpdateEventStatusAction} className="grid gap-4">
+                <label className={labelClass}>
+                  {t("eventLabel")}
+                  <select className={inputClass} name="eventId" defaultValue={activeEvent.id}>
+                    <EventOptions events={[activeEvent]} />
+                  </select>
+                </label>
+                <label className={labelClass}>
+                  {t("statusLabel")}
+                  <select className={inputClass} name="status" defaultValue={activeEvent.status}>
+                    {["Draft", "Published", "Registration Closed", "Ongoing", "Finished"].map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button className={quietButton} type="submit">
+                  <Send className="h-4 w-4" />
+                  {t("saveStatus")}
                 </button>
-              </div>
-            </form>
-          ) : (
-            <p className="text-sm text-slate-400">Create at least one event first.</p>
-          )}
-        </Section>
+              </form>
+            ) : (
+              <p className="text-sm text-slate-500">{t("noEventsImport")}</p>
+            )}
+          </Section>
 
-        <Section
-          className="h-full"
-          title="Attach live stream"
-          description="Lightweight event-level stream for semifinal/final coverage."
-        >
-          {featuredEvent ? (
-            <form action={adminUpdateStreamAction} className="grid h-full content-start gap-4">
-              <input type="hidden" name="eventId" value={featuredEvent.id} />
-              <p className="text-sm text-slate-300">
-                Target event: <span className="font-medium text-white">{featuredEvent.name}</span>
-              </p>
-              <label className="grid gap-2 text-sm text-slate-300">
-                Stream label
-                <input
-                  className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                  name="label"
-                  defaultValue={featuredEvent.stream?.label ?? "Semifinal broadcast"}
-                />
-              </label>
-              <label className="grid gap-2 text-sm text-slate-300">
-                Stream URL
-                <input
-                  className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                  name="url"
-                  defaultValue={featuredEvent.stream?.url ?? "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}
-                />
-              </label>
-              <div className="pt-2">
-                <button className={`${buttonStyles.secondary} w-full sm:w-auto`} type="submit">
-                  Update stream metadata
+          <Section title={t("streamTitle")} description={t("streamDescription")} className="rounded-xl shadow-none">
+            {activeEvent ? (
+              <form action={adminUpdateStreamAction} className="grid gap-4">
+                <input type="hidden" name="eventId" value={activeEvent.id} />
+                <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  {t("targetEvent")}: <span className="font-semibold text-slate-950">{activeEvent.name}</span>
+                </p>
+                <label className={labelClass}>
+                  {t("streamLabel")}
+                  <input className={inputClass} name="label" defaultValue={activeEvent.stream?.label ?? "Semifinal broadcast"} />
+                </label>
+                <label className={labelClass}>
+                  {t("streamUrl")}
+                  <input className={inputClass} name="url" defaultValue={activeEvent.stream?.url ?? "https://www.youtube.com/watch?v=dQw4w9WgXcQ"} />
+                </label>
+                <button className={quietButton} type="submit">
+                  <LinkIcon className="h-4 w-4" />
+                  {t("saveStream")}
                 </button>
-              </div>
-            </form>
-          ) : (
-            <p className="text-sm text-slate-400">Create at least one event to attach a stream.</p>
-          )}
-        </Section>
-
+              </form>
+            ) : (
+              <p className="text-sm text-slate-500">{t("noEventsStream")}</p>
+            )}
+          </Section>
+        </div>
       </div>
+    </PhaseSection>
+  );
+}
 
-      {/* Match operations — full-width, two-step: pick match, then enter result */}
-      <Section
-        title={t("matchTitle")}
-        description={t("matchDescription")}
-      >
-        {selectedManageableEvent ? (
-          <div className="grid gap-6">
-            {/* Event selector */}
-            <form action="" className="flex flex-wrap items-end gap-3">
-              <label className="grid gap-2 text-sm text-slate-300">
-                Event
-                <select
-                  className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                  name="matchEventId"
-                  defaultValue={selectedManageableEvent.event.id}
-                >
-                  {manageableEvents.map(({ event, manageableMatches: eventMatches }) => (
-                    <option key={event.id} value={event.id}>
-                      {event.name} · {t("matchesRemaining", { n: eventMatches.length })}
-                    </option>
-                  ))}
-                </select>
+function ImportRegistrationPhase({
+  allTeamsByEvent,
+  events,
+  importedEventIds,
+  importedTeams,
+  t,
+}: {
+  allTeamsByEvent: Map<string, TeamItem[]>;
+  events: EventItem[];
+  importedEventIds: Set<string>;
+  importedTeams: ImportedTeamItem[];
+  t: AdminTranslator;
+}) {
+  return (
+    <PhaseSection
+      action={
+        <a className={quietButton} href="/templates/team-import-template.csv">
+          <Download className="h-4 w-4" />
+          {t("downloadTemplate")}
+        </a>
+      }
+      description={t("importDescription")}
+      title={t("importWorkspaceTitle")}
+    >
+      <div className="grid min-w-0 gap-5">
+        <Section title={t("importTitle")} description={t("importHelp")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
+          <form action={adminImportTeamsCsvAction} className="grid min-w-0 gap-4 lg:grid-cols-[minmax(22rem,1fr)_minmax(12rem,16rem)] lg:items-end">
+            <div className="grid min-w-0 gap-3">
+              <label className={labelClass}>
+                {t("csvFile")}
+                <input
+                  className={`${inputClass} block w-full min-w-0 max-w-full overflow-hidden file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-200`}
+                  name="csv"
+                  type="file"
+                  accept=".csv,text/csv"
+                />
               </label>
-              <button className={buttonStyles.secondary} type="submit">
-                {t("changeEvent")}
-              </button>
-            </form>
-
-            {/* Match list — semua match yang belum selesai, klik untuk pilih */}
-            <div className="grid gap-3">
-              <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-                {selectedManageableEvent.event.name} · {t("matchesRemaining", { n: manageableMatches.length })}
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                {t("requiredColumns")}:{" "}
+                <span className="mono inline-block max-w-full break-all text-slate-900">
+                  event_slug,team_name,team_tag,captain_name,captain_contact
+                </span>
               </p>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            </div>
+            <button className={`${primaryButton} min-h-11 w-full self-stretch px-5`} type="submit">
+              <Upload className="h-4 w-4" />
+              {t("importSubmit")}
+            </button>
+          </form>
+        </Section>
+
+        <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(24rem,0.9fr)_minmax(32rem,1.1fr)]">
+          <Section title={t("importSlugsTitle")} description={t("importSlugsDescription")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
+            <DataTable
+              columns={[t("eventLabel"), "event_slug", t("statusLabel"), t("teamsLabel"), ""]}
+              minTableWidth="44rem"
+              rows={events.map((event) => [
+                <span key={`${event.id}-name`} className="font-medium text-slate-800">{event.name}</span>,
+                <span key={`${event.id}-slug`} className="mono block max-w-40 break-all text-xs text-slate-700">{event.slug}</span>,
+                <Pill key={`${event.id}-import-status`} tone={event.status === "Ongoing" ? "live" : "default"}>
+                  {event.status}
+                </Pill>,
+                allTeamsByEvent.get(event.id)?.length ?? 0,
+                importedEventIds.has(event.id) ? (
+                  <a
+                    key={`${event.id}-creds`}
+                    className="inline-flex min-w-max items-center gap-1 text-xs font-semibold text-cyan-700 hover:text-cyan-600"
+                    href={`/api/admin/captain-credentials?eventId=${event.id}`}
+                  >
+                    <KeyRound className="h-3.5 w-3.5" />
+                    {t("downloadCredentials")}
+                  </a>
+                ) : null,
+              ])}
+            />
+          </Section>
+
+          <Section title={t("importedRegistrationsTitle")} description={t("importedRegistrationsDescription")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
+            {importedTeams.length ? (
+              <DataTable
+                columns={[t("eventLabel"), t("teamLabel"), "Tag", "PIC", t("contactLabel"), t("sourceLabel")]}
+                minTableWidth="56rem"
+                rows={importedTeams.map((team) => [
+                  <span key={`${team.id}-event`} className="font-medium text-slate-800">{team.eventName}</span>,
+                  <span key={`${team.id}-team`} className="font-medium text-slate-800">{team.name}</span>,
+                  <span key={`${team.id}-tag`} className="mono text-xs text-slate-700">{team.tag}</span>,
+                  team.captainName ?? "-",
+                  <span key={`${team.id}-contact`} className="mono text-xs text-slate-700">{team.captainContact ?? "-"}</span>,
+                  team.source ?? "-",
+                ])}
+              />
+            ) : (
+              <p className="text-sm text-slate-500">{t("noImportedRegistrations")}</p>
+            )}
+          </Section>
+        </div>
+      </div>
+    </PhaseSection>
+  );
+}
+
+function RunMatchDayPhase({
+  manageableEvents,
+  manageableMatches,
+  roundConfigMap,
+  roundConfigs,
+  selectedManageableEvent,
+  selectedMatch,
+  selectedMatchBestOf,
+  selectedMatchGames,
+  t,
+  teamName,
+}: {
+  manageableEvents: ManageableEventItem[];
+  manageableMatches: MatchItem[];
+  roundConfigMap: Map<string, number>;
+  roundConfigs: RoundConfigItem[];
+  selectedManageableEvent: ManageableEventItem | undefined;
+  selectedMatch: MatchItem | undefined;
+  selectedMatchBestOf: number;
+  selectedMatchGames: MatchGameItem[];
+  t: AdminTranslator;
+  teamName: (teamId: string | undefined) => string;
+}) {
+  const distinctRoundLabels = selectedManageableEvent
+    ? [...new Set(selectedManageableEvent.manageableMatches.map((match) => match.roundLabel))]
+    : [];
+
+  return (
+    <PhaseSection
+      action={
+        <a className={quietButton} href={buildAdminPhaseHref("run", { matchEventId: selectedManageableEvent?.event.id })}>
+          <RefreshCw className="h-4 w-4" />
+          {t("refreshMatchDesk")}
+        </a>
+      }
+      description={t("runDescription")}
+      title={t("runTitle")}
+    >
+      {selectedManageableEvent ? (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.9fr)]">
+          <div className="grid gap-6">
+            <Section title={t("matchQueueTitle")} description={t("matchQueueDescription")} className="rounded-xl shadow-none">
+              <form action="" className="mb-5 flex flex-wrap items-end gap-3">
+                <input type="hidden" name="phase" value="run" />
+                <label className={`${labelClass} min-w-64 flex-1`}>
+                  {t("eventSelect")}
+                  <select className={inputClass} name="matchEventId" defaultValue={selectedManageableEvent.event.id}>
+                    {manageableEvents.map(({ event, manageableMatches: eventMatches }) => (
+                      <option key={event.id} value={event.id}>
+                        {event.name} - {t("matchesRemaining", { n: eventMatches.length })}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button className={quietButton} type="submit">
+                  <RefreshCw className="h-4 w-4" />
+                  {t("changeEvent")}
+                </button>
+              </form>
+
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                 {manageableMatches.map((match) => {
                   const bo = roundConfigMap.get(match.roundLabel) ?? 1;
                   const isSelected = selectedMatch?.id === match.id;
                   return (
                     <a
                       key={match.id}
-                      href={`?matchEventId=${selectedManageableEvent.event.id}&matchId=${match.id}`}
-                      className={`group flex flex-col gap-1 rounded-2xl border px-4 py-3 transition ${
+                      href={`?phase=run&matchEventId=${selectedManageableEvent.event.id}&matchId=${match.id}`}
+                      className={`grid gap-2 rounded-lg border px-3 py-3 transition ${
                         isSelected
-                          ? "border-cyan-400/40 bg-cyan-500/10"
-                          : "border-white/10 hover:border-white/20 hover:bg-white/5"
+                          ? "border-cyan-300 bg-cyan-50"
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={`text-xs font-semibold uppercase tracking-widest ${isSelected ? "text-cyan-400" : "text-slate-500"}`}>
-                          {match.roundLabel} · Match {match.slot}
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold uppercase text-slate-500">
+                          {match.roundLabel} - Match {match.slot}
                         </span>
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${bo > 1 ? "bg-amber-500/20 text-amber-300" : "bg-slate-700 text-slate-400"}`}>
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
                           BO{bo}
                         </span>
-                      </div>
-                      <span className={`text-sm font-medium ${isSelected ? "text-white" : "text-slate-300 group-hover:text-white"}`}>
-                        {teamName(match.homeTeamId)} <span className="text-slate-500">vs</span> {teamName(match.awayTeamId)}
+                      </span>
+                      <span className="text-sm font-semibold text-slate-950">
+                        {teamName(match.homeTeamId)} <span className="text-slate-400">vs</span> {teamName(match.awayTeamId)}
                       </span>
                     </a>
                   );
                 })}
               </div>
-            </div>
+            </Section>
 
-            {/* Result entry — muncul setelah match dipilih */}
+            {distinctRoundLabels.length ? (
+              <Section title={t("roundConfigTitle")} description={t("roundConfigDesc")} className="rounded-xl shadow-none">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {distinctRoundLabels.map((label) => {
+                    const currentBestOf = roundConfigMap.get(label) ?? roundConfigs.find((config) => config.roundLabel === label)?.bestOf ?? 1;
+                    return (
+                      <form key={label} action={adminSetRoundConfigAction} className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <input type="hidden" name="eventId" value={selectedManageableEvent.event.id} />
+                        <input type="hidden" name="roundLabel" value={label} />
+                        <label className={labelClass}>
+                          {label}
+                          <select name="bestOf" defaultValue={currentBestOf} className={inputClass}>
+                            <option value="1">Best of 1</option>
+                            <option value="3">Best of 3</option>
+                            <option value="5">Best of 5</option>
+                          </select>
+                        </label>
+                        <button className={quietButton} type="submit">
+                          <SlidersHorizontal className="h-4 w-4" />
+                          {t("saveRoundConfig")}
+                        </button>
+                      </form>
+                    );
+                  })}
+                </div>
+              </Section>
+            ) : null}
+          </div>
+
+          <Section title={t("selectedMatchTitle")} description={t("selectedMatchDescription")} className="rounded-xl shadow-none">
             {selectedMatch ? (
-              <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
-                {/* Header match yang dipilih */}
-                <div className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-                      {selectedMatch.roundLabel} · Match {selectedMatch.slot}
-                    </p>
-                    <p className="mt-1 text-base font-semibold text-white">
-                      {teamName(selectedMatch.homeTeamId)}{" "}
-                      <span className="text-slate-400">vs</span>{" "}
-                      {teamName(selectedMatch.awayTeamId)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`rounded-full px-3 py-1 text-sm font-semibold ${selectedMatchBestOf > 1 ? "bg-amber-500/20 text-amber-300" : "bg-slate-700 text-slate-300"}`}>
-                      Best of {selectedMatchBestOf}
-                    </span>
-                    <a
-                      href={`?matchEventId=${selectedManageableEvent.event.id}`}
-                      className="text-sm text-slate-500 hover:text-slate-300"
-                    >
-                      {t("cancelAction")}
-                    </a>
+              <div className="grid gap-5">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        {selectedMatch.roundLabel} - Match {selectedMatch.slot}
+                      </p>
+                      <p className="mt-1 text-base font-semibold text-slate-950">
+                        {teamName(selectedMatch.homeTeamId)} <span className="text-slate-400">vs</span> {teamName(selectedMatch.awayTeamId)}
+                      </p>
+                    </div>
+                    <StatusChip tone="warning">Best of {selectedMatchBestOf}</StatusChip>
                   </div>
                 </div>
 
-                {/* BO1: langsung masukkan skor */}
-                {selectedMatchBestOf === 1 && (
+                {selectedMatchBestOf === 1 ? (
                   <form action={adminUpdateMatchResultAction} className="grid gap-4">
                     <input type="hidden" name="eventId" value={selectedManageableEvent.event.id} />
                     <input type="hidden" name="matchEventId" value={selectedManageableEvent.event.id} />
                     <input type="hidden" name="matchId" value={selectedMatch.id} />
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="grid gap-2 text-sm text-slate-300">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className={labelClass}>
                         {teamName(selectedMatch.homeTeamId)} (Home)
-                        <input
-                          className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-lg font-semibold"
-                          name="homeScore"
-                          type="number"
-                          min="0"
-                          defaultValue="0"
-                        />
+                        <input className={inputClass} name="homeScore" type="number" min="0" defaultValue="0" />
                       </label>
-                      <label className="grid gap-2 text-sm text-slate-300">
+                      <label className={labelClass}>
                         {teamName(selectedMatch.awayTeamId)} (Away)
-                        <input
-                          className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-lg font-semibold"
-                          name="awayScore"
-                          type="number"
-                          min="0"
-                          defaultValue="0"
-                        />
+                        <input className={inputClass} name="awayScore" type="number" min="0" defaultValue="0" />
                       </label>
                     </div>
-                    <div className="pt-1">
-                      <button className={buttonStyles.primary} type="submit">
-                        {t("saveResult")}
-                      </button>
-                    </div>
+                    <button className={primaryButton} type="submit">
+                      <Save className="h-4 w-4" />
+                      {t("saveResult")}
+                    </button>
                   </form>
-                )}
-
-                {/* BO3/BO5: per-game entry */}
-                {selectedMatchBestOf > 1 && (
+                ) : (
                   <form action={adminSetMatchGamesAction} className="grid gap-4">
                     <input type="hidden" name="matchId" value={selectedMatch.id} />
                     <input type="hidden" name="matchEventId" value={selectedManageableEvent.event.id} />
                     <input type="hidden" name="bestOf" value={selectedMatchBestOf} />
                     <div className="grid gap-3">
-                      {/* Column headers */}
                       <div className="grid grid-cols-[3rem_1fr_1fr] gap-3">
                         <div />
-                        <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{teamName(selectedMatch.homeTeamId)}</p>
-                        <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{teamName(selectedMatch.awayTeamId)}</p>
+                        <p className="text-xs font-semibold uppercase text-slate-500">{teamName(selectedMatch.homeTeamId)}</p>
+                        <p className="text-xs font-semibold uppercase text-slate-500">{teamName(selectedMatch.awayTeamId)}</p>
                       </div>
-                      {Array.from({ length: selectedMatchBestOf }, (_, i) => {
-                        const gameNum = i + 1;
-                        const existingGame = selectedMatchGames.find((g) => g.gameNumber === gameNum);
+                      {Array.from({ length: selectedMatchBestOf }, (_, index) => {
+                        const gameNumber = index + 1;
+                        const existingGame = selectedMatchGames.find((game) => game.gameNumber === gameNumber);
                         return (
-                          <div key={gameNum} className="grid grid-cols-[3rem_1fr_1fr] items-center gap-3">
-                            <p className="text-xs font-semibold text-slate-500">G{gameNum}</p>
-                            <input
-                              className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-2.5 text-center text-base font-semibold"
-                              name={`game${gameNum}_home`}
-                              type="number"
-                              min="0"
-                              defaultValue={existingGame?.homeScore ?? ""}
-                              placeholder="—"
-                            />
-                            <input
-                              className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-2.5 text-center text-base font-semibold"
-                              name={`game${gameNum}_away`}
-                              type="number"
-                              min="0"
-                              defaultValue={existingGame?.awayScore ?? ""}
-                              placeholder="—"
-                            />
+                          <div key={gameNumber} className="grid grid-cols-[3rem_1fr_1fr] items-center gap-3">
+                            <p className="text-xs font-semibold text-slate-500">G{gameNumber}</p>
+                            <input className={`${inputClass} text-center font-semibold`} name={`game${gameNumber}_home`} type="number" min="0" defaultValue={existingGame?.homeScore ?? ""} placeholder="-" />
+                            <input className={`${inputClass} text-center font-semibold`} name={`game${gameNumber}_away`} type="number" min="0" defaultValue={existingGame?.awayScore ?? ""} placeholder="-" />
                           </div>
                         );
                       })}
                     </div>
-                    <div className="pt-1">
-                      <button className={buttonStyles.primary} type="submit">
-                        {t("saveGames")}
-                      </button>
-                    </div>
+                    <button className={primaryButton} type="submit">
+                      <Save className="h-4 w-4" />
+                      {t("saveGames")}
+                    </button>
                   </form>
                 )}
+
+                <a href={`?phase=run&matchEventId=${selectedManageableEvent.event.id}`} className="text-sm font-medium text-slate-500 hover:text-slate-700">
+                  {t("cancelAction")}
+                </a>
               </div>
             ) : (
               <p className="text-sm text-slate-500">{t("selectMatch")}</p>
             )}
-          </div>
-        ) : (
-          <p className="text-sm text-slate-400">{t("noMatches")}</p>
-        )}
-      </Section>
-
-      {/* Best of N round configuration */}
-      {selectedManageableEvent && (() => {
-        const distinctRoundLabels = [...new Set(selectedManageableEvent.manageableMatches.map((m) => m.roundLabel))];
-        if (distinctRoundLabels.length === 0) return null;
-        return (
-          <Section
-            title={t("roundConfigTitle")}
-            description={t("roundConfigDesc")}
-          >
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {distinctRoundLabels.map((label) => {
-                const currentBestOf = roundConfigMap.get(label) ?? 1;
-                return (
-                  <form key={label} action={adminSetRoundConfigAction} className="grid gap-2">
-                    <input type="hidden" name="eventId" value={selectedManageableEvent.event.id} />
-                    <input type="hidden" name="roundLabel" value={label} />
-                    <label className="grid gap-2 text-sm text-slate-300">
-                      {label}
-                      <select
-                        name="bestOf"
-                        defaultValue={currentBestOf}
-                        className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-                      >
-                        <option value="1">Best of 1</option>
-                        <option value="3">Best of 3</option>
-                        <option value="5">Best of 5</option>
-                      </select>
-                    </label>
-                    <button className={`${buttonStyles.secondary} w-full`} type="submit">
-                      {t("saveRoundConfig")}
-                    </button>
-                  </form>
-                );
-              })}
-            </div>
           </Section>
-        );
-      })()}
-
-      <Section title="Import teams from CSV" description="One row = one team. Use an existing event_slug and import team + PIC data only.">
-        <form action={adminImportTeamsCsvAction} className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-          <label className="grid gap-2 text-sm text-slate-300">
-            CSV file
-            <input
-              className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3"
-              name="csv"
-              type="file"
-              accept=".csv,text/csv"
-            />
-          </label>
-          <button className={buttonStyles.primary} type="submit">
-            Upload and import
-          </button>
-        </form>
-        <p className="mt-3 text-sm text-slate-400">
-          Required: <span className="mono">event_slug,team_name,team_tag,captain_name,captain_contact</span>
-          {" · "}Optional: <span className="mono">captain_email</span>
-        </p>
-        <a className="mt-3 inline-flex text-sm text-cyan-300 hover:text-cyan-200" href="/templates/team-import-template.csv">
-          Download CSV template
-        </a>
-      </Section>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Section title="Import-ready event slugs" description="Use one of these slugs in your CSV so registrations land in the right event.">
-          <DataTable
-            columns={["Event", "event_slug", "Status", "Teams", ""]}
-            rows={events.map((event) => [
-              event.name,
-              <span key={`${event.id}-slug`} className="mono text-xs text-slate-700">{event.slug}</span>,
-              <Pill key={`${event.id}-import-status`} tone={event.status === "Ongoing" ? "live" : "default"}>
-                {event.status}
-              </Pill>,
-              allTeamsByEvent.get(event.id)?.length ?? 0,
-              importedEventIds.has(event.id) ? (
-                <a
-                  key={`${event.id}-creds`}
-                  className="whitespace-nowrap text-xs text-cyan-400 hover:text-cyan-300"
-                  href={`/api/admin/captain-credentials?eventId=${event.id}`}
-                >
-                  Download credentials
-                </a>
-              ) : null,
-            ])}
-          />
+        </div>
+      ) : (
+        <Section title={t("matchTitle")} description={t("matchDescription")} className="rounded-xl shadow-none">
+          <p className="text-sm text-slate-500">{t("noMatches")}</p>
         </Section>
+      )}
+    </PhaseSection>
+  );
+}
 
-        <Section title="Imported registrations" description="Review imported team and PIC data before you hand off captain access later.">
-          {importedTeams.length ? (
-            <DataTable
-              columns={["Event", "Team", "Tag", "PIC", "Contact", "Source"]}
-              rows={importedTeams.map((team) => [
-                team.eventName,
-                team.name,
-                team.tag,
-                team.captainName ?? "—",
-                team.captainContact ?? "—",
-                team.source ?? "—",
-              ])}
-            />
+function ReviewPublishPhase({
+  certificatesByEvent,
+  events,
+  pendingCount,
+  pendingSubmissions,
+  t,
+}: {
+  certificatesByEvent: Map<string, CertificateItem>;
+  events: EventItem[];
+  pendingCount: number;
+  pendingSubmissions: PendingSubmissionItem[];
+  t: AdminTranslator;
+}) {
+  return (
+    <PhaseSection
+      action={<StatusChip tone={pendingCount > 0 ? "warning" : "success"}>{t("pendingReviews", { count: pendingCount })}</StatusChip>}
+      description={t("reviewDescription")}
+      title={t("reviewWorkspaceTitle")}
+    >
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.9fr)]">
+        <Section
+          title={`${t("statReviewTitle")}${pendingCount > 0 ? ` - ${pendingCount} ${t("pending")}` : ""}`}
+          description={t("statReviewDescription")}
+          className="rounded-xl shadow-none"
+        >
+          {pendingSubmissions.length === 0 ? (
+            <p className="text-sm text-slate-500">{t("noPendingSubmissions")}</p>
           ) : (
-            <p className="text-sm text-slate-400">
-              No CSV imports yet. After a successful upload, imported team and PIC rows will appear here.
-            </p>
+            <div className="grid gap-3">
+              {pendingSubmissions.map((submission) => (
+                <details key={submission.id} className="rounded-lg border border-slate-200 bg-slate-50">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950">
+                        {submission.matchLabel} - {submission.teamName}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {submission.eventName} - {submission.captainEmail} - {new Date(submission.submittedAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <StatusChip tone="warning">{t("pending")}</StatusChip>
+                  </summary>
+
+                  <div className="border-t border-slate-200 bg-white p-4">
+                    <div className="mb-4 overflow-x-auto">
+                      <table className="w-full text-xs text-slate-700">
+                        <thead>
+                          <tr>
+                            <th className="py-1 text-left font-semibold uppercase text-slate-500">{t("playerId")}</th>
+                            <th className="px-2 py-1 text-left font-semibold uppercase text-slate-500">{t("statsLabel")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(submission.stats).map(([playerId, stats]) => (
+                            <tr key={playerId} className="border-t border-slate-100">
+                              <td className="mono py-1.5 pr-3 text-slate-500">{playerId.slice(0, 12)}...</td>
+                              <td className="py-1.5">
+                                {Object.entries(stats).map(([key, value]) => (
+                                  <span key={key} className="mr-2 inline-block">
+                                    <span className="text-slate-500">{key}:</span>{" "}
+                                    <span className="text-slate-900">{value}</span>
+                                  </span>
+                                ))}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                      <form action={adminApproveStatAction}>
+                        <input type="hidden" name="submissionId" value={submission.id} />
+                        <button className={primaryButton} type="submit">
+                          <Check className="h-4 w-4" />
+                          {t("approve")}
+                        </button>
+                      </form>
+                      <form action={adminRejectStatAction} className="flex flex-wrap gap-2">
+                        <input type="hidden" name="submissionId" value={submission.id} />
+                        <input className={inputClass} name="rejectionNote" placeholder={t("rejectionNote")} />
+                        <button className={quietButton} type="submit">
+                          <X className="h-4 w-4" />
+                          {t("reject")}
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </details>
+              ))}
+            </div>
           )}
         </Section>
-      </div>
 
-      <Section
-        title="Certificate Settings"
-        description="Upload character art and set the accent color for each event's champion e-certificate. The certificate is auto-generated when the Final match result is saved."
-      >
-        <div className="space-y-6">
-          {events.map((event) => {
-            const cert = certificatesByEvent.get(event.id);
-            return (
-              <details key={event.id} className="rounded-2xl border border-slate-200 bg-slate-50">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{event.name}</p>
-                    <p className="text-xs text-slate-400">{getGameForEvent(event).name} · {event.status}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {cert ? (
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                        Certificate ready
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
-                        No certificate
-                      </span>
-                    )}
-                    {event.accentColor && (
-                      <span
-                        className="inline-block h-5 w-5 rounded-full border border-slate-300"
-                        style={{ background: event.accentColor }}
-                      />
-                    )}
-                  </div>
-                </summary>
-                <div className="space-y-4 border-t border-slate-200 p-4">
-                  {/* Character art upload */}
-                  <form action={adminUploadCharacterArtAction} encType="multipart/form-data">
-                    <input type="hidden" name="eventId" value={event.id} />
-                    <p className="mb-2 text-xs font-semibold text-slate-700">Character Art PNG</p>
-                    {event.characterArtUrl && (
-                      <div className="mb-2">
-                        <img
-                          src={event.characterArtUrl}
-                          alt="Character art preview"
-                          className="h-24 w-auto rounded border border-slate-200 object-contain"
-                        />
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <input
-                        type="file"
-                        name="characterArt"
-                        accept="image/png,image/webp,image/jpeg"
-                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700"
-                      />
-                      <button className={buttonStyles.secondary} type="submit">
-                        Upload
-                      </button>
-                    </div>
-                  </form>
-                  {/* Accent color */}
-                  <form action={adminSetAccentColorAction} className="flex items-end gap-3">
-                    <input type="hidden" name="eventId" value={event.id} />
+        <Section title={t("certificateSettingsTitle")} description={t("certificateSettingsDescription")} className="rounded-xl shadow-none">
+          <div className="space-y-4">
+            {events.map((event) => {
+              const cert = certificatesByEvent.get(event.id);
+              return (
+                <details key={event.id} className="rounded-lg border border-slate-200 bg-slate-50">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
                     <div>
-                      <p className="mb-2 text-xs font-semibold text-slate-700">Accent Color</p>
-                      <input
-                        type="color"
-                        name="accentColor"
-                        defaultValue={event.accentColor ?? "#2563eb"}
-                        className="h-10 w-16 cursor-pointer rounded border border-slate-200 bg-white p-1"
-                      />
+                      <p className="text-sm font-semibold text-slate-950">{event.name}</p>
+                      <p className="text-xs text-slate-500">{getGameForEvent(event).name} - {event.status}</p>
                     </div>
-                    <button className={buttonStyles.secondary} type="submit">
-                      Save color
-                    </button>
-                  </form>
-                  {/* Existing certificate */}
-                  {cert && (
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                      <p className="mb-1 text-xs font-semibold text-emerald-700">Champion Certificate</p>
-                      <a
-                        href={cert.imageUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-emerald-600 underline break-all"
-                      >
-                        {cert.imageUrl}
-                      </a>
+                    <div className="flex items-center gap-2">
+                      <StatusChip tone={cert ? "success" : "default"}>
+                        {cert ? t("certificateReady") : t("noCertificate")}
+                      </StatusChip>
+                      {event.accentColor ? (
+                        <span className="inline-block h-5 w-5 rounded-full border border-slate-300" style={{ background: event.accentColor }} />
+                      ) : null}
                     </div>
-                  )}
-                </div>
-              </details>
-            );
-          })}
-        </div>
-      </Section>
-
-      <Section title="Operations overview" description="Everything the public site is currently exposing.">
-        <DataTable
-          columns={["Event", "Game", "Status", "Format", "Teams", "Matches"]}
-          rows={events.map((event) => [
-            event.name,
-            getGameForEvent(event).name,
-            <Pill key={`${event.id}-status`} tone={event.status === "Ongoing" ? "live" : "default"}>
-              {event.status}
-            </Pill>,
-            event.format,
-            allTeamsByEvent.get(event.id)?.length ?? 0,
-            featuredEvent?.id === event.id ? featuredMatches.length : 0,
-          ])}
-        />
-      </Section>
-
-      <Section
-        title={`Stat Submissions${pendingCount > 0 ? ` · ${pendingCount} pending` : ""}`}
-        description="Captain-submitted match stats awaiting review. Approve to publish to leaderboard, or reject with a note."
-      >
-        {pendingSubmissions.length === 0 ? (
-          <p className="text-sm text-slate-400">No pending submissions.</p>
-        ) : (
-          <div className="space-y-3">
-            {pendingSubmissions.map((sub) => (
-              <details key={sub.id} className="rounded-2xl border border-slate-200 bg-slate-50">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">
-                      {sub.matchLabel} · {sub.teamName}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {sub.eventName} · Submitted by {sub.captainEmail} ·{" "}
-                      {new Date(sub.submittedAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                    Pending
-                  </span>
-                </summary>
-
-                <div className="border-t border-slate-200 p-4">
-                  {/* Stats preview */}
-                  <div className="mb-4 overflow-x-auto">
-                    <table className="w-full text-xs text-slate-700">
-                      <thead>
-                        <tr>
-                          <th className="py-1 text-left font-semibold uppercase tracking-widest text-slate-500">
-                            Player ID
-                          </th>
-                          <th className="px-2 py-1 text-left font-semibold uppercase tracking-widest text-slate-500">
-                            Stats
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Object.entries(sub.stats).map(([playerId, stats]) => (
-                          <tr key={playerId} className="border-t border-slate-100">
-                            <td className="mono py-1.5 pr-3 text-slate-400">{playerId.slice(0, 12)}…</td>
-                            <td className="py-1.5">
-                              {Object.entries(stats).map(([k, v]) => (
-                                <span key={k} className="mr-2 inline-block">
-                                  <span className="text-slate-500">{k}:</span>{" "}
-                                  <span className="text-slate-900">{v}</span>
-                                </span>
-                              ))}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="flex flex-wrap gap-3">
-                    {/* Approve */}
-                    <form action={adminApproveStatAction}>
-                      <input type="hidden" name="submissionId" value={sub.id} />
-                      <button className={buttonStyles.primary} type="submit">
-                        {t("approve")}
+                  </summary>
+                  <div className="grid gap-4 border-t border-slate-200 bg-white p-4">
+                    <form action={adminUploadCharacterArtAction} encType="multipart/form-data" className="grid gap-3">
+                      <input type="hidden" name="eventId" value={event.id} />
+                      <p className="text-xs font-semibold uppercase text-slate-500">{t("characterArt")}</p>
+                      {event.characterArtUrl ? (
+                        <img src={event.characterArtUrl} alt="Character art preview" className="h-24 w-auto rounded-lg border border-slate-200 object-contain" />
+                      ) : null}
+                      <div className="flex flex-wrap gap-2">
+                        <input type="file" name="characterArt" accept="image/png,image/webp,image/jpeg" className={`${inputClass} flex-1 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
+                        <button className={quietButton} type="submit">
+                          <ImageUp className="h-4 w-4" />
+                          {t("upload")}
+                        </button>
+                      </div>
+                    </form>
+                    <form action={adminSetAccentColorAction} className="flex flex-wrap items-end gap-3">
+                      <input type="hidden" name="eventId" value={event.id} />
+                      <label className={labelClass}>
+                        {t("accentColor")}
+                        <input type="color" name="accentColor" defaultValue={event.accentColor ?? "#2563eb"} className="h-10 w-16 cursor-pointer rounded-lg border border-slate-200 bg-white p-1" />
+                      </label>
+                      <button className={quietButton} type="submit">
+                        <Palette className="h-4 w-4" />
+                        {t("saveColor")}
                       </button>
                     </form>
-
-                    {/* Reject */}
-                    <form action={adminRejectStatAction} className="flex gap-2">
-                      <input type="hidden" name="submissionId" value={sub.id} />
-                      <input
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400"
-                        name="rejectionNote"
-                        placeholder={t("rejectionNote")}
-                      />
-                      <button className={buttonStyles.secondary} type="submit">
-                        {t("reject")}
-                      </button>
-                    </form>
+                    {cert ? (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                        <p className="mb-1 text-xs font-semibold text-emerald-700">{t("championCertificate")}</p>
+                        <a href={cert.imageUrl} target="_blank" rel="noopener noreferrer" className="break-all text-xs text-emerald-700 underline">
+                          {cert.imageUrl}
+                        </a>
+                      </div>
+                    ) : null}
                   </div>
-                </div>
-              </details>
-            ))}
+                </details>
+              );
+            })}
           </div>
-        )}
-      </Section>
-    </div>
+        </Section>
+      </div>
+    </PhaseSection>
+  );
+}
+
+function OperationsOverview({
+  activeEvent,
+  activeLeaderboardCount,
+  activeMatches,
+  allTeamsByEvent,
+  events,
+  t,
+}: {
+  activeEvent: EventItem | undefined;
+  activeLeaderboardCount: number;
+  activeMatches: Awaited<ReturnType<typeof getMatchesForEvent>>;
+  allTeamsByEvent: Map<string, TeamItem[]>;
+  events: EventItem[];
+  t: AdminTranslator;
+}) {
+  return (
+    <Section title={t("operationsOverviewTitle")} description={t("operationsOverviewDescription")} className="rounded-xl shadow-none">
+      <div className="mb-5 grid gap-4 md:grid-cols-3">
+        <StatCard label={t("activeMatches")} value={activeMatches.length} hint={t("activeMatchesHint")} />
+        <StatCard label={t("leaderboardRows")} value={activeLeaderboardCount} hint={t("leaderboardRowsHint")} />
+        <StatCard label={t("activeTeams")} value={activeEvent ? (allTeamsByEvent.get(activeEvent.id)?.length ?? 0) : 0} hint={t("activeTeamsHint")} />
+      </div>
+      <DataTable
+        columns={[t("eventLabel"), t("gameLabel"), t("statusLabel"), t("formatLabel"), t("teamsLabel"), t("matchesLabel")]}
+        rows={events.map((event) => [
+          event.name,
+          getGameForEvent(event).name,
+          <Pill key={`${event.id}-status`} tone={event.status === "Ongoing" ? "live" : "default"}>
+            {event.status}
+          </Pill>,
+          event.format,
+          allTeamsByEvent.get(event.id)?.length ?? 0,
+          activeEvent?.id === event.id ? activeMatches.length : 0,
+        ])}
+      />
+    </Section>
+  );
+}
+
+function PhaseSection({
+  action,
+  children,
+  description,
+  title,
+}: {
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  description: string;
+  title: string;
+}) {
+  return (
+    <section className="space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold text-slate-950">{title}</h2>
+          <p className="mt-1 max-w-3xl text-sm text-slate-600">{description}</p>
+        </div>
+        {action ? <div className="flex flex-wrap gap-2">{action}</div> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function EventOptions({ events }: { events: EventItem[] }) {
+  return (
+    <>
+      {events.map((event) => (
+        <option key={event.id} value={event.id}>
+          {event.name}
+        </option>
+      ))}
+    </>
+  );
+}
+
+function StatusChip({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "info" | "success" | "warning" }) {
+  const toneClass = {
+    default: "border-slate-200 bg-slate-50 text-slate-600",
+    info: "border-cyan-200 bg-cyan-50 text-cyan-800",
+    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    warning: "border-amber-200 bg-amber-50 text-amber-800",
+  }[tone];
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
+      {children}
+    </span>
   );
 }

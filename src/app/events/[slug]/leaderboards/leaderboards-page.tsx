@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
 import { DataTable, Section } from "@/components/ui";
+import { getOrderedStatEntries } from "@/lib/platform/config";
 import { getEventBySlug, getLeaderboardForEvent } from "@/lib/platform/repository";
 
 export async function renderLeaderboardsPage(slug: string) {
@@ -22,7 +23,7 @@ export async function renderLeaderboardsPage(slug: string) {
           entry.playerName,
           entry.position,
           entry.matchesPlayed,
-          Object.entries(entry.totalStats)
+          getOrderedStatEntries(entry.totalStats, event.gameModeId, event.gameId)
             .map(([key, value]) => `${key}: ${value}`)
             .join(" · "),
         ])}

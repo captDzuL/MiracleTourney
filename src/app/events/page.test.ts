@@ -12,4 +12,54 @@ describe("events page public cards", () => {
     expect(source).toContain("{game.name}");
     expect(source).not.toContain('className="mt-4 text-xl font-semibold text-white">{event.name}</h2>');
   });
+
+  test("homepage mode label rendering does not require getModeForEvent lookups", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "../home-page-content.tsx"), "utf8");
+
+    expect(source).not.toContain("getModeForEvent(event)");
+    expect(source).toContain("getDefaultModeLabel(event.gameModeId, event.gameId)");
+  });
+
+  test("captain stats page resolves stat keys through registry helpers", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "../captain/stats/page.tsx"), "utf8");
+
+    expect(source).not.toContain("getGameModes");
+    expect(source).not.toContain("gameModes.find");
+    expect(source).toContain("getStatKeysForMode(row.gameModeId, row.gameId)");
+  });
+
+  test("public leaderboard pages render stat summaries in registry order", () => {
+    const leaderboardSource = fs.readFileSync(
+      path.resolve(__dirname, "./[slug]/leaderboards/leaderboards-page.tsx"),
+      "utf8",
+    );
+    const detailSource = fs.readFileSync(
+      path.resolve(__dirname, "./[slug]/event-detail-page.tsx"),
+      "utf8",
+    );
+
+    expect(leaderboardSource).toContain("getOrderedStatEntries(entry.totalStats, event.gameModeId, event.gameId)");
+    expect(leaderboardSource).not.toContain("Object.entries(entry.totalStats)");
+
+    expect(detailSource).toContain(
+      "getOrderedStatEntries(leaderboard[0].totalStats, event.gameModeId, event.gameId)",
+    );
+    expect(detailSource).not.toContain("Object.entries(leaderboard[0].totalStats)");
+  });
+
+  test("event detail links do not require a next-intl client provider on the non-locale route", () => {
+    const detailSource = fs.readFileSync(
+      path.resolve(__dirname, "./[slug]/event-detail-page.tsx"),
+      "utf8",
+    );
+    const localizedPageSource = fs.readFileSync(
+      path.resolve(__dirname, "../[locale]/events/[slug]/page.tsx"),
+      "utf8",
+    );
+
+    expect(detailSource).not.toContain('import { Link } from "@/i18n/navigation"');
+    expect(detailSource).toContain('import Link from "next/link"');
+    expect(detailSource).toContain("function buildEventHref");
+    expect(localizedPageSource).toContain("renderEventDetailPage(slug, locale as");
+  });
 });

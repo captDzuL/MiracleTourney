@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   addPlayer,
   approveStatSubmission,
+  assertCaptainCanSubmitStats,
   autoTransitionEventToOngoing,
   createCaptainWithTeam,
   createEvent,
@@ -25,11 +26,13 @@ const {
   updateCaptainPassword,
   updateEventStream,
   updatePlayer,
+  updateEventCertificateAssets,
   upsertRoundConfig,
   upsertStatSubmission,
 } = vi.hoisted(() => ({
   addPlayer: vi.fn(),
   approveStatSubmission: vi.fn(),
+  assertCaptainCanSubmitStats: vi.fn(),
   autoTransitionEventToOngoing: vi.fn(),
   createCaptainWithTeam: vi.fn(),
   createEvent: vi.fn(),
@@ -52,6 +55,7 @@ const {
   updateCaptainPassword: vi.fn(),
   updateEventStream: vi.fn(),
   updatePlayer: vi.fn(),
+  updateEventCertificateAssets: vi.fn(),
   upsertRoundConfig: vi.fn(),
   upsertStatSubmission: vi.fn(),
 }));
@@ -69,6 +73,7 @@ vi.mock("@/lib/imports/team-import", () => ({
 vi.mock("@/lib/platform/repository", () => ({
   addPlayer,
   approveStatSubmission,
+  assertCaptainCanSubmitStats,
   autoTransitionEventToOngoing,
   createCaptainWithTeam,
   createEvent,
@@ -84,10 +89,14 @@ vi.mock("@/lib/platform/repository", () => ({
   setMatchGames,
   setMatchResult,
   updateCaptainPassword,
+  updateEventCertificateAssets,
   updateEventStream,
   updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
+}));
+vi.mock("@/lib/certificate/generate", () => ({
+  generateCertificateIfFinal: vi.fn(),
 }));
 vi.mock("bcryptjs", () => ({
   default: {
@@ -105,6 +114,7 @@ import {
   adminRejectStatAction,
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
+  adminUploadCharacterArtAction,
   adminUpdateEventStatusAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
@@ -166,6 +176,14 @@ describe("loginAction", () => {
 
     await expect(loginAction(fd({ email: "bad@test.com", password: "wrong" }))).rejects.toThrow(
       "REDIRECT:/login?error=invalid",
+    );
+  });
+
+  it("redirects to a database error when sign-in cannot reach the database", async () => {
+    signIn.mockRejectedValue(new Error("Can't reach database server at `db.example.com:5432`"));
+
+    await expect(loginAction(fd({ email: "admin@test.com", password: "secret123" }))).rejects.toThrow(
+      "REDIRECT:/login?error=database",
     );
   });
 
@@ -351,6 +369,7 @@ describe("captain actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireRole.mockResolvedValue(captainSession());
+    assertCaptainCanSubmitStats.mockResolvedValue(undefined);
   });
 
   it("requires a captain session before registering a team", async () => {
@@ -625,6 +644,15 @@ describe("adminImportTeamsCsvAction", () => {
     expect(importTeams).not.toHaveBeenCalled();
   });
 
+  it("rejects oversized CSV files before reading or parsing them", async () => {
+    const f = new FormData();
+    f.set("csv", new File(["x".repeat(262_145)], "large.csv", { type: "text/csv" }));
+
+    await expect(adminImportTeamsCsvAction(f)).rejects.toThrow("REDIRECT:/admin?error=");
+    expect(parseAndValidateTeamImport).not.toHaveBeenCalled();
+    expect(importTeams).not.toHaveBeenCalled();
+  });
+
   it("redirects with error when parseAndValidateTeamImport fails", async () => {
     const f = new FormData();
     f.set("csv", new File(["bad"], "bad.csv", { type: "text/csv" }));
@@ -690,6 +718,13 @@ describe("adminUpdateStreamAction", () => {
     ).rejects.toThrow();
     expect(updateEventStream).not.toHaveBeenCalled();
   });
+
+  it("rejects non-http stream URLs to avoid scriptable links", async () => {
+    await expect(
+      adminUpdateStreamAction(fd({ ...validData, url: "javascript:alert(1)" })),
+    ).rejects.toThrow();
+    expect(updateEventStream).not.toHaveBeenCalled();
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -720,6 +755,12 @@ describe("captainSubmitStatsAction", () => {
 
     await captainSubmitStatsAction(f);
 
+    expect(assertCaptainCanSubmitStats).toHaveBeenCalledWith({
+      captainId: "captain-1",
+      eventId: "event-1",
+      matchId: "match-1",
+      teamId: "team-1",
+    });
     expect(upsertStatSubmission).toHaveBeenCalledWith({
       matchId: "match-1",
       teamId: "team-1",
@@ -730,6 +771,62 @@ describe("captainSubmitStatsAction", () => {
         "player-2": { goals: 2 },
       },
     });
+  });
+
+  it("blocks manipulated team or match identifiers before persisting stats", async () => {
+    assertCaptainCanSubmitStats.mockRejectedValue(new Error("Not authorized"));
+    const f = new FormData();
+    f.set("matchId", "match-owned-by-other-captain");
+    f.set("teamId", "team-owned-by-other-captain");
+    f.set("eventId", "event-1");
+    f.set("stat_player-1_goals", "3");
+
+    await expect(captainSubmitStatsAction(f)).rejects.toThrow("Not authorized");
+    expect(upsertStatSubmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing required match identifiers before persisting stats", async () => {
+    const f = new FormData();
+    f.set("matchId", "match-1");
+    f.set("teamId", "team-1");
+    f.set("stat_player-1_goals", "3");
+
+    await expect(captainSubmitStatsAction(f)).rejects.toThrow();
+    expect(upsertStatSubmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects negative stat values before they can reach leaderboard review", async () => {
+    const f = new FormData();
+    f.set("matchId", "match-1");
+    f.set("teamId", "team-1");
+    f.set("eventId", "event-1");
+    f.set("stat_player-1_goals", "-999");
+
+    await expect(captainSubmitStatsAction(f)).rejects.toThrow();
+    expect(upsertStatSubmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects unreasonably large stat values before persisting", async () => {
+    const f = new FormData();
+    f.set("matchId", "match-1");
+    f.set("teamId", "team-1");
+    f.set("eventId", "event-1");
+    f.set("stat_player-1_goals", "1000000000");
+
+    await expect(captainSubmitStatsAction(f)).rejects.toThrow();
+    expect(upsertStatSubmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed stat field names instead of creating attacker-controlled keys", async () => {
+    const f = new FormData();
+    f.set("matchId", "match-1");
+    f.set("teamId", "team-1");
+    f.set("eventId", "event-1");
+    f.set("stat_../../player_goals", "3");
+    f.set("stat_player-1_<script>", "4");
+
+    await expect(captainSubmitStatsAction(f)).rejects.toThrow();
+    expect(upsertStatSubmission).not.toHaveBeenCalled();
   });
 });
 
@@ -909,5 +1006,54 @@ describe("adminSetMatchGamesAction", () => {
     await expect(adminSetMatchGamesAction(bo3FormData())).rejects.toThrow(
       "REDIRECT:/admin?matchEventId=event-1&error=",
     );
+  });
+});
+
+describe("adminUploadCharacterArtAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+  });
+
+  it("requires an admin session", async () => {
+    requireRole.mockResolvedValue(null);
+
+    await expect(
+      adminUploadCharacterArtAction(fd({
+        eventId: "event-safe",
+        characterArt: new File(["fake"], "art.png", { type: "image/png" }),
+      })),
+    ).rejects.toThrow("REDIRECT:/login");
+    expect(updateEventCertificateAssets).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-image uploads before persisting certificate assets", async () => {
+    await expect(
+      adminUploadCharacterArtAction(fd({
+        eventId: "event-safe",
+        characterArt: new File(["not an image"], "payload.txt", { type: "text/plain" }),
+      })),
+    ).rejects.toThrow("REDIRECT:/admin?error=");
+    expect(updateEventCertificateAssets).not.toHaveBeenCalled();
+  });
+
+  it("rejects spoofed image uploads whose bytes do not match the declared MIME type", async () => {
+    await expect(
+      adminUploadCharacterArtAction(fd({
+        eventId: "event-safe",
+        characterArt: new File(["<script>alert(1)</script>"], "art.png", { type: "image/png" }),
+      })),
+    ).rejects.toThrow("REDIRECT:/admin?error=");
+    expect(updateEventCertificateAssets).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsafe event IDs before building a local file path", async () => {
+    await expect(
+      adminUploadCharacterArtAction(fd({
+        eventId: "../outside",
+        characterArt: new File(["fake"], "art.png", { type: "image/png" }),
+      })),
+    ).rejects.toThrow("REDIRECT:/admin?error=");
+    expect(updateEventCertificateAssets).not.toHaveBeenCalled();
   });
 });

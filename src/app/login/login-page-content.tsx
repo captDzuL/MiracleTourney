@@ -9,6 +9,8 @@ export async function renderLoginPage(
 ) {
   const t = await getTranslations("login");
   const resolvedSearchParams = await searchParams;
+  const errorMessage =
+    resolvedSearchParams?.error === "database" ? t("databaseError") : t("error");
 
   return (
     <div className="mx-auto max-w-md rounded-[2rem] border border-white/10 bg-slate-900/70 p-8">
@@ -17,7 +19,7 @@ export async function renderLoginPage(
 
       {resolvedSearchParams?.error ? (
         <p className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {t("error")}
+          {errorMessage}
         </p>
       ) : null}
 
