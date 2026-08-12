@@ -4,6 +4,8 @@ const {
   addPlayer,
   approveStatSubmission,
   assertCaptainCanSubmitStats,
+  assertUserCanManageEvent,
+  assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   createCaptainWithTeam,
   createEvent,
@@ -33,6 +35,8 @@ const {
   addPlayer: vi.fn(),
   approveStatSubmission: vi.fn(),
   assertCaptainCanSubmitStats: vi.fn(),
+  assertUserCanManageEvent: vi.fn(),
+  assertUserCanReviewStatSubmission: vi.fn(),
   autoTransitionEventToOngoing: vi.fn(),
   createCaptainWithTeam: vi.fn(),
   createEvent: vi.fn(),
@@ -74,6 +78,8 @@ vi.mock("@/lib/platform/repository", () => ({
   addPlayer,
   approveStatSubmission,
   assertCaptainCanSubmitStats,
+  assertUserCanManageEvent,
+  assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   createCaptainWithTeam,
   createEvent,
@@ -140,7 +146,11 @@ function fd(pairs: Record<string, string | File>): FormData {
 }
 
 function adminSession() {
-  return { id: "admin-1", role: "admin" as const, email: "admin@test.com", name: "Admin" };
+  return { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
+}
+
+function organizerSession() {
+  return { id: "organizer-1", role: "organizer" as const, email: "org@test.com", name: "Organizer One" };
 }
 
 function captainSession() {
@@ -150,6 +160,11 @@ function captainSession() {
 // ────────────────────────────────────────────────────────────
 // loginAction
 // ────────────────────────────────────────────────────────────
+
+beforeEach(() => {
+  assertUserCanManageEvent.mockResolvedValue(undefined);
+  assertUserCanReviewStatSubmission.mockResolvedValue(undefined);
+});
 
 describe("loginAction", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -521,6 +536,22 @@ describe("adminCreateEventAction", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
+  it("assigns event ownership from the authenticated organizer session", async () => {
+    requireRole.mockResolvedValue(organizerSession());
+
+    await expect(adminCreateEventAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/admin?success=event-created",
+    );
+
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizerUserId: "organizer-1",
+        organizerName: "Organizer One",
+        organizerVerified: false,
+      }),
+    );
+  });
+
   it("throws Zod error for invalid format value", async () => {
     await expect(
       adminCreateEventAction(fd({ ...validData, format: "Round Robin" })),
@@ -561,6 +592,29 @@ describe("adminUpdateEventStatusAction", () => {
     ).rejects.toThrow("REDIRECT:/admin?success=event-status-updated&event=miracle-league");
     expect(setEventStatus).toHaveBeenCalledWith("e1", "Ongoing");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("checks organizer ownership before updating event status", async () => {
+    requireRole.mockResolvedValue(organizerSession());
+    setEventStatus.mockResolvedValue({ slug: "miracle-league" });
+
+    await expect(
+      adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Ongoing" })),
+    ).rejects.toThrow("REDIRECT:/admin?success=event-status-updated&event=miracle-league");
+
+    expect(assertUserCanManageEvent).toHaveBeenCalledWith(organizerSession(), "e1");
+    expect(setEventStatus).toHaveBeenCalledWith("e1", "Ongoing");
+  });
+
+  it("blocks direct status updates for events outside the organizer scope", async () => {
+    requireRole.mockResolvedValue(organizerSession());
+    assertUserCanManageEvent.mockRejectedValue(new Error("Not authorized"));
+
+    await expect(
+      adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Ongoing" })),
+    ).rejects.toThrow("Not authorized");
+
+    expect(setEventStatus).not.toHaveBeenCalled();
   });
 
   it("redirects with error when event not found", async () => {
@@ -605,7 +659,7 @@ describe("adminUpdateMatchResultAction", () => {
     await expect(adminUpdateMatchResultAction(resultFormData())).rejects.toThrow(
       "REDIRECT:/admin?matchEventId=event-kuroko-summer&success=match-result-updated",
     );
-    expect(requireRole).toHaveBeenCalledWith("admin");
+    expect(requireRole).toHaveBeenCalledWith("platform_admin");
     expect(autoTransitionEventToOngoing).toHaveBeenCalledWith("event-kuroko-summer");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });

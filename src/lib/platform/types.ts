@@ -1,4 +1,4 @@
-export type UserRole = "public" | "captain" | "admin";
+export type UserRole = "public" | "captain" | "organizer" | "platform_admin" | "admin";
 
 export type AppUser = {
   id: string;
@@ -72,6 +72,12 @@ export type Event = {
   stream?: EventStream;
   characterArtUrl?: string;
   accentColor?: string;
+  organizerUserId?: string;
+  organizerName?: string;
+  organizerVerified?: boolean;
+  prizePoolLabel?: string;
+  registrationFeeLabel?: string;
+  registrationUrl?: string;
 };
 
 export type Certificate = {

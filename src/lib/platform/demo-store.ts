@@ -42,7 +42,7 @@ const initialState: DemoState = {
       id: "admin-commish",
       email: "admin@miraclefc.gg",
       name: "League Commissioner",
-      role: "admin",
+      role: "platform_admin",
     },
   ],
   events: [
@@ -60,6 +60,11 @@ const initialState: DemoState = {
       registrationWindow: "July 1, 2026 - July 20, 2026",
       startsAt: "July 30, 2026",
       venue: "Online Arena",
+      organizerUserId: "admin-commish",
+      organizerName: "Miracle League Ops",
+      organizerVerified: true,
+      prizePoolLabel: "Champion Certificate",
+      registrationFeeLabel: "Gratis",
       stream: {
         platform: "youtube",
         url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -82,6 +87,11 @@ const initialState: DemoState = {
       registrationWindow: "July 28, 2026 - August 10, 2026",
       startsAt: "August 15, 2026",
       venue: "Flashpeak Match Hub",
+      organizerUserId: "admin-commish",
+      organizerName: "Miracle League Ops",
+      organizerVerified: true,
+      prizePoolLabel: "Leaderboard Showcase",
+      registrationFeeLabel: "Gratis",
     },
   ],
   teams: [
@@ -413,6 +423,9 @@ export function createEvent(input: {
   gameModeId: string;
   format: Event["format"];
   participantCap: Event["participantCap"];
+  organizerUserId?: string;
+  organizerName?: string;
+  organizerVerified?: boolean;
 }) {
   const event: Event = {
     id: `event-${input.slug}`,
@@ -427,6 +440,9 @@ export function createEvent(input: {
     registrationWindow: "TBD",
     startsAt: "TBD",
     venue: "Online",
+    organizerUserId: input.organizerUserId,
+    organizerName: input.organizerName,
+    organizerVerified: input.organizerVerified ?? false,
   };
 
   getStore().events.unshift(event);

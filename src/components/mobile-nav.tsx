@@ -91,7 +91,7 @@ export function MobileMenuToggle({
                 </Link>
               </>
             )}
-            {user?.role === "admin" && (
+            {(user?.role === "platform_admin" || user?.role === "organizer" || user?.role === "admin") && (
               <Link
                 href="/admin"
                 onClick={() => setOpen(false)}

@@ -14,6 +14,8 @@ import {
   addPlayer,
   approveStatSubmission,
   assertCaptainCanSubmitStats,
+  assertUserCanManageEvent,
+  assertUserCanReviewStatSubmission,
   createCaptainWithTeam,
   createEvent,
   deletePlayer,
@@ -43,7 +45,10 @@ import path from "path";
 const MAX_TEAM_IMPORT_CSV_BYTES = 256 * 1024;
 
 async function requireAdminSession(): Promise<AppUser> {
-  const user = await requireRole("admin");
+  const user =
+    await requireRole("platform_admin")
+    ?? await requireRole("organizer")
+    ?? await requireRole("admin");
 
   if (!user) {
     return redirectToActiveLocale("/login");
@@ -199,7 +204,10 @@ export async function loginAction(formData: FormData) {
     return await redirectToRequestedLocale("/login?error=invalid", requestedLocale);
   }
 
-  await redirectToRequestedLocale(user.role === "admin" ? "/admin" : "/captain", requestedLocale);
+  await redirectToRequestedLocale(
+    user.role === "platform_admin" || user.role === "organizer" || user.role === "admin" ? "/admin" : "/captain",
+    requestedLocale,
+  );
 }
 
 /** Clears the session cookie and redirects to the home page. */
@@ -342,7 +350,7 @@ export async function captainDeletePlayerAction(formData: FormData) {
 
 /** Creates a new tournament event. Supported participant caps: 8, 12, 16, 24, 32, 64, 128, 256. */
 export async function adminCreateEventAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const input = z.object({
     name: z.string().min(3),
@@ -358,14 +366,19 @@ export async function adminCreateEventAction(formData: FormData) {
     participantCap: Number(formData.get("participantCap")),
   });
 
-  await createEvent(input);
+  await createEvent({
+    ...input,
+    organizerUserId: user.role === "organizer" ? user.id : undefined,
+    organizerName: user.role === "organizer" ? user.name : undefined,
+    organizerVerified: false,
+  });
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=event-created");
 }
 
 /** Changes an event's lifecycle status (Draft → Published → Registration Closed → Ongoing → Finished). */
 export async function adminUpdateEventStatusAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const input = z.object({
     eventId: z.string().min(1),
@@ -375,6 +388,7 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
     status: formData.get("status"),
   });
 
+  await assertUserCanManageEvent(user, input.eventId);
   const event = await setEventStatus(input.eventId, input.status);
 
   if (!event) {
@@ -390,7 +404,7 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
  * status from Published/Registration Closed to Ongoing if it hasn't been set yet.
  */
 export async function adminUpdateMatchResultAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const matchEventId = z.string().min(1).parse(formData.get("matchEventId"));
   const input = z.object({
@@ -404,6 +418,8 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
     homeScore: formData.get("homeScore"),
     awayScore: formData.get("awayScore"),
   });
+
+  await assertUserCanManageEvent(user, input.eventId);
 
   let match;
 
@@ -434,7 +450,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
  * and business-rule checks before persisting. Redirects with error on any failure.
  */
 export async function adminImportTeamsCsvAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const file = formData.get("csv");
 
@@ -445,7 +461,10 @@ export async function adminImportTeamsCsvAction(formData: FormData) {
     return redirectToActiveLocale("/admin?error=CSV%20file%20is%20too%20large.%20Maximum%20size%20is%20256%20KiB.");
   }
 
-  const result = parseAndValidateTeamImport(await file.text(), await getImportSnapshot());
+  const result = parseAndValidateTeamImport(
+    await file.text(),
+    await getImportSnapshot(user.role === "organizer" ? user : undefined),
+  );
 
   if (!result.ok) {
     return redirectToActiveLocale(`/admin?error=${encodeURIComponent(result.message)}`);
@@ -458,7 +477,7 @@ export async function adminImportTeamsCsvAction(formData: FormData) {
 
 /** Updates the live-stream URL and label for an event. URL must be a valid absolute URL. */
 export async function adminUpdateStreamAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const input = z.object({
     eventId: z.string().min(1),
@@ -470,6 +489,7 @@ export async function adminUpdateStreamAction(formData: FormData) {
     label: formData.get("label"),
   });
 
+  await assertUserCanManageEvent(user, input.eventId);
   await updateEventStream(input.eventId, input.url, input.label);
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=stream-updated");
@@ -519,6 +539,7 @@ export async function captainSubmitStatsAction(formData: FormData) {
 export async function adminApproveStatAction(formData: FormData) {
   const user = await requireAdminSession();
   const submissionId = formData.get("submissionId") as string;
+  await assertUserCanReviewStatSubmission(user, submissionId);
   await approveStatSubmission(submissionId, user.id);
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=stat-approved");
@@ -530,6 +551,7 @@ export async function adminRejectStatAction(formData: FormData) {
   const submissionId = formData.get("submissionId") as string;
   const note =
     (formData.get("rejectionNote") as string)?.trim() || "Please review and resubmit.";
+  await assertUserCanReviewStatSubmission(user, submissionId);
   await rejectStatSubmission(submissionId, user.id, note);
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=stat-rejected");
@@ -537,7 +559,7 @@ export async function adminRejectStatAction(formData: FormData) {
 
 /** Sets the Best-of-N configuration for a specific round label in an event. Valid bestOf values are 1, 3, or 5. */
 export async function adminSetRoundConfigAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const input = z.object({
     eventId: z.string().min(1),
@@ -549,6 +571,7 @@ export async function adminSetRoundConfigAction(formData: FormData) {
     bestOf: formData.get("bestOf"),
   });
 
+  await assertUserCanManageEvent(user, input.eventId);
   await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?matchEventId=${input.eventId}&success=round-config-saved` as never);
@@ -560,11 +583,12 @@ export async function adminSetRoundConfigAction(formData: FormData) {
  * must be provided. Also auto-transitions the event to Ongoing if needed.
  */
 export async function adminSetMatchGamesAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const matchId = z.string().min(1).parse(formData.get("matchId"));
   const matchEventId = z.string().min(1).parse(formData.get("matchEventId"));
   const bestOf = z.coerce.number().int().min(1).max(5).parse(formData.get("bestOf"));
+  await assertUserCanManageEvent(user, matchEventId);
 
   const games: { gameNumber: number; homeScore: number; awayScore: number }[] = [];
   for (let i = 1; i <= bestOf; i++) {
@@ -598,12 +622,13 @@ export async function adminSetMatchGamesAction(formData: FormData) {
 
 /** Uploads a character art PNG for an event's certificate to Vercel Blob and stores the URL. */
 export async function adminUploadCharacterArtAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   const file = formData.get("characterArt");
   if (!isSafeEntityId(eventId)) {
     redirect(`/admin?error=${encodeURIComponent("Invalid event ID.")}` as never);
   }
+  await assertUserCanManageEvent(user, eventId);
   if (!(file instanceof File) || file.size === 0) {
     redirect(`/admin?error=No+file+uploaded` as never);
   }
@@ -645,9 +670,10 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
 
 /** Updates the accent color for an event's certificate. */
 export async function adminSetAccentColorAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   const accentColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).parse(formData.get("accentColor"));
+  await assertUserCanManageEvent(user, eventId);
   await updateEventCertificateAssets(eventId, { accentColor });
   revalidatePath("/admin");
   redirect(`/admin?success=accent-color-saved` as never);

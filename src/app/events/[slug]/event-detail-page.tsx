@@ -4,10 +4,12 @@ import { ArrowRight, CalendarDays, ListTree, Trophy, Users } from "lucide-react"
 import { getTranslations } from "next-intl/server";
 
 import { LiveStreamCard, Pill, Section, StatCard } from "@/components/ui";
+import { ShareButton } from "@/components/ShareButton";
 import { getOrderedStatEntries, getStatKeysForMode } from "@/lib/platform/config";
 import type { Event } from "@/lib/platform/types";
 import {
   getBracketPreview,
+  getCertificateByEvent,
   getGameForEvent,
   getLeaderboardForEvent,
   getModeForEvent,
@@ -69,6 +71,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
     getLeaderboardForEvent(event.id, event.gameId).catch(() => []),
   ]);
   const liveView = event.stream?.enabled ? getLiveStreamPresentation(event.stream.url) : null;
+  const certificate = event.status === "Finished" ? await getCertificateByEvent(event.id).catch(() => null) : null;
 
   return (
     <div className="space-y-6">
@@ -82,12 +85,17 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
               <Pill tone={event.stream?.enabled && event.stream.isLive ? "live" : "default"}>
                 {event.stream?.enabled && event.stream.isLive ? t("liveNow") : event.status}
               </Pill>
+              {event.organizerVerified ? <Pill tone="success">Verified Organizer</Pill> : null}
             </div>
             <h1 className="mt-4 text-3xl font-semibold text-slate-950">{event.name}</h1>
             <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">{event.description}</p>
+            <p className="mt-3 text-sm font-semibold text-slate-700">
+              Organizer: {event.organizerName ?? "Miracle Organizer"}
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-2 text-sm text-slate-600 lg:max-w-sm lg:justify-end">
+            <ShareButton />
             <EventFact icon={<CalendarDays className="h-4 w-4 text-cyan-600" />}>
               {event.registrationWindow}
             </EventFact>
@@ -95,8 +103,13 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
               {t("teamCount", { registered: teams.length, cap: event.participantCap })}
             </EventFact>
             <EventFact icon={<Trophy className="h-4 w-4 text-cyan-600" />}>
-              {event.venue}
+              {event.prizePoolLabel ?? event.venue}
             </EventFact>
+            {event.registrationFeeLabel ? (
+              <EventFact icon={<Trophy className="h-4 w-4 text-cyan-600" />}>
+                {event.registrationFeeLabel}
+              </EventFact>
+            ) : null}
           </div>
         </div>
 
@@ -116,6 +129,15 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
           </div>
         </div>
       </section>
+
+      {certificate ? (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+          <p className="text-sm font-semibold text-emerald-800">Champion proof published</p>
+          <a href={certificate.imageUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block break-all text-sm font-medium text-emerald-700 underline">
+            View certificate
+          </a>
+        </section>
+      ) : null}
 
       {event.stream?.enabled && liveView ? (
         <LiveStreamCard

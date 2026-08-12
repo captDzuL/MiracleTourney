@@ -24,6 +24,7 @@ import {
   projectSingleEliminationBracket,
 } from "@/lib/tournament/engine";
 import type { BracketMatch, MatchResultInput, PlayerMatchStatInput } from "@/lib/tournament/types";
+import * as demoStore from "./demo-store";
 import { prisma } from "./db";
 
 const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration Closed", "Ongoing", "Finished"]);
@@ -36,6 +37,8 @@ function mapEvent(row: {
   gameId: string; gameModeId: string; format: string; status: string;
   participantCap: number; registrationWindow: string; startsAt: string;
   venue: string; characterArtUrl?: string | null; accentColor?: string | null;
+  organizerUserId?: string | null; organizerName?: string | null; organizerVerified?: boolean | null;
+  prizePoolLabel?: string | null; registrationFeeLabel?: string | null; registrationUrl?: string | null;
   stream?: { platform: string; url: string; label: string; enabled: boolean; isLive: boolean; } | null;
 }): Event {
   const event: Event = {
@@ -51,6 +54,12 @@ function mapEvent(row: {
   if (row.gameImageUrl) event.gameImageUrl = row.gameImageUrl;
   if (row.characterArtUrl) event.characterArtUrl = row.characterArtUrl;
   if (row.accentColor) event.accentColor = row.accentColor;
+  if (row.organizerUserId) event.organizerUserId = row.organizerUserId;
+  if (row.organizerName) event.organizerName = row.organizerName;
+  if (row.organizerVerified != null) event.organizerVerified = row.organizerVerified;
+  if (row.prizePoolLabel) event.prizePoolLabel = row.prizePoolLabel;
+  if (row.registrationFeeLabel) event.registrationFeeLabel = row.registrationFeeLabel;
+  if (row.registrationUrl) event.registrationUrl = row.registrationUrl;
   if (row.stream) {
     event.stream = {
       platform: row.stream.platform as EventStream["platform"],
@@ -166,14 +175,52 @@ export async function getEvents(): Promise<Event[]> {
   return rows.map(mapEvent);
 }
 
-/** Returns events with publicly visible statuses: Published, Registration Closed, Ongoing, Finished. */
-export async function getPublicEvents(): Promise<Event[]> {
+export async function getManageableEventsForUser(user: AppUser): Promise<Event[]> {
+  if (user.role === "platform_admin" || user.role === "admin") return getEvents();
+  if (user.role !== "organizer") return [];
+
   const rows = await prisma.event.findMany({
-    where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
+    where: { organizerUserId: user.id },
     include: { stream: true },
     orderBy: { createdAt: "desc" },
   });
   return rows.map(mapEvent);
+}
+
+export async function assertUserCanManageEvent(user: AppUser, eventId: string): Promise<void> {
+  if (user.role === "platform_admin" || user.role === "admin") return;
+  if (user.role !== "organizer") throw new Error("Not authorized");
+
+  const row = await prisma.event.findFirst({
+    where: { id: eventId, organizerUserId: user.id },
+    select: { id: true },
+  });
+  if (!row) throw new Error("Not authorized");
+}
+
+export async function assertUserCanReviewStatSubmission(user: AppUser, submissionId: string): Promise<void> {
+  if (user.role === "platform_admin" || user.role === "admin") return;
+  if (user.role !== "organizer") throw new Error("Not authorized");
+
+  const row = await prisma.statSubmission.findFirst({
+    where: { id: submissionId, event: { organizerUserId: user.id } },
+    select: { id: true },
+  });
+  if (!row) throw new Error("Not authorized");
+}
+
+/** Returns events with publicly visible statuses: Published, Registration Closed, Ongoing, Finished. */
+export async function getPublicEvents(): Promise<Event[]> {
+  try {
+    const rows = await prisma.event.findMany({
+      where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
+      include: { stream: true },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(mapEvent);
+  } catch {
+    return demoStore.getPublicEvents();
+  }
 }
 
 /**
@@ -192,8 +239,12 @@ export async function getPublishedEvents(): Promise<Event[]> {
 
 /** Direct DB lookup by slug with no status filter. For admin pages that need to see Draft events. */
 export async function getEventBySlug(slug: string): Promise<Event | null> {
-  const row = await prisma.event.findUnique({ where: { slug }, include: { stream: true } });
-  return row ? mapEvent(row) : null;
+  try {
+    const row = await prisma.event.findUnique({ where: { slug }, include: { stream: true } });
+    return row ? mapEvent(row) : null;
+  } catch {
+    return demoStore.getEventBySlug(slug) ?? null;
+  }
 }
 
 /**
@@ -203,11 +254,15 @@ export async function getEventBySlug(slug: string): Promise<Event | null> {
 export const getPublicEventBySlug = cache(
   unstable_cache(
     async (slug: string): Promise<Event | null> => {
-      const row = await prisma.event.findFirst({
-        where: { slug, status: { in: [...PUBLIC_EVENT_STATUSES] } },
-        include: { stream: true },
-      });
-      return row ? mapEvent(row) : null;
+      try {
+        const row = await prisma.event.findFirst({
+          where: { slug, status: { in: [...PUBLIC_EVENT_STATUSES] } },
+          include: { stream: true },
+        });
+        return row ? mapEvent(row) : null;
+      } catch {
+        return demoStore.getPublicEventBySlug(slug) ?? null;
+      }
     },
     ["public-event-by-slug"],
     { revalidate: 60, tags: ["events"] },
@@ -224,8 +279,12 @@ export const getPublicEventBySlug = cache(
 export const getTeamsForEvent = cache(
   unstable_cache(
     async (eventId: string): Promise<Team[]> => {
-      const rows = await prisma.team.findMany({ where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
-      return rows.map(mapTeam);
+      try {
+        const rows = await prisma.team.findMany({ where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+        return rows.map(mapTeam);
+      } catch {
+        return demoStore.getTeamsForEvent(eventId);
+      }
     },
     ["teams-for-event"],
     { revalidate: 30, tags: ["teams"] },
@@ -243,24 +302,36 @@ export async function getCaptainTeams(userId: string | undefined): Promise<Team[
 
 /** Returns all players for a single team, ordered by registration time. */
 export async function getPlayersForTeam(teamId: string): Promise<Player[]> {
-  const rows = await prisma.player.findMany({ where: { teamId }, orderBy: { createdAt: "asc" } });
-  return rows.map(mapPlayer);
+  try {
+    const rows = await prisma.player.findMany({ where: { teamId }, orderBy: { createdAt: "asc" } });
+    return rows.map(mapPlayer);
+  } catch {
+    return demoStore.getPlayersForTeam(teamId);
+  }
 }
 
 /** Batch-fetches players for multiple teams in a single query, ordered by team then jersey number. */
 export async function getPlayersForTeams(teamIds: string[]): Promise<Player[]> {
   if (!teamIds.length) return [];
-  const rows = await prisma.player.findMany({
-    where: { teamId: { in: teamIds } },
-    orderBy: [{ teamId: "asc" }, { jerseyNumber: "asc" }],
-  });
-  return rows.map(mapPlayer);
+  try {
+    const rows = await prisma.player.findMany({
+      where: { teamId: { in: teamIds } },
+      orderBy: [{ teamId: "asc" }, { jerseyNumber: "asc" }],
+    });
+    return rows.map(mapPlayer);
+  } catch {
+    return teamIds.flatMap((teamId) => demoStore.getPlayersForTeam(teamId));
+  }
 }
 
 /** Returns all players across all teams registered in a given event. */
 export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
-  const rows = await prisma.player.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
-  return rows.map(mapPlayer);
+  try {
+    const rows = await prisma.player.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
+    return rows.map(mapPlayer);
+  } catch {
+    return demoStore.getPlayersForEvent(eventId);
+  }
 }
 
 // ── Matches ───────────────────────────────────────────────────────────────────
@@ -273,8 +344,12 @@ export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
 export const getMatchesForEvent = cache(
   unstable_cache(
     async (eventId: string): Promise<Match[]> => {
-      const rows = await prisma.match.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
-      return rows.map(mapMatch);
+      try {
+        const rows = await prisma.match.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
+        return rows.map(mapMatch);
+      } catch {
+        return demoStore.getMatchesForEvent(eventId);
+      }
     },
     ["matches-for-event"],
     { revalidate: 30, tags: ["teams"] },
@@ -453,11 +528,21 @@ const _getLeaderboardForEvent = unstable_cache(
     if (!game) return [];
 
     const metric = getGamePrimaryStatKey(game.id);
-    const playerIds = (await prisma.player.findMany({ where: { eventId }, select: { id: true } })).map((p) => p.id);
+    let playerIds: string[];
+    try {
+      playerIds = (await prisma.player.findMany({ where: { eventId }, select: { id: true } })).map((p) => p.id);
+    } catch {
+      return demoStore.getLeaderboardForEvent(eventId);
+    }
 
-    const stats = await prisma.playerStat.findMany({
-      where: { gameSlug: game.slug, playerId: { in: playerIds } },
-    });
+    let stats;
+    try {
+      stats = await prisma.playerStat.findMany({
+        where: { gameSlug: game.slug, playerId: { in: playerIds } },
+      });
+    } catch {
+      return demoStore.getLeaderboardForEvent(eventId);
+    }
 
     const statInputs: PlayerMatchStatInput[] = stats.map((s) => ({
       matchId: s.matchId,
@@ -480,9 +565,13 @@ const _getLeaderboardForEvent = unstable_cache(
  * Cached (60s, tag "stats"). Primary metric is "goals" for Flashpeak, "points" for others.
  */
 export async function getLeaderboardForEvent(eventId: string, gameId?: string) {
-  const resolvedGameId = gameId ?? (await prisma.event.findUnique({ where: { id: eventId }, select: { gameId: true } }))?.gameId;
-  if (!resolvedGameId) return [];
-  return _getLeaderboardForEvent(eventId, resolvedGameId);
+  try {
+    const resolvedGameId = gameId ?? (await prisma.event.findUnique({ where: { id: eventId }, select: { gameId: true } }))?.gameId;
+    if (!resolvedGameId) return [];
+    return _getLeaderboardForEvent(eventId, resolvedGameId);
+  } catch {
+    return demoStore.getLeaderboardForEvent(eventId);
+  }
 }
 
 /** Computes league standings from completed match results for an event. Ranked by points → score diff → score for. */
@@ -511,7 +600,12 @@ export async function getTeamStandings(eventId: string) {
  * For league: returns the round-robin schedule. Used internally and in the admin bracket view.
  */
 export async function getBracketPreview(eventId: string) {
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  let event;
+  try {
+    event = await prisma.event.findUnique({ where: { id: eventId } });
+  } catch {
+    return demoStore.getBracketPreview(eventId);
+  }
   if (!event) return [];
 
   const [teams, matches] = await Promise.all([getTeamsForEvent(eventId), getMatchesForEvent(eventId)]);
@@ -534,7 +628,12 @@ export async function getBracketPreview(eventId: string) {
  * shows the full projected bracket including TBD placeholders for undecided rounds.
  */
 export async function getPublicVisibleBracketPreview(eventId: string) {
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  let event;
+  try {
+    event = await prisma.event.findUnique({ where: { id: eventId } });
+  } catch {
+    return demoStore.getPublicVisibleBracketPreview(eventId);
+  }
   if (!event || event.format !== "Single Elimination") return getBracketPreview(eventId);
 
   const [teams, matches] = await Promise.all([getTeamsForEvent(eventId), getMatchesForEvent(eventId)]);
@@ -610,9 +709,17 @@ export async function updateCaptainPassword(userId: string, newHash: string): Pr
  * Returns a lightweight snapshot of events and registered teams used by CSV import validation.
  * Includes `bracketLocked` flag so the validator can reject imports into locked events.
  */
-export async function getImportSnapshot() {
-  const events = await prisma.event.findMany({ select: { id: true, slug: true, participantCap: true } });
-  const teams = await prisma.team.findMany({ select: { eventId: true, name: true, tag: true } });
+export async function getImportSnapshot(user?: AppUser) {
+  const eventWhere = user?.role === "organizer" ? { organizerUserId: user.id } : undefined;
+  const events = await prisma.event.findMany({
+    where: eventWhere,
+    select: { id: true, slug: true, participantCap: true },
+  });
+  const eventIds = events.map((event) => event.id);
+  const teams = await prisma.team.findMany({
+    where: eventWhere ? { eventId: { in: eventIds } } : undefined,
+    select: { eventId: true, name: true, tag: true },
+  });
 
   const lockedSet = new Set<string>();
   await Promise.all(
@@ -679,6 +786,9 @@ export async function createEvent(input: {
   gameModeId: string;
   format: Event["format"];
   participantCap: Event["participantCap"];
+  organizerUserId?: string;
+  organizerName?: string;
+  organizerVerified?: boolean;
 }): Promise<Event> {
   const gameId = getGameIdForMode(input.gameModeId);
   const row = await prisma.event.create({
@@ -694,6 +804,9 @@ export async function createEvent(input: {
       registrationWindow: "TBD",
       startsAt: "TBD",
       venue: "Online",
+      organizerUserId: input.organizerUserId,
+      organizerName: input.organizerName,
+      organizerVerified: input.organizerVerified ?? false,
     },
     include: { stream: true },
   });
@@ -1245,8 +1358,12 @@ export async function createCaptainWithTeam(input: {
 export const getEventRoundConfigs = cache(
   unstable_cache(
     async (eventId: string): Promise<EventRoundConfig[]> => {
-      const rows = await prisma.eventRoundConfig.findMany({ where: { eventId } });
-      return rows.map((r) => ({ id: r.id, eventId: r.eventId, roundLabel: r.roundLabel, bestOf: r.bestOf }));
+      try {
+        const rows = await prisma.eventRoundConfig.findMany({ where: { eventId } });
+        return rows.map((r) => ({ id: r.id, eventId: r.eventId, roundLabel: r.roundLabel, bestOf: r.bestOf }));
+      } catch {
+        return [];
+      }
     },
     ["event-round-configs"],
     { revalidate: 30, tags: ["teams"] },
@@ -1273,10 +1390,15 @@ export async function getMatchGames(matchId: string): Promise<MatchGame[]> {
 const _getMatchGamesForEventCached = cache(
   unstable_cache(
     async (eventId: string): Promise<Array<{ matchId: string; games: MatchGame[] }>> => {
-      const rows = await prisma.matchGame.findMany({
-        where: { match: { eventId } },
-        orderBy: { gameNumber: "asc" },
-      });
+      let rows;
+      try {
+        rows = await prisma.matchGame.findMany({
+          where: { match: { eventId } },
+          orderBy: { gameNumber: "asc" },
+        });
+      } catch {
+        return [];
+      }
       const acc: Record<string, MatchGame[]> = {};
       for (const row of rows) {
         (acc[row.matchId] ??= []).push({ id: row.id, matchId: row.matchId, gameNumber: row.gameNumber, homeScore: row.homeScore, awayScore: row.awayScore });
@@ -1294,8 +1416,12 @@ const _getMatchGamesForEventCached = cache(
  * Cached 30s under tag "teams" so score detail panels stay fresh after match saves.
  */
 export async function getMatchGamesForEvent(eventId: string): Promise<Map<string, MatchGame[]>> {
-  const entries = await _getMatchGamesForEventCached(eventId);
-  return new Map(entries.map((e) => [e.matchId, e.games]));
+  try {
+    const entries = await _getMatchGamesForEventCached(eventId);
+    return new Map(entries.map((e) => [e.matchId, e.games]));
+  } catch {
+    return new Map();
+  }
 }
 
 /**

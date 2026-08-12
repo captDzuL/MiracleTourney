@@ -11,7 +11,7 @@ export const appUsers: AppUser[] = [
     id: "admin-commish",
     email: "admin@miraclefc.gg",
     name: "League Commissioner",
-    role: "admin",
+    role: "platform_admin",
   },
 ];
 

@@ -50,7 +50,7 @@ export function SessionNav() {
           {t("matchStats")}
         </Link>
       )}
-      {user?.role === "admin" && (
+      {(user?.role === "platform_admin" || user?.role === "organizer" || user?.role === "admin") && (
         <Link
           className="relative hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 md:block"
           href="/admin"

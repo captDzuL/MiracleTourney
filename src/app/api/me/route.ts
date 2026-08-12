@@ -7,6 +7,9 @@ import { getPendingStatSubmissionCount } from "@/lib/platform/repository";
 export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ user: null });
-  const pendingCount = user.role === "admin" ? await getPendingStatSubmissionCount() : 0;
+  const pendingCount =
+    user.role === "platform_admin" || user.role === "organizer" || user.role === "admin"
+      ? await getPendingStatSubmissionCount()
+      : 0;
   return NextResponse.json({ user: { name: user.name, role: user.role, pendingCount } });
 }

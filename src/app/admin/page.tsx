@@ -39,7 +39,7 @@ import {
   getCertificateByEvent,
   getEventBySlug,
   getEventRoundConfigs,
-  getEvents,
+  getManageableEventsForUser,
   getGameForEvent,
   getGameModes,
   getImportedTeams,
@@ -66,7 +66,7 @@ type AdminSearchParams = {
   matchId?: string;
 };
 
-type EventItem = Awaited<ReturnType<typeof getEvents>>[number];
+type EventItem = Awaited<ReturnType<typeof getManageableEventsForUser>>[number];
 type GameModeItem = ReturnType<typeof getGameModes>[number];
 type TeamItem = Awaited<ReturnType<typeof getTeamsForEvent>>[number];
 type ImportedTeamItem = Awaited<ReturnType<typeof getImportedTeams>>[number] & { eventName: string };
@@ -99,7 +99,10 @@ export default async function AdminPage({
 }: {
   searchParams?: Promise<AdminSearchParams>;
 }) {
-  const user = await requireRole("admin");
+  const user =
+    await requireRole("platform_admin")
+    ?? await requireRole("organizer")
+    ?? await requireRole("admin");
   if (!user) {
     return redirectToActiveLocale("/login");
   }
@@ -107,7 +110,7 @@ export default async function AdminPage({
   const t = await getTranslations("admin");
   const resolvedSearchParams = await searchParams;
   const activePhase = resolveAdminPhase(resolvedSearchParams?.phase);
-  const events = await getEvents();
+  const events = await getManageableEventsForUser(user);
   const gameModes = getGameModes();
 
   const [allTeamsByEventArr, featuredEventFromSlug, importedTeamsRaw] = await Promise.all([
@@ -119,7 +122,9 @@ export default async function AdminPage({
   const allTeamsByEvent = new Map(allTeamsByEventArr.map(({ eventId, teams }) => [eventId, teams]));
   const allTeams = [...allTeamsByEvent.values()].flat();
   const teamName = (teamId: string | undefined) => allTeams.find((team) => team.id === teamId)?.name ?? "TBD";
-  const featuredEvent = featuredEventFromSlug ?? events[0];
+  const featuredEvent =
+    (featuredEventFromSlug && events.some((event) => event.id === featuredEventFromSlug.id) ? featuredEventFromSlug : null)
+    ?? events[0];
   const activeEvent =
     events.find((event) => event.id === resolvedSearchParams?.activeEventId)
     ?? featuredEvent

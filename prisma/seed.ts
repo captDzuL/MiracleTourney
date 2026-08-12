@@ -19,7 +19,7 @@ async function main() {
     create: {
       email: "admin@miraclefc.gg",
       name: "League Commissioner",
-      role: "admin",
+      role: "platform_admin",
       passwordHash: adminPasswordHash,
     },
   });
