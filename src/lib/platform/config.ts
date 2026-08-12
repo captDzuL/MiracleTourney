@@ -13,6 +13,18 @@ export const appUsers: AppUser[] = [
     name: "League Commissioner",
     role: "platform_admin",
   },
+  {
+    id: "organizer-flashpeak",
+    email: "organizer-a@miraclefc.gg",
+    name: "Flashpeak Organizer",
+    role: "organizer",
+  },
+  {
+    id: "organizer-mlbb",
+    email: "organizer-b@miraclefc.gg",
+    name: "Mobile Legends Organizer",
+    role: "organizer",
+  },
 ];
 
 export const games: Game[] = [

@@ -4,6 +4,8 @@ import {
   createEvent,
   getBracketManageableMatches,
   getBracketPreview,
+  getEvents,
+  getUserByEmail,
   isEventBracketLocked,
   importTeams,
   registerTeam,
@@ -213,6 +215,56 @@ describe("demo-store bracket operations", () => {
       gameModeId: "mode-valorant-5v5",
       status: "Draft",
     });
+  });
+
+  it("seeds organizer demo accounts with isolated Flashpeak and Mobile Legends events", () => {
+    const organizerA = getUserByEmail("organizer-a@miraclefc.gg");
+    const organizerB = getUserByEmail("organizer-b@miraclefc.gg");
+    const events = getEvents();
+
+    expect(organizerA).toMatchObject({
+      id: "organizer-flashpeak",
+      role: "organizer",
+      name: "Flashpeak Organizer",
+    });
+    expect(organizerB).toMatchObject({
+      id: "organizer-mlbb",
+      role: "organizer",
+      name: "Mobile Legends Organizer",
+    });
+
+    expect(events.filter((event) => event.organizerUserId === organizerA?.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "flashpeak-champions-32",
+          gameId: "game-flashpeak",
+          status: "Finished",
+          participantCap: 32,
+        }),
+        expect.objectContaining({
+          slug: "flashpeak-rising-64",
+          gameId: "game-flashpeak",
+          status: "Ongoing",
+          participantCap: 64,
+        }),
+      ]),
+    );
+    expect(events.filter((event) => event.organizerUserId === organizerB?.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "mlbb-dawn-finals-16",
+          gameId: "game-mobile-legends",
+          status: "Finished",
+          participantCap: 16,
+        }),
+        expect.objectContaining({
+          slug: "mlbb-rank-war-32",
+          gameId: "game-mobile-legends",
+          status: "Ongoing",
+          participantCap: 32,
+        }),
+      ]),
+    );
   });
 });
 
