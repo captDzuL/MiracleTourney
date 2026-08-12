@@ -5,6 +5,10 @@ import {
   getBracketManageableMatches,
   getBracketPreview,
   getEvents,
+  getLeaderboardForEvent,
+  getMatchesForEvent,
+  getTeamStandings,
+  getTeamsForEvent,
   getUserByEmail,
   isEventBracketLocked,
   importTeams,
@@ -265,6 +269,32 @@ describe("demo-store bracket operations", () => {
         }),
       ]),
     );
+  });
+
+  it("seeds playable organizer demo events with teams, results, and leaderboards", () => {
+    const finishedSlugs = ["flashpeak-champions-32", "mlbb-dawn-finals-16"];
+    const ongoingSlugs = ["flashpeak-rising-64", "mlbb-rank-war-32"];
+
+    for (const slug of finishedSlugs) {
+      const event = getEvents().find((item) => item.slug === slug);
+
+      expect(event).toBeDefined();
+      expect(getTeamsForEvent(event!.id).length).toBeGreaterThanOrEqual(8);
+      expect(getMatchesForEvent(event!.id).filter((match) => match.status === "Completed").length).toBeGreaterThan(0);
+      expect(getLeaderboardForEvent(event!.id).length).toBeGreaterThan(0);
+      expect(getTeamStandings(event!.id)[0]?.wins).toBeGreaterThan(0);
+    }
+
+    for (const slug of ongoingSlugs) {
+      const event = getEvents().find((item) => item.slug === slug);
+      const matches = getMatchesForEvent(event!.id);
+
+      expect(event).toBeDefined();
+      expect(getTeamsForEvent(event!.id).length).toBeGreaterThanOrEqual(8);
+      expect(matches.some((match) => match.status === "Completed")).toBe(true);
+      expect(matches.some((match) => match.status === "Scheduled")).toBe(true);
+      expect(getLeaderboardForEvent(event!.id).length).toBeGreaterThan(0);
+    }
   });
 });
 

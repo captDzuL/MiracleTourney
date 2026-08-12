@@ -30,6 +30,142 @@ type DemoState = {
 
 const PUBLIC_EVENT_STATUSES = new Set<Event["status"]>(["Published", "Registration Closed", "Ongoing", "Finished"]);
 
+function buildDemoTeams(eventId: string, names: string[]): Team[] {
+  return names.map((name, index) => {
+    const tag = name
+      .split(" ")
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 3)
+      .toUpperCase();
+
+    return {
+      id: `team-${eventId.replace(/^event-/, "")}-${index + 1}`,
+      eventId,
+      captainId: "captain-seirin",
+      name,
+      logoText: tag.slice(0, 2),
+      tag,
+      source: "demo",
+    };
+  });
+}
+
+function buildDemoPlayers(eventId: string, teams: Team[], positions: string[]): Player[] {
+  return teams.map((team, index) => ({
+    id: `player-${team.id.replace(/^team-/, "")}`,
+    teamId: team.id,
+    eventId,
+    displayName: `${team.name} Ace`,
+    nickname: team.tag,
+    position: positions[index % positions.length],
+    jerseyNumber: index + 1,
+  }));
+}
+
+const flashpeakFinishedTeams = buildDemoTeams("event-flashpeak-champions-32", [
+  "Summit Strikers",
+  "Miracle Five",
+  "Northwind FC",
+  "Pulse United",
+  "Velvet Rangers",
+  "Cinder Squad",
+  "Orbit Kings",
+  "Harbor Wolves",
+]);
+const flashpeakOngoingTeams = buildDemoTeams("event-flashpeak-rising-64", [
+  "Rising Comets",
+  "Thunder Street",
+  "Vortex FC",
+  "Scorch United",
+  "Blitz Yard",
+  "Cobalt Eleven",
+  "Solaris Crew",
+  "Metro Lions",
+]);
+const mlbbFinishedTeams = buildDemoTeams("event-mlbb-dawn-finals-16", [
+  "Dawn Breakers",
+  "Royal Turtle",
+  "Midnight Retribution",
+  "Gold Lane Union",
+  "Crimson Minions",
+  "Lord Hunters",
+  "Abyss Roamers",
+  "Base Invaders",
+]);
+const mlbbOngoingTeams = buildDemoTeams("event-mlbb-rank-war-32", [
+  "Rank Warriors",
+  "Savage Five",
+  "Blue Buff Club",
+  "Mythic Guard",
+  "River Ambush",
+  "Turret Breakers",
+  "Jungle Tempo",
+  "Lane Kings",
+]);
+
+const organizerDemoTeams = [
+  ...flashpeakFinishedTeams,
+  ...flashpeakOngoingTeams,
+  ...mlbbFinishedTeams,
+  ...mlbbOngoingTeams,
+];
+
+const organizerDemoPlayers = [
+  ...buildDemoPlayers("event-flashpeak-champions-32", flashpeakFinishedTeams, ["Forward", "Midfielder", "Defender", "Goalkeeper"]),
+  ...buildDemoPlayers("event-flashpeak-rising-64", flashpeakOngoingTeams, ["Forward", "Midfielder", "Defender", "Goalkeeper"]),
+  ...buildDemoPlayers("event-mlbb-dawn-finals-16", mlbbFinishedTeams, ["EXP Lane", "Jungler", "Mid Lane", "Gold Lane", "Roamer"]),
+  ...buildDemoPlayers("event-mlbb-rank-war-32", mlbbOngoingTeams, ["EXP Lane", "Jungler", "Mid Lane", "Gold Lane", "Roamer"]),
+];
+
+const organizerDemoMatches: Match[] = [
+  { id: "match-flash-f-1", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[0].id, awayTeamId: flashpeakFinishedTeams[1].id, homeScore: 3, awayScore: 1, status: "Completed", round: 1, slot: 1, winnerTeamId: flashpeakFinishedTeams[0].id },
+  { id: "match-flash-f-2", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[2].id, awayTeamId: flashpeakFinishedTeams[3].id, homeScore: 2, awayScore: 0, status: "Completed", round: 1, slot: 2, winnerTeamId: flashpeakFinishedTeams[2].id },
+  { id: "match-flash-f-3", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[4].id, awayTeamId: flashpeakFinishedTeams[5].id, homeScore: 1, awayScore: 2, status: "Completed", round: 1, slot: 3, winnerTeamId: flashpeakFinishedTeams[5].id },
+  { id: "match-flash-f-4", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[6].id, awayTeamId: flashpeakFinishedTeams[7].id, homeScore: 4, awayScore: 2, status: "Completed", round: 1, slot: 4, winnerTeamId: flashpeakFinishedTeams[6].id },
+  { id: "match-flash-f-5", eventId: "event-flashpeak-champions-32", roundLabel: "Semifinal", homeTeamId: flashpeakFinishedTeams[0].id, awayTeamId: flashpeakFinishedTeams[2].id, homeScore: 2, awayScore: 1, status: "Completed", round: 2, slot: 1, winnerTeamId: flashpeakFinishedTeams[0].id },
+  { id: "match-flash-f-6", eventId: "event-flashpeak-champions-32", roundLabel: "Semifinal", homeTeamId: flashpeakFinishedTeams[5].id, awayTeamId: flashpeakFinishedTeams[6].id, homeScore: 1, awayScore: 3, status: "Completed", round: 2, slot: 2, winnerTeamId: flashpeakFinishedTeams[6].id },
+  { id: "match-flash-f-7", eventId: "event-flashpeak-champions-32", roundLabel: "Final", homeTeamId: flashpeakFinishedTeams[0].id, awayTeamId: flashpeakFinishedTeams[6].id, homeScore: 3, awayScore: 2, status: "Completed", round: 3, slot: 1, winnerTeamId: flashpeakFinishedTeams[0].id },
+  { id: "match-flash-o-1", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[0].id, awayTeamId: flashpeakOngoingTeams[1].id, homeScore: 2, awayScore: 1, status: "Completed", round: 1, slot: 1, winnerTeamId: flashpeakOngoingTeams[0].id },
+  { id: "match-flash-o-2", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[2].id, awayTeamId: flashpeakOngoingTeams[3].id, homeScore: 0, awayScore: 2, status: "Completed", round: 1, slot: 2, winnerTeamId: flashpeakOngoingTeams[3].id },
+  { id: "match-flash-o-3", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[4].id, awayTeamId: flashpeakOngoingTeams[5].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 3, winnerTeamId: null, scheduledLabel: "Tonight 20:00 WIB" },
+  { id: "match-flash-o-4", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[6].id, awayTeamId: flashpeakOngoingTeams[7].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 4, winnerTeamId: null, scheduledLabel: "Tonight 21:00 WIB" },
+  { id: "match-mlbb-f-1", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[0].id, awayTeamId: mlbbFinishedTeams[1].id, homeScore: 2, awayScore: 0, status: "Completed", round: 1, slot: 1, winnerTeamId: mlbbFinishedTeams[0].id },
+  { id: "match-mlbb-f-2", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[2].id, awayTeamId: mlbbFinishedTeams[3].id, homeScore: 2, awayScore: 1, status: "Completed", round: 1, slot: 2, winnerTeamId: mlbbFinishedTeams[2].id },
+  { id: "match-mlbb-f-3", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[4].id, awayTeamId: mlbbFinishedTeams[5].id, homeScore: 1, awayScore: 2, status: "Completed", round: 1, slot: 3, winnerTeamId: mlbbFinishedTeams[5].id },
+  { id: "match-mlbb-f-4", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[6].id, awayTeamId: mlbbFinishedTeams[7].id, homeScore: 0, awayScore: 2, status: "Completed", round: 1, slot: 4, winnerTeamId: mlbbFinishedTeams[7].id },
+  { id: "match-mlbb-f-5", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Semifinal", homeTeamId: mlbbFinishedTeams[0].id, awayTeamId: mlbbFinishedTeams[2].id, homeScore: 2, awayScore: 1, status: "Completed", round: 2, slot: 1, winnerTeamId: mlbbFinishedTeams[0].id },
+  { id: "match-mlbb-f-6", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Semifinal", homeTeamId: mlbbFinishedTeams[5].id, awayTeamId: mlbbFinishedTeams[7].id, homeScore: 1, awayScore: 2, status: "Completed", round: 2, slot: 2, winnerTeamId: mlbbFinishedTeams[7].id },
+  { id: "match-mlbb-f-7", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Final", homeTeamId: mlbbFinishedTeams[0].id, awayTeamId: mlbbFinishedTeams[7].id, homeScore: 3, awayScore: 2, status: "Completed", round: 3, slot: 1, winnerTeamId: mlbbFinishedTeams[0].id },
+  { id: "match-mlbb-o-1", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[0].id, awayTeamId: mlbbOngoingTeams[1].id, homeScore: 2, awayScore: 1, status: "Completed", round: 1, slot: 1, winnerTeamId: mlbbOngoingTeams[0].id },
+  { id: "match-mlbb-o-2", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[2].id, awayTeamId: mlbbOngoingTeams[3].id, homeScore: 1, awayScore: 2, status: "Completed", round: 1, slot: 2, winnerTeamId: mlbbOngoingTeams[3].id },
+  { id: "match-mlbb-o-3", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[4].id, awayTeamId: mlbbOngoingTeams[5].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 3, winnerTeamId: null, scheduledLabel: "Tonight 19:30 WIB" },
+  { id: "match-mlbb-o-4", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[6].id, awayTeamId: mlbbOngoingTeams[7].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 4, winnerTeamId: null, scheduledLabel: "Tonight 20:30 WIB" },
+];
+
+const organizerDemoPlayerStats: PlayerMatchStatInput[] = organizerDemoMatches
+  .filter((match) => match.status === "Completed")
+  .flatMap((match) => {
+    const players = organizerDemoPlayers.filter((player) => player.teamId === match.homeTeamId || player.teamId === match.awayTeamId);
+    const isMlbb = match.eventId.includes("mlbb");
+
+    return players.map((player, index) => {
+      const stats: Record<string, number> = isMlbb
+        ? { kills: player.teamId === match.winnerTeamId ? 9 + index : 4 + index, assists: 6 + index, deaths: player.teamId === match.winnerTeamId ? 2 : 5, gold: 12000 + index * 700, damage: 28000 + index * 3000 }
+        : { goals: player.teamId === match.winnerTeamId ? 2 + index : index, assists: 1 + index, tackles: 3 + index, blocks: index };
+
+      return {
+        matchId: match.id,
+        playerId: player.id,
+        playerName: player.displayName,
+        teamId: player.teamId,
+        position: player.position,
+        gameSlug: isMlbb ? "mobile-legends" : "flashpeak",
+        stats,
+      };
+    });
+  });
+
 const initialState: DemoState = {
   users: [
     {
@@ -202,6 +338,7 @@ const initialState: DemoState = {
     { id: "team-thunder", eventId: "event-flashpeak-open", captainId: "captain-seirin", name: "Thunder Street", logoText: "TS", tag: "THS", source: "demo" },
     { id: "team-vortex", eventId: "event-flashpeak-open", captainId: "captain-seirin", name: "Vortex", logoText: "VX", tag: "VTX", source: "demo" },
     { id: "team-scorch", eventId: "event-flashpeak-open", captainId: "captain-seirin", name: "Scorch FC", logoText: "SC", tag: "SCR", source: "demo" },
+    ...organizerDemoTeams,
   ],
   players: [
     { id: "player-kagami", teamId: "team-seirin", eventId: "event-kuroko-summer", displayName: "Taiga Kagami", nickname: "Kagami", position: "Forward", jerseyNumber: 10 },
@@ -216,12 +353,14 @@ const initialState: DemoState = {
     { id: "player-dino", teamId: "team-thunder", eventId: "event-flashpeak-open", displayName: "Dino", nickname: "Dino", position: "Defender", jerseyNumber: 4 },
     { id: "player-eko", teamId: "team-vortex", eventId: "event-flashpeak-open", displayName: "Eko", nickname: "Eko", position: "Midfielder", jerseyNumber: 7 },
     { id: "player-faris", teamId: "team-scorch", eventId: "event-flashpeak-open", displayName: "Faris", nickname: "Faris", position: "Forward", jerseyNumber: 10 },
+    ...organizerDemoPlayers,
   ],
   matches: [
     { id: "match-kuroko-1", eventId: "event-kuroko-summer", roundLabel: "Quarterfinal", homeTeamId: "team-seirin", awayTeamId: "team-kaijo", homeScore: 21, awayScore: 16, status: "Completed", round: 2, slot: 1, winnerTeamId: "team-seirin" },
     { id: "match-kuroko-2", eventId: "event-kuroko-summer", roundLabel: "Quarterfinal", homeTeamId: "team-rakuzan", awayTeamId: "team-shutoku", homeScore: 18, awayScore: 20, status: "Completed", round: 2, slot: 2, winnerTeamId: "team-shutoku" },
     { id: "match-flash-1", eventId: "event-flashpeak-open", roundLabel: "Matchday 1", homeTeamId: "team-miracle", awayTeamId: "team-thunder", homeScore: 4, awayScore: 2, status: "Completed" },
     { id: "match-flash-2", eventId: "event-flashpeak-open", roundLabel: "Matchday 1", homeTeamId: "team-vortex", awayTeamId: "team-scorch", homeScore: 1, awayScore: 1, status: "Completed" },
+    ...organizerDemoMatches,
   ],
   playerStats: [
     { matchId: "match-kuroko-1", playerId: "player-kagami", playerName: "Taiga Kagami", teamId: "team-seirin", position: "Forward", gameSlug: "kuroko-street-rival", stats: { points: 14, assists: 2, rebounds: 6, steals: 1, blocks: 2 } },
@@ -233,6 +372,7 @@ const initialState: DemoState = {
     { matchId: "match-flash-1", playerId: "player-dino", playerName: "Dino", teamId: "team-thunder", position: "Defender", gameSlug: "flashpeak", stats: { goals: 0, assists: 1, tackles: 4, blocks: 1 } },
     { matchId: "match-flash-2", playerId: "player-eko", playerName: "Eko", teamId: "team-vortex", position: "Midfielder", gameSlug: "flashpeak", stats: { goals: 1, assists: 0, tackles: 2, blocks: 0 } },
     { matchId: "match-flash-2", playerId: "player-faris", playerName: "Faris", teamId: "team-scorch", position: "Forward", gameSlug: "flashpeak", stats: { goals: 1, assists: 0, tackles: 1, blocks: 0 } },
+    ...organizerDemoPlayerStats,
   ],
 };
 
