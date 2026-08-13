@@ -20,6 +20,30 @@ describe("events page public cards", () => {
     expect(source).toContain("getDefaultModeLabel(event.gameModeId, event.gameId)");
   });
 
+  test("homepage promotes participant demo exploration instead of direct registration", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "../home-page-content.tsx"), "utf8");
+
+    expect(source).toContain("featuredEvent");
+    expect(source).toContain("quickLinks");
+    expect(source).toContain("/participants");
+    expect(source).toContain("/leaderboards");
+    expect(source).not.toContain('href="/register"');
+  });
+
+  test("homepage keeps demo events visible when public event loading falls back", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "../home-page-content.tsx"), "utf8");
+
+    expect(source).toContain('getPublicEvents as getDemoPublicEvents');
+    expect(source).toContain("getDemoPublicEvents()");
+  });
+
+  test("global link styling does not override Tailwind text color utilities", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "../globals.css"), "utf8");
+
+    expect(source).not.toContain("color: inherit");
+    expect(source).toContain("text-decoration: none");
+  });
+
   test("captain stats page resolves stat keys through registry helpers", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "../captain/stats/page.tsx"), "utf8");
 
@@ -61,5 +85,15 @@ describe("events page public cards", () => {
     expect(detailSource).toContain('import Link from "next/link"');
     expect(detailSource).toContain("function buildEventHref");
     expect(localizedPageSource).toContain("renderEventDetailPage(slug, locale as");
+  });
+
+  test("localized events page passes search params through to the shared events page", () => {
+    const localizedEventsSource = fs.readFileSync(
+      path.resolve(__dirname, "../[locale]/events/page.tsx"),
+      "utf8",
+    );
+
+    expect(localizedEventsSource).toContain("searchParams");
+    expect(localizedEventsSource).toContain("<EventsPage searchParams={searchParams} />");
   });
 });
