@@ -30,6 +30,11 @@ type DemoState = {
 
 const PUBLIC_EVENT_STATUSES = new Set<Event["status"]>(["Published", "Registration Closed", "Ongoing", "Finished"]);
 
+function getBracketSlotCount(teamCount: number): 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256 {
+  const safeCount = Math.max(teamCount, 2);
+  return Math.max(8, Math.pow(2, Math.ceil(Math.log2(safeCount)))) as 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
+}
+
 function buildDemoTeams(eventId: string, names: string[]): Team[] {
   return names.map((name, index) => {
     const tag = name
@@ -119,28 +124,28 @@ const organizerDemoPlayers = [
 ];
 
 const organizerDemoMatches: Match[] = [
-  { id: "match-flash-f-1", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[0].id, awayTeamId: flashpeakFinishedTeams[1].id, homeScore: 3, awayScore: 1, status: "Completed", round: 1, slot: 1, winnerTeamId: flashpeakFinishedTeams[0].id },
-  { id: "match-flash-f-2", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[2].id, awayTeamId: flashpeakFinishedTeams[3].id, homeScore: 2, awayScore: 0, status: "Completed", round: 1, slot: 2, winnerTeamId: flashpeakFinishedTeams[2].id },
-  { id: "match-flash-f-3", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[4].id, awayTeamId: flashpeakFinishedTeams[5].id, homeScore: 1, awayScore: 2, status: "Completed", round: 1, slot: 3, winnerTeamId: flashpeakFinishedTeams[5].id },
-  { id: "match-flash-f-4", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[6].id, awayTeamId: flashpeakFinishedTeams[7].id, homeScore: 4, awayScore: 2, status: "Completed", round: 1, slot: 4, winnerTeamId: flashpeakFinishedTeams[6].id },
-  { id: "match-flash-f-5", eventId: "event-flashpeak-champions-32", roundLabel: "Semifinal", homeTeamId: flashpeakFinishedTeams[0].id, awayTeamId: flashpeakFinishedTeams[2].id, homeScore: 2, awayScore: 1, status: "Completed", round: 2, slot: 1, winnerTeamId: flashpeakFinishedTeams[0].id },
-  { id: "match-flash-f-6", eventId: "event-flashpeak-champions-32", roundLabel: "Semifinal", homeTeamId: flashpeakFinishedTeams[5].id, awayTeamId: flashpeakFinishedTeams[6].id, homeScore: 1, awayScore: 3, status: "Completed", round: 2, slot: 2, winnerTeamId: flashpeakFinishedTeams[6].id },
-  { id: "match-flash-f-7", eventId: "event-flashpeak-champions-32", roundLabel: "Final", homeTeamId: flashpeakFinishedTeams[0].id, awayTeamId: flashpeakFinishedTeams[6].id, homeScore: 3, awayScore: 2, status: "Completed", round: 3, slot: 1, winnerTeamId: flashpeakFinishedTeams[0].id },
-  { id: "match-flash-o-1", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[0].id, awayTeamId: flashpeakOngoingTeams[1].id, homeScore: 2, awayScore: 1, status: "Completed", round: 1, slot: 1, winnerTeamId: flashpeakOngoingTeams[0].id },
-  { id: "match-flash-o-2", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[2].id, awayTeamId: flashpeakOngoingTeams[3].id, homeScore: 0, awayScore: 2, status: "Completed", round: 1, slot: 2, winnerTeamId: flashpeakOngoingTeams[3].id },
-  { id: "match-flash-o-3", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[4].id, awayTeamId: flashpeakOngoingTeams[5].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 3, winnerTeamId: null, scheduledLabel: "Tonight 20:00 WIB" },
-  { id: "match-flash-o-4", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[6].id, awayTeamId: flashpeakOngoingTeams[7].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 4, winnerTeamId: null, scheduledLabel: "Tonight 21:00 WIB" },
-  { id: "match-mlbb-f-1", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[0].id, awayTeamId: mlbbFinishedTeams[1].id, homeScore: 2, awayScore: 0, status: "Completed", round: 1, slot: 1, winnerTeamId: mlbbFinishedTeams[0].id },
-  { id: "match-mlbb-f-2", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[2].id, awayTeamId: mlbbFinishedTeams[3].id, homeScore: 2, awayScore: 1, status: "Completed", round: 1, slot: 2, winnerTeamId: mlbbFinishedTeams[2].id },
-  { id: "match-mlbb-f-3", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[4].id, awayTeamId: mlbbFinishedTeams[5].id, homeScore: 1, awayScore: 2, status: "Completed", round: 1, slot: 3, winnerTeamId: mlbbFinishedTeams[5].id },
-  { id: "match-mlbb-f-4", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[6].id, awayTeamId: mlbbFinishedTeams[7].id, homeScore: 0, awayScore: 2, status: "Completed", round: 1, slot: 4, winnerTeamId: mlbbFinishedTeams[7].id },
-  { id: "match-mlbb-f-5", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Semifinal", homeTeamId: mlbbFinishedTeams[0].id, awayTeamId: mlbbFinishedTeams[2].id, homeScore: 2, awayScore: 1, status: "Completed", round: 2, slot: 1, winnerTeamId: mlbbFinishedTeams[0].id },
-  { id: "match-mlbb-f-6", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Semifinal", homeTeamId: mlbbFinishedTeams[5].id, awayTeamId: mlbbFinishedTeams[7].id, homeScore: 1, awayScore: 2, status: "Completed", round: 2, slot: 2, winnerTeamId: mlbbFinishedTeams[7].id },
-  { id: "match-mlbb-f-7", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Final", homeTeamId: mlbbFinishedTeams[0].id, awayTeamId: mlbbFinishedTeams[7].id, homeScore: 3, awayScore: 2, status: "Completed", round: 3, slot: 1, winnerTeamId: mlbbFinishedTeams[0].id },
-  { id: "match-mlbb-o-1", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[0].id, awayTeamId: mlbbOngoingTeams[1].id, homeScore: 2, awayScore: 1, status: "Completed", round: 1, slot: 1, winnerTeamId: mlbbOngoingTeams[0].id },
-  { id: "match-mlbb-o-2", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[2].id, awayTeamId: mlbbOngoingTeams[3].id, homeScore: 1, awayScore: 2, status: "Completed", round: 1, slot: 2, winnerTeamId: mlbbOngoingTeams[3].id },
-  { id: "match-mlbb-o-3", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[4].id, awayTeamId: mlbbOngoingTeams[5].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 3, winnerTeamId: null, scheduledLabel: "Tonight 19:30 WIB" },
-  { id: "match-mlbb-o-4", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[6].id, awayTeamId: mlbbOngoingTeams[7].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 4, winnerTeamId: null, scheduledLabel: "Tonight 20:30 WIB" },
+  { id: "match-flash-f-1", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[0].id, awayTeamId: flashpeakFinishedTeams[7].id, homeScore: 3, awayScore: 1, status: "Completed", round: 1, slot: 1, winnerTeamId: flashpeakFinishedTeams[0].id },
+  { id: "match-flash-f-2", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[3].id, awayTeamId: flashpeakFinishedTeams[4].id, homeScore: 2, awayScore: 0, status: "Completed", round: 1, slot: 2, winnerTeamId: flashpeakFinishedTeams[3].id },
+  { id: "match-flash-f-3", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[1].id, awayTeamId: flashpeakFinishedTeams[6].id, homeScore: 1, awayScore: 2, status: "Completed", round: 1, slot: 3, winnerTeamId: flashpeakFinishedTeams[6].id },
+  { id: "match-flash-f-4", eventId: "event-flashpeak-champions-32", roundLabel: "Quarterfinal", homeTeamId: flashpeakFinishedTeams[2].id, awayTeamId: flashpeakFinishedTeams[5].id, homeScore: 4, awayScore: 2, status: "Completed", round: 1, slot: 4, winnerTeamId: flashpeakFinishedTeams[2].id },
+  { id: "match-flash-f-5", eventId: "event-flashpeak-champions-32", roundLabel: "Semifinal", homeTeamId: flashpeakFinishedTeams[0].id, awayTeamId: flashpeakFinishedTeams[3].id, homeScore: 2, awayScore: 1, status: "Completed", round: 2, slot: 1, winnerTeamId: flashpeakFinishedTeams[0].id },
+  { id: "match-flash-f-6", eventId: "event-flashpeak-champions-32", roundLabel: "Semifinal", homeTeamId: flashpeakFinishedTeams[6].id, awayTeamId: flashpeakFinishedTeams[2].id, homeScore: 1, awayScore: 3, status: "Completed", round: 2, slot: 2, winnerTeamId: flashpeakFinishedTeams[2].id },
+  { id: "match-flash-f-7", eventId: "event-flashpeak-champions-32", roundLabel: "Final", homeTeamId: flashpeakFinishedTeams[0].id, awayTeamId: flashpeakFinishedTeams[2].id, homeScore: 3, awayScore: 2, status: "Completed", round: 3, slot: 1, winnerTeamId: flashpeakFinishedTeams[0].id },
+  { id: "match-flash-o-1", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[0].id, awayTeamId: flashpeakOngoingTeams[7].id, homeScore: 2, awayScore: 1, status: "Completed", round: 1, slot: 1, winnerTeamId: flashpeakOngoingTeams[0].id },
+  { id: "match-flash-o-2", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[3].id, awayTeamId: flashpeakOngoingTeams[4].id, homeScore: 0, awayScore: 2, status: "Completed", round: 1, slot: 2, winnerTeamId: flashpeakOngoingTeams[4].id },
+  { id: "match-flash-o-3", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[1].id, awayTeamId: flashpeakOngoingTeams[6].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 3, winnerTeamId: null, scheduledLabel: "Tonight 20:00 WIB" },
+  { id: "match-flash-o-4", eventId: "event-flashpeak-rising-64", roundLabel: "Round 1", homeTeamId: flashpeakOngoingTeams[2].id, awayTeamId: flashpeakOngoingTeams[5].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 4, winnerTeamId: null, scheduledLabel: "Tonight 21:00 WIB" },
+  { id: "match-mlbb-f-1", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[0].id, awayTeamId: mlbbFinishedTeams[7].id, homeScore: 2, awayScore: 0, status: "Completed", round: 1, slot: 1, winnerTeamId: mlbbFinishedTeams[0].id },
+  { id: "match-mlbb-f-2", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[3].id, awayTeamId: mlbbFinishedTeams[4].id, homeScore: 2, awayScore: 1, status: "Completed", round: 1, slot: 2, winnerTeamId: mlbbFinishedTeams[3].id },
+  { id: "match-mlbb-f-3", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[1].id, awayTeamId: mlbbFinishedTeams[6].id, homeScore: 1, awayScore: 2, status: "Completed", round: 1, slot: 3, winnerTeamId: mlbbFinishedTeams[6].id },
+  { id: "match-mlbb-f-4", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Quarterfinal", homeTeamId: mlbbFinishedTeams[2].id, awayTeamId: mlbbFinishedTeams[5].id, homeScore: 0, awayScore: 2, status: "Completed", round: 1, slot: 4, winnerTeamId: mlbbFinishedTeams[5].id },
+  { id: "match-mlbb-f-5", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Semifinal", homeTeamId: mlbbFinishedTeams[0].id, awayTeamId: mlbbFinishedTeams[3].id, homeScore: 2, awayScore: 1, status: "Completed", round: 2, slot: 1, winnerTeamId: mlbbFinishedTeams[0].id },
+  { id: "match-mlbb-f-6", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Semifinal", homeTeamId: mlbbFinishedTeams[6].id, awayTeamId: mlbbFinishedTeams[5].id, homeScore: 1, awayScore: 2, status: "Completed", round: 2, slot: 2, winnerTeamId: mlbbFinishedTeams[5].id },
+  { id: "match-mlbb-f-7", eventId: "event-mlbb-dawn-finals-16", roundLabel: "Final", homeTeamId: mlbbFinishedTeams[0].id, awayTeamId: mlbbFinishedTeams[5].id, homeScore: 3, awayScore: 2, status: "Completed", round: 3, slot: 1, winnerTeamId: mlbbFinishedTeams[0].id },
+  { id: "match-mlbb-o-1", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[0].id, awayTeamId: mlbbOngoingTeams[7].id, homeScore: 2, awayScore: 1, status: "Completed", round: 1, slot: 1, winnerTeamId: mlbbOngoingTeams[0].id },
+  { id: "match-mlbb-o-2", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[3].id, awayTeamId: mlbbOngoingTeams[4].id, homeScore: 1, awayScore: 2, status: "Completed", round: 1, slot: 2, winnerTeamId: mlbbOngoingTeams[4].id },
+  { id: "match-mlbb-o-3", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[1].id, awayTeamId: mlbbOngoingTeams[6].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 3, winnerTeamId: null, scheduledLabel: "Tonight 19:30 WIB" },
+  { id: "match-mlbb-o-4", eventId: "event-mlbb-rank-war-32", roundLabel: "Round 1", homeTeamId: mlbbOngoingTeams[2].id, awayTeamId: mlbbOngoingTeams[5].id, homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 4, winnerTeamId: null, scheduledLabel: "Tonight 20:30 WIB" },
 ];
 
 const organizerDemoPlayerStats: PlayerMatchStatInput[] = organizerDemoMatches
@@ -478,7 +483,7 @@ function getProjectedBracketMatches(event: Event): Match[] {
   const teamSeeds = getTeamsForEvent(event.id).map((team) => ({ id: team.id, name: team.name }));
   const bracket = projectSingleEliminationBracket({
     teams: teamSeeds,
-    slotCount: event.participantCap,
+    slotCount: getBracketSlotCount(teamSeeds.length),
     results: getMatchesForEvent(event.id),
   }) as BracketMatch[];
   const existingById = new Map(getMatchesForEvent(event.id).map((match) => [match.id, match]));
@@ -601,7 +606,7 @@ export function getBracketPreview(eventId: string) {
   if (event.format === "Single Elimination") {
     return projectSingleEliminationBracket({
       teams: teamSeeds,
-      slotCount: event.participantCap,
+      slotCount: getBracketSlotCount(teamSeeds.length),
       results: getMatchesForEvent(eventId),
     });
   }
@@ -617,7 +622,7 @@ export function getPublicVisibleBracketPreview(eventId: string): ReturnType<type
 
   return getPublicVisibleSingleEliminationBracket({
     teams: teamSeeds,
-    slotCount: event.participantCap,
+    slotCount: getBracketSlotCount(teamSeeds.length),
     results: getMatchesForEvent(eventId),
   });
 }
