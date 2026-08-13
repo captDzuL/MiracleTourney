@@ -10,6 +10,7 @@ describe("events page public cards", () => {
     expect(source).toContain("{event.name}");
     expect(source).toContain("logo");
     expect(source).toContain("{game.name}");
+    expect(source).toContain("getEventBackgroundUrl(event)");
     expect(source).not.toContain('className="mt-4 text-xl font-semibold text-white">{event.name}</h2>');
   });
 
@@ -95,5 +96,13 @@ describe("events page public cards", () => {
 
     expect(localizedEventsSource).toContain("searchParams");
     expect(localizedEventsSource).toContain("<EventsPage searchParams={searchParams} />");
+  });
+
+  test("non-locale events page does not require a next-intl client link provider", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain('import Link from "next/link"');
+    expect(source).toContain("getLocale()");
+    expect(source).not.toContain('import { Link } from "@/i18n/navigation"');
   });
 });

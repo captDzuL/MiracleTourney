@@ -1,16 +1,21 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
+import { TeamIdentity } from "@/components/TeamAvatar";
 import { DataTable, Section } from "@/components/ui";
 import { getOrderedStatEntries } from "@/lib/platform/config";
-import { getEventBySlug, getLeaderboardForEvent } from "@/lib/platform/repository";
+import { getEventBySlug, getLeaderboardForEvent, getTeamsForEvent } from "@/lib/platform/repository";
 
 export async function renderLeaderboardsPage(slug: string) {
   const t = await getTranslations("leaderboard");
   const event = await getEventBySlug(slug);
   if (!event || event.status === "Draft") notFound();
 
-  const leaderboard = await getLeaderboardForEvent(event.id, event.gameId);
+  const [leaderboard, teams] = await Promise.all([
+    getLeaderboardForEvent(event.id, event.gameId),
+    getTeamsForEvent(event.id),
+  ]);
+  const teamLookup = new Map(teams.map((team) => [team.id, team]));
 
   return (
     <Section
@@ -19,14 +24,21 @@ export async function renderLeaderboardsPage(slug: string) {
     >
       <DataTable
         columns={[t("player"), t("position"), t("matches"), t("totals")]}
-        rows={leaderboard.map((entry) => [
-          entry.playerName,
-          entry.position,
-          entry.matchesPlayed,
-          getOrderedStatEntries(entry.totalStats, event.gameModeId, event.gameId)
-            .map(([key, value]) => `${key}: ${value}`)
-            .join(" · "),
-        ])}
+        rows={leaderboard.map((entry) => {
+          const team = teamLookup.get(entry.teamId);
+
+          return [
+            <span key={entry.playerId} className="grid gap-2">
+              <span className="font-semibold text-slate-900">{entry.playerName}</span>
+              {team ? <TeamIdentity logoText={team.logoText} logoUrl={team.logoUrl} name={team.name} size="sm" /> : null}
+            </span>,
+            entry.position,
+            entry.matchesPlayed,
+            getOrderedStatEntries(entry.totalStats, event.gameModeId, event.gameId)
+              .map(([key, value]) => `${key}: ${value}`)
+              .join(" - "),
+          ];
+        })}
       />
     </Section>
   );

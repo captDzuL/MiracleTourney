@@ -32,7 +32,9 @@ import {
   setMatchResult,
   updateCaptainPassword,
   updateEventStream,
+  updateEventBrandAssets,
   updateEventCertificateAssets,
+  updateTeamLogo,
   updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
@@ -43,6 +45,8 @@ import fs from "fs";
 import path from "path";
 
 const MAX_TEAM_IMPORT_CSV_BYTES = 256 * 1024;
+const MAX_LOGO_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_BACKGROUND_IMAGE_BYTES = 5 * 1024 * 1024;
 
 async function requireAdminSession(): Promise<AppUser> {
   const user =
@@ -91,7 +95,7 @@ function isSafeEntityId(id: string) {
   return /^[a-zA-Z0-9_-]+$/.test(id);
 }
 
-function getCharacterArtExtension(contentType: string) {
+function getImageExtension(contentType: string) {
   if (contentType === "image/png") return "png";
   if (contentType === "image/jpeg") return "jpg";
   if (contentType === "image/webp") return "webp";
@@ -126,6 +130,54 @@ function isHttpUrl(value: string) {
   } catch {
     return false;
   }
+}
+
+async function uploadImageAsset({
+  file,
+  folder,
+  entityId,
+  label,
+  maxBytes,
+}: {
+  file: FormDataEntryValue | null;
+  folder: string;
+  entityId: string;
+  label: string;
+  maxBytes: number;
+}) {
+  if (!isSafeEntityId(entityId)) {
+    redirect(`/admin?error=${encodeURIComponent(`Invalid ${label} ID.`)}` as never);
+  }
+  if (!(file instanceof File) || file.size === 0) {
+    redirect(`/admin?error=${encodeURIComponent(`No ${label} file uploaded.`)}` as never);
+  }
+  if (file.size > maxBytes) {
+    redirect(`/admin?error=${encodeURIComponent(`${label} file is too large.`)}` as never);
+  }
+
+  const extension = getImageExtension(file.type);
+  if (!extension) {
+    redirect(`/admin?error=${encodeURIComponent(`${label} must be a PNG, JPEG, or WebP image.`)}` as never);
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  if (!hasImageSignature(buffer, extension)) {
+    redirect(`/admin?error=${encodeURIComponent(`${label} file content does not match its image type.`)}` as never);
+  }
+
+  const filename = `${entityId}-${Date.now()}.${extension}`;
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const result = await put(`${folder}/${filename}`, buffer, {
+      access: "public",
+      contentType: file.type || "image/png",
+    });
+    return result.url;
+  }
+
+  const dir = path.join(process.cwd(), "public", folder);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, filename), buffer);
+  return `/${folder}/${filename}`;
 }
 
 function isSafeStatToken(value: string) {
@@ -624,41 +676,16 @@ export async function adminSetMatchGamesAction(formData: FormData) {
 export async function adminUploadCharacterArtAction(formData: FormData) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const file = formData.get("characterArt");
-  if (!isSafeEntityId(eventId)) {
-    redirect(`/admin?error=${encodeURIComponent("Invalid event ID.")}` as never);
-  }
   await assertUserCanManageEvent(user, eventId);
-  if (!(file instanceof File) || file.size === 0) {
-    redirect(`/admin?error=No+file+uploaded` as never);
-  }
-  const extension = getCharacterArtExtension((file as File).type);
-  if (!extension) {
-    redirect(`/admin?error=${encodeURIComponent("Character art must be a PNG, JPEG, or WebP image.")}` as never);
-  }
+
   try {
-    const bytes = await (file as File).arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    if (!hasImageSignature(buffer, extension)) {
-      redirect(`/admin?error=${encodeURIComponent("Character art file content does not match its image type.")}` as never);
-    }
-    let url: string;
-
-    if (process.env.BLOB_READ_WRITE_TOKEN) {
-      const result = await put(`character-art/${eventId}-${Date.now()}.${extension}`, buffer, {
-        access: "public",
-        contentType: (file as File).type || "image/png",
-      });
-      url = result.url;
-    } else {
-      // Local dev fallback: write to public/character-art/ and serve as static asset
-      const dir = path.join(process.cwd(), "public", "character-art");
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      const filename = `${eventId}-${Date.now()}.${extension}`;
-      fs.writeFileSync(path.join(dir, filename), buffer);
-      url = `/character-art/${filename}`;
-    }
-
+    const url = await uploadImageAsset({
+      file: formData.get("characterArt"),
+      folder: "character-art",
+      entityId: eventId,
+      label: "Character art",
+      maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
+    });
     await updateEventCertificateAssets(eventId, { characterArtUrl: url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
@@ -666,6 +693,77 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
   }
   revalidatePath("/admin");
   redirect(`/admin?success=character-art-uploaded` as never);
+}
+
+export async function adminUploadEventLogoAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  await assertUserCanManageEvent(user, eventId);
+
+  try {
+    const url = await uploadImageAsset({
+      file: formData.get("eventLogo"),
+      folder: "event-logos",
+      entityId: eventId,
+      label: "Event logo",
+      maxBytes: MAX_LOGO_IMAGE_BYTES,
+    });
+    await updateEventBrandAssets(eventId, { logoUrl: url });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  redirect(`/admin?success=event-logo-uploaded` as never);
+}
+
+export async function adminUploadEventBackgroundAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  await assertUserCanManageEvent(user, eventId);
+
+  try {
+    const url = await uploadImageAsset({
+      file: formData.get("eventBackground"),
+      folder: "event-backgrounds",
+      entityId: eventId,
+      label: "Event background",
+      maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
+    });
+    await updateEventBrandAssets(eventId, { gameImageUrl: url });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  redirect(`/admin?success=event-background-uploaded` as never);
+}
+
+export async function adminUploadTeamLogoAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const teamId = z.string().min(1).parse(formData.get("teamId"));
+
+  try {
+    const url = await uploadImageAsset({
+      file: formData.get("teamLogo"),
+      folder: "team-logos",
+      entityId: teamId,
+      label: "Team logo",
+      maxBytes: MAX_LOGO_IMAGE_BYTES,
+    });
+    await updateTeamLogo(user, teamId, url);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidateTag("teams");
+  revalidatePath("/", "layout");
+  redirect(`/admin?success=team-logo-uploaded` as never);
 }
 
 /** Updates the accent color for an event's certificate. */

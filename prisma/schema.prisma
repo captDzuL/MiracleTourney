@@ -73,6 +73,7 @@ model Team {
   captainId      String?
   name           String
   logoText       String
+  logoUrl        String?
   tag            String
   captainName    String?
   captainContact String?

@@ -15,6 +15,7 @@ const { prisma } = vi.hoisted(() => ({
     team: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
+      update: vi.fn(),
     },
     event: {
       findFirst: vi.fn(),
@@ -47,6 +48,7 @@ import {
   getPublicEventBySlug,
   getPublicVisibleBracketPreview,
   getTeamsForEvent,
+  updateTeamLogo,
 } from "./repository";
 
 const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
@@ -166,6 +168,49 @@ describe("organizer event ownership", () => {
     prisma.event.findFirst.mockResolvedValue(null);
 
     await expect(assertUserCanManageEvent(organizer, "event-other")).rejects.toThrow("Not authorized");
+  });
+
+  it("updates a team logo only when the organizer owns the team's event", async () => {
+    prisma.team.findFirst.mockResolvedValue({ id: "team-1", eventId: "event-1" });
+    prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
+    prisma.team.update.mockResolvedValue({
+      id: "team-1",
+      eventId: "event-1",
+      captainId: null,
+      name: "Logo Squad",
+      logoText: "LS",
+      logoUrl: "/team-logos/team-1.png",
+      tag: "LOG",
+      captainName: null,
+      captainContact: null,
+      source: "demo",
+    });
+
+    await expect(updateTeamLogo(organizer, "team-1", "/team-logos/team-1.png")).resolves.toMatchObject({
+      id: "team-1",
+      logoUrl: "/team-logos/team-1.png",
+    });
+
+    expect(prisma.team.findFirst).toHaveBeenCalledWith({
+      where: { id: "team-1" },
+      select: { id: true, eventId: true },
+    });
+    expect(prisma.event.findFirst).toHaveBeenCalledWith({
+      where: { id: "event-1", organizerUserId: "org-1" },
+      select: { id: true },
+    });
+    expect(prisma.team.update).toHaveBeenCalledWith({
+      where: { id: "team-1" },
+      data: { logoUrl: "/team-logos/team-1.png" },
+    });
+  });
+
+  it("rejects a team logo update when the organizer does not own the team's event", async () => {
+    prisma.team.findFirst.mockResolvedValue({ id: "team-1", eventId: "event-other" });
+    prisma.event.findFirst.mockResolvedValue(null);
+
+    await expect(updateTeamLogo(organizer, "team-1", "/team-logos/team-1.png")).rejects.toThrow("Not authorized");
+    expect(prisma.team.update).not.toHaveBeenCalled();
   });
 });
 

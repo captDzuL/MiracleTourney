@@ -72,12 +72,13 @@ function mapEvent(row: {
 
 function mapTeam(row: {
   id: string; eventId: string; captainId: string | null;
-  name: string; logoText: string; tag: string;
+  name: string; logoText: string; logoUrl?: string | null; tag: string;
   captainName: string | null; captainContact: string | null; source: string;
 }): Team {
   return {
     id: row.id, eventId: row.eventId, captainId: row.captainId ?? "",
     name: row.name, logoText: row.logoText, tag: row.tag,
+    ...(row.logoUrl ? { logoUrl: row.logoUrl } : {}),
     ...(row.captainName ? { captainName: row.captainName } : {}),
     ...(row.captainContact ? { captainContact: row.captainContact } : {}),
     source: row.source as Team["source"],
@@ -209,6 +210,17 @@ export async function assertUserCanReviewStatSubmission(user: AppUser, submissio
   if (!row) throw new Error("Not authorized");
 }
 
+export async function assertUserCanManageTeam(user: AppUser, teamId: string): Promise<{ eventId: string }> {
+  const team = await prisma.team.findFirst({
+    where: { id: teamId },
+    select: { id: true, eventId: true },
+  });
+
+  if (!team) throw new Error("Not authorized");
+  await assertUserCanManageEvent(user, team.eventId);
+  return { eventId: team.eventId };
+}
+
 /** Returns events with publicly visible statuses: Published, Registration Closed, Ongoing, Finished. */
 export async function getPublicEvents(): Promise<Event[]> {
   try {
@@ -296,6 +308,22 @@ export async function getCaptainTeams(userId: string | undefined): Promise<Team[
   if (!userId) return [];
   const rows = await prisma.team.findMany({ where: { captainId: userId } });
   return rows.map(mapTeam);
+}
+
+export async function updateTeamLogo(user: AppUser, teamId: string, logoUrl: string): Promise<Team> {
+  try {
+    await assertUserCanManageTeam(user, teamId);
+    const row = await prisma.team.update({
+      where: { id: teamId },
+      data: { logoUrl },
+    });
+    return mapTeam(row);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Not authorized") throw error;
+    const team = demoStore.updateTeamLogo(user, teamId, logoUrl);
+    if (!team) throw new Error("Not authorized");
+    return team;
+  }
 }
 
 // ── Players ───────────────────────────────────────────────────────────────────
@@ -1508,6 +1536,17 @@ export async function updateEventCertificateAssets(
   updates: { characterArtUrl?: string; accentColor?: string },
 ): Promise<void> {
   await prisma.event.update({ where: { id: eventId }, data: updates });
+}
+
+export async function updateEventBrandAssets(
+  eventId: string,
+  updates: { logoUrl?: string; gameImageUrl?: string },
+): Promise<void> {
+  try {
+    await prisma.event.update({ where: { id: eventId }, data: updates });
+  } catch {
+    demoStore.updateEventBrandAssets(eventId, updates);
+  }
 }
 
 /** Stores a generated certificate record for an event's champion team. */

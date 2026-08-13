@@ -31,7 +31,10 @@ import {
   adminUpdateEventStatusAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
+  adminUploadEventBackgroundAction,
+  adminUploadEventLogoAction,
   adminUploadCharacterArtAction,
+  adminUploadTeamLogoAction,
 } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import {
@@ -51,6 +54,8 @@ import {
   getTeamsForEvent,
 } from "@/lib/platform/repository";
 import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
+import { TeamAvatar, TeamIdentity } from "@/components/TeamAvatar";
+import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 
 import { type AdminPhase, adminPhases, buildAdminPhaseHref, resolveAdminPhase } from "./admin-flow";
 
@@ -224,6 +229,8 @@ export default async function AdminPage({
           {activePhase === "prepare" ? (
             <PrepareEventPhase
               activeEvent={activeEvent}
+              allTeamsByEvent={allTeamsByEvent}
+              events={events}
               gameModes={gameModes}
               t={t}
             />
@@ -428,10 +435,14 @@ function AdminPhaseRail({
 
 function PrepareEventPhase({
   activeEvent,
+  allTeamsByEvent,
+  events,
   gameModes,
   t,
 }: {
   activeEvent: EventItem | undefined;
+  allTeamsByEvent: Map<string, TeamItem[]>;
+  events: EventItem[];
   gameModes: GameModeItem[];
   t: AdminTranslator;
 }) {
@@ -549,7 +560,127 @@ function PrepareEventPhase({
           </Section>
         </div>
       </div>
+      <BrandAssetsSection allTeamsByEvent={allTeamsByEvent} events={events} t={t} />
     </PhaseSection>
+  );
+}
+
+function BrandAssetsSection({
+  allTeamsByEvent,
+  events,
+  t,
+}: {
+  allTeamsByEvent: Map<string, TeamItem[]>;
+  events: EventItem[];
+  t: AdminTranslator;
+}) {
+  return (
+    <Section title="Brand Assets" description="Upload logo event, background event, dan logo team untuk kartu publik dan halaman turnamen." className="rounded-xl shadow-none">
+      {events.length ? (
+        <div className="grid gap-4">
+          {events.map((event) => {
+            const teams = allTeamsByEvent.get(event.id) ?? [];
+            const backgroundUrl = getEventBackgroundUrl(event);
+
+            return (
+              <details key={event.id} className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="relative h-14 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-900">
+                      {backgroundUrl ? (
+                        <img src={backgroundUrl} alt="" className="h-full w-full object-cover" />
+                      ) : null}
+                      <div className="absolute inset-0 bg-slate-950/35" />
+                      <div className="absolute bottom-1 left-1">
+                        <TeamAvatar logoText={event.name.slice(0, 2).toUpperCase()} logoUrl={event.logoUrl} name={event.name} size="sm" />
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-950">{event.name}</p>
+                      <p className="text-xs text-slate-500">{getGameForEvent(event).name} - {teams.length}/{event.participantCap} teams</p>
+                    </div>
+                  </div>
+                  <StatusChip tone={event.logoUrl && backgroundUrl ? "success" : "default"}>
+                    {event.logoUrl && backgroundUrl ? "Ready" : "Needs assets"}
+                  </StatusChip>
+                </summary>
+
+                <div className="grid gap-5 border-t border-slate-200 bg-white p-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                  <div className="grid gap-4">
+                    <form action={adminUploadEventLogoAction} encType="multipart/form-data" className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <input type="hidden" name="eventId" value={event.id} />
+                      <div className="flex items-center gap-3">
+                        <TeamAvatar logoText={event.name.slice(0, 2).toUpperCase()} logoUrl={event.logoUrl} name={event.name} size="lg" />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">Event logo</p>
+                          <p className="text-xs text-slate-500">PNG, JPG, atau WebP. Maks 2 MB.</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <input type="file" name="eventLogo" accept="image/png,image/webp,image/jpeg" className={`${inputClass} flex-1 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
+                        <button className={quietButton} type="submit">
+                          <ImageUp className="h-4 w-4" />
+                          Upload
+                        </button>
+                      </div>
+                    </form>
+
+                    <form action={adminUploadEventBackgroundAction} encType="multipart/form-data" className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <input type="hidden" name="eventId" value={event.id} />
+                      <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
+                        {backgroundUrl ? (
+                          <img src={backgroundUrl} alt={`${event.name} background preview`} className="aspect-video w-full object-cover" />
+                        ) : (
+                          <div className="flex aspect-video items-center justify-center text-sm text-slate-400">No background</div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">Event background</p>
+                        <p className="text-xs text-slate-500">Disarankan 16:9. PNG, JPG, atau WebP. Maks 5 MB.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <input type="file" name="eventBackground" accept="image/png,image/webp,image/jpeg" className={`${inputClass} flex-1 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
+                        <button className={quietButton} type="submit">
+                          <ImageUp className="h-4 w-4" />
+                          Upload
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">Team logos</p>
+                        <p className="text-xs text-slate-500">Organizer mengelola logo semua team di event ini.</p>
+                      </div>
+                      <StatusChip tone="default">{teams.length} teams</StatusChip>
+                    </div>
+                    <div className="grid max-h-[30rem] gap-2 overflow-y-auto pr-1">
+                      {teams.length ? teams.map((team) => (
+                        <form key={team.id} action={adminUploadTeamLogoAction} encType="multipart/form-data" className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[minmax(10rem,1fr)_minmax(14rem,1fr)_auto] md:items-center">
+                          <input type="hidden" name="teamId" value={team.id} />
+                          <TeamIdentity logoText={team.logoText} logoUrl={team.logoUrl} name={team.name} meta={team.tag} />
+                          <input type="file" name="teamLogo" accept="image/png,image/webp,image/jpeg" className={`${inputClass} min-w-0 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
+                          <button className={quietButton} type="submit">
+                            <ImageUp className="h-4 w-4" />
+                            Upload
+                          </button>
+                        </form>
+                      )) : (
+                        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">Belum ada team di event ini.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-sm text-slate-500">{t("noEventsImport")}</p>
+      )}
+    </Section>
   );
 }
 

@@ -703,6 +703,30 @@ export function setEventStatus(eventId: string, status: Event["status"]) {
   return event;
 }
 
+export function updateEventBrandAssets(eventId: string, updates: { logoUrl?: string; gameImageUrl?: string }) {
+  const event = getStore().events.find((item) => item.id === eventId);
+  if (!event) return null;
+
+  if (updates.logoUrl !== undefined) event.logoUrl = updates.logoUrl;
+  if (updates.gameImageUrl !== undefined) event.gameImageUrl = updates.gameImageUrl;
+  return event;
+}
+
+export function updateTeamLogo(user: AppUser, teamId: string, logoUrl: string) {
+  const team = getStore().teams.find((item) => item.id === teamId);
+  if (!team) return null;
+
+  const event = getStore().events.find((item) => item.id === team.eventId);
+  const canManage =
+    user.role === "platform_admin"
+    || user.role === "admin"
+    || (user.role === "organizer" && event?.organizerUserId === user.id);
+
+  if (!canManage) return null;
+  team.logoUrl = logoUrl;
+  return team;
+}
+
 export function registerTeam(input: {
   eventId: string;
   captainId: string;

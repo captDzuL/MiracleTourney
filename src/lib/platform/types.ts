@@ -14,6 +14,7 @@ export type Game = {
   accent: string;
   defaultModeLabel?: string;
   fallbackLogoUrl?: string;
+  defaultBackgroundUrl?: string;
   primaryStatKey?: string;
   certificateThemeId?: "flashpeak" | "kuroko" | "mlbb" | "hok" | "valorant" | "dota2";
   artTheme?: {
@@ -94,6 +95,7 @@ export type Team = {
   captainId: string;
   name: string;
   logoText: string;
+  logoUrl?: string;
   tag: string;
   captainName?: string;
   captainContact?: string;
