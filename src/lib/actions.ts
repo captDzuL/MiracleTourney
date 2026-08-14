@@ -7,17 +7,20 @@ import { z } from "zod";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { routing } from "@/i18n/routing";
-import { requireRole, signIn, signOut } from "@/lib/auth/session";
+import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import type { AppUser } from "@/lib/platform/types";
 import {
   addPlayer,
   approveStatSubmission,
   assertCaptainCanSubmitStats,
+  assertUserCanManageEvent,
+  assertUserCanReviewStatSubmission,
   createCaptainWithTeam,
   createEvent,
   deletePlayer,
   getImportSnapshot,
+  getOrganizerUserById,
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
@@ -29,21 +32,27 @@ import {
   setMatchGames,
   setMatchResult,
   updateCaptainPassword,
+  updateEventPublicInfo,
   updateEventStream,
+  updateEventBrandAssets,
   updateEventCertificateAssets,
+  updateTeamLogo,
   updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
 } from "@/lib/platform/repository";
-import { put } from "@vercel/blob";
-import { generateCertificateIfFinal } from "@/lib/certificate/generate";
 import fs from "fs";
 import path from "path";
 
 const MAX_TEAM_IMPORT_CSV_BYTES = 256 * 1024;
+const MAX_LOGO_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_BACKGROUND_IMAGE_BYTES = 5 * 1024 * 1024;
 
 async function requireAdminSession(): Promise<AppUser> {
-  const user = await requireRole("admin");
+  const user =
+    await requireRole("platform_admin")
+    ?? await requireRole("organizer")
+    ?? await requireRole("admin");
 
   if (!user) {
     return redirectToActiveLocale("/login");
@@ -86,7 +95,7 @@ function isSafeEntityId(id: string) {
   return /^[a-zA-Z0-9_-]+$/.test(id);
 }
 
-function getCharacterArtExtension(contentType: string) {
+function getImageExtension(contentType: string) {
   if (contentType === "image/png") return "png";
   if (contentType === "image/jpeg") return "jpg";
   if (contentType === "image/webp") return "webp";
@@ -121,6 +130,76 @@ function isHttpUrl(value: string) {
   } catch {
     return false;
   }
+}
+
+const optionalPublicLabelSchema = z.preprocess(
+  (value) => {
+    const text = String(value ?? "").trim();
+    return text === "" ? null : text;
+  },
+  z.string().max(80).nullable(),
+);
+
+const optionalPublicUrlSchema = z.preprocess(
+  (value) => {
+    const text = String(value ?? "").trim();
+    return text === "" ? null : text;
+  },
+  z.string().refine(isHttpUrl, "Registration URL must use http or https.").nullable(),
+);
+
+async function uploadImageAsset({
+  file,
+  folder,
+  entityId,
+  label,
+  maxBytes,
+}: {
+  file: FormDataEntryValue | null;
+  folder: string;
+  entityId: string;
+  label: string;
+  maxBytes: number;
+}) {
+  if (!isSafeEntityId(entityId)) {
+    redirect(`/admin?error=${encodeURIComponent(`Invalid ${label} ID.`)}` as never);
+  }
+  if (!(file instanceof File) || file.size === 0) {
+    redirect(`/admin?error=${encodeURIComponent(`No ${label} file uploaded.`)}` as never);
+  }
+  if (file.size > maxBytes) {
+    redirect(`/admin?error=${encodeURIComponent(`${label} file is too large.`)}` as never);
+  }
+
+  const extension = getImageExtension(file.type);
+  if (!extension) {
+    redirect(`/admin?error=${encodeURIComponent(`${label} must be a PNG, JPEG, or WebP image.`)}` as never);
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  if (!hasImageSignature(buffer, extension)) {
+    redirect(`/admin?error=${encodeURIComponent(`${label} file content does not match its image type.`)}` as never);
+  }
+
+  const filename = `${entityId}-${Date.now()}.${extension}`;
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const { put } = await import("@vercel/blob");
+    const result = await put(`${folder}/${filename}`, buffer, {
+      access: "public",
+      contentType: file.type || "image/png",
+    });
+    return result.url;
+  }
+
+  const dir = path.join(process.cwd(), "public", folder);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, filename), buffer);
+  return `/${folder}/${filename}`;
+}
+
+async function generateCertificateForFinalMatch(matchId: string, eventId: string) {
+  const { generateCertificateIfFinal } = await import("@/lib/certificate/generate");
+  await generateCertificateIfFinal(matchId, eventId);
 }
 
 function isSafeStatToken(value: string) {
@@ -199,13 +278,10 @@ export async function loginAction(formData: FormData) {
     return await redirectToRequestedLocale("/login?error=invalid", requestedLocale);
   }
 
-  await redirectToRequestedLocale(user.role === "admin" ? "/admin" : "/captain", requestedLocale);
-}
-
-/** Clears the session cookie and redirects to the home page. */
-export async function logoutAction() {
-  await signOut();
-  await redirectToActiveLocale("/");
+  await redirectToRequestedLocale(
+    user.role === "platform_admin" || user.role === "organizer" || user.role === "admin" ? "/admin" : "/captain",
+    requestedLocale,
+  );
 }
 
 /** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
@@ -342,7 +418,7 @@ export async function captainDeletePlayerAction(formData: FormData) {
 
 /** Creates a new tournament event. Supported participant caps: 8, 12, 16, 24, 32, 64, 128, 256. */
 export async function adminCreateEventAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const input = z.object({
     name: z.string().min(3),
@@ -350,22 +426,45 @@ export async function adminCreateEventAction(formData: FormData) {
     gameModeId: z.string().min(1),
     format: z.enum(["Single Elimination", "League"]),
     participantCap: z.union([z.literal(8), z.literal(12), z.literal(16), z.literal(24), z.literal(32), z.literal(64), z.literal(128), z.literal(256)]),
+    organizerUserId: z.string().min(1).optional(),
   }).parse({
     name: formData.get("name"),
     slug: formData.get("slug"),
     gameModeId: formData.get("gameModeId"),
     format: formData.get("format"),
     participantCap: Number(formData.get("participantCap")),
+    organizerUserId: formData.get("organizerUserId") || undefined,
   });
 
-  await createEvent(input);
+  let organizerAssignment: Pick<AppUser, "id" | "name"> | undefined;
+  if (user.role === "organizer") {
+    organizerAssignment = user;
+  } else if (input.organizerUserId) {
+    const organizer = await getOrganizerUserById(input.organizerUserId);
+    if (!organizer) {
+      await redirectToActiveLocale("/admin?error=Organizer%20not%20found.");
+    } else {
+      organizerAssignment = organizer;
+    }
+  }
+
+  await createEvent({
+    name: input.name,
+    slug: input.slug,
+    gameModeId: input.gameModeId,
+    format: input.format,
+    participantCap: input.participantCap,
+    organizerUserId: organizerAssignment?.id,
+    organizerName: organizerAssignment?.name,
+    organizerVerified: false,
+  });
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=event-created");
 }
 
 /** Changes an event's lifecycle status (Draft → Published → Registration Closed → Ongoing → Finished). */
 export async function adminUpdateEventStatusAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const input = z.object({
     eventId: z.string().min(1),
@@ -375,6 +474,7 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
     status: formData.get("status"),
   });
 
+  await assertUserCanManageEvent(user, input.eventId);
   const event = await setEventStatus(input.eventId, input.status);
 
   if (!event) {
@@ -390,7 +490,7 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
  * status from Published/Registration Closed to Ongoing if it hasn't been set yet.
  */
 export async function adminUpdateMatchResultAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const matchEventId = z.string().min(1).parse(formData.get("matchEventId"));
   const input = z.object({
@@ -405,6 +505,8 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
     awayScore: formData.get("awayScore"),
   });
 
+  await assertUserCanManageEvent(user, input.eventId);
+
   let match;
 
   try {
@@ -418,14 +520,14 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   await autoTransitionEventToOngoing(input.eventId);
   if (match) {
     try {
-      await generateCertificateIfFinal(match.id, input.eventId);
+      await generateCertificateForFinalMatch(match.id, input.eventId);
     } catch (err) {
       console.error("[certificate] generation failed:", err);
     }
   }
   revalidateTag("teams");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&success=match-result-updated` as never);
+  await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-result-updated` as never);
 }
 
 /**
@@ -434,7 +536,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
  * and business-rule checks before persisting. Redirects with error on any failure.
  */
 export async function adminImportTeamsCsvAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const file = formData.get("csv");
 
@@ -445,7 +547,10 @@ export async function adminImportTeamsCsvAction(formData: FormData) {
     return redirectToActiveLocale("/admin?error=CSV%20file%20is%20too%20large.%20Maximum%20size%20is%20256%20KiB.");
   }
 
-  const result = parseAndValidateTeamImport(await file.text(), await getImportSnapshot());
+  const result = parseAndValidateTeamImport(
+    await file.text(),
+    await getImportSnapshot(user.role === "organizer" ? user : undefined),
+  );
 
   if (!result.ok) {
     return redirectToActiveLocale(`/admin?error=${encodeURIComponent(result.message)}`);
@@ -458,7 +563,7 @@ export async function adminImportTeamsCsvAction(formData: FormData) {
 
 /** Updates the live-stream URL and label for an event. URL must be a valid absolute URL. */
 export async function adminUpdateStreamAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const input = z.object({
     eventId: z.string().min(1),
@@ -470,9 +575,48 @@ export async function adminUpdateStreamAction(formData: FormData) {
     label: formData.get("label"),
   });
 
+  await assertUserCanManageEvent(user, input.eventId);
   await updateEventStream(input.eventId, input.url, input.label);
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=stream-updated");
+}
+
+export async function adminUpdateEventPublicInfoAction(formData: FormData) {
+  const user = await requireAdminSession();
+
+  const input = z.object({
+    eventId: z.string().min(1),
+    description: z.string().trim().min(10).max(500),
+    registrationWindow: z.string().trim().min(2).max(120),
+    startsAt: z.string().trim().min(2).max(120),
+    venue: z.string().trim().min(2).max(120),
+    prizePoolLabel: optionalPublicLabelSchema,
+    registrationFeeLabel: optionalPublicLabelSchema,
+    registrationUrl: optionalPublicUrlSchema,
+  }).parse({
+    eventId: formData.get("eventId"),
+    description: formData.get("description"),
+    registrationWindow: formData.get("registrationWindow"),
+    startsAt: formData.get("startsAt"),
+    venue: formData.get("venue"),
+    prizePoolLabel: formData.get("prizePoolLabel"),
+    registrationFeeLabel: formData.get("registrationFeeLabel"),
+    registrationUrl: formData.get("registrationUrl"),
+  });
+
+  const event = await updateEventPublicInfo(user, input.eventId, {
+    description: input.description,
+    registrationWindow: input.registrationWindow,
+    startsAt: input.startsAt,
+    venue: input.venue,
+    prizePoolLabel: input.prizePoolLabel,
+    registrationFeeLabel: input.registrationFeeLabel,
+    registrationUrl: input.registrationUrl,
+  });
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale(`/admin?success=event-public-info-updated&event=${event.slug}`);
 }
 
 /**
@@ -519,6 +663,7 @@ export async function captainSubmitStatsAction(formData: FormData) {
 export async function adminApproveStatAction(formData: FormData) {
   const user = await requireAdminSession();
   const submissionId = formData.get("submissionId") as string;
+  await assertUserCanReviewStatSubmission(user, submissionId);
   await approveStatSubmission(submissionId, user.id);
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=stat-approved");
@@ -530,6 +675,7 @@ export async function adminRejectStatAction(formData: FormData) {
   const submissionId = formData.get("submissionId") as string;
   const note =
     (formData.get("rejectionNote") as string)?.trim() || "Please review and resubmit.";
+  await assertUserCanReviewStatSubmission(user, submissionId);
   await rejectStatSubmission(submissionId, user.id, note);
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=stat-rejected");
@@ -537,7 +683,7 @@ export async function adminRejectStatAction(formData: FormData) {
 
 /** Sets the Best-of-N configuration for a specific round label in an event. Valid bestOf values are 1, 3, or 5. */
 export async function adminSetRoundConfigAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const input = z.object({
     eventId: z.string().min(1),
@@ -549,9 +695,10 @@ export async function adminSetRoundConfigAction(formData: FormData) {
     bestOf: formData.get("bestOf"),
   });
 
+  await assertUserCanManageEvent(user, input.eventId);
   await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?matchEventId=${input.eventId}&success=round-config-saved` as never);
+  await redirectToActiveLocale(`/admin?phase=run&matchEventId=${input.eventId}&success=round-config-saved` as never);
 }
 
 /**
@@ -560,11 +707,12 @@ export async function adminSetRoundConfigAction(formData: FormData) {
  * must be provided. Also auto-transitions the event to Ongoing if needed.
  */
 export async function adminSetMatchGamesAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
 
   const matchId = z.string().min(1).parse(formData.get("matchId"));
   const matchEventId = z.string().min(1).parse(formData.get("matchEventId"));
   const bestOf = z.coerce.number().int().min(1).max(5).parse(formData.get("bestOf"));
+  await assertUserCanManageEvent(user, matchEventId);
 
   const games: { gameNumber: number; homeScore: number; awayScore: number }[] = [];
   for (let i = 1; i <= bestOf; i++) {
@@ -587,53 +735,29 @@ export async function adminSetMatchGamesAction(formData: FormData) {
 
   await autoTransitionEventToOngoing(matchEventId);
   try {
-    await generateCertificateIfFinal(matchId, matchEventId);
+    await generateCertificateForFinalMatch(matchId, matchEventId);
   } catch (err) {
     console.error("[certificate] generation failed:", err);
   }
   revalidateTag("teams");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&success=match-games-saved` as never);
+  await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-games-saved` as never);
 }
 
 /** Uploads a character art PNG for an event's certificate to Vercel Blob and stores the URL. */
 export async function adminUploadCharacterArtAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const file = formData.get("characterArt");
-  if (!isSafeEntityId(eventId)) {
-    redirect(`/admin?error=${encodeURIComponent("Invalid event ID.")}` as never);
-  }
-  if (!(file instanceof File) || file.size === 0) {
-    redirect(`/admin?error=No+file+uploaded` as never);
-  }
-  const extension = getCharacterArtExtension((file as File).type);
-  if (!extension) {
-    redirect(`/admin?error=${encodeURIComponent("Character art must be a PNG, JPEG, or WebP image.")}` as never);
-  }
+  await assertUserCanManageEvent(user, eventId);
+
   try {
-    const bytes = await (file as File).arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    if (!hasImageSignature(buffer, extension)) {
-      redirect(`/admin?error=${encodeURIComponent("Character art file content does not match its image type.")}` as never);
-    }
-    let url: string;
-
-    if (process.env.BLOB_READ_WRITE_TOKEN) {
-      const result = await put(`character-art/${eventId}-${Date.now()}.${extension}`, buffer, {
-        access: "public",
-        contentType: (file as File).type || "image/png",
-      });
-      url = result.url;
-    } else {
-      // Local dev fallback: write to public/character-art/ and serve as static asset
-      const dir = path.join(process.cwd(), "public", "character-art");
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      const filename = `${eventId}-${Date.now()}.${extension}`;
-      fs.writeFileSync(path.join(dir, filename), buffer);
-      url = `/character-art/${filename}`;
-    }
-
+    const url = await uploadImageAsset({
+      file: formData.get("characterArt"),
+      folder: "character-art",
+      entityId: eventId,
+      label: "Character art",
+      maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
+    });
     await updateEventCertificateAssets(eventId, { characterArtUrl: url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
@@ -643,11 +767,83 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
   redirect(`/admin?success=character-art-uploaded` as never);
 }
 
+export async function adminUploadEventLogoAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  await assertUserCanManageEvent(user, eventId);
+
+  try {
+    const url = await uploadImageAsset({
+      file: formData.get("eventLogo"),
+      folder: "event-logos",
+      entityId: eventId,
+      label: "Event logo",
+      maxBytes: MAX_LOGO_IMAGE_BYTES,
+    });
+    await updateEventBrandAssets(eventId, { logoUrl: url });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  redirect(`/admin?success=event-logo-uploaded` as never);
+}
+
+export async function adminUploadEventBackgroundAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  await assertUserCanManageEvent(user, eventId);
+
+  try {
+    const url = await uploadImageAsset({
+      file: formData.get("eventBackground"),
+      folder: "event-backgrounds",
+      entityId: eventId,
+      label: "Event background",
+      maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
+    });
+    await updateEventBrandAssets(eventId, { gameImageUrl: url });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  redirect(`/admin?success=event-background-uploaded` as never);
+}
+
+export async function adminUploadTeamLogoAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const teamId = z.string().min(1).parse(formData.get("teamId"));
+
+  try {
+    const url = await uploadImageAsset({
+      file: formData.get("teamLogo"),
+      folder: "team-logos",
+      entityId: teamId,
+      label: "Team logo",
+      maxBytes: MAX_LOGO_IMAGE_BYTES,
+    });
+    await updateTeamLogo(user, teamId, url);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidateTag("teams");
+  revalidatePath("/", "layout");
+  redirect(`/admin?success=team-logo-uploaded` as never);
+}
+
 /** Updates the accent color for an event's certificate. */
 export async function adminSetAccentColorAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   const accentColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).parse(formData.get("accentColor"));
+  await assertUserCanManageEvent(user, eventId);
   await updateEventCertificateAssets(eventId, { accentColor });
   revalidatePath("/admin");
   redirect(`/admin?success=accent-color-saved` as never);

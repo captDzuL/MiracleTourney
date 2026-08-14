@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { ImagePlus } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { getGameArtTheme } from "@/lib/platform/config";
@@ -24,7 +23,6 @@ export function GameArt({
   gameId,
   logoUrl,
   entityName,
-  priority = false,
 }: {
   gameId: string;
   logoUrl?: string;
@@ -44,13 +42,9 @@ export function GameArt({
       </span>
       <div className="absolute bottom-0 left-4 translate-y-1/2">
         {logoUrl ? (
-          <Image
+          <img
             src={logoUrl}
             alt={entityName}
-            width={56}
-            height={56}
-            sizes="56px"
-            priority={priority}
             className="h-14 w-14 rounded-xl border-2 border-white object-cover shadow-md"
           />
         ) : (

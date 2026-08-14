@@ -22,7 +22,7 @@ function getJwtSecret() {
 }
 
 function getSessionMaxAge(role: string) {
-  return role === "admin" ? ADMIN_SESSION_MAX_AGE : CAPTAIN_SESSION_MAX_AGE;
+  return role === "admin" || role === "platform_admin" ? ADMIN_SESSION_MAX_AGE : CAPTAIN_SESSION_MAX_AGE;
 }
 
 async function signToken(payload: { sub: string; role: string }, maxAge: number): Promise<string> {
@@ -52,7 +52,10 @@ export const getSessionUser = cache(async (): Promise<AppUser | null> => {
   const claims = await verifyToken(token);
   if (!claims) return null;
 
-  return getCaptainById(claims.sub) ?? getUserByEmail(claims.sub) ?? null;
+  const captain = await getCaptainById(claims.sub);
+  if (captain) return captain;
+
+  return getUserByEmail(claims.sub) ?? null;
 });
 
 /**
@@ -102,5 +105,12 @@ export async function signOut() {
 export async function requireRole(role: Exclude<UserRole, "public">) {
   const user = await getSessionUser();
   if (!user || user.role !== role) return null;
+  return user;
+}
+
+/** Returns the session user when their role is in `roles`, otherwise null. */
+export async function requireAnyRole(roles: Array<Exclude<UserRole, "public">>) {
+  const user = await getSessionUser();
+  if (!user || !roles.includes(user.role as Exclude<UserRole, "public">)) return null;
   return user;
 }

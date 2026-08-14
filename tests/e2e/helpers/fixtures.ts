@@ -37,6 +37,7 @@ export async function prepareAdminMatchEvent() {
   await prisma.match.deleteMany({ where: { eventId: event.id } });
   await prisma.eventRoundConfig.deleteMany({ where: { eventId: event.id } });
   await prisma.player.deleteMany({ where: { eventId: event.id } });
+  await prisma.certificate.deleteMany({ where: { eventId: event.id } });
   await prisma.team.deleteMany({ where: { eventId: event.id } });
 
   await prisma.team.createMany({

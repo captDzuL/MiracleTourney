@@ -108,4 +108,57 @@ describe("auth session hardening", () => {
       }),
     );
   });
+
+  it("accepts any role from the allowed role list", async () => {
+    const { requireAnyRole, signIn } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getCaptainById.mockResolvedValue(null);
+    getUserByEmail.mockResolvedValue({
+      id: "org-1",
+      email: "organizer@test.com",
+      name: "Organizer",
+      role: "organizer",
+    });
+    getUserWithPasswordByEmail.mockResolvedValue({
+      id: "org-1",
+      email: "organizer@test.com",
+      name: "Organizer",
+      role: "organizer",
+      passwordHash: "$hash",
+    });
+
+    await signIn("organizer@test.com", "secret123");
+    cookieStore.get.mockReturnValue({ value: cookieStore.set.mock.calls[0][1] });
+
+    await expect(requireAnyRole(["platform_admin", "organizer", "admin"])).resolves.toMatchObject({
+      id: "org-1",
+      role: "organizer",
+    });
+  });
+
+  it("rejects a session role outside the allowed role list", async () => {
+    const { requireAnyRole, signIn } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getCaptainById.mockResolvedValue(null);
+    getUserByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+    });
+    getUserWithPasswordByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      passwordHash: "$hash",
+    });
+
+    await signIn("captain@test.com", "secret123");
+    cookieStore.get.mockReturnValue({ value: cookieStore.set.mock.calls[0][1] });
+
+    await expect(requireAnyRole(["platform_admin", "organizer", "admin"])).resolves.toBeNull();
+  });
 });

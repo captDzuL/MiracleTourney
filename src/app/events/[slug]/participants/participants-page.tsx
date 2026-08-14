@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
 import { DataTable, Section } from "@/components/ui";
+import { TeamIdentity } from "@/components/TeamAvatar";
 import { getPlayersForTeams, getPublicEventBySlug, getTeamsForEvent } from "@/lib/platform/repository";
 
 export async function renderParticipantsPage(slug: string) {
@@ -22,7 +23,7 @@ export async function renderParticipantsPage(slug: string) {
       <DataTable
         columns={[t("team"), t("tag"), t("captain"), t("roster")]}
         rows={teamsWithPlayers.map((team) => [
-          team.name,
+          <TeamIdentity key={team.id} logoText={team.logoText} logoUrl={team.logoUrl} name={team.name} meta={team.tag} />,
           team.tag,
           team.captainName ?? t("unassigned"),
           team.players.length

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
+import { TeamIdentity } from "@/components/TeamAvatar";
 import { DataTable, Pill, Section } from "@/components/ui";
 import {
   getBracketPreview,
@@ -11,7 +12,7 @@ import {
   getPublicVisibleBracketPreview,
   getTeamsForEvent,
 } from "@/lib/platform/repository";
-import type { Match, MatchGame } from "@/lib/platform/types";
+import type { Match, MatchGame, Team } from "@/lib/platform/types";
 import type { BracketMatch } from "@/lib/tournament/types";
 
 type TFn = (key: string, values?: Record<string, string | number>) => string;
@@ -207,9 +208,16 @@ function getLeagueMatchState(
   };
 }
 
-function renderTeamName(teamLookup: Map<string, string>, teamId: string | null, fallback: string) {
+function renderTeamName(teamLookup: Map<string, Team>, teamId: string | null, fallback: string) {
   if (!teamId) return fallback;
-  return teamLookup.get(teamId) ?? fallback;
+  return teamLookup.get(teamId)?.name ?? fallback;
+}
+
+function renderTeamSlot(teamLookup: Map<string, Team>, teamId: string | null, fallback: string) {
+  const team = teamId ? teamLookup.get(teamId) : undefined;
+  if (!team) return <span className="font-medium text-slate-500">{fallback}</span>;
+
+  return <TeamIdentity logoText={team.logoText} logoUrl={team.logoUrl} name={team.name} size="sm" />;
 }
 
 function chunkIntoPairs<T>(items: T[]): T[][] {
@@ -239,7 +247,7 @@ function MatchCard({
   playInRound: number | null;
   eventStartsAt: string;
   recordedByRound: Map<string, Match>;
-  teamLookup: Map<string, string>;
+  teamLookup: Map<string, Team>;
   roundConfigMap: Map<string, number>;
   gamesMap: Map<string, MatchGame[]>;
   connect: boolean;
@@ -278,11 +286,11 @@ function MatchCard({
 
       <div className="divide-y divide-slate-200">
         <div className="flex items-center justify-between px-4 py-3">
-          <span className="font-medium text-slate-900">{homeName}</span>
+          {renderTeamSlot(teamLookup, match.homeTeamId, "TBD")}
           <span className="mono text-xs text-slate-500">{t("home")}</span>
         </div>
         <div className="flex items-center justify-between px-4 py-3">
-          <span className="font-medium text-slate-900">{awayName}</span>
+          {renderTeamSlot(teamLookup, match.awayTeamId, match.byeForTeamId ? "BYE" : "TBD")}
           <span className="mono text-xs text-slate-500">{t("away")}</span>
         </div>
       </div>
@@ -362,7 +370,7 @@ export async function renderBracketPage(slug: string) {
     getMatchGamesForEvent(event.id),
   ]);
   const roundConfigMap = new Map(roundConfigs.map((c) => [c.roundLabel, c.bestOf]));
-  const teamLookup = new Map(teams.map((team) => [team.id, team.name]));
+  const teamLookup = new Map(teams.map((team) => [team.id, team]));
 
   if (event.format === "League") {
     return (

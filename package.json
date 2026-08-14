@@ -13,6 +13,7 @@
     "test:e2e:preflight": "node scripts/e2e-db-preflight.mjs",
     "test:e2e:smoke": "node scripts/run-smoke-e2e.mjs",
     "test:pressure:smoke": "node scripts/run-smoke-pressure.mjs",
+    "test:dashboard:perf": "node scripts/run-dashboard-performance.mjs",
     "test:e2e:headed": "playwright test --headed",
     "db:seed": "tsx prisma/seed.ts",
     "postinstall": "prisma generate"

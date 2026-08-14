@@ -1,4 +1,3 @@
-import { put } from "@vercel/blob";
 import { chromium } from "playwright-core";
 import fs from "fs";
 import path from "path";
@@ -62,6 +61,7 @@ export async function generateCertificate(eventId: string, winnerTeamId: string)
     let url: string;
     if (process.env.BLOB_READ_WRITE_TOKEN) {
       const filename = `certificates/${eventId}-${winnerTeamId}-${Date.now()}.png`;
+      const { put } = await import("@vercel/blob");
       const result = await put(filename, pngBuffer, { access: "public", contentType: "image/png" });
       url = result.url;
     } else {

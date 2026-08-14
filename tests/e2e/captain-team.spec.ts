@@ -17,7 +17,7 @@ test.describe("captain team management", () => {
     const playerName = `E2E Test Player ${Date.now()}`;
     const addPlayerForm = page.locator("form").filter({
       has: page.getByRole("button", { name: /add player|tambah pemain/i }),
-    });
+    }).first();
 
     if (await addPlayerForm.count() === 0) {
       test.skip();

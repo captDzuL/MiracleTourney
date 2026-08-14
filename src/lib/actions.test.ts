@@ -4,11 +4,14 @@ const {
   addPlayer,
   approveStatSubmission,
   assertCaptainCanSubmitStats,
+  assertUserCanManageEvent,
+  assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   createCaptainWithTeam,
   createEvent,
   deletePlayer,
   getImportSnapshot,
+  getOrganizerUserById,
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
@@ -27,17 +30,21 @@ const {
   updateEventStream,
   updatePlayer,
   updateEventCertificateAssets,
+  updateEventPublicInfo,
   upsertRoundConfig,
   upsertStatSubmission,
 } = vi.hoisted(() => ({
   addPlayer: vi.fn(),
   approveStatSubmission: vi.fn(),
   assertCaptainCanSubmitStats: vi.fn(),
+  assertUserCanManageEvent: vi.fn(),
+  assertUserCanReviewStatSubmission: vi.fn(),
   autoTransitionEventToOngoing: vi.fn(),
   createCaptainWithTeam: vi.fn(),
   createEvent: vi.fn(),
   deletePlayer: vi.fn(),
   getImportSnapshot: vi.fn(),
+  getOrganizerUserById: vi.fn(),
   getPublishedEvents: vi.fn(),
   getUserByEmail: vi.fn(),
   getUserPasswordHashById: vi.fn(),
@@ -56,6 +63,7 @@ const {
   updateEventStream: vi.fn(),
   updatePlayer: vi.fn(),
   updateEventCertificateAssets: vi.fn(),
+  updateEventPublicInfo: vi.fn(),
   upsertRoundConfig: vi.fn(),
   upsertStatSubmission: vi.fn(),
 }));
@@ -74,11 +82,14 @@ vi.mock("@/lib/platform/repository", () => ({
   addPlayer,
   approveStatSubmission,
   assertCaptainCanSubmitStats,
+  assertUserCanManageEvent,
+  assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   createCaptainWithTeam,
   createEvent,
   deletePlayer,
   getImportSnapshot,
+  getOrganizerUserById,
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
@@ -90,6 +101,7 @@ vi.mock("@/lib/platform/repository", () => ({
   setMatchResult,
   updateCaptainPassword,
   updateEventCertificateAssets,
+  updateEventPublicInfo,
   updateEventStream,
   updatePlayer,
   upsertRoundConfig,
@@ -116,6 +128,7 @@ import {
   adminSetRoundConfigAction,
   adminUploadCharacterArtAction,
   adminUpdateEventStatusAction,
+  adminUpdateEventPublicInfoAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
   captainAddPlayerAction,
@@ -126,8 +139,8 @@ import {
   captainUpdatePlayerAction,
   changePasswordAction,
   loginAction,
-  logoutAction,
 } from "./actions";
+import { logoutAction } from "./session-actions";
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -140,7 +153,11 @@ function fd(pairs: Record<string, string | File>): FormData {
 }
 
 function adminSession() {
-  return { id: "admin-1", role: "admin" as const, email: "admin@test.com", name: "Admin" };
+  return { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
+}
+
+function organizerSession() {
+  return { id: "organizer-1", role: "organizer" as const, email: "org@test.com", name: "Organizer One" };
 }
 
 function captainSession() {
@@ -150,6 +167,11 @@ function captainSession() {
 // ────────────────────────────────────────────────────────────
 // loginAction
 // ────────────────────────────────────────────────────────────
+
+beforeEach(() => {
+  assertUserCanManageEvent.mockResolvedValue(undefined);
+  assertUserCanReviewStatSubmission.mockResolvedValue(undefined);
+});
 
 describe("loginAction", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -521,6 +543,70 @@ describe("adminCreateEventAction", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
+  it("lets a platform admin assign a new event to an organizer", async () => {
+    getOrganizerUserById.mockResolvedValue({
+      id: "organizer-target",
+      email: "target@test.com",
+      name: "Target Organizer",
+      role: "organizer",
+    });
+
+    await expect(adminCreateEventAction(fd({ ...validData, organizerUserId: "organizer-target" }))).rejects.toThrow(
+      "REDIRECT:/admin?success=event-created",
+    );
+
+    expect(getOrganizerUserById).toHaveBeenCalledWith("organizer-target");
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizerUserId: "organizer-target",
+        organizerName: "Target Organizer",
+        organizerVerified: false,
+      }),
+    );
+  });
+
+  it("rejects platform admin assignment to an unknown organizer", async () => {
+    getOrganizerUserById.mockResolvedValue(null);
+
+    await expect(adminCreateEventAction(fd({ ...validData, organizerUserId: "missing-organizer" }))).rejects.toThrow(
+      "REDIRECT:/admin?error=Organizer%20not%20found.",
+    );
+
+    expect(createEvent).not.toHaveBeenCalled();
+  });
+
+  it("assigns event ownership from the authenticated organizer session", async () => {
+    requireRole.mockResolvedValue(organizerSession());
+
+    await expect(adminCreateEventAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/admin?success=event-created",
+    );
+
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizerUserId: "organizer-1",
+        organizerName: "Organizer One",
+        organizerVerified: false,
+      }),
+    );
+  });
+
+  it("ignores organizer assignment spoofing from a non-platform organizer", async () => {
+    requireRole.mockResolvedValue(organizerSession());
+
+    await expect(adminCreateEventAction(fd({ ...validData, organizerUserId: "organizer-target" }))).rejects.toThrow(
+      "REDIRECT:/admin?success=event-created",
+    );
+
+    expect(getOrganizerUserById).not.toHaveBeenCalled();
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizerUserId: "organizer-1",
+        organizerName: "Organizer One",
+      }),
+    );
+  });
+
   it("throws Zod error for invalid format value", async () => {
     await expect(
       adminCreateEventAction(fd({ ...validData, format: "Round Robin" })),
@@ -563,6 +649,29 @@ describe("adminUpdateEventStatusAction", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
+  it("checks organizer ownership before updating event status", async () => {
+    requireRole.mockResolvedValue(organizerSession());
+    setEventStatus.mockResolvedValue({ slug: "miracle-league" });
+
+    await expect(
+      adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Ongoing" })),
+    ).rejects.toThrow("REDIRECT:/admin?success=event-status-updated&event=miracle-league");
+
+    expect(assertUserCanManageEvent).toHaveBeenCalledWith(organizerSession(), "e1");
+    expect(setEventStatus).toHaveBeenCalledWith("e1", "Ongoing");
+  });
+
+  it("blocks direct status updates for events outside the organizer scope", async () => {
+    requireRole.mockResolvedValue(organizerSession());
+    assertUserCanManageEvent.mockRejectedValue(new Error("Not authorized"));
+
+    await expect(
+      adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Ongoing" })),
+    ).rejects.toThrow("Not authorized");
+
+    expect(setEventStatus).not.toHaveBeenCalled();
+  });
+
   it("redirects with error when event not found", async () => {
     setEventStatus.mockResolvedValue(null);
 
@@ -603,9 +712,9 @@ describe("adminUpdateMatchResultAction", () => {
     setMatchResult.mockReturnValue({ id: "match-kuroko-1" });
 
     await expect(adminUpdateMatchResultAction(resultFormData())).rejects.toThrow(
-      "REDIRECT:/admin?matchEventId=event-kuroko-summer&success=match-result-updated",
+      "REDIRECT:/admin?phase=run&matchEventId=event-kuroko-summer&success=match-result-updated",
     );
-    expect(requireRole).toHaveBeenCalledWith("admin");
+    expect(requireRole).toHaveBeenCalledWith("platform_admin");
     expect(autoTransitionEventToOngoing).toHaveBeenCalledWith("event-kuroko-summer");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
@@ -730,6 +839,62 @@ describe("adminUpdateStreamAction", () => {
 // ────────────────────────────────────────────────────────────
 // captainSubmitStatsAction
 // ────────────────────────────────────────────────────────────
+
+describe("adminUpdateEventPublicInfoAction", () => {
+  const validData = {
+    eventId: "event-1",
+    description: "A public listing description for this tournament.",
+    registrationWindow: "August 20 - August 28, 2026",
+    startsAt: "August 30, 2026",
+    venue: "Online",
+    prizePoolLabel: "Rp1.000.000",
+    registrationFeeLabel: "",
+    registrationUrl: "",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(organizerSession());
+    updateEventPublicInfo.mockResolvedValue({ slug: "owned-event" });
+  });
+
+  it("requires an organizer/admin session", async () => {
+    requireRole.mockResolvedValue(null);
+
+    await expect(adminUpdateEventPublicInfoAction(fd(validData))).rejects.toThrow("REDIRECT:/login");
+    expect(updateEventPublicInfo).not.toHaveBeenCalled();
+  });
+
+  it("normalizes empty optional labels and updates public event info", async () => {
+    await expect(adminUpdateEventPublicInfoAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/admin?success=event-public-info-updated&event=owned-event",
+    );
+
+    expect(updateEventPublicInfo).toHaveBeenCalledWith(
+      organizerSession(),
+      "event-1",
+      {
+        description: "A public listing description for this tournament.",
+        registrationWindow: "August 20 - August 28, 2026",
+        startsAt: "August 30, 2026",
+        venue: "Online",
+        prizePoolLabel: "Rp1.000.000",
+        registrationFeeLabel: null,
+        registrationUrl: null,
+      },
+    );
+    expect(revalidateTag).toHaveBeenCalledWith("events");
+    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("rejects non-http registration URLs", async () => {
+    await expect(
+      adminUpdateEventPublicInfoAction(fd({ ...validData, registrationUrl: "javascript:alert(1)" })),
+    ).rejects.toThrow();
+
+    expect(updateEventPublicInfo).not.toHaveBeenCalled();
+  });
+});
 
 describe("captainSubmitStatsAction", () => {
   beforeEach(() => {
@@ -908,7 +1073,7 @@ describe("adminSetRoundConfigAction", () => {
   it("saves round config and redirects on success", async () => {
     await expect(
       adminSetRoundConfigAction(fd({ eventId: "event-1", roundLabel: "Semifinal", bestOf: "3" })),
-    ).rejects.toThrow("REDIRECT:/admin?matchEventId=event-1&success=round-config-saved");
+    ).rejects.toThrow("REDIRECT:/admin?phase=run&matchEventId=event-1&success=round-config-saved");
     expect(upsertRoundConfig).toHaveBeenCalledWith("event-1", "Semifinal", 3);
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
@@ -953,7 +1118,7 @@ describe("adminSetMatchGamesAction", () => {
 
   it("saves game scores and redirects with success", async () => {
     await expect(adminSetMatchGamesAction(bo3FormData())).rejects.toThrow(
-      "REDIRECT:/admin?matchEventId=event-1&success=match-games-saved",
+      "REDIRECT:/admin?phase=run&matchEventId=event-1&success=match-games-saved",
     );
     expect(setMatchGames).toHaveBeenCalledWith(
       "match-1",

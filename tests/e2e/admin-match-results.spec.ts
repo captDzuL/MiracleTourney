@@ -24,8 +24,8 @@ test.describe("admin match result entry", () => {
   test.beforeEach(async ({ page }) => {
     currentEvent = await prepareAdminMatchEvent();
     await loginAsAdmin(page, "id");
-    await page.goto(`/id/admin?matchEventId=${currentEvent.eventId}`);
-    await expect(page).toHaveURL(new RegExp(`/id/admin\\?matchEventId=${currentEvent.eventId}`));
+    await page.goto(`/id/admin?phase=run&matchEventId=${currentEvent.eventId}`);
+    await expect(page).toHaveURL(new RegExp(`/id/admin\\?phase=run&matchEventId=${currentEvent.eventId}`));
   });
 
   test("draw is rejected for single-elimination match", async ({ page }) => {
@@ -44,7 +44,7 @@ test.describe("admin match result entry", () => {
 
   test("admin can save a BO1 match result and see bracket update", async ({ page }) => {
     await setRoundBestOf(page, "1");
-    await page.goto(`/id/admin?matchEventId=${currentEvent.eventId}`);
+    await page.goto(`/id/admin?phase=run&matchEventId=${currentEvent.eventId}`);
     await selectFirstMatch(page);
     const resultForm = page.locator("form").filter({
       has: page.locator('input[name="homeScore"]'),
@@ -62,7 +62,7 @@ test.describe("admin match result entry", () => {
 
   test("event auto-transitions to Ongoing after first match result", async ({ page }) => {
     await setRoundBestOf(page, "1");
-    await page.goto(`/id/admin?matchEventId=${currentEvent.eventId}`);
+    await page.goto(`/id/admin?phase=run&matchEventId=${currentEvent.eventId}`);
     await selectFirstMatch(page);
     const resultForm = page.locator("form").filter({
       has: page.locator('input[name="homeScore"]'),
@@ -94,9 +94,9 @@ test.describe("public bracket page", () => {
   test("bracket shows completed match score", async ({ page }) => {
     const { eventId, slug } = await prepareAdminMatchEvent();
     await loginAsAdmin(page, "id");
-    await page.goto(`/id/admin?matchEventId=${eventId}`);
+    await page.goto(`/id/admin?phase=run&matchEventId=${eventId}`);
     await setRoundBestOf(page, "1");
-    await page.goto(`/id/admin?matchEventId=${eventId}`);
+    await page.goto(`/id/admin?phase=run&matchEventId=${eventId}`);
     await selectFirstMatch(page);
     const resultForm = page.locator("form").filter({
       has: page.locator('input[name="homeScore"]'),
@@ -105,6 +105,7 @@ test.describe("public bracket page", () => {
     await resultForm.locator('input[name="homeScore"]').fill("19");
     await resultForm.locator('input[name="awayScore"]').fill("17");
     await resultForm.getByRole("button", { name: /simpan/i }).click();
+    await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
 
     await page.goto(`/id/events/${slug}/bracket`);
     await expect(page.getByRole("main")).toBeVisible();

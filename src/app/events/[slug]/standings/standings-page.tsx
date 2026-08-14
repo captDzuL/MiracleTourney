@@ -2,14 +2,19 @@ import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
 import { DataTable, Section } from "@/components/ui";
-import { getPublicEventBySlug, getTeamStandings } from "@/lib/platform/repository";
+import { TeamIdentity } from "@/components/TeamAvatar";
+import { getPublicEventBySlug, getTeamsForEvent, getTeamStandings } from "@/lib/platform/repository";
 
 export async function renderStandingsPage(slug: string) {
   const t = await getTranslations("standings");
   const event = await getPublicEventBySlug(slug);
   if (!event) notFound();
 
-  const standings = await getTeamStandings(event.id);
+  const [standings, teams] = await Promise.all([
+    getTeamStandings(event.id),
+    getTeamsForEvent(event.id),
+  ]);
+  const teamLookup = new Map(teams.map((team) => [team.id, team]));
 
   return (
     <Section
@@ -24,7 +29,12 @@ export async function renderStandingsPage(slug: string) {
         ]}
         rows={standings.map((standing) => [
           standing.rank,
-          standing.teamName,
+          (() => {
+            const team = teamLookup.get(standing.teamId);
+            return team ? (
+              <TeamIdentity key={standing.teamId} logoText={team.logoText} logoUrl={team.logoUrl} name={team.name} />
+            ) : standing.teamName;
+          })(),
           standing.played,
           standing.wins,
           standing.draws,

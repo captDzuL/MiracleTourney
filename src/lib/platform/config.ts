@@ -11,7 +11,19 @@ export const appUsers: AppUser[] = [
     id: "admin-commish",
     email: "admin@miraclefc.gg",
     name: "League Commissioner",
-    role: "admin",
+    role: "platform_admin",
+  },
+  {
+    id: "organizer-flashpeak",
+    email: "organizer-a@miraclefc.gg",
+    name: "Flashpeak Organizer",
+    role: "organizer",
+  },
+  {
+    id: "organizer-mlbb",
+    email: "organizer-b@miraclefc.gg",
+    name: "Mobile Legends Organizer",
+    role: "organizer",
   },
 ];
 
@@ -40,6 +52,7 @@ export const games: Game[] = [
     accent: "from-emerald-500/30 to-lime-500/10",
     defaultModeLabel: "5v5",
     fallbackLogoUrl: "https://lh3.googleusercontent.com/d/1m01dWpxKA6qXRzfFRrEovFzho1nTnV9B",
+    defaultBackgroundUrl: "/game-backgrounds/flashpeak.svg",
     primaryStatKey: "goals",
     certificateThemeId: "flashpeak",
     artTheme: {
@@ -57,6 +70,7 @@ export const games: Game[] = [
     accent: "from-blue-500/30 to-indigo-500/10",
     defaultModeLabel: "5v5",
     primaryStatKey: "kills",
+    defaultBackgroundUrl: "/game-backgrounds/mobile-legends.svg",
     certificateThemeId: "mlbb",
     artTheme: {
       bg: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 50%, #312e81 100%)",
@@ -120,7 +134,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-kuroko-3v3",
     gameId: "game-kuroko",
-    name: "3v3 Street Cup",
+    name: "3v3",
     slug: "kuroko-3v3",
     defaultModeLabel: "3v3",
     teamSize: 3,
@@ -131,7 +145,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-flashpeak-5v5",
     gameId: "game-flashpeak",
-    name: "5v5 League",
+    name: "5v5",
     slug: "flashpeak-5v5",
     defaultModeLabel: "5v5",
     teamSize: 5,
@@ -142,7 +156,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-mlbb-5v5",
     gameId: "game-mobile-legends",
-    name: "5v5 Ranked Clash",
+    name: "5v5",
     slug: "mlbb-5v5",
     defaultModeLabel: "5v5",
     teamSize: 5,
@@ -153,7 +167,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-hok-5v5",
     gameId: "game-hok",
-    name: "5v5 King's Rift",
+    name: "5v5",
     slug: "hok-5v5",
     defaultModeLabel: "5v5",
     teamSize: 5,
@@ -164,7 +178,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-valorant-5v5",
     gameId: "game-valorant",
-    name: "5v5 Tactical Series",
+    name: "5v5",
     slug: "valorant-5v5",
     defaultModeLabel: "5v5",
     teamSize: 5,
@@ -175,7 +189,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-dota2-5v5",
     gameId: "game-dota2",
-    name: "5v5 Ancient League",
+    name: "5v5",
     slug: "dota2-5v5",
     defaultModeLabel: "5v5",
     teamSize: 5,
@@ -232,6 +246,10 @@ export function getFallbackLogoUrl(gameId: string) {
   return findGameConfig(gameId)?.fallbackLogoUrl ?? "";
 }
 
+export function getDefaultGameBackgroundUrl(gameId: string) {
+  return findGameConfig(gameId)?.defaultBackgroundUrl ?? "";
+}
+
 export function getGameArtTheme(gameId: string) {
   return findGameConfig(gameId)?.artTheme ?? genericGameArtTheme;
 }
@@ -252,6 +270,12 @@ export function getDefaultModeLabel(modeId: string, gameId?: string) {
   }
 
   return "Event";
+}
+
+export function getGameModeDisplayLabel(modeId: string) {
+  const mode = getGameModeConfig(modeId);
+  const game = getGameConfig(mode.gameId);
+  return `${game.name} - ${mode.defaultModeLabel ?? `${mode.teamSize}v${mode.teamSize}`}`;
 }
 
 export function getStatKeysForMode(modeId: string, gameId?: string) {

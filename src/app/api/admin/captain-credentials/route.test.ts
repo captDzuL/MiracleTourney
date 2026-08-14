@@ -1,18 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getCaptainCredentialsForEvent, requireRole } = vi.hoisted(() => ({
+const { assertUserCanManageEvent, getCaptainCredentialsForEvent, requireRole } = vi.hoisted(() => ({
+  assertUserCanManageEvent: vi.fn(),
   getCaptainCredentialsForEvent: vi.fn(),
   requireRole: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireRole }));
-vi.mock("@/lib/platform/repository", () => ({ getCaptainCredentialsForEvent }));
+vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent, getCaptainCredentialsForEvent }));
 
 import { GET } from "./route";
 
 describe("captain credentials export API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    assertUserCanManageEvent.mockResolvedValue(undefined);
   });
 
   it("requires an admin session", async () => {
