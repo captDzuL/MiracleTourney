@@ -88,6 +88,17 @@ describe("events page public cards", () => {
     expect(localizedPageSource).toContain("renderEventDetailPage(slug, locale as");
   });
 
+  test("event detail shows an external registration CTA only when a registration URL exists", () => {
+    const detailSource = fs.readFileSync(
+      path.resolve(__dirname, "./[slug]/event-detail-page.tsx"),
+      "utf8",
+    );
+
+    expect(detailSource).toContain("event.registrationUrl");
+    expect(detailSource).toContain("Daftar Event");
+    expect(detailSource).toContain('target="_blank"');
+  });
+
   test("localized events page passes search params through to the shared events page", () => {
     const localizedEventsSource = fs.readFileSync(
       path.resolve(__dirname, "../[locale]/events/page.tsx"),

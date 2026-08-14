@@ -135,6 +135,17 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
                 {event.registrationFeeLabel}
               </EventFact>
             ) : null}
+            {event.registrationUrl ? (
+              <a
+                className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-4 py-2 font-semibold text-slate-950 shadow-sm transition hover:bg-cyan-300"
+                href={event.registrationUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Daftar Event
+                <ArrowRight className="h-4 w-4" />
+              </a>
+            ) : null}
           </div>
         </div>
 

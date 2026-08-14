@@ -48,4 +48,14 @@ describe("admin action buttons", () => {
     expect(source).toContain("adminUploadEventBackgroundAction");
     expect(source).toContain("adminUploadTeamLogoAction");
   });
+
+  test("exposes public listing settings for event card prize and registration copy", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain("Public Listing Settings");
+    expect(source).toContain("adminUpdateEventPublicInfoAction");
+    expect(source).toContain('name="prizePoolLabel"');
+    expect(source).toContain('name="registrationFeeLabel"');
+    expect(source).toContain('name="registrationUrl"');
+  });
 });

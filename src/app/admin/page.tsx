@@ -35,6 +35,7 @@ import {
   adminUploadEventLogoAction,
   adminUploadCharacterArtAction,
   adminUploadTeamLogoAction,
+  adminUpdateEventPublicInfoAction,
 } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import {
@@ -560,8 +561,91 @@ function PrepareEventPhase({
           </Section>
         </div>
       </div>
+      <PublicListingSettingsSection events={events} t={t} />
       <BrandAssetsSection allTeamsByEvent={allTeamsByEvent} events={events} t={t} />
     </PhaseSection>
+  );
+}
+
+function PublicListingSettingsSection({
+  events,
+  t,
+}: {
+  events: EventItem[];
+  t: AdminTranslator;
+}) {
+  return (
+    <Section title="Public Listing Settings" description="Atur info yang tampil di card event depan dan halaman detail publik." className="rounded-xl shadow-none">
+      {events.length ? (
+        <div className="grid gap-4">
+          {events.map((event) => (
+            <details key={event.id} className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-950">{event.name}</p>
+                  <p className="truncate text-xs text-slate-500">
+                    {event.startsAt} - {event.prizePoolLabel ?? event.venue}
+                  </p>
+                </div>
+                <StatusChip tone={event.registrationFeeLabel || event.registrationUrl ? "info" : "default"}>
+                  {event.registrationFeeLabel ? event.registrationFeeLabel : "Listing info"}
+                </StatusChip>
+              </summary>
+
+              <form action={adminUpdateEventPublicInfoAction} className="grid gap-4 border-t border-slate-200 bg-white p-4">
+                <input type="hidden" name="eventId" value={event.id} />
+                <label className={labelClass}>
+                  Deskripsi event
+                  <textarea
+                    className={`${inputClass} min-h-28 resize-y leading-6`}
+                    name="description"
+                    defaultValue={event.description}
+                    maxLength={500}
+                    minLength={10}
+                  />
+                </label>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <label className={labelClass}>
+                    Jadwal pendaftaran
+                    <input className={inputClass} name="registrationWindow" defaultValue={event.registrationWindow} maxLength={120} minLength={2} />
+                  </label>
+                  <label className={labelClass}>
+                    Tanggal mulai
+                    <input className={inputClass} name="startsAt" defaultValue={event.startsAt} maxLength={120} minLength={2} />
+                  </label>
+                  <label className={labelClass}>
+                    Venue
+                    <input className={inputClass} name="venue" defaultValue={event.venue} maxLength={120} minLength={2} />
+                  </label>
+                </div>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <label className={labelClass}>
+                    Hadiah pemenang
+                    <input className={inputClass} name="prizePoolLabel" defaultValue={event.prizePoolLabel ?? ""} maxLength={80} placeholder="Rp3.000.000" />
+                  </label>
+                  <label className={labelClass}>
+                    Biaya registrasi
+                    <input className={inputClass} name="registrationFeeLabel" defaultValue={event.registrationFeeLabel ?? ""} maxLength={80} placeholder="Rp20.000 / team" />
+                  </label>
+                  <label className={labelClass}>
+                    Link pendaftaran
+                    <input className={inputClass} name="registrationUrl" defaultValue={event.registrationUrl ?? ""} placeholder="https://..." />
+                  </label>
+                </div>
+                <div className="flex justify-end">
+                  <button className={quietButton} type="submit">
+                    <Save className="h-4 w-4" />
+                    Simpan public info
+                  </button>
+                </div>
+              </form>
+            </details>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-slate-500">{t("noEventsImport")}</p>
+      )}
+    </Section>
   );
 }
 

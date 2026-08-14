@@ -29,6 +29,7 @@ const {
   updateEventStream,
   updatePlayer,
   updateEventCertificateAssets,
+  updateEventPublicInfo,
   upsertRoundConfig,
   upsertStatSubmission,
 } = vi.hoisted(() => ({
@@ -60,6 +61,7 @@ const {
   updateEventStream: vi.fn(),
   updatePlayer: vi.fn(),
   updateEventCertificateAssets: vi.fn(),
+  updateEventPublicInfo: vi.fn(),
   upsertRoundConfig: vi.fn(),
   upsertStatSubmission: vi.fn(),
 }));
@@ -96,6 +98,7 @@ vi.mock("@/lib/platform/repository", () => ({
   setMatchResult,
   updateCaptainPassword,
   updateEventCertificateAssets,
+  updateEventPublicInfo,
   updateEventStream,
   updatePlayer,
   upsertRoundConfig,
@@ -122,6 +125,7 @@ import {
   adminSetRoundConfigAction,
   adminUploadCharacterArtAction,
   adminUpdateEventStatusAction,
+  adminUpdateEventPublicInfoAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
   captainAddPlayerAction,
@@ -784,6 +788,62 @@ describe("adminUpdateStreamAction", () => {
 // ────────────────────────────────────────────────────────────
 // captainSubmitStatsAction
 // ────────────────────────────────────────────────────────────
+
+describe("adminUpdateEventPublicInfoAction", () => {
+  const validData = {
+    eventId: "event-1",
+    description: "A public listing description for this tournament.",
+    registrationWindow: "August 20 - August 28, 2026",
+    startsAt: "August 30, 2026",
+    venue: "Online",
+    prizePoolLabel: "Rp1.000.000",
+    registrationFeeLabel: "",
+    registrationUrl: "",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(organizerSession());
+    updateEventPublicInfo.mockResolvedValue({ slug: "owned-event" });
+  });
+
+  it("requires an organizer/admin session", async () => {
+    requireRole.mockResolvedValue(null);
+
+    await expect(adminUpdateEventPublicInfoAction(fd(validData))).rejects.toThrow("REDIRECT:/login");
+    expect(updateEventPublicInfo).not.toHaveBeenCalled();
+  });
+
+  it("normalizes empty optional labels and updates public event info", async () => {
+    await expect(adminUpdateEventPublicInfoAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/admin?success=event-public-info-updated&event=owned-event",
+    );
+
+    expect(updateEventPublicInfo).toHaveBeenCalledWith(
+      organizerSession(),
+      "event-1",
+      {
+        description: "A public listing description for this tournament.",
+        registrationWindow: "August 20 - August 28, 2026",
+        startsAt: "August 30, 2026",
+        venue: "Online",
+        prizePoolLabel: "Rp1.000.000",
+        registrationFeeLabel: null,
+        registrationUrl: null,
+      },
+    );
+    expect(revalidateTag).toHaveBeenCalledWith("events");
+    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("rejects non-http registration URLs", async () => {
+    await expect(
+      adminUpdateEventPublicInfoAction(fd({ ...validData, registrationUrl: "javascript:alert(1)" })),
+    ).rejects.toThrow();
+
+    expect(updateEventPublicInfo).not.toHaveBeenCalled();
+  });
+});
 
 describe("captainSubmitStatsAction", () => {
   beforeEach(() => {

@@ -21,6 +21,7 @@ const { prisma } = vi.hoisted(() => ({
       findFirst: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
+      update: vi.fn(),
     },
     player: {
       findMany: vi.fn(),
@@ -48,6 +49,7 @@ import {
   getPublicEventBySlug,
   getPublicVisibleBracketPreview,
   getTeamsForEvent,
+  updateEventPublicInfo,
   updateTeamLogo,
 } from "./repository";
 
@@ -211,6 +213,69 @@ describe("organizer event ownership", () => {
 
     await expect(updateTeamLogo(organizer, "team-1", "/team-logos/team-1.png")).rejects.toThrow("Not authorized");
     expect(prisma.team.update).not.toHaveBeenCalled();
+  });
+
+  it("updates public event info only after ownership is verified", async () => {
+    prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
+    prisma.event.update.mockResolvedValue({
+      id: "event-1",
+      slug: "owned-event",
+      name: "Owned Event",
+      description: "Fresh public description",
+      logoUrl: null,
+      gameImageUrl: null,
+      gameId: "game-kuroko",
+      gameModeId: "mode-kuroko-3v3",
+      format: "Single Elimination",
+      status: "Published",
+      participantCap: 8,
+      registrationWindow: "Aug 20 - Aug 28",
+      startsAt: "Aug 30, 2026",
+      venue: "Online",
+      organizerUserId: "org-1",
+      organizerName: "Organizer",
+      organizerVerified: false,
+      prizePoolLabel: "Rp1.000.000",
+      registrationFeeLabel: null,
+      registrationUrl: null,
+      characterArtUrl: null,
+      accentColor: null,
+      stream: null,
+    });
+
+    const result = await updateEventPublicInfo(organizer, "event-1", {
+      description: "Fresh public description",
+      registrationWindow: "Aug 20 - Aug 28",
+      startsAt: "Aug 30, 2026",
+      venue: "Online",
+      prizePoolLabel: "Rp1.000.000",
+      registrationFeeLabel: null,
+      registrationUrl: null,
+    });
+
+    expect(result).toMatchObject({
+      id: "event-1",
+      prizePoolLabel: "Rp1.000.000",
+    });
+    expect(result).not.toHaveProperty("registrationFeeLabel");
+
+    expect(prisma.event.findFirst).toHaveBeenCalledWith({
+      where: { id: "event-1", organizerUserId: "org-1" },
+      select: { id: true },
+    });
+    expect(prisma.event.update).toHaveBeenCalledWith({
+      where: { id: "event-1" },
+      data: {
+        description: "Fresh public description",
+        registrationWindow: "Aug 20 - Aug 28",
+        startsAt: "Aug 30, 2026",
+        venue: "Online",
+        prizePoolLabel: "Rp1.000.000",
+        registrationFeeLabel: null,
+        registrationUrl: null,
+      },
+      include: { stream: true },
+    });
   });
 });
 

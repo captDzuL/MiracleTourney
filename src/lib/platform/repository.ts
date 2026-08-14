@@ -221,6 +221,37 @@ export async function assertUserCanManageTeam(user: AppUser, teamId: string): Pr
   return { eventId: team.eventId };
 }
 
+export type EventPublicInfoUpdates = {
+  description: string;
+  registrationWindow: string;
+  startsAt: string;
+  venue: string;
+  prizePoolLabel?: string | null;
+  registrationFeeLabel?: string | null;
+  registrationUrl?: string | null;
+};
+
+export async function updateEventPublicInfo(
+  user: AppUser,
+  eventId: string,
+  updates: EventPublicInfoUpdates,
+): Promise<Event> {
+  try {
+    await assertUserCanManageEvent(user, eventId);
+    const row = await prisma.event.update({
+      where: { id: eventId },
+      data: updates,
+      include: { stream: true },
+    });
+    return mapEvent(row);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Not authorized") throw error;
+    const event = demoStore.updateEventPublicInfo(user, eventId, updates);
+    if (!event) throw new Error("Not authorized");
+    return event;
+  }
+}
+
 /** Returns events with publicly visible statuses: Published, Registration Closed, Ongoing, Finished. */
 export async function getPublicEvents(): Promise<Event[]> {
   try {

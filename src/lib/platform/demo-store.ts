@@ -712,6 +712,39 @@ export function updateEventBrandAssets(eventId: string, updates: { logoUrl?: str
   return event;
 }
 
+export function updateEventPublicInfo(
+  user: AppUser,
+  eventId: string,
+  updates: {
+    description: string;
+    registrationWindow: string;
+    startsAt: string;
+    venue: string;
+    prizePoolLabel?: string | null;
+    registrationFeeLabel?: string | null;
+    registrationUrl?: string | null;
+  },
+) {
+  const event = getStore().events.find((item) => item.id === eventId);
+  if (!event) return null;
+
+  const canManage =
+    user.role === "platform_admin"
+    || user.role === "admin"
+    || (user.role === "organizer" && event.organizerUserId === user.id);
+
+  if (!canManage) return null;
+
+  event.description = updates.description;
+  event.registrationWindow = updates.registrationWindow;
+  event.startsAt = updates.startsAt;
+  event.venue = updates.venue;
+  event.prizePoolLabel = updates.prizePoolLabel ?? undefined;
+  event.registrationFeeLabel = updates.registrationFeeLabel ?? undefined;
+  event.registrationUrl = updates.registrationUrl ?? undefined;
+  return event;
+}
+
 export function updateTeamLogo(user: AppUser, teamId: string, logoUrl: string) {
   const team = getStore().teams.find((item) => item.id === teamId);
   if (!team) return null;

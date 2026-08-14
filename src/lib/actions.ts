@@ -31,6 +31,7 @@ import {
   setMatchGames,
   setMatchResult,
   updateCaptainPassword,
+  updateEventPublicInfo,
   updateEventStream,
   updateEventBrandAssets,
   updateEventCertificateAssets,
@@ -131,6 +132,22 @@ function isHttpUrl(value: string) {
     return false;
   }
 }
+
+const optionalPublicLabelSchema = z.preprocess(
+  (value) => {
+    const text = String(value ?? "").trim();
+    return text === "" ? null : text;
+  },
+  z.string().max(80).nullable(),
+);
+
+const optionalPublicUrlSchema = z.preprocess(
+  (value) => {
+    const text = String(value ?? "").trim();
+    return text === "" ? null : text;
+  },
+  z.string().refine(isHttpUrl, "Registration URL must use http or https.").nullable(),
+);
 
 async function uploadImageAsset({
   file,
@@ -545,6 +562,44 @@ export async function adminUpdateStreamAction(formData: FormData) {
   await updateEventStream(input.eventId, input.url, input.label);
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=stream-updated");
+}
+
+export async function adminUpdateEventPublicInfoAction(formData: FormData) {
+  const user = await requireAdminSession();
+
+  const input = z.object({
+    eventId: z.string().min(1),
+    description: z.string().trim().min(10).max(500),
+    registrationWindow: z.string().trim().min(2).max(120),
+    startsAt: z.string().trim().min(2).max(120),
+    venue: z.string().trim().min(2).max(120),
+    prizePoolLabel: optionalPublicLabelSchema,
+    registrationFeeLabel: optionalPublicLabelSchema,
+    registrationUrl: optionalPublicUrlSchema,
+  }).parse({
+    eventId: formData.get("eventId"),
+    description: formData.get("description"),
+    registrationWindow: formData.get("registrationWindow"),
+    startsAt: formData.get("startsAt"),
+    venue: formData.get("venue"),
+    prizePoolLabel: formData.get("prizePoolLabel"),
+    registrationFeeLabel: formData.get("registrationFeeLabel"),
+    registrationUrl: formData.get("registrationUrl"),
+  });
+
+  const event = await updateEventPublicInfo(user, input.eventId, {
+    description: input.description,
+    registrationWindow: input.registrationWindow,
+    startsAt: input.startsAt,
+    venue: input.venue,
+    prizePoolLabel: input.prizePoolLabel,
+    registrationFeeLabel: input.registrationFeeLabel,
+    registrationUrl: input.registrationUrl,
+  });
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale(`/admin?success=event-public-info-updated&event=${event.slug}`);
 }
 
 /**
