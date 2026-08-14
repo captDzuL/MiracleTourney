@@ -176,6 +176,22 @@ export async function getEvents(): Promise<Event[]> {
   return rows.map(mapEvent);
 }
 
+/** Returns selected events by ID, preserving database ordering newest first. */
+export async function getEventsByIds(eventIds: string[]): Promise<Event[]> {
+  if (!eventIds.length) return [];
+  try {
+    const rows = await prisma.event.findMany({
+      where: { id: { in: eventIds } },
+      include: { stream: true },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(mapEvent);
+  } catch {
+    const eventIdSet = new Set(eventIds);
+    return demoStore.getEvents().filter((event) => eventIdSet.has(event.id));
+  }
+}
+
 export async function getManageableEventsForUser(user: AppUser): Promise<Event[]> {
   if (user.role === "platform_admin" || user.role === "admin") return getEvents();
   if (user.role !== "organizer") return [];
@@ -333,6 +349,51 @@ export const getTeamsForEvent = cache(
     { revalidate: 30, tags: ["teams"] },
   ),
 );
+
+/** Batch-fetches teams for multiple events in one query. */
+export async function getTeamsForEvents(eventIds: string[]): Promise<Map<string, Team[]>> {
+  const teamsByEvent = new Map(eventIds.map((eventId) => [eventId, [] as Team[]]));
+  if (!eventIds.length) return teamsByEvent;
+
+  try {
+    const rows = await prisma.team.findMany({
+      where: { eventId: { in: eventIds } },
+      orderBy: [{ eventId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
+    for (const team of rows.map(mapTeam)) {
+      teamsByEvent.get(team.eventId)?.push(team);
+    }
+  } catch {
+    for (const eventId of eventIds) {
+      teamsByEvent.set(eventId, demoStore.getTeamsForEvent(eventId));
+    }
+  }
+
+  return teamsByEvent;
+}
+
+/** Batch-counts teams for event summary UI without transferring every team row. */
+export async function getTeamCountsForEvents(eventIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map(eventIds.map((eventId) => [eventId, 0]));
+  if (!eventIds.length) return counts;
+
+  try {
+    const rows = await prisma.team.groupBy({
+      by: ["eventId"],
+      where: { eventId: { in: eventIds } },
+      _count: { _all: true },
+    });
+    for (const row of rows) {
+      counts.set(row.eventId, row._count._all);
+    }
+  } catch {
+    for (const eventId of eventIds) {
+      counts.set(eventId, demoStore.getTeamsForEvent(eventId).length);
+    }
+  }
+
+  return counts;
+}
 
 /** Returns all teams registered by a specific captain across all events. Returns empty array for undefined userId. */
 export async function getCaptainTeams(userId: string | undefined): Promise<Team[]> {
@@ -799,9 +860,14 @@ export async function getImportSnapshot(user?: AppUser) {
   };
 }
 
-/** Returns all teams created via CSV import (source = "csv-import") across all events. */
-export async function getImportedTeams(): Promise<Team[]> {
-  const rows = await prisma.team.findMany({ where: { source: "csv-import" } });
+/** Returns teams created via CSV import. Organizers only see teams from their own events. */
+export async function getImportedTeams(user?: AppUser): Promise<Team[]> {
+  const rows = await prisma.team.findMany({
+    where: {
+      source: "csv-import",
+      ...(user?.role === "organizer" ? { event: { organizerUserId: user.id } } : {}),
+    },
+  });
   return rows.map(mapTeam);
 }
 
@@ -1218,8 +1284,13 @@ export async function upsertStatSubmission(input: {
 // ── Stat Submissions (admin) ──────────────────────────────────────────────────
 
 /** Request-memoised count of pending stat submissions. Used for the admin notification badge. */
-export const getPendingStatSubmissionCount = cache(async (): Promise<number> => {
-  return prisma.statSubmission.count({ where: { status: "pending" } });
+export const getPendingStatSubmissionCount = cache(async (user?: AppUser): Promise<number> => {
+  return prisma.statSubmission.count({
+    where: {
+      status: "pending",
+      ...(user?.role === "organizer" ? { event: { organizerUserId: user.id } } : {}),
+    },
+  });
 });
 
 export type StatSubmissionRow = {
@@ -1238,10 +1309,13 @@ export type StatSubmissionRow = {
   eventName: string;
 };
 
-/** Returns all pending stat submissions with denormalized display fields (match label, team name, captain email). */
-export async function getPendingStatSubmissions(): Promise<StatSubmissionRow[]> {
+/** Returns pending stat submissions with denormalized display fields (match label, team name, captain email). */
+export async function getPendingStatSubmissions(user?: AppUser): Promise<StatSubmissionRow[]> {
   const rows = await prisma.statSubmission.findMany({
-    where: { status: "pending" },
+    where: {
+      status: "pending",
+      ...(user?.role === "organizer" ? { event: { organizerUserId: user.id } } : {}),
+    },
     orderBy: { submittedAt: "asc" },
   });
   if (rows.length === 0) return [];
@@ -1595,6 +1669,33 @@ export async function getCertificateByEvent(eventId: string): Promise<Certificat
   const row = await prisma.certificate.findUnique({ where: { eventId } });
   if (!row) return null;
   return { id: row.id, eventId: row.eventId, teamId: row.teamId, imageUrl: row.imageUrl, createdAt: row.createdAt };
+}
+
+/** Batch-fetches generated certificates for multiple events. */
+export async function getCertificatesForEvents(eventIds: string[]): Promise<Map<string, Certificate | null>> {
+  const certificates = new Map(eventIds.map((eventId) => [eventId, null as Certificate | null]));
+  if (!eventIds.length) return certificates;
+
+  try {
+    const rows = await prisma.certificate.findMany({ where: { eventId: { in: eventIds } } });
+    for (const row of rows) {
+      certificates.set(row.eventId, {
+        id: row.id,
+        eventId: row.eventId,
+        teamId: row.teamId,
+        imageUrl: row.imageUrl,
+        createdAt: row.createdAt,
+      });
+    }
+  } catch {
+    await Promise.all(
+      eventIds.map(async (eventId) => {
+        certificates.set(eventId, await getCertificateByEvent(eventId));
+      }),
+    );
+  }
+
+  return certificates;
 }
 
 /** Counts existing certificates for a given game prefix (e.g. "game-flashpeak") to generate sequential IDs. */

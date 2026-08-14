@@ -8,8 +8,8 @@ import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import {
   getCaptainTeams,
-  getCertificateByEvent,
-  getEvents,
+  getCertificatesForEvents,
+  getEventsByIds,
   getGameForEvent,
   getModeForEvent,
   getPlayersForTeams,
@@ -44,24 +44,27 @@ export default async function CaptainPage({
   const success = params?.success;
   const error = params?.error;
 
-  const [teams, events, usingTempPassword] = await Promise.all([
+  const [teams, usingTempPassword] = await Promise.all([
     getCaptainTeams(user.id),
-    getEvents(),
     hasTempPassword(user.id),
   ]);
-  const allPlayers = await getPlayersForTeams(teams.map((team) => team.id));
+  const teamIds = teams.map((team) => team.id);
+  const eventIds = [...new Set(teams.map((team) => team.eventId))];
+  const [events, allPlayers, certificatesByEvent] = await Promise.all([
+    getEventsByIds(eventIds),
+    getPlayersForTeams(teamIds),
+    getCertificatesForEvents(eventIds),
+  ]);
   const teamsWithPlayers = teams.map((team) => ({
     team,
     players: allPlayers.filter((player) => player.teamId === team.id),
   }));
 
   const certificates = new Map<string, Certificate | null>(
-    await Promise.all(
-      teams.map(async (team) => {
-        const cert = await getCertificateByEvent(team.eventId);
-        return [team.id, cert?.teamId === team.id ? cert : null] as const;
-      }),
-    ),
+    teams.map((team) => {
+      const cert = certificatesByEvent.get(team.eventId);
+      return [team.id, cert?.teamId === team.id ? cert : null] as const;
+    }),
   );
 
   return (
