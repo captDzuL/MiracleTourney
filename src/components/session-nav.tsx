@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { usePathname } from "next/navigation";
 
 import { Link } from "@/i18n/navigation";
-import { logoutAction } from "@/lib/actions";
+import { logoutAction } from "@/lib/session-actions";
 
 type MeResponse = { user: { name: string; role: string; pendingCount: number } | null };
 

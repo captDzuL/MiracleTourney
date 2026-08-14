@@ -5,7 +5,7 @@ import { Menu, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { Link } from "@/i18n/navigation";
-import { logoutAction } from "@/lib/actions";
+import { logoutAction } from "@/lib/session-actions";
 
 export function MobileMenuToggle({
   eventsLabel,

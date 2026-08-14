@@ -136,8 +136,8 @@ import {
   captainUpdatePlayerAction,
   changePasswordAction,
   loginAction,
-  logoutAction,
 } from "./actions";
+import { logoutAction } from "./session-actions";
 
 // ────────────────────────────────────────────────────────────
 // Helpers

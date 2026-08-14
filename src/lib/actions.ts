@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { routing } from "@/i18n/routing";
-import { requireRole, signIn, signOut } from "@/lib/auth/session";
+import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import type { AppUser } from "@/lib/platform/types";
 import {
@@ -40,8 +40,6 @@ import {
   upsertRoundConfig,
   upsertStatSubmission,
 } from "@/lib/platform/repository";
-import { put } from "@vercel/blob";
-import { generateCertificateIfFinal } from "@/lib/certificate/generate";
 import fs from "fs";
 import path from "path";
 
@@ -184,6 +182,7 @@ async function uploadImageAsset({
 
   const filename = `${entityId}-${Date.now()}.${extension}`;
   if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const { put } = await import("@vercel/blob");
     const result = await put(`${folder}/${filename}`, buffer, {
       access: "public",
       contentType: file.type || "image/png",
@@ -195,6 +194,11 @@ async function uploadImageAsset({
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, filename), buffer);
   return `/${folder}/${filename}`;
+}
+
+async function generateCertificateForFinalMatch(matchId: string, eventId: string) {
+  const { generateCertificateIfFinal } = await import("@/lib/certificate/generate");
+  await generateCertificateIfFinal(matchId, eventId);
 }
 
 function isSafeStatToken(value: string) {
@@ -277,12 +281,6 @@ export async function loginAction(formData: FormData) {
     user.role === "platform_admin" || user.role === "organizer" || user.role === "admin" ? "/admin" : "/captain",
     requestedLocale,
   );
-}
-
-/** Clears the session cookie and redirects to the home page. */
-export async function logoutAction() {
-  await signOut();
-  await redirectToActiveLocale("/");
 }
 
 /** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
@@ -503,7 +501,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   await autoTransitionEventToOngoing(input.eventId);
   if (match) {
     try {
-      await generateCertificateIfFinal(match.id, input.eventId);
+      await generateCertificateForFinalMatch(match.id, input.eventId);
     } catch (err) {
       console.error("[certificate] generation failed:", err);
     }
@@ -718,7 +716,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
 
   await autoTransitionEventToOngoing(matchEventId);
   try {
-    await generateCertificateIfFinal(matchId, matchEventId);
+    await generateCertificateForFinalMatch(matchId, matchEventId);
   } catch (err) {
     console.error("[certificate] generation failed:", err);
   }
