@@ -15,6 +15,7 @@ const { prisma } = vi.hoisted(() => ({
     team: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
+      groupBy: vi.fn(),
       update: vi.fn(),
     },
     event: {
@@ -27,6 +28,9 @@ const { prisma } = vi.hoisted(() => ({
       findMany: vi.fn(),
     },
     playerStat: {
+      findMany: vi.fn(),
+    },
+    certificate: {
       findMany: vi.fn(),
     },
   },
@@ -42,13 +46,16 @@ import {
   assertUserCanManageEvent,
   assertCaptainCanSubmitStats,
   getEventRoundConfigs,
+  getEventsByIds,
   getLeaderboardForEvent,
   getManageableEventsForUser,
   getMatchGamesForEvent,
   getMatchesForEvent,
   getPublicEventBySlug,
   getPublicVisibleBracketPreview,
+  getTeamCountsForEvents,
   getTeamsForEvent,
+  getTeamsForEvents,
   updateEventPublicInfo,
   updateTeamLogo,
 } from "./repository";
@@ -275,6 +282,101 @@ describe("organizer event ownership", () => {
         registrationUrl: null,
       },
       include: { stream: true },
+    });
+  });
+});
+
+describe("dashboard batch lookups", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("fetches selected captain events without loading the full event catalog", async () => {
+    prisma.event.findMany.mockResolvedValue([
+      {
+        id: "event-1",
+        slug: "event-one",
+        name: "Event One",
+        description: "Event",
+        logoUrl: null,
+        gameImageUrl: null,
+        gameId: "game-kuroko",
+        gameModeId: "mode-kuroko-3v3",
+        format: "Single Elimination",
+        status: "Ongoing",
+        participantCap: 8,
+        registrationWindow: "TBD",
+        startsAt: "TBD",
+        venue: "Online",
+        organizerUserId: null,
+        organizerName: null,
+        organizerVerified: false,
+        characterArtUrl: null,
+        accentColor: null,
+        stream: null,
+      },
+    ]);
+
+    await expect(getEventsByIds(["event-1"])).resolves.toHaveLength(1);
+    expect(prisma.event.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["event-1"] } },
+      include: { stream: true },
+      orderBy: { createdAt: "desc" },
+    });
+  });
+
+  it("batch-fetches teams grouped by event", async () => {
+    prisma.team.findMany.mockResolvedValue([
+      {
+        id: "team-1",
+        eventId: "event-1",
+        captainId: null,
+        name: "Alpha",
+        logoText: "AL",
+        logoUrl: null,
+        tag: "ALP",
+        captainName: null,
+        captainContact: null,
+        source: "demo",
+      },
+      {
+        id: "team-2",
+        eventId: "event-2",
+        captainId: null,
+        name: "Beta",
+        logoText: "BE",
+        logoUrl: null,
+        tag: "BET",
+        captainName: null,
+        captainContact: null,
+        source: "demo",
+      },
+    ]);
+
+    const result = await getTeamsForEvents(["event-1", "event-2"]);
+
+    expect(result.get("event-1")).toHaveLength(1);
+    expect(result.get("event-2")).toHaveLength(1);
+    expect(prisma.team.findMany).toHaveBeenCalledWith({
+      where: { eventId: { in: ["event-1", "event-2"] } },
+      orderBy: [{ eventId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
+  });
+
+  it("batch-counts teams without fetching every team row", async () => {
+    prisma.team.groupBy.mockResolvedValue([
+      { eventId: "event-1", _count: { _all: 32 } },
+    ]);
+
+    const result = await getTeamCountsForEvents(["event-1", "event-2"]);
+
+    expect(result.get("event-1")).toBe(32);
+    expect(result.get("event-2")).toBe(0);
+    expect(prisma.team.findMany).not.toHaveBeenCalled();
+    expect(prisma.team.groupBy).toHaveBeenCalledWith({
+      by: ["eventId"],
+      where: { eventId: { in: ["event-1", "event-2"] } },
+      _count: { _all: true },
     });
   });
 });

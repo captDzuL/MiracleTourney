@@ -252,7 +252,7 @@
     "createEventTitle": "Create Draft Event",
     "eventNameLabel": "Event name",
     "slugLabel": "Slug",
-    "gameModeLabel": "Game mode",
+    "gameModeLabel": "Game and mode",
     "formatLabel": "Format",
     "capLabel": "Participant cap",
     "startDateLabel": "Start date",
