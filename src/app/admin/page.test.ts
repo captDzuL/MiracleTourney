@@ -64,4 +64,19 @@ describe("admin action buttons", () => {
     expect(source).toContain('name="registrationFeeLabel"');
     expect(source).toContain('name="registrationUrl"');
   });
+
+  test("keeps long select values constrained inside responsive form columns", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain('const inputClass = "w-full min-w-0');
+    expect(source).toContain('const labelClass = "grid min-w-0');
+  });
+
+  test("shows organizer assignment on draft creation for platform admins", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain("organizerOptions");
+    expect(source).toContain('name="organizerUserId"');
+    expect(source).toContain('t("createEventOrganizerLabel")');
+  });
 });

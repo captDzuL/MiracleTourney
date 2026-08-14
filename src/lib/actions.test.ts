@@ -11,6 +11,7 @@ const {
   createEvent,
   deletePlayer,
   getImportSnapshot,
+  getOrganizerUserById,
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
@@ -43,6 +44,7 @@ const {
   createEvent: vi.fn(),
   deletePlayer: vi.fn(),
   getImportSnapshot: vi.fn(),
+  getOrganizerUserById: vi.fn(),
   getPublishedEvents: vi.fn(),
   getUserByEmail: vi.fn(),
   getUserPasswordHashById: vi.fn(),
@@ -87,6 +89,7 @@ vi.mock("@/lib/platform/repository", () => ({
   createEvent,
   deletePlayer,
   getImportSnapshot,
+  getOrganizerUserById,
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
@@ -540,6 +543,38 @@ describe("adminCreateEventAction", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
+  it("lets a platform admin assign a new event to an organizer", async () => {
+    getOrganizerUserById.mockResolvedValue({
+      id: "organizer-target",
+      email: "target@test.com",
+      name: "Target Organizer",
+      role: "organizer",
+    });
+
+    await expect(adminCreateEventAction(fd({ ...validData, organizerUserId: "organizer-target" }))).rejects.toThrow(
+      "REDIRECT:/admin?success=event-created",
+    );
+
+    expect(getOrganizerUserById).toHaveBeenCalledWith("organizer-target");
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizerUserId: "organizer-target",
+        organizerName: "Target Organizer",
+        organizerVerified: false,
+      }),
+    );
+  });
+
+  it("rejects platform admin assignment to an unknown organizer", async () => {
+    getOrganizerUserById.mockResolvedValue(null);
+
+    await expect(adminCreateEventAction(fd({ ...validData, organizerUserId: "missing-organizer" }))).rejects.toThrow(
+      "REDIRECT:/admin?error=Organizer%20not%20found.",
+    );
+
+    expect(createEvent).not.toHaveBeenCalled();
+  });
+
   it("assigns event ownership from the authenticated organizer session", async () => {
     requireRole.mockResolvedValue(organizerSession());
 
@@ -552,6 +587,22 @@ describe("adminCreateEventAction", () => {
         organizerUserId: "organizer-1",
         organizerName: "Organizer One",
         organizerVerified: false,
+      }),
+    );
+  });
+
+  it("ignores organizer assignment spoofing from a non-platform organizer", async () => {
+    requireRole.mockResolvedValue(organizerSession());
+
+    await expect(adminCreateEventAction(fd({ ...validData, organizerUserId: "organizer-target" }))).rejects.toThrow(
+      "REDIRECT:/admin?success=event-created",
+    );
+
+    expect(getOrganizerUserById).not.toHaveBeenCalled();
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizerUserId: "organizer-1",
+        organizerName: "Organizer One",
       }),
     );
   });

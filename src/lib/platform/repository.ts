@@ -96,6 +96,15 @@ function mapPlayer(row: {
   };
 }
 
+function mapUser(row: { id: string; email: string; name: string; role: string }): AppUser {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role as AppUser["role"],
+  };
+}
+
 function mapMatch(row: {
   id: string; eventId: string; roundLabel: string;
   homeTeamId: string; awayTeamId: string;
@@ -786,21 +795,40 @@ export async function getCaptainById(userId: string | undefined): Promise<AppUse
   if (!userId) return null;
   const row = await prisma.user.findUnique({ where: { id: userId } });
   if (!row) return null;
-  return { id: row.id, email: row.email, name: row.name, role: row.role as AppUser["role"] };
+  return mapUser(row);
+}
+
+/** Lists organizer accounts that platform admins can assign as event owners. */
+export async function getOrganizerUsers(): Promise<AppUser[]> {
+  const rows = await prisma.user.findMany({
+    where: { role: "organizer" },
+    orderBy: { name: "asc" },
+    select: { id: true, email: true, name: true, role: true },
+  });
+  return rows.map(mapUser);
+}
+
+/** Looks up one organizer account for server-side event ownership assignment. */
+export async function getOrganizerUserById(userId: string): Promise<AppUser | null> {
+  const row = await prisma.user.findFirst({
+    where: { id: userId, role: "organizer" },
+    select: { id: true, email: true, name: true, role: true },
+  });
+  return row ? mapUser(row) : null;
 }
 
 /** Looks up a user by email without exposing the password hash. For duplicate-email checks and session resolution. */
 export async function getUserByEmail(email: string): Promise<AppUser | null> {
   const row = await prisma.user.findUnique({ where: { email } });
   if (!row) return null;
-  return { id: row.id, email: row.email, name: row.name, role: row.role as AppUser["role"] };
+  return mapUser(row);
 }
 
 /** Fetches user with passwordHash included. Only used by the sign-in flow for bcrypt comparison. */
 export async function getUserWithPasswordByEmail(email: string): Promise<(AppUser & { passwordHash: string }) | null> {
   const row = await prisma.user.findUnique({ where: { email } });
   if (!row) return null;
-  return { id: row.id, email: row.email, name: row.name, role: row.role as AppUser["role"], passwordHash: row.passwordHash };
+  return { ...mapUser(row), passwordHash: row.passwordHash };
 }
 
 /** Fetches only the password hash for the change-password flow. Returns null if user not found. */
