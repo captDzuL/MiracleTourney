@@ -4,20 +4,20 @@ test("language switcher toggles localized copy on the homepage", async ({ page }
   await page.goto("/id");
   await expect(page).toHaveURL(/\/id$/);
 
-  await expect(page.getByRole("heading", { name: "Temukan Kemenangan Berikutnya" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Lihat Turnamen Komunitas yang Lagi Berjalan" })).toBeVisible();
 
   const localeSwitcher = page.getByLabel(/pilih bahasa \/ select language/i);
 
   await localeSwitcher.getByRole("button", { name: "en" }).click();
   await expect(page).toHaveURL(/\/en$/);
 
-  await expect(page.getByRole("heading", { name: "Discover Your Next Victory" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Explore Live Community Tournaments" })).toBeVisible();
   await expect(localeSwitcher.getByRole("button", { name: "en" })).toHaveAttribute("aria-pressed", "true");
 
   await localeSwitcher.getByRole("button", { name: "id" }).click();
   await expect(page).toHaveURL(/\/id$/);
 
-  await expect(page.getByRole("heading", { name: "Temukan Kemenangan Berikutnya" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Lihat Turnamen Komunitas yang Lagi Berjalan" })).toBeVisible();
   await expect(localeSwitcher.getByRole("button", { name: "id" })).toHaveAttribute("aria-pressed", "true");
 });
 

@@ -32,6 +32,9 @@ export default async function globalSetup() {
 
     const event = await prisma.event.findUniqueOrThrow({ where: { slug: "kuroko-summer-cup" } });
 
+    // Remove dependent records before teams so repeated E2E runs can start clean.
+    await prisma.certificate.deleteMany({ where: { eventId: event.id } });
+
     // Remove match results and teams from previous runs to start clean
     await prisma.match.deleteMany({ where: { eventId: event.id } });
     await prisma.team.deleteMany({ where: { eventId: event.id } });

@@ -661,7 +661,7 @@ describe("adminUpdateMatchResultAction", () => {
     setMatchResult.mockReturnValue({ id: "match-kuroko-1" });
 
     await expect(adminUpdateMatchResultAction(resultFormData())).rejects.toThrow(
-      "REDIRECT:/admin?matchEventId=event-kuroko-summer&success=match-result-updated",
+      "REDIRECT:/admin?phase=run&matchEventId=event-kuroko-summer&success=match-result-updated",
     );
     expect(requireRole).toHaveBeenCalledWith("platform_admin");
     expect(autoTransitionEventToOngoing).toHaveBeenCalledWith("event-kuroko-summer");
@@ -1022,7 +1022,7 @@ describe("adminSetRoundConfigAction", () => {
   it("saves round config and redirects on success", async () => {
     await expect(
       adminSetRoundConfigAction(fd({ eventId: "event-1", roundLabel: "Semifinal", bestOf: "3" })),
-    ).rejects.toThrow("REDIRECT:/admin?matchEventId=event-1&success=round-config-saved");
+    ).rejects.toThrow("REDIRECT:/admin?phase=run&matchEventId=event-1&success=round-config-saved");
     expect(upsertRoundConfig).toHaveBeenCalledWith("event-1", "Semifinal", 3);
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
@@ -1067,7 +1067,7 @@ describe("adminSetMatchGamesAction", () => {
 
   it("saves game scores and redirects with success", async () => {
     await expect(adminSetMatchGamesAction(bo3FormData())).rejects.toThrow(
-      "REDIRECT:/admin?matchEventId=event-1&success=match-games-saved",
+      "REDIRECT:/admin?phase=run&matchEventId=event-1&success=match-games-saved",
     );
     expect(setMatchGames).toHaveBeenCalledWith(
       "match-1",

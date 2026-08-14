@@ -1,19 +1,16 @@
 import { expect, test } from "@playwright/test";
+import { loginAsAdmin } from "./helpers/auth";
 
 test.describe("admin event management", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/en/login");
-    await page.getByLabel("Email").fill("admin@miraclefc.gg");
-    await page.getByLabel("Password").fill("Miracle2026!");
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page).toHaveURL(/\/(en|id)\/admin/);
+    await loginAsAdmin(page, "en");
   });
 
   test("admin keeps localized navbar when changing match management event", async ({ page }) => {
-    await page.goto("/id/admin");
-    await expect(page).toHaveURL(/\/id\/admin$/);
+    await page.goto("/id/admin?phase=run");
+    await expect(page).toHaveURL(/\/id\/admin\?phase=run$/);
 
-    const changeEventButton = page.getByRole("button", { name: /ganti event|change event/i });
+    const changeEventButton = page.getByRole("button", { name: /ganti event|change event/i }).last();
     await expect(changeEventButton).toBeVisible();
     await expect(page.locator("header")).toBeVisible();
     await expect(page.getByRole("link", { name: /^Event$/i })).toBeVisible();
@@ -22,7 +19,7 @@ test.describe("admin event management", () => {
 
     await changeEventButton.click();
 
-    await expect(page).toHaveURL(/\/id\/admin\?matchEventId=/);
+    await expect(page).toHaveURL(/\/id\/admin\?phase=run&matchEventId=/);
     await expect(page.locator("header")).toBeVisible();
     await expect(page.getByRole("link", { name: /^Event$/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /^Admin$/i })).toBeVisible();
@@ -41,6 +38,7 @@ test.describe("admin event management", () => {
   });
 
   test("admin can import teams via CSV and see success count", async ({ page }) => {
+    await page.goto("/en/admin?phase=import");
     await page.locator('input[name="csv"]').setInputFiles({
       name: "test-import.csv",
       mimeType: "text/csv",
@@ -54,6 +52,7 @@ test.describe("admin event management", () => {
   });
 
   test("admin sees error when importing CSV after bracket is locked", async ({ page }) => {
+    await page.goto("/en/admin?phase=import");
     const lateImportFile = "tests/fixtures/late-import-after-lock.csv";
     await page.locator('input[name="csv"]').setInputFiles(lateImportFile);
     await page.getByRole("button", { name: "Upload and import" }).click();

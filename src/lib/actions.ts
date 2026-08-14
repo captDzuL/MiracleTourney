@@ -508,7 +508,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   }
   revalidateTag("teams");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&success=match-result-updated` as never);
+  await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-result-updated` as never);
 }
 
 /**
@@ -679,7 +679,7 @@ export async function adminSetRoundConfigAction(formData: FormData) {
   await assertUserCanManageEvent(user, input.eventId);
   await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?matchEventId=${input.eventId}&success=round-config-saved` as never);
+  await redirectToActiveLocale(`/admin?phase=run&matchEventId=${input.eventId}&success=round-config-saved` as never);
 }
 
 /**
@@ -722,7 +722,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
   }
   revalidateTag("teams");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&success=match-games-saved` as never);
+  await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-games-saved` as never);
 }
 
 /** Uploads a character art PNG for an event's certificate to Vercel Blob and stores the URL. */
