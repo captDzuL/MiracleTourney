@@ -4,7 +4,7 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { captainSubmitStatsAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { getStatKeysForMode } from "@/lib/platform/config";
-import { getCompletedMatchesForCaptain, getPlayersForTeam } from "@/lib/platform/repository";
+import { getCompletedMatchesForCaptain, getPlayersForTeams } from "@/lib/platform/repository";
 import { Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -19,9 +19,8 @@ export default async function CaptainStatsPage() {
   const matchRows = await getCompletedMatchesForCaptain(user.id);
 
   const teamIds = [...new Set(matchRows.map((r) => r.teamId))];
-  const playersByTeam = new Map(
-    await Promise.all(teamIds.map(async (id) => [id, await getPlayersForTeam(id)] as const)),
-  );
+  const players = await getPlayersForTeams(teamIds);
+  const playersByTeam = new Map(teamIds.map((id) => [id, players.filter((player) => player.teamId === id)] as const));
 
   if (matchRows.length === 0) {
     return (

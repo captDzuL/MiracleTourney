@@ -37,10 +37,10 @@ import {
   adminUploadTeamLogoAction,
   adminUpdateEventPublicInfoAction,
 } from "@/lib/actions";
-import { requireRole } from "@/lib/auth/session";
+import { requireAnyRole } from "@/lib/auth/session";
 import {
   getBracketManageableMatchesForEvent,
-  getCertificateByEvent,
+  getCertificatesForEvents,
   getEventBySlug,
   getEventRoundConfigs,
   getManageableEventsForUser,
@@ -52,10 +52,12 @@ import {
   getMatchesForEvent,
   getPendingStatSubmissionCount,
   getPendingStatSubmissions,
-  getTeamsForEvent,
+  getTeamCountsForEvents,
+  getTeamsForEvents,
 } from "@/lib/platform/repository";
 import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
 import { TeamAvatar, TeamIdentity } from "@/components/TeamAvatar";
+import { getGameModeDisplayLabel } from "@/lib/platform/config";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 
 import { type AdminPhase, adminPhases, buildAdminPhaseHref, resolveAdminPhase } from "./admin-flow";
@@ -74,7 +76,7 @@ type AdminSearchParams = {
 
 type EventItem = Awaited<ReturnType<typeof getManageableEventsForUser>>[number];
 type GameModeItem = ReturnType<typeof getGameModes>[number];
-type TeamItem = Awaited<ReturnType<typeof getTeamsForEvent>>[number];
+type TeamItem = Awaited<ReturnType<typeof getTeamsForEvents>> extends Map<string, infer T> ? T extends Array<infer U> ? U : never : never;
 type ImportedTeamItem = Awaited<ReturnType<typeof getImportedTeams>>[number] & { eventName: string };
 type ManageableEventItem = {
   event: EventItem;
@@ -84,7 +86,7 @@ type MatchItem = ManageableEventItem["manageableMatches"][number];
 type RoundConfigItem = Awaited<ReturnType<typeof getEventRoundConfigs>>[number];
 type MatchGameItem = Awaited<ReturnType<typeof getMatchGames>>[number];
 type PendingSubmissionItem = Awaited<ReturnType<typeof getPendingStatSubmissions>>[number];
-type CertificateItem = Awaited<ReturnType<typeof getCertificateByEvent>>;
+type CertificateItem = Awaited<ReturnType<typeof getCertificatesForEvents>> extends Map<string, infer T> ? T : never;
 
 type AdminTranslator = Awaited<ReturnType<typeof getTranslations>>;
 
@@ -98,36 +100,30 @@ const phaseIcons = {
 const inputClass = "rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100";
 const labelClass = "grid gap-2 text-sm font-medium text-slate-700";
 const quietButton = "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
-const primaryButton = "inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-400 px-3.5 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
+const primaryButton = "inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-400 px-3.5 py-2.5 text-sm font-semibold text-cyan-950 shadow-sm transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
 
 export default async function AdminPage({
   searchParams,
 }: {
   searchParams?: Promise<AdminSearchParams>;
 }) {
-  const user =
-    await requireRole("platform_admin")
-    ?? await requireRole("organizer")
-    ?? await requireRole("admin");
+  const user = await requireAnyRole(["platform_admin", "organizer", "admin"]);
   if (!user) {
     return redirectToActiveLocale("/login");
   }
 
-  const t = await getTranslations("admin");
-  const resolvedSearchParams = await searchParams;
+  const [t, resolvedSearchParams] = await Promise.all([getTranslations("admin"), searchParams]);
   const activePhase = resolveAdminPhase(resolvedSearchParams?.phase);
-  const events = await getManageableEventsForUser(user);
-  const gameModes = getGameModes();
-
-  const [allTeamsByEventArr, featuredEventFromSlug, importedTeamsRaw] = await Promise.all([
-    Promise.all(events.map(async (event) => ({ eventId: event.id, teams: await getTeamsForEvent(event.id) }))),
-    getEventBySlug("kuroko-summer-cup"),
-    getImportedTeams(),
+  const [events, pendingCount] = await Promise.all([
+    getManageableEventsForUser(user),
+    getPendingStatSubmissionCount(user),
   ]);
-
-  const allTeamsByEvent = new Map(allTeamsByEventArr.map(({ eventId, teams }) => [eventId, teams]));
-  const allTeams = [...allTeamsByEvent.values()].flat();
-  const teamName = (teamId: string | undefined) => allTeams.find((team) => team.id === teamId)?.name ?? "TBD";
+  const gameModes = getGameModes();
+  const eventIds = events.map((event) => event.id);
+  const [teamCountsByEvent, featuredEventFromSlug] = await Promise.all([
+    getTeamCountsForEvents(eventIds),
+    getEventBySlug("kuroko-summer-cup"),
+  ]);
   const featuredEvent =
     (featuredEventFromSlug && events.some((event) => event.id === featuredEventFromSlug.id) ? featuredEventFromSlug : null)
     ?? events[0];
@@ -136,18 +132,21 @@ export default async function AdminPage({
     ?? featuredEvent
     ?? events[0];
 
-  const manageableEventsRaw = await Promise.all(
-    events.map(async (event) => ({
-      event,
-      manageableMatches: await getBracketManageableMatchesForEvent(event),
-    })),
-  );
-  const manageableEvents = manageableEventsRaw
-    .map(({ event, manageableMatches }) => ({
-      event,
-      manageableMatches: manageableMatches.filter((match) => match.status !== "Completed"),
-    }))
-    .filter(({ manageableMatches }) => manageableMatches.length > 0);
+  const needsAllTeams = activePhase === "prepare" || activePhase === "import";
+  const needsActiveTeams = activePhase === "run" || activePhase === "review";
+  const teamsForEventIds = needsAllTeams || activePhase === "run" ? eventIds : activeEvent && needsActiveTeams ? [activeEvent.id] : [];
+  const allTeamsByEvent = await getTeamsForEvents(teamsForEventIds);
+  const allTeams = [...allTeamsByEvent.values()].flat();
+  const teamName = (teamId: string | undefined) => allTeams.find((team) => team.id === teamId)?.name ?? "TBD";
+
+  const manageableEvents = activePhase === "run"
+    ? (await Promise.all(
+        events.map(async (event) => ({
+          event,
+          manageableMatches: (await getBracketManageableMatchesForEvent(event)).filter((match) => match.status !== "Completed"),
+        })),
+      )).filter(({ manageableMatches }) => manageableMatches.length > 0)
+    : [];
   const selectedManageableEventId =
     manageableEvents.find(({ event }) => event.id === resolvedSearchParams?.matchEventId)?.event.id
     ?? manageableEvents.find(({ event }) => event.id === activeEvent?.id)?.event.id
@@ -155,19 +154,17 @@ export default async function AdminPage({
   const selectedManageableEvent = manageableEvents.find(({ event }) => event.id === selectedManageableEventId);
   const manageableMatches = selectedManageableEvent?.manageableMatches ?? [];
 
-  const [activeMatches, activeLeaderboard, pendingSubmissions, pendingCount] = activeEvent
+  const [activeMatches, activeLeaderboard] = activeEvent && (activePhase === "run" || activePhase === "review")
     ? await Promise.all([
         getMatchesForEvent(activeEvent.id),
         getLeaderboardForEvent(activeEvent.id, activeEvent.gameId),
-        getPendingStatSubmissions(),
-        getPendingStatSubmissionCount(),
       ])
-    : await Promise.all([
-        Promise.resolve([] as Awaited<ReturnType<typeof getMatchesForEvent>>),
-        Promise.resolve([] as Awaited<ReturnType<typeof getLeaderboardForEvent>>),
-        getPendingStatSubmissions(),
-        getPendingStatSubmissionCount(),
-      ]);
+    : [
+        [] as Awaited<ReturnType<typeof getMatchesForEvent>>,
+        [] as Awaited<ReturnType<typeof getLeaderboardForEvent>>,
+      ];
+
+  const importedTeamsRaw = activePhase === "import" ? await getImportedTeams(user) : [];
 
   const importedTeams = importedTeamsRaw
     .map((team) => ({
@@ -179,16 +176,16 @@ export default async function AdminPage({
 
   const selectedMatchId = resolvedSearchParams?.matchId;
   const [roundConfigs, selectedMatchGames] = await Promise.all([
-    selectedManageableEvent ? getEventRoundConfigs(selectedManageableEvent.event.id) : Promise.resolve([]),
-    selectedMatchId ? getMatchGames(selectedMatchId) : Promise.resolve([]),
+    activePhase === "run" && selectedManageableEvent ? getEventRoundConfigs(selectedManageableEvent.event.id) : Promise.resolve([]),
+    activePhase === "run" && selectedMatchId ? getMatchGames(selectedMatchId) : Promise.resolve([]),
   ]);
   const roundConfigMap = new Map(roundConfigs.map((config) => [config.roundLabel, config.bestOf]));
   const selectedMatch = selectedMatchId ? manageableMatches.find((match) => match.id === selectedMatchId) : undefined;
   const selectedMatchBestOf = selectedMatch ? (roundConfigMap.get(selectedMatch.roundLabel) ?? 1) : 1;
 
-  const certificatesByEvent = new Map(
-    await Promise.all(events.map(async (event) => [event.id, await getCertificateByEvent(event.id)] as const)),
-  );
+  const [certificatesByEvent, pendingSubmissions] = activePhase === "review"
+    ? await Promise.all([getCertificatesForEvents(eventIds), getPendingStatSubmissions(user)])
+    : [new Map(eventIds.map((eventId) => [eventId, null as CertificateItem])), [] as PendingSubmissionItem[]];
 
   const currentQuery = {
     activeEventId: activeEvent?.id,
@@ -202,6 +199,7 @@ export default async function AdminPage({
         activeEvent={activeEvent}
         activePhase={activePhase}
         activeTeamCount={activeEvent ? (allTeamsByEvent.get(activeEvent.id)?.length ?? 0) : 0}
+        activeTeamFallbackCount={activeEvent ? (teamCountsByEvent.get(activeEvent.id) ?? 0) : 0}
         events={events}
         pendingCount={pendingCount}
         t={t}
@@ -277,6 +275,7 @@ export default async function AdminPage({
             activeMatches={activeMatches}
             activeLeaderboardCount={activeLeaderboard.length}
             allTeamsByEvent={allTeamsByEvent}
+            teamCountsByEvent={teamCountsByEvent}
             events={events}
             t={t}
           />
@@ -289,6 +288,7 @@ export default async function AdminPage({
 function AdminHeader({
   activeEvent,
   activePhase,
+  activeTeamFallbackCount,
   activeTeamCount,
   events,
   pendingCount,
@@ -297,6 +297,7 @@ function AdminHeader({
 }: {
   activeEvent: EventItem | undefined;
   activePhase: AdminPhase;
+  activeTeamFallbackCount: number;
   activeTeamCount: number;
   events: EventItem[];
   pendingCount: number;
@@ -321,7 +322,7 @@ function AdminHeader({
       </div>
       <div className="grid gap-px bg-slate-200 md:grid-cols-4">
         <HeaderMetric label={t("trackedEvents")} value={events.length} hint={t("trackedEventsHint")} />
-        <HeaderMetric label={t("activeTeams")} value={activeTeamCount} hint={t("activeTeamsHint")} />
+        <HeaderMetric label={t("activeTeams")} value={activeTeamCount || activeTeamFallbackCount} hint={t("activeTeamsHint")} />
         <HeaderMetric label={t("activeEventStatus")} value={activeEvent?.status ?? "-"} hint={t("activeEventStatusHint")} />
         <HeaderMetric label={t("activeGame")} value={activeEvent ? getGameForEvent(activeEvent).name : "-"} hint={t("activeGameHint")} />
       </div>
@@ -475,7 +476,7 @@ function PrepareEventPhase({
                 <select className={inputClass} name="gameModeId" defaultValue={gameModes[0]?.id}>
                   {gameModes.map((mode) => (
                     <option key={mode.id} value={mode.id}>
-                      {mode.name}
+                      {getGameModeDisplayLabel(mode.id)}
                     </option>
                   ))}
                 </select>
@@ -691,7 +692,7 @@ function BrandAssetsSection({
 
                 <div className="grid gap-5 border-t border-slate-200 bg-white p-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                   <div className="grid gap-4">
-                    <form action={adminUploadEventLogoAction} encType="multipart/form-data" className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <form action={adminUploadEventLogoAction} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                       <input type="hidden" name="eventId" value={event.id} />
                       <div className="flex items-center gap-3">
                         <TeamAvatar logoText={event.name.slice(0, 2).toUpperCase()} logoUrl={event.logoUrl} name={event.name} size="lg" />
@@ -709,7 +710,7 @@ function BrandAssetsSection({
                       </div>
                     </form>
 
-                    <form action={adminUploadEventBackgroundAction} encType="multipart/form-data" className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <form action={adminUploadEventBackgroundAction} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                       <input type="hidden" name="eventId" value={event.id} />
                       <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
                         {backgroundUrl ? (
@@ -742,7 +743,7 @@ function BrandAssetsSection({
                     </div>
                     <div className="grid max-h-[30rem] gap-2 overflow-y-auto pr-1">
                       {teams.length ? teams.map((team) => (
-                        <form key={team.id} action={adminUploadTeamLogoAction} encType="multipart/form-data" className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[minmax(10rem,1fr)_minmax(14rem,1fr)_auto] md:items-center">
+                        <form key={team.id} action={adminUploadTeamLogoAction} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[minmax(10rem,1fr)_minmax(14rem,1fr)_auto] md:items-center">
                           <input type="hidden" name="teamId" value={team.id} />
                           <TeamIdentity logoText={team.logoText} logoUrl={team.logoUrl} name={team.name} meta={team.tag} />
                           <input type="file" name="teamLogo" accept="image/png,image/webp,image/jpeg" className={`${inputClass} min-w-0 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
@@ -1189,7 +1190,7 @@ function ReviewPublishPhase({
                     </div>
                   </summary>
                   <div className="grid gap-4 border-t border-slate-200 bg-white p-4">
-                    <form action={adminUploadCharacterArtAction} encType="multipart/form-data" className="grid gap-3">
+                    <form action={adminUploadCharacterArtAction} className="grid gap-3">
                       <input type="hidden" name="eventId" value={event.id} />
                       <p className="text-xs font-semibold uppercase text-slate-500">{t("characterArt")}</p>
                       {event.characterArtUrl ? (
@@ -1239,6 +1240,7 @@ function OperationsOverview({
   activeMatches,
   allTeamsByEvent,
   events,
+  teamCountsByEvent,
   t,
 }: {
   activeEvent: EventItem | undefined;
@@ -1246,6 +1248,7 @@ function OperationsOverview({
   activeMatches: Awaited<ReturnType<typeof getMatchesForEvent>>;
   allTeamsByEvent: Map<string, TeamItem[]>;
   events: EventItem[];
+  teamCountsByEvent: Map<string, number>;
   t: AdminTranslator;
 }) {
   return (
@@ -1253,7 +1256,11 @@ function OperationsOverview({
       <div className="mb-5 grid gap-4 md:grid-cols-3">
         <StatCard label={t("activeMatches")} value={activeMatches.length} hint={t("activeMatchesHint")} />
         <StatCard label={t("leaderboardRows")} value={activeLeaderboardCount} hint={t("leaderboardRowsHint")} />
-        <StatCard label={t("activeTeams")} value={activeEvent ? (allTeamsByEvent.get(activeEvent.id)?.length ?? 0) : 0} hint={t("activeTeamsHint")} />
+        <StatCard
+          label={t("activeTeams")}
+          value={activeEvent ? (allTeamsByEvent.get(activeEvent.id)?.length ?? teamCountsByEvent.get(activeEvent.id) ?? 0) : 0}
+          hint={t("activeTeamsHint")}
+        />
       </div>
       <DataTable
         columns={[t("eventLabel"), t("gameLabel"), t("statusLabel"), t("formatLabel"), t("teamsLabel"), t("matchesLabel")]}
@@ -1264,7 +1271,7 @@ function OperationsOverview({
             {event.status}
           </Pill>,
           event.format,
-          allTeamsByEvent.get(event.id)?.length ?? 0,
+          allTeamsByEvent.get(event.id)?.length ?? teamCountsByEvent.get(event.id) ?? 0,
           activeEvent?.id === event.id ? activeMatches.length : 0,
         ])}
       />

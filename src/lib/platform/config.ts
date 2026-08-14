@@ -134,7 +134,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-kuroko-3v3",
     gameId: "game-kuroko",
-    name: "3v3 Street Cup",
+    name: "3v3",
     slug: "kuroko-3v3",
     defaultModeLabel: "3v3",
     teamSize: 3,
@@ -145,7 +145,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-flashpeak-5v5",
     gameId: "game-flashpeak",
-    name: "5v5 League",
+    name: "5v5",
     slug: "flashpeak-5v5",
     defaultModeLabel: "5v5",
     teamSize: 5,
@@ -156,7 +156,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-mlbb-5v5",
     gameId: "game-mobile-legends",
-    name: "5v5 Ranked Clash",
+    name: "5v5",
     slug: "mlbb-5v5",
     defaultModeLabel: "5v5",
     teamSize: 5,
@@ -167,7 +167,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-hok-5v5",
     gameId: "game-hok",
-    name: "5v5 King's Rift",
+    name: "5v5",
     slug: "hok-5v5",
     defaultModeLabel: "5v5",
     teamSize: 5,
@@ -178,7 +178,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-valorant-5v5",
     gameId: "game-valorant",
-    name: "5v5 Tactical Series",
+    name: "5v5",
     slug: "valorant-5v5",
     defaultModeLabel: "5v5",
     teamSize: 5,
@@ -189,7 +189,7 @@ export const gameModes: GameMode[] = [
   {
     id: "mode-dota2-5v5",
     gameId: "game-dota2",
-    name: "5v5 Ancient League",
+    name: "5v5",
     slug: "dota2-5v5",
     defaultModeLabel: "5v5",
     teamSize: 5,
@@ -270,6 +270,12 @@ export function getDefaultModeLabel(modeId: string, gameId?: string) {
   }
 
   return "Event";
+}
+
+export function getGameModeDisplayLabel(modeId: string) {
+  const mode = getGameModeConfig(modeId);
+  const game = getGameConfig(mode.gameId);
+  return `${game.name} - ${mode.defaultModeLabel ?? `${mode.teamSize}v${mode.teamSize}`}`;
 }
 
 export function getStatKeysForMode(modeId: string, gameId?: string) {

@@ -49,6 +49,12 @@ describe("admin action buttons", () => {
     expect(source).toContain("adminUploadTeamLogoAction");
   });
 
+  test("lets React manage form encoding for server action forms", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).not.toContain('encType="multipart/form-data"');
+  });
+
   test("exposes public listing settings for event card prize and registration copy", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
 

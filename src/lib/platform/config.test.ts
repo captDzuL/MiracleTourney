@@ -8,6 +8,7 @@ import {
   getGameCertificateThemeId,
   getGameConfig,
   getGameModeConfig,
+  getGameModeDisplayLabel,
   getGamePrimaryStatKey,
   getOrderedStatEntries,
   getStatKeysForMode,
@@ -126,6 +127,15 @@ describe("game registry config", () => {
       gameId: "game-dota2",
       teamSize: 5,
     });
+  });
+
+  it("labels admin game mode choices with the game name and player count", () => {
+    expect(getGameModeDisplayLabel("mode-kuroko-3v3")).toBe("Kuroko no Basket Street Rival - 3v3");
+    expect(getGameModeDisplayLabel("mode-flashpeak-5v5")).toBe("Flashpeak - 5v5");
+    expect(getGameModeDisplayLabel("mode-mlbb-5v5")).toBe("Mobile Legends - 5v5");
+    expect(getGameModeDisplayLabel("mode-hok-5v5")).toBe("Honor of Kings - 5v5");
+    expect(getGameModeDisplayLabel("mode-valorant-5v5")).toBe("Valorant - 5v5");
+    expect(getGameModeDisplayLabel("mode-dota2-5v5")).toBe("DOTA 2 - 5v5");
   });
 
   it("exposes per-game stat keys and visual themes for the newly onboarded games", () => {
