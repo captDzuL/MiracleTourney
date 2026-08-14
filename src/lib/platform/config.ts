@@ -11,7 +11,19 @@ export const appUsers: AppUser[] = [
     id: "admin-commish",
     email: "admin@miraclefc.gg",
     name: "League Commissioner",
-    role: "admin",
+    role: "platform_admin",
+  },
+  {
+    id: "organizer-flashpeak",
+    email: "organizer-a@miraclefc.gg",
+    name: "Flashpeak Organizer",
+    role: "organizer",
+  },
+  {
+    id: "organizer-mlbb",
+    email: "organizer-b@miraclefc.gg",
+    name: "Mobile Legends Organizer",
+    role: "organizer",
   },
 ];
 
@@ -40,6 +52,7 @@ export const games: Game[] = [
     accent: "from-emerald-500/30 to-lime-500/10",
     defaultModeLabel: "5v5",
     fallbackLogoUrl: "https://lh3.googleusercontent.com/d/1m01dWpxKA6qXRzfFRrEovFzho1nTnV9B",
+    defaultBackgroundUrl: "/game-backgrounds/flashpeak.svg",
     primaryStatKey: "goals",
     certificateThemeId: "flashpeak",
     artTheme: {
@@ -57,6 +70,7 @@ export const games: Game[] = [
     accent: "from-blue-500/30 to-indigo-500/10",
     defaultModeLabel: "5v5",
     primaryStatKey: "kills",
+    defaultBackgroundUrl: "/game-backgrounds/mobile-legends.svg",
     certificateThemeId: "mlbb",
     artTheme: {
       bg: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 50%, #312e81 100%)",
@@ -230,6 +244,10 @@ export function getGamePrimaryStatKey(gameId: string) {
 
 export function getFallbackLogoUrl(gameId: string) {
   return findGameConfig(gameId)?.fallbackLogoUrl ?? "";
+}
+
+export function getDefaultGameBackgroundUrl(gameId: string) {
+  return findGameConfig(gameId)?.defaultBackgroundUrl ?? "";
 }
 
 export function getGameArtTheme(gameId: string) {

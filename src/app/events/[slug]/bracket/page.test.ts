@@ -318,4 +318,16 @@ describe("public bracket page", () => {
     expect(markup).toContain("G1");
     expect(markup).toContain("G2");
   });
+
+  it("renders seeded finished organizer bracket results", async () => {
+    const flashpeakMarkup = await renderBracket("flashpeak-champions-32");
+    const mlbbMarkup = await renderBracket("mlbb-dawn-finals-16");
+
+    expect(flashpeakMarkup).toContain("Summit Strikers");
+    expect(flashpeakMarkup).toContain("3 - 2");
+    expect(flashpeakMarkup).toContain("Final");
+    expect(mlbbMarkup).toContain("Dawn Breakers");
+    expect(mlbbMarkup).toContain("3 - 2");
+    expect(mlbbMarkup).toContain("Final");
+  });
 });

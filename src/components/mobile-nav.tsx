@@ -5,7 +5,7 @@ import { Menu, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { Link } from "@/i18n/navigation";
-import { logoutAction } from "@/lib/actions";
+import { logoutAction } from "@/lib/session-actions";
 
 export function MobileMenuToggle({
   eventsLabel,
@@ -91,7 +91,7 @@ export function MobileMenuToggle({
                 </Link>
               </>
             )}
-            {user?.role === "admin" && (
+            {(user?.role === "platform_admin" || user?.role === "organizer" || user?.role === "admin") && (
               <Link
                 href="/admin"
                 onClick={() => setOpen(false)}

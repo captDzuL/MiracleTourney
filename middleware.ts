@@ -105,9 +105,10 @@ export async function middleware(request: NextRequest) {
   // Route protection — verify JWT and check role
   if (normalizedPath.startsWith("/captain") || normalizedPath.startsWith("/admin")) {
     const role = await getRole(request);
-    const requiredRole = normalizedPath.startsWith("/admin") ? "admin" : "captain";
+    const canAccessAdmin = role === "platform_admin" || role === "organizer" || role === "admin";
+    const canAccessCaptain = role === "captain";
 
-    if (role !== requiredRole) {
+    if ((normalizedPath.startsWith("/admin") && !canAccessAdmin) || (normalizedPath.startsWith("/captain") && !canAccessCaptain)) {
       return NextResponse.redirect(new URL(`/${activeLocale}/login`, request.url));
     }
   }

@@ -4,10 +4,13 @@ import { ArrowRight, CalendarDays, ListTree, Trophy, Users } from "lucide-react"
 import { getTranslations } from "next-intl/server";
 
 import { LiveStreamCard, Pill, Section, StatCard } from "@/components/ui";
+import { ShareButton } from "@/components/ShareButton";
 import { getOrderedStatEntries, getStatKeysForMode } from "@/lib/platform/config";
 import type { Event } from "@/lib/platform/types";
+import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 import {
   getBracketPreview,
+  getCertificateByEvent,
   getGameForEvent,
   getLeaderboardForEvent,
   getModeForEvent,
@@ -53,6 +56,15 @@ function buildEventHref(slug: string, section: "participants" | "bracket" | "sta
   return `${prefix}/events/${slug}/${section}`;
 }
 
+function getInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 export async function renderEventDetailPage(slug: string, locale?: "id" | "en") {
   const t = await getTranslations("eventDetail");
   const fallbackEvent = fallbackEventsBySlug[slug];
@@ -69,25 +81,46 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
     getLeaderboardForEvent(event.id, event.gameId).catch(() => []),
   ]);
   const liveView = event.stream?.enabled ? getLiveStreamPresentation(event.stream.url) : null;
+  const certificate = event.status === "Finished" ? await getCertificateByEvent(event.id).catch(() => null) : null;
+  const backgroundUrl = getEventBackgroundUrl(event);
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
-        <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50 px-5 py-5 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
+      <section
+        className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 text-white shadow-[0_24px_80px_rgba(15,23,42,0.16)]"
+        style={backgroundUrl ? { backgroundImage: `url(${backgroundUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
+      >
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/68 to-slate-950/28" />
+        <div className="absolute inset-0 bg-slate-950/18" />
+        <div className="relative flex flex-col gap-4 border-b border-white/15 px-5 py-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="grid min-w-0 gap-4 sm:grid-cols-[88px_minmax(0,1fr)]">
+            <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-white/35 bg-white/95 text-slate-500 shadow-sm">
+              {event.logoUrl ? (
+                <img src={event.logoUrl} alt={`${event.name} logo`} className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-lg font-semibold text-slate-700">{getInitials(event.name) || "EV"}</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
               <Pill>{game.name}</Pill>
               <Pill>{mode.name}</Pill>
               <Pill>{event.format}</Pill>
               <Pill tone={event.stream?.enabled && event.stream.isLive ? "live" : "default"}>
                 {event.stream?.enabled && event.stream.isLive ? t("liveNow") : event.status}
               </Pill>
+              {event.organizerVerified ? <Pill tone="success">Verified Organizer</Pill> : null}
+              </div>
+              <h1 className="mt-4 text-3xl font-semibold text-white">{event.name}</h1>
+              <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-200">{event.description}</p>
+              <p className="mt-3 text-sm font-semibold text-slate-100">
+                Organizer: {event.organizerName ?? "Miracle Organizer"}
+              </p>
             </div>
-            <h1 className="mt-4 text-3xl font-semibold text-slate-950">{event.name}</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">{event.description}</p>
           </div>
 
-          <div className="flex flex-wrap gap-2 text-sm text-slate-600 lg:max-w-sm lg:justify-end">
+          <div className="flex flex-wrap gap-2 text-sm text-slate-100 lg:max-w-sm lg:justify-end">
+            <ShareButton />
             <EventFact icon={<CalendarDays className="h-4 w-4 text-cyan-600" />}>
               {event.registrationWindow}
             </EventFact>
@@ -95,27 +128,52 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
               {t("teamCount", { registered: teams.length, cap: event.participantCap })}
             </EventFact>
             <EventFact icon={<Trophy className="h-4 w-4 text-cyan-600" />}>
-              {event.venue}
+              {event.prizePoolLabel ?? event.venue}
             </EventFact>
+            {event.registrationFeeLabel ? (
+              <EventFact icon={<Trophy className="h-4 w-4 text-cyan-600" />}>
+                {event.registrationFeeLabel}
+              </EventFact>
+            ) : null}
+            {event.registrationUrl ? (
+              <a
+                className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-4 py-2 font-semibold text-slate-950 shadow-sm transition hover:bg-cyan-300"
+                href={event.registrationUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Daftar Event
+                <ArrowRight className="h-4 w-4" />
+              </a>
+            ) : null}
           </div>
         </div>
 
         <div className="grid gap-px bg-slate-200 md:grid-cols-3">
-          <div className="bg-white p-4">
+          <div className="relative bg-white p-4">
             <StatCard
               label={t("bracketStat")}
               value={bracket.length}
               hint={event.format === "Single Elimination" ? t("bracketHint") : t("standingsHint")}
             />
           </div>
-          <div className="bg-white p-4">
+          <div className="relative bg-white p-4">
             <StatCard label={t("standingsStat")} value={mode.positions.length} hint={mode.positions.join(", ")} />
           </div>
-          <div className="bg-white p-4">
+          <div className="relative bg-white p-4">
             <StatCard label={t("leaderboardStat")} value={leaderboard.length} hint={t("leaderboardHint")} />
           </div>
         </div>
       </section>
+
+      {certificate ? (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+          <p className="text-sm font-semibold text-emerald-800">Champion proof published</p>
+          <a href={certificate.imageUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block break-all text-sm font-medium text-emerald-700 underline">
+            View certificate
+          </a>
+        </section>
+      ) : null}
 
       {event.stream?.enabled && liveView ? (
         <LiveStreamCard

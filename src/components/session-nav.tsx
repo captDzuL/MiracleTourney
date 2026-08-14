@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { usePathname } from "next/navigation";
 
 import { Link } from "@/i18n/navigation";
-import { logoutAction } from "@/lib/actions";
+import { logoutAction } from "@/lib/session-actions";
 
 type MeResponse = { user: { name: string; role: string; pendingCount: number } | null };
 
@@ -50,7 +50,7 @@ export function SessionNav() {
           {t("matchStats")}
         </Link>
       )}
-      {user?.role === "admin" && (
+      {(user?.role === "platform_admin" || user?.role === "organizer" || user?.role === "admin") && (
         <Link
           className="relative hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 md:block"
           href="/admin"

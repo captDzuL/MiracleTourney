@@ -1,4 +1,4 @@
-import { getCaptainCredentialsForEvent } from "@/lib/platform/repository";
+import { assertUserCanManageEvent, getCaptainCredentialsForEvent } from "@/lib/platform/repository";
 import { requireRole } from "@/lib/auth/session";
 
 function csvEscape(value: string): string {
@@ -15,13 +15,17 @@ function isSafeEventId(eventId: string) {
 }
 
 export async function GET(req: Request) {
-  const user = await requireRole("admin");
+  const user =
+    await requireRole("platform_admin")
+    ?? await requireRole("organizer")
+    ?? await requireRole("admin");
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const eventId = searchParams.get("eventId");
   if (!eventId) return new Response("Missing eventId", { status: 400 });
   if (!isSafeEventId(eventId)) return new Response("Invalid eventId", { status: 400 });
+  await assertUserCanManageEvent(user, eventId);
 
   const credentials = await getCaptainCredentialsForEvent(eventId);
 

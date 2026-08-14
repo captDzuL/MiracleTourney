@@ -4,6 +4,12 @@ import {
   createEvent,
   getBracketManageableMatches,
   getBracketPreview,
+  getEvents,
+  getLeaderboardForEvent,
+  getMatchesForEvent,
+  getTeamStandings,
+  getTeamsForEvent,
+  getUserByEmail,
   isEventBracketLocked,
   importTeams,
   registerTeam,
@@ -213,6 +219,82 @@ describe("demo-store bracket operations", () => {
       gameModeId: "mode-valorant-5v5",
       status: "Draft",
     });
+  });
+
+  it("seeds organizer demo accounts with isolated Flashpeak and Mobile Legends events", () => {
+    const organizerA = getUserByEmail("organizer-a@miraclefc.gg");
+    const organizerB = getUserByEmail("organizer-b@miraclefc.gg");
+    const events = getEvents();
+
+    expect(organizerA).toMatchObject({
+      id: "organizer-flashpeak",
+      role: "organizer",
+      name: "Flashpeak Organizer",
+    });
+    expect(organizerB).toMatchObject({
+      id: "organizer-mlbb",
+      role: "organizer",
+      name: "Mobile Legends Organizer",
+    });
+
+    expect(events.filter((event) => event.organizerUserId === organizerA?.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "flashpeak-champions-32",
+          gameId: "game-flashpeak",
+          status: "Finished",
+          participantCap: 32,
+        }),
+        expect.objectContaining({
+          slug: "flashpeak-rising-64",
+          gameId: "game-flashpeak",
+          status: "Ongoing",
+          participantCap: 64,
+        }),
+      ]),
+    );
+    expect(events.filter((event) => event.organizerUserId === organizerB?.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "mlbb-dawn-finals-16",
+          gameId: "game-mobile-legends",
+          status: "Finished",
+          participantCap: 16,
+        }),
+        expect.objectContaining({
+          slug: "mlbb-rank-war-32",
+          gameId: "game-mobile-legends",
+          status: "Ongoing",
+          participantCap: 32,
+        }),
+      ]),
+    );
+  });
+
+  it("seeds playable organizer demo events with teams, results, and leaderboards", () => {
+    const finishedSlugs = ["flashpeak-champions-32", "mlbb-dawn-finals-16"];
+    const ongoingSlugs = ["flashpeak-rising-64", "mlbb-rank-war-32"];
+
+    for (const slug of finishedSlugs) {
+      const event = getEvents().find((item) => item.slug === slug);
+
+      expect(event).toBeDefined();
+      expect(getTeamsForEvent(event!.id).length).toBeGreaterThanOrEqual(8);
+      expect(getMatchesForEvent(event!.id).filter((match) => match.status === "Completed").length).toBeGreaterThan(0);
+      expect(getLeaderboardForEvent(event!.id).length).toBeGreaterThan(0);
+      expect(getTeamStandings(event!.id)[0]?.wins).toBeGreaterThan(0);
+    }
+
+    for (const slug of ongoingSlugs) {
+      const event = getEvents().find((item) => item.slug === slug);
+      const matches = getMatchesForEvent(event!.id);
+
+      expect(event).toBeDefined();
+      expect(getTeamsForEvent(event!.id).length).toBeGreaterThanOrEqual(8);
+      expect(matches.some((match) => match.status === "Completed")).toBe(true);
+      expect(matches.some((match) => match.status === "Scheduled")).toBe(true);
+      expect(getLeaderboardForEvent(event!.id).length).toBeGreaterThan(0);
+    }
   });
 });
 

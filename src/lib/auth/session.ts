@@ -22,7 +22,7 @@ function getJwtSecret() {
 }
 
 function getSessionMaxAge(role: string) {
-  return role === "admin" ? ADMIN_SESSION_MAX_AGE : CAPTAIN_SESSION_MAX_AGE;
+  return role === "admin" || role === "platform_admin" ? ADMIN_SESSION_MAX_AGE : CAPTAIN_SESSION_MAX_AGE;
 }
 
 async function signToken(payload: { sub: string; role: string }, maxAge: number): Promise<string> {
