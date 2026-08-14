@@ -86,7 +86,7 @@ export default async function EventsPage({
               href={href({ status: status.id })}
               className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition ${
                 statusFilter === status.id
-                  ? "border-cyan-400 bg-cyan-400 text-slate-950"
+                  ? "border-cyan-400 bg-cyan-400 text-cyan-950"
                   : "border-slate-200 bg-white text-slate-600 hover:border-cyan-300 hover:text-cyan-700"
               }`}
             >
