@@ -252,6 +252,8 @@
     "createEventTitle": "Buat Draft Event",
     "eventNameLabel": "Nama event",
     "slugLabel": "Slug",
+    "createEventOrganizerLabel": "Organizer penanggung jawab",
+    "createEventOrganizerPlaceholder": "Miracle Ops / belum ditetapkan",
     "gameModeLabel": "Game dan mode",
     "formatLabel": "Format",
     "capLabel": "Kapasitas peserta",

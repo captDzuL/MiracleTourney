@@ -20,6 +20,7 @@ import {
   createEvent,
   deletePlayer,
   getImportSnapshot,
+  getOrganizerUserById,
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
@@ -425,18 +426,36 @@ export async function adminCreateEventAction(formData: FormData) {
     gameModeId: z.string().min(1),
     format: z.enum(["Single Elimination", "League"]),
     participantCap: z.union([z.literal(8), z.literal(12), z.literal(16), z.literal(24), z.literal(32), z.literal(64), z.literal(128), z.literal(256)]),
+    organizerUserId: z.string().min(1).optional(),
   }).parse({
     name: formData.get("name"),
     slug: formData.get("slug"),
     gameModeId: formData.get("gameModeId"),
     format: formData.get("format"),
     participantCap: Number(formData.get("participantCap")),
+    organizerUserId: formData.get("organizerUserId") || undefined,
   });
 
+  let organizerAssignment: Pick<AppUser, "id" | "name"> | undefined;
+  if (user.role === "organizer") {
+    organizerAssignment = user;
+  } else if (input.organizerUserId) {
+    const organizer = await getOrganizerUserById(input.organizerUserId);
+    if (!organizer) {
+      await redirectToActiveLocale("/admin?error=Organizer%20not%20found.");
+    } else {
+      organizerAssignment = organizer;
+    }
+  }
+
   await createEvent({
-    ...input,
-    organizerUserId: user.role === "organizer" ? user.id : undefined,
-    organizerName: user.role === "organizer" ? user.name : undefined,
+    name: input.name,
+    slug: input.slug,
+    gameModeId: input.gameModeId,
+    format: input.format,
+    participantCap: input.participantCap,
+    organizerUserId: organizerAssignment?.id,
+    organizerName: organizerAssignment?.name,
     organizerVerified: false,
   });
   revalidatePath("/", "layout");

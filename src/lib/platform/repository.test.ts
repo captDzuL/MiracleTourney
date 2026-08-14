@@ -24,6 +24,10 @@ const { prisma } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       update: vi.fn(),
     },
+    user: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+    },
     player: {
       findMany: vi.fn(),
     },
@@ -51,6 +55,8 @@ import {
   getManageableEventsForUser,
   getMatchGamesForEvent,
   getMatchesForEvent,
+  getOrganizerUserById,
+  getOrganizerUsers,
   getPublicEventBySlug,
   getPublicVisibleBracketPreview,
   getTeamCountsForEvents,
@@ -62,6 +68,49 @@ import {
 
 const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
 const organizer = { id: "org-1", role: "organizer" as const, email: "org@test.com", name: "Organizer" };
+
+describe("organizer user lookups", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("lists organizer accounts for platform-admin event assignment", async () => {
+    prisma.user.findMany.mockResolvedValue([
+      { id: "org-1", email: "org@test.com", name: "Organizer", role: "organizer" },
+    ]);
+
+    await expect(getOrganizerUsers()).resolves.toEqual([
+      { id: "org-1", email: "org@test.com", name: "Organizer", role: "organizer" },
+    ]);
+
+    expect(prisma.user.findMany).toHaveBeenCalledWith({
+      where: { role: "organizer" },
+      orderBy: { name: "asc" },
+      select: { id: true, email: true, name: true, role: true },
+    });
+  });
+
+  it("finds only organizer accounts by id", async () => {
+    prisma.user.findFirst.mockResolvedValue({
+      id: "org-1",
+      email: "org@test.com",
+      name: "Organizer",
+      role: "organizer",
+    });
+
+    await expect(getOrganizerUserById("org-1")).resolves.toEqual({
+      id: "org-1",
+      email: "org@test.com",
+      name: "Organizer",
+      role: "organizer",
+    });
+
+    expect(prisma.user.findFirst).toHaveBeenCalledWith({
+      where: { id: "org-1", role: "organizer" },
+      select: { id: true, email: true, name: true, role: true },
+    });
+  });
+});
 
 describe("assertCaptainCanSubmitStats", () => {
   const input = {

@@ -252,6 +252,8 @@
     "createEventTitle": "Create Draft Event",
     "eventNameLabel": "Event name",
     "slugLabel": "Slug",
+    "createEventOrganizerLabel": "Responsible organizer",
+    "createEventOrganizerPlaceholder": "Miracle Ops / unassigned",
     "gameModeLabel": "Game and mode",
     "formatLabel": "Format",
     "capLabel": "Participant cap",

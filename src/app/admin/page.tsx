@@ -50,6 +50,7 @@ import {
   getLeaderboardForEvent,
   getMatchGames,
   getMatchesForEvent,
+  getOrganizerUsers,
   getPendingStatSubmissionCount,
   getPendingStatSubmissions,
   getTeamCountsForEvents,
@@ -76,6 +77,7 @@ type AdminSearchParams = {
 
 type EventItem = Awaited<ReturnType<typeof getManageableEventsForUser>>[number];
 type GameModeItem = ReturnType<typeof getGameModes>[number];
+type OrganizerItem = Awaited<ReturnType<typeof getOrganizerUsers>>[number];
 type TeamItem = Awaited<ReturnType<typeof getTeamsForEvents>> extends Map<string, infer T> ? T extends Array<infer U> ? U : never : never;
 type ImportedTeamItem = Awaited<ReturnType<typeof getImportedTeams>>[number] & { eventName: string };
 type ManageableEventItem = {
@@ -97,8 +99,8 @@ const phaseIcons = {
   review: BadgeCheck,
 } satisfies Record<AdminPhase, React.ComponentType<{ className?: string }>>;
 
-const inputClass = "rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100";
-const labelClass = "grid gap-2 text-sm font-medium text-slate-700";
+const inputClass = "w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100";
+const labelClass = "grid min-w-0 gap-2 text-sm font-medium text-slate-700";
 const quietButton = "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
 const primaryButton = "inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-400 px-3.5 py-2.5 text-sm font-semibold text-cyan-950 shadow-sm transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
 
@@ -114,9 +116,10 @@ export default async function AdminPage({
 
   const [t, resolvedSearchParams] = await Promise.all([getTranslations("admin"), searchParams]);
   const activePhase = resolveAdminPhase(resolvedSearchParams?.phase);
-  const [events, pendingCount] = await Promise.all([
+  const [events, pendingCount, organizerOptions] = await Promise.all([
     getManageableEventsForUser(user),
     getPendingStatSubmissionCount(user),
+    user.role === "platform_admin" || user.role === "admin" ? getOrganizerUsers() : Promise.resolve([]),
   ]);
   const gameModes = getGameModes();
   const eventIds = events.map((event) => event.id);
@@ -231,7 +234,9 @@ export default async function AdminPage({
               allTeamsByEvent={allTeamsByEvent}
               events={events}
               gameModes={gameModes}
+              organizerOptions={organizerOptions}
               t={t}
+              userRole={user.role}
             />
           ) : null}
 
@@ -440,13 +445,17 @@ function PrepareEventPhase({
   allTeamsByEvent,
   events,
   gameModes,
+  organizerOptions,
   t,
+  userRole,
 }: {
   activeEvent: EventItem | undefined;
   allTeamsByEvent: Map<string, TeamItem[]>;
   events: EventItem[];
   gameModes: GameModeItem[];
+  organizerOptions: OrganizerItem[];
   t: AdminTranslator;
+  userRole: string;
 }) {
   return (
     <PhaseSection
@@ -471,6 +480,19 @@ function PrepareEventPhase({
                 {t("slugLabel")}
                 <input className={inputClass} name="slug" placeholder="flashpeak-mid-season-cup" />
               </label>
+              {userRole === "platform_admin" || userRole === "admin" ? (
+                <label className={labelClass}>
+                  {t("createEventOrganizerLabel")}
+                  <select className={inputClass} name="organizerUserId" defaultValue="">
+                    <option value="">{t("createEventOrganizerPlaceholder")}</option>
+                    {organizerOptions.map((organizer) => (
+                      <option key={organizer.id} value={organizer.id}>
+                        {organizer.name} - {organizer.email}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <label className={labelClass}>
                 {t("gameModeLabel")}
                 <select className={inputClass} name="gameModeId" defaultValue={gameModes[0]?.id}>
