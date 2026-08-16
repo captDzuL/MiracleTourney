@@ -53,9 +53,11 @@ export const getSessionUser = cache(async (): Promise<AppUser | null> => {
   if (!claims) return null;
 
   const captain = await getCaptainById(claims.sub);
-  if (captain) return captain;
+  if (captain) return captain.deactivatedAt ? null : captain;
 
-  return getUserByEmail(claims.sub) ?? null;
+  const user = await getUserByEmail(claims.sub);
+  if (!user || user.deactivatedAt) return null;
+  return user;
 });
 
 /**
@@ -67,6 +69,9 @@ export async function signIn(email: string, password: string) {
 
   if (!user) {
     return { ok: false as const, error: "Invalid email or password." };
+  }
+  if (user.deactivatedAt) {
+    return { ok: false as const, error: "Account is deactivated." };
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash);

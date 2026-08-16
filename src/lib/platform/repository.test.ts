@@ -408,6 +408,7 @@ describe("dashboard batch lookups", () => {
     expect(result.get("event-2")).toHaveLength(1);
     expect(prisma.team.findMany).toHaveBeenCalledWith({
       where: { eventId: { in: ["event-1", "event-2"] } },
+      include: { captain: { select: { id: true, name: true } } },
       orderBy: [{ eventId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     });
   });

@@ -74,6 +74,7 @@ function mapTeam(row: {
   id: string; eventId: string; captainId: string | null;
   name: string; logoText: string; logoUrl?: string | null; tag: string;
   captainName: string | null; captainContact: string | null; source: string;
+  captain?: { id: string; name: string } | null;
 }): Team {
   return {
     id: row.id, eventId: row.eventId, captainId: row.captainId ?? "",
@@ -81,6 +82,7 @@ function mapTeam(row: {
     ...(row.logoUrl ? { logoUrl: row.logoUrl } : {}),
     ...(row.captainName ? { captainName: row.captainName } : {}),
     ...(row.captainContact ? { captainContact: row.captainContact } : {}),
+    ...(row.captain != null ? { captain: row.captain } : {}),
     source: row.source as Team["source"],
   };
 }
@@ -96,12 +98,13 @@ function mapPlayer(row: {
   };
 }
 
-function mapUser(row: { id: string; email: string; name: string; role: string }): AppUser {
+function mapUser(row: { id: string; email: string; name: string; role: string; deactivatedAt?: Date | null }): AppUser {
   return {
     id: row.id,
     email: row.email,
     name: row.name,
     role: row.role as AppUser["role"],
+    ...(row.deactivatedAt ? { deactivatedAt: row.deactivatedAt } : {}),
   };
 }
 
@@ -348,7 +351,7 @@ export const getTeamsForEvent = cache(
   unstable_cache(
     async (eventId: string): Promise<Team[]> => {
       try {
-        const rows = await prisma.team.findMany({ where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+        const rows = await prisma.team.findMany({ where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], include: { captain: { select: { id: true, name: true } } } });
         return rows.map(mapTeam);
       } catch {
         return demoStore.getTeamsForEvent(eventId);
@@ -368,6 +371,7 @@ export async function getTeamsForEvents(eventIds: string[]): Promise<Map<string,
     const rows = await prisma.team.findMany({
       where: { eventId: { in: eventIds } },
       orderBy: [{ eventId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      include: { captain: { select: { id: true, name: true } } },
     });
     for (const team of rows.map(mapTeam)) {
       teamsByEvent.get(team.eventId)?.push(team);
@@ -407,7 +411,7 @@ export async function getTeamCountsForEvents(eventIds: string[]): Promise<Map<st
 /** Returns all teams registered by a specific captain across all events. Returns empty array for undefined userId. */
 export async function getCaptainTeams(userId: string | undefined): Promise<Team[]> {
   if (!userId) return [];
-  const rows = await prisma.team.findMany({ where: { captainId: userId } });
+  const rows = await prisma.team.findMany({ where: { captainId: userId }, include: { captain: { select: { id: true, name: true } } } });
   return rows.map(mapTeam);
 }
 
@@ -837,6 +841,15 @@ export async function getUserPasswordHashById(userId: string): Promise<string | 
   return row?.passwordHash ?? null;
 }
 
+/** Returns all captain-role users, for admin assignment dropdown. */
+export async function getCaptainUsersForAdmin() {
+  return prisma.user.findMany({
+    where: { role: "captain" },
+    select: { id: true, name: true, email: true },
+    orderBy: { name: "asc" },
+  });
+}
+
 /** Returns true if the user still has a temporary password set from a CSV import. Used to prompt password change on first login. */
 export async function hasTempPassword(userId: string): Promise<boolean> {
   const row = await prisma.user.findUnique({ where: { id: userId }, select: { tempPassword: true } });
@@ -895,6 +908,7 @@ export async function getImportedTeams(user?: AppUser): Promise<Team[]> {
       source: "csv-import",
       ...(user?.role === "organizer" ? { event: { organizerUserId: user.id } } : {}),
     },
+    include: { captain: { select: { id: true, name: true } } },
   });
   return rows.map(mapTeam);
 }
@@ -907,6 +921,7 @@ export async function getCaptainCredentialsForEvent(eventId: string) {
   const teams = await prisma.team.findMany({
     where: { eventId, source: "csv-import" },
     orderBy: { createdAt: "asc" },
+    include: { captain: { select: { id: true, name: true } } },
   });
   const captainIds = teams.map((t) => t.captainId).filter(Boolean) as string[];
   const users = captainIds.length

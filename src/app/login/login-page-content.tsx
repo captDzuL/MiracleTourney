@@ -52,6 +52,12 @@ export async function renderLoginPage(
             className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
             placeholder="........"
           />
+          <a
+            href="/forgot-password"
+            className="mt-1 block text-right text-sm text-cyan-400 hover:text-cyan-300"
+          >
+            Lupa password?
+          </a>
         </div>
         <button
           type="submit"

@@ -5,6 +5,7 @@ export type AppUser = {
   email: string;
   name: string;
   role: Exclude<UserRole, "public">;
+  deactivatedAt?: Date | null;
 };
 
 export type Game = {
@@ -99,6 +100,7 @@ export type Team = {
   tag: string;
   captainName?: string;
   captainContact?: string;
+  captain?: { id: string; name: string } | null;
   source?: "demo" | "csv-import";
 };
 

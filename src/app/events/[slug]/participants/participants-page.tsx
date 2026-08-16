@@ -4,6 +4,7 @@ import { getTranslations } from "next-intl/server";
 import { DataTable, Section } from "@/components/ui";
 import { TeamIdentity } from "@/components/TeamAvatar";
 import { getPlayersForTeams, getPublicEventBySlug, getTeamsForEvent } from "@/lib/platform/repository";
+import { getCaptainDisplayName } from "@/lib/team-display";
 
 export async function renderParticipantsPage(slug: string) {
   const t = await getTranslations("participants");
@@ -25,7 +26,7 @@ export async function renderParticipantsPage(slug: string) {
         rows={teamsWithPlayers.map((team) => [
           <TeamIdentity key={team.id} logoText={team.logoText} logoUrl={team.logoUrl} name={team.name} meta={team.tag} />,
           team.tag,
-          team.captainName ?? t("unassigned"),
+          getCaptainDisplayName(team),
           team.players.length
             ? team.players.map((player) => `${player.nickname} (${player.position})`).join(", ")
             : t("rosterPending"),

@@ -2,13 +2,19 @@
 
 import bcrypt from "bcryptjs";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
+import { prisma } from "@/lib/platform/db";
+import { createPasswordResetToken, consumePasswordResetToken } from "@/lib/platform/password-reset";
 import { routing } from "@/i18n/routing";
 import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { isDisposableEmail } from "@/lib/validation/email";
+import { validateTeamData } from "@/lib/validation/team-data";
 import type { AppUser } from "@/lib/platform/types";
 import {
   addPlayer,
@@ -228,7 +234,21 @@ export async function captainSignUpAction(formData: FormData) {
   if (password.length < 8) await signUpError("Password minimal 8 karakter.");
   if (!eventId) await signUpError("Pilih event terlebih dahulu.");
   if (teamName.length < 2) await signUpError("Nama tim minimal 2 karakter.");
-  if (teamTag.length < 2 || teamTag.length > 4) await signUpError("Tag tim harus 2-4 karakter.");
+  if (teamTag.length < 2 || teamTag.length > 5) await signUpError("Tag tim harus 2-5 karakter.");
+
+  const ip = (await headers()).get("x-forwarded-for") ?? "unknown";
+  if (!checkRateLimit(`register:${ip}`, 5, 15 * 60 * 1000)) {
+    await signUpError("Terlalu banyak percobaan pendaftaran. Coba lagi dalam 15 menit.");
+  }
+
+  if (isDisposableEmail(email)) {
+    await signUpError("Email sementara tidak diizinkan. Gunakan email aktif.");
+  }
+
+  const dataErrors = validateTeamData({ teamName, teamTag, captainName: fullName });
+  if (dataErrors.length > 0) {
+    await signUpError(dataErrors.map((e) => e.message).join(". "));
+  }
 
   const existingUser = await getUserByEmail(email);
   if (existingUser) await signUpError("Email ini sudah terdaftar. Coba login.");
@@ -483,6 +503,125 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
 
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?success=event-status-updated&event=${event.slug}`);
+}
+
+/** Assigns or clears the captain user for an imported team. */
+export async function adminAssignCaptainAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const teamId = z.string().min(1).parse(formData.get("teamId"));
+  const captainUserId = String(formData.get("captainUserId") ?? "").trim() || null;
+
+  const team = await prisma.team.findUnique({
+    where: { id: teamId },
+    select: { id: true, eventId: true },
+  });
+  if (!team) {
+    return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
+  }
+  await assertUserCanManageEvent(user, team.eventId);
+
+  if (captainUserId) {
+    const captain = await prisma.user.findUnique({
+      where: { id: captainUserId, role: "captain" },
+      select: { id: true, name: true },
+    });
+    if (!captain) {
+      return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Kapten tidak ditemukan.")}` as never);
+    }
+    await prisma.team.update({
+      where: { id: teamId },
+      data: { captainId: captain.id, captainName: captain.name },
+    });
+  } else {
+    await prisma.team.update({
+      where: { id: teamId },
+      data: { captainId: null, captainName: null },
+    });
+  }
+
+  revalidatePath("/", "layout");
+  return redirectToActiveLocale("/admin?success=captain-assigned" as never);
+}
+
+/** Deactivates a captain account (platform_admin only). Deactivated users cannot log in. */
+export async function adminDeactivateUserAction(formData: FormData) {
+  const user = await requireRole("platform_admin");
+  if (!user) {
+    return redirectToActiveLocale("/login" as never);
+  }
+  const targetUserId = z.string().min(1).parse(formData.get("userId"));
+  if (targetUserId === user.id) {
+    return redirectToActiveLocale(
+      `/admin?error=${encodeURIComponent("Tidak dapat menonaktifkan akun sendiri.")}` as never
+    );
+  }
+  const target = await prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true, role: true } });
+  if (!target || target.role !== "captain") {
+    return redirectToActiveLocale(
+      `/admin?error=${encodeURIComponent("Hanya akun kapten yang dapat dinonaktifkan.")}` as never
+    );
+  }
+  await prisma.user.update({ where: { id: targetUserId }, data: { deactivatedAt: new Date() } });
+  revalidatePath("/", "layout");
+  return redirectToActiveLocale("/admin?success=user-deactivated" as never);
+}
+
+/** Deletes a team from a Draft-status event. Blocks if event has started. */
+export async function adminDeleteTeamAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const teamId = z.string().min(1).parse(formData.get("teamId"));
+
+  const team = await prisma.team.findUnique({
+    where: { id: teamId },
+    include: { event: { select: { id: true, status: true } } },
+  });
+  if (!team) {
+    return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
+  }
+  if (team.event.status !== "Draft") {
+    return redirectToActiveLocale(
+      `/admin?error=${encodeURIComponent("Tim hanya dapat dihapus dari event Draft.")}` as never
+    );
+  }
+  await assertUserCanManageEvent(user, team.eventId);
+  await prisma.team.delete({ where: { id: teamId } });
+  revalidatePath("/", "layout");
+  return redirectToActiveLocale("/admin?success=team-deleted" as never);
+}
+
+/** Archives event (sets to Finished) or hard-deletes Draft events with no teams. */
+export async function adminArchiveEventAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const action = z.enum(["archive", "delete"]).parse(formData.get("action"));
+  await assertUserCanManageEvent(user, eventId);
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    include: { _count: { select: { teams: true } } },
+  });
+  if (!event) {
+    return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Event tidak ditemukan.")}` as never);
+  }
+
+  if (action === "delete") {
+    if (event.status !== "Draft") {
+      return redirectToActiveLocale(
+        `/admin?error=${encodeURIComponent("Hanya event Draft yang dapat dihapus.")}` as never
+      );
+    }
+    if (event._count.teams > 0) {
+      return redirectToActiveLocale(
+        `/admin?error=${encodeURIComponent("Event dengan tim tidak dapat dihapus. Hapus tim terlebih dahulu.")}` as never
+      );
+    }
+    await prisma.event.delete({ where: { id: eventId } });
+  } else {
+    await prisma.event.update({ where: { id: eventId }, data: { status: "Finished" } });
+  }
+
+  revalidatePath("/", "layout");
+  return redirectToActiveLocale("/admin?success=event-archived" as never);
 }
 
 /**
@@ -847,4 +986,68 @@ export async function adminSetAccentColorAction(formData: FormData) {
   await updateEventCertificateAssets(eventId, { accentColor });
   revalidatePath("/admin");
   redirect(`/admin?success=accent-color-saved` as never);
+}
+
+/**
+ * Requests a password reset link for a captain account.
+ * Always redirects to sent=1 regardless of whether the email exists (security best practice).
+ * The reset URL is logged to the console for Beta; real email can be wired later.
+ */
+export async function requestPasswordResetAction(formData: FormData) {
+  const emailRaw = String(formData.get("email") ?? "").trim().toLowerCase();
+  const email = z.string().email().safeParse(emailRaw);
+  if (!email.success) {
+    return redirectToActiveLocale(
+      `/forgot-password?error=${encodeURIComponent("Format email tidak valid.")}` as never,
+    );
+  }
+  const user = await getUserByEmail(email.data);
+  if (user && user.role === "captain") {
+    const token = await createPasswordResetToken(user.id);
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+    const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
+    console.log(`[password-reset] Reset URL for ${email.data}: ${resetUrl}`);
+  }
+  // Always redirect to sent=1 regardless of whether email exists (security)
+  return redirectToActiveLocale("/forgot-password?sent=1" as never);
+}
+
+/**
+ * Resets a captain's password using a one-time token.
+ * Validates token length, password length, and confirmation match before consuming the token.
+ */
+export async function resetPasswordAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirmPassword") ?? "");
+
+  if (!token || token.length < 64) {
+    return redirectToActiveLocale(
+      `/forgot-password/reset?error=${encodeURIComponent("Token tidak valid.")}` as never,
+    );
+  }
+  if (password.length < 8) {
+    return redirectToActiveLocale(
+      `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Password minimal 8 karakter.")}` as never,
+    );
+  }
+  if (password !== confirm) {
+    return redirectToActiveLocale(
+      `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Password tidak sama.")}` as never,
+    );
+  }
+
+  const newHash = await bcrypt.hash(password, 10);
+
+  try {
+    await consumePasswordResetToken(token, newHash);
+  } catch {
+    return redirectToActiveLocale(
+      `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Token tidak valid atau sudah kadaluarsa.")}` as never,
+    );
+  }
+
+  return redirectToActiveLocale(
+    `/login?message=${encodeURIComponent("Password berhasil direset. Silakan login.")}` as never,
+  );
 }

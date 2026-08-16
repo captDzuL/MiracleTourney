@@ -161,4 +161,48 @@ describe("auth session hardening", () => {
 
     await expect(requireAnyRole(["platform_admin", "organizer", "admin"])).resolves.toBeNull();
   });
+
+  it("rejects deactivated users before issuing a cookie", async () => {
+    const { signIn } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getUserWithPasswordByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      passwordHash: "$hash",
+      deactivatedAt: new Date(),
+    });
+
+    const result = await signIn("captain@test.com", "secret123");
+
+    expect(result).toEqual({ ok: false, error: "Account is deactivated." });
+    expect(cookieStore.set).not.toHaveBeenCalled();
+  });
+
+  it("ignores existing cookies for deactivated users", async () => {
+    const { getSessionUser, signIn } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getUserWithPasswordByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      passwordHash: "$hash",
+    });
+
+    await signIn("captain@test.com", "secret123");
+    cookieStore.get.mockReturnValue({ value: cookieStore.set.mock.calls[0][1] });
+    getCaptainById.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      deactivatedAt: new Date(),
+    });
+
+    await expect(getSessionUser()).resolves.toBeNull();
+  });
 });

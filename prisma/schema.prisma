@@ -9,15 +9,18 @@ datasource db {
 }
 
 model User {
-  id              String   @id @default(cuid())
-  email           String   @unique
-  name            String
-  role            String
-  passwordHash    String
-  tempPassword    String?
-  organizedEvents Event[]  @relation("EventOrganizer")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                   String               @id @default(cuid())
+  email                String               @unique
+  name                 String
+  role                 String
+  passwordHash         String
+  tempPassword         String?
+  deactivatedAt        DateTime?
+  organizedEvents      Event[]              @relation("EventOrganizer")
+  captainOf            Team[]               @relation("TeamCaptain")
+  passwordResetTokens  PasswordResetToken[]
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
 }
 
 model Event {
@@ -71,6 +74,7 @@ model Team {
   eventId        String
   event          Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
   captainId      String?
+  captain        User?         @relation("TeamCaptain", fields: [captainId], references: [id], onDelete: SetNull)
   name           String
   logoText       String
   logoUrl        String?
@@ -183,4 +187,14 @@ model Certificate {
   createdAt DateTime @default(now())
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   team      Team     @relation(fields: [teamId], references: [id])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
