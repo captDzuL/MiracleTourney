@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
+import { createPasswordResetToken, consumePasswordResetToken } from "@/lib/platform/password-reset";
 import { routing } from "@/i18n/routing";
 import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
@@ -865,4 +866,68 @@ export async function adminSetAccentColorAction(formData: FormData) {
   await updateEventCertificateAssets(eventId, { accentColor });
   revalidatePath("/admin");
   redirect(`/admin?success=accent-color-saved` as never);
+}
+
+/**
+ * Requests a password reset link for a captain account.
+ * Always redirects to sent=1 regardless of whether the email exists (security best practice).
+ * The reset URL is logged to the console for Beta; real email can be wired later.
+ */
+export async function requestPasswordResetAction(formData: FormData) {
+  const emailRaw = String(formData.get("email") ?? "").trim().toLowerCase();
+  const email = z.string().email().safeParse(emailRaw);
+  if (!email.success) {
+    return redirectToActiveLocale(
+      `/forgot-password?error=${encodeURIComponent("Format email tidak valid.")}` as never,
+    );
+  }
+  const user = await getUserByEmail(email.data);
+  if (user && user.role === "captain") {
+    const token = await createPasswordResetToken(user.id);
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+    const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
+    console.log(`[password-reset] Reset URL for ${email.data}: ${resetUrl}`);
+  }
+  // Always redirect to sent=1 regardless of whether email exists (security)
+  return redirectToActiveLocale("/forgot-password?sent=1" as never);
+}
+
+/**
+ * Resets a captain's password using a one-time token.
+ * Validates token length, password length, and confirmation match before consuming the token.
+ */
+export async function resetPasswordAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirmPassword") ?? "");
+
+  if (!token || token.length < 64) {
+    return redirectToActiveLocale(
+      `/forgot-password/reset?error=${encodeURIComponent("Token tidak valid.")}` as never,
+    );
+  }
+  if (password.length < 8) {
+    return redirectToActiveLocale(
+      `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Password minimal 8 karakter.")}` as never,
+    );
+  }
+  if (password !== confirm) {
+    return redirectToActiveLocale(
+      `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Password tidak sama.")}` as never,
+    );
+  }
+
+  const newHash = await bcrypt.hash(password, 10);
+
+  try {
+    await consumePasswordResetToken(token, newHash);
+  } catch {
+    return redirectToActiveLocale(
+      `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Token tidak valid atau sudah kadaluarsa.")}` as never,
+    );
+  }
+
+  return redirectToActiveLocale(
+    `/login?message=${encodeURIComponent("Password berhasil direset. Silakan login.")}` as never,
+  );
 }
