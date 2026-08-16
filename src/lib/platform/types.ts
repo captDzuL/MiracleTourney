@@ -99,6 +99,7 @@ export type Team = {
   tag: string;
   captainName?: string;
   captainContact?: string;
+  captain?: { id: string; name: string } | null;
   source?: "demo" | "csv-import";
 };
 
