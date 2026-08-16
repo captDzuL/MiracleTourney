@@ -23,8 +23,11 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { SubmitButton } from "@/components/submit-button";
 import {
   adminApproveStatAction,
+  adminArchiveEventAction,
   adminAssignCaptainAction,
   adminCreateEventAction,
+  adminDeactivateUserAction,
+  adminDeleteTeamAction,
   adminImportTeamsCsvAction,
   adminRejectStatAction,
   adminSetAccentColorAction,
@@ -174,7 +177,7 @@ export default async function AdminPage({
 
   const [importedTeamsRaw, captainUsers] = await Promise.all([
     activePhase === "import" ? getImportedTeams(user) : Promise.resolve([]),
-    activePhase === "import" ? getCaptainUsersForAdmin() : Promise.resolve([] as CaptainUser[]),
+    activePhase === "import" || activePhase === "prepare" ? getCaptainUsersForAdmin() : Promise.resolve([] as CaptainUser[]),
   ]);
 
   const importedTeams = importedTeamsRaw
@@ -240,6 +243,7 @@ export default async function AdminPage({
             <PrepareEventPhase
               activeEvent={activeEvent}
               allTeamsByEvent={allTeamsByEvent}
+              captainUsers={captainUsers}
               events={events}
               gameModes={gameModes}
               organizerOptions={organizerOptions}
@@ -463,6 +467,7 @@ function AdminPhaseRail({
 function PrepareEventPhase({
   activeEvent,
   allTeamsByEvent,
+  captainUsers,
   events,
   gameModes,
   organizerOptions,
@@ -471,6 +476,7 @@ function PrepareEventPhase({
 }: {
   activeEvent: EventItem | undefined;
   allTeamsByEvent: Map<string, TeamItem[]>;
+  captainUsers: CaptainUser[];
   events: EventItem[];
   gameModes: GameModeItem[];
   organizerOptions: OrganizerItem[];
@@ -606,6 +612,70 @@ function PrepareEventPhase({
       </div>
       <PublicListingSettingsSection events={events} t={t} />
       <BrandAssetsSection allTeamsByEvent={allTeamsByEvent} events={events} t={t} />
+
+      <Section title="Arsip / Hapus Event" description="Arsipkan event selesai atau hapus event Draft yang kosong." className="rounded-xl shadow-none">
+        {events.length ? (
+          <div className="grid gap-3">
+            {events.map((event) => (
+              <div key={event.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="flex-1 text-sm font-medium text-slate-800">{event.name} <span className="font-normal text-slate-500">({event.status})</span></span>
+                <form action={adminArchiveEventAction} className="flex items-center gap-2">
+                  <input type="hidden" name="eventId" value={event.id} />
+                  <input type="hidden" name="action" value="archive" />
+                  <button type="submit" className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100">
+                    Arsipkan (Selesai)
+                  </button>
+                </form>
+                {event.status === "Draft" && (
+                  <details className="relative">
+                    <summary className="cursor-pointer rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-100">
+                      Hapus Event
+                    </summary>
+                    <div className="absolute right-0 z-10 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+                      <p className="mb-2 text-xs text-slate-600">Hapus event Draft ini? Tindakan tidak dapat dibatalkan.</p>
+                      <form action={adminArchiveEventAction}>
+                        <input type="hidden" name="eventId" value={event.id} />
+                        <input type="hidden" name="action" value="delete" />
+                        <button type="submit" className="w-full rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500">
+                          Konfirmasi Hapus
+                        </button>
+                      </form>
+                    </div>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">Belum ada event.</p>
+        )}
+      </Section>
+
+      {userRole === "platform_admin" && captainUsers.length > 0 && (
+        <Section title="Nonaktifkan Pengguna" description="Hanya platform_admin. Akun kapten yang dinonaktifkan tidak dapat login." className="rounded-xl shadow-none">
+          <div className="grid gap-3">
+            {captainUsers.map((captain) => (
+              <div key={captain.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="flex-1 text-sm text-slate-800">{captain.name} <span className="text-xs text-slate-500">({captain.email})</span></span>
+                <details className="relative">
+                  <summary className="cursor-pointer rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-100">
+                    Nonaktifkan
+                  </summary>
+                  <div className="absolute right-0 z-10 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+                    <p className="mb-2 text-xs text-slate-600">Nonaktifkan {captain.name}? Kapten tidak dapat login setelah ini.</p>
+                    <form action={adminDeactivateUserAction}>
+                      <input type="hidden" name="userId" value={captain.id} />
+                      <button type="submit" className="w-full rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500">
+                        Konfirmasi Nonaktifkan
+                      </button>
+                    </form>
+                  </div>
+                </details>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
     </PhaseSection>
   );
 }
@@ -893,35 +963,52 @@ function ImportRegistrationPhase({
           <Section title={t("importedRegistrationsTitle")} description={t("importedRegistrationsDescription")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
             {importedTeams.length ? (
               <DataTable
-                columns={[t("eventLabel"), t("teamLabel"), "Tag", "PIC", t("contactLabel"), t("sourceLabel"), "Kapten Assign"]}
-                minTableWidth="72rem"
-                rows={importedTeams.map((team) => [
-                  <span key={`${team.id}-event`} className="font-medium text-slate-800">{team.eventName}</span>,
-                  <span key={`${team.id}-team`} className="font-medium text-slate-800">{team.name}</span>,
-                  <span key={`${team.id}-tag`} className="mono text-xs text-slate-700">{team.tag}</span>,
-                  getCaptainDisplayName(team),
-                  <span key={`${team.id}-contact`} className="mono text-xs text-slate-700">{team.captainContact ?? "-"}</span>,
-                  team.source ?? "-",
-                  <form key={`${team.id}-assign`} action={adminAssignCaptainAction} className="flex items-center gap-2">
-                    <input type="hidden" name="teamId" value={team.id} />
-                    <select
-                      name="captainUserId"
-                      defaultValue={team.captainId ?? ""}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
-                    >
-                      <option value="">— Tidak ada —</option>
-                      {captainUsers.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="submit"
-                      className="rounded-full bg-cyan-600 px-3 py-1 text-xs font-semibold text-white hover:bg-cyan-500"
-                    >
-                      Simpan
-                    </button>
-                  </form>,
-                ])}
+                columns={[t("eventLabel"), t("teamLabel"), "Tag", "PIC", t("contactLabel"), t("sourceLabel"), "Kapten Assign", ""]}
+                minTableWidth="80rem"
+                rows={importedTeams.map((team) => {
+                  const eventStatus = events.find((e) => e.id === team.eventId)?.status;
+                  return [
+                    <span key={`${team.id}-event`} className="font-medium text-slate-800">{team.eventName}</span>,
+                    <span key={`${team.id}-team`} className="font-medium text-slate-800">{team.name}</span>,
+                    <span key={`${team.id}-tag`} className="mono text-xs text-slate-700">{team.tag}</span>,
+                    getCaptainDisplayName(team),
+                    <span key={`${team.id}-contact`} className="mono text-xs text-slate-700">{team.captainContact ?? "-"}</span>,
+                    team.source ?? "-",
+                    <form key={`${team.id}-assign`} action={adminAssignCaptainAction} className="flex items-center gap-2">
+                      <input type="hidden" name="teamId" value={team.id} />
+                      <select
+                        name="captainUserId"
+                        defaultValue={team.captainId ?? ""}
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                      >
+                        <option value="">— Tidak ada —</option>
+                        {captainUsers.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="submit"
+                        className="rounded-full bg-cyan-600 px-3 py-1 text-xs font-semibold text-white hover:bg-cyan-500"
+                      >
+                        Simpan
+                      </button>
+                    </form>,
+                    eventStatus === "Draft" ? (
+                      <details key={`${team.id}-delete`} className="relative">
+                        <summary className="cursor-pointer text-xs font-medium text-red-600 hover:underline">Hapus</summary>
+                        <div className="absolute right-0 z-10 mt-1 w-52 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+                          <p className="mb-2 text-xs text-slate-600">Hapus {team.name}?</p>
+                          <form action={adminDeleteTeamAction}>
+                            <input type="hidden" name="teamId" value={team.id} />
+                            <button type="submit" className="w-full rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500">
+                              Konfirmasi Hapus
+                            </button>
+                          </form>
+                        </div>
+                      </details>
+                    ) : <span key={`${team.id}-nodelete`} />,
+                  ];
+                })}
               />
             ) : (
               <p className="text-sm text-slate-500">{t("noImportedRegistrations")}</p>

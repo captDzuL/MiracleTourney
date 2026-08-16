@@ -15,6 +15,7 @@ model User {
   role                 String
   passwordHash         String
   tempPassword         String?
+  deactivatedAt        DateTime?
   organizedEvents      Event[]              @relation("EventOrganizer")
   captainOf            Team[]               @relation("TeamCaptain")
   passwordResetTokens  PasswordResetToken[]

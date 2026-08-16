@@ -298,6 +298,14 @@ export async function loginAction(formData: FormData) {
     return await redirectToRequestedLocale("/login?error=invalid", requestedLocale);
   }
 
+  const dbUser = await prisma.user.findUnique({ where: { id: user.id }, select: { deactivatedAt: true } });
+  if (dbUser?.deactivatedAt) {
+    return await redirectToRequestedLocale(
+      `/login?error=${encodeURIComponent("Akun tidak aktif. Hubungi penyelenggara.")}`,
+      requestedLocale,
+    );
+  }
+
   await redirectToRequestedLocale(
     user.role === "platform_admin" || user.role === "organizer" || user.role === "admin" ? "/admin" : "/captain",
     requestedLocale,
@@ -541,6 +549,87 @@ export async function adminAssignCaptainAction(formData: FormData) {
 
   revalidatePath("/", "layout");
   return redirectToActiveLocale("/admin?success=captain-assigned" as never);
+}
+
+/** Deactivates a captain account (platform_admin only). Deactivated users cannot log in. */
+export async function adminDeactivateUserAction(formData: FormData) {
+  const user = await requireRole("platform_admin");
+  if (!user) {
+    return redirectToActiveLocale("/login" as never);
+  }
+  const targetUserId = z.string().min(1).parse(formData.get("userId"));
+  if (targetUserId === user.id) {
+    return redirectToActiveLocale(
+      `/admin?error=${encodeURIComponent("Tidak dapat menonaktifkan akun sendiri.")}` as never
+    );
+  }
+  const target = await prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true, role: true } });
+  if (!target || target.role !== "captain") {
+    return redirectToActiveLocale(
+      `/admin?error=${encodeURIComponent("Hanya akun kapten yang dapat dinonaktifkan.")}` as never
+    );
+  }
+  await prisma.user.update({ where: { id: targetUserId }, data: { deactivatedAt: new Date() } });
+  revalidatePath("/", "layout");
+  return redirectToActiveLocale("/admin?success=user-deactivated" as never);
+}
+
+/** Deletes a team from a Draft-status event. Blocks if event has started. */
+export async function adminDeleteTeamAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const teamId = z.string().min(1).parse(formData.get("teamId"));
+
+  const team = await prisma.team.findUnique({
+    where: { id: teamId },
+    include: { event: { select: { id: true, status: true } } },
+  });
+  if (!team) {
+    return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
+  }
+  if (team.event.status !== "Draft") {
+    return redirectToActiveLocale(
+      `/admin?error=${encodeURIComponent("Tim hanya dapat dihapus dari event Draft.")}` as never
+    );
+  }
+  await assertUserCanManageEvent(user, team.eventId);
+  await prisma.team.delete({ where: { id: teamId } });
+  revalidatePath("/", "layout");
+  return redirectToActiveLocale("/admin?success=team-deleted" as never);
+}
+
+/** Archives event (sets to Finished) or hard-deletes Draft events with no teams. */
+export async function adminArchiveEventAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const action = z.enum(["archive", "delete"]).parse(formData.get("action"));
+  await assertUserCanManageEvent(user, eventId);
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    include: { _count: { select: { teams: true } } },
+  });
+  if (!event) {
+    return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Event tidak ditemukan.")}` as never);
+  }
+
+  if (action === "delete") {
+    if (event.status !== "Draft") {
+      return redirectToActiveLocale(
+        `/admin?error=${encodeURIComponent("Hanya event Draft yang dapat dihapus.")}` as never
+      );
+    }
+    if (event._count.teams > 0) {
+      return redirectToActiveLocale(
+        `/admin?error=${encodeURIComponent("Event dengan tim tidak dapat dihapus. Hapus tim terlebih dahulu.")}` as never
+      );
+    }
+    await prisma.event.delete({ where: { id: eventId } });
+  } else {
+    await prisma.event.update({ where: { id: eventId }, data: { status: "Finished" } });
+  }
+
+  revalidatePath("/", "layout");
+  return redirectToActiveLocale("/admin?success=event-archived" as never);
 }
 
 /**
