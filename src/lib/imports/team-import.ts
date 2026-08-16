@@ -1,3 +1,5 @@
+import { validateTeamData } from "@/lib/validation/team-data";
+
 type ImportSnapshot = {
   events: Array<{ id: string; slug: string; participantCap: number; bracketLocked: boolean }>;
   teams: Array<{ eventId: string; name: string; tag: string }>;
@@ -165,6 +167,20 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
     ] as const) {
       if (value && hasSpreadsheetFormulaPayload(value)) {
         errors.push({ row: rowNumber, field, message: `Kolom ${field} tidak boleh diawali karakter formula spreadsheet (=, +, -, @).` });
+        rowValid = false;
+      }
+    }
+
+    // Apply shared content validation (profanity, format, length) when fields are non-empty
+    if (teamName && teamTagRaw && captainName) {
+      const dataErrors = validateTeamData({
+        teamName,
+        teamTag: teamTagRaw.toUpperCase(),
+        captainName,
+        captainContact,
+      });
+      for (const e of dataErrors) {
+        errors.push({ row: rowNumber, field: e.field, message: e.message });
         rowValid = false;
       }
     }

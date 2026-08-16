@@ -69,7 +69,7 @@ describe("parseAndValidateTeamImport", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failed result");
 
-    expect(result.message).toContain("Row 2");
+    expect(result.message).toContain("Baris 2");
     expect(result.message).toContain("event_slug");
     expect(result.message).toContain("unknown-event");
   });
@@ -87,9 +87,8 @@ describe("parseAndValidateTeamImport", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failed result");
-    expect(result.message).toBe(
-      'Event "kuroko-summer-cup" already has recorded match results, so additional teams cannot be imported.',
-    );
+    expect(result.message).toContain("kuroko-summer-cup");
+    expect(result.message).toContain("sudah memiliki hasil pertandingan");
   });
 
   it("rejects duplicate team tags inside the same event", () => {
@@ -104,7 +103,7 @@ describe("parseAndValidateTeamImport", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failed result");
 
-    expect(result.message).toContain("Row 2");
+    expect(result.message).toContain("Baris 2");
     expect(result.message).toContain("team_tag");
     expect(result.message).toContain("MFC");
   });
@@ -121,7 +120,7 @@ describe("parseAndValidateTeamImport", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failed result");
 
-    expect(result.message).toContain("Row 2");
+    expect(result.message).toContain("Baris 2");
     expect(result.message).toContain("team_name");
     expect(result.message).toContain("Miracle Five");
   });
@@ -146,8 +145,8 @@ describe("parseAndValidateTeamImport", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failed result");
 
-    expect(result.message).toContain("Row 10");
-    expect(result.message).toContain("participant cap");
+    expect(result.message).toContain("Baris 10");
+    expect(result.message).toContain("melebihi batas peserta");
     expect(result.message).toContain("flashpeak-open-league");
   });
 
@@ -162,9 +161,25 @@ describe("parseAndValidateTeamImport", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failed result");
-    expect(result.message).toContain("Row 2");
+    expect(result.message).toContain("Baris 2");
     expect(result.message).toContain("team_name");
-    expect(result.message).toContain("spreadsheet formula");
+    expect(result.message).toContain("formula spreadsheet");
+  });
+
+  it("rejects profanity in team name or captain name", () => {
+    const result = parseAndValidateTeamImport(
+      [
+        "event_slug,team_name,team_tag,captain_name,captain_contact",
+        "flashpeak-open-league,kontol fc,KFC,Budi,08189",
+      ].join("\n"),
+      getImportSnapshot(),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failed result");
+    expect(result.message).toContain("Baris 2");
+    expect(result.message).toContain("team_name");
+    expect(result.message).toContain("tidak diizinkan");
   });
 
   it("rejects CSV imports with too many rows before expensive validation work", () => {
@@ -180,6 +195,6 @@ describe("parseAndValidateTeamImport", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failed result");
-    expect(result.message).toContain("too many rows");
+    expect(result.message).toContain("terlalu banyak baris");
   });
 });
