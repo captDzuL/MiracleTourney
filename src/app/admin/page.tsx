@@ -20,6 +20,7 @@ import {
 import { getTranslations } from "next-intl/server";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
+import { SubmitButton } from "@/components/submit-button";
 import {
   adminApproveStatAction,
   adminCreateEventAction,
@@ -345,18 +346,27 @@ function HeaderMetric({ label, value, hint }: { label: string; value: string | n
   );
 }
 
+const SUCCESS_MESSAGES: Record<string, string> = {
+  "teams-imported": "Tim berhasil diimpor",
+  "event-status-updated": "Status event berhasil diperbarui",
+  "captain-assigned": "Kapten berhasil ditugaskan",
+  "team-deleted": "Tim berhasil dihapus",
+  "event-archived": "Event berhasil diarsipkan",
+  "user-deactivated": "Pengguna berhasil dinonaktifkan",
+};
+
 function ActionFeedback({ count, error, success }: { count?: string; error?: string; success?: string }) {
   if (success) {
+    const message = SUCCESS_MESSAGES[success] ?? success.replaceAll("-", " ");
     return (
       <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-        Demo action completed: {success.replaceAll("-", " ")}
-        {count ? ` (${count} teams).` : "."}
+        {message}{count ? ` (${count} tim).` : "."}
       </p>
     );
   }
 
   return (
-    <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 whitespace-pre-wrap">
       {error}
     </p>
   );
@@ -548,10 +558,10 @@ function PrepareEventPhase({
                     ))}
                   </select>
                 </label>
-                <button className={quietButton} type="submit">
+                <SubmitButton className={quietButton}>
                   <Send className="h-4 w-4" />
                   {t("saveStatus")}
-                </button>
+                </SubmitButton>
               </form>
             ) : (
               <p className="text-sm text-slate-500">{t("noEventsImport")}</p>
@@ -835,10 +845,10 @@ function ImportRegistrationPhase({
                 </span>
               </p>
             </div>
-            <button className={`${primaryButton} min-h-11 w-full self-stretch px-5`} type="submit">
+            <SubmitButton className={`${primaryButton} min-h-11 w-full self-stretch px-5`}>
               <Upload className="h-4 w-4" />
               {t("importSubmit")}
-            </button>
+            </SubmitButton>
           </form>
         </Section>
 
