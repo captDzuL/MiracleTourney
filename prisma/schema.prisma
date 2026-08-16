@@ -16,6 +16,7 @@ model User {
   passwordHash    String
   tempPassword    String?
   organizedEvents Event[]  @relation("EventOrganizer")
+  captainOf       Team[]   @relation("TeamCaptain")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -71,6 +72,7 @@ model Team {
   eventId        String
   event          Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
   captainId      String?
+  captain        User?         @relation("TeamCaptain", fields: [captainId], references: [id], onDelete: SetNull)
   name           String
   logoText       String
   logoUrl        String?
