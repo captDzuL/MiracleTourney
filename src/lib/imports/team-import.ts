@@ -43,14 +43,6 @@ function hasSpreadsheetFormulaPayload(value: string) {
   return /^[=+\-@]/.test(value.trimStart());
 }
 
-function validateSafeTextField(rowNumber: number, field: string, value: string): ImportFailure | null {
-  if (hasSpreadsheetFormulaPayload(value)) {
-    return fail(`Row ${rowNumber}: ${field} cannot start with a spreadsheet formula character.`);
-  }
-
-  return null;
-}
-
 function parseCsvLine(line: string) {
   const values: string[] = [];
   let current = "";
@@ -84,6 +76,8 @@ function parseCsvLine(line: string) {
   return values;
 }
 
+type RowError = { row: number; field: string; message: string };
+
 export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnapshot): ParseTeamImportResult {
   const lines = csvText
     .split(/\r?\n/)
@@ -91,13 +85,13 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
     .filter(Boolean);
 
   if (lines.length < 2) {
-    return fail("CSV must include a header row and at least one team row.");
+    return fail("CSV harus memiliki baris header dan setidaknya satu baris tim.");
   }
   if (lines.length - 1 > MAX_IMPORT_ROWS) {
-    return fail(`CSV has too many rows. Maximum import size is ${MAX_IMPORT_ROWS} team rows.`);
+    return fail(`CSV memiliki terlalu banyak baris. Maksimal impor adalah ${MAX_IMPORT_ROWS} baris tim.`);
   }
 
-  const headers = parseCsvLine(lines[0].replace(/^\uFEFF/, ""));
+  const headers = parseCsvLine(lines[0].replace(/^﻿/, ""));
 
   const hasOptionalEmail = headers.length === REQUIRED_HEADERS.length + 1 &&
     headers[REQUIRED_HEADERS.length] === OPTIONAL_HEADERS[0];
@@ -107,7 +101,7 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
     REQUIRED_HEADERS.some((h, i) => headers[i] !== h)
   ) {
     return fail(
-      `CSV header must start with: ${REQUIRED_HEADERS.join(", ")} (optional extra column: captain_email)`,
+      `Header CSV harus dimulai dengan: ${REQUIRED_HEADERS.join(", ")} (kolom opsional: captain_email)`,
     );
   }
 
@@ -121,6 +115,7 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
   const stagedTeamCounts = new Map<string, number>();
   const stagedTags = new Set<string>();
   const stagedNames = new Set<string>();
+  const errors: RowError[] = [];
   const rows: ImportRow[] = [];
 
   for (let index = 1; index < lines.length; index += 1) {
@@ -129,18 +124,38 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
 
     const expectedColumns = hasOptionalEmail ? REQUIRED_HEADERS.length + 1 : REQUIRED_HEADERS.length;
     if (values.length !== expectedColumns) {
-      return fail(`Row ${rowNumber}: expected ${expectedColumns} columns, received ${values.length}.`);
+      errors.push({ row: rowNumber, field: "baris", message: `Diharapkan ${expectedColumns} kolom, diterima ${values.length}.` });
+      continue;
     }
 
     const [eventSlug, teamName, teamTagRaw, captainName, captainContact, captainEmailRaw] = values;
     const captainEmail = captainEmailRaw?.trim() || undefined;
 
-    if (!eventSlug) return fail(`Row ${rowNumber}: event_slug is required.`);
-    if (!teamName) return fail(`Row ${rowNumber}: team_name is required.`);
-    if (!teamTagRaw) return fail(`Row ${rowNumber}: team_tag is required.`);
-    if (!captainName) return fail(`Row ${rowNumber}: captain_name is required.`);
-    if (!captainContact) return fail(`Row ${rowNumber}: captain_contact is required.`);
+    let rowValid = true;
 
+    // Empty required field checks
+    if (!eventSlug) {
+      errors.push({ row: rowNumber, field: "event_slug", message: "Kolom event_slug tidak boleh kosong." });
+      rowValid = false;
+    }
+    if (!teamName) {
+      errors.push({ row: rowNumber, field: "team_name", message: "Kolom team_name tidak boleh kosong." });
+      rowValid = false;
+    }
+    if (!teamTagRaw) {
+      errors.push({ row: rowNumber, field: "team_tag", message: "Kolom team_tag tidak boleh kosong." });
+      rowValid = false;
+    }
+    if (!captainName) {
+      errors.push({ row: rowNumber, field: "captain_name", message: "Kolom captain_name tidak boleh kosong." });
+      rowValid = false;
+    }
+    if (!captainContact) {
+      errors.push({ row: rowNumber, field: "captain_contact", message: "Kolom captain_contact tidak boleh kosong." });
+      rowValid = false;
+    }
+
+    // Formula injection checks
     for (const [field, value] of [
       ["team_name", teamName],
       ["team_tag", teamTagRaw],
@@ -148,51 +163,71 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
       ["captain_contact", captainContact],
       ["captain_email", captainEmail ?? ""],
     ] as const) {
-      const unsafeField = validateSafeTextField(rowNumber, field, value);
-      if (unsafeField) return unsafeField;
+      if (value && hasSpreadsheetFormulaPayload(value)) {
+        errors.push({ row: rowNumber, field, message: `Kolom ${field} tidak boleh diawali karakter formula spreadsheet (=, +, -, @).` });
+        rowValid = false;
+      }
+    }
+
+    // If required fields are missing we can't do event or duplicate checks
+    if (!eventSlug || !teamName || !teamTagRaw) {
+      continue;
     }
 
     const event = eventsBySlug.get(eventSlug);
     if (!event) {
-      return fail(`Row ${rowNumber}: unknown event_slug "${eventSlug}".`);
+      errors.push({ row: rowNumber, field: "event_slug", message: `Event dengan slug "${eventSlug}" tidak ditemukan.` });
+      rowValid = false;
+      continue;
     }
 
+    // bracketLocked is a file-level safety check: abort the entire import
     if (event.bracketLocked) {
-      return fail(`Event "${eventSlug}" already has recorded match results, so additional teams cannot be imported.`);
+      return fail(`Event "${eventSlug}" sudah memiliki hasil pertandingan yang tercatat, sehingga tim tambahan tidak dapat diimpor.`);
     }
 
     const teamTag = teamTagRaw.toUpperCase();
-    const duplicateKey = `${event.id}::${teamTag}`;
+    const duplicateTagKey = `${event.id}::${teamTag}`;
     const duplicateNameKey = `${event.id}::${teamName.trim().toLowerCase()}`;
 
-    if (existingTags.has(duplicateKey) || stagedTags.has(duplicateKey)) {
-      return fail(`Row ${rowNumber}: team_tag "${teamTag}" already exists for event_slug "${eventSlug}".`);
+    if (existingTags.has(duplicateTagKey) || stagedTags.has(duplicateTagKey)) {
+      errors.push({ row: rowNumber, field: "team_tag", message: `Tag tim "${teamTag}" sudah digunakan untuk event "${eventSlug}".` });
+      rowValid = false;
     }
 
     if (existingNames.has(duplicateNameKey) || stagedNames.has(duplicateNameKey)) {
-      return fail(`Row ${rowNumber}: team_name "${teamName}" already exists for event_slug "${eventSlug}".`);
+      errors.push({ row: rowNumber, field: "team_name", message: `Nama tim "${teamName}" sudah digunakan untuk event "${eventSlug}".` });
+      rowValid = false;
     }
 
     const nextTeamCount =
       (existingTeamCounts.get(event.id) ?? 0) + (stagedTeamCounts.get(event.id) ?? 0) + 1;
 
+    // participantCap is a file-level safety check: abort the entire import
     if (nextTeamCount > event.participantCap) {
       return fail(
-        `Row ${rowNumber}: event_slug "${eventSlug}" would exceed its participant cap of ${event.participantCap} teams.`,
+        `Baris ${rowNumber}: event "${eventSlug}" akan melebihi batas peserta sebanyak ${event.participantCap} tim.`,
       );
     }
 
-    stagedTags.add(duplicateKey);
-    stagedNames.add(duplicateNameKey);
-    stagedTeamCounts.set(event.id, (stagedTeamCounts.get(event.id) ?? 0) + 1);
-    rows.push({
-      eventId: event.id,
-      teamName,
-      teamTag,
-      captainName,
-      captainContact,
-      captainEmail,
-    });
+    if (rowValid) {
+      stagedTags.add(duplicateTagKey);
+      stagedNames.add(duplicateNameKey);
+      stagedTeamCounts.set(event.id, (stagedTeamCounts.get(event.id) ?? 0) + 1);
+      rows.push({
+        eventId: event.id,
+        teamName,
+        teamTag,
+        captainName,
+        captainContact,
+        captainEmail,
+      });
+    }
+  }
+
+  if (errors.length > 0) {
+    const message = errors.map((e) => `Baris ${e.row} (${e.field}): ${e.message}`).join("\n");
+    return { ok: false, message };
   }
 
   return { ok: true, rows };
