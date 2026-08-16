@@ -23,6 +23,7 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { SubmitButton } from "@/components/submit-button";
 import {
   adminApproveStatAction,
+  adminAssignCaptainAction,
   adminCreateEventAction,
   adminImportTeamsCsvAction,
   adminRejectStatAction,
@@ -41,6 +42,7 @@ import {
 import { requireAnyRole } from "@/lib/auth/session";
 import {
   getBracketManageableMatchesForEvent,
+  getCaptainUsersForAdmin,
   getCertificatesForEvents,
   getEventBySlug,
   getEventRoundConfigs,
@@ -93,6 +95,7 @@ type PendingSubmissionItem = Awaited<ReturnType<typeof getPendingStatSubmissions
 type CertificateItem = Awaited<ReturnType<typeof getCertificatesForEvents>> extends Map<string, infer T> ? T : never;
 
 type AdminTranslator = Awaited<ReturnType<typeof getTranslations>>;
+type CaptainUser = { id: string; name: string; email: string };
 
 const phaseIcons = {
   prepare: CalendarPlus,
@@ -169,7 +172,10 @@ export default async function AdminPage({
         [] as Awaited<ReturnType<typeof getLeaderboardForEvent>>,
       ];
 
-  const importedTeamsRaw = activePhase === "import" ? await getImportedTeams(user) : [];
+  const [importedTeamsRaw, captainUsers] = await Promise.all([
+    activePhase === "import" ? getImportedTeams(user) : Promise.resolve([]),
+    activePhase === "import" ? getCaptainUsersForAdmin() : Promise.resolve([] as CaptainUser[]),
+  ]);
 
   const importedTeams = importedTeamsRaw
     .map((team) => ({
@@ -245,6 +251,7 @@ export default async function AdminPage({
           {activePhase === "import" ? (
             <ImportRegistrationPhase
               allTeamsByEvent={allTeamsByEvent}
+              captainUsers={captainUsers}
               events={events}
               importedEventIds={importedEventIds}
               importedTeams={importedTeams}
@@ -806,12 +813,14 @@ function BrandAssetsSection({
 
 function ImportRegistrationPhase({
   allTeamsByEvent,
+  captainUsers,
   events,
   importedEventIds,
   importedTeams,
   t,
 }: {
   allTeamsByEvent: Map<string, TeamItem[]>;
+  captainUsers: CaptainUser[];
   events: EventItem[];
   importedEventIds: Set<string>;
   importedTeams: ImportedTeamItem[];
@@ -884,8 +893,8 @@ function ImportRegistrationPhase({
           <Section title={t("importedRegistrationsTitle")} description={t("importedRegistrationsDescription")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
             {importedTeams.length ? (
               <DataTable
-                columns={[t("eventLabel"), t("teamLabel"), "Tag", "PIC", t("contactLabel"), t("sourceLabel")]}
-                minTableWidth="56rem"
+                columns={[t("eventLabel"), t("teamLabel"), "Tag", "PIC", t("contactLabel"), t("sourceLabel"), "Kapten Assign"]}
+                minTableWidth="72rem"
                 rows={importedTeams.map((team) => [
                   <span key={`${team.id}-event`} className="font-medium text-slate-800">{team.eventName}</span>,
                   <span key={`${team.id}-team`} className="font-medium text-slate-800">{team.name}</span>,
@@ -893,6 +902,25 @@ function ImportRegistrationPhase({
                   getCaptainDisplayName(team),
                   <span key={`${team.id}-contact`} className="mono text-xs text-slate-700">{team.captainContact ?? "-"}</span>,
                   team.source ?? "-",
+                  <form key={`${team.id}-assign`} action={adminAssignCaptainAction} className="flex items-center gap-2">
+                    <input type="hidden" name="teamId" value={team.id} />
+                    <select
+                      name="captainUserId"
+                      defaultValue={team.captainId ?? ""}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                    >
+                      <option value="">— Tidak ada —</option>
+                      {captainUsers.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="submit"
+                      className="rounded-full bg-cyan-600 px-3 py-1 text-xs font-semibold text-white hover:bg-cyan-500"
+                    >
+                      Simpan
+                    </button>
+                  </form>,
                 ])}
               />
             ) : (

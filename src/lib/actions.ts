@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
+import { prisma } from "@/lib/platform/db";
 import { createPasswordResetToken, consumePasswordResetToken } from "@/lib/platform/password-reset";
 import { routing } from "@/i18n/routing";
 import { requireRole, signIn } from "@/lib/auth/session";
@@ -502,6 +503,44 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
 
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?success=event-status-updated&event=${event.slug}`);
+}
+
+/** Assigns or clears the captain user for an imported team. */
+export async function adminAssignCaptainAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const teamId = z.string().min(1).parse(formData.get("teamId"));
+  const captainUserId = String(formData.get("captainUserId") ?? "").trim() || null;
+
+  const team = await prisma.team.findUnique({
+    where: { id: teamId },
+    select: { id: true, eventId: true },
+  });
+  if (!team) {
+    return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
+  }
+  await assertUserCanManageEvent(user, team.eventId);
+
+  if (captainUserId) {
+    const captain = await prisma.user.findUnique({
+      where: { id: captainUserId, role: "captain" },
+      select: { id: true, name: true },
+    });
+    if (!captain) {
+      return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Kapten tidak ditemukan.")}` as never);
+    }
+    await prisma.team.update({
+      where: { id: teamId },
+      data: { captainId: captain.id, captainName: captain.name },
+    });
+  } else {
+    await prisma.team.update({
+      where: { id: teamId },
+      data: { captainId: null, captainName: null },
+    });
+  }
+
+  revalidatePath("/", "layout");
+  return redirectToActiveLocale("/admin?success=captain-assigned" as never);
 }
 
 /**

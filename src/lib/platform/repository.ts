@@ -840,6 +840,15 @@ export async function getUserPasswordHashById(userId: string): Promise<string | 
   return row?.passwordHash ?? null;
 }
 
+/** Returns all captain-role users, for admin assignment dropdown. */
+export async function getCaptainUsersForAdmin() {
+  return prisma.user.findMany({
+    where: { role: "captain" },
+    select: { id: true, name: true, email: true },
+    orderBy: { name: "asc" },
+  });
+}
+
 /** Returns true if the user still has a temporary password set from a CSV import. Used to prompt password change on first login. */
 export async function hasTempPassword(userId: string): Promise<boolean> {
   const row = await prisma.user.findUnique({ where: { id: userId }, select: { tempPassword: true } });
