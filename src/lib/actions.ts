@@ -298,14 +298,6 @@ export async function loginAction(formData: FormData) {
     return await redirectToRequestedLocale("/login?error=invalid", requestedLocale);
   }
 
-  const dbUser = await prisma.user.findUnique({ where: { id: user.id }, select: { deactivatedAt: true } });
-  if (dbUser?.deactivatedAt) {
-    return await redirectToRequestedLocale(
-      `/login?error=${encodeURIComponent("Akun tidak aktif. Hubungi penyelenggara.")}`,
-      requestedLocale,
-    );
-  }
-
   await redirectToRequestedLocale(
     user.role === "platform_admin" || user.role === "organizer" || user.role === "admin" ? "/admin" : "/captain",
     requestedLocale,

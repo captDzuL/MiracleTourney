@@ -5,6 +5,7 @@ export type AppUser = {
   email: string;
   name: string;
   role: Exclude<UserRole, "public">;
+  deactivatedAt?: Date | null;
 };
 
 export type Game = {

@@ -98,12 +98,13 @@ function mapPlayer(row: {
   };
 }
 
-function mapUser(row: { id: string; email: string; name: string; role: string }): AppUser {
+function mapUser(row: { id: string; email: string; name: string; role: string; deactivatedAt?: Date | null }): AppUser {
   return {
     id: row.id,
     email: row.email,
     name: row.name,
     role: row.role as AppUser["role"],
+    ...(row.deactivatedAt ? { deactivatedAt: row.deactivatedAt } : {}),
   };
 }
 

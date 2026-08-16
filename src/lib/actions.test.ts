@@ -26,6 +26,7 @@ const {
   setMatchResult,
   signIn,
   signOut,
+  headers,
   updateCaptainPassword,
   updateEventStream,
   updatePlayer,
@@ -59,6 +60,7 @@ const {
   setMatchResult: vi.fn(),
   signIn: vi.fn(),
   signOut: vi.fn(),
+  headers: vi.fn(),
   updateCaptainPassword: vi.fn(),
   updateEventStream: vi.fn(),
   updatePlayer: vi.fn(),
@@ -74,6 +76,7 @@ vi.mock("next/navigation", () => ({
     throw new Error(`REDIRECT:${url}`);
   },
 }));
+vi.mock("next/headers", () => ({ headers }));
 vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut }));
 vi.mock("@/lib/imports/team-import", () => ({
   parseAndValidateTeamImport: vi.fn(),
@@ -171,6 +174,7 @@ function captainSession() {
 beforeEach(() => {
   assertUserCanManageEvent.mockResolvedValue(undefined);
   assertUserCanReviewStatSubmission.mockResolvedValue(undefined);
+  headers.mockResolvedValue(new Headers({ "x-forwarded-for": "127.0.0.1" }));
 });
 
 describe("loginAction", () => {
