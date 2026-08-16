@@ -61,6 +61,7 @@ import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/u
 import { TeamAvatar, TeamIdentity } from "@/components/TeamAvatar";
 import { getGameModeDisplayLabel } from "@/lib/platform/config";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
+import { getCaptainDisplayName } from "@/lib/team-display";
 
 import { type AdminPhase, adminPhases, buildAdminPhaseHref, resolveAdminPhase } from "./admin-flow";
 
@@ -889,7 +890,7 @@ function ImportRegistrationPhase({
                   <span key={`${team.id}-event`} className="font-medium text-slate-800">{team.eventName}</span>,
                   <span key={`${team.id}-team`} className="font-medium text-slate-800">{team.name}</span>,
                   <span key={`${team.id}-tag`} className="mono text-xs text-slate-700">{team.tag}</span>,
-                  team.captainName ?? "-",
+                  getCaptainDisplayName(team),
                   <span key={`${team.id}-contact`} className="mono text-xs text-slate-700">{team.captainContact ?? "-"}</span>,
                   team.source ?? "-",
                 ])}
