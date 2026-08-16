@@ -2,6 +2,7 @@
 
 import bcrypt from "bcryptjs";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -9,6 +10,9 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { routing } from "@/i18n/routing";
 import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { isDisposableEmail } from "@/lib/validation/email";
+import { validateTeamData } from "@/lib/validation/team-data";
 import type { AppUser } from "@/lib/platform/types";
 import {
   addPlayer,
@@ -228,7 +232,21 @@ export async function captainSignUpAction(formData: FormData) {
   if (password.length < 8) await signUpError("Password minimal 8 karakter.");
   if (!eventId) await signUpError("Pilih event terlebih dahulu.");
   if (teamName.length < 2) await signUpError("Nama tim minimal 2 karakter.");
-  if (teamTag.length < 2 || teamTag.length > 4) await signUpError("Tag tim harus 2-4 karakter.");
+  if (teamTag.length < 2 || teamTag.length > 5) await signUpError("Tag tim harus 2-5 karakter.");
+
+  const ip = (await headers()).get("x-forwarded-for") ?? "unknown";
+  if (!checkRateLimit(`register:${ip}`, 5, 15 * 60 * 1000)) {
+    await signUpError("Terlalu banyak percobaan pendaftaran. Coba lagi dalam 15 menit.");
+  }
+
+  if (isDisposableEmail(email)) {
+    await signUpError("Email sementara tidak diizinkan. Gunakan email aktif.");
+  }
+
+  const dataErrors = validateTeamData({ teamName, teamTag, captainName: fullName });
+  if (dataErrors.length > 0) {
+    await signUpError(dataErrors.map((e) => e.message).join(". "));
+  }
 
   const existingUser = await getUserByEmail(email);
   if (existingUser) await signUpError("Email ini sudah terdaftar. Coba login.");

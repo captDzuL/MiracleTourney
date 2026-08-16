@@ -24,6 +24,7 @@
     "@vercel/speed-insights": "^2.0.0",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
+    "disposable-email-domains": "^1.0.62",
     "jose": "^6.2.6",
     "lucide-react": "^0.539.0",
     "next": "^15.4.0",
