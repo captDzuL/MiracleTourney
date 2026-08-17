@@ -46,6 +46,7 @@ import {
   updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
+  setTeamCaptainDisplay,
 } from "@/lib/platform/repository";
 import fs from "fs";
 import path from "path";
@@ -383,7 +384,12 @@ export async function captainAddPlayerAction(formData: FormData) {
       ? parseInt(String(jerseyRaw), 10)
       : undefined;
 
-  await addPlayer({ ...input, jerseyNumber });
+  try {
+    await addPlayer({ ...input, jerseyNumber });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Tidak dapat menambahkan pemain.";
+    return await redirectToActiveLocale("/captain?error=" + encodeURIComponent(msg));
+  }
   await redirectToActiveLocale("/captain?success=player-added");
 }
 
@@ -434,6 +440,21 @@ export async function captainDeletePlayerAction(formData: FormData) {
 
   revalidatePath("/captain");
   await redirectToActiveLocale("/captain?success=player-deleted");
+}
+
+export async function captainSetDisplayCaptainAction(formData: FormData) {
+  const user = await requireCaptainSession();
+  const teamId = z.string().min(1).parse(formData.get("teamId"));
+  const playerId = z.string().min(1).parse(formData.get("playerId"));
+
+  try {
+    await setTeamCaptainDisplay(teamId, user.id, playerId);
+  } catch {
+    return await redirectToActiveLocale("/captain?error=" + encodeURIComponent("Tidak dapat mengubah tampilan kapten."));
+  }
+
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale("/captain?success=captain-display-updated");
 }
 
 /** Creates a new tournament event. Supported participant caps: 8, 12, 16, 24, 32, 64, 128, 256. */
@@ -863,7 +884,10 @@ export async function adminSetMatchGamesAction(formData: FormData) {
     games.push({ gameNumber: i, homeScore, awayScore });
   }
 
-  if (games.length === 0) await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=Masukkan+skor+minimal+1+game.` as never);
+  if (games.length === 0) {
+    await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=Masukkan+skor+minimal+1+game.` as never);
+    return;
+  }
 
   try {
     await setMatchGames(matchId, matchEventId, games, bestOf);

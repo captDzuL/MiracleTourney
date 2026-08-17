@@ -24,6 +24,7 @@ import {
   projectSingleEliminationBracket,
 } from "@/lib/tournament/engine";
 import type { BracketMatch, MatchResultInput, PlayerMatchStatInput } from "@/lib/tournament/types";
+import { Prisma } from "@prisma/client";
 import * as demoStore from "./demo-store";
 import { prisma } from "./db";
 
@@ -1114,8 +1115,15 @@ export async function addPlayer(input: {
   position: string;
   jerseyNumber?: number;
 }): Promise<Player> {
-  const row = await prisma.player.create({ data: input });
-  return mapPlayer(row);
+  try {
+    const row = await prisma.player.create({ data: input });
+    return mapPlayer(row);
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      throw new Error("Pemain dengan nickname ini sudah ada di tim.");
+    }
+    throw e;
+  }
 }
 
 /**
@@ -1151,6 +1159,17 @@ export async function deletePlayer(id: string, captainUserId: string): Promise<v
     throw new Error("Not authorized to delete this player.");
   }
   await prisma.player.delete({ where: { id } });
+}
+
+export async function setTeamCaptainDisplay(teamId: string, captainUserId: string, playerId: string): Promise<void> {
+  const player = await prisma.player.findFirst({
+    where: { id: playerId, teamId, team: { captainId: captainUserId } },
+    select: { displayName: true },
+  });
+  if (!player) {
+    throw new Error("Not authorized to update this team.");
+  }
+  await prisma.team.update({ where: { id: teamId }, data: { captainName: player.displayName } });
 }
 
 // ── Stat Submissions (captain) ────────────────────────────────────────────────

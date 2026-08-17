@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 
 import { Link } from "@/i18n/navigation";
 import { captainSignUpAction } from "@/lib/actions";
+import { SubmitButton } from "@/components/submit-button";
 import type { Event } from "@/lib/platform/types";
 
 const inputCls =
@@ -172,12 +173,9 @@ export function RegisterWizard({ events, errorMsg }: { events: Event[]; errorMsg
                 >
                   {t("back")}
                 </button>
-                <button
-                  type="submit"
-                  className="flex-1 rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-                >
+                <SubmitButton className="flex-1 rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300">
                   {t("submit")}
-                </button>
+                </SubmitButton>
               </div>
             </>
           )}

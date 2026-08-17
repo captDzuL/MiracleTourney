@@ -7,6 +7,7 @@ import { changePasswordAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { hasTempPassword } from "@/lib/platform/repository";
 import { buttonStyles } from "@/components/ui";
+import { SubmitButton } from "@/components/submit-button";
 
 export default async function CaptainSettingsPage({
   searchParams,
@@ -90,9 +91,9 @@ export default async function CaptainSettingsPage({
             />
           </label>
           <div className="pt-1">
-            <button type="submit" className={`${buttonStyles.primary} text-sm`}>
+            <SubmitButton className={`${buttonStyles.primary} text-sm`}>
               {t("submit")}
-            </button>
+            </SubmitButton>
           </div>
         </form>
       </div>
