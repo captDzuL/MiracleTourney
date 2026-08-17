@@ -2,6 +2,7 @@ import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { loginAction } from "@/lib/actions";
+import { SubmitButton } from "@/components/submit-button";
 
 export async function renderLoginPage(
   searchParams?: Promise<{ error?: string }>,
@@ -59,12 +60,9 @@ export async function renderLoginPage(
             Lupa password?
           </a>
         </div>
-        <button
-          type="submit"
-          className="mt-2 w-full rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-        >
+        <SubmitButton className="mt-2 w-full rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300">
           {t("submit")}
-        </button>
+        </SubmitButton>
       </form>
 
       <p className="mt-6 text-center text-sm text-slate-400">

@@ -384,7 +384,12 @@ export async function captainAddPlayerAction(formData: FormData) {
       ? parseInt(String(jerseyRaw), 10)
       : undefined;
 
-  await addPlayer({ ...input, jerseyNumber });
+  try {
+    await addPlayer({ ...input, jerseyNumber });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Tidak dapat menambahkan pemain.";
+    return await redirectToActiveLocale("/captain?error=" + encodeURIComponent(msg));
+  }
   await redirectToActiveLocale("/captain?success=player-added");
 }
 

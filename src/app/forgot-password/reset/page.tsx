@@ -1,4 +1,5 @@
 import { resetPasswordAction } from "@/lib/actions";
+import { SubmitButton } from "@/components/submit-button";
 
 export default async function ResetPasswordPage({
   searchParams,
@@ -62,12 +63,9 @@ export default async function ResetPasswordPage({
               placeholder="........"
             />
           </div>
-          <button
-            type="submit"
-            className="w-full rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-          >
+          <SubmitButton className="w-full rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300">
             Reset Password
-          </button>
+          </SubmitButton>
         </form>
       </div>
     </main>
