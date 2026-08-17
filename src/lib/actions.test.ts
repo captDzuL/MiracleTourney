@@ -34,6 +34,7 @@ const {
   updateEventPublicInfo,
   upsertRoundConfig,
   upsertStatSubmission,
+  setTeamCaptainDisplay,
 } = vi.hoisted(() => ({
   addPlayer: vi.fn(),
   approveStatSubmission: vi.fn(),
@@ -68,6 +69,7 @@ const {
   updateEventPublicInfo: vi.fn(),
   upsertRoundConfig: vi.fn(),
   upsertStatSubmission: vi.fn(),
+  setTeamCaptainDisplay: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
@@ -109,6 +111,7 @@ vi.mock("@/lib/platform/repository", () => ({
   updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
+  setTeamCaptainDisplay,
 }));
 vi.mock("@/lib/certificate/generate", () => ({
   generateCertificateIfFinal: vi.fn(),
@@ -137,6 +140,7 @@ import {
   captainAddPlayerAction,
   captainDeletePlayerAction,
   captainRegisterTeamAction,
+  captainSetDisplayCaptainAction,
   captainSignUpAction,
   captainSubmitStatsAction,
   captainUpdatePlayerAction,
@@ -510,6 +514,39 @@ describe("captainDeletePlayerAction", () => {
     await expect(captainDeletePlayerAction(fd({ playerId: "p1" }))).rejects.toThrow(
       "REDIRECT:/captain?error=",
     );
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// captainSetDisplayCaptainAction
+// ────────────────────────────────────────────────────────────
+
+describe("captainSetDisplayCaptainAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(captainSession());
+    setTeamCaptainDisplay.mockResolvedValue(undefined);
+  });
+
+  it("requires a captain session", async () => {
+    requireRole.mockResolvedValue(null);
+    await expect(
+      captainSetDisplayCaptainAction(fd({ teamId: "t1", displayName: "Budi" })),
+    ).rejects.toThrow("REDIRECT:/login");
+  });
+
+  it("calls setTeamCaptainDisplay and redirects to success", async () => {
+    await expect(
+      captainSetDisplayCaptainAction(fd({ teamId: "t1", displayName: "Sari" })),
+    ).rejects.toThrow("REDIRECT:/captain?success=captain-display-updated");
+    expect(setTeamCaptainDisplay).toHaveBeenCalledWith("t1", "captain-1", "Sari");
+  });
+
+  it("redirects with error when setTeamCaptainDisplay throws", async () => {
+    setTeamCaptainDisplay.mockRejectedValue(new Error("Not authorized"));
+    await expect(
+      captainSetDisplayCaptainAction(fd({ teamId: "t1", displayName: "Sari" })),
+    ).rejects.toThrow("REDIRECT:/captain?error=");
   });
 });
 
