@@ -40,34 +40,19 @@ for (const match of toRename) {
   }
 
   await prisma.$transaction(async (tx) => {
-    // Create new row with event-scoped ID
-    await tx.match.create({
-      data: {
-        id: newId,
-        eventId: match.eventId,
-        roundLabel: match.roundLabel,
-        homeTeamId: match.homeTeamId,
-        awayTeamId: match.awayTeamId,
-        homeScore: match.homeScore,
-        awayScore: match.awayScore,
-        status: match.status,
-        slot: match.slot,
-        round: match.round,
-        winnerTeamId: match.winnerTeamId,
-        scheduledLabel: match.scheduledLabel,
-        createdAt: match.createdAt,
-        updatedAt: match.updatedAt,
-      },
-    });
+    // Save game rows before removing FK reference
+    const games = await tx.$queryRaw`SELECT * FROM "MatchGame" WHERE "matchId" = ${match.id}`;
 
-    // Migrate child MatchGame rows
-    await tx.matchGame.updateMany({
-      where: { matchId: match.id },
-      data: { matchId: newId },
-    });
+    // Delete children to free FK reference on old PK
+    await tx.$executeRaw`DELETE FROM "MatchGame" WHERE "matchId" = ${match.id}`;
 
-    // Delete the old row (after children are migrated)
-    await tx.match.delete({ where: { id: match.id } });
+    // Rename Match PK in-place (safe now — no children referencing it)
+    await tx.$executeRaw`UPDATE "Match" SET "id" = ${newId} WHERE "id" = ${match.id}`;
+
+    // Recreate game rows with new matchId
+    for (const g of games) {
+      await tx.$executeRaw`INSERT INTO "MatchGame" ("id","matchId","gameNumber","homeScore","awayScore") VALUES (${g.id},${newId},${g.gameNumber},${g.homeScore},${g.awayScore})`;
+    }
   });
 
   console.log(`  RENAMED ${match.id} → ${newId}`);
