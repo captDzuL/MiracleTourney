@@ -884,7 +884,10 @@ export async function adminSetMatchGamesAction(formData: FormData) {
     games.push({ gameNumber: i, homeScore, awayScore });
   }
 
-  if (games.length === 0) await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=Masukkan+skor+minimal+1+game.` as never);
+  if (games.length === 0) {
+    await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=Masukkan+skor+minimal+1+game.` as never);
+    return;
+  }
 
   try {
     await setMatchGames(matchId, matchEventId, games, bestOf);
