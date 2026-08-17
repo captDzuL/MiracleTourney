@@ -228,26 +228,30 @@ function TeamSection({
             {t("roster", { count: players.length })}
           </h3>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {players.map((player) => {
-              if (confirmDeleteId === player.id) {
-                return <DeletePlayerCard key={player.id} player={player} t={t} />;
-              }
-
-              if (editPlayerId === player.id) {
-                return <EditPlayerForm key={player.id} mode={mode} player={player} t={t} />;
-              }
-
+            {(() => {
               const effectiveCaptainName = team.captainName ?? team.captain?.name ?? null;
-              return (
-                <PlayerCard
-                  key={player.id}
-                  player={player}
-                  team={team}
-                  isCaptain={player.displayName === effectiveCaptainName}
-                  t={t}
-                />
-              );
-            })}
+              const hasMatch = players.some((p) => p.displayName === effectiveCaptainName);
+              const resolvedCaptainName =
+                !hasMatch && players.length > 0 ? players[0].displayName : effectiveCaptainName;
+
+              return players.map((player) => {
+                if (confirmDeleteId === player.id) {
+                  return <DeletePlayerCard key={player.id} player={player} t={t} />;
+                }
+                if (editPlayerId === player.id) {
+                  return <EditPlayerForm key={player.id} mode={mode} player={player} t={t} />;
+                }
+                return (
+                  <PlayerCard
+                    key={player.id}
+                    player={player}
+                    team={team}
+                    isCaptain={player.displayName === resolvedCaptainName}
+                    t={t}
+                  />
+                );
+              });
+            })()}
             <a
               href="#add-player-form"
               className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white p-4 text-slate-500 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700"
