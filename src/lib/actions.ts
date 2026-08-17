@@ -46,6 +46,7 @@ import {
   updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
+  setTeamCaptainDisplay,
 } from "@/lib/platform/repository";
 import fs from "fs";
 import path from "path";
@@ -434,6 +435,21 @@ export async function captainDeletePlayerAction(formData: FormData) {
 
   revalidatePath("/captain");
   await redirectToActiveLocale("/captain?success=player-deleted");
+}
+
+export async function captainSetDisplayCaptainAction(formData: FormData) {
+  const user = await requireCaptainSession();
+  const teamId = z.string().min(1).parse(formData.get("teamId"));
+  const playerId = z.string().min(1).parse(formData.get("playerId"));
+
+  try {
+    await setTeamCaptainDisplay(teamId, user.id, playerId);
+  } catch {
+    return await redirectToActiveLocale("/captain?error=" + encodeURIComponent("Tidak dapat mengubah tampilan kapten."));
+  }
+
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale("/captain?success=captain-display-updated");
 }
 
 /** Creates a new tournament event. Supported participant caps: 8, 12, 16, 24, 32, 64, 128, 256. */

@@ -1,9 +1,9 @@
-import { CalendarDays, Plus, Settings, Trophy, Users } from "lucide-react";
+import { CalendarDays, Crown, Plus, Settings, Trophy, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
-import { captainAddPlayerAction, captainDeletePlayerAction, captainUpdatePlayerAction } from "@/lib/actions";
+import { captainAddPlayerAction, captainDeletePlayerAction, captainSetDisplayCaptainAction, captainUpdatePlayerAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import {
@@ -82,6 +82,7 @@ export default async function CaptainPage({
       {success === "player-updated" ? <Notice tone="success">{t("playerUpdated")}</Notice> : null}
       {success === "player-deleted" ? <Notice tone="success">{t("playerDeleted")}</Notice> : null}
       {success === "registered" ? <Notice tone="success">{t("registered")}</Notice> : null}
+      {success === "captain-display-updated" ? <Notice tone="success">Tampilan kapten berhasil diperbarui.</Notice> : null}
       {error ? <Notice tone="danger">{decodeURIComponent(error)}</Notice> : null}
 
       <div className="space-y-8">
@@ -227,17 +228,30 @@ function TeamSection({
             {t("roster", { count: players.length })}
           </h3>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {players.map((player) => {
-              if (confirmDeleteId === player.id) {
-                return <DeletePlayerCard key={player.id} player={player} t={t} />;
-              }
+            {(() => {
+              const effectiveCaptainName = team.captainName ?? team.captain?.name ?? null;
+              const hasMatch = players.some((p) => p.displayName === effectiveCaptainName);
+              const resolvedCaptainName =
+                !hasMatch && players.length > 0 ? players[0].displayName : effectiveCaptainName;
 
-              if (editPlayerId === player.id) {
-                return <EditPlayerForm key={player.id} mode={mode} player={player} t={t} />;
-              }
-
-              return <PlayerCard key={player.id} player={player} t={t} />;
-            })}
+              return players.map((player) => {
+                if (confirmDeleteId === player.id) {
+                  return <DeletePlayerCard key={player.id} player={player} t={t} />;
+                }
+                if (editPlayerId === player.id) {
+                  return <EditPlayerForm key={player.id} mode={mode} player={player} t={t} />;
+                }
+                return (
+                  <PlayerCard
+                    key={player.id}
+                    player={player}
+                    team={team}
+                    isCaptain={player.displayName === resolvedCaptainName}
+                    t={t}
+                  />
+                );
+              });
+            })()}
             <a
               href="#add-player-form"
               className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white p-4 text-slate-500 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700"
@@ -351,15 +365,32 @@ function EditPlayerForm({ mode, player, t }: { mode: GameMode; player: Player; t
   );
 }
 
-function PlayerCard({ player, t }: { player: Player; t: TFn }) {
+function PlayerCard({ player, team, isCaptain, t }: { player: Player; team: Team; isCaptain: boolean; t: TFn }) {
   return (
-    <div className="relative rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <div className={`relative rounded-xl border p-4 ${isCaptain ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
       {player.jerseyNumber != null ? (
         <span className="absolute right-3 top-3 rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
           #{player.jerseyNumber}
         </span>
       ) : null}
-      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-lg text-sm font-semibold ${avatarTone(player.position)}`}>
+      {isCaptain ? (
+        <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-amber-900">
+          <Crown className="h-3 w-3" aria-hidden="true" /> Kapten
+        </span>
+      ) : (
+        <form action={captainSetDisplayCaptainAction} className="absolute left-3 top-3">
+          <input type="hidden" name="teamId" value={team.id} />
+          <input type="hidden" name="playerId" value={player.id} />
+          <button
+            type="submit"
+            title="Jadikan sebagai tampilan kapten di halaman peserta"
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-400 transition hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700"
+          >
+            <Crown className="h-3 w-3" aria-hidden="true" /> Jadikan
+          </button>
+        </form>
+      )}
+      <div className={`mb-3 mt-6 flex h-10 w-10 items-center justify-center rounded-lg text-sm font-semibold ${avatarTone(player.position)}`}>
         {player.nickname.slice(0, 2).toUpperCase()}
       </div>
       <p className="truncate text-sm font-semibold text-slate-950">{player.displayName}</p>
