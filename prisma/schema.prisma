@@ -125,6 +125,8 @@ model Match {
   games           MatchGame[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
+
+  @@unique([eventId, round, slot])
 }
 
 model EventRoundConfig {
