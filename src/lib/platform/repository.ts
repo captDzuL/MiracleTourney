@@ -1153,12 +1153,15 @@ export async function deletePlayer(id: string, captainUserId: string): Promise<v
   await prisma.player.delete({ where: { id } });
 }
 
-export async function setTeamCaptainDisplay(teamId: string, captainUserId: string, displayName: string): Promise<void> {
-  const team = await prisma.team.findUnique({ where: { id: teamId } });
-  if (!team || team.captainId !== captainUserId) {
+export async function setTeamCaptainDisplay(teamId: string, captainUserId: string, playerId: string): Promise<void> {
+  const player = await prisma.player.findFirst({
+    where: { id: playerId, teamId, team: { captainId: captainUserId } },
+    select: { displayName: true },
+  });
+  if (!player) {
     throw new Error("Not authorized to update this team.");
   }
-  await prisma.team.update({ where: { id: teamId }, data: { captainName: displayName } });
+  await prisma.team.update({ where: { id: teamId }, data: { captainName: player.displayName } });
 }
 
 // ── Stat Submissions (captain) ────────────────────────────────────────────────

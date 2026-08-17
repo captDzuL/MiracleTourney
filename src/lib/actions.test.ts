@@ -531,21 +531,34 @@ describe("captainSetDisplayCaptainAction", () => {
   it("requires a captain session", async () => {
     requireRole.mockResolvedValue(null);
     await expect(
-      captainSetDisplayCaptainAction(fd({ teamId: "t1", displayName: "Budi" })),
+      captainSetDisplayCaptainAction(fd({ teamId: "t1", playerId: "p1" })),
     ).rejects.toThrow("REDIRECT:/login");
   });
 
-  it("calls setTeamCaptainDisplay and redirects to success", async () => {
+  it("calls setTeamCaptainDisplay with playerId and redirects to success", async () => {
     await expect(
-      captainSetDisplayCaptainAction(fd({ teamId: "t1", displayName: "Sari" })),
+      captainSetDisplayCaptainAction(fd({ teamId: "t1", playerId: "p1" })),
     ).rejects.toThrow("REDIRECT:/captain?success=captain-display-updated");
-    expect(setTeamCaptainDisplay).toHaveBeenCalledWith("t1", "captain-1", "Sari");
+    expect(setTeamCaptainDisplay).toHaveBeenCalledWith("t1", "captain-1", "p1");
   });
 
-  it("redirects with error when setTeamCaptainDisplay throws", async () => {
-    setTeamCaptainDisplay.mockRejectedValue(new Error("Not authorized"));
+  it("does not accept displayName from client — action only passes playerId", async () => {
+    await captainSetDisplayCaptainAction(fd({ teamId: "t1", playerId: "p1", displayName: "INJECTED" })).catch(() => {});
+    expect(setTeamCaptainDisplay).toHaveBeenCalledWith("t1", "captain-1", "p1");
+    expect(setTeamCaptainDisplay).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), "INJECTED");
+  });
+
+  it("redirects with error when player does not belong to the team", async () => {
+    setTeamCaptainDisplay.mockRejectedValue(new Error("Not authorized to update this team."));
     await expect(
-      captainSetDisplayCaptainAction(fd({ teamId: "t1", displayName: "Sari" })),
+      captainSetDisplayCaptainAction(fd({ teamId: "t1", playerId: "other-team-player" })),
+    ).rejects.toThrow("REDIRECT:/captain?error=");
+  });
+
+  it("redirects with error when team does not belong to the captain", async () => {
+    setTeamCaptainDisplay.mockRejectedValue(new Error("Not authorized to update this team."));
+    await expect(
+      captainSetDisplayCaptainAction(fd({ teamId: "other-team", playerId: "p1" })),
     ).rejects.toThrow("REDIRECT:/captain?error=");
   });
 });

@@ -380,7 +380,7 @@ function PlayerCard({ player, team, isCaptain, t }: { player: Player; team: Team
       ) : (
         <form action={captainSetDisplayCaptainAction} className="absolute left-3 top-3">
           <input type="hidden" name="teamId" value={team.id} />
-          <input type="hidden" name="displayName" value={player.displayName} />
+          <input type="hidden" name="playerId" value={player.id} />
           <button
             type="submit"
             title="Jadikan sebagai tampilan kapten di halaman peserta"

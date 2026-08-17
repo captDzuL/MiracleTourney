@@ -440,10 +440,10 @@ export async function captainDeletePlayerAction(formData: FormData) {
 export async function captainSetDisplayCaptainAction(formData: FormData) {
   const user = await requireCaptainSession();
   const teamId = z.string().min(1).parse(formData.get("teamId"));
-  const displayName = z.string().min(1).max(64).parse(formData.get("displayName"));
+  const playerId = z.string().min(1).parse(formData.get("playerId"));
 
   try {
-    await setTeamCaptainDisplay(teamId, user.id, displayName);
+    await setTeamCaptainDisplay(teamId, user.id, playerId);
   } catch {
     return await redirectToActiveLocale("/captain?error=" + encodeURIComponent("Tidak dapat mengubah tampilan kapten."));
   }
