@@ -3,7 +3,7 @@ import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
-import { captainAddPlayerAction, captainDeletePlayerAction, captainUpdatePlayerAction } from "@/lib/actions";
+import { captainAddPlayerAction, captainDeletePlayerAction, captainSetDisplayCaptainAction, captainUpdatePlayerAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import {
@@ -82,6 +82,7 @@ export default async function CaptainPage({
       {success === "player-updated" ? <Notice tone="success">{t("playerUpdated")}</Notice> : null}
       {success === "player-deleted" ? <Notice tone="success">{t("playerDeleted")}</Notice> : null}
       {success === "registered" ? <Notice tone="success">{t("registered")}</Notice> : null}
+      {success === "captain-display-updated" ? <Notice tone="success">Tampilan kapten berhasil diperbarui.</Notice> : null}
       {error ? <Notice tone="danger">{decodeURIComponent(error)}</Notice> : null}
 
       <div className="space-y-8">
@@ -247,6 +248,31 @@ function TeamSection({
             </a>
           </div>
         </div>
+
+        {players.length > 0 && (
+          <details className="rounded-xl border border-slate-200 bg-slate-50">
+            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-cyan-700 hover:text-cyan-900">
+              Ganti tampilan kapten
+            </summary>
+            <div className="border-t border-slate-200 px-4 pb-4 pt-3">
+              <form action={captainSetDisplayCaptainAction} className="flex flex-wrap items-end gap-3">
+                <input type="hidden" name="teamId" value={team.id} />
+                <label className={`${labelClass} flex-1 min-w-40`}>
+                  Pemain yang ditampilkan sebagai kapten
+                  <select className={inputClass} name="displayName" defaultValue={team.captainName ?? ""}>
+                    {players.map((p) => (
+                      <option key={p.id} value={p.displayName}>{p.displayName}</option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit" className={quietButton}>Simpan</button>
+              </form>
+              <p className="mt-2 text-xs text-slate-400">
+                Nama ini tampil di halaman peserta publik. Akun kapten tidak berubah.
+              </p>
+            </div>
+          </details>
+        )}
 
         <form id="add-player-form" action={captainAddPlayerAction} className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <input type="hidden" name="teamId" value={team.id} />
