@@ -24,6 +24,7 @@ import {
   projectSingleEliminationBracket,
 } from "@/lib/tournament/engine";
 import type { BracketMatch, MatchResultInput, PlayerMatchStatInput } from "@/lib/tournament/types";
+import { Prisma } from "@prisma/client";
 import * as demoStore from "./demo-store";
 import { prisma } from "./db";
 
@@ -1114,8 +1115,15 @@ export async function addPlayer(input: {
   position: string;
   jerseyNumber?: number;
 }): Promise<Player> {
-  const row = await prisma.player.create({ data: input });
-  return mapPlayer(row);
+  try {
+    const row = await prisma.player.create({ data: input });
+    return mapPlayer(row);
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      throw new Error("Pemain dengan nickname ini sudah ada di tim.");
+    }
+    throw e;
+  }
 }
 
 /**

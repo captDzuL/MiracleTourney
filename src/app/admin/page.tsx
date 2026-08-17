@@ -447,10 +447,10 @@ function AdminPhaseRail({
             ))}
           </select>
         </label>
-        <button className={`${quietButton} mt-3 w-full`} type="submit">
+        <SubmitButton className={`${quietButton} mt-3 w-full`}>
           <RefreshCw className="h-4 w-4" />
           {t("switchEvent")}
-        </button>
+        </SubmitButton>
       </form>
 
       <div className="mt-4 border-t border-slate-200 pt-4">
@@ -547,10 +547,10 @@ function PrepareEventPhase({
                 </select>
               </label>
             </div>
-            <button className={primaryButton} type="submit">
+            <SubmitButton className={primaryButton}>
               <CalendarPlus className="h-4 w-4" />
               {t("createEventSubmit")}
-            </button>
+            </SubmitButton>
           </form>
         </Section>
 
@@ -599,10 +599,10 @@ function PrepareEventPhase({
                   {t("streamUrl")}
                   <input className={inputClass} name="url" defaultValue={activeEvent.stream?.url ?? "https://www.youtube.com/watch?v=dQw4w9WgXcQ"} />
                 </label>
-                <button className={quietButton} type="submit">
+                <SubmitButton className={quietButton}>
                   <LinkIcon className="h-4 w-4" />
                   {t("saveStream")}
-                </button>
+                </SubmitButton>
               </form>
             ) : (
               <p className="text-sm text-slate-500">{t("noEventsStream")}</p>
@@ -622,9 +622,9 @@ function PrepareEventPhase({
                 <form action={adminArchiveEventAction} className="flex items-center gap-2">
                   <input type="hidden" name="eventId" value={event.id} />
                   <input type="hidden" name="action" value="archive" />
-                  <button type="submit" className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100">
+                  <SubmitButton className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100">
                     Arsipkan (Selesai)
-                  </button>
+                  </SubmitButton>
                 </form>
                 {event.status === "Draft" && (
                   <details className="relative">
@@ -636,9 +636,9 @@ function PrepareEventPhase({
                       <form action={adminArchiveEventAction}>
                         <input type="hidden" name="eventId" value={event.id} />
                         <input type="hidden" name="action" value="delete" />
-                        <button type="submit" className="w-full rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500">
+                        <SubmitButton className="w-full rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500">
                           Konfirmasi Hapus
-                        </button>
+                        </SubmitButton>
                       </form>
                     </div>
                   </details>
@@ -665,9 +665,9 @@ function PrepareEventPhase({
                     <p className="mb-2 text-xs text-slate-600">Nonaktifkan {captain.name}? Kapten tidak dapat login setelah ini.</p>
                     <form action={adminDeactivateUserAction}>
                       <input type="hidden" name="userId" value={captain.id} />
-                      <button type="submit" className="w-full rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500">
+                      <SubmitButton className="w-full rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500">
                         Konfirmasi Nonaktifkan
-                      </button>
+                      </SubmitButton>
                     </form>
                   </div>
                 </details>
@@ -746,10 +746,10 @@ function PublicListingSettingsSection({
                   </label>
                 </div>
                 <div className="flex justify-end">
-                  <button className={quietButton} type="submit">
+                  <SubmitButton className={quietButton}>
                     <Save className="h-4 w-4" />
                     Simpan public info
-                  </button>
+                  </SubmitButton>
                 </div>
               </form>
             </details>
@@ -815,10 +815,10 @@ function BrandAssetsSection({
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <input type="file" name="eventLogo" accept="image/png,image/webp,image/jpeg" className={`${inputClass} flex-1 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
-                        <button className={quietButton} type="submit">
+                        <SubmitButton className={quietButton}>
                           <ImageUp className="h-4 w-4" />
                           Upload
-                        </button>
+                        </SubmitButton>
                       </div>
                     </form>
 
@@ -837,10 +837,10 @@ function BrandAssetsSection({
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <input type="file" name="eventBackground" accept="image/png,image/webp,image/jpeg" className={`${inputClass} flex-1 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
-                        <button className={quietButton} type="submit">
+                        <SubmitButton className={quietButton}>
                           <ImageUp className="h-4 w-4" />
                           Upload
-                        </button>
+                        </SubmitButton>
                       </div>
                     </form>
                   </div>
@@ -859,10 +859,10 @@ function BrandAssetsSection({
                           <input type="hidden" name="teamId" value={team.id} />
                           <TeamIdentity logoText={team.logoText} logoUrl={team.logoUrl} name={team.name} meta={team.tag} />
                           <input type="file" name="teamLogo" accept="image/png,image/webp,image/jpeg" className={`${inputClass} min-w-0 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
-                          <button className={quietButton} type="submit">
+                          <SubmitButton className={quietButton}>
                             <ImageUp className="h-4 w-4" />
                             Upload
-                          </button>
+                          </SubmitButton>
                         </form>
                       )) : (
                         <p className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">Belum ada team di event ini.</p>
@@ -986,12 +986,9 @@ function ImportRegistrationPhase({
                           <option key={c.id} value={c.id}>{c.name}</option>
                         ))}
                       </select>
-                      <button
-                        type="submit"
-                        className="rounded-full bg-cyan-600 px-3 py-1 text-xs font-semibold text-white hover:bg-cyan-500"
-                      >
+                      <SubmitButton className="rounded-full bg-cyan-600 px-3 py-1 text-xs font-semibold text-white hover:bg-cyan-500">
                         Simpan
-                      </button>
+                      </SubmitButton>
                     </form>,
                     eventStatus === "Draft" ? (
                       <details key={`${team.id}-delete`} className="relative">
@@ -1000,9 +997,9 @@ function ImportRegistrationPhase({
                           <p className="mb-2 text-xs text-slate-600">Hapus {team.name}?</p>
                           <form action={adminDeleteTeamAction}>
                             <input type="hidden" name="teamId" value={team.id} />
-                            <button type="submit" className="w-full rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500">
+                            <SubmitButton className="w-full rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500">
                               Konfirmasi Hapus
-                            </button>
+                            </SubmitButton>
                           </form>
                         </div>
                       </details>
@@ -1074,10 +1071,10 @@ function RunMatchDayPhase({
                     ))}
                   </select>
                 </label>
-                <button className={quietButton} type="submit">
+                <SubmitButton className={quietButton}>
                   <RefreshCw className="h-4 w-4" />
                   {t("changeEvent")}
-                </button>
+                </SubmitButton>
               </form>
 
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -1128,10 +1125,10 @@ function RunMatchDayPhase({
                             <option value="5">Best of 5</option>
                           </select>
                         </label>
-                        <button className={quietButton} type="submit">
+                        <SubmitButton className={quietButton}>
                           <SlidersHorizontal className="h-4 w-4" />
                           {t("saveRoundConfig")}
-                        </button>
+                        </SubmitButton>
                       </form>
                     );
                   })}
@@ -1172,10 +1169,10 @@ function RunMatchDayPhase({
                         <input className={inputClass} name="awayScore" type="number" min="0" defaultValue="0" />
                       </label>
                     </div>
-                    <button className={primaryButton} type="submit">
+                    <SubmitButton className={primaryButton}>
                       <Save className="h-4 w-4" />
                       {t("saveResult")}
-                    </button>
+                    </SubmitButton>
                   </form>
                 ) : (
                   <form action={adminSetMatchGamesAction} className="grid gap-4">
@@ -1200,10 +1197,10 @@ function RunMatchDayPhase({
                         );
                       })}
                     </div>
-                    <button className={primaryButton} type="submit">
+                    <SubmitButton className={primaryButton}>
                       <Save className="h-4 w-4" />
                       {t("saveGames")}
-                    </button>
+                    </SubmitButton>
                   </form>
                 )}
 
@@ -1298,18 +1295,18 @@ function ReviewPublishPhase({
                     <div className="flex flex-wrap gap-3">
                       <form action={adminApproveStatAction}>
                         <input type="hidden" name="submissionId" value={submission.id} />
-                        <button className={primaryButton} type="submit">
+                        <SubmitButton className={primaryButton}>
                           <Check className="h-4 w-4" />
                           {t("approve")}
-                        </button>
+                        </SubmitButton>
                       </form>
                       <form action={adminRejectStatAction} className="flex flex-wrap gap-2">
                         <input type="hidden" name="submissionId" value={submission.id} />
                         <input className={inputClass} name="rejectionNote" placeholder={t("rejectionNote")} />
-                        <button className={quietButton} type="submit">
+                        <SubmitButton className={quietButton}>
                           <X className="h-4 w-4" />
                           {t("reject")}
-                        </button>
+                        </SubmitButton>
                       </form>
                     </div>
                   </div>
@@ -1348,10 +1345,10 @@ function ReviewPublishPhase({
                       ) : null}
                       <div className="flex flex-wrap gap-2">
                         <input type="file" name="characterArt" accept="image/png,image/webp,image/jpeg" className={`${inputClass} flex-1 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
-                        <button className={quietButton} type="submit">
+                        <SubmitButton className={quietButton}>
                           <ImageUp className="h-4 w-4" />
                           {t("upload")}
-                        </button>
+                        </SubmitButton>
                       </div>
                     </form>
                     <form action={adminSetAccentColorAction} className="flex flex-wrap items-end gap-3">
@@ -1360,10 +1357,10 @@ function ReviewPublishPhase({
                         {t("accentColor")}
                         <input type="color" name="accentColor" defaultValue={event.accentColor ?? "#2563eb"} className="h-10 w-16 cursor-pointer rounded-lg border border-slate-200 bg-white p-1" />
                       </label>
-                      <button className={quietButton} type="submit">
+                      <SubmitButton className={quietButton}>
                         <Palette className="h-4 w-4" />
                         {t("saveColor")}
-                      </button>
+                      </SubmitButton>
                     </form>
                     {cert ? (
                       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">

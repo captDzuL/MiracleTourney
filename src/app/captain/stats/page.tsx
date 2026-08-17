@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth/session";
 import { getStatKeysForMode } from "@/lib/platform/config";
 import { getCompletedMatchesForCaptain, getPlayersForTeams } from "@/lib/platform/repository";
 import { Section } from "@/components/ui";
+import { SubmitButton } from "@/components/submit-button";
 
 export const dynamic = "force-dynamic";
 
@@ -131,12 +132,9 @@ export default async function CaptainStatsPage() {
                     </div>
 
                     <div className="mt-4">
-                      <button
-                        type="submit"
-                        className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-                      >
+                      <SubmitButton className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
                         {sub?.status === "rejected" ? t("resubmit") : t("submit")}
-                      </button>
+                      </SubmitButton>
                     </div>
                   </form>
                 )}

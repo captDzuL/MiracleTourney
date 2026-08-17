@@ -1,4 +1,5 @@
 import { requestPasswordResetAction } from "@/lib/actions";
+import { SubmitButton } from "@/components/submit-button";
 
 export default async function ForgotPasswordPage({
   searchParams,
@@ -38,12 +39,9 @@ export default async function ForgotPasswordPage({
                 placeholder="email@contoh.com"
               />
             </div>
-            <button
-              type="submit"
-              className="w-full rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-            >
+            <SubmitButton className="w-full rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300">
               Kirim Link Reset
-            </button>
+            </SubmitButton>
           </form>
         )}
         <p className="mt-6 text-center text-sm text-slate-400">

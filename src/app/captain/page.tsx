@@ -18,6 +18,7 @@ import {
 import type { Certificate } from "@/lib/platform/types";
 import type { Event, Game, GameMode, Player, Team } from "@/lib/platform/types";
 import { ShareCertificateButton } from "@/components/ShareCertificateButton";
+import { SubmitButton } from "@/components/submit-button";
 
 type TFn = (key: string, values?: Record<string, string | number>) => string;
 
@@ -289,9 +290,9 @@ function TeamSection({
             </label>
           </div>
           <div>
-            <button className={primaryButton} type="submit">
+            <SubmitButton className={primaryButton}>
               {t("addPlayerSubmit")}
-            </button>
+            </SubmitButton>
           </div>
         </form>
       </div>
@@ -305,9 +306,9 @@ function DeletePlayerCard({ player, t }: { player: Player; t: TFn }) {
       <p className="text-sm font-semibold text-red-700">{t("deleteConfirm", { name: player.displayName })}</p>
       <form action={captainDeletePlayerAction}>
         <input type="hidden" name="playerId" value={player.id} />
-        <button type="submit" className={dangerButton}>
+        <SubmitButton className={dangerButton}>
           {t("confirmDelete")}
-        </button>
+        </SubmitButton>
       </form>
       <Link href="/captain" className="text-sm font-medium text-slate-600 hover:text-slate-900">
         {t("cancelAction")}
@@ -354,9 +355,9 @@ function EditPlayerForm({ mode, player, t }: { mode: GameMode; player: Player; t
         </label>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button type="submit" className={primaryButton}>
+        <SubmitButton className={primaryButton}>
           {t("save")}
-        </button>
+        </SubmitButton>
         <Link href="/captain" className={quietButton}>
           {t("cancelAction")}
         </Link>
@@ -381,13 +382,13 @@ function PlayerCard({ player, team, isCaptain, t }: { player: Player; team: Team
         <form action={captainSetDisplayCaptainAction} className="absolute left-3 top-3">
           <input type="hidden" name="teamId" value={team.id} />
           <input type="hidden" name="playerId" value={player.id} />
-          <button
-            type="submit"
+          <SubmitButton
             title="Jadikan sebagai tampilan kapten di halaman peserta"
             className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-400 transition hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700"
+            pendingLabel="..."
           >
             <Crown className="h-3 w-3" aria-hidden="true" /> Jadikan
-          </button>
+          </SubmitButton>
         </form>
       )}
       <div className={`mb-3 mt-6 flex h-10 w-10 items-center justify-center rounded-lg text-sm font-semibold ${avatarTone(player.position)}`}>

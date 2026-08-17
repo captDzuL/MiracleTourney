@@ -102,6 +102,8 @@ model Player {
   jerseyNumber Int?
   stats        PlayerStat[]
   createdAt    DateTime     @default(now())
+
+  @@unique([teamId, nickname])
 }
 
 model Match {
