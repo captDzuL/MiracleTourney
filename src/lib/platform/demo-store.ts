@@ -485,6 +485,7 @@ function getProjectedBracketMatches(event: Event): Match[] {
     teams: teamSeeds,
     slotCount: getBracketSlotCount(teamSeeds.length),
     results: getMatchesForEvent(event.id),
+    eventId: event.id,
   }) as BracketMatch[];
   const existingById = new Map(getMatchesForEvent(event.id).map((match) => [match.id, match]));
   const totalRounds = Math.max(...bracket.map((match) => match.round), 1);
@@ -608,6 +609,7 @@ export function getBracketPreview(eventId: string) {
       teams: teamSeeds,
       slotCount: getBracketSlotCount(teamSeeds.length),
       results: getMatchesForEvent(eventId),
+      eventId,
     });
   }
 
@@ -624,6 +626,7 @@ export function getPublicVisibleBracketPreview(eventId: string): ReturnType<type
     teams: teamSeeds,
     slotCount: getBracketSlotCount(teamSeeds.length),
     results: getMatchesForEvent(eventId),
+    eventId,
   });
 }
 

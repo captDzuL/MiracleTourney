@@ -56,7 +56,7 @@ describe("demo-store bracket operations", () => {
 
   it("uses canonical projected bracket match ids for admin result entry and public advancement", () => {
     const manageable = getBracketManageableMatches("event-kuroko-summer");
-    const targetMatch = manageable.find((match) => match.id === "bracket-r2-m1");
+    const targetMatch = manageable.find((match) => match.id === "event-kuroko-summer-r2-m1");
 
     expect(targetMatch).toMatchObject({
       homeTeamId: "team-seirin",
@@ -67,13 +67,13 @@ describe("demo-store bracket operations", () => {
 
     const saved = setMatchResult({
       eventId: "event-kuroko-summer",
-      matchId: "bracket-r2-m1",
+      matchId: "event-kuroko-summer-r2-m1",
       homeScore: 21,
       awayScore: 18,
     });
 
     expect(saved).toMatchObject({
-      id: "bracket-r2-m1",
+      id: "event-kuroko-summer-r2-m1",
       winnerTeamId: "team-seirin",
       status: "Completed",
     });

@@ -470,7 +470,7 @@ describe("public demo fallback reads", () => {
 
     expect(preview).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: expect.stringContaining("bracket-") }),
+        expect.objectContaining({ id: expect.stringMatching(/^event-kuroko-summer-r\d+-m\d+$/) }),
       ]),
     );
   });

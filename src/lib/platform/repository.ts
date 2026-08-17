@@ -528,6 +528,7 @@ async function getProjectedBracketMatches(event: Event): Promise<Match[]> {
     teams: teamSeeds,
     slotCount: getBracketSlotCount(teams.length),
     results: existingMatches,
+    eventId: event.id,
   }) as BracketMatch[];
   const existingBySlot = new Map(
     existingMatches
@@ -750,6 +751,7 @@ export async function getBracketPreview(eventId: string) {
       teams: teamSeeds,
       slotCount: getBracketSlotCount(teams.length),
       results: matches,
+      eventId,
     });
   }
 
@@ -783,6 +785,7 @@ export async function getPublicVisibleBracketPreview(eventId: string) {
       teams: teamSeeds,
       slotCount,
       results: matches,
+      eventId,
     });
   }
 
@@ -790,6 +793,7 @@ export async function getPublicVisibleBracketPreview(eventId: string) {
     teams: teamSeeds,
     slotCount,
     results: matches,
+    eventId,
   });
 }
 
