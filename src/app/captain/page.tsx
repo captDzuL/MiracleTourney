@@ -1,4 +1,4 @@
-import { CalendarDays, Plus, Settings, Trophy, Users } from "lucide-react";
+import { CalendarDays, Crown, Plus, Settings, Trophy, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
@@ -237,7 +237,15 @@ function TeamSection({
                 return <EditPlayerForm key={player.id} mode={mode} player={player} t={t} />;
               }
 
-              return <PlayerCard key={player.id} player={player} t={t} />;
+              return (
+                <PlayerCard
+                  key={player.id}
+                  player={player}
+                  team={team}
+                  isCaptain={player.displayName === team.captainName}
+                  t={t}
+                />
+              );
             })}
             <a
               href="#add-player-form"
@@ -248,31 +256,6 @@ function TeamSection({
             </a>
           </div>
         </div>
-
-        {players.length > 0 && (
-          <details className="rounded-xl border border-slate-200 bg-slate-50">
-            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-cyan-700 hover:text-cyan-900">
-              Ganti tampilan kapten
-            </summary>
-            <div className="border-t border-slate-200 px-4 pb-4 pt-3">
-              <form action={captainSetDisplayCaptainAction} className="flex flex-wrap items-end gap-3">
-                <input type="hidden" name="teamId" value={team.id} />
-                <label className={`${labelClass} flex-1 min-w-40`}>
-                  Pemain yang ditampilkan sebagai kapten
-                  <select className={inputClass} name="displayName" defaultValue={team.captainName ?? ""}>
-                    {players.map((p) => (
-                      <option key={p.id} value={p.displayName}>{p.displayName}</option>
-                    ))}
-                  </select>
-                </label>
-                <button type="submit" className={quietButton}>Simpan</button>
-              </form>
-              <p className="mt-2 text-xs text-slate-400">
-                Nama ini tampil di halaman peserta publik. Akun kapten tidak berubah.
-              </p>
-            </div>
-          </details>
-        )}
 
         <form id="add-player-form" action={captainAddPlayerAction} className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <input type="hidden" name="teamId" value={team.id} />
@@ -377,15 +360,32 @@ function EditPlayerForm({ mode, player, t }: { mode: GameMode; player: Player; t
   );
 }
 
-function PlayerCard({ player, t }: { player: Player; t: TFn }) {
+function PlayerCard({ player, team, isCaptain, t }: { player: Player; team: Team; isCaptain: boolean; t: TFn }) {
   return (
-    <div className="relative rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <div className={`relative rounded-xl border p-4 ${isCaptain ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
       {player.jerseyNumber != null ? (
         <span className="absolute right-3 top-3 rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
           #{player.jerseyNumber}
         </span>
       ) : null}
-      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-lg text-sm font-semibold ${avatarTone(player.position)}`}>
+      {isCaptain ? (
+        <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-amber-900">
+          <Crown className="h-3 w-3" aria-hidden="true" /> Kapten
+        </span>
+      ) : (
+        <form action={captainSetDisplayCaptainAction} className="absolute left-3 top-3">
+          <input type="hidden" name="teamId" value={team.id} />
+          <input type="hidden" name="displayName" value={player.displayName} />
+          <button
+            type="submit"
+            title="Jadikan sebagai tampilan kapten di halaman peserta"
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-400 transition hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700"
+          >
+            <Crown className="h-3 w-3" aria-hidden="true" /> Jadikan
+          </button>
+        </form>
+      )}
+      <div className={`mb-3 mt-6 flex h-10 w-10 items-center justify-center rounded-lg text-sm font-semibold ${avatarTone(player.position)}`}>
         {player.nickname.slice(0, 2).toUpperCase()}
       </div>
       <p className="truncate text-sm font-semibold text-slate-950">{player.displayName}</p>
