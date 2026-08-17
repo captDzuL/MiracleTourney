@@ -10,8 +10,8 @@ import type {
 } from "./types";
 import type { Match } from "../platform/types";
 
-function createMatchId(prefix: string, round: number, slot: number) {
-  return `${prefix}-r${round}-m${slot}`;
+function createMatchId(eventId: string, round: number, slot: number) {
+  return `${eventId}-r${round}-m${slot}`;
 }
 
 function getBracketSize(participantCap: number) {
@@ -46,6 +46,7 @@ function getSeedOrder(size: number): number[] {
 export function generateSingleEliminationBracket(
   teams: TeamSeed[],
   slotCount: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256,
+  eventId: string,
 ): BracketMatch[] {
   const entrants = teams.slice(0, slotCount);
 
@@ -81,7 +82,7 @@ export function generateSingleEliminationBracket(
             : undefined;
 
       bracket.push({
-        id: createMatchId("bracket", round, slot + 1),
+        id: createMatchId(eventId, round, slot + 1),
         round,
         slot: slot + 1,
         homeTeamId: homeEntry?.id ?? null,
@@ -135,8 +136,9 @@ export function projectSingleEliminationBracket(input: {
   teams: TeamSeed[];
   slotCount: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
   results: Match[];
+  eventId: string;
 }): BracketMatch[] {
-  const base = generateSingleEliminationBracket(input.teams, input.slotCount);
+  const base = generateSingleEliminationBracket(input.teams, input.slotCount, input.eventId);
   const resultsById = new Map(input.results.map((match) => [match.id, match]));
   const resultsByPosition = new Map(
     input.results
@@ -193,6 +195,7 @@ export function getPublicVisibleSingleEliminationBracket(input: {
   teams: TeamSeed[];
   slotCount: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
   results: Match[];
+  eventId: string;
 }): BracketMatch[] {
   return projectSingleEliminationBracket(input)
     .map((match) => {

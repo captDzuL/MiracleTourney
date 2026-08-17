@@ -18,6 +18,8 @@ import type {
   TeamSeed,
 } from "./types";
 
+const TEST_EVENT_ID = "test-event";
+
 const teams: TeamSeed[] = [
   { id: "team-a", name: "Team A" },
   { id: "team-b", name: "Team B" },
@@ -31,7 +33,7 @@ const teams: TeamSeed[] = [
 
 describe("generateSingleEliminationBracket", () => {
   it("creates seeded first-round matches and byes for open slots", () => {
-    const bracket = generateSingleEliminationBracket(teams.slice(0, 6), 8);
+    const bracket = generateSingleEliminationBracket(teams.slice(0, 6), 8, TEST_EVENT_ID);
 
     expect(bracket.length).toBe(7);
     expect(bracket.filter((match) => match.round === 1)).toHaveLength(4);
@@ -45,7 +47,7 @@ describe("generateSingleEliminationBracket", () => {
   });
 
   it("keeps undersubscribed events in their configured preset bracket", () => {
-    const bracket = generateSingleEliminationBracket(teams.slice(0, 7), 12);
+    const bracket = generateSingleEliminationBracket(teams.slice(0, 7), 12, TEST_EVENT_ID);
 
     expect(bracket.filter((match) => match.round === 1)).toHaveLength(8);
     expect(bracket.filter((match) => match.byeForTeamId)).toHaveLength(7);
@@ -60,7 +62,7 @@ describe("generateSingleEliminationBracket", () => {
       { id: "team-l", name: "Team L" },
     ];
 
-    const bracket = generateSingleEliminationBracket(extendedTeams, 12);
+    const bracket = generateSingleEliminationBracket(extendedTeams, 12, TEST_EVENT_ID);
 
     expect(bracket.filter((match) => match.round === 1)).toHaveLength(8);
     expect(bracket.filter((match) => match.byeForTeamId)).toHaveLength(4);
@@ -73,6 +75,7 @@ describe("projectSingleEliminationBracket", () => {
       teams: teams.slice(0, 7),
       slotCount: 8,
       results: [],
+      eventId: TEST_EVENT_ID,
     });
 
     const semifinal = projected.find((match) => match.round === 2 && match.slot === 1);
@@ -83,6 +86,7 @@ describe("projectSingleEliminationBracket", () => {
     const projected = projectSingleEliminationBracket({
       teams: teams.slice(0, 7),
       slotCount: 8,
+      eventId: TEST_EVENT_ID,
       results: [
         {
           id: "bracket-r1-m2",
@@ -111,6 +115,7 @@ describe("projectSingleEliminationBracket", () => {
     const projected = projectSingleEliminationBracket({
       teams: teams.slice(0, 4),
       slotCount: 8,
+      eventId: TEST_EVENT_ID,
       results: [
         {
           id: "unrelated-semifinal-result",
@@ -144,6 +149,7 @@ describe("projectSingleEliminationBracket", () => {
       teams: teams.slice(0, 7),
       slotCount: 12,
       results: [],
+      eventId: TEST_EVENT_ID,
     });
 
     const quarterfinal = projected.find((match) => match.round === 2 && match.slot === 1);
@@ -160,9 +166,10 @@ describe("getPublicVisibleSingleEliminationBracket", () => {
       teams: teams.slice(0, 2),
       slotCount: 8,
       results: [],
+      eventId: TEST_EVENT_ID,
     });
 
-    expect(visible.find((match) => match.id === "bracket-r3-m1")).toMatchObject({
+    expect(visible.find((match) => match.id === `${TEST_EVENT_ID}-r3-m1`)).toMatchObject({
       homeTeamId: "team-a",
       awayTeamId: "team-b",
       visibility: "ready",
@@ -174,6 +181,7 @@ describe("getPublicVisibleSingleEliminationBracket", () => {
     const visible = getPublicVisibleSingleEliminationBracket({
       teams: teams.slice(0, 7),
       slotCount: 12,
+      eventId: TEST_EVENT_ID,
       results: [
         {
           id: "bracket-r2-m2",
@@ -191,7 +199,7 @@ describe("getPublicVisibleSingleEliminationBracket", () => {
       ],
     });
 
-    expect(visible.find((match) => match.id === "bracket-r3-m1")).toMatchObject({
+    expect(visible.find((match) => match.id === `${TEST_EVENT_ID}-r3-m1`)).toMatchObject({
       homeTeamId: "team-a",
       awayTeamId: "team-d",
       visibility: "ready",
@@ -213,11 +221,12 @@ describe("getPublicVisibleSingleEliminationBracket", () => {
       teams,
       slotCount: 8,
       results: [],
+      eventId: TEST_EVENT_ID,
     });
 
     expect(visible).toHaveLength(4);
     expect(visible.every((match) => match.round === 1)).toBe(true);
-    expect(visible.find((match) => match.id === "bracket-r1-m2")).toMatchObject({
+    expect(visible.find((match) => match.id === `${TEST_EVENT_ID}-r1-m2`)).toMatchObject({
       homeTeamId: "team-4",
       awayTeamId: "team-5",
       visibility: "ready",
@@ -226,21 +235,21 @@ describe("getPublicVisibleSingleEliminationBracket", () => {
     expect(visible.filter((match) => match.byeForTeamId)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "bracket-r1-m1",
+          id: `${TEST_EVENT_ID}-r1-m1`,
           byeForTeamId: "team-1",
           visibility: "auto-advance",
           isPublicVisible: true,
         }),
         expect.objectContaining({
-          id: "bracket-r1-m3",
+          id: `${TEST_EVENT_ID}-r1-m3`,
           byeForTeamId: "team-2",
           visibility: "auto-advance",
           isPublicVisible: true,
         }),
       ]),
     );
-    expect(visible.find((match) => match.id === "bracket-r2-m1")).toBeUndefined();
-    expect(visible.find((match) => match.id === "bracket-r2-m2")).toBeUndefined();
+    expect(visible.find((match) => match.id === `${TEST_EVENT_ID}-r2-m1`)).toBeUndefined();
+    expect(visible.find((match) => match.id === `${TEST_EVENT_ID}-r2-m2`)).toBeUndefined();
   });
 
   it("shows a semifinal only after both quarterfinal winners are known", () => {
@@ -266,12 +275,14 @@ describe("getPublicVisibleSingleEliminationBracket", () => {
       teams,
       slotCount: 8,
       results: [firstQuarterfinal],
+      eventId: TEST_EVENT_ID,
     });
     expect(partiallyVisible.some((match) => match.round === 2)).toBe(false);
 
     const visible = getPublicVisibleSingleEliminationBracket({
       teams,
       slotCount: 8,
+      eventId: TEST_EVENT_ID,
       results: [
         firstQuarterfinal,
         {
@@ -290,7 +301,7 @@ describe("getPublicVisibleSingleEliminationBracket", () => {
       ],
     });
 
-    expect(visible.find((match) => match.id === "bracket-r2-m1")).toMatchObject({
+    expect(visible.find((match) => match.id === `${TEST_EVENT_ID}-r2-m1`)).toMatchObject({
       homeTeamId: "team-1",
       awayTeamId: "team-4",
       visibility: "ready",
