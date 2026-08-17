@@ -237,12 +237,13 @@ function TeamSection({
                 return <EditPlayerForm key={player.id} mode={mode} player={player} t={t} />;
               }
 
+              const effectiveCaptainName = team.captainName ?? team.captain?.name ?? null;
               return (
                 <PlayerCard
                   key={player.id}
                   player={player}
                   team={team}
-                  isCaptain={player.displayName === team.captainName}
+                  isCaptain={player.displayName === effectiveCaptainName}
                   t={t}
                 />
               );
