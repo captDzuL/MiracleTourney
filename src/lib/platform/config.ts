@@ -151,7 +151,7 @@ export const gameModes: GameMode[] = [
     teamSize: 5,
     maxRosterSize: 8,
     positions: ["Forward", "Midfielder", "Defender", "Goalkeeper"],
-    statKeys: ["goals", "assists", "tackles", "blocks"],
+    statKeys: ["goal", "assist", "passing", "defense"],
   },
   {
     id: "mode-mlbb-5v5",

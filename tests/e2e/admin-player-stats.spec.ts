@@ -72,7 +72,7 @@ test.describe("admin player stats entry", () => {
   test("stats form shows dynamic stat keys for Flashpeak game mode", async ({ page }) => {
     await expect(page.getByText("Statistik Pemain", { exact: true })).toBeVisible({ timeout: 15_000 });
 
-    const pillSummary = page.locator("span").filter({ hasText: /goals/ }).first();
+    const pillSummary = page.locator("span").filter({ hasText: /goal/ }).first();
     await expect(pillSummary).toBeVisible();
   });
 

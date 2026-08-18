@@ -1544,9 +1544,32 @@ export async function adminWriteMatchPlayerStats(input: {
   const game = event?.gameId ? getGameConfig(event.gameId) : null;
   const gameSlug = game?.slug ?? "unknown";
 
-  await prisma.$transaction(async (tx) => {
-    await writePlayerStatsToDb(tx, input.matchId, input.teamId, gameSlug, input.stats, { source: "admin", lastUpdatedBy: input.adminId });
-  });
+  // Upserts run without an interactive transaction — each row-level upsert is
+  // independently atomic and Neon/PgBouncer doesn't support long-lived interactive
+  // transactions (P2028: "Transaction not found / old closed transaction").
+  for (const [playerId, playerStats] of Object.entries(input.stats)) {
+    const player = await prisma.player.findUnique({
+      where: { id: playerId },
+      select: { displayName: true, position: true },
+    });
+    if (!player) continue;
+
+    await prisma.playerStat.upsert({
+      where: { matchId_playerId: { matchId: input.matchId, playerId } },
+      update: { stats: playerStats as object, source: "admin", lastUpdatedBy: input.adminId },
+      create: {
+        matchId: input.matchId,
+        playerId,
+        playerName: player.displayName,
+        teamId: input.teamId,
+        position: player.position,
+        gameSlug,
+        stats: playerStats as object,
+        source: "admin",
+        lastUpdatedBy: input.adminId,
+      },
+    });
+  }
 }
 
 /** Rejects a stat submission with a note shown to the captain. Does not delete PlayerStat rows. */
