@@ -30,6 +30,7 @@ import {
   adminDeleteTeamAction,
   adminImportTeamsCsvAction,
   adminRejectStatAction,
+  adminSaveMatchPlayerStatsAction,
   adminSetAccentColorAction,
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
@@ -46,6 +47,7 @@ import { requireAnyRole } from "@/lib/auth/session";
 import {
   getBracketManageableMatchesForEvent,
   getCaptainUsersForAdmin,
+  getMatchWithRosterAndStats,
   getCertificatesForEvents,
   getEventBySlug,
   getEventRoundConfigs,
@@ -64,7 +66,7 @@ import {
 } from "@/lib/platform/repository";
 import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
 import { TeamAvatar, TeamIdentity } from "@/components/TeamAvatar";
-import { getGameModeDisplayLabel } from "@/lib/platform/config";
+import { getGameModeDisplayLabel, getStatKeysForMode } from "@/lib/platform/config";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 import { getCaptainDisplayName } from "@/lib/team-display";
 
@@ -189,12 +191,28 @@ export default async function AdminPage({
   const importedEventIds = new Set(importedTeamsRaw.map((team) => team.eventId));
 
   const selectedMatchId = resolvedSearchParams?.matchId;
-  const [roundConfigs, selectedMatchGames] = await Promise.all([
+
+  // Completed matches for the currently active event only.
+  // Filtered by activeEvent so "Hasil & Statistik" stays scoped to what the admin is working on.
+  const completedMatchesWithEvent: { match: MatchItem; event: EventItem }[] = activePhase === "run" && activeEvent
+    ? (await getMatchesForEvent(activeEvent.id))
+        .filter((m) => m.status === "Completed")
+        .map((match) => ({ match, event: activeEvent }))
+    : [];
+
+  const completedMatchItem = selectedMatchId
+    ? completedMatchesWithEvent.find((item) => item.match.id === selectedMatchId)
+    : undefined;
+
+  const [roundConfigs, selectedMatchGames, selectedMatchRosterAndStats] = await Promise.all([
     activePhase === "run" && selectedManageableEvent ? getEventRoundConfigs(selectedManageableEvent.event.id) : Promise.resolve([]),
     activePhase === "run" && selectedMatchId ? getMatchGames(selectedMatchId) : Promise.resolve([]),
+    activePhase === "run" && selectedMatchId ? getMatchWithRosterAndStats(selectedMatchId) : Promise.resolve(null),
   ]);
   const roundConfigMap = new Map(roundConfigs.map((config) => [config.roundLabel, config.bestOf]));
-  const selectedMatch = selectedMatchId ? manageableMatches.find((match) => match.id === selectedMatchId) : undefined;
+  const selectedMatch = selectedMatchId
+    ? (manageableMatches.find((match) => match.id === selectedMatchId) ?? completedMatchItem?.match)
+    : undefined;
   const selectedMatchBestOf = selectedMatch ? (roundConfigMap.get(selectedMatch.roundLabel) ?? 1) : 1;
 
   const [certificatesByEvent, pendingSubmissions] = activePhase === "review"
@@ -265,6 +283,9 @@ export default async function AdminPage({
 
           {activePhase === "run" ? (
             <RunMatchDayPhase
+              activeEvent={activeEvent}
+              completedMatchesWithEvent={completedMatchesWithEvent}
+              completedMatchItem={completedMatchItem}
               manageableEvents={manageableEvents}
               manageableMatches={manageableMatches}
               roundConfigMap={roundConfigMap}
@@ -273,6 +294,7 @@ export default async function AdminPage({
               selectedMatch={selectedMatch}
               selectedMatchBestOf={selectedMatchBestOf}
               selectedMatchGames={selectedMatchGames}
+              selectedMatchRosterAndStats={selectedMatchRosterAndStats}
               t={t}
               teamName={teamName}
             />
@@ -1017,7 +1039,13 @@ function ImportRegistrationPhase({
   );
 }
 
+type MatchRosterAndStats = Awaited<ReturnType<typeof getMatchWithRosterAndStats>>;
+type CompletedMatchWithEvent = { match: MatchItem; event: EventItem };
+
 function RunMatchDayPhase({
+  activeEvent,
+  completedMatchesWithEvent,
+  completedMatchItem,
   manageableEvents,
   manageableMatches,
   roundConfigMap,
@@ -1026,9 +1054,13 @@ function RunMatchDayPhase({
   selectedMatch,
   selectedMatchBestOf,
   selectedMatchGames,
+  selectedMatchRosterAndStats,
   t,
   teamName,
 }: {
+  activeEvent: EventItem | undefined;
+  completedMatchesWithEvent: CompletedMatchWithEvent[];
+  completedMatchItem: CompletedMatchWithEvent | undefined;
   manageableEvents: ManageableEventItem[];
   manageableMatches: MatchItem[];
   roundConfigMap: Map<string, number>;
@@ -1037,12 +1069,15 @@ function RunMatchDayPhase({
   selectedMatch: MatchItem | undefined;
   selectedMatchBestOf: number;
   selectedMatchGames: MatchGameItem[];
+  selectedMatchRosterAndStats: MatchRosterAndStats;
   t: AdminTranslator;
   teamName: (teamId: string | undefined) => string;
 }) {
   const distinctRoundLabels = selectedManageableEvent
     ? [...new Set(selectedManageableEvent.manageableMatches.map((match) => match.roundLabel))]
     : [];
+
+  const hasContent = selectedManageableEvent || completedMatchesWithEvent.length > 0;
 
   return (
     <PhaseSection
@@ -1055,62 +1090,113 @@ function RunMatchDayPhase({
       description={t("runDescription")}
       title={t("runTitle")}
     >
-      {selectedManageableEvent ? (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.9fr)]">
+      {hasContent ? (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.85fr)]">
           <div className="grid gap-6">
-            <Section title={t("matchQueueTitle")} description={t("matchQueueDescription")} className="rounded-xl shadow-none">
-              <form action="" className="mb-5 flex flex-wrap items-end gap-3">
-                <input type="hidden" name="phase" value="run" />
-                <label className={`${labelClass} min-w-64 flex-1`}>
-                  {t("eventSelect")}
-                  <select className={inputClass} name="matchEventId" defaultValue={selectedManageableEvent.event.id}>
-                    {manageableEvents.map(({ event, manageableMatches: eventMatches }) => (
-                      <option key={event.id} value={event.id}>
-                        {event.name} - {t("matchesRemaining", { n: eventMatches.length })}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <SubmitButton className={quietButton}>
-                  <RefreshCw className="h-4 w-4" />
-                  {t("changeEvent")}
-                </SubmitButton>
-              </form>
+            {selectedManageableEvent ? (
+              <Section title={t("matchQueueTitle")} description={t("matchQueueDescription")} className="rounded-xl shadow-none">
+                <form action="" className="mb-5 flex flex-wrap items-end gap-3">
+                  <input type="hidden" name="phase" value="run" />
+                  <label className={`${labelClass} min-w-64 flex-1`}>
+                    {t("eventSelect")}
+                    <select className={inputClass} name="matchEventId" defaultValue={selectedManageableEvent.event.id}>
+                      {manageableEvents.map(({ event, manageableMatches: eventMatches }) => (
+                        <option key={event.id} value={event.id}>
+                          {event.name} - {t("matchesRemaining", { n: eventMatches.length })}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <SubmitButton className={quietButton}>
+                    <RefreshCw className="h-4 w-4" />
+                    {t("changeEvent")}
+                  </SubmitButton>
+                </form>
 
-              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                {manageableMatches.map((match) => {
-                  const bo = roundConfigMap.get(match.roundLabel) ?? 1;
-                  const isSelected = selectedMatch?.id === match.id;
-                  return (
-                    <a
-                      key={match.id}
-                      href={`?phase=run&matchEventId=${selectedManageableEvent.event.id}&matchId=${match.id}`}
-                      className={`grid gap-2 rounded-lg border px-3 py-3 transition ${
-                        isSelected
-                          ? "border-cyan-300 bg-cyan-50"
-                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-                      }`}
-                    >
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold uppercase text-slate-500">
-                          {match.roundLabel} - Match {match.slot}
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {manageableMatches.map((match) => {
+                    const bo = roundConfigMap.get(match.roundLabel) ?? 1;
+                    const isSelected = selectedMatch?.id === match.id;
+                    return (
+                      <a
+                        key={match.id}
+                        href={`?phase=run&matchEventId=${selectedManageableEvent.event.id}&matchId=${match.id}`}
+                        className={`grid gap-2 rounded-xl border px-3 py-3 transition ${
+                          isSelected
+                            ? "border-cyan-300 bg-cyan-50 shadow-[0_0_0_3px_rgba(34,211,238,0.15)]"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                            {match.roundLabel} · M{match.slot}
+                          </span>
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                            BO{bo}
+                          </span>
                         </span>
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                          BO{bo}
+                        <span className="text-sm font-semibold leading-snug text-slate-900">
+                          {teamName(match.homeTeamId)}
+                          <span className="mx-1.5 font-normal text-slate-400">vs</span>
+                          {teamName(match.awayTeamId)}
                         </span>
-                      </span>
-                      <span className="text-sm font-semibold text-slate-950">
-                        {teamName(match.homeTeamId)} <span className="text-slate-400">vs</span> {teamName(match.awayTeamId)}
-                      </span>
-                    </a>
-                  );
-                })}
-              </div>
-            </Section>
+                      </a>
+                    );
+                  })}
+                </div>
+              </Section>
+            ) : null}
 
-            {distinctRoundLabels.length ? (
+            {completedMatchesWithEvent.length > 0 ? (
+              <Section
+                title="Hasil & Statistik"
+                description={`Match selesai di ${activeEvent?.name ?? "event aktif"} — klik untuk input atau edit statistik pemain.`}
+                className="rounded-xl shadow-none"
+              >
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {completedMatchesWithEvent.map(({ match }) => {
+                    const isSelected = selectedMatch?.id === match.id;
+                    const homeScore = match.homeScore;
+                    const awayScore = match.awayScore;
+                    return (
+                      <a
+                        key={match.id}
+                        href={`?phase=run&activeEventId=${activeEvent?.id ?? ""}&matchEventId=${selectedManageableEvent?.event.id ?? ""}&matchId=${match.id}`}
+                        className={`grid gap-2.5 rounded-xl border px-3 py-3 transition ${
+                          isSelected
+                            ? "border-emerald-300 bg-emerald-50 shadow-[0_0_0_3px_rgba(52,211,153,0.15)]"
+                            : "border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/50"
+                        }`}
+                      >
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                            {match.roundLabel}
+                          </span>
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                            Selesai
+                          </span>
+                        </span>
+                        <span className="text-sm font-semibold leading-snug text-slate-900">
+                          {teamName(match.homeTeamId)}
+                          <span className="mx-1.5 font-normal text-slate-400">vs</span>
+                          {teamName(match.awayTeamId)}
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span className="rounded-md bg-slate-900 px-2.5 py-1 text-sm font-bold tabular-nums text-white">
+                            {homeScore} – {awayScore}
+                          </span>
+                          <span className="text-xs text-slate-400">Klik untuk statistik</span>
+                        </span>
+                      </a>
+                    );
+                  })}
+                </div>
+              </Section>
+            ) : null}
+
+            {distinctRoundLabels.length && selectedManageableEvent ? (
               <Section title={t("roundConfigTitle")} description={t("roundConfigDesc")} className="rounded-xl shadow-none">
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {distinctRoundLabels.map((label) => {
                     const currentBestOf = roundConfigMap.get(label) ?? roundConfigs.find((config) => config.roundLabel === label)?.bestOf ?? 1;
                     return (
@@ -1137,81 +1223,112 @@ function RunMatchDayPhase({
             ) : null}
           </div>
 
-          <Section title={t("selectedMatchTitle")} description={t("selectedMatchDescription")} className="rounded-xl shadow-none">
-            {selectedMatch ? (
-              <div className="grid gap-5">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase text-slate-500">
-                        {selectedMatch.roundLabel} - Match {selectedMatch.slot}
-                      </p>
-                      <p className="mt-1 text-base font-semibold text-slate-950">
-                        {teamName(selectedMatch.homeTeamId)} <span className="text-slate-400">vs</span> {teamName(selectedMatch.awayTeamId)}
+          <div className="grid auto-rows-min gap-6">
+            <Section title={t("selectedMatchTitle")} description={t("selectedMatchDescription")} className="rounded-xl shadow-none">
+              {selectedMatch ? (
+                <div className="grid gap-5">
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        {selectedMatch.roundLabel}{selectedMatch.slot ? ` · Match ${selectedMatch.slot}` : ""}
                       </p>
                     </div>
-                    <StatusChip tone="warning">Best of {selectedMatchBestOf}</StatusChip>
-                  </div>
-                </div>
-
-                {selectedMatchBestOf === 1 ? (
-                  <form action={adminUpdateMatchResultAction} className="grid gap-4">
-                    <input type="hidden" name="eventId" value={selectedManageableEvent.event.id} />
-                    <input type="hidden" name="matchEventId" value={selectedManageableEvent.event.id} />
-                    <input type="hidden" name="matchId" value={selectedMatch.id} />
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className={labelClass}>
-                        {teamName(selectedMatch.homeTeamId)} (Home)
-                        <input className={inputClass} name="homeScore" type="number" min="0" defaultValue="0" />
-                      </label>
-                      <label className={labelClass}>
-                        {teamName(selectedMatch.awayTeamId)} (Away)
-                        <input className={inputClass} name="awayScore" type="number" min="0" defaultValue="0" />
-                      </label>
-                    </div>
-                    <SubmitButton className={primaryButton}>
-                      <Save className="h-4 w-4" />
-                      {t("saveResult")}
-                    </SubmitButton>
-                  </form>
-                ) : (
-                  <form action={adminSetMatchGamesAction} className="grid gap-4">
-                    <input type="hidden" name="matchId" value={selectedMatch.id} />
-                    <input type="hidden" name="matchEventId" value={selectedManageableEvent.event.id} />
-                    <input type="hidden" name="bestOf" value={selectedMatchBestOf} />
-                    <div className="grid gap-3">
-                      <div className="grid grid-cols-[3rem_1fr_1fr] gap-3">
-                        <div />
-                        <p className="text-xs font-semibold uppercase text-slate-500">{teamName(selectedMatch.homeTeamId)}</p>
-                        <p className="text-xs font-semibold uppercase text-slate-500">{teamName(selectedMatch.awayTeamId)}</p>
+                    <div className="px-4 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-base font-semibold text-slate-900">
+                          {teamName(selectedMatch.homeTeamId)}
+                          <span className="mx-2 font-normal text-slate-400">vs</span>
+                          {teamName(selectedMatch.awayTeamId)}
+                        </p>
+                        <StatusChip tone={selectedMatch.status === "Completed" ? "success" : "warning"}>
+                          {selectedMatch.status === "Completed" ? `${selectedMatch.homeScore} – ${selectedMatch.awayScore}` : `BO${selectedMatchBestOf}`}
+                        </StatusChip>
                       </div>
-                      {Array.from({ length: selectedMatchBestOf }, (_, index) => {
-                        const gameNumber = index + 1;
-                        const existingGame = selectedMatchGames.find((game) => game.gameNumber === gameNumber);
-                        return (
-                          <div key={gameNumber} className="grid grid-cols-[3rem_1fr_1fr] items-center gap-3">
-                            <p className="text-xs font-semibold text-slate-500">G{gameNumber}</p>
-                            <input className={`${inputClass} text-center font-semibold`} name={`game${gameNumber}_home`} type="number" min="0" defaultValue={existingGame?.homeScore ?? ""} placeholder="-" />
-                            <input className={`${inputClass} text-center font-semibold`} name={`game${gameNumber}_away`} type="number" min="0" defaultValue={existingGame?.awayScore ?? ""} placeholder="-" />
-                          </div>
-                        );
-                      })}
                     </div>
-                    <SubmitButton className={primaryButton}>
-                      <Save className="h-4 w-4" />
-                      {t("saveGames")}
-                    </SubmitButton>
-                  </form>
-                )}
+                  </div>
 
-                <a href={`?phase=run&matchEventId=${selectedManageableEvent.event.id}`} className="text-sm font-medium text-slate-500 hover:text-slate-700">
-                  {t("cancelAction")}
-                </a>
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500">{t("selectMatch")}</p>
-            )}
-          </Section>
+                  {selectedMatch.status !== "Completed" && (
+                    selectedMatchBestOf === 1 ? (
+                      <form action={adminUpdateMatchResultAction} className="grid gap-4">
+                        <input type="hidden" name="eventId" value={selectedManageableEvent?.event.id} />
+                        <input type="hidden" name="matchEventId" value={selectedManageableEvent?.event.id} />
+                        <input type="hidden" name="matchId" value={selectedMatch.id} />
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <label className={labelClass}>
+                            {teamName(selectedMatch.homeTeamId)} (Home)
+                            <input className={`${inputClass} text-center text-lg font-semibold`} name="homeScore" type="number" min="0" defaultValue="0" />
+                          </label>
+                          <label className={labelClass}>
+                            {teamName(selectedMatch.awayTeamId)} (Away)
+                            <input className={`${inputClass} text-center text-lg font-semibold`} name="awayScore" type="number" min="0" defaultValue="0" />
+                          </label>
+                        </div>
+                        <SubmitButton className={primaryButton}>
+                          <Save className="h-4 w-4" />
+                          {t("saveResult")}
+                        </SubmitButton>
+                      </form>
+                    ) : (
+                      <form action={adminSetMatchGamesAction} className="grid gap-4">
+                        <input type="hidden" name="matchId" value={selectedMatch.id} />
+                        <input type="hidden" name="matchEventId" value={selectedManageableEvent?.event.id} />
+                        <input type="hidden" name="bestOf" value={selectedMatchBestOf} />
+                        <div className="grid gap-3">
+                          <div className="grid grid-cols-[3rem_1fr_1fr] gap-3">
+                            <div />
+                            <p className="text-xs font-semibold uppercase text-slate-500">{teamName(selectedMatch.homeTeamId)}</p>
+                            <p className="text-xs font-semibold uppercase text-slate-500">{teamName(selectedMatch.awayTeamId)}</p>
+                          </div>
+                          {Array.from({ length: selectedMatchBestOf }, (_, index) => {
+                            const gameNumber = index + 1;
+                            const existingGame = selectedMatchGames.find((game) => game.gameNumber === gameNumber);
+                            return (
+                              <div key={gameNumber} className="grid grid-cols-[3rem_1fr_1fr] items-center gap-3">
+                                <p className="text-xs font-semibold text-slate-500">G{gameNumber}</p>
+                                <input className={`${inputClass} text-center font-semibold`} name={`game${gameNumber}_home`} type="number" min="0" defaultValue={existingGame?.homeScore ?? ""} placeholder="-" />
+                                <input className={`${inputClass} text-center font-semibold`} name={`game${gameNumber}_away`} type="number" min="0" defaultValue={existingGame?.awayScore ?? ""} placeholder="-" />
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <SubmitButton className={primaryButton}>
+                          <Save className="h-4 w-4" />
+                          {t("saveGames")}
+                        </SubmitButton>
+                      </form>
+                    )
+                  )}
+
+                  {selectedMatch.status === "Completed" && selectedMatchRosterAndStats && completedMatchItem ? (
+                    <PlayerStatsSection
+                      eventId={completedMatchItem.event.id}
+                      gameModeId={completedMatchItem.event.gameModeId}
+                      gameId={completedMatchItem.event.gameId}
+                      matchId={selectedMatch.id}
+                      homePlayers={selectedMatchRosterAndStats.homePlayers}
+                      awayPlayers={selectedMatchRosterAndStats.awayPlayers}
+                      homeTeamId={selectedMatch.homeTeamId}
+                      awayTeamId={selectedMatch.awayTeamId}
+                      homeTeamName={teamName(selectedMatch.homeTeamId)}
+                      awayTeamName={teamName(selectedMatch.awayTeamId)}
+                      existingStats={selectedMatchRosterAndStats.existingStats}
+                    />
+                  ) : null}
+
+                  <a
+                    href={`?phase=run&activeEventId=${activeEvent?.id ?? ""}&matchEventId=${selectedManageableEvent?.event.id ?? ""}`}
+                    className="text-sm font-medium text-slate-400 hover:text-slate-600"
+                  >
+                    {t("cancelAction")}
+                  </a>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center">
+                  <p className="text-sm text-slate-400">{t("selectMatch")}</p>
+                </div>
+              )}
+            </Section>
+          </div>
         </div>
       ) : (
         <Section title={t("matchTitle")} description={t("matchDescription")} className="rounded-xl shadow-none">
@@ -1475,5 +1592,109 @@ function StatusChip({ children, tone = "default" }: { children: React.ReactNode;
     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
       {children}
     </span>
+  );
+}
+
+type PlayerInfo = { id: string; displayName: string };
+
+function PlayerStatsSection({
+  eventId,
+  gameModeId,
+  gameId,
+  matchId,
+  homePlayers,
+  awayPlayers,
+  homeTeamId,
+  awayTeamId,
+  homeTeamName,
+  awayTeamName,
+  existingStats,
+}: {
+  eventId: string;
+  gameModeId: string;
+  gameId: string;
+  matchId: string;
+  homePlayers: PlayerInfo[];
+  awayPlayers: PlayerInfo[];
+  homeTeamId: string;
+  awayTeamId: string;
+  homeTeamName: string;
+  awayTeamName: string;
+  existingStats: Record<string, Record<string, number>>;
+}) {
+  const statKeys = getStatKeysForMode(gameModeId, gameId);
+  const hasHomePlayers = homePlayers.length > 0;
+  const hasAwayPlayers = awayPlayers.length > 0;
+
+  if (!statKeys.length || (!hasHomePlayers && !hasAwayPlayers)) return null;
+
+  const statColWidth = statKeys.length <= 3 ? "5rem" : "4rem";
+  const gridCols = `grid-cols-[minmax(8rem,1fr)_repeat(${statKeys.length},${statColWidth})]`;
+
+  function TeamStatForm({ teamId, teamName, players }: { teamId: string; teamName: string; players: PlayerInfo[] }) {
+    return (
+      <form action={adminSaveMatchPlayerStatsAction} className="grid gap-0">
+        <input type="hidden" name="matchId" value={matchId} />
+        <input type="hidden" name="teamId" value={teamId} />
+        <input type="hidden" name="eventId" value={eventId} />
+
+        <div className="mb-3 flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-cyan-400" />
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{teamName}</p>
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className={`grid gap-0 border-b border-slate-100 bg-slate-50 px-3 py-2 ${gridCols}`}>
+            <p className="text-xs font-semibold text-slate-400">Pemain</p>
+            {statKeys.map((key) => (
+              <p key={key} className="text-center text-xs font-bold capitalize text-slate-500">{key}</p>
+            ))}
+          </div>
+
+          {players.map((player, i) => (
+            <div
+              key={player.id}
+              className={`grid items-center gap-0 px-3 py-2 ${gridCols} ${i < players.length - 1 ? "border-b border-slate-100" : ""}`}
+            >
+              <p className="truncate pr-2 text-sm font-medium text-slate-800">{player.displayName}</p>
+              {statKeys.map((key) => (
+                <input
+                  key={key}
+                  className="mx-0.5 w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-center text-sm font-semibold text-slate-900 outline-none transition focus:border-cyan-400 focus:bg-white focus:ring-2 focus:ring-cyan-100"
+                  name={`stat_${player.id}_${key}`}
+                  type="number"
+                  min="0"
+                  max="9999"
+                  defaultValue={existingStats[player.id]?.[key] ?? 0}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+
+        <SubmitButton className={`${primaryButton} mt-3`}>
+          <Save className="h-4 w-4" />
+          Simpan Statistik {teamName}
+        </SubmitButton>
+      </form>
+    );
+  }
+
+  return (
+    <div className="grid gap-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-center gap-3">
+        <p className="text-sm font-bold text-slate-700">Statistik Pemain</p>
+        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-500">
+          {statKeys.join(" · ")}
+        </span>
+      </div>
+      {hasHomePlayers ? (
+        <TeamStatForm teamId={homeTeamId} teamName={homeTeamName} players={homePlayers} />
+      ) : null}
+      {hasHomePlayers && hasAwayPlayers ? <hr className="border-slate-200" /> : null}
+      {hasAwayPlayers ? (
+        <TeamStatForm teamId={awayTeamId} teamName={awayTeamName} players={awayPlayers} />
+      ) : null}
+    </div>
   );
 }
