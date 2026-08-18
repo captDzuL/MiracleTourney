@@ -47,6 +47,7 @@ import {
   upsertRoundConfig,
   upsertStatSubmission,
   setTeamCaptainDisplay,
+  adminWriteMatchPlayerStats,
 } from "@/lib/platform/repository";
 import fs from "fs";
 import path from "path";
@@ -839,6 +840,54 @@ export async function adminRejectStatAction(formData: FormData) {
   await rejectStatSubmission(submissionId, user.id, note);
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=stat-rejected");
+}
+
+/**
+ * Writes player match statistics directly from the Admin page.
+ * Bypasses the captain submission queue and upserts PlayerStat rows immediately.
+ * Only allowed for Completed matches. Uses the same validation as the captain flow.
+ */
+export async function adminSaveMatchPlayerStatsAction(formData: FormData) {
+  const user = await requireAdminSession();
+
+  const { matchId, teamId, eventId } = z.object({
+    matchId: z.string().min(1),
+    teamId: z.string().min(1),
+    eventId: z.string().min(1),
+  }).parse({
+    matchId: formData.get("matchId"),
+    teamId: formData.get("teamId"),
+    eventId: formData.get("eventId"),
+  });
+
+  await assertUserCanManageEvent(user, eventId);
+
+  const match = await prisma.match.findUnique({
+    where: { id: matchId },
+    select: { status: true, homeTeamId: true, awayTeamId: true, eventId: true },
+  });
+  if (!match) throw new Error("Match not found");
+  if (match.status !== "Completed") throw new Error("Stats can only be entered for completed matches");
+  if (match.homeTeamId !== teamId && match.awayTeamId !== teamId) throw new Error("Team is not part of this match");
+  if (match.eventId !== eventId) throw new Error("Match does not belong to this event");
+
+  const stats: Record<string, Record<string, number>> = {};
+  for (const [key, value] of formData.entries()) {
+    const m = key.match(/^stat_(.+)_(.+)$/);
+    if (!m) continue;
+    const [, playerId, statKey] = m;
+    if (!isSafeStatToken(playerId) || !isSafeStatToken(statKey)) {
+      throw new Error("Invalid stat field name.");
+    }
+    const parsedValue = z.coerce.number().int().min(0).max(9999).parse(value);
+    if (!stats[playerId]) stats[playerId] = {};
+    stats[playerId][statKey] = parsedValue;
+  }
+
+  await adminWriteMatchPlayerStats({ matchId, teamId, eventId, adminId: user.id, stats });
+  revalidateTag("stats");
+  revalidatePath("/", "layout");
+  redirect(`/admin?phase=run&activeEventId=${eventId}&matchId=${matchId}&success=player-stats-saved` as never);
 }
 
 /** Sets the Best-of-N configuration for a specific round label in an event. Valid bestOf values are 1, 3, or 5. */

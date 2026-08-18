@@ -37,7 +37,8 @@ describe("admin action buttons", () => {
     expect(source).not.toContain("href={`/admin?");
     expect(source).toContain('action=""');
     expect(source).toContain('href={`?phase=run&matchEventId=${selectedManageableEvent.event.id}&matchId=${match.id}`}');
-    expect(source).toContain('href={`?phase=run&matchEventId=${selectedManageableEvent.event.id}`}');
+    expect(source).toContain('href={buildAdminPhaseHref("run", { matchEventId: selectedManageableEvent?.event.id })}');
+    expect(source).toContain('href={`?phase=run&activeEventId=${activeEvent?.id ?? ""}&matchEventId=${selectedManageableEvent?.event.id ?? ""}&matchId=${match.id}`}');
   });
 
   test("exposes organizer brand asset uploads for event and team logos", () => {

@@ -1431,6 +1431,42 @@ export async function getPendingStatSubmissions(user?: AppUser): Promise<StatSub
 }
 
 /**
+ * Upserts PlayerStat rows for each playerId in `statsMap` within a transaction.
+ * Players not found in the DB are skipped. Existing rows have their stats JSON replaced (not merged).
+ */
+async function writePlayerStatsToDb(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  matchId: string,
+  teamId: string,
+  gameSlug: string,
+  statsMap: Record<string, Record<string, number>>,
+  audit?: { source: string; lastUpdatedBy: string },
+): Promise<void> {
+  for (const [playerId, playerStats] of Object.entries(statsMap)) {
+    const player = await tx.player.findUnique({
+      where: { id: playerId },
+      select: { displayName: true, position: true },
+    });
+    if (!player) continue;
+
+    await tx.playerStat.upsert({
+      where: { matchId_playerId: { matchId, playerId } },
+      update: { stats: playerStats as object, ...(audit ? { source: audit.source, lastUpdatedBy: audit.lastUpdatedBy } : {}) },
+      create: {
+        matchId,
+        playerId,
+        playerName: player.displayName,
+        teamId,
+        position: player.position,
+        gameSlug,
+        stats: playerStats as object,
+        ...(audit ? { source: audit.source, lastUpdatedBy: audit.lastUpdatedBy } : {}),
+      },
+    });
+  }
+}
+
+/**
  * Approves a stat submission: writes `PlayerStat` rows for each player and marks the
  * submission as "approved" in a single transaction. Skips players not found in the DB.
  */
@@ -1448,33 +1484,92 @@ export async function approveStatSubmission(submissionId: string, adminId: strin
   const statsMap = submission.stats as Record<string, Record<string, number>>;
 
   await prisma.$transaction(async (tx) => {
-    for (const [playerId, playerStats] of Object.entries(statsMap)) {
-      const player = await tx.player.findUnique({
-        where: { id: playerId },
-        select: { displayName: true, position: true },
-      });
-      if (!player) continue;
-
-      await tx.playerStat.upsert({
-        where: { matchId_playerId: { matchId: submission.matchId, playerId } },
-        update: { stats: playerStats as object },
-        create: {
-          matchId: submission.matchId,
-          playerId,
-          playerName: player.displayName,
-          teamId: submission.teamId,
-          position: player.position,
-          gameSlug,
-          stats: playerStats as object,
-        },
-      });
-    }
-
+    await writePlayerStatsToDb(tx, submission.matchId, submission.teamId, gameSlug, statsMap, { source: "captain", lastUpdatedBy: submission.submittedBy });
     await tx.statSubmission.update({
       where: { id: submissionId },
       data: { status: "approved", reviewedAt: new Date(), reviewedBy: adminId },
     });
   });
+}
+
+/**
+ * Returns a match with its roster (players from both teams) and existing PlayerStat rows.
+ * Used by Admin to pre-fill the player statistics editor.
+ */
+export async function getMatchWithRosterAndStats(matchId: string): Promise<{
+  match: { id: string; homeTeamId: string; awayTeamId: string; status: string; eventId: string };
+  homePlayers: Player[];
+  awayPlayers: Player[];
+  existingStats: Record<string, Record<string, number>>;
+} | null> {
+  const match = await prisma.match.findUnique({
+    where: { id: matchId },
+    select: { id: true, homeTeamId: true, awayTeamId: true, status: true, eventId: true },
+  });
+  if (!match || !match.homeTeamId || !match.awayTeamId) return null;
+
+  const [allPlayers, statRows] = await Promise.all([
+    getPlayersForTeams([match.homeTeamId, match.awayTeamId]),
+    prisma.playerStat.findMany({ where: { matchId } }),
+  ]);
+
+  const existingStats: Record<string, Record<string, number>> = {};
+  for (const row of statRows) {
+    existingStats[row.playerId] = row.stats as Record<string, number>;
+  }
+
+  return {
+    match,
+    homePlayers: allPlayers.filter((p) => p.teamId === match.homeTeamId),
+    awayPlayers: allPlayers.filter((p) => p.teamId === match.awayTeamId),
+    existingStats,
+  };
+}
+
+/**
+ * Writes player match statistics directly (admin override, bypasses captain submission queue).
+ * Stats JSON is replaced per player — safe for editing existing values without double-counting.
+ */
+export async function adminWriteMatchPlayerStats(input: {
+  matchId: string;
+  teamId: string;
+  eventId: string;
+  adminId: string;
+  stats: Record<string, Record<string, number>>;
+}): Promise<void> {
+  const event = await prisma.event.findUnique({
+    where: { id: input.eventId },
+    select: { gameId: true },
+  });
+  const game = event?.gameId ? getGameConfig(event.gameId) : null;
+  const gameSlug = game?.slug ?? "unknown";
+
+  // Upserts run without an interactive transaction — each row-level upsert is
+  // independently atomic and Neon/PgBouncer doesn't support long-lived interactive
+  // transactions (P2028: "Transaction not found / old closed transaction").
+  for (const [playerId, playerStats] of Object.entries(input.stats)) {
+    const player = await prisma.player.findUnique({
+      where: { id: playerId },
+      select: { displayName: true, position: true },
+    });
+    if (!player) continue;
+
+    await prisma.playerStat.upsert({
+      where: { matchId_playerId: { matchId: input.matchId, playerId } },
+      update: { stats: playerStats as object, source: "admin", lastUpdatedBy: input.adminId },
+      create: {
+        matchId: input.matchId,
+        playerId,
+        playerName: player.displayName,
+        teamId: input.teamId,
+        position: player.position,
+        gameSlug,
+        stats: playerStats as object,
+        source: "admin",
+        lastUpdatedBy: input.adminId,
+      },
+    });
+  }
 }
 
 /** Rejects a stat submission with a note shown to the captain. Does not delete PlayerStat rows. */

@@ -151,16 +151,18 @@ model MatchGame {
 }
 
 model PlayerStat {
-  id         String @id @default(cuid())
-  matchId    String
-  match      Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  playerId   String
-  player     Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  playerName String
-  teamId     String
-  position   String
-  gameSlug   String
-  stats      Json
+  id            String   @id @default(cuid())
+  matchId       String
+  match         Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerId      String
+  player        Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerName    String
+  teamId        String
+  position      String
+  gameSlug      String
+  stats         Json
+  source        String?  // "captain" | "admin" — who last wrote these stats
+  lastUpdatedBy String?  // userId of last writer
 
   @@unique([matchId, playerId])
 }

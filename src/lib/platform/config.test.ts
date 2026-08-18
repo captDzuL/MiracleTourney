@@ -63,10 +63,10 @@ describe("game registry config", () => {
       "flb",
     ]);
     expect(getStatKeysForMode("mode-missing", "game-flashpeak")).toEqual([
-      "goals",
-      "assists",
-      "tackles",
-      "blocks",
+      "goal",
+      "assist",
+      "passing",
+      "defense",
     ]);
   });
 
@@ -74,18 +74,18 @@ describe("game registry config", () => {
     expect(
       getOrderedStatEntries(
         {
-          blocks: 2,
-          assists: 5,
-          goals: 3,
-          tackles: 1,
+          defense: 2,
+          assist: 5,
+          goal: 3,
+          passing: 1,
         },
         "mode-flashpeak-5v5",
       ),
     ).toEqual([
-      ["goals", 3],
-      ["assists", 5],
-      ["tackles", 1],
-      ["blocks", 2],
+      ["goal", 3],
+      ["assist", 5],
+      ["passing", 1],
+      ["defense", 2],
     ]);
   });
 
