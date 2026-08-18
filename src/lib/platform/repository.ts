@@ -183,6 +183,19 @@ export function getModeForEvent(event: Event) {
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
+/** Returns all publicly-visible events (Published, Registration Closed, Ongoing, Finished). Used by sitemap. */
+export async function getAllPublicEvents(): Promise<Array<{ slug: string; updatedAt: Date }>> {
+  try {
+    return await prisma.event.findMany({
+      where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
+      select: { slug: true, updatedAt: true },
+      orderBy: { updatedAt: "desc" },
+    });
+  } catch {
+    return [];
+  }
+}
+
 /** Returns all events (all statuses), ordered newest first. For admin use only. */
 export async function getEvents(): Promise<Event[]> {
   const rows = await prisma.event.findMany({ include: { stream: true }, orderBy: { createdAt: "desc" } });

@@ -13,6 +13,7 @@ import { routing } from "@/i18n/routing";
 import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { sendEmail } from "@/lib/email/send";
 import { isDisposableEmail } from "@/lib/validation/email";
 import { validateTeamData } from "@/lib/validation/team-data";
 import type { AppUser } from "@/lib/platform/types";
@@ -1079,7 +1080,11 @@ export async function requestPasswordResetAction(formData: FormData) {
     const token = await createPasswordResetToken(user.id);
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
     const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
-    console.log(`[password-reset] Reset URL for ${email.data}: ${resetUrl}`);
+    await sendEmail({
+      to: email.data,
+      subject: "Reset Password Miracle League",
+      html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 1 jam.</p>`,
+    });
   }
   // Always redirect to sent=1 regardless of whether email exists (security)
   return redirectToActiveLocale("/forgot-password?sent=1" as never);

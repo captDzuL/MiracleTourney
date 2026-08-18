@@ -16,6 +16,7 @@
     "test:dashboard:perf": "node scripts/run-dashboard-performance.mjs",
     "test:e2e:headed": "playwright test --headed",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:test": "tsx prisma/seed.ts --test",
     "postinstall": "prisma generate"
   },
   "dependencies": {

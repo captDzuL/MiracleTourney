@@ -26,6 +26,19 @@ function prismaClientMock(connectImpl: () => Promise<void>) {
 }
 
 describe("E2E database preflight", () => {
+  it("blocks when DATABASE_URL points to the production Neon host", async () => {
+    const result = await checkE2eDatabaseConnection({
+      env: {
+        DATABASE_URL: "postgresql://user:secret@ep-prod-host.neon.tech:5432/app",
+        NEON_PROD_HOST: "ep-prod-host.neon.tech",
+      },
+      PrismaClient: vi.fn(),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/production Neon branch/);
+  });
+
   it("fails fast when no database URL is configured", async () => {
     const result = await checkE2eDatabaseConnection({
       env: {},
