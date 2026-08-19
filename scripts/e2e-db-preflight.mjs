@@ -1,7 +1,7 @@
 import { PrismaClient as DefaultPrismaClient } from "@prisma/client";
 import { pathToFileURL } from "node:url";
 
-const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 function configuredDatabaseUrl(env) {
   return env.DIRECT_URL || env.DATABASE_URL || "";

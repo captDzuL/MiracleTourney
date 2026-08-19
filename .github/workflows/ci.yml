@@ -110,6 +110,14 @@ jobs:
           echo "::add-mask::$JWT_SECRET"
           echo "JWT_SECRET=$JWT_SECRET" >> "$GITHUB_ENV"
 
+      - name: Wake Neon test branch
+        run: |
+          for i in 1 2 3; do
+            pg_isready -d "$DATABASE_URL" && break
+            echo "Attempt $i: Neon not ready yet, waiting 10s..."
+            sleep 10
+          done
+
       - name: Verify test DB (not production)
         run: pnpm test:e2e:preflight
 
