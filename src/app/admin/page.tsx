@@ -1656,7 +1656,7 @@ function PlayerStatsSection({
               key={player.id}
               className={`grid items-center gap-0 px-3 py-2 ${gridCols} ${i < players.length - 1 ? "border-b border-slate-100" : ""}`}
             >
-              <p className="truncate pr-2 text-sm font-medium text-slate-800">{player.displayName}</p>
+              <p className="truncate pr-2 text-sm font-medium text-slate-800">{player.nickname}</p>
               {statKeys.map((key) => (
                 <input
                   key={key}

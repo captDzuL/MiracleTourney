@@ -1468,7 +1468,7 @@ async function writePlayerStatsToDb(
       create: {
         matchId,
         playerId,
-        playerName: player.displayName,
+        playerName: player.nickname,
         teamId,
         position: player.position,
         gameSlug,
@@ -1573,7 +1573,7 @@ export async function adminWriteMatchPlayerStats(input: {
       create: {
         matchId: input.matchId,
         playerId,
-        playerName: player.displayName,
+        playerName: player.nickname,
         teamId: input.teamId,
         position: player.position,
         gameSlug,
