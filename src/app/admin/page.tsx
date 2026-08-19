@@ -1595,7 +1595,7 @@ function StatusChip({ children, tone = "default" }: { children: React.ReactNode;
   );
 }
 
-type PlayerInfo = { id: string; displayName: string };
+type PlayerInfo = { id: string; displayName: string; nickname: string };
 
 function PlayerStatsSection({
   eventId,

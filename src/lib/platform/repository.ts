@@ -1458,7 +1458,7 @@ async function writePlayerStatsToDb(
   for (const [playerId, playerStats] of Object.entries(statsMap)) {
     const player = await tx.player.findUnique({
       where: { id: playerId },
-      select: { displayName: true, position: true },
+      select: { displayName: true, nickname: true, position: true },
     });
     if (!player) continue;
 
@@ -1563,7 +1563,7 @@ export async function adminWriteMatchPlayerStats(input: {
   for (const [playerId, playerStats] of Object.entries(input.stats)) {
     const player = await prisma.player.findUnique({
       where: { id: playerId },
-      select: { displayName: true, position: true },
+      select: { displayName: true, nickname: true, position: true },
     });
     if (!player) continue;
 
