@@ -8,7 +8,11 @@ export default async function globalSetup() {
   }
   execSync("pnpm prisma db seed", { stdio: "inherit" });
 
-  const prisma = new PrismaClient();
+  const prisma = new PrismaClient(
+    process.env.CI && process.env.DIRECT_URL
+      ? { datasources: { db: { url: process.env.DIRECT_URL } } }
+      : {}
+  );
   try {
     // Clean up test-created events to prevent unique constraint violations on re-run
     await prisma.event.deleteMany({ where: { slug: { in: ["flashpeak-24", "flashpeak-open-league", "admin-match-e2e", "admin-stats-e2e", "admin-stats-nav-e2e"] } } });
