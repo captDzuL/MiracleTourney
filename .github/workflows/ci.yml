@@ -125,7 +125,14 @@ jobs:
           pnpm test:e2e:preflight
 
       - name: Reset and sync test DB
-        run: pnpm prisma db push --force-reset --skip-generate
+        run: |
+          pnpm prisma db execute --stdin <<'SQL'
+          DROP SCHEMA public CASCADE;
+          CREATE SCHEMA public;
+          GRANT ALL ON SCHEMA public TO neondb_owner;
+          GRANT ALL ON SCHEMA public TO public;
+          SQL
+          pnpm prisma db push --skip-generate
 
       - name: Run E2E tests
         run: pnpm test:e2e
