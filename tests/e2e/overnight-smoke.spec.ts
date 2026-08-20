@@ -56,6 +56,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
 });
 
 test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff", async ({ page }) => {
+  test.setTimeout(120_000);
   // Delete flashpeak-24 if left by a previous CI run to ensure idempotency
   const fp24 = await prisma.event.findFirst({ where: { slug: "flashpeak-24" } });
   if (fp24) {

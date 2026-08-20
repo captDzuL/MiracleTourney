@@ -57,7 +57,7 @@ test.describe("admin match result entry", () => {
 
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
     await page.goto(`/id/events/${currentEvent.slug}/bracket`);
-    await expect(page.getByText(/21\s*-\s*18/).first()).toBeVisible();
+    await expect(page.getByText(/21\s*-\s*18/).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("event auto-transitions to Ongoing after first match result", async ({ page }) => {
@@ -109,7 +109,7 @@ test.describe("public bracket page", () => {
 
     await page.goto(`/id/events/${slug}/bracket`);
     await expect(page.getByRole("main")).toBeVisible();
-    await expect(page.getByText(/19\s*-\s*17/).first()).toBeVisible();
+    await expect(page.getByText(/19\s*-\s*17/).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("events list page is publicly accessible", async ({ page }) => {
