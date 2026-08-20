@@ -126,7 +126,7 @@ jobs:
 
       - name: Reset test DB schema
         run: |
-          pnpm prisma db execute --stdin <<'SQL'
+          pnpm prisma db execute --schema prisma/schema.prisma --stdin <<'SQL'
           DROP SCHEMA public CASCADE;
           CREATE SCHEMA public;
           GRANT ALL ON SCHEMA public TO neondb_owner;
