@@ -134,6 +134,7 @@ jobs:
         env:
           CI: true
           PLAYWRIGHT_PORT: "3100"
+          DATABASE_URL: ${{ secrets.NEON_TEST_DIRECT_URL }}
 
       - name: Upload Playwright report on failure
         if: failure()
