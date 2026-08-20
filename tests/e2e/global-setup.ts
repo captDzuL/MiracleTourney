@@ -11,7 +11,7 @@ export default async function globalSetup() {
   const prisma = new PrismaClient(
     process.env.CI && process.env.DIRECT_URL
       ? { datasources: { db: { url: process.env.DIRECT_URL } } }
-      : {}
+      : undefined
   );
   try {
     // Clean up test-created events to prevent unique constraint violations on re-run
