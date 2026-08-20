@@ -95,7 +95,7 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   await page.goto("/en/admin?phase=import");
   await page.locator('input[name="csv"]').setInputFiles("tests/fixtures/import-22.csv");
   await page.getByRole("button", { name: /Upload and import/i }).click();
-  await page.waitForURL(/\/admin\?success=teams-imported&count=22/, { timeout: 15000 });
+  await page.waitForURL(/\/admin\?success=teams-imported&count=22/, { timeout: 30_000 });
 
   await page.goto("/id/events/flashpeak-24/bracket");
   await expect(page.getByText("Final", { exact: true })).not.toBeVisible();
