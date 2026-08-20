@@ -61,7 +61,7 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   });
   await createEventForm.getByLabel("Event name").fill("Flashpeak 24");
   await createEventForm.getByLabel("Slug").fill("flashpeak-24");
-  await createEventForm.getByLabel("Game mode").selectOption("mode-flashpeak-5v5");
+  await createEventForm.getByLabel("Game and mode").selectOption("mode-flashpeak-5v5");
   await createEventForm.getByLabel("Format").selectOption("Single Elimination");
   await createEventForm.getByLabel("Participant cap").selectOption("24");
   await createEventForm.getByRole("button", { name: /create draft event|buat draft event/i }).click();
