@@ -491,16 +491,24 @@ export async function adminCreateEventAction(formData: FormData) {
     }
   }
 
-  await createEvent({
-    name: input.name,
-    slug: input.slug,
-    gameModeId: input.gameModeId,
-    format: input.format,
-    participantCap: input.participantCap,
-    organizerUserId: organizerAssignment?.id,
-    organizerName: organizerAssignment?.name,
-    organizerVerified: false,
-  });
+  try {
+    await createEvent({
+      name: input.name,
+      slug: input.slug,
+      gameModeId: input.gameModeId,
+      format: input.format,
+      participantCap: input.participantCap,
+      organizerUserId: organizerAssignment?.id,
+      organizerName: organizerAssignment?.name,
+      organizerVerified: false,
+    });
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code === "P2002") {
+      await redirectToActiveLocale("/admin?error=slug-already-exists");
+    }
+    throw error;
+  }
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=event-created");
 }
@@ -907,6 +915,7 @@ export async function adminSetRoundConfigAction(formData: FormData) {
 
   await assertUserCanManageEvent(user, input.eventId);
   await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
+  revalidateTag("teams");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?phase=run&matchEventId=${input.eventId}&success=round-config-saved` as never);
 }

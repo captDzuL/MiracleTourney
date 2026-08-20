@@ -14,8 +14,23 @@ export default async function globalSetup() {
       : undefined
   );
   try {
-    // Clean up test-created events to prevent unique constraint violations on re-run
-    await prisma.event.deleteMany({ where: { slug: { in: ["flashpeak-24", "flashpeak-open-league", "admin-match-e2e", "admin-stats-e2e", "admin-stats-nav-e2e"] } } });
+    // Clean up test-created events — explicit cascade to defeat any FK ordering issues
+    const testSlugs = ["flashpeak-24", "flashpeak-open-league", "admin-match-e2e", "admin-stats-e2e", "admin-stats-nav-e2e"];
+    const testEvents = await prisma.event.findMany({ where: { slug: { in: testSlugs } }, select: { id: true } });
+    const testEventIds = testEvents.map((e) => e.id);
+    if (testEventIds.length > 0) {
+      await prisma.certificate.deleteMany({ where: { eventId: { in: testEventIds } } });
+      await prisma.matchGame.deleteMany({ where: { match: { eventId: { in: testEventIds } } } });
+      await prisma.playerStat.deleteMany({ where: { match: { eventId: { in: testEventIds } } } });
+      await prisma.statSubmission.deleteMany({ where: { eventId: { in: testEventIds } } });
+      await prisma.match.deleteMany({ where: { eventId: { in: testEventIds } } });
+      await prisma.player.deleteMany({ where: { eventId: { in: testEventIds } } });
+      await prisma.team.deleteMany({ where: { eventId: { in: testEventIds } } });
+      await prisma.event.deleteMany({ where: { id: { in: testEventIds } } });
+    }
+    // Also clean up any timestamp-suffixed admin-stats events from previous runs
+    await prisma.event.deleteMany({ where: { slug: { startsWith: "admin-stats-e2e-" } } });
+    await prisma.event.deleteMany({ where: { slug: { startsWith: "admin-stats-nav-e2e-" } } });
 
     // Ensure kuroko-summer-cup exists with Draft status
     await prisma.event.upsert({

@@ -200,16 +200,22 @@ export default async function AdminPage({
         .map((match) => ({ match, event: activeEvent }))
     : [];
 
-  const completedMatchItem = selectedMatchId
-    ? completedMatchesWithEvent.find((item) => item.match.id === selectedMatchId)
-    : undefined;
-
   const [roundConfigs, selectedMatchGames, selectedMatchRosterAndStats] = await Promise.all([
     activePhase === "run" && selectedManageableEvent ? getEventRoundConfigs(selectedManageableEvent.event.id) : Promise.resolve([]),
     activePhase === "run" && selectedMatchId ? getMatchGames(selectedMatchId) : Promise.resolve([]),
     activePhase === "run" && selectedMatchId ? getMatchWithRosterAndStats(selectedMatchId) : Promise.resolve(null),
   ]);
   const roundConfigMap = new Map(roundConfigs.map((config) => [config.roundLabel, config.bestOf]));
+
+  // completedMatchItem computed after Promise.all so we can fall back to
+  // selectedMatchRosterAndStats when getMatchesForEvent cache returns empty.
+  const completedMatchItem = selectedMatchId
+    ? (completedMatchesWithEvent.find((item) => item.match.id === selectedMatchId)
+        ?? (selectedMatchRosterAndStats?.match.status === "Completed" && activeEvent
+            ? { match: selectedMatchRosterAndStats.match as MatchItem, event: activeEvent }
+            : undefined))
+    : undefined;
+
   const selectedMatch = selectedMatchId
     ? (manageableMatches.find((match) => match.id === selectedMatchId) ?? completedMatchItem?.match)
     : undefined;
