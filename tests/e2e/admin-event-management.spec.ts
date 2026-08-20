@@ -1,5 +1,8 @@
+import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
+
+const prisma = new PrismaClient();
 
 test.describe("admin event management", () => {
   test.beforeEach(async ({ page }) => {
@@ -38,6 +41,10 @@ test.describe("admin event management", () => {
   });
 
   test("admin can import teams via CSV and see success count", async ({ page }) => {
+    // Remove ETA if left by a previous run (global-setup may not clean it in parallel CI jobs)
+    const ksc = await prisma.event.findFirst({ where: { slug: "kuroko-summer-cup" } });
+    if (ksc) await prisma.team.deleteMany({ where: { eventId: ksc.id, tag: "ETA" } });
+
     await page.goto("/en/admin?phase=import");
     await page.locator('input[name="csv"]').setInputFiles({
       name: "test-import.csv",

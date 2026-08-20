@@ -1,5 +1,8 @@
+import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
+
+const prisma = new PrismaClient();
 
 test("admin can publish, import, enter a result, and see bracket advancement publicly", async ({ page }) => {
   await loginAsAdmin(page, "en");
@@ -53,6 +56,15 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
 });
 
 test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff", async ({ page }) => {
+  // Delete flashpeak-24 if left by a previous CI run to ensure idempotency
+  const fp24 = await prisma.event.findFirst({ where: { slug: "flashpeak-24" } });
+  if (fp24) {
+    await prisma.matchGame.deleteMany({ where: { match: { eventId: fp24.id } } });
+    await prisma.match.deleteMany({ where: { eventId: fp24.id } });
+    await prisma.team.deleteMany({ where: { eventId: fp24.id } });
+    await prisma.event.delete({ where: { id: fp24.id } });
+  }
+
   await loginAsAdmin(page, "en");
   await page.goto("/en/admin?phase=prepare");
 

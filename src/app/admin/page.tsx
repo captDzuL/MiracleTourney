@@ -200,22 +200,16 @@ export default async function AdminPage({
         .map((match) => ({ match, event: activeEvent }))
     : [];
 
+  const completedMatchItem = selectedMatchId
+    ? completedMatchesWithEvent.find((item) => item.match.id === selectedMatchId)
+    : undefined;
+
   const [roundConfigs, selectedMatchGames, selectedMatchRosterAndStats] = await Promise.all([
     activePhase === "run" && selectedManageableEvent ? getEventRoundConfigs(selectedManageableEvent.event.id) : Promise.resolve([]),
     activePhase === "run" && selectedMatchId ? getMatchGames(selectedMatchId) : Promise.resolve([]),
     activePhase === "run" && selectedMatchId ? getMatchWithRosterAndStats(selectedMatchId) : Promise.resolve(null),
   ]);
   const roundConfigMap = new Map(roundConfigs.map((config) => [config.roundLabel, config.bestOf]));
-
-  // completedMatchItem computed after Promise.all so we can fall back to
-  // selectedMatchRosterAndStats when getMatchesForEvent cache returns empty.
-  const completedMatchItem = selectedMatchId
-    ? (completedMatchesWithEvent.find((item) => item.match.id === selectedMatchId)
-        ?? (selectedMatchRosterAndStats?.match.status === "Completed" && activeEvent
-            ? { match: selectedMatchRosterAndStats.match as MatchItem, event: activeEvent }
-            : undefined))
-    : undefined;
-
   const selectedMatch = selectedMatchId
     ? (manageableMatches.find((match) => match.id === selectedMatchId) ?? completedMatchItem?.match)
     : undefined;
@@ -1305,18 +1299,18 @@ function RunMatchDayPhase({
                     )
                   )}
 
-                  {selectedMatch.status === "Completed" && selectedMatchRosterAndStats && completedMatchItem ? (
+                  {selectedMatchRosterAndStats?.match.status === "Completed" && (completedMatchItem?.event ?? activeEvent) ? (
                     <PlayerStatsSection
-                      eventId={completedMatchItem.event.id}
-                      gameModeId={completedMatchItem.event.gameModeId}
-                      gameId={completedMatchItem.event.gameId}
-                      matchId={selectedMatch.id}
+                      eventId={(completedMatchItem?.event ?? activeEvent)!.id}
+                      gameModeId={(completedMatchItem?.event ?? activeEvent)!.gameModeId}
+                      gameId={(completedMatchItem?.event ?? activeEvent)!.gameId}
+                      matchId={selectedMatchRosterAndStats.match.id}
                       homePlayers={selectedMatchRosterAndStats.homePlayers}
                       awayPlayers={selectedMatchRosterAndStats.awayPlayers}
-                      homeTeamId={selectedMatch.homeTeamId}
-                      awayTeamId={selectedMatch.awayTeamId}
-                      homeTeamName={teamName(selectedMatch.homeTeamId)}
-                      awayTeamName={teamName(selectedMatch.awayTeamId)}
+                      homeTeamId={selectedMatchRosterAndStats.match.homeTeamId}
+                      awayTeamId={selectedMatchRosterAndStats.match.awayTeamId}
+                      homeTeamName={teamName(selectedMatchRosterAndStats.match.homeTeamId)}
+                      awayTeamName={teamName(selectedMatchRosterAndStats.match.awayTeamId)}
                       existingStats={selectedMatchRosterAndStats.existingStats}
                     />
                   ) : null}
