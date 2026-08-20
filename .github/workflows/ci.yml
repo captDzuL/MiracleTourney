@@ -125,9 +125,7 @@ jobs:
           pnpm test:e2e:preflight
 
       - name: Run migrations on test DB
-        run: |
-          pnpm prisma migrate resolve --rolled-back 20260817100000_add_match_event_round_slot_unique || true
-          pnpm prisma migrate deploy
+        run: pnpm prisma migrate reset --force --skip-seed
 
       - name: Run E2E tests
         run: pnpm test:e2e
