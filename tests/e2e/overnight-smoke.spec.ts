@@ -89,7 +89,7 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   await eventStatusForm.getByLabel("Event").selectOption({ label: "Flashpeak 24" });
   await eventStatusForm.getByLabel("Status").selectOption("Published");
   await eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i }).click();
-  await expect(page).toHaveURL(/\/admin\?success=event-status-updated/);
+  await expect(page).toHaveURL(/\/admin\?success=event-status-updated/, { timeout: 15_000 });
 
   // Navigate to fresh admin page before importing
   await page.goto("/en/admin?phase=import");

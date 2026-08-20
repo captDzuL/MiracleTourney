@@ -1299,22 +1299,6 @@ function RunMatchDayPhase({
                     )
                   )}
 
-                  {selectedMatchRosterAndStats?.match.status === "Completed" && (completedMatchItem?.event ?? activeEvent) ? (
-                    <PlayerStatsSection
-                      eventId={(completedMatchItem?.event ?? activeEvent)!.id}
-                      gameModeId={(completedMatchItem?.event ?? activeEvent)!.gameModeId}
-                      gameId={(completedMatchItem?.event ?? activeEvent)!.gameId}
-                      matchId={selectedMatchRosterAndStats.match.id}
-                      homePlayers={selectedMatchRosterAndStats.homePlayers}
-                      awayPlayers={selectedMatchRosterAndStats.awayPlayers}
-                      homeTeamId={selectedMatchRosterAndStats.match.homeTeamId}
-                      awayTeamId={selectedMatchRosterAndStats.match.awayTeamId}
-                      homeTeamName={teamName(selectedMatchRosterAndStats.match.homeTeamId)}
-                      awayTeamName={teamName(selectedMatchRosterAndStats.match.awayTeamId)}
-                      existingStats={selectedMatchRosterAndStats.existingStats}
-                    />
-                  ) : null}
-
                   <a
                     href={`?phase=run&activeEventId=${activeEvent?.id ?? ""}&matchEventId=${selectedManageableEvent?.event.id ?? ""}`}
                     className="text-sm font-medium text-slate-400 hover:text-slate-600"
@@ -1327,6 +1311,21 @@ function RunMatchDayPhase({
                   <p className="text-sm text-slate-400">{t("selectMatch")}</p>
                 </div>
               )}
+              {selectedMatchRosterAndStats?.match.status === "Completed" && (completedMatchItem?.event ?? activeEvent) ? (
+                <PlayerStatsSection
+                  eventId={(completedMatchItem?.event ?? activeEvent)!.id}
+                  gameModeId={(completedMatchItem?.event ?? activeEvent)!.gameModeId}
+                  gameId={(completedMatchItem?.event ?? activeEvent)!.gameId}
+                  matchId={selectedMatchRosterAndStats.match.id}
+                  homePlayers={selectedMatchRosterAndStats.homePlayers}
+                  awayPlayers={selectedMatchRosterAndStats.awayPlayers}
+                  homeTeamId={selectedMatchRosterAndStats.match.homeTeamId}
+                  awayTeamId={selectedMatchRosterAndStats.match.awayTeamId}
+                  homeTeamName={teamName(selectedMatchRosterAndStats.match.homeTeamId)}
+                  awayTeamName={teamName(selectedMatchRosterAndStats.match.awayTeamId)}
+                  existingStats={selectedMatchRosterAndStats.existingStats}
+                />
+              ) : null}
             </Section>
           </div>
         </div>
