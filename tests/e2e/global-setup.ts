@@ -6,7 +6,7 @@ export default async function globalSetup() {
   if (!process.env.CI) {
     execSync("pnpm prisma db push --accept-data-loss --skip-generate", { stdio: "inherit" });
   }
-  execSync("pnpm prisma db seed", { stdio: "inherit" });
+  execSync("pnpm db:seed", { stdio: "inherit" });
 
   const prisma = new PrismaClient(
     process.env.CI && process.env.DIRECT_URL
