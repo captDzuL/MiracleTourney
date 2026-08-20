@@ -3,7 +3,9 @@ import { PrismaClient } from "@prisma/client";
 
 export default async function globalSetup() {
   // Sync schema and seed users
-  execSync("pnpm prisma db push --accept-data-loss --skip-generate", { stdio: "inherit" });
+  if (!process.env.CI) {
+    execSync("pnpm prisma db push --accept-data-loss --skip-generate", { stdio: "inherit" });
+  }
   execSync("pnpm prisma db seed", { stdio: "inherit" });
 
   const prisma = new PrismaClient();
