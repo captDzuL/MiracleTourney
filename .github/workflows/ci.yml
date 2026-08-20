@@ -125,8 +125,10 @@ jobs:
           pnpm test:e2e:preflight
 
       - name: Reset and sync test DB
+        env:
+          DATABASE_URL: ${{ secrets.NEON_TEST_DIRECT_URL }}
         run: |
-          pnpm prisma db execute --url "$DIRECT_URL" --stdin <<'SQL'
+          pnpm prisma db execute --url "$DATABASE_URL" --stdin <<'SQL'
           DROP SCHEMA public CASCADE;
           CREATE SCHEMA public;
           GRANT ALL ON SCHEMA public TO neondb_owner;
