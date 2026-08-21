@@ -28,7 +28,9 @@ import {
   adminCreateEventAction,
   adminDeactivateUserAction,
   adminDeleteTeamAction,
+  adminCommitRegistrationImportAction,
   adminImportTeamsCsvAction,
+  adminPreviewRegistrationImportAction,
   adminRejectStatAction,
   adminSaveMatchPlayerStatsAction,
   adminSetAccentColorAction,
@@ -61,6 +63,8 @@ import {
   getOrganizerUsers,
   getPendingStatSubmissionCount,
   getPendingStatSubmissions,
+  getRegistrationImportBatchForAdmin,
+  getRegistrationImportBatchesForEvent,
   getTeamCountsForEvents,
   getTeamsForEvents,
 } from "@/lib/platform/repository";
@@ -82,6 +86,7 @@ type AdminSearchParams = {
   phase?: string;
   matchEventId?: string;
   matchId?: string;
+  registrationBatchId?: string;
 };
 
 type EventItem = Awaited<ReturnType<typeof getManageableEventsForUser>>[number];
@@ -89,6 +94,8 @@ type GameModeItem = ReturnType<typeof getGameModes>[number];
 type OrganizerItem = Awaited<ReturnType<typeof getOrganizerUsers>>[number];
 type TeamItem = Awaited<ReturnType<typeof getTeamsForEvents>> extends Map<string, infer T> ? T extends Array<infer U> ? U : never : never;
 type ImportedTeamItem = Awaited<ReturnType<typeof getImportedTeams>>[number] & { eventName: string };
+type RegistrationImportBatchItem = NonNullable<Awaited<ReturnType<typeof getRegistrationImportBatchForAdmin>>>;
+type RegistrationImportBatchSummaryItem = Awaited<ReturnType<typeof getRegistrationImportBatchesForEvent>>[number];
 type ManageableEventItem = {
   event: EventItem;
   manageableMatches: Awaited<ReturnType<typeof getBracketManageableMatchesForEvent>>;
@@ -126,6 +133,7 @@ export default async function AdminPage({
 
   const [t, resolvedSearchParams] = await Promise.all([getTranslations("admin"), searchParams]);
   const activePhase = resolveAdminPhase(resolvedSearchParams?.phase);
+  const registrationIntakeV2 = process.env.REGISTRATION_INTAKE_V2 !== "false";
   const [events, pendingCount, organizerOptions] = await Promise.all([
     getManageableEventsForUser(user),
     getPendingStatSubmissionCount(user),
@@ -177,9 +185,13 @@ export default async function AdminPage({
         [] as Awaited<ReturnType<typeof getLeaderboardForEvent>>,
       ];
 
-  const [importedTeamsRaw, captainUsers] = await Promise.all([
+  const [importedTeamsRaw, captainUsers, registrationBatches, registrationBatch] = await Promise.all([
     activePhase === "import" ? getImportedTeams(user) : Promise.resolve([]),
     activePhase === "import" || activePhase === "prepare" ? getCaptainUsersForAdmin() : Promise.resolve([] as CaptainUser[]),
+    activePhase === "import" && activeEvent ? getRegistrationImportBatchesForEvent(user, activeEvent.id) : Promise.resolve([] as RegistrationImportBatchSummaryItem[]),
+    activePhase === "import" && resolvedSearchParams?.registrationBatchId
+      ? getRegistrationImportBatchForAdmin(user, resolvedSearchParams.registrationBatchId)
+      : Promise.resolve(null),
   ]);
 
   const importedTeams = importedTeamsRaw
@@ -272,11 +284,14 @@ export default async function AdminPage({
 
           {activePhase === "import" ? (
             <ImportRegistrationPhase
-              allTeamsByEvent={allTeamsByEvent}
+              activeEvent={activeEvent}
               captainUsers={captainUsers}
               events={events}
               importedEventIds={importedEventIds}
               importedTeams={importedTeams}
+              registrationBatch={registrationBatch}
+              registrationBatches={registrationBatches}
+              registrationIntakeV2={registrationIntakeV2}
               t={t}
             />
           ) : null}
@@ -382,6 +397,8 @@ function HeaderMetric({ label, value, hint }: { label: string; value: string | n
 
 const SUCCESS_MESSAGES: Record<string, string> = {
   "teams-imported": "Tim berhasil diimpor",
+  "registration-preview-ready": "Preview registrasi siap direview",
+  "registration-imported": "Registrasi terpilih berhasil diimpor",
   "event-status-updated": "Status event berhasil diperbarui",
   "captain-assigned": "Kapten berhasil ditugaskan",
   "team-deleted": "Tim berhasil dihapus",
@@ -904,32 +921,41 @@ function BrandAssetsSection({
 }
 
 function ImportRegistrationPhase({
-  allTeamsByEvent,
+  activeEvent,
   captainUsers,
   events,
   importedEventIds,
   importedTeams,
+  registrationBatch,
+  registrationBatches,
+  registrationIntakeV2,
   t,
 }: {
-  allTeamsByEvent: Map<string, TeamItem[]>;
+  activeEvent: EventItem | undefined;
   captainUsers: CaptainUser[];
   events: EventItem[];
   importedEventIds: Set<string>;
   importedTeams: ImportedTeamItem[];
+  registrationBatch: RegistrationImportBatchItem | null;
+  registrationBatches: RegistrationImportBatchSummaryItem[];
+  registrationIntakeV2: boolean;
   t: AdminTranslator;
 }) {
-  return (
-    <PhaseSection
-      action={
-        <a className={quietButton} href="/templates/team-import-template.csv">
-          <Download className="h-4 w-4" />
-          {t("downloadTemplate")}
-        </a>
-      }
-      description={t("importDescription")}
-      title={t("importWorkspaceTitle")}
-    >
-      <div className="grid min-w-0 gap-5">
+  const activeEventHasCredentials = activeEvent ? importedEventIds.has(activeEvent.id) : false;
+  const batchSummary = (registrationBatch?.summary ?? {}) as Partial<Record<"new" | "changed" | "same" | "error", number>>;
+
+  if (!registrationIntakeV2) {
+    return (
+      <PhaseSection
+        action={
+          <a className={quietButton} href="/templates/team-import-template.csv">
+            <Download className="h-4 w-4" />
+            {t("downloadTemplate")}
+          </a>
+        }
+        description={t("importDescription")}
+        title={t("importWorkspaceTitle")}
+      >
         <Section title={t("importTitle")} description={t("importHelp")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
           <form action={adminImportTeamsCsvAction} className="grid min-w-0 gap-4 lg:grid-cols-[minmax(22rem,1fr)_minmax(12rem,16rem)] lg:items-end">
             <div className="grid min-w-0 gap-3">
@@ -955,31 +981,155 @@ function ImportRegistrationPhase({
             </SubmitButton>
           </form>
         </Section>
+      </PhaseSection>
+    );
+  }
 
-        <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(24rem,0.9fr)_minmax(32rem,1.1fr)]">
-          <Section title={t("importSlugsTitle")} description={t("importSlugsDescription")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
+  return (
+    <PhaseSection
+      action={
+        activeEvent && activeEventHasCredentials ? (
+          <a className={quietButton} href={`/api/admin/captain-credentials?eventId=${activeEvent.id}`}>
+            <KeyRound className="h-4 w-4" />
+            {t("downloadCredentials")}
+          </a>
+        ) : null
+      }
+      description={t("importDescription")}
+      title={t("importWorkspaceTitle")}
+    >
+      <div className="grid min-w-0 gap-5">
+        <Section title={t("registrationSourceTitle")} description={t("registrationSourceDescription")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
+          {activeEvent ? (
+            <form action={adminPreviewRegistrationImportAction} className="grid min-w-0 gap-4 xl:grid-cols-[minmax(18rem,1fr)_minmax(14rem,0.55fr)_minmax(12rem,16rem)] xl:items-end">
+              <input type="hidden" name="eventId" value={activeEvent.id} />
+              <label className={labelClass}>
+                {t("registrationFile")}
+                <input
+                  className={`${inputClass} block w-full min-w-0 max-w-full overflow-hidden file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-200`}
+                  name="registrationFile"
+                  type="file"
+                  accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+                />
+              </label>
+              <label className={labelClass}>
+                {t("worksheetName")}
+                <input
+                  className={inputClass}
+                  name="worksheetName"
+                  placeholder={t("worksheetNamePlaceholder")}
+                />
+              </label>
+              <SubmitButton className={`${primaryButton} min-h-11 w-full px-5`}>
+                <Upload className="h-4 w-4" />
+                {t("previewRegistration")}
+              </SubmitButton>
+            </form>
+          ) : (
+            <p className="text-sm text-slate-500">{t("noEventsImport")}</p>
+          )}
+          <div className="mt-4 grid gap-3 text-sm text-slate-600 md:grid-cols-3">
+            <div>
+              <p className="font-semibold text-slate-900">{t("sourceStep")}</p>
+              <p className="mt-1">{t("sourceStepDescription")}</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900">{t("mappingStep")}</p>
+              <p className="mt-1">{t("mappingStepDescription")}</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900">{t("reviewStep")}</p>
+              <p className="mt-1">{t("reviewStepDescription")}</p>
+            </div>
+          </div>
+        </Section>
+
+        {registrationBatch ? (
+          <Section title={t("registrationPreviewTitle")} description={t("registrationPreviewDescription")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
+            <div className="mb-4 flex flex-wrap gap-2">
+              <StatusChip tone="success">{t("newRows", { count: batchSummary.new ?? 0 })}</StatusChip>
+              <StatusChip tone="warning">{t("changedRows", { count: batchSummary.changed ?? 0 })}</StatusChip>
+              <StatusChip>{t("sameRows", { count: batchSummary.same ?? 0 })}</StatusChip>
+              <StatusChip tone={batchSummary.error ? "warning" : "default"}>{t("errorRows", { count: batchSummary.error ?? 0 })}</StatusChip>
+            </div>
+            <form action={adminCommitRegistrationImportAction} className="grid gap-4">
+              <input type="hidden" name="eventId" value={registrationBatch.eventId} />
+              <input type="hidden" name="batchId" value={registrationBatch.id} />
+              <DataTable
+                columns={["", t("rowLabel"), t("statusLabel"), t("teamLabel"), "Tag", "PIC", t("rosterLabel"), t("issueLabel")]}
+                minTableWidth="72rem"
+                rows={registrationBatch.items.map((item) => {
+                  const normalized = (item.normalizedData ?? {}) as {
+                    teamName?: string;
+                    teamTag?: string;
+                    captainName?: string;
+                    captainContact?: string;
+                    players?: Array<{ nickname: string }>;
+                  };
+                  const errors = (item.validationErrors ?? []) as string[];
+                  const canSelect = item.status === "new" || item.status === "changed";
+                  return [
+                    <input
+                      key={`${item.id}-select`}
+                      aria-label={t("selectImportRow")}
+                      className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 disabled:opacity-40"
+                      defaultChecked={item.status === "new"}
+                      disabled={!canSelect}
+                      name="itemId"
+                      type="checkbox"
+                      value={item.id}
+                    />,
+                    <span key={`${item.id}-row`} className="mono text-xs text-slate-700">{item.sourceRow}</span>,
+                    <Pill key={`${item.id}-status`} tone={item.status === "new" ? "live" : "default"}>
+                      {t(`registrationStatuses.${item.status}`)}
+                    </Pill>,
+                    <span key={`${item.id}-team`} className="font-medium text-slate-800">{normalized.teamName ?? "-"}</span>,
+                    <span key={`${item.id}-tag`} className="mono text-xs text-slate-700">{normalized.teamTag ?? "-"}</span>,
+                    <span key={`${item.id}-captain`} className="text-slate-700">{normalized.captainName ?? "-"}</span>,
+                    <span key={`${item.id}-players`} className="text-slate-700">
+                      {normalized.players?.map((player) => player.nickname).join(", ") || "-"}
+                    </span>,
+                    <span key={`${item.id}-errors`} className="text-xs text-slate-600">
+                      {errors.length ? errors.join(" ") : "-"}
+                    </span>,
+                  ];
+                })}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-slate-500">{t("changedRowsNeedApproval")}</p>
+                <SubmitButton className={primaryButton}>
+                  <Check className="h-4 w-4" />
+                  {t("commitRegistrationImport")}
+                </SubmitButton>
+              </div>
+            </form>
+          </Section>
+        ) : null}
+
+        <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(24rem,0.75fr)_minmax(32rem,1.25fr)]">
+          <Section title={t("registrationBatchHistoryTitle")} description={t("registrationBatchHistoryDescription")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
             <DataTable
-              columns={[t("eventLabel"), "event_slug", t("statusLabel"), t("teamsLabel"), ""]}
+              columns={[t("sourceLabel"), t("statusLabel"), t("rowsLabel"), ""]}
               minTableWidth="44rem"
-              rows={events.map((event) => [
-                <span key={`${event.id}-name`} className="font-medium text-slate-800">{event.name}</span>,
-                <span key={`${event.id}-slug`} className="mono block max-w-40 break-all text-xs text-slate-700">{event.slug}</span>,
-                <Pill key={`${event.id}-import-status`} tone={event.status === "Ongoing" ? "live" : "default"}>
-                  {event.status}
+              rows={registrationBatches.map((batch) => [
+                <span key={`${batch.id}-source`} className="font-medium text-slate-800">{batch.sourceLabel}</span>,
+                <Pill key={`${batch.id}-status`} tone={batch.status === "committed" ? "live" : "default"}>
+                  {batch.status}
                 </Pill>,
-                allTeamsByEvent.get(event.id)?.length ?? 0,
-                importedEventIds.has(event.id) ? (
-                  <a
-                    key={`${event.id}-creds`}
-                    className="inline-flex min-w-max items-center gap-1 text-xs font-semibold text-cyan-700 hover:text-cyan-600"
-                    href={`/api/admin/captain-credentials?eventId=${event.id}`}
-                  >
-                    <KeyRound className="h-3.5 w-3.5" />
-                    {t("downloadCredentials")}
-                  </a>
-                ) : null,
+                batch.items.length,
+                <a
+                  key={`${batch.id}-open`}
+                  className="inline-flex min-w-max items-center gap-1 text-xs font-semibold text-cyan-700 hover:text-cyan-600"
+                  href={`?phase=import&activeEventId=${batch.eventId}&registrationBatchId=${batch.id}`}
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  {t("openPreview")}
+                </a>,
               ])}
             />
+            {registrationBatches.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">{t("noRegistrationBatches")}</p>
+            ) : null}
           </Section>
 
           <Section title={t("importedRegistrationsTitle")} description={t("importedRegistrationsDescription")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
@@ -1032,6 +1182,15 @@ function ImportRegistrationPhase({
             ) : (
               <p className="text-sm text-slate-500">{t("noImportedRegistrations")}</p>
             )}
+            {activeEvent && activeEventHasCredentials ? (
+              <a
+                className="mt-4 inline-flex min-w-max items-center gap-1 text-sm font-semibold text-cyan-700 hover:text-cyan-600"
+                href={`/api/admin/captain-credentials?eventId=${activeEvent.id}`}
+              >
+                <KeyRound className="h-4 w-4" />
+                {t("downloadCredentials")}
+              </a>
+            ) : null}
           </Section>
         </div>
       </div>
