@@ -4,6 +4,32 @@ import { loginAsAdmin } from "./helpers/auth";
 
 const prisma = new PrismaClient();
 
+async function uploadRegistrationFile(page: import("@playwright/test").Page, file: {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+}) {
+  await page.locator('input[name="registrationFile"]').setInputFiles(file);
+  await Promise.all([
+    page.waitForURL(
+      (url) => url.searchParams.has("registrationBatchId") || url.searchParams.has("error"),
+      { timeout: 30_000 },
+    ),
+    page.getByRole("button", { name: /check and preview|cek dan preview/i }).click(),
+  ]);
+
+  const previewUrl = new URL(page.url());
+  if (previewUrl.searchParams.has("error")) {
+    throw new Error(`Registration preview failed: ${previewUrl.searchParams.get("error") || "Unknown error"}`);
+  }
+
+  const previewForm = page.locator("form").filter({
+    has: page.locator('input[name="batchId"]'),
+  });
+  await expect(previewForm).toBeVisible({ timeout: 30_000 });
+  return previewForm;
+}
+
 test.describe("admin event management", () => {
   test.beforeEach(async ({ page }) => {
     await loginAsAdmin(page, "en");
@@ -41,31 +67,66 @@ test.describe("admin event management", () => {
   });
 
   test("admin can import teams via CSV and see success count", async ({ page }) => {
-    // Remove ETA if left by a previous run (global-setup may not clean it in parallel CI jobs)
-    const ksc = await prisma.event.findFirst({ where: { slug: "kuroko-summer-cup" } });
-    if (ksc) await prisma.team.deleteMany({ where: { eventId: ksc.id, tag: "ETA" } });
+    test.setTimeout(90_000);
+    const event = await prisma.event.findUnique({ where: { slug: "kuroko-summer-cup" } });
+    expect(event, "Expected the seeded Kuroko event to exist").not.toBeNull();
+    if (!event) return;
 
-    await page.goto("/en/admin?phase=import");
-    await page.locator('input[name="csv"]').setInputFiles({
+    const completedMatches = await prisma.match.count({ where: { eventId: event.id, status: "Completed" } });
+    expect(completedMatches, "Expected the seeded Kuroko event to be unlocked").toBe(0);
+    await prisma.team.deleteMany({
+      where: {
+        eventId: event.id,
+        OR: [{ tag: "ETA" }, { name: "E2E Team Alpha" }],
+      },
+    });
+
+    await page.goto(`/en/admin?phase=import&activeEventId=${event.id}`);
+    const previewForm = await uploadRegistrationFile(page, {
       name: "test-import.csv",
       mimeType: "text/csv",
       buffer: Buffer.from(
-        "event_slug,team_name,team_tag,captain_name,captain_contact\nkuroko-summer-cup,E2E Team Alpha,ETA,E2E Captain,e2ecap@test.com\n",
+        "event_slug,team_name,team_tag,captain_name,captain_contact,Player 1 Nickname\nkuroko-summer-cup,E2E Team Alpha,ETA,E2E Captain,e2ecap@test.com,E2EPlayer\n",
       ),
     });
-    await page.getByRole("button", { name: "Upload and import" }).click();
+    await expect(previewForm.locator('input[name="itemId"]:checked')).toHaveCount(1);
 
-    await expect(page).toHaveURL(/success=teams-imported/);
+    await Promise.all([
+      page.waitForURL(
+        (url) => url.searchParams.get("success") === "registration-imported" || url.searchParams.has("error"),
+        { timeout: 75_000 },
+      ),
+      previewForm.getByRole("button", { name: /import selected rows|import baris terpilih/i }).click(),
+    ]);
+
+    const importError = new URL(page.url()).searchParams.get("error");
+    if (importError) throw new Error(`Registration commit failed: ${importError}`);
+
+    await expect(page).toHaveURL(/success=registration-imported&count=1/);
   });
 
   test("admin sees error when importing CSV after bracket is locked", async ({ page }) => {
-    await page.goto("/en/admin?phase=import");
-    const lateImportFile = "tests/fixtures/late-import-after-lock.csv";
-    await page.locator('input[name="csv"]').setInputFiles(lateImportFile);
-    await page.getByRole("button", { name: "Upload and import" }).click();
+    const events = await prisma.event.findMany({ select: { id: true } });
+    let lockedEventId: string | null = null;
+    for (const event of events) {
+      const completedMatches = await prisma.match.count({ where: { eventId: event.id, status: "Completed" } });
+      if (completedMatches > 0) {
+        lockedEventId = event.id;
+        break;
+      }
+    }
+    if (!lockedEventId) {
+      test.skip();
+      return;
+    }
 
-    // late-import-after-lock.csv references flashpeak-24 which doesn't exist → unknown event_slug error
-    await expect(page).toHaveURL(/error=/);
+    await page.goto(`/en/admin?phase=import&activeEventId=${lockedEventId}`);
+    const lateImportFile = "tests/fixtures/late-import-after-lock.csv";
+    await page.locator('input[name="registrationFile"]').setInputFiles(lateImportFile);
+    await page.getByRole("button", { name: /check and preview|cek dan preview/i }).click();
+
+    await expect(page).toHaveURL(/registrationBatchId=/, { timeout: 30_000 });
+    await expect(page.getByText(/sudah memiliki hasil pertandingan|already has recorded match results/i)).toBeVisible();
   });
 
   test("admin can update live stream URL", async ({ page }) => {

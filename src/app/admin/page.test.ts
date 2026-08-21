@@ -80,4 +80,16 @@ describe("admin action buttons", () => {
     expect(source).toContain('name="organizerUserId"');
     expect(source).toContain('t("createEventOrganizerLabel")');
   });
+
+  test("uses registration intake wizard instead of the legacy visible CSV importer", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain("adminPreviewRegistrationImportAction");
+    expect(source).toContain("adminCommitRegistrationImportAction");
+    expect(source).toContain('process.env.REGISTRATION_INTAKE_V2 !== "false"');
+    expect(source).toContain("registrationIntakeV2");
+    expect(source).toContain('name="registrationFile"');
+    expect(source).toContain('accept=".xlsx,.csv');
+    expect(source).not.toContain("importSlugsTitle");
+  });
 });
