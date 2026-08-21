@@ -2,17 +2,35 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
 
-const csvHeader = "event_slug,team_name,team_tag,captain_name,captain_contact";
+const csvHeader = "event_slug,team_name,team_tag,captain_name,captain_contact,Player 1 Nickname";
 
 function teamImportCsv(slug: string, teamNumbers: number[]) {
   const rows = teamNumbers.map(
-    (number) => `${slug},Team ${number},T${String(number).padStart(2, "0")},Captain ${number},captain${number}@team.test`,
+    (number) => `${slug},Team ${number},T${String(number).padStart(2, "0")},Captain ${number},captain${number}@team.test,Player ${number}`,
   );
   return Buffer.from([csvHeader, ...rows].join("\n"));
 }
 
 function lateTeamImportCsv(slug: string) {
-  return Buffer.from(`${csvHeader}\n${slug},Late Team,LTE,Late Captain,late@team.test\n`);
+  return Buffer.from(`${csvHeader}\n${slug},Late Team,LTE,Late Captain,late@team.test,Late Player\n`);
+}
+
+async function previewRegistrationCsv(page: import("@playwright/test").Page, file: {
+  name: string;
+  buffer: Buffer;
+}) {
+  await page.locator('input[name="registrationFile"]').setInputFiles({
+    name: file.name,
+    mimeType: "text/csv",
+    buffer: file.buffer,
+  });
+  await page.getByRole("button", { name: /check and preview|cek dan preview/i }).click();
+  await expect(page).toHaveURL(/registrationBatchId=/, { timeout: 30_000 });
+}
+
+async function commitPreviewedRegistration(page: import("@playwright/test").Page, count: number) {
+  await page.getByRole("button", { name: /import selected rows|import baris terpilih/i }).click();
+  await page.waitForURL(new RegExp(`success=registration-imported&count=${count}`), { timeout: 30_000 });
 }
 
 test("admin can publish, import, enter a result, and see bracket advancement publicly", async ({ page }) => {
@@ -30,16 +48,17 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
 
   // Attempt CSV import — may fail if event already has recorded results (test ordering)
   await page.goto("/en/admin?phase=import");
-  await page.locator('input[name="csv"]').setInputFiles({
+  await previewRegistrationCsv(page, {
     name: "overnight-smoke.csv",
-    mimeType: "text/csv",
     buffer: Buffer.from(
-      "event_slug,team_name,team_tag,captain_name,captain_contact\nkuroko-summer-cup,Smoke Test Five,ST5,Smoke Captain,smoke@example.com\n",
+      "event_slug,team_name,team_tag,captain_name,captain_contact,Player 1 Nickname\nkuroko-summer-cup,Smoke Test Five,ST5,Smoke Captain,smoke@example.com,Smoke Player\n",
     ),
   });
-  await page.getByRole("button", { name: /upload and import|unggah/i }).click();
-  // Accept either success (first run) or lock error (subsequent runs after match result is recorded)
-  await expect(page).toHaveURL(/\/admin\?(?:success=teams-imported|error=)/, { timeout: 30_000 });
+  // Accept either a successful import (first run) or a preview error after match results already exist.
+  const lockedImportMessage = page.getByText(/sudah memiliki hasil pertandingan|already has recorded match results/i).first();
+  if (!(await lockedImportMessage.isVisible().catch(() => false))) {
+    await commitPreviewedRegistration(page, 1);
+  }
 
   // Click the first manageable match card to get the result form (if any)
   await page.goto("/id/admin?phase=run");
@@ -101,27 +120,23 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   await expect(page).toHaveURL(/\/admin\?success=event-status-updated/, { timeout: 15_000 });
 
   // Navigate to fresh admin page before importing
-  await page.goto("/en/admin?phase=import");
-  await page.locator('input[name="csv"]').setInputFiles({
+  await page.goto(`/en/admin?phase=import&activeEventId=${eventId}`);
+  await previewRegistrationCsv(page, {
     name: "import-22.csv",
-    mimeType: "text/csv",
     buffer: teamImportCsv(slug, Array.from({ length: 22 }, (_, index) => index + 1)),
   });
-  await page.getByRole("button", { name: /Upload and import/i }).click();
-  await page.waitForURL(/\/admin\?success=teams-imported&count=22/, { timeout: 30_000 });
+  await commitPreviewedRegistration(page, 22);
 
   await page.goto(`/id/events/${slug}/bracket`);
   await expect(page.getByText("Final", { exact: true })).not.toBeVisible();
   await expect(page.getByText(/Semifinal|Quarterfinal/i)).not.toBeVisible();
 
-  await page.goto("/en/admin?phase=import");
-  await page.locator('input[name="csv"]').setInputFiles({
+  await page.goto(`/en/admin?phase=import&activeEventId=${eventId}`);
+  await previewRegistrationCsv(page, {
     name: "import-2-more.csv",
-    mimeType: "text/csv",
     buffer: teamImportCsv(slug, [23, 24]),
   });
-  await page.getByRole("button", { name: /Upload and import/i }).click();
-  await page.waitForURL(/\/admin\?success=teams-imported&count=2/, { timeout: 15000 });
+  await commitPreviewedRegistration(page, 2);
 
   await page.goto(`/id/events/${slug}/bracket`);
   await expect(page.getByText("Team 23", { exact: true })).toBeVisible();
@@ -144,13 +159,10 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 30_000 });
 
   // Late import should fail — event already has recorded results
-  await page.goto("/en/admin?phase=import");
-  await page.setInputFiles('input[name="csv"]', {
+  await page.goto(`/en/admin?phase=import&activeEventId=${eventId}`);
+  await previewRegistrationCsv(page, {
     name: "late-import-after-lock.csv",
-    mimeType: "text/csv",
     buffer: lateTeamImportCsv(slug),
   });
-  await page.getByRole("button", { name: /Upload and import/i }).click();
-  await expect(page).toHaveURL(/error=/, { timeout: 30_000 });
-  expect(new URL(page.url()).searchParams.get("error")).toContain("sudah memiliki hasil pertandingan");
+  await expect(page.getByText(/sudah memiliki hasil pertandingan|already has recorded match results/i)).toBeVisible();
 });
