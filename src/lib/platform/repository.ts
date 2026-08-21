@@ -1361,7 +1361,7 @@ export async function commitRegistrationImportBatch(
         committedAt: new Date(),
       },
     });
-  });
+  }, { maxWait: 10_000, timeout: 60_000 });
 
   return { importedCount: prepared.length, credentials };
 }

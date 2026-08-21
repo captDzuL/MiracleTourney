@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
 
+const prisma = new PrismaClient();
 const csvHeader = "event_slug,team_name,team_tag,captain_name,captain_contact,Player 1 Nickname";
 
 function teamImportCsv(slug: string, teamNumbers: number[]) {
@@ -24,16 +26,51 @@ async function previewRegistrationCsv(page: import("@playwright/test").Page, fil
     mimeType: "text/csv",
     buffer: file.buffer,
   });
-  await page.getByRole("button", { name: /check and preview|cek dan preview/i }).click();
-  await expect(page).toHaveURL(/registrationBatchId=/, { timeout: 30_000 });
+  await Promise.all([
+    page.waitForURL((url) => url.searchParams.has("registrationBatchId"), { timeout: 30_000 }),
+    page.getByRole("button", { name: /check and preview|cek dan preview/i }).click(),
+  ]);
+
+  const previewForm = page.locator("form").filter({
+    has: page.locator('input[name="batchId"]'),
+  });
+  await expect(previewForm).toBeVisible();
 }
 
 async function commitPreviewedRegistration(page: import("@playwright/test").Page, count: number) {
-  await page.getByRole("button", { name: /import selected rows|import baris terpilih/i }).click();
-  await page.waitForURL(new RegExp(`success=registration-imported&count=${count}`), { timeout: 30_000 });
+  const previewForm = page.locator("form").filter({
+    has: page.locator('input[name="batchId"]'),
+  });
+  await expect(previewForm.locator('input[name="itemId"]:checked')).toHaveCount(count);
+
+  await Promise.all([
+    page.waitForURL(
+      (url) => url.searchParams.get("success") === "registration-imported" || url.searchParams.has("error"),
+      { timeout: 75_000 },
+    ),
+    previewForm.getByRole("button", { name: /import selected rows|import baris terpilih/i }).click(),
+  ]);
+
+  const importError = new URL(page.url()).searchParams.get("error");
+  if (importError) throw new Error(`Registration commit failed: ${importError}`);
+  await expect(page).toHaveURL(new RegExp(`success=registration-imported&count=${count}`));
 }
 
 test("admin can publish, import, enter a result, and see bracket advancement publicly", async ({ page }) => {
+  test.setTimeout(90_000);
+  const event = await prisma.event.findUnique({ where: { slug: "kuroko-summer-cup" } });
+  expect(event, "Expected the seeded Kuroko event to exist").not.toBeNull();
+  if (!event) return;
+
+  await prisma.match.deleteMany({ where: { eventId: event.id } });
+  await prisma.eventRoundConfig.deleteMany({ where: { eventId: event.id } });
+  await prisma.team.deleteMany({
+    where: {
+      eventId: event.id,
+      OR: [{ tag: "ST5" }, { name: "Smoke Test Five" }],
+    },
+  });
+
   await loginAsAdmin(page, "en");
   await page.goto("/en/admin?phase=prepare");
 
@@ -46,38 +83,29 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   await eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i }).click();
   await expect(page).toHaveURL(/\/admin\?success=event-status-updated/);
 
-  // Attempt CSV import — may fail if event already has recorded results (test ordering)
-  await page.goto("/en/admin?phase=import");
+  await page.goto(`/en/admin?phase=import&activeEventId=${event.id}`);
   await previewRegistrationCsv(page, {
     name: "overnight-smoke.csv",
     buffer: Buffer.from(
       "event_slug,team_name,team_tag,captain_name,captain_contact,Player 1 Nickname\nkuroko-summer-cup,Smoke Test Five,ST5,Smoke Captain,smoke@example.com,Smoke Player\n",
     ),
   });
-  // Accept either a successful import (first run) or a preview error after match results already exist.
-  const lockedImportMessage = page.getByText(/sudah memiliki hasil pertandingan|already has recorded match results/i).first();
-  if (!(await lockedImportMessage.isVisible().catch(() => false))) {
-    await commitPreviewedRegistration(page, 1);
-  }
+  await commitPreviewedRegistration(page, 1);
 
-  // Click the first manageable match card to get the result form (if any)
-  await page.goto("/id/admin?phase=run");
+  await page.goto(`/id/admin?phase=run&activeEventId=${event.id}&matchEventId=${event.id}`);
   const firstMatch = page.locator("a[href*='matchId=']").first();
-  if (await firstMatch.count() > 0) {
-    await firstMatch.click();
-    await expect(page).toHaveURL(/matchId=/);
+  await expect(firstMatch).toBeVisible();
+  await firstMatch.click();
+  await expect(page).toHaveURL(/matchId=/);
 
-    const resultForm = page.locator("form").filter({
-      has: page.locator('input[name="homeScore"]'),
-    });
-
-    if (await resultForm.count() > 0) {
-      await resultForm.locator('input[name="homeScore"]').fill("21");
-      await resultForm.locator('input[name="awayScore"]').fill("18");
-      await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
-      await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 30_000 });
-    }
-  }
+  const resultForm = page.locator("form").filter({
+    has: page.locator('input[name="homeScore"]'),
+  });
+  await expect(resultForm).toBeVisible();
+  await resultForm.locator('input[name="homeScore"]').fill("21");
+  await resultForm.locator('input[name="awayScore"]').fill("18");
+  await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
+  await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 30_000 });
 
   // Bracket page loads publicly regardless of match state
   await page.goto("/id/events/kuroko-summer-cup/bracket");
@@ -86,7 +114,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
 });
 
 test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   const suffix = randomUUID().slice(0, 8);
   const eventName = `Flashpeak 24 ${suffix}`;
   const slug = `flashpeak-24-${suffix}`;

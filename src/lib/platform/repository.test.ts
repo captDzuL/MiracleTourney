@@ -186,6 +186,10 @@ describe("registration intake commit", () => {
 
     expect(result.importedCount).toBe(2);
     expect(result.credentials).toHaveLength(1);
+    expect(prisma.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { maxWait: 10_000, timeout: 60_000 },
+    );
     expect(result.credentials[0]).toMatchObject({
       teamName: "Gamma",
       teamTag: "GAM",
@@ -202,6 +206,18 @@ describe("registration intake commit", () => {
     }));
     expect(prisma.player.deleteMany).toHaveBeenCalledWith({ where: { teamId: "team-alpha" } });
     expect(prisma.player.createMany).toHaveBeenCalledTimes(2);
+    expect(prisma.registrationImportItem.update).toHaveBeenNthCalledWith(1, {
+      where: { id: "item-new" },
+      data: expect.objectContaining({ selected: true, status: "imported", teamId: "team-gamma" }),
+    });
+    expect(prisma.registrationImportItem.update).toHaveBeenNthCalledWith(2, {
+      where: { id: "item-existing" },
+      data: expect.objectContaining({ selected: true, status: "imported", teamId: "team-alpha" }),
+    });
+    expect(prisma.registrationImportBatch.update).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: expect.objectContaining({ status: "committed" }),
+    });
   });
 
   it("rejects a selected row when the captain email belongs to a non-captain user", async () => {

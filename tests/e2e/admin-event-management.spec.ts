@@ -10,8 +10,16 @@ async function uploadRegistrationFile(page: import("@playwright/test").Page, fil
   buffer: Buffer;
 }) {
   await page.locator('input[name="registrationFile"]').setInputFiles(file);
-  await page.getByRole("button", { name: /check and preview|cek dan preview/i }).click();
-  await expect(page).toHaveURL(/registrationBatchId=/, { timeout: 30_000 });
+  await Promise.all([
+    page.waitForURL((url) => url.searchParams.has("registrationBatchId"), { timeout: 30_000 }),
+    page.getByRole("button", { name: /check and preview|cek dan preview/i }).click(),
+  ]);
+
+  const previewForm = page.locator("form").filter({
+    has: page.locator('input[name="batchId"]'),
+  });
+  await expect(previewForm).toBeVisible();
+  return previewForm;
 }
 
 test.describe("admin event management", () => {
@@ -51,30 +59,40 @@ test.describe("admin event management", () => {
   });
 
   test("admin can import teams via CSV and see success count", async ({ page }) => {
-    const events = await prisma.event.findMany({ select: { id: true } });
-    let unlockedEventId: string | null = null;
-    for (const event of events) {
-      const completedMatches = await prisma.match.count({ where: { eventId: event.id, status: "Completed" } });
-      if (completedMatches === 0) {
-        unlockedEventId = event.id;
-        break;
-      }
-    }
-    if (!unlockedEventId) {
-      test.skip();
-      return;
-    }
-    await prisma.team.deleteMany({ where: { eventId: unlockedEventId, tag: "ETA" } });
+    test.setTimeout(90_000);
+    const event = await prisma.event.findUnique({ where: { slug: "kuroko-summer-cup" } });
+    expect(event, "Expected the seeded Kuroko event to exist").not.toBeNull();
+    if (!event) return;
 
-    await page.goto(`/en/admin?phase=import&activeEventId=${unlockedEventId}`);
-    await uploadRegistrationFile(page, {
+    const completedMatches = await prisma.match.count({ where: { eventId: event.id, status: "Completed" } });
+    expect(completedMatches, "Expected the seeded Kuroko event to be unlocked").toBe(0);
+    await prisma.team.deleteMany({
+      where: {
+        eventId: event.id,
+        OR: [{ tag: "ETA" }, { name: "E2E Team Alpha" }],
+      },
+    });
+
+    await page.goto(`/en/admin?phase=import&activeEventId=${event.id}`);
+    const previewForm = await uploadRegistrationFile(page, {
       name: "test-import.csv",
       mimeType: "text/csv",
       buffer: Buffer.from(
         "event_slug,team_name,team_tag,captain_name,captain_contact,Player 1 Nickname\nkuroko-summer-cup,E2E Team Alpha,ETA,E2E Captain,e2ecap@test.com,E2EPlayer\n",
       ),
     });
-    await page.getByRole("button", { name: /import selected rows/i }).click();
+    await expect(previewForm.locator('input[name="itemId"]:checked')).toHaveCount(1);
+
+    await Promise.all([
+      page.waitForURL(
+        (url) => url.searchParams.get("success") === "registration-imported" || url.searchParams.has("error"),
+        { timeout: 75_000 },
+      ),
+      previewForm.getByRole("button", { name: /import selected rows|import baris terpilih/i }).click(),
+    ]);
+
+    const importError = new URL(page.url()).searchParams.get("error");
+    if (importError) throw new Error(`Registration commit failed: ${importError}`);
 
     await expect(page).toHaveURL(/success=registration-imported&count=1/);
   });
