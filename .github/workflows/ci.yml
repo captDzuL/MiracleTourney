@@ -62,6 +62,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     needs: [lint-and-typecheck, unit-tests]
+    concurrency:
+      group: e2e-neon-test-db
+      cancel-in-progress: false
     # Only run E2E when the Neon test branch secrets are available
     # (skipped on forks and dependabot PRs that lack access to secrets)
     if: ${{ vars.E2E_ENABLED == 'true' }}
