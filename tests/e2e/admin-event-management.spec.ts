@@ -11,14 +11,22 @@ async function uploadRegistrationFile(page: import("@playwright/test").Page, fil
 }) {
   await page.locator('input[name="registrationFile"]').setInputFiles(file);
   await Promise.all([
-    page.waitForURL((url) => url.searchParams.has("registrationBatchId"), { timeout: 30_000 }),
+    page.waitForURL(
+      (url) => url.searchParams.has("registrationBatchId") || url.searchParams.has("error"),
+      { timeout: 30_000 },
+    ),
     page.getByRole("button", { name: /check and preview|cek dan preview/i }).click(),
   ]);
+
+  const previewUrl = new URL(page.url());
+  if (previewUrl.searchParams.has("error")) {
+    throw new Error(`Registration preview failed: ${previewUrl.searchParams.get("error") || "Unknown error"}`);
+  }
 
   const previewForm = page.locator("form").filter({
     has: page.locator('input[name="batchId"]'),
   });
-  await expect(previewForm).toBeVisible();
+  await expect(previewForm).toBeVisible({ timeout: 30_000 });
   return previewForm;
 }
 
