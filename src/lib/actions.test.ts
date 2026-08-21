@@ -594,6 +594,7 @@ describe("adminCreateEventAction", () => {
     expect(createEvent).toHaveBeenCalledWith(
       expect.objectContaining({ name: "New Event 2026", participantCap: 8 }),
     );
+    expect(revalidateTag).toHaveBeenCalledWith("events");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
@@ -700,6 +701,7 @@ describe("adminUpdateEventStatusAction", () => {
       adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Ongoing" })),
     ).rejects.toThrow("REDIRECT:/admin?success=event-status-updated&event=miracle-league");
     expect(setEventStatus).toHaveBeenCalledWith("e1", "Ongoing");
+    expect(revalidateTag).toHaveBeenCalledWith("events");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
@@ -770,6 +772,7 @@ describe("adminUpdateMatchResultAction", () => {
     );
     expect(requireRole).toHaveBeenCalledWith("platform_admin");
     expect(autoTransitionEventToOngoing).toHaveBeenCalledWith("event-kuroko-summer");
+    expect(revalidateTag).toHaveBeenCalledWith("events");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
@@ -1186,6 +1189,7 @@ describe("adminSetMatchGamesAction", () => {
     );
     expect(autoTransitionEventToOngoing).toHaveBeenCalledWith("event-1");
     expect(revalidateTag).toHaveBeenCalledWith("teams");
+    expect(revalidateTag).toHaveBeenCalledWith("events");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 

@@ -1,23 +1,7 @@
-import type { Metadata } from "next";
-
-import { SpeedInsights } from "@vercel/speed-insights/next";
-
-import "@/components/shell";
-import "@/app/home-page-content";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "Miracle League",
-  description: "Platform turnamen komunitas multi-game.",
-};
-
+// Root layout is a passthrough — <html> and <body> live in [locale]/layout.tsx
+// so the lang attribute can be set dynamically per locale.
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <html lang="id">
-      <body>
-        {children}
-        <SpeedInsights />
-      </body>
-    </html>
-  );
+  return children;
 }

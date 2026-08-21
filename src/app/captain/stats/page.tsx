@@ -111,7 +111,7 @@ export default async function CaptainStatsPage() {
                           {players.map((player) => (
                             <tr key={player.id} className="border-t border-slate-50">
                               <td className="py-2 pr-3">
-                                <p className="font-medium text-slate-900">{player.displayName}</p>
+                                <p className="font-medium text-slate-900">{player.nickname}</p>
                                 <p className="text-xs text-slate-400">{player.position}</p>
                               </td>
                               {statKeys.map((k) => (

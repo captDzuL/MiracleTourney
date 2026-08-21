@@ -1299,22 +1299,6 @@ function RunMatchDayPhase({
                     )
                   )}
 
-                  {selectedMatch.status === "Completed" && selectedMatchRosterAndStats && completedMatchItem ? (
-                    <PlayerStatsSection
-                      eventId={completedMatchItem.event.id}
-                      gameModeId={completedMatchItem.event.gameModeId}
-                      gameId={completedMatchItem.event.gameId}
-                      matchId={selectedMatch.id}
-                      homePlayers={selectedMatchRosterAndStats.homePlayers}
-                      awayPlayers={selectedMatchRosterAndStats.awayPlayers}
-                      homeTeamId={selectedMatch.homeTeamId}
-                      awayTeamId={selectedMatch.awayTeamId}
-                      homeTeamName={teamName(selectedMatch.homeTeamId)}
-                      awayTeamName={teamName(selectedMatch.awayTeamId)}
-                      existingStats={selectedMatchRosterAndStats.existingStats}
-                    />
-                  ) : null}
-
                   <a
                     href={`?phase=run&activeEventId=${activeEvent?.id ?? ""}&matchEventId=${selectedManageableEvent?.event.id ?? ""}`}
                     className="text-sm font-medium text-slate-400 hover:text-slate-600"
@@ -1327,6 +1311,21 @@ function RunMatchDayPhase({
                   <p className="text-sm text-slate-400">{t("selectMatch")}</p>
                 </div>
               )}
+              {selectedMatchRosterAndStats?.match.status === "Completed" && (completedMatchItem?.event ?? activeEvent) ? (
+                <PlayerStatsSection
+                  eventId={(completedMatchItem?.event ?? activeEvent)!.id}
+                  gameModeId={(completedMatchItem?.event ?? activeEvent)!.gameModeId}
+                  gameId={(completedMatchItem?.event ?? activeEvent)!.gameId}
+                  matchId={selectedMatchRosterAndStats.match.id}
+                  homePlayers={selectedMatchRosterAndStats.homePlayers}
+                  awayPlayers={selectedMatchRosterAndStats.awayPlayers}
+                  homeTeamId={selectedMatchRosterAndStats.match.homeTeamId}
+                  awayTeamId={selectedMatchRosterAndStats.match.awayTeamId}
+                  homeTeamName={teamName(selectedMatchRosterAndStats.match.homeTeamId)}
+                  awayTeamName={teamName(selectedMatchRosterAndStats.match.awayTeamId)}
+                  existingStats={selectedMatchRosterAndStats.existingStats}
+                />
+              ) : null}
             </Section>
           </div>
         </div>
@@ -1595,7 +1594,7 @@ function StatusChip({ children, tone = "default" }: { children: React.ReactNode;
   );
 }
 
-type PlayerInfo = { id: string; displayName: string };
+type PlayerInfo = { id: string; displayName: string; nickname: string };
 
 function PlayerStatsSection({
   eventId,
@@ -1656,7 +1655,7 @@ function PlayerStatsSection({
               key={player.id}
               className={`grid items-center gap-0 px-3 py-2 ${gridCols} ${i < players.length - 1 ? "border-b border-slate-100" : ""}`}
             >
-              <p className="truncate pr-2 text-sm font-medium text-slate-800">{player.displayName}</p>
+              <p className="truncate pr-2 text-sm font-medium text-slate-800">{player.nickname}</p>
               {statKeys.map((key) => (
                 <input
                   key={key}

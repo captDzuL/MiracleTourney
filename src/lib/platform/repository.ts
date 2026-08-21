@@ -183,6 +183,19 @@ export function getModeForEvent(event: Event) {
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
+/** Returns all publicly-visible events (Published, Registration Closed, Ongoing, Finished). Used by sitemap. */
+export async function getAllPublicEvents(): Promise<Array<{ slug: string; updatedAt: Date }>> {
+  try {
+    return await prisma.event.findMany({
+      where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
+      select: { slug: true, updatedAt: true },
+      orderBy: { updatedAt: "desc" },
+    });
+  } catch {
+    return [];
+  }
+}
+
 /** Returns all events (all statuses), ordered newest first. For admin use only. */
 export async function getEvents(): Promise<Event[]> {
   const rows = await prisma.event.findMany({ include: { stream: true }, orderBy: { createdAt: "desc" } });
@@ -1445,7 +1458,7 @@ async function writePlayerStatsToDb(
   for (const [playerId, playerStats] of Object.entries(statsMap)) {
     const player = await tx.player.findUnique({
       where: { id: playerId },
-      select: { displayName: true, position: true },
+      select: { displayName: true, nickname: true, position: true },
     });
     if (!player) continue;
 
@@ -1455,7 +1468,7 @@ async function writePlayerStatsToDb(
       create: {
         matchId,
         playerId,
-        playerName: player.displayName,
+        playerName: player.nickname,
         teamId,
         position: player.position,
         gameSlug,
@@ -1550,7 +1563,7 @@ export async function adminWriteMatchPlayerStats(input: {
   for (const [playerId, playerStats] of Object.entries(input.stats)) {
     const player = await prisma.player.findUnique({
       where: { id: playerId },
-      select: { displayName: true, position: true },
+      select: { displayName: true, nickname: true, position: true },
     });
     if (!player) continue;
 
@@ -1560,7 +1573,7 @@ export async function adminWriteMatchPlayerStats(input: {
       create: {
         matchId: input.matchId,
         playerId,
-        playerName: player.displayName,
+        playerName: player.nickname,
         teamId: input.teamId,
         position: player.position,
         gameSlug,

@@ -1,7 +1,7 @@
 import { PrismaClient as DefaultPrismaClient } from "@prisma/client";
 import { pathToFileURL } from "node:url";
 
-const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 function configuredDatabaseUrl(env) {
   return env.DIRECT_URL || env.DATABASE_URL || "";
@@ -50,18 +50,28 @@ export async function checkE2eDatabaseConnection({
     };
   }
 
+  const host = safeHostFromUrl(databaseUrl);
+  const prodHost = (env.NEON_PROD_HOST ?? "").trim();
+  if (prodHost && host.includes(prodHost)) {
+    return {
+      ok: false,
+      host,
+      message: "Blocked: DATABASE_URL points to the production Neon branch. Set DIRECT_URL / DATABASE_URL to the test branch before running E2E tests.",
+    };
+  }
+
   const prisma = new PrismaClient();
   try {
     await withTimeout(prisma.$connect(), timeoutMs);
     return {
       ok: true,
-      host: safeHostFromUrl(databaseUrl),
+      host,
       message: "Database connection is reachable for DB-backed E2E tests.",
     };
   } catch (error) {
     return {
       ok: false,
-      host: safeHostFromUrl(databaseUrl),
+      host,
       message: describeError(error),
     };
   } finally {

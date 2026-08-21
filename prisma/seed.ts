@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
+const isTestMode = process.argv.includes("--test");
 
 function teamTag(name: string) {
   return name
@@ -16,7 +17,78 @@ function demoTeamId(eventSlug: string, index: number) {
   return `team-${eventSlug}-${index + 1}`;
 }
 
+async function seedTest() {
+  const adminPasswordHash = await bcrypt.hash("TestAdmin123!", 10);
+  const captainPasswordHash = await bcrypt.hash("TestCaptain123!", 10);
+
+  await prisma.user.upsert({
+    where: { email: "test-admin@miraclefc.gg" },
+    update: { name: "Test Admin", role: "platform_admin", passwordHash: adminPasswordHash },
+    create: { email: "test-admin@miraclefc.gg", name: "Test Admin", role: "platform_admin", passwordHash: adminPasswordHash },
+  });
+
+  const captain = await prisma.user.upsert({
+    where: { email: "test-captain@miraclefc.gg" },
+    update: { name: "Test Captain", role: "captain", passwordHash: captainPasswordHash },
+    create: { email: "test-captain@miraclefc.gg", name: "Test Captain", role: "captain", passwordHash: captainPasswordHash },
+  });
+
+  const event = await prisma.event.upsert({
+    where: { slug: "test-event-e2e" },
+    update: { name: "E2E Test Event", status: "Ongoing" },
+    create: {
+      slug: "test-event-e2e",
+      name: "E2E Test Event",
+      description: "Deterministic test event for E2E tests.",
+      gameId: "game-flashpeak",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      status: "Ongoing",
+      participantCap: 8,
+      registrationWindow: "2026-01-01 - 2026-01-07",
+      startsAt: "2026-01-08",
+      venue: "Online",
+    },
+  });
+
+  const teamA = await prisma.team.upsert({
+    where: { eventId_tag: { eventId: event.id, tag: "TMA" } },
+    update: {},
+    create: { id: "test-team-a", eventId: event.id, captainId: captain.id, name: "Test Team Alpha", logoText: "TM", tag: "TMA", source: "demo" },
+  });
+
+  const teamB = await prisma.team.upsert({
+    where: { eventId_tag: { eventId: event.id, tag: "TMB" } },
+    update: {},
+    create: { id: "test-team-b", eventId: event.id, captainId: captain.id, name: "Test Team Beta", logoText: "TB", tag: "TMB", source: "demo" },
+  });
+
+  await prisma.match.upsert({
+    where: { id: "test-match-1" },
+    update: {},
+    create: {
+      id: "test-match-1",
+      eventId: event.id,
+      roundLabel: "Semifinal",
+      homeTeamId: teamA.id,
+      awayTeamId: teamB.id,
+      homeScore: 0,
+      awayScore: 0,
+      status: "Scheduled",
+      round: 1,
+      slot: 1,
+    },
+  });
+
+  console.log("Seeded deterministic test data for E2E tests.");
+}
+
 async function main() {
+  if (isTestMode) {
+    await seedTest();
+    return;
+  }
+
   const adminPasswordHash = await bcrypt.hash(
     process.env.SEED_ADMIN_PASSWORD ?? "Miracle2026!",
     12,

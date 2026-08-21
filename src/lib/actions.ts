@@ -13,6 +13,7 @@ import { routing } from "@/i18n/routing";
 import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { sendEmail } from "@/lib/email/send";
 import { isDisposableEmail } from "@/lib/validation/email";
 import { validateTeamData } from "@/lib/validation/team-data";
 import type { AppUser } from "@/lib/platform/types";
@@ -490,16 +491,25 @@ export async function adminCreateEventAction(formData: FormData) {
     }
   }
 
-  await createEvent({
-    name: input.name,
-    slug: input.slug,
-    gameModeId: input.gameModeId,
-    format: input.format,
-    participantCap: input.participantCap,
-    organizerUserId: organizerAssignment?.id,
-    organizerName: organizerAssignment?.name,
-    organizerVerified: false,
-  });
+  try {
+    await createEvent({
+      name: input.name,
+      slug: input.slug,
+      gameModeId: input.gameModeId,
+      format: input.format,
+      participantCap: input.participantCap,
+      organizerUserId: organizerAssignment?.id,
+      organizerName: organizerAssignment?.name,
+      organizerVerified: false,
+    });
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code === "P2002") {
+      await redirectToActiveLocale("/admin?error=slug-already-exists");
+    }
+    throw error;
+  }
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=event-created");
 }
@@ -523,6 +533,7 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
     return redirectToActiveLocale("/admin?error=Event%20not%20found.");
   }
 
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?success=event-status-updated&event=${event.slug}`);
 }
@@ -687,6 +698,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
     }
   }
   revalidateTag("teams");
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-result-updated` as never);
 }
@@ -906,6 +918,7 @@ export async function adminSetRoundConfigAction(formData: FormData) {
 
   await assertUserCanManageEvent(user, input.eventId);
   await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
+  revalidateTag("teams");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?phase=run&matchEventId=${input.eventId}&success=round-config-saved` as never);
 }
@@ -952,6 +965,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
     console.error("[certificate] generation failed:", err);
   }
   revalidateTag("teams");
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-games-saved` as never);
 }
@@ -1079,7 +1093,11 @@ export async function requestPasswordResetAction(formData: FormData) {
     const token = await createPasswordResetToken(user.id);
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
     const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
-    console.log(`[password-reset] Reset URL for ${email.data}: ${resetUrl}`);
+    await sendEmail({
+      to: email.data,
+      subject: "Reset Password Miracle League",
+      html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 1 jam.</p>`,
+    });
   }
   // Always redirect to sent=1 regardless of whether email exists (security)
   return redirectToActiveLocale("/forgot-password?sent=1" as never);
