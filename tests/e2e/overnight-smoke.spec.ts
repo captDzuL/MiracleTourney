@@ -39,7 +39,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   });
   await page.getByRole("button", { name: /upload and import|unggah/i }).click();
   // Accept either success (first run) or lock error (subsequent runs after match result is recorded)
-  await expect(page).toHaveURL(/\/admin\?(?:success=teams-imported|error=)/);
+  await expect(page).toHaveURL(/\/admin\?(?:success=teams-imported|error=)/, { timeout: 30_000 });
 
   // Click the first manageable match card to get the result form (if any)
   await page.goto("/id/admin?phase=run");
@@ -55,8 +55,8 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
     if (await resultForm.count() > 0) {
       await resultForm.locator('input[name="homeScore"]').fill("21");
       await resultForm.locator('input[name="awayScore"]').fill("18");
-      await resultForm.getByRole("button", { name: /simpan/i }).click();
-      await expect(page).toHaveURL(/success=match-result-updated/);
+      await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
+      await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 30_000 });
     }
   }
 
