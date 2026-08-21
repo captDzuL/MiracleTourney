@@ -16,7 +16,18 @@ export default async function globalSetup() {
   try {
     // Clean up test-created events — explicit cascade to defeat any FK ordering issues
     const testSlugs = ["flashpeak-24", "flashpeak-open-league", "admin-match-e2e", "admin-stats-e2e", "admin-stats-nav-e2e"];
-    const testEvents = await prisma.event.findMany({ where: { slug: { in: testSlugs } }, select: { id: true } });
+    const testEvents = await prisma.event.findMany({
+      where: {
+        OR: [
+          { slug: { in: testSlugs } },
+          { slug: { startsWith: "admin-match-e2e-" } },
+          { slug: { startsWith: "admin-stats-e2e-" } },
+          { slug: { startsWith: "admin-stats-nav-e2e-" } },
+          { slug: { startsWith: "flashpeak-24-" } },
+        ],
+      },
+      select: { id: true },
+    });
     const testEventIds = testEvents.map((e) => e.id);
     if (testEventIds.length > 0) {
       await prisma.certificate.deleteMany({ where: { eventId: { in: testEventIds } } });
@@ -28,10 +39,6 @@ export default async function globalSetup() {
       await prisma.team.deleteMany({ where: { eventId: { in: testEventIds } } });
       await prisma.event.deleteMany({ where: { id: { in: testEventIds } } });
     }
-    // Also clean up any timestamp-suffixed admin-stats events from previous runs
-    await prisma.event.deleteMany({ where: { slug: { startsWith: "admin-stats-e2e-" } } });
-    await prisma.event.deleteMany({ where: { slug: { startsWith: "admin-stats-nav-e2e-" } } });
-
     // Ensure kuroko-summer-cup exists with Draft status
     await prisma.event.upsert({
       where: { slug: "kuroko-summer-cup" },

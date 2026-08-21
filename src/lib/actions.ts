@@ -509,6 +509,7 @@ export async function adminCreateEventAction(formData: FormData) {
     }
     throw error;
   }
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=event-created");
 }
@@ -532,6 +533,7 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
     return redirectToActiveLocale("/admin?error=Event%20not%20found.");
   }
 
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?success=event-status-updated&event=${event.slug}`);
 }
@@ -696,6 +698,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
     }
   }
   revalidateTag("teams");
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-result-updated` as never);
 }
@@ -962,6 +965,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
     console.error("[certificate] generation failed:", err);
   }
   revalidateTag("teams");
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-games-saved` as never);
 }
