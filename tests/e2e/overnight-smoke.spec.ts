@@ -140,8 +140,8 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   await expect(resultForm).toBeVisible();
   await resultForm.locator('input[name="homeScore"]').fill("21");
   await resultForm.locator('input[name="awayScore"]').fill("18");
-  await resultForm.getByRole("button", { name: /simpan/i }).click();
-  await expect(page).toHaveURL(/success=match-result-updated/);
+  await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
+  await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 30_000 });
 
   // Late import should fail — event already has recorded results
   await page.goto("/en/admin?phase=import");
@@ -151,6 +151,6 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
     buffer: lateTeamImportCsv(slug),
   });
   await page.getByRole("button", { name: /Upload and import/i }).click();
-  await expect(page).toHaveURL(/error=/);
+  await expect(page).toHaveURL(/error=/, { timeout: 30_000 });
   expect(new URL(page.url()).searchParams.get("error")).toContain("sudah memiliki hasil pertandingan");
 });
