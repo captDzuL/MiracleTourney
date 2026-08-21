@@ -15,6 +15,7 @@ import {
   getGamePrimaryStatKey,
 } from "@/lib/platform/config";
 import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventStream, Match, MatchGame, Player, Team, TournamentFormat } from "@/lib/platform/types";
+import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import {
   aggregatePlayerLeaderboard,
   buildLeagueStandings,
@@ -154,6 +155,18 @@ function generateCaptainEmail(tag: string, usedInBatch: Set<string>, explicitEma
   while (usedInBatch.has(candidate)) {
     candidate = `${tag.toLowerCase()}${n}@miraclefc.gg`;
     n++;
+  }
+  usedInBatch.add(candidate);
+  return candidate;
+}
+
+function generateSyntheticRegistrationEmail(eventSlug: string, tag: string, usedInBatch: Set<string>): string {
+  const base = `${eventSlug}-${tag}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  let candidate = `${base}@miraclefc.gg`;
+  let n = 2;
+  while (usedInBatch.has(candidate)) {
+    candidate = `${base}-${n}@miraclefc.gg`;
+    n += 1;
   }
   usedInBatch.add(candidate);
   return candidate;
@@ -923,7 +936,7 @@ export async function getImportSnapshot(user?: AppUser) {
 export async function getImportedTeams(user?: AppUser): Promise<Team[]> {
   const rows = await prisma.team.findMany({
     where: {
-      source: "csv-import",
+      source: { in: ["csv-import", "registration-intake"] },
       ...(user?.role === "organizer" ? { event: { organizerUserId: user.id } } : {}),
     },
     include: { captain: { select: { id: true, name: true } } },
@@ -937,7 +950,7 @@ export async function getImportedTeams(user?: AppUser): Promise<Team[]> {
  */
 export async function getCaptainCredentialsForEvent(eventId: string) {
   const teams = await prisma.team.findMany({
-    where: { eventId, source: "csv-import" },
+    where: { eventId, source: { in: ["csv-import", "registration-intake"] } },
     orderBy: { createdAt: "asc" },
     include: { captain: { select: { id: true, name: true } } },
   });
@@ -1121,6 +1134,236 @@ export async function importTeams(input: Array<{
   );
 
   return rows.map(mapTeam);
+}
+
+export async function saveRegistrationImportPreviewBatch(input: {
+  user: AppUser;
+  eventId: string;
+  sourceKind: RegistrationSourceKind;
+  sourceLabel: string;
+  worksheetName?: string;
+  headerSignature: string;
+  mapping: Prisma.InputJsonValue;
+  items: RegistrationPreviewItem[];
+  summary: Prisma.InputJsonValue;
+}) {
+  await assertUserCanManageEvent(input.user, input.eventId);
+
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const profile = await prisma.registrationImportProfile.create({
+    data: {
+      eventId: input.eventId,
+      createdById: input.user.id,
+      sourceKind: input.sourceKind,
+      sourceLabel: input.sourceLabel,
+      worksheetName: input.worksheetName,
+      headerSignature: input.headerSignature,
+      mapping: input.mapping,
+    },
+  });
+
+  return prisma.registrationImportBatch.create({
+    data: {
+      eventId: input.eventId,
+      profileId: profile.id,
+      createdById: input.user.id,
+      sourceKind: input.sourceKind,
+      sourceLabel: input.sourceLabel,
+      worksheetName: input.worksheetName,
+      status: "draft",
+      summary: input.summary,
+      expiresAt,
+      items: {
+        create: input.items.map((item) => ({
+          sourceRow: item.sourceRow,
+          status: item.status,
+          selected: item.selected,
+          normalizedData: item.normalized as Prisma.InputJsonValue | undefined,
+          diff: item.diff as Prisma.InputJsonValue | undefined,
+          validationErrors: item.errors as Prisma.InputJsonValue | undefined,
+          teamId: item.existingTeamId,
+        })),
+      },
+    },
+    include: { items: true },
+  });
+}
+
+export async function getRegistrationImportBatchesForEvent(user: AppUser, eventId: string) {
+  await assertUserCanManageEvent(user, eventId);
+  return prisma.registrationImportBatch.findMany({
+    where: { eventId },
+    orderBy: { createdAt: "desc" },
+    take: 8,
+    include: { items: { select: { id: true, status: true } } },
+  });
+}
+
+export async function getRegistrationImportBatchForAdmin(user: AppUser, batchId: string) {
+  const batch = await prisma.registrationImportBatch.findFirst({
+    where: { id: batchId },
+    include: {
+      items: { orderBy: { sourceRow: "asc" } },
+    },
+  });
+  if (!batch) return null;
+  await assertUserCanManageEvent(user, batch.eventId);
+  return batch;
+}
+
+export async function commitRegistrationImportBatch(
+  user: AppUser,
+  batchId: string,
+  selectedItemIds: string[],
+): Promise<{
+  importedCount: number;
+  credentials: Array<{
+    teamName: string;
+    teamTag: string;
+    captainName: string;
+    captainContact: string;
+    email: string;
+    tempPassword: string;
+  }>;
+}> {
+  const batch = await prisma.registrationImportBatch.findFirst({
+    where: { id: batchId },
+    include: {
+      event: { select: { id: true, slug: true, format: true } },
+      items: {
+        where: {
+          id: { in: selectedItemIds },
+          status: { in: ["new", "changed"] },
+        },
+      },
+    },
+  });
+
+  if (!batch) throw new Error("Batch import registrasi tidak ditemukan.");
+  await assertUserCanManageEvent(user, batch.eventId);
+
+  const locked = await isEventBracketLocked(batch.eventId);
+  if (locked) {
+    throw new Error(`Event "${batch.event.slug}" already has recorded match results, so registration import cannot be committed.`);
+  }
+
+  const usedEmails = new Set<string>();
+  const prepared = await Promise.all(
+    batch.items.map(async (item) => {
+      const normalized = item.normalizedData as RegistrationNormalizedTeam | null;
+      if (!normalized) throw new Error("Item import tidak memiliki data normalisasi.");
+
+      const explicitEmail = normalized.captainEmail?.trim().toLowerCase();
+      const email = explicitEmail || generateSyntheticRegistrationEmail(batch.event.slug, normalized.teamTag, usedEmails);
+      if (explicitEmail) usedEmails.add(explicitEmail);
+
+      const existingUser = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, email: true, role: true, name: true },
+      });
+      if (existingUser && existingUser.role !== "captain") {
+        throw new Error("Email kapten sudah dipakai akun non-captain.");
+      }
+      if (existingUser) {
+        return { item, normalized, captainId: existingUser.id, email, tempPassword: null };
+      }
+
+      const tempPassword = generateTempPassword();
+      const passwordHash = await bcrypt.hash(tempPassword, 10);
+      return { item, normalized, captainId: null, email, tempPassword, passwordHash };
+    }),
+  );
+
+  const credentials: Array<{
+    teamName: string;
+    teamTag: string;
+    captainName: string;
+    captainContact: string;
+    email: string;
+    tempPassword: string;
+  }> = [];
+
+  await prisma.$transaction(async (tx) => {
+    for (const row of prepared) {
+      let captainId = row.captainId;
+      if (!captainId) {
+        const captain = await tx.user.create({
+          data: {
+            email: row.email,
+            name: row.normalized.captainName,
+            role: "captain",
+            passwordHash: row.passwordHash!,
+            tempPassword: row.tempPassword,
+          },
+        });
+        captainId = captain.id;
+        credentials.push({
+          teamName: row.normalized.teamName,
+          teamTag: row.normalized.teamTag,
+          captainName: row.normalized.captainName,
+          captainContact: row.normalized.captainContact,
+          email: row.email,
+          tempPassword: row.tempPassword!,
+        });
+      }
+
+      let teamId = row.item.teamId ?? "";
+      const teamData = {
+        eventId: batch.eventId,
+        captainId,
+        name: row.normalized.teamName,
+        logoText: row.normalized.teamTag.slice(0, 2).toUpperCase(),
+        tag: row.normalized.teamTag.toUpperCase(),
+        captainName: row.normalized.captainName,
+        captainContact: row.normalized.captainContact,
+        source: "registration-intake",
+      };
+
+      if (row.item.status === "changed" && row.item.teamId) {
+        const updated = await tx.team.update({
+          where: { id: row.item.teamId },
+          data: teamData,
+        });
+        teamId = updated.id;
+        await tx.player.deleteMany({ where: { teamId } });
+      } else {
+        const created = await tx.team.create({ data: teamData });
+        teamId = created.id;
+      }
+
+      if (row.normalized.players.length > 0) {
+        await tx.player.createMany({
+          data: row.normalized.players.map((player) => ({
+            teamId,
+            eventId: batch.eventId,
+            displayName: player.displayName,
+            nickname: player.nickname,
+            position: player.position,
+          })),
+        });
+      }
+
+      await tx.registrationImportItem.update({
+        where: { id: row.item.id },
+        data: {
+          selected: true,
+          status: "imported",
+          teamId,
+          committedAt: new Date(),
+        },
+      });
+    }
+
+    await tx.registrationImportBatch.update({
+      where: { id: batch.id },
+      data: {
+        status: "committed",
+        committedAt: new Date(),
+      },
+    });
+  }, { maxWait: 10_000, timeout: 60_000 });
+
+  return { importedCount: prepared.length, credentials };
 }
 
 /** Adds a new player to a team. Jersey number is optional and stored as null when not provided. */
