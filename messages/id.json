@@ -36,16 +36,32 @@
     "viewStandings": "Lihat Klasemen",
     "viewEvent": "Lihat Event",
     "upToTeams": "Maks {cap} tim · {venue}",
-    "noEvents": "Belum ada event publik untuk game ini."
+    "noEvents": "Belum ada event publik untuk game ini.",
+    "eventDrop": "Event Drop",
+    "liveFeed": "Live Feed",
+    "tickerEmpty": "Jadwal muncul setelah tim siap.",
+    "exploreEvent": "Jelajahi Event",
+    "issueLabel": "Event",
+    "teamsLabel": "tim",
+    "statusOngoing": "BERLANGSUNG",
+    "statusUpNext": "SEGERA",
+    "statusFinished": "SELESAI"
   },
   "events": {
     "title": "Daftar Event",
     "description": "Daftar event kompetisi yang sudah dipublikasi, sedang berjalan, dan sudah selesai.",
     "capTeams": "Maks {n} tim",
+    "allGames": "Semua Game",
+    "teamsLabel": "tim",
+    "issueLabel": "Event",
+    "organizerLabel": "Organizer",
     "noEvents": "Belum ada event yang dipublikasi. Event draft hanya terlihat di panel admin."
   },
   "eventDetail": {
     "liveNow": "Sedang Live",
+    "issueLabel": "Event",
+    "organizerLabel": "Organizer",
+    "register": "Daftar Event",
     "teamCount": "{registered}/{cap} tim terdaftar",
     "bracketStat": "Bracket / Fixture",
     "bracketHint": "Proyeksi dari tim yang terdaftar",
