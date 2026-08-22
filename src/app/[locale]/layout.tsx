@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
+import localFont from "next/font/local";
 import { notFound } from "next/navigation";
 
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -9,6 +10,28 @@ import { AppShell } from "@/components/shell";
 import { routing } from "@/i18n/routing";
 
 export const dynamic = "force-dynamic";
+
+// Latin subset only, and only the weights the poster system actually uses.
+const displayFont = localFont({
+  variable: "--font-display",
+  display: "swap",
+  fallback: ["Bahnschrift", "Segoe UI Variable", "sans-serif"],
+  src: [
+    { path: "../fonts/teko-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "../fonts/teko-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
+});
+
+const uiFont = localFont({
+  variable: "--font-ui",
+  display: "swap",
+  fallback: ["Segoe UI", "system-ui", "sans-serif"],
+  src: [
+    { path: "../fonts/chakra-petch-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "../fonts/chakra-petch-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "../fonts/chakra-petch-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
+});
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-tourney.vercel.app";
 
@@ -66,7 +89,7 @@ export default async function LocaleLayout({
 
   return (
     <html lang={locale}>
-      <body>
+      <body className={`${displayFont.variable} ${uiFont.variable}`}>
         <NextIntlClientProvider locale={locale} messages={messages}>
           <AppShell>{children}</AppShell>
         </NextIntlClientProvider>

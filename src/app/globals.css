@@ -40,3 +40,180 @@ select,
 textarea {
   outline: none;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Public visual v2 — street-sport poster system.
+   Scoped to .public-visual-v2 so admin/captain surfaces keep their current look.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.public-visual-v2 {
+  --pv-canvas: #080c0e;
+  --pv-canvas-raised: #101619;
+  --pv-ink: #f3f0e8;
+  --pv-ink-muted: #9aa3a1;
+  --pv-lime: #caff38;
+  --pv-rule: rgba(243, 240, 232, 0.14);
+  --pv-display: var(--font-display), "Teko", "Bahnschrift", sans-serif;
+  --pv-ui: var(--font-ui), "Chakra Petch", "Segoe UI", sans-serif;
+
+  background-color: var(--pv-canvas);
+  color: var(--pv-ink);
+  font-family: var(--pv-ui);
+}
+
+.public-visual-v2 h1,
+.public-visual-v2 h2,
+.public-visual-v2 h3,
+.public-visual-v2 .pv-display {
+  font-family: var(--pv-display);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.public-visual-v2 .pv-eyebrow {
+  font-family: var(--pv-ui);
+  font-weight: 600;
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-muted {
+  color: var(--pv-ink-muted);
+}
+
+/* Clipped corner button — the only accent surface that may use lime fill. */
+.public-visual-v2 .pv-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-family: var(--pv-ui);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: var(--pv-lime);
+  color: var(--pv-canvas);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+  transition: filter 140ms ease-out;
+}
+
+.public-visual-v2 .pv-button:hover {
+  filter: brightness(1.08);
+}
+
+.public-visual-v2 .pv-button--ghost {
+  background: transparent;
+  color: var(--pv-ink);
+  box-shadow: inset 0 0 0 1px var(--pv-rule);
+}
+
+/* Hairline poster rule used to separate blocks instead of card borders. */
+.public-visual-v2 .pv-rule {
+  border: 0;
+  border-top: 1px solid var(--pv-rule);
+}
+
+/* Decorative film grain — pure CSS, no extra network bytes. */
+.public-visual-v2 .pv-grain {
+  position: relative;
+  isolation: isolate;
+}
+
+.public-visual-v2 .pv-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.16;
+  mix-blend-mode: overlay;
+  background-image: repeating-conic-gradient(
+    rgba(243, 240, 232, 0.5) 0% 25%,
+    transparent 0% 50%
+  );
+  background-size: 3px 3px;
+}
+
+/* ─── Event artwork ───────────────────────────────────────────────────────── */
+
+.event-visual {
+  position: relative;
+  overflow: hidden;
+  container-type: inline-size;
+  background-color: #080c0e;
+}
+
+.event-visual__image {
+  z-index: 0;
+}
+
+.event-visual--typographic {
+  --event-accent: #caff38;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  padding: clamp(0.75rem, 3cqw, 1.5rem);
+  color: #f3f0e8;
+}
+
+.event-visual__court {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  stroke: var(--event-accent);
+  stroke-width: 0.6;
+  fill: none;
+  opacity: 0.35;
+}
+
+.event-visual--typographic::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.22;
+  background-image: radial-gradient(circle, rgba(243, 240, 232, 0.55) 0.7px, transparent 0.8px);
+  background-size: 5px 5px;
+}
+
+.event-visual__initials {
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-display), "Teko", "Bahnschrift", sans-serif;
+  font-weight: 700;
+  font-size: clamp(2.5rem, 22cqw, 6rem);
+  line-height: 0.82;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  color: var(--event-accent);
+}
+
+.event-visual__game {
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-ui), "Chakra Petch", sans-serif;
+  font-weight: 600;
+  font-size: 0.6875rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(243, 240, 232, 0.7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-visual-v2 *,
+  .public-visual-v2 *::before,
+  .public-visual-v2 *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

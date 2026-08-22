@@ -117,3 +117,28 @@ describe("events page public cards", () => {
     expect(source).not.toContain('import { Link } from "@/i18n/navigation"');
   });
 });
+
+describe("EventVisual artwork delivery", () => {
+  const source = () =>
+    fs.readFileSync(path.resolve(__dirname, "../../components/public-v2/EventVisual.tsx"), "utf8");
+
+  test("delivers artwork through next/image so Next can optimize and size it", () => {
+    expect(source()).toContain('import Image from "next/image"');
+    expect(source()).toContain("sizes=");
+    expect(source()).toContain("priority=");
+  });
+
+  test("never paints event artwork through a CSS background image", () => {
+    expect(source()).not.toContain("backgroundImage");
+    expect(source()).not.toContain("background-image");
+  });
+
+  test("resolves artwork through the shared precedence resolver", () => {
+    expect(source()).toContain("resolveEventVisual");
+    expect(source()).toContain("data-event-art-source");
+  });
+
+  test("positions artwork from the normalized focal point", () => {
+    expect(source()).toContain("objectPosition");
+  });
+});

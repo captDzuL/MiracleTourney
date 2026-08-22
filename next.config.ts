@@ -44,7 +44,10 @@ const nextConfig: NextConfig = {
     },
   },
   images: {
-    remotePatterns: [{ protocol: "https", hostname: "lh3.googleusercontent.com" }],
+    remotePatterns: [
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+      { protocol: "https", hostname: "**.public.blob.vercel-storage.com" },
+    ],
   },
   headers: async () => [
     {
