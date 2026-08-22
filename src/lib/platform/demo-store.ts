@@ -7,7 +7,7 @@ import {
   getGameModeConfig,
   getGamePrimaryStatKey,
 } from "@/lib/platform/config";
-import type { AppUser, Event, Match, Player, Team } from "@/lib/platform/types";
+import type { AppUser, Event, EventVisualAsset, Match, Player, Team } from "@/lib/platform/types";
 import {
   aggregatePlayerLeaderboard,
   buildLeagueStandings,
@@ -428,6 +428,16 @@ export function getEventBySlug(slug: string) {
 
 export function getPublicEventBySlug(slug: string) {
   return getStore().events.find((event) => event.slug === slug && PUBLIC_EVENT_STATUSES.has(event.status));
+}
+
+/**
+ * Demo events carry no visual revisions, so they resolve through the legacy
+ * background or the typographic poster. Returning an empty list keeps the
+ * organizer panel renderable when Prisma is unreachable.
+ */
+export function listEventVisualAssets(eventId: string): EventVisualAsset[] {
+  const event = getStore().events.find((item) => item.id === eventId);
+  return event?.activeVisualAsset ? [event.activeVisualAsset] : [];
 }
 
 export function getGameForEvent(event: Event) {
