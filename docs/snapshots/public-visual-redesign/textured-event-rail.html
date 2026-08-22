@@ -1,0 +1,109 @@
+<div id="miracle-textured-rail">
+  <h2>Event rail sebagai koleksi potongan poster</h2>
+  <p class="subtitle">Informasi tetap terbaca, tetapi setiap event membawa tekstur, cropping, dan gestur visualnya sendiri.</p>
+
+  <div class="rail-shell">
+    <header class="rail-index">
+      <div><small>EVENT DROP</small><strong>01—03</strong></div>
+      <span>FEATURED TOURNAMENTS / AUG 2026</span>
+    </header>
+
+    <article class="event-slice lime">
+      <div class="event-art art-one"></div>
+      <div class="halftone"></div>
+      <div class="ghost-word">DAWN</div>
+      <div class="event-no">01</div>
+      <div class="event-copy">
+        <small>● ONGOING / MLBB · 5V5</small>
+        <h3>DAWN<br>FINALS <em>24</em></h3>
+        <p>24 TEAMS · ROUND 1 · 20:00 WIB</p>
+      </div>
+      <div class="stamp">ENTER<br>THE<br>ARENA ↗</div>
+    </article>
+
+    <article class="event-slice cyan">
+      <div class="event-art art-two"></div>
+      <div class="xerox-lines"></div>
+      <div class="ghost-word">CLASH</div>
+      <div class="event-no">02</div>
+      <div class="event-copy">
+        <small>UP NEXT / HONOR OF KINGS · 5V5</small>
+        <h3>STREET<br>CLASH <em>16</em></h3>
+        <p>16 TEAMS · OPEN QUALIFIER · 23 AUG</p>
+      </div>
+      <div class="tape">NEXT DROP</div>
+    </article>
+
+    <article class="event-slice pink">
+      <div class="event-art art-three"></div>
+      <div class="speed-lines"></div>
+      <div class="ghost-word">SUMMER</div>
+      <div class="event-no">03</div>
+      <div class="event-copy">
+        <small>FINISHED / KUROKO STREET RIVAL · 3V3</small>
+        <h3>SUMMER<br>CUP <em>08</em></h3>
+        <p>8 TEAMS · FINAL STANDINGS · ARCHIVE</p>
+      </div>
+      <div class="champion-stamp">CHAMPION<br>SET</div>
+    </article>
+  </div>
+
+  <div class="options texture-feedback">
+    <div class="option" data-choice="right-texture" onclick="toggleSelect(this)">
+      <div class="letter">A</div><div class="content"><h3>Ini level teksturnya</h3><p>Ekspresif, tetapi event name dan metadata masih terbaca.</p></div>
+    </div>
+    <div class="option" data-choice="more-raw" onclick="toggleSelect(this)">
+      <div class="letter">B</div><div class="content"><h3>Masih perlu lebih liar</h3><p>Tambahkan sobekan, stiker, distorsi, dan overlap yang lebih ekstrem.</p></div>
+    </div>
+    <div class="option" data-choice="less-texture" onclick="toggleSelect(this)">
+      <div class="letter">C</div><div class="content"><h3>Terlalu ramai</h3><p>Kurangi tekstur dan biarkan key art serta type menjadi fokus.</p></div>
+    </div>
+  </div>
+</div>
+
+<style>
+  #miracle-textured-rail { width:100%; }
+  #miracle-textured-rail .rail-shell { background:#080c0e; border:1px solid #2d3438; color:#f6f2e8; overflow:hidden; font-family:"Arial Narrow","Bahnschrift Condensed",Arial,sans-serif; }
+  #miracle-textured-rail .rail-index { min-height:95px; padding:22px 26px; display:flex; justify-content:space-between; align-items:flex-end; background:#0b1013; border-bottom:1px solid #353d41; }
+  #miracle-textured-rail .rail-index div { display:flex; flex-direction:column; }
+  #miracle-textured-rail .rail-index small { color:#caff38; font-size:9px; letter-spacing:.16em; }
+  #miracle-textured-rail .rail-index strong { font-size:28px; letter-spacing:-.06em; }
+  #miracle-textured-rail .rail-index span { color:#677278; font-size:8px; letter-spacing:.14em; }
+  #miracle-textured-rail .event-slice { min-height:210px; position:relative; overflow:hidden; border-bottom:1px solid #394145; isolation:isolate; }
+  #miracle-textured-rail .event-art { position:absolute; inset:-12px -30px -12px 34%; background-size:cover; background-position:center; filter:grayscale(.25) contrast(1.18) saturate(1.3); transform:skewX(-6deg); z-index:-4; }
+  #miracle-textured-rail .art-one { background-image:linear-gradient(90deg,#0a0e10 0%,rgba(10,14,16,.88) 8%,rgba(10,14,16,.08) 70%),url("https://game.mobilelegends.com/img/tb1.9b67a4f6.jpg"); }
+  #miracle-textured-rail .art-two { background-image:linear-gradient(90deg,#0a0e10 0%,rgba(10,14,16,.82) 18%,rgba(0,229,255,.08) 80%),url("https://game.mobilelegends.com/img/tb2.d27e2e82.jpg"); filter:grayscale(.5) sepia(.15) hue-rotate(145deg) contrast(1.2); }
+  #miracle-textured-rail .art-three { background-image:linear-gradient(90deg,#0a0e10 0%,rgba(10,14,16,.84) 15%,rgba(255,49,95,.12) 75%),url("https://game.mobilelegends.com/img/tb3.fd2c327b.png"); filter:grayscale(.35) hue-rotate(295deg) contrast(1.25); }
+  #miracle-textured-rail .event-slice:after { content:""; position:absolute; inset:0; z-index:-2; background:linear-gradient(90deg,#090d0f 0 36%,transparent 68%),linear-gradient(0deg,rgba(8,12,14,.6),transparent 58%); }
+  #miracle-textured-rail .event-slice.lime { border-left:5px solid #caff38; }
+  #miracle-textured-rail .event-slice.cyan { border-left:5px solid #00e5ff; }
+  #miracle-textured-rail .event-slice.pink { border-left:5px solid #ff315f; }
+  #miracle-textured-rail .halftone { position:absolute; inset:0; z-index:-1; opacity:.18; background-image:radial-gradient(#caff38 1px,transparent 1.6px); background-size:7px 7px; mask-image:linear-gradient(90deg,transparent 20%,black 55%,transparent 100%); }
+  #miracle-textured-rail .xerox-lines { position:absolute; inset:0; z-index:-1; opacity:.17; background:repeating-linear-gradient(-14deg,transparent 0 9px,#00e5ff 10px 11px,transparent 12px 18px); mask-image:linear-gradient(90deg,transparent 22%,black 70%); }
+  #miracle-textured-rail .speed-lines { position:absolute; inset:0; z-index:-1; opacity:.23; background:repeating-linear-gradient(164deg,transparent 0 12px,#ff315f 13px 15px,transparent 16px 24px); mask-image:linear-gradient(90deg,transparent 15%,black 74%); }
+  #miracle-textured-rail .ghost-word { position:absolute; right:-8px; top:-23px; font-size:118px; line-height:1; font-weight:900; letter-spacing:-.09em; color:transparent; -webkit-text-stroke:1px rgba(255,255,255,.16); transform:skewY(-4deg); z-index:-1; }
+  #miracle-textured-rail .event-no { position:absolute; right:20px; bottom:8px; font-size:75px; line-height:1; font-weight:900; color:rgba(255,255,255,.1); letter-spacing:-.08em; }
+  #miracle-textured-rail .event-copy { position:relative; padding:36px 26px 28px; width:390px; z-index:2; }
+  #miracle-textured-rail .event-copy small { display:block; font-size:8px; letter-spacing:.16em; margin-bottom:11px; }
+  #miracle-textured-rail .lime .event-copy small { color:#caff38; }
+  #miracle-textured-rail .cyan .event-copy small { color:#00e5ff; }
+  #miracle-textured-rail .pink .event-copy small { color:#ff5c7e; }
+  #miracle-textured-rail .event-copy h3 { margin:0; font-size:43px; line-height:.78; letter-spacing:-.055em; font-weight:900; transform:scaleX(.88); transform-origin:left; text-shadow:3px 3px 0 #080c0e; }
+  #miracle-textured-rail .event-copy h3 em { font-style:normal; font-size:20px; vertical-align:top; margin-left:5px; }
+  #miracle-textured-rail .event-copy p { margin:17px 0 0; color:#929ca1; font-size:8px; letter-spacing:.12em; }
+  #miracle-textured-rail .stamp { position:absolute; right:20px; top:68px; padding:9px 13px; background:#caff38; color:#090d0f; font-size:9px; font-weight:900; line-height:.92; transform:rotate(4deg); clip-path:polygon(0 0,90% 0,100% 18%,100% 100%,10% 100%,0 82%); }
+  #miracle-textured-rail .tape { position:absolute; right:15px; top:76px; padding:8px 26px; background:rgba(0,229,255,.9); color:#061014; font-size:9px; font-weight:900; letter-spacing:.12em; transform:rotate(-8deg); box-shadow:0 0 0 2px rgba(0,0,0,.28); }
+  #miracle-textured-rail .champion-stamp { position:absolute; right:22px; top:64px; width:58px; height:58px; border:2px solid #ff315f; color:#ff6685; border-radius:50%; display:grid; place-items:center; text-align:center; font-size:8px; font-weight:900; letter-spacing:.08em; transform:rotate(9deg); background:rgba(8,12,14,.65); }
+  #miracle-textured-rail .texture-feedback { margin-top:18px; grid-template-columns:repeat(3,1fr); }
+  @media(max-width:700px){
+    #miracle-textured-rail .rail-index span { display:none; }
+    #miracle-textured-rail .event-slice { min-height:238px; }
+    #miracle-textured-rail .event-art { inset:0 -95px 0 27%; transform:none; }
+    #miracle-textured-rail .event-slice:after { background:linear-gradient(90deg,#090d0f 0 25%,rgba(9,13,15,.72) 55%,rgba(9,13,15,.2) 100%),linear-gradient(0deg,#090d0f,transparent 60%); }
+    #miracle-textured-rail .event-copy { padding:42px 22px 26px; width:285px; }
+    #miracle-textured-rail .event-copy h3 { font-size:39px; }
+    #miracle-textured-rail .ghost-word { font-size:82px; top:0; }
+    #miracle-textured-rail .stamp,#miracle-textured-rail .tape,#miracle-textured-rail .champion-stamp { right:12px; top:auto; bottom:22px; }
+    #miracle-textured-rail .texture-feedback { grid-template-columns:1fr; }
+  }
+</style>

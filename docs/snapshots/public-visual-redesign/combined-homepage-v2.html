@@ -1,0 +1,144 @@
+<div id="miracle-combined">
+  <h2>Game-skinned street sport — condensed, textured, restrained</h2>
+  <p class="subtitle">Poster pertandingan tetap menjadi pusat, tetapi tipografi kini konsisten dan kontras visual dikendalikan.</p>
+
+  <div class="site-shell">
+    <header class="site-nav">
+      <div class="brand"><span>M</span><b>MIRACLE<br>TOURNEY</b></div>
+      <div class="nav-code">MRC / MLBB / 024</div>
+      <nav><a>EVENT</a><a>BRACKET</a><a>PLAYERS</a><strong>ID</strong></nav>
+    </header>
+
+    <section class="hero">
+      <div class="hero-art"></div>
+      <div class="paper-grain"></div>
+      <div class="game-label">MOBILE LEGENDS · 5V5</div>
+      <div class="hero-title">
+        <small>COMMUNITY MAIN EVENT / LIVE NOW</small>
+        <h3>DAWN<br>FINALS</h3>
+        <div class="hero-meta"><b>ROUND 01</b><span>21 AUG · 20:00 WIB</span><span>24 TEAMS</span></div>
+        <a>MASUK ARENA <b>↗</b></a>
+      </div>
+      <div class="hero-number"><span>EVENT</span><b>024</b></div>
+      <div class="side-line">BUKAN CUMA MAIN. BIKIN NAMAMU TERLIHAT.</div>
+    </section>
+
+    <section class="ticker">
+      <div class="ticker-title"><i></i><span>LIVE FEED</span></div>
+      <div class="match"><small>R1 · M03</small><b>ALTER EGO</b><strong>1—0</strong><b>BIGETRON</b><span>12:48</span></div>
+      <div class="match next"><small>NEXT</small><b>EVOS</b><strong>VS</strong><b>GEEK FAM</b><span>20:30</span></div>
+      <a>BRACKET →</a>
+    </section>
+
+    <section class="event-drop">
+      <header class="drop-header"><div><small>EVENT DROP</small><b>01—03</b></div><span>FEATURED TOURNAMENTS / AUG 2026</span></header>
+
+      <div class="event-grid">
+        <article class="event-card lime">
+          <div class="card-art art-one"></div><div class="card-texture"></div><div class="card-number">01</div>
+          <div class="card-copy"><small>● ONGOING / MLBB</small><h3>DAWN<br>FINALS <em>24</em></h3><p>24 TEAMS · ROUND 1</p></div>
+        </article>
+        <article class="event-card cyan">
+          <div class="card-art art-two"></div><div class="card-texture"></div><div class="card-number">02</div>
+          <div class="card-copy"><small>UP NEXT / HOK</small><h3>STREET<br>CLASH <em>16</em></h3><p>16 TEAMS · OPEN QUALIFIER</p></div>
+        </article>
+        <article class="event-card pink">
+          <div class="card-art art-three"></div><div class="card-texture"></div><div class="card-number">03</div>
+          <div class="card-copy"><small>FINISHED / KUROKO</small><h3>SUMMER<br>CUP <em>08</em></h3><p>8 TEAMS · FINAL STANDINGS</p></div>
+        </article>
+      </div>
+    </section>
+  </div>
+
+  <div class="options approval-options">
+    <div class="option" data-choice="approve-combined" onclick="toggleSelect(this)">
+      <div class="letter">✓</div><div class="content"><h3>Arah ini sudah benar</h3><p>Kita jadikan ini fondasi design system public Miracle.</p></div>
+    </div>
+    <div class="option" data-choice="refine-combined" onclick="toggleSelect(this)">
+      <div class="letter">↻</div><div class="content"><h3>Masih perlu refinement</h3><p>Arah dasarnya benar, tetapi ada bagian tertentu yang perlu diubah.</p></div>
+    </div>
+  </div>
+</div>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Teko:wght@600;700&display=swap');
+  #miracle-combined { width:100%; }
+  #miracle-combined .site-shell { overflow:hidden; background:#080c0e; border:1px solid #30383d; color:#f3f0e8; font-family:'Chakra Petch',sans-serif; }
+  #miracle-combined .site-nav { height:64px; padding:0 22px; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; border-bottom:1px solid #30383d; background:#090d10; font-size:9px; letter-spacing:.12em; }
+  #miracle-combined .brand { display:flex; align-items:center; gap:9px; line-height:.9; }
+  #miracle-combined .brand span { width:31px; height:31px; display:grid; place-items:center; background:#caff38; color:#090d10; font:700 24px 'Teko',sans-serif; transform:skew(-6deg); }
+  #miracle-combined .brand b { font-size:9px; }
+  #miracle-combined .nav-code { color:#687379; }
+  #miracle-combined .site-nav nav { justify-self:end; display:flex; align-items:center; gap:18px; }
+  #miracle-combined .site-nav nav strong { padding:7px 8px; background:#caff38; color:#090d10; }
+
+  #miracle-combined .hero { min-height:540px; position:relative; overflow:hidden; background:#111820; }
+  #miracle-combined .hero-art { position:absolute; inset:0; background-image:linear-gradient(90deg,rgba(5,8,10,.93) 0%,rgba(5,8,10,.67) 34%,rgba(5,8,10,.1) 72%,rgba(5,8,10,.55) 100%),linear-gradient(0deg,rgba(5,8,10,.62),transparent 55%),url("https://game.mobilelegends.com/img/tb1.9b67a4f6.jpg"); background-size:cover; background-position:center; filter:saturate(1.06) contrast(1.06); }
+  #miracle-combined .paper-grain { position:absolute; inset:0; opacity:.1; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,.7) .6px,transparent .8px); background-size:5px 5px; mask-image:linear-gradient(90deg,black,transparent 80%); }
+  #miracle-combined .game-label { position:absolute; left:22px; top:22px; padding:7px 10px; background:#caff38; color:#080c0e; font-size:8px; font-weight:700; letter-spacing:.12em; transform:rotate(-1deg); }
+  #miracle-combined .hero-title { position:absolute; left:38px; bottom:43px; width:430px; }
+  #miracle-combined .hero-title small { color:#caff38; font-size:9px; font-weight:700; letter-spacing:.16em; }
+  #miracle-combined .hero-title h3 { margin:8px 0 11px; font:700 91px/.7 'Teko',sans-serif; letter-spacing:-.035em; transform:scaleX(.92); transform-origin:left; color:#f3f0e8; }
+  #miracle-combined .hero-meta { display:flex; font-size:8px; letter-spacing:.09em; }
+  #miracle-combined .hero-meta > * { padding:6px 9px; border:1px solid rgba(255,255,255,.28); border-right:0; background:rgba(7,10,12,.65); }
+  #miracle-combined .hero-meta > *:last-child { border-right:1px solid rgba(255,255,255,.28); }
+  #miracle-combined .hero-title > a { width:max-content; margin-top:15px; padding:12px 15px; display:flex; gap:22px; align-items:center; background:#caff38; color:#080c0e; font-size:10px; font-weight:700; letter-spacing:.08em; clip-path:polygon(0 0,91% 0,100% 35%,100% 100%,9% 100%,0 65%); }
+  #miracle-combined .hero-title > a b { font-size:16px; }
+  #miracle-combined .hero-number { position:absolute; right:25px; bottom:35px; display:flex; flex-direction:column; align-items:flex-end; }
+  #miracle-combined .hero-number span { color:#caff38; font-size:8px; letter-spacing:.2em; }
+  #miracle-combined .hero-number b { font:600 85px/.78 'Teko',sans-serif; letter-spacing:-.05em; color:#f3f0e8; }
+  #miracle-combined .side-line { position:absolute; right:12px; top:130px; writing-mode:vertical-rl; font-size:8px; letter-spacing:.18em; color:rgba(243,240,232,.78); }
+
+  #miracle-combined .ticker { min-height:72px; display:grid; grid-template-columns:105px 1fr 1fr 112px; border-top:3px solid #caff38; border-bottom:1px solid #30383d; background:#090d10; }
+  #miracle-combined .ticker-title { padding:0 15px; display:flex; align-items:center; gap:7px; color:#caff38; font-size:8px; letter-spacing:.12em; }
+  #miracle-combined .ticker-title i { width:6px; height:6px; border-radius:50%; background:#ff3d62; box-shadow:0 0 10px rgba(255,61,98,.75); }
+  #miracle-combined .match { display:grid; grid-template-columns:48px 1fr auto 1fr 34px; gap:8px; align-items:center; padding:0 12px; border-left:1px solid #30383d; font-size:8px; }
+  #miracle-combined .match small,#miracle-combined .match span { color:#657178; }
+  #miracle-combined .match strong { color:#caff38; font:600 19px 'Teko',sans-serif; }
+  #miracle-combined .match.next { opacity:.52; }
+  #miracle-combined .ticker > a { display:grid; place-items:center; background:#f3f0e8; color:#090d10; font-size:8px; font-weight:700; }
+
+  #miracle-combined .drop-header { min-height:88px; padding:18px 22px; display:flex; justify-content:space-between; align-items:flex-end; border-bottom:1px solid #30383d; background:#0b1013; }
+  #miracle-combined .drop-header div { display:flex; flex-direction:column; }
+  #miracle-combined .drop-header small { color:#caff38; font-size:8px; letter-spacing:.16em; }
+  #miracle-combined .drop-header b { font:600 29px/.9 'Teko',sans-serif; }
+  #miracle-combined .drop-header > span { color:#657178; font-size:7px; letter-spacing:.13em; }
+  #miracle-combined .event-grid { display:grid; grid-template-columns:repeat(3,1fr); }
+  #miracle-combined .event-card { min-height:205px; position:relative; overflow:hidden; border-right:1px solid #30383d; isolation:isolate; }
+  #miracle-combined .event-card:last-child { border-right:0; }
+  #miracle-combined .card-art { position:absolute; inset:0; background-size:cover; background-position:center; z-index:-4; filter:grayscale(.38) contrast(1.18); }
+  #miracle-combined .art-one { background-image:linear-gradient(0deg,rgba(7,10,12,.96),rgba(7,10,12,.1)),url("https://game.mobilelegends.com/img/tb1.9b67a4f6.jpg"); }
+  #miracle-combined .art-two { background-image:linear-gradient(0deg,rgba(7,10,12,.96),rgba(7,10,12,.12)),url("https://game.mobilelegends.com/img/tb2.d27e2e82.jpg"); filter:grayscale(.6) hue-rotate(150deg) contrast(1.18); }
+  #miracle-combined .art-three { background-image:linear-gradient(0deg,rgba(7,10,12,.96),rgba(7,10,12,.12)),url("https://game.mobilelegends.com/img/tb3.fd2c327b.png"); filter:grayscale(.48) hue-rotate(300deg) contrast(1.2); }
+  #miracle-combined .card-texture { position:absolute; inset:0; z-index:-2; opacity:.11; background-image:radial-gradient(#f3f0e8 .7px,transparent 1px); background-size:6px 6px; mask-image:linear-gradient(180deg,black,transparent 78%); }
+  #miracle-combined .event-card.lime { box-shadow:inset 0 3px #caff38; }
+  #miracle-combined .event-card.cyan { box-shadow:inset 0 3px #00d8e8; }
+  #miracle-combined .event-card.pink { box-shadow:inset 0 3px #e83c61; }
+  #miracle-combined .card-number { position:absolute; right:9px; top:8px; font:600 62px/.8 'Teko',sans-serif; color:rgba(243,240,232,.13); }
+  #miracle-combined .card-copy { position:absolute; left:18px; right:16px; bottom:18px; }
+  #miracle-combined .card-copy small { font-size:7px; letter-spacing:.13em; }
+  #miracle-combined .lime .card-copy small { color:#caff38; }
+  #miracle-combined .cyan .card-copy small { color:#00d8e8; }
+  #miracle-combined .pink .card-copy small { color:#f05a78; }
+  #miracle-combined .card-copy h3 { margin:7px 0 5px; font:700 40px/.75 'Teko',sans-serif; letter-spacing:-.025em; transform:scaleX(.93); transform-origin:left; }
+  #miracle-combined .card-copy h3 em { font-style:normal; font-size:18px; color:#caff38; }
+  #miracle-combined .card-copy p { margin:0; color:#89949a; font-size:7px; letter-spacing:.1em; }
+  #miracle-combined .approval-options { margin-top:18px; grid-template-columns:1fr 1fr; }
+  @media(max-width:760px){
+    #miracle-combined .site-nav { grid-template-columns:1fr auto; }
+    #miracle-combined .nav-code,#miracle-combined .site-nav nav a { display:none; }
+    #miracle-combined .hero { min-height:500px; }
+    #miracle-combined .hero-art { background-position:60% center; }
+    #miracle-combined .hero-title { left:22px; width:320px; }
+    #miracle-combined .hero-title h3 { font-size:72px; }
+    #miracle-combined .hero-number { right:14px; bottom:23px; }
+    #miracle-combined .hero-number b { font-size:62px; }
+    #miracle-combined .ticker { grid-template-columns:88px 1fr; }
+    #miracle-combined .ticker .next,#miracle-combined .ticker>a { display:none; }
+    #miracle-combined .drop-header > span { display:none; }
+    #miracle-combined .event-grid { grid-template-columns:1fr; }
+    #miracle-combined .event-card { min-height:190px; border-right:0; border-bottom:1px solid #30383d; }
+    #miracle-combined .event-card:last-child { border-bottom:0; }
+    #miracle-combined .approval-options { grid-template-columns:1fr; }
+  }
+</style>
