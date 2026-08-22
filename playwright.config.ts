@@ -2,6 +2,9 @@ import { defineConfig } from "@playwright/test";
 
 const port = process.env.PLAYWRIGHT_PORT ?? "3100";
 const baseURL = `http://127.0.0.1:${port}`;
+// Optional escape hatch: reuse a locally installed browser (e.g. "msedge", "chrome")
+// when the bundled Chromium download is unavailable. Unset = bundled Chromium.
+const channel = process.env.PLAYWRIGHT_CHANNEL;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -15,5 +18,6 @@ export default defineConfig({
   use: {
     baseURL,
     headless: true,
+    ...(channel ? { channel } : {}),
   },
 });
