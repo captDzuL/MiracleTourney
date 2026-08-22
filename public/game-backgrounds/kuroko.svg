@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Kuroko no Basket Street Rival game background">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0c1445"/>
+      <stop offset="0.5" stop-color="#1e3a8a"/>
+      <stop offset="1" stop-color="#1e40af"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="72%" cy="26%" r="58%">
+      <stop offset="0" stop-color="#bfdbfe" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#bfdbfe" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="court" width="180" height="180" patternUnits="userSpaceOnUse">
+      <path d="M0 90H180M90 0V180" stroke="#dbeafe" stroke-opacity="0.07" stroke-width="3"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#court)"/>
+  <rect width="1600" height="900" fill="url(#glow)"/>
+  <circle cx="1180" cy="420" r="255" fill="none" stroke="#dbeafe" stroke-opacity="0.16" stroke-width="18"/>
+  <circle cx="1180" cy="420" r="86" fill="none" stroke="#eff6ff" stroke-opacity="0.24" stroke-width="8"/>
+  <path d="M1180 165A255 255 0 0 1 1180 675" fill="none" stroke="#93c5fd" stroke-opacity="0.30" stroke-width="14" stroke-linecap="round"/>
+  <path d="M120 760C300 640 470 620 640 690C800 756 960 730 1120 620" fill="none" stroke="#eff6ff" stroke-opacity="0.24" stroke-width="16" stroke-linecap="round"/>
+  <path d="M0 240H520M0 300H430" stroke="#93c5fd" stroke-opacity="0.18" stroke-width="10" stroke-linecap="round"/>
+  <text x="116" y="196" fill="#eff6ff" fill-opacity="0.16" font-family="Arial, sans-serif" font-size="132" font-weight="800">KNB</text>
+</svg>

@@ -37,14 +37,21 @@ async function skipUnlessVisualV2(page: Page) {
   test.skip(!enabled, "public_visual_v2 is disabled - legacy rendering is out of scope for this gate");
 }
 
-/** Records the transferred byte length of every successful `/_next/image` response. */
+/** Records the transferred byte length of every successful image response. */
 function collectOptimizedImageBytes(page: Page) {
   const bytesByUrl = new Map<string, number>();
   const inFlight: Array<Promise<void>> = [];
 
   page.on("response", (response) => {
     const url = response.url();
-    if (!url.includes("/_next/image") || !response.ok()) return;
+    if (!response.ok()) return;
+    // Artwork reaches the browser two ways: through the Next image optimizer,
+    // or served verbatim from `public/` when Next declines to optimize it
+    // (which it does for SVG unless `dangerouslyAllowSVG` is enabled). Both
+    // cost real bytes, so both are measured.
+    const isOptimized = url.includes("/_next/image");
+    const isRawImage = (response.headers()["content-type"] ?? "").startsWith("image/");
+    if (!isOptimized && !isRawImage) return;
 
     inFlight.push(
       response
@@ -84,6 +91,28 @@ async function readArtworkSlots(page: Page): Promise<ArtworkSlot[]> {
   );
 }
 
+/**
+ * Every way the page can tell the browser "fetch this image first".
+ *
+ * `next/image` marks an optimized image with `fetchpriority="high"`, but an
+ * unoptimized one (any SVG) gets no such attribute and is prioritised solely by
+ * a `<link rel="preload" as="image">` in the head. Counting only one of the two
+ * would let a second eager image slip through unnoticed.
+ */
+async function readEagerImageTargets(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const targets = new Set<string>();
+    for (const image of document.querySelectorAll('img[fetchpriority="high"]')) {
+      targets.add(new URL((image as HTMLImageElement).src, location.href).href);
+    }
+    for (const link of document.querySelectorAll('link[rel="preload"][as="image"]')) {
+      const href = link.getAttribute("href");
+      if (href) targets.add(new URL(href, location.href).href);
+    }
+    return [...targets];
+  });
+}
+
 function bytesFor(bytesByUrl: Map<string, number>, src: string | null) {
   if (!src) return undefined;
   for (const [url, bytes] of bytesByUrl) {
@@ -107,30 +136,41 @@ test.describe("public visual v2 release budgets", () => {
     const slots = await readArtworkSlots(page);
     expect(slots.length, "homepage must render at least one event artwork slot").toBeGreaterThan(0);
 
-    const eagerCount = await page.locator('img[fetchpriority="high"]').count();
+    const eagerTargets = await readEagerImageTargets(page);
     const withArtwork = slots.filter((slot) => Boolean(slot.src));
 
     if (withArtwork.length > 0) {
       expect(
-        eagerCount,
-        `exactly one priority image is allowed in the homepage initial viewport, found ${eagerCount}: ` +
-          JSON.stringify(withArtwork.map((slot) => slot.src)),
-      ).toBe(1);
+        eagerTargets,
+        `exactly one priority image is allowed in the homepage initial viewport, found ${eagerTargets.length}: ` +
+          JSON.stringify(eagerTargets),
+      ).toHaveLength(1);
+
+      expect(
+        eagerTargets[0],
+        `the single priority image must be the hero artwork, not ${eagerTargets[0]}`,
+      ).toContain(new URL(withArtwork[0]!.src!, "http://127.0.0.1").pathname);
 
       const belowTheFold = withArtwork.slice(1);
       for (const slot of belowTheFold) {
+        // Several events can legitimately share one game background, so the URL
+        // alone cannot tell hero from rail. The per-element hints can.
         expect(
           slot.fetchPriority,
           `event rail image ${slot.src} must not be eager (fetchpriority=${slot.fetchPriority})`,
         ).not.toBe("high");
+        expect(
+          slot.loading,
+          `event rail image ${slot.src} must load lazily (loading=${slot.loading})`,
+        ).toBe("lazy");
       }
     } else {
       // No artwork URL resolved: the deterministic typographic poster is the
       // expected path, and it must cost zero eager image bytes.
       expect(
-        eagerCount,
+        eagerTargets,
         "typographic fallback must not request any priority image",
-      ).toBe(0);
+      ).toEqual([]);
       expect(
         slots.map((slot) => slot.source),
         "every artwork slot must declare the typographic fallback source",
@@ -196,33 +236,39 @@ test.describe("public visual v2 release budgets", () => {
       const slots = await readArtworkSlots(page);
       const withArtwork = slots.filter((slot) => Boolean(slot.src));
 
-      if (collector.bytesByUrl.size === 0) {
-        // Meaningful negative assertion: no optimized image was served, so the
+      if (withArtwork.length === 0) {
+        // Meaningful negative assertion: nothing referenced an image, so the
         // page must actually be on the typographic fallback path, not silently
         // shipping unmeasured bytes through some other delivery mechanism.
         expect(
-          withArtwork,
-          `no /_next/image response was observed on ${label}, but ${withArtwork.length} artwork slot(s) reference an image src`,
-        ).toEqual([]);
-        expect(
           slots.map((slot) => slot.source),
-          `no /_next/image response on ${label}: every slot must be the typographic fallback`,
+          `no artwork src on ${label}: every slot must be the typographic fallback`,
         ).toEqual(slots.map(() => "typographic"));
         await expect(page.locator(".event-visual__initials").first()).toBeVisible();
-        measured.push(`${label}: 0 optimized image responses (typographic fallback, ${slots.length} slots)`);
+        measured.push(`${label}: 0 image responses (typographic fallback, ${slots.length} slots)`);
         continue;
+      }
+
+      // The browser reuses its cache across the desktop and mobile passes, so a
+      // second navigation can legitimately emit no response event. Any artwork
+      // the run did not observe on the wire is fetched directly, which yields
+      // the same transferred size and keeps every budget assertion real.
+      for (const slot of withArtwork) {
+        if (bytesFor(collector.bytesByUrl, slot.src) !== undefined) continue;
+        const response = await page.request.get(slot.src!);
+        expect(response.ok(), `artwork ${slot.src} is not retrievable (${response.status()})`).toBe(true);
+        collector.bytesByUrl.set(slot.src!, (await response.body()).length);
       }
 
       const heroSrc = withArtwork[0]?.src ?? null;
       const heroBytes = bytesFor(collector.bytesByUrl, heroSrc);
 
-      if (heroBytes !== undefined) {
-        expect(
-          heroBytes,
-          `${label} hero exceeds budget: ${heroSrc} = ${heroBytes} bytes (budget ${heroBudget} bytes)`,
-        ).toBeLessThanOrEqual(heroBudget);
-        measured.push(`${label} hero: ${heroBytes} bytes (${heroSrc})`);
-      }
+      expect(heroBytes, `hero artwork ${heroSrc} could not be measured on ${label}`).toBeDefined();
+      expect(
+        heroBytes,
+        `${label} hero exceeds budget: ${heroSrc} = ${heroBytes} bytes (budget ${heroBudget} bytes)`,
+      ).toBeLessThanOrEqual(heroBudget);
+      measured.push(`${label} hero: ${heroBytes} bytes (${heroSrc})`);
 
       for (const [url, bytes] of collector.bytesByUrl) {
         if (url === heroSrc) continue;

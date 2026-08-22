@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Honor of Kings game background">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#431407"/>
+      <stop offset="0.52" stop-color="#9a3412"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="26%" cy="28%" r="58%">
+      <stop offset="0" stop-color="#fed7aa" stop-opacity="0.50"/>
+      <stop offset="1" stop-color="#fed7aa" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="lattice" width="150" height="150" patternUnits="userSpaceOnUse">
+      <path d="M0 0L150 150M150 0L0 150" stroke="#ffedd5" stroke-opacity="0.07" stroke-width="3"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#lattice)"/>
+  <rect width="1600" height="900" fill="url(#glow)"/>
+  <path d="M1120 200L1330 320V560L1120 680L910 560V320Z" fill="none" stroke="#ffedd5" stroke-opacity="0.20" stroke-width="16" stroke-linejoin="round"/>
+  <path d="M1120 300L1245 372V516L1120 588L995 516V372Z" fill="none" stroke="#fde68a" stroke-opacity="0.26" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M90 700C280 640 430 664 600 720C742 767 880 758 1010 706" fill="none" stroke="#ffedd5" stroke-opacity="0.22" stroke-width="16" stroke-linecap="round"/>
+  <path d="M0 250H470M0 312H380" stroke="#fde68a" stroke-opacity="0.20" stroke-width="10" stroke-linecap="round"/>
+  <text x="116" y="196" fill="#fff7ed" fill-opacity="0.16" font-family="Arial, sans-serif" font-size="132" font-weight="800">HOK</text>
+</svg>
