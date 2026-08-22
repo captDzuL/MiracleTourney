@@ -2,7 +2,7 @@
 
 **Snapshot date:** 2026-08-22
 
-**Status:** Approved direction, ready for implementation handoff
+**Status:** Approved direction. Partially implemented — see [Implementation outcome](#implementation-outcome--2026-08-22) before continuing.
 
 **Primary implementation plan:** [plan.md](./plan.md)
 
@@ -566,3 +566,43 @@ The handoff is successful when another agent can answer all of the following wit
 - What can ship before the AI pipeline exists?
 
 The answers are now captured here, while the exact implementation work is captured in [`plan.md`](./plan.md).
+
+---
+
+## Implementation outcome — 2026-08-22
+
+This section was added **after** the first implementation pass so the design record does not read as if the approved direction had been delivered. It had not.
+
+Work lives on branch `feat/public-visual-v2` (head `8d3b955`, 12 commits, unpushed). Milestone A and Milestone B are code-complete and green — lint 0, 325 unit tests passing, build 0, smoke 14 passing with `public_visual_v2=true`. Milestone C was never started. `plan.md` carries the per-task table.
+
+### The approved composition was not reached
+
+The user's verdict after seeing the result: *"aku masih anggap ini jauh dari harapan."*
+
+Comparing [`combined-homepage-v2.html`](./docs/snapshots/public-visual-redesign/combined-homepage-v2.html) against the delivered `PublicHomeV2.tsx`:
+
+| Approved reference | Delivered |
+|---|---|
+| Full-bleed hero: artwork fills the section, copy absolutely positioned over it behind gradient scrims | Two-column grid; artwork boxed into an `aspect-[4/5]` panel beside the copy |
+| Wordmark `Teko 700 / 91px / line-height .7 / scaleX(.92)`, broken across two lines | `h1` at a fluid clamp, normal flow, single line, no horizontal compression |
+| Issue numeral `024` set large at bottom-right | small lime numeral tucked against the art panel |
+| Vertical `side-line` rule down the right edge | absent |
+| Rotated lime `game-label` chip at top-left | absent |
+| Ticker as a four-column bordered grid with a glowing live dot and Teko scores | plain unordered list |
+| Event cards: artwork with grayscale + contrast, masked halftone, per-card accent, ghost numeral at 13% opacity | flat rows |
+
+The two-column split hero is precisely the SaaS grammar rejected in round 2 of this conversation. Texture, palette, fonts, and flag plumbing landed correctly; **the poster composition did not.**
+
+### Why it happened
+
+Every task was implemented from the prose of `plan.md`. At no point did any step render the page and compare it against the approved HTML. The automated release gate measured bytes, overflow, focus, and reduced motion — all real, and it did catch a genuine keyboard-focus bug — but none of those assertions can detect "this is the wrong composition."
+
+**Recommendation for whoever continues:** make a rendered-vs-reference visual comparison an explicit, repeated gate. Note that opening `combined-homepage-v2.html` on a restricted network is misleading: it pulls fonts from Google Fonts and hero imagery from `game.mobilelegends.com`, and if either is blocked the reference itself renders flat. Its texture is pure CSS gradient and always works.
+
+### A rejected pattern was reintroduced
+
+Commit `8d3b955` added a `game_default` precedence level between the legacy background and the typographic poster, backed by six SVGs in `public/game-backgrounds/`. Four were newly authored using `linear-gradient` and `font-family="Arial"`.
+
+This contradicts three rules in this document: the three-level "Visual source precedence", the ban on "generic gradient hero sections" and "interchangeable gaming illustrations with no connection to the event", and the Teko/Chakra Petch typography rule. The user accepted it provisionally (*"sementara aku oke deh"*) with the understanding that it is disposable — `git revert 8d3b955` removes it cleanly and touches nothing else.
+
+**This document remains the authority. Where the code disagrees with it, the code is wrong.**
