@@ -45,7 +45,9 @@ vi.mock("@/i18n/navigation", () => ({
 }));
 
 import { PublicHomeV2 } from "@/components/public-v2/PublicHomeV2";
-import { games } from "@/lib/platform/config";
+import { PublicEventsV2 } from "@/components/public-v2/PublicEventsV2";
+import { PublicEventDetailV2 } from "@/components/public-v2/PublicEventDetailV2";
+import { gameModes, games } from "@/lib/platform/config";
 
 function makeEvent(overrides: Partial<Event> & Pick<Event, "id" | "slug" | "name">): Event {
   return {
@@ -239,5 +241,234 @@ describe("PublicHomeV2", () => {
 
     expect(container.querySelectorAll("h1")).toHaveLength(1);
     expect(container.textContent).toContain("Belum ada event publik untuk game ini.");
+  });
+});
+
+const listLabels = {
+  title: "Event",
+  description: "Semua turnamen publik.",
+  allGames: "Semua Game",
+  teams: "tim",
+  noEvents: "Belum ada event yang cocok.",
+  issue: "Event",
+  organizer: "Organizer",
+};
+
+const statusFilters = [
+  { id: "all", label: "Semua" },
+  { id: "published", label: "Buka Pendaftaran" },
+  { id: "ongoing", label: "Berlangsung" },
+  { id: "finished", label: "Selesai" },
+];
+
+function listHref(next: { game?: string; status?: string }) {
+  const query = new URLSearchParams();
+  const game = next.game ?? "all";
+  const status = next.status ?? "all";
+  if (game !== "all") query.set("game", game);
+  if (status !== "all") query.set("status", status);
+  const qs = query.toString();
+  return qs ? `/events?${qs}` : "/events";
+}
+
+describe("PublicEventsV2", () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  beforeEach(() => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    if (root) {
+      act(() => {
+        root.unmount();
+      });
+    }
+    container?.remove();
+  });
+
+  function renderList(overrides: Partial<React.ComponentProps<typeof PublicEventsV2>> = {}) {
+    act(() => {
+      root.render(
+        <PublicEventsV2
+          events={[featuredEvent, railEventA]}
+          games={games}
+          teamsByEvent={new Map([["evt-1", featuredTeams]])}
+          filters={{ statuses: statusFilters, activeStatus: "all", activeGame: "all" }}
+          href={listHref}
+          labels={listLabels}
+          {...overrides}
+        />,
+      );
+    });
+  }
+
+  it("renders one page level h1 and each event name as real heading text", () => {
+    renderList();
+
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+
+    const rows = container.querySelectorAll('[data-testid="pv-event-row"]');
+    expect(rows).toHaveLength(2);
+
+    const names = Array.from(container.querySelectorAll("h2")).map((node) => node.textContent);
+    expect(names.some((text) => text?.includes("Dawn Finals"))).toBe(true);
+    expect(names.some((text) => text?.includes("Street Clash"))).toBe(true);
+  });
+
+  it("paints event artwork through the image pipeline instead of CSS backgrounds", () => {
+    renderList();
+
+    const painted = Array.from(container.querySelectorAll<HTMLElement>("[style]")).filter((node) =>
+      node.getAttribute("style")?.includes("background-image"),
+    );
+    expect(painted).toHaveLength(0);
+    expect(container.querySelectorAll("img").length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelectorAll('img[data-priority="true"]')).toHaveLength(0);
+  });
+
+  it("keeps status and game filters as navigable links carrying their query", () => {
+    renderList();
+
+    const statusLinks = container.querySelectorAll('[data-testid="pv-status-filter"]');
+    expect(statusLinks).toHaveLength(statusFilters.length);
+    expect(Array.from(statusLinks).every((node) => node.tagName === "A")).toBe(true);
+    expect(Array.from(statusLinks).map((node) => node.getAttribute("href"))).toContain("/events?status=ongoing");
+
+    const gameLinks = container.querySelectorAll('[data-testid="pv-game-filter"]');
+    expect(gameLinks).toHaveLength(games.length + 1);
+    expect(Array.from(gameLinks).map((node) => node.getAttribute("href"))).toContain("/events?game=game-kuroko");
+  });
+
+  it("links every row to its event slug and shows the registered team count", () => {
+    renderList();
+
+    const first = container.querySelector('[data-testid="pv-event-row"] a');
+    expect(first?.getAttribute("href")).toBe("/events/dawn-finals");
+    expect(container.textContent).toContain("4/16");
+  });
+
+  it("shows the empty state when nothing matches", () => {
+    renderList({ events: [] });
+
+    expect(container.querySelectorAll('[data-testid="pv-event-row"]')).toHaveLength(0);
+    expect(container.textContent).toContain("Belum ada event yang cocok.");
+  });
+});
+
+const detailLabels = {
+  liveNow: "LIVE",
+  organizer: "Organizer",
+  issue: "Event",
+  teamCount: "4/16 tim",
+  register: "Daftar Event",
+  quickLinks: "Navigasi Event",
+  participants: "Peserta",
+  bracket: "Bagan",
+  standings: "Klasemen",
+  leaderboards: "Papan Skor",
+};
+
+describe("PublicEventDetailV2", () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  beforeEach(() => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    if (root) {
+      act(() => {
+        root.unmount();
+      });
+    }
+    container?.remove();
+  });
+
+  function renderDetail(overrides: Partial<React.ComponentProps<typeof PublicEventDetailV2>> = {}) {
+    act(() => {
+      root.render(
+        <PublicEventDetailV2
+          event={featuredEvent}
+          game={games.find((game) => game.id === featuredEvent.gameId)!}
+          mode={gameModes.find((mode) => mode.id === featuredEvent.gameModeId)!}
+          teams={featuredTeams}
+          bracket={featuredBracket}
+          labels={detailLabels}
+          {...overrides}
+        >
+          <p data-testid="pv-detail-extras">extras slot</p>
+        </PublicEventDetailV2>,
+      );
+    });
+  }
+
+  it("renders exactly one semantic h1 with the event name as text", () => {
+    renderDetail();
+
+    const headings = container.querySelectorAll("h1");
+    expect(headings).toHaveLength(1);
+    expect(headings[0]?.textContent).toContain("Dawn Finals");
+  });
+
+  it("hides the registration call to action when the event has no registration url", () => {
+    renderDetail();
+
+    expect(container.querySelector('[data-testid="pv-detail-register"]')).toBeNull();
+  });
+
+  it("renders the registration call to action as an external link when a url exists", () => {
+    renderDetail({ event: makeEvent({ ...featuredEvent, registrationUrl: "https://forms.example.test/join" }) });
+
+    const cta = container.querySelector('[data-testid="pv-detail-register"]');
+    expect(cta?.getAttribute("href")).toBe("https://forms.example.test/join");
+    expect(cta?.getAttribute("target")).toBe("_blank");
+    expect(cta?.getAttribute("rel")).toContain("noreferrer");
+    expect(cta?.textContent).toContain("Daftar Event");
+  });
+
+  it("exposes all four event sections as quick links", () => {
+    renderDetail();
+
+    const hrefs = Array.from(container.querySelectorAll('[data-testid="pv-detail-quick-link"]')).map((node) =>
+      node.getAttribute("href"),
+    );
+    expect(hrefs).toEqual([
+      "/events/dawn-finals/participants",
+      "/events/dawn-finals/bracket",
+      "/events/dawn-finals/standings",
+      "/events/dawn-finals/leaderboards",
+    ]);
+  });
+
+  it("prefixes quick links with the active locale when one is provided", () => {
+    renderDetail({ locale: "id" });
+
+    const first = container.querySelector('[data-testid="pv-detail-quick-link"]');
+    expect(first?.getAttribute("href")).toBe("/id/events/dawn-finals/participants");
+  });
+
+  it("never paints the hero artwork through a CSS background image", () => {
+    renderDetail();
+
+    const painted = Array.from(container.querySelectorAll<HTMLElement>("[style]")).filter((node) =>
+      node.getAttribute("style")?.includes("background-image"),
+    );
+    expect(painted).toHaveLength(0);
+    expect(container.querySelectorAll("img").length).toBeGreaterThan(0);
+  });
+
+  it("renders the supporting sections passed in as children", () => {
+    renderDetail();
+
+    expect(container.querySelector('[data-testid="pv-detail-extras"]')?.textContent).toBe("extras slot");
   });
 });

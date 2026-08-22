@@ -51,10 +51,17 @@
     "title": "Event Hub",
     "description": "Public list of published, ongoing, and archived competition events.",
     "capTeams": "Cap {n} teams",
+    "allGames": "All Games",
+    "teamsLabel": "teams",
+    "issueLabel": "Event",
+    "organizerLabel": "Organizer",
     "noEvents": "No public events are published yet. Draft events stay visible only inside the admin panel."
   },
   "eventDetail": {
     "liveNow": "Live now",
+    "issueLabel": "Event",
+    "organizerLabel": "Organizer",
+    "register": "Register Event",
     "teamCount": "{registered}/{cap} registered teams",
     "bracketStat": "Bracket / fixtures",
     "bracketHint": "Projected from teams registered",

@@ -4,7 +4,9 @@ import { ArrowRight, CalendarDays, ListTree, Trophy, Users } from "lucide-react"
 import { getTranslations } from "next-intl/server";
 
 import { LiveStreamCard, Pill, Section, StatCard } from "@/components/ui";
+import { PublicEventDetailV2 } from "@/components/public-v2/PublicEventDetailV2";
 import { ShareButton } from "@/components/ShareButton";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getOrderedStatEntries, getStatKeysForMode } from "@/lib/platform/config";
 import type { Event } from "@/lib/platform/types";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
@@ -96,6 +98,100 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
     ...(event.prizePoolLabel ? { "prize": event.prizePoolLabel } : {}),
   };
 
+  const supportingSections = (
+    <>
+      {certificate ? (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+          <p className="text-sm font-semibold text-emerald-800">Champion proof published</p>
+          <a href={certificate.imageUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block break-all text-sm font-medium text-emerald-700 underline">
+            View certificate
+          </a>
+        </section>
+      ) : null}
+
+      {event.stream?.enabled && liveView ? (
+        <LiveStreamCard
+          label={event.stream.label}
+          watchUrl={event.stream.url}
+          embedUrl={liveView.embedUrl}
+          shouldEmbed={liveView.shouldEmbed}
+        />
+      ) : null}
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Section title={t("quickLinks")} description={t("quickLinksDesc")} className="rounded-xl shadow-none">
+          <div className="grid gap-3 text-sm">
+            <EventLink href={buildEventHref(event.slug, "participants", locale)}>{t("participants")}</EventLink>
+            <EventLink href={buildEventHref(event.slug, "bracket", locale)}>{t("bracketLink")}</EventLink>
+            <EventLink href={buildEventHref(event.slug, "standings", locale)}>{t("standingsLink")}</EventLink>
+            <EventLink href={buildEventHref(event.slug, "leaderboards", locale)}>{t("leaderboardLink")}</EventLink>
+          </div>
+        </Section>
+
+        <Section title={t("formatSnapshot")} description={t("formatSnapshotDesc")} className="rounded-xl shadow-none">
+          <div className="space-y-3 text-sm text-slate-700">
+            <p className="flex items-center gap-2 font-medium text-slate-950">
+              <ListTree className="h-4 w-4 text-cyan-600" /> {event.format}
+            </p>
+            <p>{t("mode", { n: mode.teamSize })}</p>
+            <p>{t("rosterLimit", { n: mode.maxRosterSize })}</p>
+            <p>{t("trackedStats", { stats: trackedStatKeys.join(", ") })}</p>
+          </div>
+        </Section>
+
+        <Section title={t("topPerformer")} description={t("topPerformerDesc")} className="rounded-xl shadow-none">
+          {leaderboard[0] ? (
+            <div className="space-y-2 text-sm text-slate-700">
+              <p className="text-lg font-semibold text-slate-950">{leaderboard[0].playerName}</p>
+              <p>{leaderboard[0].position} - {leaderboard[0].matchesPlayed} matches</p>
+              <p className="font-medium text-cyan-700">
+                {getOrderedStatEntries(leaderboard[0].totalStats, event.gameModeId, event.gameId)
+                  .slice(0, 3)
+                  .map(([key, value]) => `${key}: ${value}`)
+                  .join(" - ")}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">{t("noStats")}</p>
+          )}
+        </Section>
+      </div>
+    </>
+  );
+
+  if (isFeatureEnabled("public_visual_v2")) {
+    return (
+      <>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+        <PublicEventDetailV2
+          event={event}
+          game={game}
+          mode={mode}
+          teams={teams}
+          bracket={bracket}
+          locale={locale}
+          labels={{
+            liveNow: t("liveNow"),
+            organizer: t("organizerLabel"),
+            issue: t("issueLabel"),
+            teamCount: t("teamCount", { registered: teams.length, cap: event.participantCap }),
+            register: t("register"),
+            quickLinks: t("quickLinks"),
+            participants: t("participants"),
+            bracket: t("bracketLink"),
+            standings: t("standingsLink"),
+            leaderboards: t("leaderboardLink"),
+          }}
+        >
+          {supportingSections}
+        </PublicEventDetailV2>
+      </>
+    );
+  }
+
   return (
     <>
       <script
@@ -183,62 +279,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
         </div>
       </section>
 
-      {certificate ? (
-        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
-          <p className="text-sm font-semibold text-emerald-800">Champion proof published</p>
-          <a href={certificate.imageUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block break-all text-sm font-medium text-emerald-700 underline">
-            View certificate
-          </a>
-        </section>
-      ) : null}
-
-      {event.stream?.enabled && liveView ? (
-        <LiveStreamCard
-          label={event.stream.label}
-          watchUrl={event.stream.url}
-          embedUrl={liveView.embedUrl}
-          shouldEmbed={liveView.shouldEmbed}
-        />
-      ) : null}
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Section title={t("quickLinks")} description={t("quickLinksDesc")} className="rounded-xl shadow-none">
-          <div className="grid gap-3 text-sm">
-            <EventLink href={buildEventHref(event.slug, "participants", locale)}>{t("participants")}</EventLink>
-            <EventLink href={buildEventHref(event.slug, "bracket", locale)}>{t("bracketLink")}</EventLink>
-            <EventLink href={buildEventHref(event.slug, "standings", locale)}>{t("standingsLink")}</EventLink>
-            <EventLink href={buildEventHref(event.slug, "leaderboards", locale)}>{t("leaderboardLink")}</EventLink>
-          </div>
-        </Section>
-
-        <Section title={t("formatSnapshot")} description={t("formatSnapshotDesc")} className="rounded-xl shadow-none">
-          <div className="space-y-3 text-sm text-slate-700">
-            <p className="flex items-center gap-2 font-medium text-slate-950">
-              <ListTree className="h-4 w-4 text-cyan-600" /> {event.format}
-            </p>
-            <p>{t("mode", { n: mode.teamSize })}</p>
-            <p>{t("rosterLimit", { n: mode.maxRosterSize })}</p>
-            <p>{t("trackedStats", { stats: trackedStatKeys.join(", ") })}</p>
-          </div>
-        </Section>
-
-        <Section title={t("topPerformer")} description={t("topPerformerDesc")} className="rounded-xl shadow-none">
-          {leaderboard[0] ? (
-            <div className="space-y-2 text-sm text-slate-700">
-              <p className="text-lg font-semibold text-slate-950">{leaderboard[0].playerName}</p>
-              <p>{leaderboard[0].position} - {leaderboard[0].matchesPlayed} matches</p>
-              <p className="font-medium text-cyan-700">
-                {getOrderedStatEntries(leaderboard[0].totalStats, event.gameModeId, event.gameId)
-                  .slice(0, 3)
-                  .map(([key, value]) => `${key}: ${value}`)
-                  .join(" - ")}
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500">{t("noStats")}</p>
-          )}
-        </Section>
-      </div>
+      {supportingSections}
     </div>
     </>
   );

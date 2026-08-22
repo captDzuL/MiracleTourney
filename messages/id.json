@@ -51,10 +51,17 @@
     "title": "Daftar Event",
     "description": "Daftar event kompetisi yang sudah dipublikasi, sedang berjalan, dan sudah selesai.",
     "capTeams": "Maks {n} tim",
+    "allGames": "Semua Game",
+    "teamsLabel": "tim",
+    "issueLabel": "Event",
+    "organizerLabel": "Organizer",
     "noEvents": "Belum ada event yang dipublikasi. Event draft hanya terlihat di panel admin."
   },
   "eventDetail": {
     "liveNow": "Sedang Live",
+    "issueLabel": "Event",
+    "organizerLabel": "Organizer",
+    "register": "Daftar Event",
     "teamCount": "{registered}/{cap} tim terdaftar",
     "bracketStat": "Bracket / Fixture",
     "bracketHint": "Proyeksi dari tim yang terdaftar",
