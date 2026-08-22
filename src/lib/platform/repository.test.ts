@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { prisma } = vi.hoisted(() => ({
   prisma: {
     match: {
+      count: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
     },
@@ -13,6 +14,7 @@ const { prisma } = vi.hoisted(() => ({
       findMany: vi.fn(),
     },
     team: {
+      create: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
       groupBy: vi.fn(),
@@ -25,11 +27,25 @@ const { prisma } = vi.hoisted(() => ({
       update: vi.fn(),
     },
     user: {
+      create: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
+      findUnique: vi.fn(),
     },
     player: {
+      createMany: vi.fn(),
+      deleteMany: vi.fn(),
       findMany: vi.fn(),
+    },
+    registrationImportBatch: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
+    registrationImportItem: {
+      createMany: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
     },
     playerStat: {
       findMany: vi.fn(),
@@ -37,6 +53,7 @@ const { prisma } = vi.hoisted(() => ({
     certificate: {
       findMany: vi.fn(),
     },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -59,6 +76,7 @@ import {
   getOrganizerUsers,
   getPublicEventBySlug,
   getPublicVisibleBracketPreview,
+  commitRegistrationImportBatch,
   getTeamCountsForEvents,
   getTeamsForEvent,
   getTeamsForEvents,
@@ -109,6 +127,137 @@ describe("organizer user lookups", () => {
       where: { id: "org-1", role: "organizer" },
       select: { id: true, email: true, name: true, role: true },
     });
+  });
+});
+
+describe("registration intake commit", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
+    prisma.event.findUnique.mockResolvedValue({ id: "event-1", slug: "redclover-cup", format: "Single Elimination" });
+    prisma.match.count.mockResolvedValue(0);
+    prisma.$transaction.mockImplementation(async (callback: unknown) => {
+      if (typeof callback === "function") return callback(prisma);
+      return callback;
+    });
+  });
+
+  it("creates teams, players, and only exports credentials for newly created captain accounts", async () => {
+    prisma.registrationImportBatch.findFirst.mockResolvedValue({
+      id: "batch-1",
+      eventId: "event-1",
+      event: { id: "event-1", slug: "redclover-cup", format: "Single Elimination" },
+      items: [
+        {
+          id: "item-new",
+          status: "new",
+          normalizedData: {
+            teamName: "Gamma",
+            teamTag: "GAM",
+            captainName: "Gina",
+            captainContact: "081",
+            captainEmail: "gina@example.com",
+            players: [{ nickname: "Gina", displayName: "Gina", position: "Unassigned" }],
+          },
+        },
+        {
+          id: "item-existing",
+          status: "changed",
+          teamId: "team-alpha",
+          normalizedData: {
+            teamName: "Alpha",
+            teamTag: "ALP",
+            captainName: "Alya",
+            captainContact: "082",
+            captainEmail: "alya@example.com",
+            players: [{ nickname: "Alya", displayName: "Alya", position: "Guard" }],
+          },
+        },
+      ],
+    });
+    prisma.user.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "captain-existing", email: "alya@example.com", role: "captain", name: "Alya" });
+    prisma.user.create.mockResolvedValue({ id: "captain-new", email: "gina@example.com", role: "captain", name: "Gina" });
+    prisma.team.create.mockResolvedValue({ id: "team-gamma" });
+    prisma.team.update.mockResolvedValue({ id: "team-alpha" });
+
+    const result = await commitRegistrationImportBatch(platformAdmin, "batch-1", ["item-new", "item-existing"]);
+
+    expect(result.importedCount).toBe(2);
+    expect(result.credentials).toHaveLength(1);
+    expect(prisma.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { maxWait: 10_000, timeout: 60_000 },
+    );
+    expect(result.credentials[0]).toMatchObject({
+      teamName: "Gamma",
+      teamTag: "GAM",
+      captainName: "Gina",
+      email: "gina@example.com",
+    });
+    expect(prisma.user.create).toHaveBeenCalledTimes(1);
+    expect(prisma.team.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ captainId: "captain-new", source: "registration-intake" }),
+    }));
+    expect(prisma.team.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "team-alpha" },
+      data: expect.objectContaining({ captainId: "captain-existing" }),
+    }));
+    expect(prisma.player.deleteMany).toHaveBeenCalledWith({ where: { teamId: "team-alpha" } });
+    expect(prisma.player.createMany).toHaveBeenCalledTimes(2);
+    expect(prisma.registrationImportItem.update).toHaveBeenNthCalledWith(1, {
+      where: { id: "item-new" },
+      data: expect.objectContaining({ selected: true, status: "imported", teamId: "team-gamma" }),
+    });
+    expect(prisma.registrationImportItem.update).toHaveBeenNthCalledWith(2, {
+      where: { id: "item-existing" },
+      data: expect.objectContaining({ selected: true, status: "imported", teamId: "team-alpha" }),
+    });
+    expect(prisma.registrationImportBatch.update).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: expect.objectContaining({ status: "committed" }),
+    });
+  });
+
+  it("rejects a selected row when the captain email belongs to a non-captain user", async () => {
+    prisma.registrationImportBatch.findFirst.mockResolvedValue({
+      id: "batch-1",
+      eventId: "event-1",
+      event: { id: "event-1", slug: "redclover-cup", format: "Single Elimination" },
+      items: [
+        {
+          id: "item-staff",
+          status: "new",
+          normalizedData: {
+            teamName: "Staff",
+            teamTag: "STF",
+            captainName: "Staff",
+            captainContact: "081",
+            captainEmail: "staff@example.com",
+            players: [{ nickname: "Staff", displayName: "Staff", position: "Unassigned" }],
+          },
+        },
+      ],
+    });
+    prisma.user.findUnique.mockResolvedValue({ id: "organizer-1", email: "staff@example.com", role: "organizer", name: "Staff" });
+
+    await expect(commitRegistrationImportBatch(platformAdmin, "batch-1", ["item-staff"]))
+      .rejects.toThrow("Email kapten sudah dipakai akun non-captain.");
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
+  it("blocks commits after the event has recorded match results", async () => {
+    prisma.registrationImportBatch.findFirst.mockResolvedValue({
+      id: "batch-1",
+      eventId: "event-1",
+      event: { id: "event-1", slug: "redclover-cup", format: "Single Elimination" },
+      items: [],
+    });
+    prisma.match.count.mockResolvedValue(1);
+
+    await expect(commitRegistrationImportBatch(platformAdmin, "batch-1", []))
+      .rejects.toThrow("already has recorded match results");
   });
 });
 

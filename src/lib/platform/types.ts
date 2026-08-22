@@ -101,7 +101,7 @@ export type Team = {
   captainName?: string;
   captainContact?: string;
   captain?: { id: string; name: string } | null;
-  source?: "demo" | "csv-import";
+  source?: "demo" | "csv-import" | "registration-intake";
 };
 
 export type Player = {

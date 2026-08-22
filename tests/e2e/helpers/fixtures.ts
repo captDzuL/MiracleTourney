@@ -1,26 +1,16 @@
+import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
 export async function prepareAdminMatchEvent() {
-  const slug = "admin-match-e2e";
+  const suffix = randomUUID().slice(0, 8);
+  const slug = `admin-match-e2e-${suffix}`;
 
-  const event = await prisma.event.upsert({
-    where: { slug },
-    update: {
-      status: "Published",
-      format: "Single Elimination",
-      participantCap: 8,
-      gameId: "game-kuroko",
-      gameModeId: "mode-kuroko-3v3",
-      description: "Deterministic admin match result test event",
-      registrationWindow: "Open",
-      startsAt: "2026-09-01",
-      venue: "Online",
-    },
-    create: {
+  const event = await prisma.event.create({
+    data: {
       slug,
-      name: "Admin Match E2E",
+      name: `Admin Match E2E ${suffix}`,
       status: "Published",
       format: "Single Elimination",
       participantCap: 8,
@@ -32,13 +22,6 @@ export async function prepareAdminMatchEvent() {
       venue: "Online",
     },
   });
-
-  await prisma.matchGame.deleteMany({ where: { match: { eventId: event.id } } });
-  await prisma.match.deleteMany({ where: { eventId: event.id } });
-  await prisma.eventRoundConfig.deleteMany({ where: { eventId: event.id } });
-  await prisma.player.deleteMany({ where: { eventId: event.id } });
-  await prisma.certificate.deleteMany({ where: { eventId: event.id } });
-  await prisma.team.deleteMany({ where: { eventId: event.id } });
 
   await prisma.team.createMany({
     data: Array.from({ length: 8 }, (_, index) => ({

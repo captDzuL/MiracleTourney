@@ -11,10 +11,13 @@ import { prisma } from "@/lib/platform/db";
 import { createPasswordResetToken, consumePasswordResetToken } from "@/lib/platform/password-reset";
 import { routing } from "@/i18n/routing";
 import { requireRole, signIn } from "@/lib/auth/session";
+import { buildRegistrationPreview, parseRegistrationSource, suggestRegistrationMapping } from "@/lib/imports/registration-intake";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { sendEmail } from "@/lib/email/send";
 import { isDisposableEmail } from "@/lib/validation/email";
 import { validateTeamData } from "@/lib/validation/team-data";
+import { getGameModeConfig } from "@/lib/platform/config";
 import type { AppUser } from "@/lib/platform/types";
 import {
   addPlayer,
@@ -32,6 +35,8 @@ import {
   getUserPasswordHashById,
   autoTransitionEventToOngoing,
   importTeams,
+  saveRegistrationImportPreviewBatch,
+  commitRegistrationImportBatch,
   registerTeam,
   rejectStatSubmission,
   setEventStatus,
@@ -53,6 +58,7 @@ import fs from "fs";
 import path from "path";
 
 const MAX_TEAM_IMPORT_CSV_BYTES = 256 * 1024;
+const MAX_REGISTRATION_INTAKE_BYTES = 5 * 1024 * 1024;
 const MAX_LOGO_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_BACKGROUND_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -490,16 +496,25 @@ export async function adminCreateEventAction(formData: FormData) {
     }
   }
 
-  await createEvent({
-    name: input.name,
-    slug: input.slug,
-    gameModeId: input.gameModeId,
-    format: input.format,
-    participantCap: input.participantCap,
-    organizerUserId: organizerAssignment?.id,
-    organizerName: organizerAssignment?.name,
-    organizerVerified: false,
-  });
+  try {
+    await createEvent({
+      name: input.name,
+      slug: input.slug,
+      gameModeId: input.gameModeId,
+      format: input.format,
+      participantCap: input.participantCap,
+      organizerUserId: organizerAssignment?.id,
+      organizerName: organizerAssignment?.name,
+      organizerVerified: false,
+    });
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code === "P2002") {
+      await redirectToActiveLocale("/admin?error=slug-already-exists");
+    }
+    throw error;
+  }
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=event-created");
 }
@@ -523,6 +538,7 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
     return redirectToActiveLocale("/admin?error=Event%20not%20found.");
   }
 
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?success=event-status-updated&event=${event.slug}`);
 }
@@ -687,6 +703,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
     }
   }
   revalidateTag("teams");
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-result-updated` as never);
 }
@@ -720,6 +737,170 @@ export async function adminImportTeamsCsvAction(formData: FormData) {
   await importTeams(result.rows);
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?success=teams-imported&count=${result.rows.length}`);
+}
+
+export async function adminPreviewRegistrationImportAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const file = formData.get("registrationFile");
+  const worksheetName = String(formData.get("worksheetName") ?? "").trim() || undefined;
+
+  await assertUserCanManageEvent(user, eventId);
+
+  if (!(file instanceof File) || file.size === 0) {
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&error=${encodeURIComponent("Pilih file XLSX atau CSV terlebih dahulu.")}` as never,
+    );
+  }
+  if (file.size > MAX_REGISTRATION_INTAKE_BYTES) {
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&error=${encodeURIComponent("File registrasi maksimal 5 MiB.")}` as never,
+    );
+  }
+
+  const lowerName = file.name.toLowerCase();
+  const kind = lowerName.endsWith(".xlsx") ? "xlsx" : lowerName.endsWith(".csv") ? "csv" : null;
+  if (!kind) {
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&error=${encodeURIComponent("File harus berformat .xlsx atau .csv.")}` as never,
+    );
+  }
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    include: {
+      teams: {
+        include: {
+          players: {
+            select: { nickname: true, displayName: true, position: true },
+            orderBy: { createdAt: "asc" },
+          },
+        },
+      },
+    },
+  });
+  if (!event) {
+    return redirectToActiveLocale(`/admin?phase=import&error=${encodeURIComponent("Event tidak ditemukan.")}` as never);
+  }
+
+  let parsed;
+  try {
+    parsed = await parseRegistrationSource({
+      kind,
+      fileName: file.name,
+      buffer: Buffer.from(await file.arrayBuffer()),
+      worksheetName,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "File registrasi tidak dapat dibaca.";
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&error=${encodeURIComponent(message)}` as never,
+    );
+  }
+
+  const worksheet = parsed.worksheets[0];
+  if (!worksheet || worksheet.rows.length < 2) {
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&error=${encodeURIComponent("File perlu header dan minimal satu baris registrasi.")}` as never,
+    );
+  }
+
+  const mode = getGameModeConfig(event.gameModeId);
+  const headers = worksheet.rows[0].map((cell) => cell.value);
+  const mapping = suggestRegistrationMapping(headers, { maxRosterSize: mode.maxRosterSize });
+  const missingRequired = [
+    ["teamName", "nama tim"],
+    ["captainName", "nama kapten"],
+  ].filter(([key]) => mapping.columns[key as keyof typeof mapping.columns] == null);
+  if (missingRequired.length > 0) {
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&error=${encodeURIComponent(`Mapping wajib belum ditemukan: ${missingRequired.map(([, label]) => label).join(", ")}.`)}` as never,
+    );
+  }
+
+  const rows = worksheet.rows.slice(1).map((row, index) => ({
+    sourceRow: index + 2,
+    cells: row.map((cell) => cell.value),
+    formulaColumns: row
+      .map((cell, columnIndex) => (cell.formula ? columnIndex : -1))
+      .filter((columnIndex) => columnIndex >= 0),
+  }));
+  const emailColumn = mapping.columns.captainEmail;
+  const emailValues = emailColumn == null
+    ? []
+    : rows.map((row) => row.cells[emailColumn]?.trim().toLowerCase()).filter(Boolean);
+  const existingUsers = emailValues.length
+    ? await prisma.user.findMany({
+        where: { email: { in: [...new Set(emailValues)] } },
+        select: { id: true, email: true, role: true },
+      })
+    : [];
+
+  const preview = buildRegistrationPreview({
+    event: {
+      id: event.id,
+      name: event.name,
+      slug: event.slug,
+      participantCap: event.participantCap,
+      bracketLocked: await import("@/lib/platform/repository").then((repo) => repo.isEventBracketLocked(event.id)),
+      maxRosterSize: mode.maxRosterSize,
+    },
+    existingTeams: event.teams.map((team) => ({
+      id: team.id,
+      name: team.name,
+      tag: team.tag,
+      captainName: team.captainName,
+      captainContact: team.captainContact,
+      players: team.players,
+    })),
+    existingUsers,
+    rows,
+    mapping,
+  });
+
+  const batch = await saveRegistrationImportPreviewBatch({
+    user,
+    eventId,
+    sourceKind: parsed.sourceKind,
+    sourceLabel: file.name,
+    worksheetName: worksheet.name,
+    headerSignature: headers.join("|").toLowerCase(),
+    mapping,
+    items: preview.items,
+    summary: preview.summary,
+  });
+
+  revalidatePath("/", "layout");
+  return redirectToActiveLocale(
+    `/admin?phase=import&activeEventId=${eventId}&registrationBatchId=${batch.id}&success=registration-preview-ready` as never,
+  );
+}
+
+export async function adminCommitRegistrationImportAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const batchId = z.string().min(1).parse(formData.get("batchId"));
+  const selectedItemIds = formData.getAll("itemId").map((value) => String(value)).filter(Boolean);
+
+  if (selectedItemIds.length === 0) {
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&registrationBatchId=${batchId}&error=${encodeURIComponent("Pilih minimal satu baris Baru atau Berubah untuk diimport.")}` as never,
+    );
+  }
+
+  try {
+    const result = await commitRegistrationImportBatch(user, batchId, selectedItemIds);
+    revalidateTag("teams");
+    revalidatePath("/", "layout");
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&success=registration-imported&count=${result.importedCount}` as never,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Import registrasi gagal.";
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&registrationBatchId=${batchId}&error=${encodeURIComponent(message)}` as never,
+    );
+  }
 }
 
 /** Updates the live-stream URL and label for an event. URL must be a valid absolute URL. */
@@ -906,6 +1087,7 @@ export async function adminSetRoundConfigAction(formData: FormData) {
 
   await assertUserCanManageEvent(user, input.eventId);
   await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
+  revalidateTag("teams");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?phase=run&matchEventId=${input.eventId}&success=round-config-saved` as never);
 }
@@ -952,6 +1134,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
     console.error("[certificate] generation failed:", err);
   }
   revalidateTag("teams");
+  revalidateTag("events");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-games-saved` as never);
 }
@@ -1079,7 +1262,11 @@ export async function requestPasswordResetAction(formData: FormData) {
     const token = await createPasswordResetToken(user.id);
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
     const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
-    console.log(`[password-reset] Reset URL for ${email.data}: ${resetUrl}`);
+    await sendEmail({
+      to: email.data,
+      subject: "Reset Password Miracle League",
+      html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 1 jam.</p>`,
+    });
   }
   // Always redirect to sent=1 regardless of whether email exists (security)
   return redirectToActiveLocale("/forgot-password?sent=1" as never);

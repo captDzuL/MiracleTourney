@@ -16,6 +16,7 @@
     "test:dashboard:perf": "node scripts/run-dashboard-performance.mjs",
     "test:e2e:headed": "playwright test --headed",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:test": "tsx prisma/seed.ts --test",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -24,7 +25,9 @@
     "@vercel/speed-insights": "^2.0.0",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
+    "csv-parse": "^7.0.2",
     "disposable-email-domains": "^1.0.62",
+    "exceljs": "^4.4.0",
     "jose": "^6.2.6",
     "lucide-react": "^0.539.0",
     "next": "^15.4.0",

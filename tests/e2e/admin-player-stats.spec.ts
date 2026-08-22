@@ -62,10 +62,10 @@ test.describe("admin player stats entry", () => {
     await expect(page.getByText("Statistik Pemain", { exact: true })).toBeVisible({ timeout: 15_000 });
 
     for (const p of fixture.homePlayers) {
-      await expect(page.getByText(p.displayName, { exact: true }).first()).toBeVisible();
+      await expect(page.getByText(p.nickname, { exact: true }).first()).toBeVisible();
     }
     for (const p of fixture.awayPlayers) {
-      await expect(page.getByText(p.displayName, { exact: true }).first()).toBeVisible();
+      await expect(page.getByText(p.nickname, { exact: true }).first()).toBeVisible();
     }
   });
 

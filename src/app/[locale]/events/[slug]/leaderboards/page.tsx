@@ -1,6 +1,29 @@
+import type { Metadata } from "next";
 import { setRequestLocale } from "next-intl/server";
 
+import { getPublicEventBySlug } from "@/lib/platform/repository";
 import { renderLeaderboardsPage } from "../../../../events/[slug]/leaderboards/leaderboards-page";
+
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-tourney.vercel.app";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string; slug: string }>;
+}): Promise<Metadata> {
+  const { locale, slug } = await params;
+  const event = await getPublicEventBySlug(slug);
+  if (!event) return {};
+
+  const title = `Leaderboard — ${event.name}`;
+  const url = `${BASE_URL}/${locale}/events/${slug}/leaderboards`;
+
+  return {
+    title,
+    alternates: { canonical: url },
+    openGraph: { title, url },
+  };
+}
 
 export default async function LocalizedLeaderboardsPage({
   params,

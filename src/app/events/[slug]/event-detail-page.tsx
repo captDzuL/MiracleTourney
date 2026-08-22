@@ -84,7 +84,24 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
   const certificate = event.status === "Finished" ? await getCertificateByEvent(event.id).catch(() => null) : null;
   const backgroundUrl = getEventBackgroundUrl(event);
 
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SportsEvent",
+    "name": event.name,
+    "description": event.description,
+    "location": { "@type": "Place", "name": event.venue },
+    "organizer": { "@type": "Organization", "name": event.organizerName ?? "Miracle League" },
+    "sport": game.name,
+    ...(event.startsAt && event.startsAt !== "TBD" ? { "startDate": event.startsAt } : {}),
+    ...(event.prizePoolLabel ? { "prize": event.prizePoolLabel } : {}),
+  };
+
   return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
     <div className="space-y-6">
       <section
         className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 text-white shadow-[0_24px_80px_rgba(15,23,42,0.16)]"
@@ -223,6 +240,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
         </Section>
       </div>
     </div>
+    </>
   );
 }
 

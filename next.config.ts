@@ -37,6 +37,7 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  serverExternalPackages: ["playwright-core"],
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",

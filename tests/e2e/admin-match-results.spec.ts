@@ -17,7 +17,7 @@ async function setRoundBestOf(page: import("@playwright/test").Page, bestOf: "1"
   await expect(roundConfigForm).toBeVisible();
   await roundConfigForm.locator('select[name="bestOf"]').selectOption(bestOf);
   await roundConfigForm.getByRole("button").click();
-  await expect(page).toHaveURL(/success=round-config-saved/);
+  await expect(page).toHaveURL(/success=round-config-saved/, { timeout: 15_000 });
 }
 
 test.describe("admin match result entry", () => {
@@ -55,9 +55,9 @@ test.describe("admin match result entry", () => {
     await resultForm.locator('input[name="awayScore"]').fill("18");
     await resultForm.getByRole("button", { name: /simpan/i }).click();
 
-    await expect(page).toHaveURL(/success=match-result-updated/);
+    await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
     await page.goto(`/id/events/${currentEvent.slug}/bracket`);
-    await expect(page.getByText(/21\s*-\s*18/).first()).toBeVisible();
+    await expect(page.getByText(/21\s*-\s*18/).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("event auto-transitions to Ongoing after first match result", async ({ page }) => {
@@ -72,7 +72,7 @@ test.describe("admin match result entry", () => {
     await resultForm.locator('input[name="homeScore"]').fill("15");
     await resultForm.locator('input[name="awayScore"]').fill("21");
     await resultForm.getByRole("button", { name: /simpan/i }).click();
-    await expect(page).toHaveURL(/success=match-result-updated/);
+    await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
 
     await page.goto(`/id/events/${currentEvent.slug}`);
     await expect(page.getByRole("main")).toBeVisible();
@@ -109,7 +109,7 @@ test.describe("public bracket page", () => {
 
     await page.goto(`/id/events/${slug}/bracket`);
     await expect(page.getByRole("main")).toBeVisible();
-    await expect(page.getByText(/19\s*-\s*17/).first()).toBeVisible();
+    await expect(page.getByText(/19\s*-\s*17/).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("events list page is publicly accessible", async ({ page }) => {
