@@ -464,11 +464,16 @@ export async function createEventVisualAsset(
  * Approves a revision and points the event at it inside one transaction so the
  * revision status and `Event.activeVisualAssetId` can never diverge. Already
  * approved revisions stay approvable, which is how rollback works.
+ *
+ * `dualWriteLegacyImage` mirrors the approved url into the legacy
+ * `Event.gameImageUrl` column. It is only meant for the migration window while
+ * surfaces that still read the single legacy url are being retired.
  */
 export async function approveEventVisualAsset(
   user: AppUser,
   eventId: string,
   assetId: string,
+  options: { dualWriteLegacyImage?: boolean } = {},
 ): Promise<EventVisualAsset> {
   await assertUserCanManageEvent(user, eventId);
   return prisma.$transaction(async (tx) => {
@@ -484,7 +489,10 @@ export async function approveEventVisualAsset(
     });
     await tx.event.update({
       where: { id: eventId },
-      data: { activeVisualAssetId: assetId },
+      data: {
+        activeVisualAssetId: assetId,
+        ...(options.dualWriteLegacyImage && approved.url ? { gameImageUrl: approved.url } : {}),
+      },
     });
     return mapEventVisualAsset(approved);
   });

@@ -598,6 +598,25 @@ describe("event visual asset lifecycle", () => {
     });
   });
 
+  it("dual-writes the legacy background url in the same transaction during the migration window", async () => {
+    prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
+    prisma.eventVisualAsset.findFirst.mockResolvedValue({ id: "asset-2" });
+    prisma.eventVisualAsset.update.mockResolvedValue({
+      ...assetRow,
+      status: "approved",
+      url: "https://assets.example/approved.webp",
+    });
+    prisma.event.update.mockResolvedValue({ id: "event-1" });
+
+    await approveEventVisualAsset(organizer, "event-1", "asset-2", { dualWriteLegacyImage: true });
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.event.update).toHaveBeenCalledWith({
+      where: { id: "event-1" },
+      data: { activeVisualAssetId: "asset-2", gameImageUrl: "https://assets.example/approved.webp" },
+    });
+  });
+
   it("activates an older approved revision for rollback", async () => {
     prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
     prisma.eventVisualAsset.findFirst.mockResolvedValue({ id: "asset-1" });

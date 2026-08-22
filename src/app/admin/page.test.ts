@@ -46,7 +46,10 @@ describe("admin action buttons", () => {
 
     expect(source).toContain("Brand Assets");
     expect(source).toContain("adminUploadEventLogoAction");
-    expect(source).toContain("adminUploadEventBackgroundAction");
+    // The single-shot background upload was replaced by the reviewable
+    // revision panel, which owns adminUploadEventVisualAction.
+    expect(source).not.toContain("adminUploadEventBackgroundAction");
+    expect(source).toContain("EventVisualAssetsPanel");
     expect(source).toContain("adminUploadTeamLogoAction");
   });
 
