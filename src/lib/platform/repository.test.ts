@@ -484,6 +484,78 @@ describe("organizer event ownership", () => {
   });
 });
 
+describe("event visual asset mapping", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("preserves the active visual revision url, status, focal point, and source", async () => {
+    prisma.event.findMany.mockResolvedValue([
+      {
+        id: "event-1",
+        slug: "event-one",
+        name: "Event One",
+        description: "Event",
+        logoUrl: null,
+        gameImageUrl: null,
+        gameId: "game-kuroko",
+        gameModeId: "mode-kuroko-3v3",
+        format: "Single Elimination",
+        status: "Ongoing",
+        participantCap: 8,
+        registrationWindow: "TBD",
+        startsAt: "TBD",
+        venue: "Online",
+        organizerUserId: null,
+        organizerName: null,
+        organizerVerified: false,
+        characterArtUrl: null,
+        accentColor: null,
+        stream: null,
+        activeVisualAssetId: "asset-1",
+        activeVisualAsset: {
+          id: "asset-1",
+          eventId: "event-1",
+          source: "organizer_upload",
+          status: "approved",
+          url: "https://assets.example/event.webp",
+          mimeType: "image/webp",
+          width: 1200,
+          height: 630,
+          focalX: 0.5,
+          focalY: 0.4,
+          provider: null,
+          model: null,
+          promptVersion: null,
+          workflowRunId: null,
+          sourceUrl: null,
+          rightsAttestedAt: null,
+          errorCode: null,
+          createdByUserId: null,
+          approvedAt: new Date("2026-08-22T00:00:00.000Z"),
+          createdAt: new Date("2026-08-21T00:00:00.000Z"),
+          updatedAt: new Date("2026-08-22T00:00:00.000Z"),
+        },
+      },
+    ]);
+
+    const result = await getEventsByIds(["event-1"]);
+
+    expect(result[0]).toMatchObject({
+      activeVisualAssetId: "asset-1",
+      activeVisualAsset: {
+        id: "asset-1",
+        eventId: "event-1",
+        source: "organizer_upload",
+        status: "approved",
+        url: "https://assets.example/event.webp",
+        focalX: 0.5,
+        focalY: 0.4,
+      },
+    });
+  });
+});
+
 describe("dashboard batch lookups", () => {
   beforeEach(() => {
     vi.clearAllMocks();
