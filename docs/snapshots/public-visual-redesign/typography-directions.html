@@ -1,0 +1,92 @@
+<div id="miracle-type-lab">
+  <h2>Nama event harus menjadi wordmark, bukan heading</h2>
+  <p class="subtitle">Tiga mesin tipografi memakai nama yang sama agar karakter hurufnya bisa dinilai tanpa distraksi artwork.</p>
+
+  <div class="type-options">
+    <article class="type-choice speed-cut" data-choice="speed-cut" onclick="toggleSelect(this)">
+      <div class="type-stage">
+        <div class="race-code">MRC/024 · MLBB 5V5</div>
+        <div class="speed-word">
+          <span class="dawn base">DAWN</span><span class="dawn slice-one">DAWN</span><span class="dawn slice-two">DAWN</span>
+          <span class="finals base">FINALS</span><span class="finals slice-one">FINALS</span><span class="finals slice-two">FINALS</span>
+        </div>
+        <div class="speed-number">24</div>
+        <div class="speed-rule"><i></i><b>BREAK THE BRACKET</b><i></i></div>
+      </div>
+      <div class="choice-copy"><b>A · SPEED CUT</b><span>Condensed athletic, miring, dan dipotong seperti motion frame. Paling fleksibel lintas game.</span></div>
+    </article>
+
+    <article class="type-choice street-collision" data-choice="street-collision" onclick="toggleSelect(this)">
+      <div class="type-stage">
+        <div class="street-tag">MIRACLE PRESENTS</div>
+        <div class="street-word">
+          <span class="dawn">DAWN</span>
+          <span class="finals">FINALS</span>
+          <strong>24</strong>
+        </div>
+        <div class="torn-note">NO SAFE PICKS / NO QUIET WINS</div>
+        <div class="scribble">///</div>
+      </div>
+      <div class="choice-copy"><b>B · STREET COLLISION</b><span>Campuran display face, glitch, rotasi, dan label tempel. Paling liar dan terasa seperti poster komunitas.</span></div>
+    </article>
+
+    <article class="type-choice neon-crest" data-choice="neon-crest" onclick="toggleSelect(this)">
+      <div class="type-stage">
+        <div class="crest-code">COMMUNITY MAIN EVENT <span>001</span></div>
+        <div class="crest-mark">DF</div>
+        <div class="crest-title"><span>DAWN</span><strong>FINALS</strong></div>
+        <div class="crest-number">/24</div>
+        <div class="crest-meta">ROUND 01 · ONLINE ARENA · AUG 21</div>
+      </div>
+      <div class="choice-copy"><b>C · NEON CREST</b><span>Geometris, modular, dan punya monogram event. Lebih khas sebagai sistem, tetapi energinya lebih terkendali.</span></div>
+    </article>
+  </div>
+</div>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Anton&family=Bungee&family=Chakra+Petch:wght@600;700&family=Rubik+Glitch&family=Teko:wght@600;700&family=Unbounded:wght@700;800&display=swap');
+  #miracle-type-lab { width:100%; }
+  #miracle-type-lab .type-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:15px; }
+  #miracle-type-lab .type-choice { cursor:pointer; background:#080c0e; border:1px solid #30383c; color:#f6f2e9; overflow:hidden; transition:transform .16s ease,border-color .16s ease; }
+  #miracle-type-lab .type-choice:hover { transform:translateY(-3px); border-color:#caff38; }
+  #miracle-type-lab .type-choice.is-selected { box-shadow:0 0 0 2px #caff38; }
+  #miracle-type-lab .type-stage { min-height:355px; position:relative; overflow:hidden; background:#080c0e; }
+  #miracle-type-lab .choice-copy { min-height:92px; padding:15px 16px; border-top:1px solid #30383c; display:flex; flex-direction:column; gap:6px; }
+  #miracle-type-lab .choice-copy b { color:#caff38; font:700 11px 'Chakra Petch',sans-serif; letter-spacing:.12em; }
+  #miracle-type-lab .choice-copy span { color:#9ca5a9; font:600 10px/1.45 'Chakra Petch',sans-serif; }
+
+  #miracle-type-lab .speed-cut .type-stage { background:linear-gradient(155deg,#101b1d,#080c0e 60%); }
+  #miracle-type-lab .speed-cut .type-stage:before { content:""; position:absolute; inset:0; opacity:.15; background:repeating-linear-gradient(166deg,transparent 0 16px,#caff38 17px 19px,transparent 20px 35px); }
+  #miracle-type-lab .race-code { position:absolute; left:16px; top:17px; color:#caff38; font:700 8px 'Chakra Petch',sans-serif; letter-spacing:.15em; }
+  #miracle-type-lab .speed-word { position:absolute; left:15px; top:68px; width:270px; height:188px; transform:skewY(-3deg); }
+  #miracle-type-lab .speed-word span { position:absolute; left:0; font:700 89px/.72 'Teko',sans-serif; letter-spacing:-.055em; transform:skewX(-10deg) scaleX(.92); transform-origin:left; }
+  #miracle-type-lab .speed-word .dawn { top:0; }
+  #miracle-type-lab .speed-word .finals { top:77px; }
+  #miracle-type-lab .speed-word .base { color:#f7f2e9; text-shadow:4px 4px 0 #ff315f; }
+  #miracle-type-lab .speed-word .slice-one { color:#caff38; clip-path:polygon(0 34%,100% 25%,100% 45%,0 53%); transform:translateX(6px) skewX(-10deg) scaleX(.92); }
+  #miracle-type-lab .speed-word .slice-two { color:#00e5ff; clip-path:polygon(0 70%,100% 61%,100% 77%,0 86%); transform:translateX(-5px) skewX(-10deg) scaleX(.92); }
+  #miracle-type-lab .speed-number { position:absolute; right:-8px; top:195px; color:transparent; -webkit-text-stroke:1px rgba(202,255,56,.68); font:700 115px/.8 'Teko',sans-serif; transform:rotate(-5deg); }
+  #miracle-type-lab .speed-rule { position:absolute; left:16px; right:16px; bottom:20px; display:flex; align-items:center; gap:8px; color:#f6f2e9; font:700 8px 'Chakra Petch',sans-serif; letter-spacing:.11em; }
+  #miracle-type-lab .speed-rule i { flex:1; height:2px; background:#ff315f; }
+
+  #miracle-type-lab .street-collision .type-stage { background:#d7ff3f; color:#0a0d0f; }
+  #miracle-type-lab .street-collision .type-stage:before { content:""; position:absolute; inset:0; opacity:.2; background-image:radial-gradient(#0a0d0f 1px,transparent 1.4px); background-size:6px 6px; mask-image:linear-gradient(135deg,black,transparent 72%); }
+  #miracle-type-lab .street-tag { position:absolute; left:-5px; top:18px; padding:7px 18px; background:#ff315f; color:white; font:700 9px 'Chakra Petch',sans-serif; letter-spacing:.13em; transform:rotate(-4deg); }
+  #miracle-type-lab .street-word .dawn { position:absolute; left:15px; top:64px; font:400 67px/.82 'Bungee',sans-serif; letter-spacing:-.07em; color:#090d0f; transform:rotate(-3deg); }
+  #miracle-type-lab .street-word .finals { position:absolute; left:24px; top:137px; font:400 70px/.82 'Rubik Glitch',sans-serif; letter-spacing:-.04em; color:#090d0f; text-shadow:5px 5px 0 #00e5ff,-3px -3px 0 #ff315f; transform:rotate(2deg); }
+  #miracle-type-lab .street-word strong { position:absolute; right:8px; top:178px; font:400 84px/.8 'Bungee',sans-serif; color:transparent; -webkit-text-stroke:3px #090d0f; transform:rotate(-9deg); }
+  #miracle-type-lab .torn-note { position:absolute; left:-8px; bottom:30px; padding:10px 19px; background:#090d0f; color:#f7f2e9; font:700 8px 'Chakra Petch',sans-serif; letter-spacing:.1em; transform:rotate(3deg); clip-path:polygon(2% 6%,97% 0,100% 80%,94% 100%,3% 90%,0 22%); }
+  #miracle-type-lab .scribble { position:absolute; right:16px; top:80px; font:700 38px 'Chakra Petch',sans-serif; color:#ff315f; transform:rotate(78deg); }
+
+  #miracle-type-lab .neon-crest .type-stage { background:radial-gradient(circle at 65% 36%,#173546,#080c0e 67%); }
+  #miracle-type-lab .neon-crest .type-stage:before { content:""; position:absolute; inset:0; opacity:.17; background-image:linear-gradient(rgba(255,255,255,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.12) 1px,transparent 1px); background-size:28px 28px; }
+  #miracle-type-lab .crest-code { position:absolute; left:18px; right:18px; top:18px; display:flex; justify-content:space-between; color:#00e5ff; font:700 8px 'Chakra Petch',sans-serif; letter-spacing:.14em; }
+  #miracle-type-lab .crest-mark { position:absolute; right:15px; top:65px; color:transparent; -webkit-text-stroke:1px rgba(0,229,255,.52); font:800 112px/.8 'Unbounded',sans-serif; letter-spacing:-.13em; transform:rotate(90deg) translateX(92px); transform-origin:right top; }
+  #miracle-type-lab .crest-title { position:absolute; left:17px; top:98px; display:flex; flex-direction:column; }
+  #miracle-type-lab .crest-title span,#miracle-type-lab .crest-title strong { font:800 43px/.93 'Unbounded',sans-serif; letter-spacing:-.08em; }
+  #miracle-type-lab .crest-title span { color:#f7f2e9; }
+  #miracle-type-lab .crest-title strong { color:#080c0e; -webkit-text-stroke:1px #caff38; text-shadow:3px 3px 0 #caff38; }
+  #miracle-type-lab .crest-number { position:absolute; left:16px; bottom:61px; color:#ff315f; font:800 58px/.8 'Unbounded',sans-serif; letter-spacing:-.1em; }
+  #miracle-type-lab .crest-meta { position:absolute; left:17px; right:17px; bottom:19px; padding-top:9px; border-top:1px solid #415057; color:#9aa5aa; font:700 7px 'Chakra Petch',sans-serif; letter-spacing:.13em; }
+  @media(max-width:920px){ #miracle-type-lab .type-options { grid-template-columns:1fr; } #miracle-type-lab .type-stage { min-height:330px; } }
+</style>

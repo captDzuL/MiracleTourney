@@ -1,0 +1,59 @@
+<div id="miracle-letterform-lab">
+  <h2>Pilih siluet huruf sebelum efek visual</h2>
+  <p class="subtitle">Satu warna teks, satu aksen neon, tanpa glitch atau shadow. Yang dinilai hanya bentuk dan ritmenya.</p>
+
+  <div class="letterform-list">
+    <article class="letterform-option condensed" data-choice="condensed" onclick="toggleSelect(this)">
+      <div class="sample-meta"><span>A · CONDENSED ATHLETIC</span><small>PADAT / CEPAT / SPORTY</small></div>
+      <div class="sample-word"><strong>DAWN FINALS</strong><b>24</b></div>
+      <div class="sample-rule"><i></i><span>MLBB · 5V5 / COMMUNITY MAIN EVENT</span></div>
+      <p>Huruf tinggi dan sempit memberi tensi tanpa perlu distorsi. Muat untuk nama event panjang dan paling mudah dipakai lintas game.</p>
+    </article>
+
+    <article class="letterform-option angular" data-choice="angular" onclick="toggleSelect(this)">
+      <div class="sample-meta"><span>B · ANGULAR TECH</span><small>TAJAM / DIGITAL / TAKTIS</small></div>
+      <div class="sample-word"><strong>DAWN FINALS</strong><b>24</b></div>
+      <div class="sample-rule"><i></i><span>MLBB · 5V5 / COMMUNITY MAIN EVENT</span></div>
+      <p>Sudut dan terminal kotak terasa dekat dengan interface game, tetapi tetap tenang dan terbaca.</p>
+    </article>
+
+    <article class="letterform-option extended" data-choice="extended" onclick="toggleSelect(this)">
+      <div class="sample-meta"><span>C · EXTENDED GEOMETRIC</span><small>LEBAR / BERANI / IKONIK</small></div>
+      <div class="sample-word"><strong>DAWN FINALS</strong><b>24</b></div>
+      <div class="sample-rule"><i></i><span>MLBB · 5V5 / COMMUNITY MAIN EVENT</span></div>
+      <p>Siluet lebar lebih mudah menjadi identitas brand, tetapi membutuhkan ruang dan line-break yang lebih hati-hati.</p>
+    </article>
+  </div>
+</div>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Teko:wght@600;700&family=Unbounded:wght@700;800&display=swap');
+  #miracle-letterform-lab { width:100%; }
+  #miracle-letterform-lab .letterform-list { display:grid; gap:14px; }
+  #miracle-letterform-lab .letterform-option { cursor:pointer; position:relative; overflow:hidden; min-height:185px; padding:20px 22px 17px; background:#0b1013; color:#f3f0e8; border-left:3px solid #313a3f; transition:border-color .15s ease,background .15s ease; }
+  #miracle-letterform-lab .letterform-option:hover,#miracle-letterform-lab .letterform-option.is-selected { border-left-color:#caff38; background:#0e1417; }
+  #miracle-letterform-lab .sample-meta { display:flex; justify-content:space-between; align-items:center; color:#caff38; font:700 9px 'Chakra Petch',sans-serif; letter-spacing:.15em; }
+  #miracle-letterform-lab .sample-meta small { color:#727e84; font-size:8px; }
+  #miracle-letterform-lab .sample-word { min-height:84px; display:flex; align-items:baseline; justify-content:space-between; gap:20px; border-bottom:1px solid #30383c; }
+  #miracle-letterform-lab .sample-word strong { white-space:nowrap; color:#f3f0e8; }
+  #miracle-letterform-lab .sample-word b { color:#caff38; }
+  #miracle-letterform-lab .condensed .sample-word strong { font:700 68px/.9 'Teko',sans-serif; letter-spacing:-.025em; transform:scaleX(.92); transform-origin:left; }
+  #miracle-letterform-lab .condensed .sample-word b { font:600 53px/.9 'Teko',sans-serif; }
+  #miracle-letterform-lab .angular .sample-word strong { font:700 46px/.95 'Chakra Petch',sans-serif; letter-spacing:-.045em; }
+  #miracle-letterform-lab .angular .sample-word b { font:700 40px/.95 'Chakra Petch',sans-serif; }
+  #miracle-letterform-lab .extended .sample-word strong { font:800 37px/.95 'Unbounded',sans-serif; letter-spacing:-.06em; }
+  #miracle-letterform-lab .extended .sample-word b { font:700 34px/.95 'Unbounded',sans-serif; }
+  #miracle-letterform-lab .sample-rule { display:flex; align-items:center; gap:10px; margin-top:11px; color:#7d898f; font:600 8px 'Chakra Petch',sans-serif; letter-spacing:.11em; }
+  #miracle-letterform-lab .sample-rule i { width:28px; height:2px; background:#caff38; }
+  #miracle-letterform-lab .letterform-option p { margin:12px 0 0; color:#a1aaae; font:600 10px/1.45 'Chakra Petch',sans-serif; max-width:720px; }
+  @media(max-width:700px){
+    #miracle-letterform-lab .sample-meta small { display:none; }
+    #miracle-letterform-lab .sample-word { min-height:72px; gap:10px; }
+    #miracle-letterform-lab .condensed .sample-word strong { font-size:51px; }
+    #miracle-letterform-lab .condensed .sample-word b { font-size:41px; }
+    #miracle-letterform-lab .angular .sample-word strong { font-size:31px; }
+    #miracle-letterform-lab .angular .sample-word b { font-size:29px; }
+    #miracle-letterform-lab .extended .sample-word strong { font-size:23px; }
+    #miracle-letterform-lab .extended .sample-word b { font-size:22px; }
+  }
+</style>

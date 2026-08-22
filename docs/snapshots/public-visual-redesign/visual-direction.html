@@ -1,0 +1,107 @@
+<div id="miracle-directions">
+  <h2>Pilih radius perubahan untuk pitch pemain & komunitas</h2>
+  <p class="subtitle">Semua opsi mempertahankan aksi utama: jelajahi event unggulan.</p>
+
+  <div class="cards direction-grid">
+    <div class="card direction-card" data-choice="facelift" onclick="toggleSelect(this)">
+      <div class="card-image mini-site facelift">
+        <div class="mini-nav"><b>◈ MIRACLE</b><span>EVENT · ID/EN · MASUK</span></div>
+        <div class="mini-hero">
+          <div class="mini-copy">
+            <small>TURNAMEN KOMUNITAS</small>
+            <strong>Lihat yang<br>lagi berjalan.</strong>
+            <button>LIHAT EVENT</button>
+          </div>
+          <div class="mini-event-card"><i>LIVE</i><b>FLASHPEAK 24</b><span>Round 1 · 24 tim</span></div>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>A · Facelift terkontrol</h3>
+        <p>Shell tetap terang. Hero, type, CTA, dan kartu event dibuat lebih tegas. Paling cepat, tetapi identitas baru berhenti di homepage.</p>
+      </div>
+    </div>
+
+    <div class="card direction-card" data-choice="broadcast" onclick="toggleSelect(this)">
+      <div class="card-image mini-site broadcast">
+        <div class="mini-nav"><b>MIRACLE // LEAGUE</b><span>EVENTS · LIVE · ID/EN</span></div>
+        <div class="score-strip"><span>NOW PLAYING</span><b>FLASHPEAK 24</b><span>24 TEAMS</span></div>
+        <div class="mini-hero">
+          <div class="mini-copy">
+            <small>COMMUNITY TOURNAMENT 001</small>
+            <strong>TURNAMEN<br>YANG HIDUP.</strong>
+            <p>Bracket, pemain, klasemen, dan momen kompetitif—langsung dari arena komunitas.</p>
+            <button>JELAJAHI EVENT ↗</button>
+          </div>
+          <div class="arena-art">
+            <div class="player-silhouette"></div>
+            <div class="live-box"><i>● LIVE</i><b>TEAM 1 — TEAM 16</b><span>ROUND 1 / MATCH 03</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>B · Broadcast editorial — rekomendasi</h3>
+        <p>Energi Gamizio diterjemahkan menjadi identitas turnamen: score strip, grid teknikal, artwork dominan, dan event sebagai pusat narasi.</p>
+      </div>
+    </div>
+
+    <div class="card direction-card" data-choice="arena" onclick="toggleSelect(this)">
+      <div class="card-image mini-site arena">
+        <div class="mini-nav"><b>🎮 MIRACLE</b><span>HOME · EVENT · COMMUNITY</span></div>
+        <div class="mini-hero">
+          <div class="mini-copy">
+            <small>PLAYERS ONLINE · 48+</small>
+            <strong>UNLEASH<br>YOUR GAME.</strong>
+            <button>PLAY NOW</button>
+          </div>
+          <div class="hero-character"><span>PLAYER<br>ART</span></div>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>C · Full arena rebrand</h3>
+        <p>Paling dekat dengan Gamizio: full dark, neon, character-first, dan semua public page ikut berubah. Dampak tinggi, scope dan kebutuhan aset juga tinggi.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  #miracle-directions { width: 100%; }
+  #miracle-directions .direction-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #miracle-directions .direction-card { cursor: pointer; overflow: hidden; }
+  #miracle-directions .mini-site { min-height: 310px; color: #f7f7f2; font-family: "Arial Narrow", Arial, sans-serif; overflow: hidden; }
+  #miracle-directions .mini-nav { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; font-size: 9px; letter-spacing: .08em; }
+  #miracle-directions .mini-nav b { font-size: 12px; }
+  #miracle-directions .mini-hero { display: grid; grid-template-columns: 1.08fr .92fr; min-height: 265px; }
+  #miracle-directions .mini-copy { padding: 30px 20px 22px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; position: relative; z-index: 2; }
+  #miracle-directions .mini-copy small { font-size: 8px; letter-spacing: .16em; margin-bottom: 12px; }
+  #miracle-directions .mini-copy strong { font-size: 28px; line-height: .94; letter-spacing: -.035em; }
+  #miracle-directions .mini-copy p { font-size: 9px; line-height: 1.45; max-width: 210px; opacity: .76; }
+  #miracle-directions .mini-copy button { margin-top: 18px; border: 0; padding: 10px 14px; font-size: 8px; font-weight: 800; clip-path: polygon(0 0, 88% 0, 100% 35%, 100% 100%, 12% 100%, 0 65%); }
+  #miracle-directions .facelift { background: #f4f6fb; color: #101727; }
+  #miracle-directions .facelift .mini-nav { background: #fff; border-bottom: 1px solid #dbe2ef; }
+  #miracle-directions .facelift .mini-hero { margin: 12px; border-radius: 18px; background: linear-gradient(135deg,#071632,#1e46bb 58%,#087b78); color: #fff; }
+  #miracle-directions .facelift button { background: #fff; color: #1e46bb; clip-path: none; border-radius: 999px; }
+  #miracle-directions .mini-event-card { align-self: center; margin-right: 18px; padding: 18px 14px; min-height: 130px; background: #fff; color: #101727; border-radius: 14px; display:flex; flex-direction:column; justify-content:flex-end; box-shadow: 0 14px 30px rgba(0,0,0,.24); }
+  #miracle-directions .mini-event-card i { color: #ef245b; font-size: 8px; margin-bottom: 30px; }
+  #miracle-directions .mini-event-card b { font-size: 15px; }
+  #miracle-directions .mini-event-card span { font-size: 9px; opacity: .55; margin-top: 5px; }
+  #miracle-directions .broadcast { background: #080b0d; position: relative; }
+  #miracle-directions .broadcast:after { content:""; position:absolute; inset:0; background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px); background-size:28px 28px; pointer-events:none; }
+  #miracle-directions .broadcast .mini-nav { border-bottom: 1px solid #2a3033; }
+  #miracle-directions .score-strip { height: 22px; background: #c8ff34; color:#0a0d0e; display:flex; align-items:center; justify-content:space-around; font-size:7px; letter-spacing:.08em; }
+  #miracle-directions .broadcast .mini-copy strong { font-size: 30px; }
+  #miracle-directions .broadcast button { background:#c8ff34; color:#080b0d; }
+  #miracle-directions .arena-art { position:relative; overflow:hidden; background:radial-gradient(circle at 60% 40%,#17445a 0,#0b1820 38%,#080b0d 72%); }
+  #miracle-directions .player-silhouette { position:absolute; width:100px; height:205px; right:28px; top:28px; background:linear-gradient(145deg,#f07931,#233b47 48%,#07090a); clip-path:polygon(36% 0,66% 8%,75% 28%,91% 42%,76% 55%,87% 100%,18% 100%,29% 61%,7% 44%,28% 28%); }
+  #miracle-directions .live-box { position:absolute; left:10px; right:10px; bottom:12px; padding:10px; border:1px solid #c8ff34; background:rgba(8,11,13,.88); display:flex; flex-direction:column; }
+  #miracle-directions .live-box i { color:#c8ff34; font-size:7px; }
+  #miracle-directions .live-box b { font-size:10px; margin:4px 0; }
+  #miracle-directions .live-box span { font-size:7px; opacity:.6; }
+  #miracle-directions .arena { background: radial-gradient(circle at 78% 42%,#19323a,#090c0b 58%); }
+  #miracle-directions .arena .mini-nav { border-bottom:1px solid #26302b; }
+  #miracle-directions .arena .mini-copy strong { font-size:30px; }
+  #miracle-directions .arena .mini-copy small { color:#adff00; }
+  #miracle-directions .arena button { background:#adff00; color:#080a08; }
+  #miracle-directions .hero-character { margin-top:14px; background:linear-gradient(145deg,transparent 15%,#b55927 30%,#192b2d 55%,#050706 82%); clip-path:polygon(35% 0,78% 8%,100% 35%,88% 100%,12% 100%,20% 42%); display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.25);font-weight:800;font-size:14px;text-align:center; }
+  @media (max-width: 900px) { #miracle-directions .direction-grid { grid-template-columns: 1fr; } }
+</style>
