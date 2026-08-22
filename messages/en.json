@@ -36,7 +36,16 @@
     "viewStandings": "View Standings",
     "viewEvent": "View Event",
     "upToTeams": "Up to {cap} teams · {venue}",
-    "noEvents": "No public events yet for this game."
+    "noEvents": "No public events yet for this game.",
+    "eventDrop": "Event Drop",
+    "liveFeed": "Live Feed",
+    "tickerEmpty": "Schedule appears once teams are locked in.",
+    "exploreEvent": "Explore Event",
+    "issueLabel": "Event",
+    "teamsLabel": "teams",
+    "statusOngoing": "ONGOING",
+    "statusUpNext": "UP NEXT",
+    "statusFinished": "FINISHED"
   },
   "events": {
     "title": "Event Hub",

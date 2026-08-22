@@ -36,7 +36,16 @@
     "viewStandings": "Lihat Klasemen",
     "viewEvent": "Lihat Event",
     "upToTeams": "Maks {cap} tim · {venue}",
-    "noEvents": "Belum ada event publik untuk game ini."
+    "noEvents": "Belum ada event publik untuk game ini.",
+    "eventDrop": "Event Drop",
+    "liveFeed": "Live Feed",
+    "tickerEmpty": "Jadwal muncul setelah tim siap.",
+    "exploreEvent": "Jelajahi Event",
+    "issueLabel": "Event",
+    "teamsLabel": "tim",
+    "statusOngoing": "BERLANGSUNG",
+    "statusUpNext": "SEGERA",
+    "statusFinished": "SELESAI"
   },
   "events": {
     "title": "Daftar Event",
