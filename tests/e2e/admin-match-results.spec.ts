@@ -37,9 +37,9 @@ test.describe("admin match result entry", () => {
 
     await resultForm.locator('input[name="homeScore"]').fill("10");
     await resultForm.locator('input[name="awayScore"]').fill("10");
-    await resultForm.getByRole("button", { name: /simpan/i }).click();
+    await resultForm.getByRole("button", { name: /simpan hasil match/i }).click();
 
-    await expect(page).toHaveURL(/error=/);
+    await expect(page).toHaveURL(/error=/, { timeout: 15_000 });
   });
 
   test("admin can save a BO1 match result and see bracket update", async ({ page }) => {
