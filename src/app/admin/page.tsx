@@ -1354,6 +1354,10 @@ function PaymentWorkspacePhase({
         <Section title={t("paymentSettingsTitle")} description={t("paymentSettingsDescription")} className="rounded-xl shadow-none">
           <form action={adminUpdatePaymentSettingsAction} className="grid gap-4">
             <label className={labelClass}>
+              Upload gambar QRIS (opsional, override URL di bawah)
+              <input type="file" name="qrisImage" accept="image/png,image/webp,image/jpeg" className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
+            </label>
+            <label className={labelClass}>
               QRIS URL
               <input className={inputClass} name="qrisImageUrl" defaultValue={paymentSettings.qrisImageUrl ?? ""} placeholder="https://... atau /payment/qris.png" />
             </label>

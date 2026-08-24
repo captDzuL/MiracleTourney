@@ -67,6 +67,7 @@ const MAX_REGISTRATION_INTAKE_BYTES = 5 * 1024 * 1024;
 const MAX_LOGO_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_BACKGROUND_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024;
+const MAX_QRIS_IMAGE_BYTES = 2 * 1024 * 1024;
 
 async function requireAdminSession(): Promise<AppUser> {
   const user =
@@ -399,6 +400,19 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
 
 export async function adminUpdatePaymentSettingsAction(formData: FormData) {
   await requireAdminSession();
+
+  const qrisImageFile = formData.get("qrisImage");
+  const uploadedQrisUrl = qrisImageFile instanceof File && qrisImageFile.size > 0
+    ? await uploadImageAsset({
+      file: qrisImageFile,
+      folder: "payment-qris",
+      entityId: "global",
+      label: "QRIS image",
+      maxBytes: MAX_QRIS_IMAGE_BYTES,
+      errorPath: "/admin?phase=payments",
+    })
+    : null;
+
   const input = z.object({
     qrisImageUrl: optionalPublicUrlSchema.or(z.string().startsWith("/")).nullable(),
     instructions: z.preprocess((value) => {
@@ -406,7 +420,7 @@ export async function adminUpdatePaymentSettingsAction(formData: FormData) {
       return text === "" ? null : text;
     }, z.string().max(500).nullable()),
   }).parse({
-    qrisImageUrl: formData.get("qrisImageUrl"),
+    qrisImageUrl: uploadedQrisUrl ?? formData.get("qrisImageUrl"),
     instructions: formData.get("instructions"),
   });
 

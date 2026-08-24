@@ -1031,6 +1031,24 @@ describe("adminUpdateEventPublicInfoAction", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/admin");
   });
 
+  it("uploads a QRIS image file and uses it instead of the text URL field", async () => {
+    updatePaymentSettings.mockResolvedValue({ id: "global", qrisImageUrl: "/payment-qris/global-123.png" });
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+    await expect(
+      adminUpdatePaymentSettingsAction(fd({
+        qrisImageUrl: "https://old-url-should-be-ignored.example/qris.png",
+        instructions: "Scan QRIS lalu upload bukti.",
+        qrisImage: new File([png], "qris.png", { type: "image/png" }),
+      })),
+    ).rejects.toThrow("REDIRECT:/admin?phase=payments&success=payment-settings-updated");
+
+    expect(updatePaymentSettings).toHaveBeenCalledWith({
+      qrisImageUrl: expect.stringContaining("payment-qris/"),
+      instructions: "Scan QRIS lalu upload bukti.",
+    });
+  });
+
   it("approves paid registration requests from admin", async () => {
     approveTeamRegistrationRequest.mockResolvedValue({ id: "team-paid" });
 
