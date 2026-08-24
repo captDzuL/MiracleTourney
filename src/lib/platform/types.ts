@@ -78,6 +78,8 @@ export type Event = {
   organizerName?: string;
   organizerVerified?: boolean;
   prizePoolLabel?: string;
+  registrationFeeRequired?: boolean;
+  registrationFeeAmount?: number;
   registrationFeeLabel?: string;
   registrationUrl?: string;
 };
@@ -102,6 +104,34 @@ export type Team = {
   captainContact?: string;
   captain?: { id: string; name: string } | null;
   source?: "demo" | "csv-import" | "registration" | "registration-intake";
+};
+
+export type TeamRegistrationRequestStatus = "pending_payment" | "pending_review" | "approved" | "rejected" | "expired";
+
+export type TeamRegistrationRequest = {
+  id: string;
+  eventId: string;
+  captainId: string;
+  teamId?: string;
+  teamName: string;
+  teamTag: string;
+  status: TeamRegistrationRequestStatus;
+  proofImageUrl?: string;
+  rejectReason?: string;
+  expiresAt: Date;
+  approvedAt?: Date;
+  approvedById?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  event?: Event;
+  captain?: { id: string; name: string; email?: string } | null;
+};
+
+export type PaymentSettings = {
+  id: string;
+  qrisImageUrl?: string;
+  instructions?: string;
+  updatedAt?: Date;
 };
 
 export type Player = {

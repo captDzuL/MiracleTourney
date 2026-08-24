@@ -1,9 +1,9 @@
-import { CalendarDays, Crown, Plus, Settings, Trophy, Users } from "lucide-react";
+import { CalendarDays, Clock, CreditCard, Crown, Plus, Settings, Trophy, Upload, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
-import { captainAddPlayerAction, captainDeletePlayerAction, captainRegisterTeamAction, captainSetDisplayCaptainAction, captainUpdatePlayerAction } from "@/lib/actions";
+import { captainAddPlayerAction, captainDeletePlayerAction, captainRegisterTeamAction, captainSetDisplayCaptainAction, captainUpdatePlayerAction, captainUploadPaymentProofAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import {
@@ -12,12 +12,14 @@ import {
   getEventsByIds,
   getGameForEvent,
   getModeForEvent,
+  getCaptainRegistrationRequests,
   getOpenRegistrationEventsForCaptain,
+  getPaymentSettings,
   getPlayersForTeams,
   hasTempPassword,
 } from "@/lib/platform/repository";
 import type { Certificate } from "@/lib/platform/types";
-import type { Event, Game, GameMode, Player, Team } from "@/lib/platform/types";
+import type { Event, Game, GameMode, PaymentSettings, Player, Team, TeamRegistrationRequest } from "@/lib/platform/types";
 import { ShareCertificateButton } from "@/components/ShareCertificateButton";
 import { SubmitButton } from "@/components/submit-button";
 
@@ -48,10 +50,12 @@ export default async function CaptainPage({
   const rosterSignals = new Set(["player-added", "player-updated", "player-deleted", "captain-display-updated"]);
   const activeTab = params?.tab === "roster" || editPlayerId || confirmDeleteId || (success && rosterSignals.has(success)) ? "roster" : "registration";
 
-  const [teams, usingTempPassword, openRegistrationEvents] = await Promise.all([
+  const [teams, usingTempPassword, openRegistrationEvents, paymentRequests, paymentSettings] = await Promise.all([
     getCaptainTeams(user.id),
     hasTempPassword(user.id),
     getOpenRegistrationEventsForCaptain(user.id),
+    getCaptainRegistrationRequests(user.id),
+    getPaymentSettings(),
   ]);
   const teamIds = teams.map((team) => team.id);
   const eventIds = [...new Set(teams.map((team) => team.eventId))];
@@ -88,13 +92,18 @@ export default async function CaptainPage({
       {success === "player-deleted" ? <Notice tone="success">{t("playerDeleted")}</Notice> : null}
       {success === "registered" ? <Notice tone="success">{t("registered")}</Notice> : null}
       {success === "team-created" ? <Notice tone="success">{t("teamCreated")}</Notice> : null}
+      {success === "payment-pending" ? <Notice tone="success">{t("paymentPending")}</Notice> : null}
+      {success === "payment-proof-uploaded" ? <Notice tone="success">{t("paymentProofUploaded")}</Notice> : null}
       {success === "captain-display-updated" ? <Notice tone="success">Tampilan kapten berhasil diperbarui.</Notice> : null}
       {error ? <Notice tone="danger">{decodeURIComponent(error)}</Notice> : null}
 
       <CaptainDashboardTabs activeTab={activeTab} t={t as TFn} />
 
       {activeTab === "registration" ? (
-        <OpenRegistrationSection events={openRegistrationEvents} t={t as TFn} />
+        <div className="grid gap-6">
+          <OpenRegistrationSection events={openRegistrationEvents} t={t as TFn} />
+          <PaymentRequestsSection requests={paymentRequests} paymentSettings={paymentSettings} t={t as TFn} />
+        </div>
       ) : (
         <RosterManagementSection
           teamsWithPlayers={teamsWithPlayers}
@@ -228,6 +237,61 @@ function OpenRegistrationSection({ events, t }: { events: Array<Event & { regist
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSettings: PaymentSettings; requests: TeamRegistrationRequest[]; t: TFn }) {
+  if (requests.length === 0) return null;
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-950">{t("paymentRequestsTitle")}</h2>
+          <p className="mt-1 text-sm text-slate-500">{t("paymentRequestsDescription")}</p>
+        </div>
+      </div>
+      <div className="mt-4 divide-y divide-slate-200 rounded-xl border border-slate-200 bg-slate-50">
+        {requests.map((request) => (
+          <div key={request.id} className="grid gap-4 p-4 lg:grid-cols-[minmax(14rem,1fr)_minmax(14rem,0.8fr)_minmax(16rem,24rem)] lg:items-start">
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold text-slate-950">{request.event?.name ?? request.eventId}</p>
+              <p className="mt-1 text-sm text-slate-600">{request.teamName} ({request.teamTag})</p>
+              <p className="mt-2 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                <Clock className="h-3.5 w-3.5" />
+                {t(`paymentStatus_${request.status}`)}
+              </p>
+              {request.rejectReason ? <p className="mt-2 text-sm text-red-700">{request.rejectReason}</p> : null}
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+              <p className="flex items-center gap-2 font-semibold text-slate-900"><CreditCard className="h-4 w-4" />{t("paymentInstructionsTitle")}</p>
+              {request.event?.registrationFeeLabel ? <p className="mt-2 font-medium text-slate-800">{request.event.registrationFeeLabel}</p> : null}
+              {paymentSettings.instructions ? <p className="mt-2 leading-6">{paymentSettings.instructions}</p> : null}
+              {paymentSettings.qrisImageUrl ? (
+                <img src={paymentSettings.qrisImageUrl} alt="QRIS" className="mt-3 aspect-square w-36 rounded-lg border border-slate-200 bg-white object-contain" />
+              ) : (
+                <p className="mt-2 text-amber-700">{t("noQrisConfigured")}</p>
+              )}
+            </div>
+            {request.status === "pending_payment" || request.status === "rejected" ? (
+              <form action={captainUploadPaymentProofAction} className="grid gap-3">
+                <input type="hidden" name="requestId" value={request.id} />
+                <label className={labelClass}>
+                  {t("paymentProof")}
+                  <input className={inputClass} name="paymentProof" type="file" accept="image/png,image/jpeg,image/webp" required />
+                </label>
+                <SubmitButton className={primaryButton}>
+                  <Upload className="h-4 w-4" />
+                  {t("uploadPaymentProof")}
+                </SubmitButton>
+              </form>
+            ) : (
+              <p className="rounded-lg border border-slate-200 bg-white p-3 text-sm font-medium text-slate-600">{t(`paymentStatus_${request.status}`)}</p>
+            )}
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

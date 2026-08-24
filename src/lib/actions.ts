@@ -22,11 +22,13 @@ import type { AppUser } from "@/lib/platform/types";
 import {
   addPlayer,
   approveStatSubmission,
+  approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
   createCaptainWithTeam,
   createEvent,
+  createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
   getOrganizerUserById,
@@ -39,10 +41,13 @@ import {
   commitRegistrationImportBatch,
   registerTeam,
   rejectStatSubmission,
+  rejectTeamRegistrationRequest,
   setEventStatus,
   setMatchGames,
   setMatchResult,
   updateCaptainPassword,
+  updatePaymentSettings,
+  updateTeamRegistrationProof,
   updateEventPublicInfo,
   updateEventStream,
   updateEventBrandAssets,
@@ -61,6 +66,7 @@ const MAX_TEAM_IMPORT_CSV_BYTES = 256 * 1024;
 const MAX_REGISTRATION_INTAKE_BYTES = 5 * 1024 * 1024;
 const MAX_LOGO_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_BACKGROUND_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024;
 
 async function requireAdminSession(): Promise<AppUser> {
   const user =
@@ -162,40 +168,47 @@ const optionalPublicUrlSchema = z.preprocess(
   z.string().refine(isHttpUrl, "Registration URL must use http or https.").nullable(),
 );
 
+function appendActionError(basePath: string, message: string) {
+  const separator = basePath.includes("?") ? "&" : "?";
+  return `${basePath}${separator}error=${encodeURIComponent(message)}`;
+}
 async function uploadImageAsset({
   file,
   folder,
   entityId,
   label,
   maxBytes,
+  errorPath = "/admin",
 }: {
   file: FormDataEntryValue | null;
   folder: string;
   entityId: string;
   label: string;
   maxBytes: number;
+  errorPath?: string;
 }) {
   if (!isSafeEntityId(entityId)) {
-    redirect(`/admin?error=${encodeURIComponent(`Invalid ${label} ID.`)}` as never);
+    redirect(appendActionError(errorPath, `Invalid ${label} ID.`) as never);
   }
   if (!(file instanceof File) || file.size === 0) {
-    redirect(`/admin?error=${encodeURIComponent(`No ${label} file uploaded.`)}` as never);
+    redirect(appendActionError(errorPath, `No ${label} file uploaded.`) as never);
   }
   if (file.size > maxBytes) {
-    redirect(`/admin?error=${encodeURIComponent(`${label} file is too large.`)}` as never);
+    redirect(appendActionError(errorPath, `${label} file is too large.`) as never);
   }
 
   const extension = getImageExtension(file.type);
   if (!extension) {
-    redirect(`/admin?error=${encodeURIComponent(`${label} must be a PNG, JPEG, or WebP image.`)}` as never);
+    redirect(appendActionError(errorPath, `${label} must be a PNG, JPEG, or WebP image.`) as never);
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
   if (!hasImageSignature(buffer, extension)) {
-    redirect(`/admin?error=${encodeURIComponent(`${label} file content does not match its image type.`)}` as never);
+    redirect(appendActionError(errorPath, `${label} file content does not match its image type.`) as never);
   }
 
   const filename = `${entityId}-${Date.now()}.${extension}`;
+  if (process.env.NODE_ENV === "test") return `/${folder}/${filename}`;
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     const { put } = await import("@vercel/blob");
     const result = await put(`${folder}/${filename}`, buffer, {
@@ -341,6 +354,17 @@ export async function captainRegisterTeamAction(formData: FormData) {
     await registerTeam({ ...input, captainId: captain.id });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal mendaftarkan tim.";
+    if (msg === "Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.") {
+      try {
+        await createTeamRegistrationRequest({ ...input, captainId: captain.id });
+      } catch (paymentError) {
+        const paymentMsg = paymentError instanceof Error ? paymentError.message : "Gagal membuat pendaftaran pembayaran.";
+        return await registrationError(paymentMsg);
+      }
+      revalidateTag("teams");
+      revalidatePath("/captain");
+      await redirectToActiveLocale("/captain?tab=registration&success=payment-pending");
+    }
     return await registrationError(msg);
   }
 
@@ -349,6 +373,87 @@ export async function captainRegisterTeamAction(formData: FormData) {
   await redirectToActiveLocale("/captain?success=team-created");
 }
 
+
+export async function captainUploadPaymentProofAction(formData: FormData) {
+  const captain = await requireCaptainSession();
+  const requestId = z.string().trim().min(1).parse(formData.get("requestId"));
+  const proofImageUrl = await uploadImageAsset({
+    file: formData.get("paymentProof"),
+    folder: "payment-proofs",
+    entityId: requestId,
+    label: "Payment proof",
+    maxBytes: MAX_PAYMENT_PROOF_BYTES,
+    errorPath: "/captain?tab=registration",
+  });
+
+  try {
+    await updateTeamRegistrationProof(captain.id, requestId, proofImageUrl);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gagal mengupload bukti pembayaran.";
+    await redirectToActiveLocale(`/captain?tab=registration&error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidatePath("/captain");
+  await redirectToActiveLocale("/captain?tab=registration&success=payment-proof-uploaded" as never);
+}
+
+export async function adminUpdatePaymentSettingsAction(formData: FormData) {
+  await requireAdminSession();
+  const input = z.object({
+    qrisImageUrl: optionalPublicUrlSchema.or(z.string().startsWith("/")).nullable(),
+    instructions: z.preprocess((value) => {
+      const text = String(value ?? "").trim();
+      return text === "" ? null : text;
+    }, z.string().max(500).nullable()),
+  }).parse({
+    qrisImageUrl: formData.get("qrisImageUrl"),
+    instructions: formData.get("instructions"),
+  });
+
+  await updatePaymentSettings(input);
+  revalidatePath("/admin");
+  await redirectToActiveLocale("/admin?phase=payments&success=payment-settings-updated" as never);
+}
+
+export async function adminApprovePaymentAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const requestId = z.string().trim().min(1).parse(formData.get("requestId"));
+
+  try {
+    await approveTeamRegistrationRequest(user, requestId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gagal approve pembayaran.";
+    await redirectToActiveLocale(`/admin?phase=payments&error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidateTag("teams");
+  revalidateTag("events");
+  revalidatePath("/admin");
+  revalidatePath("/captain");
+  await redirectToActiveLocale("/admin?phase=payments&success=payment-approved" as never);
+}
+
+export async function adminRejectPaymentAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const input = z.object({
+    requestId: z.string().trim().min(1),
+    reason: z.string().trim().min(3).max(240),
+  }).parse({
+    requestId: formData.get("requestId"),
+    reason: formData.get("reason"),
+  });
+
+  try {
+    await rejectTeamRegistrationRequest(user, input.requestId, input.reason);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gagal reject pembayaran.";
+    await redirectToActiveLocale(`/admin?phase=payments&error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/captain");
+  await redirectToActiveLocale("/admin?phase=payments&success=payment-rejected" as never);
+}
 /**
  * Changes the captain's password after verifying the current one.
  * Validates that new and confirm passwords match and meet the 8-character minimum.
@@ -953,6 +1058,13 @@ export async function adminUpdateEventPublicInfoAction(formData: FormData) {
     startsAt: z.string().trim().min(2).max(120),
     venue: z.string().trim().min(2).max(120),
     prizePoolLabel: optionalPublicLabelSchema,
+    registrationFeeRequired: z.preprocess((value) => value === "on" || value === "true" || value === "paid", z.boolean()),
+    registrationFeeAmount: z.preprocess((value) => {
+      const text = String(value ?? "").trim();
+      if (!text) return null;
+      const number = Number(text);
+      return Number.isFinite(number) ? number : value;
+    }, z.number().int().positive().nullable()),
     registrationFeeLabel: optionalPublicLabelSchema,
     registrationUrl: optionalPublicUrlSchema,
   }).parse({
@@ -962,6 +1074,8 @@ export async function adminUpdateEventPublicInfoAction(formData: FormData) {
     startsAt: formData.get("startsAt"),
     venue: formData.get("venue"),
     prizePoolLabel: formData.get("prizePoolLabel"),
+    registrationFeeRequired: formData.get("registrationFeeRequired"),
+    registrationFeeAmount: formData.get("registrationFeeAmount"),
     registrationFeeLabel: formData.get("registrationFeeLabel"),
     registrationUrl: formData.get("registrationUrl"),
   });
@@ -972,7 +1086,10 @@ export async function adminUpdateEventPublicInfoAction(formData: FormData) {
     startsAt: input.startsAt,
     venue: input.venue,
     prizePoolLabel: input.prizePoolLabel,
+    registrationFeeRequired: input.registrationFeeRequired,
+    registrationFeeAmount: input.registrationFeeRequired ? input.registrationFeeAmount : null,
     registrationFeeLabel: input.registrationFeeLabel,
+
     registrationUrl: input.registrationUrl,
   });
 

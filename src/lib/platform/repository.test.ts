@@ -21,6 +21,18 @@ const { prisma } = vi.hoisted(() => ({
       groupBy: vi.fn(),
       update: vi.fn(),
     },
+    teamRegistrationRequest: {
+      count: vi.fn(),
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    paymentSettings: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+    },
     event: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -70,6 +82,10 @@ import {
   getEventRoundConfigs,
   getEventsByIds,
   getOpenRegistrationEventsForCaptain,
+  approveTeamRegistrationRequest,
+  createTeamRegistrationRequest,
+  getCaptainRegistrationRequests,
+  getPaymentSettings,
   getLeaderboardForEvent,
   getManageableEventsForUser,
   getMatchGamesForEvent,
@@ -83,7 +99,10 @@ import {
   getTeamsForEvent,
   getTeamsForEvents,
   registerTeam,
+  rejectTeamRegistrationRequest,
+  updateTeamRegistrationProof,
   updateEventPublicInfo,
+  updatePaymentSettings,
   updateTeamLogo,
 } from "./repository";
 
@@ -686,6 +705,142 @@ describe("existing captain event registration", () => {
       "Slot pendaftaran event ini sudah penuh.",
     );
     expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+  it("creates a pending payment request for a paid published event", async () => {
+    const future = new Date("2026-08-25T00:00:00.000Z");
+    prisma.event.findUnique.mockResolvedValue({
+      ...publishedEventRow({ id: "event-paid", slug: "paid-cup" }),
+      registrationFeeRequired: true,
+      registrationFeeAmount: 25000,
+    });
+    prisma.team.count.mockResolvedValue(3);
+    prisma.team.findFirst.mockResolvedValue(null);
+    prisma.match.count.mockResolvedValue(0);
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(null);
+    prisma.teamRegistrationRequest.create.mockResolvedValue({
+      id: "request-1",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      teamId: null,
+      teamName: "Session United",
+      teamTag: "SES",
+      status: "pending_payment",
+      proofImageUrl: null,
+      rejectReason: null,
+      expiresAt: future,
+      approvedAt: null,
+      approvedById: null,
+      createdAt: new Date("2026-08-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-08-24T00:00:00.000Z"),
+      event: publishedEventRow({ id: "event-paid", slug: "paid-cup" }),
+      captain: { id: "captain-1", name: "Captain" },
+    });
+
+    await expect(
+      createTeamRegistrationRequest({ eventId: "event-paid", captainId: "captain-1", name: "Session United", tag: "ses" }),
+    ).resolves.toEqual(expect.objectContaining({ id: "request-1", status: "pending_payment", teamTag: "SES" }));
+
+    expect(prisma.team.create).not.toHaveBeenCalled();
+    expect(prisma.teamRegistrationRequest.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventId: "event-paid",
+        captainId: "captain-1",
+        teamName: "Session United",
+        teamTag: "SES",
+        status: "pending_payment",
+        expiresAt: expect.any(Date),
+      }),
+      include: expect.any(Object),
+    });
+  });
+
+  it("approves a paid registration request by creating the active team", async () => {
+    const request = {
+      id: "request-1",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      teamId: null,
+      teamName: "Session United",
+      teamTag: "SES",
+      status: "pending_review",
+      proofImageUrl: "/payment-proofs/request-1.png",
+      rejectReason: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      approvedAt: null,
+      approvedById: null,
+      createdAt: new Date("2026-08-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-08-24T00:00:00.000Z"),
+      event: { ...publishedEventRow({ id: "event-paid", slug: "paid-cup" }), registrationFeeRequired: true, registrationFeeAmount: 25000 },
+      captain: { id: "captain-1", name: "Captain" },
+    };
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(request);
+    prisma.team.count.mockResolvedValue(3);
+    prisma.match.count.mockResolvedValue(0);
+    prisma.team.create.mockResolvedValue({
+      id: "team-paid",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      name: "Session United",
+      logoText: "SE",
+      logoUrl: null,
+      tag: "SES",
+      captainName: null,
+      captainContact: null,
+      source: "registration",
+    });
+    prisma.teamRegistrationRequest.update.mockResolvedValue({ ...request, status: "approved", teamId: "team-paid" });
+
+    await expect(approveTeamRegistrationRequest(platformAdmin, "request-1")).resolves.toEqual(
+      expect.objectContaining({ id: "team-paid", source: "registration" }),
+    );
+
+    expect(prisma.team.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventId: "event-paid",
+        captainId: "captain-1",
+        name: "Session United",
+        tag: "SES",
+        source: "registration",
+      }),
+    });
+    expect(prisma.teamRegistrationRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-1" },
+      data: expect.objectContaining({ status: "approved", teamId: "team-paid", approvedById: "admin-1" }),
+      include: expect.any(Object),
+    });
+  });
+
+  it("does not approve expired paid registration requests", async () => {
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({
+      id: "request-expired",
+      status: "pending_review",
+      expiresAt: new Date("2026-01-01T00:00:00.000Z"),
+      event: publishedEventRow({ id: "event-paid" }),
+    });
+
+    await expect(approveTeamRegistrationRequest(platformAdmin, "request-expired")).rejects.toThrow(
+      "Pendaftaran pembayaran sudah kedaluwarsa.",
+    );
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
+  it("stores global QRIS payment settings", async () => {
+    prisma.paymentSettings.upsert.mockResolvedValue({
+      id: "global",
+      qrisImageUrl: "/payment/qris.png",
+      instructions: "Transfer lalu upload bukti.",
+      updatedAt: new Date("2026-08-24T00:00:00.000Z"),
+    });
+
+    await expect(
+      updatePaymentSettings({ qrisImageUrl: "/payment/qris.png", instructions: "Transfer lalu upload bukti." }),
+    ).resolves.toEqual(expect.objectContaining({ id: "global", qrisImageUrl: "/payment/qris.png" }));
+
+    expect(prisma.paymentSettings.upsert).toHaveBeenCalledWith({
+      where: { id: "global" },
+      update: { qrisImageUrl: "/payment/qris.png", instructions: "Transfer lalu upload bukti." },
+      create: { id: "global", qrisImageUrl: "/payment/qris.png", instructions: "Transfer lalu upload bukti." },
+    });
   });
 });
 describe("public demo fallback reads", () => {
