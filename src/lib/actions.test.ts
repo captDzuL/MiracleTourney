@@ -3,20 +3,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   addPlayer,
   approveStatSubmission,
+  approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   createCaptainWithTeam,
   createEvent,
+  createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
   getOrganizerUserById,
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
+  generateCertificateIfFinal,
   importTeams,
   rejectStatSubmission,
+  rejectTeamRegistrationRequest,
   registerTeam,
   revalidatePath,
   revalidateTag,
@@ -28,6 +32,8 @@ const {
   signOut,
   headers,
   updateCaptainPassword,
+  updatePaymentSettings,
+  updateTeamRegistrationProof,
   updateEventStream,
   updatePlayer,
   updateEventCertificateAssets,
@@ -38,20 +44,24 @@ const {
 } = vi.hoisted(() => ({
   addPlayer: vi.fn(),
   approveStatSubmission: vi.fn(),
+  approveTeamRegistrationRequest: vi.fn(),
   assertCaptainCanSubmitStats: vi.fn(),
   assertUserCanManageEvent: vi.fn(),
   assertUserCanReviewStatSubmission: vi.fn(),
   autoTransitionEventToOngoing: vi.fn(),
   createCaptainWithTeam: vi.fn(),
   createEvent: vi.fn(),
+  createTeamRegistrationRequest: vi.fn(),
   deletePlayer: vi.fn(),
   getImportSnapshot: vi.fn(),
   getOrganizerUserById: vi.fn(),
   getPublishedEvents: vi.fn(),
   getUserByEmail: vi.fn(),
   getUserPasswordHashById: vi.fn(),
+  generateCertificateIfFinal: vi.fn(),
   importTeams: vi.fn(),
   rejectStatSubmission: vi.fn(),
+  rejectTeamRegistrationRequest: vi.fn(),
   registerTeam: vi.fn(),
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
@@ -63,6 +73,8 @@ const {
   signOut: vi.fn(),
   headers: vi.fn(),
   updateCaptainPassword: vi.fn(),
+  updatePaymentSettings: vi.fn(),
+  updateTeamRegistrationProof: vi.fn(),
   updateEventStream: vi.fn(),
   updatePlayer: vi.fn(),
   updateEventCertificateAssets: vi.fn(),
@@ -86,12 +98,14 @@ vi.mock("@/lib/imports/team-import", () => ({
 vi.mock("@/lib/platform/repository", () => ({
   addPlayer,
   approveStatSubmission,
+  approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   createCaptainWithTeam,
   createEvent,
+  createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
   getOrganizerUserById,
@@ -100,11 +114,14 @@ vi.mock("@/lib/platform/repository", () => ({
   getUserPasswordHashById,
   importTeams,
   rejectStatSubmission,
+  rejectTeamRegistrationRequest,
   registerTeam,
   setEventStatus,
   setMatchGames,
   setMatchResult,
   updateCaptainPassword,
+  updatePaymentSettings,
+  updateTeamRegistrationProof,
   updateEventCertificateAssets,
   updateEventPublicInfo,
   updateEventStream,
@@ -114,7 +131,7 @@ vi.mock("@/lib/platform/repository", () => ({
   setTeamCaptainDisplay,
 }));
 vi.mock("@/lib/certificate/generate", () => ({
-  generateCertificateIfFinal: vi.fn(),
+  generateCertificateIfFinal,
 }));
 vi.mock("bcryptjs", () => ({
   default: {
@@ -127,19 +144,23 @@ import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import bcrypt from "bcryptjs";
 import {
   adminApproveStatAction,
+  adminApprovePaymentAction,
   adminCreateEventAction,
   adminImportTeamsCsvAction,
   adminRejectStatAction,
+  adminRejectPaymentAction,
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
   adminUploadCharacterArtAction,
   adminUpdateEventStatusAction,
   adminUpdateEventPublicInfoAction,
+  adminUpdatePaymentSettingsAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
   captainAddPlayerAction,
   captainDeletePlayerAction,
   captainRegisterTeamAction,
+  captainUploadPaymentProofAction,
   captainSetDisplayCaptainAction,
   captainSignUpAction,
   captainSubmitStatsAction,
@@ -423,6 +444,36 @@ describe("captain actions", () => {
     });
   });
 
+
+  it("creates a pending payment request when the event requires a fee", async () => {
+    registerTeam.mockRejectedValue(new Error("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif."));
+    createTeamRegistrationRequest.mockResolvedValue({ id: "request-1", status: "pending_payment" });
+
+    await expect(
+      captainRegisterTeamAction(fd({ eventId: "event-paid", name: "Paid United", tag: "PDU" })),
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&success=payment-pending");
+
+    expect(createTeamRegistrationRequest).toHaveBeenCalledWith({
+      eventId: "event-paid",
+      captainId: "captain-1",
+      name: "Paid United",
+      tag: "PDU",
+    });
+    expect(revalidateTag).toHaveBeenCalledWith("teams");
+    expect(revalidatePath).toHaveBeenCalledWith("/captain");
+  });
+
+  it("uploads a payment proof for the authenticated captain", async () => {
+    updateTeamRegistrationProof.mockResolvedValue({ id: "request-1", status: "pending_review" });
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+    await expect(
+      captainUploadPaymentProofAction(fd({ requestId: "request-1", paymentProof: new File([png], "proof.png", { type: "image/png" }) })),
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&success=payment-proof-uploaded");
+
+    expect(updateTeamRegistrationProof).toHaveBeenCalledWith("captain-1", "request-1", expect.stringContaining("payment-proofs/"));
+    expect(revalidatePath).toHaveBeenCalledWith("/captain");
+  });
   it("requires a captain session before adding a player", async () => {
     requireRole.mockResolvedValue(null);
 
@@ -765,15 +816,26 @@ describe("adminUpdateMatchResultAction", () => {
   });
 
   it("preserves the success redirect after saving a match result", async () => {
-    setMatchResult.mockReturnValue({ id: "match-kuroko-1" });
+    setMatchResult.mockReturnValue({ id: "match-kuroko-1", roundLabel: "Quarterfinal", winnerTeamId: "team-away" });
 
     await expect(adminUpdateMatchResultAction(resultFormData())).rejects.toThrow(
       "REDIRECT:/admin?phase=run&matchEventId=event-kuroko-summer&success=match-result-updated",
     );
     expect(requireRole).toHaveBeenCalledWith("platform_admin");
     expect(autoTransitionEventToOngoing).toHaveBeenCalledWith("event-kuroko-summer");
+    expect(generateCertificateIfFinal).not.toHaveBeenCalled();
     expect(revalidateTag).toHaveBeenCalledWith("events");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("generates a certificate only after saving a final match result", async () => {
+    setMatchResult.mockReturnValue({ id: "match-final", roundLabel: "Final", winnerTeamId: "team-home" });
+
+    await expect(adminUpdateMatchResultAction(resultFormData())).rejects.toThrow(
+      "REDIRECT:/admin?phase=run&matchEventId=event-kuroko-summer&success=match-result-updated",
+    );
+
+    expect(generateCertificateIfFinal).toHaveBeenCalledWith("match-final", "event-kuroko-summer");
   });
 
   it("preserves the not-found redirect when the match is missing", async () => {
@@ -905,7 +967,9 @@ describe("adminUpdateEventPublicInfoAction", () => {
     startsAt: "August 30, 2026",
     venue: "Online",
     prizePoolLabel: "Rp1.000.000",
-    registrationFeeLabel: "",
+    registrationFeeRequired: "on",
+    registrationFeeAmount: "25000",
+    registrationFeeLabel: "Rp25.000 / team",
     registrationUrl: "",
   };
 
@@ -936,7 +1000,9 @@ describe("adminUpdateEventPublicInfoAction", () => {
         startsAt: "August 30, 2026",
         venue: "Online",
         prizePoolLabel: "Rp1.000.000",
-        registrationFeeLabel: null,
+        registrationFeeRequired: true,
+        registrationFeeAmount: 25000,
+        registrationFeeLabel: "Rp25.000 / team",
         registrationUrl: null,
       },
     );
@@ -953,6 +1019,38 @@ describe("adminUpdateEventPublicInfoAction", () => {
   });
 });
 
+
+  it("updates global payment settings", async () => {
+    updatePaymentSettings.mockResolvedValue({ id: "global", qrisImageUrl: "/payment/qris.png" });
+
+    await expect(
+      adminUpdatePaymentSettingsAction(fd({ qrisImageUrl: "/payment/qris.png", instructions: "Scan QRIS lalu upload bukti." })),
+    ).rejects.toThrow("REDIRECT:/admin?phase=payments&success=payment-settings-updated");
+
+    expect(updatePaymentSettings).toHaveBeenCalledWith({ qrisImageUrl: "/payment/qris.png", instructions: "Scan QRIS lalu upload bukti." });
+    expect(revalidatePath).toHaveBeenCalledWith("/admin");
+  });
+
+  it("approves paid registration requests from admin", async () => {
+    approveTeamRegistrationRequest.mockResolvedValue({ id: "team-paid" });
+
+    await expect(adminApprovePaymentAction(fd({ requestId: "request-1" }))).rejects.toThrow(
+      "REDIRECT:/admin?phase=payments&success=payment-approved",
+    );
+
+    expect(approveTeamRegistrationRequest).toHaveBeenCalledWith(organizerSession(), "request-1");
+    expect(revalidateTag).toHaveBeenCalledWith("teams");
+  });
+
+  it("rejects paid registration requests with a reason", async () => {
+    rejectTeamRegistrationRequest.mockResolvedValue({ id: "request-1", status: "rejected" });
+
+    await expect(adminRejectPaymentAction(fd({ requestId: "request-1", reason: "Bukti tidak sesuai." }))).rejects.toThrow(
+      "REDIRECT:/admin?phase=payments&success=payment-rejected",
+    );
+
+    expect(rejectTeamRegistrationRequest).toHaveBeenCalledWith(organizerSession(), "request-1", "Bukti tidak sesuai.");
+  });
 describe("captainSubmitStatsAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
