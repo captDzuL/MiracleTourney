@@ -78,6 +78,8 @@ describe("admin action buttons", () => {
     expect(source).toContain("adminApprovePaymentAction");
     expect(source).toContain("adminRejectPaymentAction");
     expect(source).toContain('name="qrisImageUrl"');
+    expect(source).toContain('name="qrisImage"');
+    expect(source).toContain('type="file"');
     expect(source).toContain('name="requestId"');
   });
   test("keeps long select values constrained inside responsive form columns", () => {
