@@ -13,6 +13,12 @@
       "ready": "Siap Vercel + Neon"
     }
   },
+  "panelTheme": {
+    "label": "Tema panel",
+    "light": "Terang",
+    "dark": "Gelap",
+    "system": "Sistem"
+  },
   "home": {
     "season": "Musim 1 · Miracle League",
     "headline": "Lihat Turnamen Komunitas yang Lagi Berjalan",

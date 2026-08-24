@@ -15,7 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // admin and captain surface — keeps its existing components and spacing.
   const chrome = visualV2
     ? {
-        root: "public-visual-v2 min-h-screen",
+        root: "app-root public-visual-v2 min-h-screen",
         header: "sticky top-0 z-40 border-b border-[color:var(--pv-rule)] bg-[color:var(--pv-canvas)]/95 backdrop-blur-sm",
         mark: "flex h-9 w-9 items-center justify-center bg-[color:var(--pv-lime)] text-[color:var(--pv-canvas)]",
         brand: "pv-display text-base leading-none text-[color:var(--pv-ink)]",
@@ -26,7 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           "mx-auto flex max-w-7xl items-center justify-between gap-4 border-t border-[color:var(--pv-rule)] px-4 py-6 text-[11px] uppercase tracking-[0.18em] text-[color:var(--pv-ink-muted)] sm:px-6",
       }
     : {
-        root: "min-h-screen",
+        root: "app-root min-h-screen",
         header:
           "sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur-sm",
         mark: "flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-sm",

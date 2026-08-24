@@ -230,3 +230,203 @@ textarea {
     scroll-behavior: auto !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Panel dark mode — admin / captain / organizer only.
+
+   Public pages are deliberately excluded. The poster system above is dark by
+   design and is not a switchable theme.
+
+   Two layers, and both are needed:
+
+     1. Variable remap — Tailwind 4 compiles every colour utility down to
+        `var(--color-*)`, so redefining those variables inside this scope
+        re-skins the existing markup without editing a single className.
+        In here, variables serve TEXT and LINES.
+
+     2. Utility override — a few shades do two jobs at once. `--color-red-600`
+        is both a solid button fill and the text colour sitting on a red tint;
+        brightening it fixes the text and ruins the button. Those cases override
+        the `.bg-*` class instead, background-colour only, so `text-white` on
+        solid buttons keeps working.
+
+   `:has(.panel-scope)` is what keeps the blast radius on operator routes while
+   still letting the shared header and footer follow the panel. `.panel-scope`
+   is rendered by PanelShell; `.app-root` is the AppShell wrapper.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) {
+  color-scheme: dark;
+
+  --panel-surface: #101619;
+  --panel-surface-sunken: #0b1012;
+  --panel-chip: #242c30;
+  --panel-lime: #caff38;
+
+  /* Surfaces and hairlines become dark. */
+  --color-slate-50: #161d20;
+  --color-slate-100: #1d2427;
+  --color-slate-200: #232a2d;
+  --color-slate-300: #2a3134;
+
+  /* Inks become light. */
+  --color-slate-400: #7d8583;
+  --color-slate-500: #9aa3a1;
+  --color-slate-600: #b0aea5;
+  --color-slate-700: #c6c3ba;
+  --color-slate-800: #ddd9d0;
+  --color-slate-900: #f3f0e8;
+  --color-slate-950: #f8f6ef;
+
+  /* Accent tints darken; the text shades paired with them lighten.
+     cyan-400 and cyan-600 keep their stock values: they are the panel's action
+     colours, and lime is reserved for focus so the two never compete. */
+  --color-cyan-50: #0a2b33;
+  --color-cyan-100: #0e3a45;
+  --color-cyan-200: #12495a;
+  --color-cyan-300: #1c6478;
+  --color-cyan-800: #6fe0f2;
+
+  --color-emerald-50: #0d2318;
+  --color-emerald-100: #123022;
+  --color-emerald-200: #17402e;
+  --color-emerald-300: #1e5239;
+  --color-emerald-700: #7ff0b4;
+  --color-emerald-800: #9af5c6;
+
+  --color-amber-50: #2a2109;
+  --color-amber-100: #392d0d;
+  --color-amber-200: #4a3b11;
+  --color-amber-700: #f2c86b;
+  --color-amber-800: #f7d68d;
+  --color-amber-950: #ffe9b0;
+  /* amber-400 and amber-900 are left alone on purpose: the captain crown chip
+     is a bright amber block with dark text, and it still reads correctly. */
+
+  --color-red-50: #2e1414;
+  --color-red-100: #3d1b1b;
+  --color-red-200: #502424;
+  --color-red-600: #ff9c9c;
+  --color-red-700: #ffb4b4;
+
+  --color-blue-50: #10202f;
+  --color-blue-100: #16304a;
+  --color-blue-200: #1d4166;
+  --color-blue-300: #2a5c8f;
+  --color-blue-700: #8fc2ff;
+
+  background-color: #080c0e;
+  background-image: linear-gradient(180deg, #070a0b, #080c0e 55%, #090d0f);
+  color: var(--color-slate-900);
+}
+
+/* Two shades sit on the wrong side of the surface/ink split above, because the
+   codebase uses them for both jobs. Correct them by class rather than by
+   variable, so borders and status fills keep the value they need. */
+
+/* `text-slate-300` is body copy on the organizer hero, not a hairline. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .text-slate-300 {
+  color: #c6c3ba;
+}
+
+/* `bg-slate-500` is the "Finished" status badge and carries white text. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-slate-500 {
+  background-color: #3f4a4f;
+}
+
+/* ── Layer 2: surfaces whose variable is already spoken for by text ───────── */
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-white {
+  background-color: var(--panel-surface);
+}
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(input, select, textarea).bg-white {
+  background-color: var(--panel-surface-sunken);
+}
+
+/* Chips that were already dark on a light page — never invert these. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-slate-900,
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-slate-950 {
+  background-color: var(--panel-chip);
+}
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-slate-950\/35 {
+  background-color: rgba(3, 6, 8, 0.55);
+}
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .hover\:bg-slate-800:hover {
+  background-color: #2f383d;
+}
+
+/* Destructive actions stay a solid red block — that emphasis is the point. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-red-600 {
+  background-color: #dc2626;
+}
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .hover\:bg-red-500:hover {
+  background-color: #ef4444;
+}
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .hover\:bg-red-700:hover {
+  background-color: #b91c1c;
+}
+
+/* ── Action hierarchy: one primary emphasis per row ───────────────────────── */
+
+/* Primary submits keep their solid cyan fill. Their label is written as
+   `text-slate-950`, which inverts to a light ink in this scope and would strand
+   it on a bright fill, so the label is pinned back to a dark teal. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(a, button, summary, label).bg-cyan-400 {
+  color: #04222a;
+}
+
+/* `--color-cyan-300` is a hairline elsewhere, so the primary hover is restored
+   by class rather than by variable. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .hover\:bg-cyan-300:hover {
+  background-color: #67e8f9;
+}
+
+/* Secondary emphasis drops to a quiet surface so it stops competing with the
+   primary submit and the destructive button beside it. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(a, button, summary, label).bg-cyan-600 {
+  background-color: var(--panel-surface-sunken);
+  border: 1px solid var(--color-slate-300);
+  color: var(--color-slate-900);
+}
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(a, button, summary, label).bg-cyan-600:hover,
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .hover\:bg-cyan-500:hover {
+  background-color: var(--color-slate-100);
+}
+
+/* Focus is the one place the poster accent still shows up. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(:focus, :focus-visible) {
+  --tw-ring-color: var(--panel-lime);
+}
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(input, select, textarea):focus {
+  border-color: var(--panel-lime);
+  box-shadow: 0 0 0 3px rgba(202, 255, 56, 0.18);
+}
+
+/* ── Shared chrome follows the panel on operator routes ───────────────────── */
+
+/* With the public poster flag on, the header and footer would otherwise stay
+   dark-and-lime while the panel below them is a light surface. Remapping the
+   poster tokens here keeps the two in step in both themes. */
+.app-root.public-visual-v2:has(.panel-scope) {
+  --pv-canvas: #ffffff;
+  --pv-canvas-raised: #f8fafc;
+  --pv-ink: #0f172a;
+  --pv-ink-muted: #64748b;
+  --pv-lime: #2563eb;
+  --pv-rule: rgba(15, 23, 42, 0.12);
+  font-family: var(--font-inter), sans-serif;
+}
+
+html[data-panel-theme="dark"] .app-root.public-visual-v2:has(.panel-scope) {
+  --pv-canvas: #101619;
+  --pv-canvas-raised: #161d20;
+  --pv-ink: #f3f0e8;
+  --pv-ink-muted: #9aa3a1;
+  --pv-lime: #caff38;
+  --pv-rule: rgba(243, 240, 232, 0.14);
+}

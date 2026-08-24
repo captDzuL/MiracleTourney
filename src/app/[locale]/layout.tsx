@@ -8,6 +8,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 
 import { AppShell } from "@/components/shell";
 import { routing } from "@/i18n/routing";
+import { PANEL_THEME_INIT_SCRIPT } from "@/lib/theme/panel-theme";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +89,14 @@ export default async function LocaleLayout({
   const messages = await getMessages();
 
   return (
-    <html lang={locale}>
+    <html lang={locale} suppressHydrationWarning>
+      <head>
+        {/*
+          Resolves the operator panel theme before the first paint so switching
+          pages never flashes the light palette. Emits only "light" or "dark".
+        */}
+        <script dangerouslySetInnerHTML={{ __html: PANEL_THEME_INIT_SCRIPT }} />
+      </head>
       <body className={`${displayFont.variable} ${uiFont.variable}`}>
         <NextIntlClientProvider locale={locale} messages={messages}>
           <AppShell>{children}</AppShell>
