@@ -810,6 +810,68 @@ describe("existing captain event registration", () => {
     });
   });
 
+  it("approves a migrated registration request by reusing its already-linked team", async () => {
+    // Regression test: migration script (scripts/migrate-existing-teams-payment-status.mjs)
+    // creates TeamRegistrationRequest rows linked via teamId to a Team that already exists
+    // (e.g. ATL/Astra Lumina). Approving must not treat that same team as a duplicate, and
+    // must not attempt to create a second Team with the same eventId+tag.
+    const request = {
+      id: "request-atl",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      teamId: "team-atl",
+      teamName: "Astra Lumina",
+      teamTag: "ATL",
+      status: "pending_review",
+      proofImageUrl: "/payment-proofs/request-atl.png",
+      rejectReason: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      approvedAt: null,
+      approvedById: null,
+      createdAt: new Date("2026-08-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-08-24T00:00:00.000Z"),
+      event: { ...publishedEventRow({ id: "event-paid", slug: "paid-cup" }), registrationFeeRequired: true, registrationFeeAmount: 25000 },
+      captain: { id: "captain-1", name: "Captain" },
+    };
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(request);
+    prisma.team.count.mockResolvedValue(3);
+    prisma.match.count.mockResolvedValue(0);
+    // existingCaptainTeam lookup must exclude the request's own linked team, so it resolves null
+    prisma.team.findFirst.mockResolvedValue(null);
+    prisma.team.update.mockResolvedValue({
+      id: "team-atl",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      name: "Astra Lumina",
+      logoText: "AT",
+      logoUrl: null,
+      tag: "ATL",
+      captainName: null,
+      captainContact: null,
+      source: "registration",
+    });
+    prisma.teamRegistrationRequest.update.mockResolvedValue({ ...request, status: "approved", teamId: "team-atl" });
+
+    await expect(approveTeamRegistrationRequest(platformAdmin, "request-atl")).resolves.toEqual(
+      expect.objectContaining({ id: "team-atl", source: "registration" }),
+    );
+
+    expect(prisma.team.findFirst).toHaveBeenCalledWith({
+      where: { eventId: "event-paid", captainId: "captain-1", id: { not: "team-atl" } },
+      select: { id: true },
+    });
+    expect(prisma.team.create).not.toHaveBeenCalled();
+    expect(prisma.team.update).toHaveBeenCalledWith({
+      where: { id: "team-atl" },
+      data: { source: "registration" },
+    });
+    expect(prisma.teamRegistrationRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-atl" },
+      data: expect.objectContaining({ status: "approved", teamId: "team-atl", approvedById: "admin-1" }),
+      include: expect.any(Object),
+    });
+  });
+
   it("does not approve expired paid registration requests", async () => {
     prisma.teamRegistrationRequest.findFirst.mockResolvedValue({
       id: "request-expired",
