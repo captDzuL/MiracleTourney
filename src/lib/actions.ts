@@ -820,7 +820,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
 
   if (!match) await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=Match%20not%20found.` as never);
   await autoTransitionEventToOngoing(input.eventId);
-  if (match) {
+  if (match?.roundLabel === "Final" && match.winnerTeamId) {
     try {
       await generateCertificateForFinalMatch(match.id, input.eventId);
     } catch (err) {

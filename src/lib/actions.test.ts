@@ -17,6 +17,7 @@ const {
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
+  generateCertificateIfFinal,
   importTeams,
   rejectStatSubmission,
   rejectTeamRegistrationRequest,
@@ -57,6 +58,7 @@ const {
   getPublishedEvents: vi.fn(),
   getUserByEmail: vi.fn(),
   getUserPasswordHashById: vi.fn(),
+  generateCertificateIfFinal: vi.fn(),
   importTeams: vi.fn(),
   rejectStatSubmission: vi.fn(),
   rejectTeamRegistrationRequest: vi.fn(),
@@ -129,7 +131,7 @@ vi.mock("@/lib/platform/repository", () => ({
   setTeamCaptainDisplay,
 }));
 vi.mock("@/lib/certificate/generate", () => ({
-  generateCertificateIfFinal: vi.fn(),
+  generateCertificateIfFinal,
 }));
 vi.mock("bcryptjs", () => ({
   default: {
@@ -814,15 +816,26 @@ describe("adminUpdateMatchResultAction", () => {
   });
 
   it("preserves the success redirect after saving a match result", async () => {
-    setMatchResult.mockReturnValue({ id: "match-kuroko-1" });
+    setMatchResult.mockReturnValue({ id: "match-kuroko-1", roundLabel: "Quarterfinal", winnerTeamId: "team-away" });
 
     await expect(adminUpdateMatchResultAction(resultFormData())).rejects.toThrow(
       "REDIRECT:/admin?phase=run&matchEventId=event-kuroko-summer&success=match-result-updated",
     );
     expect(requireRole).toHaveBeenCalledWith("platform_admin");
     expect(autoTransitionEventToOngoing).toHaveBeenCalledWith("event-kuroko-summer");
+    expect(generateCertificateIfFinal).not.toHaveBeenCalled();
     expect(revalidateTag).toHaveBeenCalledWith("events");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("generates a certificate only after saving a final match result", async () => {
+    setMatchResult.mockReturnValue({ id: "match-final", roundLabel: "Final", winnerTeamId: "team-home" });
+
+    await expect(adminUpdateMatchResultAction(resultFormData())).rejects.toThrow(
+      "REDIRECT:/admin?phase=run&matchEventId=event-kuroko-summer&success=match-result-updated",
+    );
+
+    expect(generateCertificateIfFinal).toHaveBeenCalledWith("match-final", "event-kuroko-summer");
   });
 
   it("preserves the not-found redirect when the match is missing", async () => {
