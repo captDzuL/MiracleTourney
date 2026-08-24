@@ -315,17 +315,37 @@ export async function loginAction(formData: FormData) {
 /** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
 export async function captainRegisterTeamAction(formData: FormData) {
   const captain = await requireCaptainSession();
-  const input = z.object({
-    eventId: z.string().min(1),
-    name: z.string().min(2),
-    tag: z.string().min(2).max(4),
-  }).parse({
+  const registrationError = async (msg: string) =>
+    redirectToActiveLocale(`/captain?error=${encodeURIComponent(msg)}` as never);
+  const parsed = z.object({
+    eventId: z.string().trim().min(1),
+    name: z.string().trim().min(2, "Nama tim minimal 2 karakter."),
+    tag: z.string().trim().min(2, "Tag tim harus 2-4 karakter.").max(4, "Tag tim harus 2-4 karakter."),
+  }).safeParse({
     eventId: formData.get("eventId"),
     name: formData.get("name"),
     tag: formData.get("tag"),
   });
 
-  await registerTeam({ ...input, captainId: captain.id });
+  if (!parsed.success) {
+    return await registrationError(parsed.error.issues[0]?.message ?? "Data pendaftaran tidak valid.");
+  }
+
+  const input = { ...parsed.data, tag: parsed.data.tag.toUpperCase() };
+  const dataErrors = validateTeamData({ teamName: input.name, teamTag: input.tag, captainName: captain.name });
+  if (dataErrors.length > 0) {
+    return await registrationError(dataErrors.map((error) => error.message).join(". "));
+  }
+
+  try {
+    await registerTeam({ ...input, captainId: captain.id });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Gagal mendaftarkan tim.";
+    return await registrationError(msg);
+  }
+
+  revalidateTag("teams");
+  revalidatePath("/captain");
   await redirectToActiveLocale("/captain?success=team-created");
 }
 

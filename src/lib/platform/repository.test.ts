@@ -14,6 +14,7 @@ const { prisma } = vi.hoisted(() => ({
       findMany: vi.fn(),
     },
     team: {
+      count: vi.fn(),
       create: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -68,6 +69,7 @@ import {
   assertCaptainCanSubmitStats,
   getEventRoundConfigs,
   getEventsByIds,
+  getOpenRegistrationEventsForCaptain,
   getLeaderboardForEvent,
   getManageableEventsForUser,
   getMatchGamesForEvent,
@@ -80,6 +82,7 @@ import {
   getTeamCountsForEvents,
   getTeamsForEvent,
   getTeamsForEvents,
+  registerTeam,
   updateEventPublicInfo,
   updateTeamLogo,
 } from "./repository";
@@ -580,6 +583,111 @@ describe("dashboard batch lookups", () => {
   });
 });
 
+function publishedEventRow(overrides: Partial<{ id: string; slug: string; name: string; status: string; participantCap: number; format: string }> = {}) {
+  return {
+    id: overrides.id ?? "event-open",
+    slug: overrides.slug ?? overrides.id ?? "event-open",
+    name: overrides.name ?? "Open Event",
+    description: "Open registration event",
+    logoUrl: null,
+    gameImageUrl: null,
+    gameId: "game-kuroko",
+    gameModeId: "mode-kuroko-3v3",
+    format: overrides.format ?? "Single Elimination",
+    status: overrides.status ?? "Published",
+    participantCap: overrides.participantCap ?? 8,
+    registrationWindow: "Aug 24 - Aug 31",
+    startsAt: "2026-09-01",
+    venue: "Online",
+    organizerUserId: null,
+    organizerName: null,
+    organizerVerified: null,
+    characterArtUrl: null,
+    accentColor: null,
+    stream: null,
+  };
+}
+
+describe("existing captain event registration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("lists only published events the captain has not joined, with capacity and unlocked bracket", async () => {
+    prisma.event.findMany.mockResolvedValue([
+      publishedEventRow({ id: "event-open", slug: "open-cup", name: "Open Cup", participantCap: 8 }),
+      publishedEventRow({ id: "event-joined", slug: "joined-cup", name: "Joined Cup", participantCap: 8 }),
+      publishedEventRow({ id: "event-full", slug: "full-cup", name: "Full Cup", participantCap: 2 }),
+      publishedEventRow({ id: "event-locked", slug: "locked-cup", name: "Locked Cup", participantCap: 8 }),
+    ]);
+    prisma.team.findMany.mockResolvedValue([{ eventId: "event-joined" }]);
+    prisma.team.groupBy.mockResolvedValue([{ eventId: "event-full", _count: { _all: 2 } }]);
+    prisma.match.count.mockImplementation(async ({ where }: { where: { eventId: string } }) =>
+      where.eventId === "event-locked" ? 1 : 0,
+    );
+
+    const result = await getOpenRegistrationEventsForCaptain("captain-1");
+
+    expect(result).toEqual([expect.objectContaining({ id: "event-open", name: "Open Cup" })]);
+  });
+
+  it("registers an existing captain team only for a published event and stores registration source", async () => {
+    prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-open", slug: "open-cup" }));
+    prisma.team.count.mockResolvedValue(3);
+    prisma.team.findFirst.mockResolvedValue(null);
+    prisma.match.count.mockResolvedValue(0);
+    prisma.team.create.mockResolvedValue({
+      id: "team-new",
+      eventId: "event-open",
+      captainId: "captain-1",
+      name: "Session United",
+      logoText: "SE",
+      logoUrl: null,
+      tag: "SES",
+      captainName: null,
+      captainContact: null,
+      source: "registration",
+    });
+
+    await expect(registerTeam({ eventId: "event-open", captainId: "captain-1", name: "Session United", tag: "ses" })).resolves.toEqual(
+      expect.objectContaining({ id: "team-new", source: "registration", tag: "SES" }),
+    );
+    expect(prisma.team.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ source: "registration", tag: "SES", logoText: "SE" }),
+    });
+  });
+
+  it("rejects existing captain registration when the event is not published", async () => {
+    prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-closed", status: "Registration Closed" }));
+
+    await expect(registerTeam({ eventId: "event-closed", captainId: "captain-1", name: "Session United", tag: "SES" })).rejects.toThrow(
+      "Event tidak valid atau sudah tidak membuka pendaftaran.",
+    );
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects existing captain registration when the captain already has a team in the event", async () => {
+    prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-open" }));
+    prisma.team.count.mockResolvedValue(1);
+    prisma.team.findFirst.mockResolvedValue({ id: "team-existing" });
+    prisma.match.count.mockResolvedValue(0);
+
+    await expect(registerTeam({ eventId: "event-open", captainId: "captain-1", name: "Another Team", tag: "AT" })).rejects.toThrow(
+      "Kamu sudah mendaftarkan tim untuk event ini.",
+    );
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects existing captain registration when the event is full", async () => {
+    prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-full", participantCap: 2 }));
+    prisma.team.count.mockResolvedValue(2);
+
+    await expect(registerTeam({ eventId: "event-full", captainId: "captain-1", name: "Late Team", tag: "LT" })).rejects.toThrow(
+      "Slot pendaftaran event ini sudah penuh.",
+    );
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+});
 describe("public demo fallback reads", () => {
   beforeEach(() => {
     vi.clearAllMocks();

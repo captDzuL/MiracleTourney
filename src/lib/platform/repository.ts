@@ -1,4 +1,4 @@
-﻿import { randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 
@@ -333,6 +333,45 @@ export async function getPublishedEvents(): Promise<Event[]> {
     orderBy: { startsAt: "asc" },
   });
   return rows.map(mapEvent);
+}
+export async function getOpenRegistrationEventsForCaptain(captainId: string): Promise<Array<Event & { registeredTeams: number }>> {
+  if (!captainId) return [];
+
+  const rows = await prisma.event.findMany({
+    where: { status: "Published" },
+    include: { stream: true },
+    orderBy: { startsAt: "asc" },
+  });
+  const events = rows.map(mapEvent);
+  const eventIds = events.map((event) => event.id);
+  if (!eventIds.length) return [];
+
+  const [captainTeams, teamCountRows, lockedEntries] = await Promise.all([
+    prisma.team.findMany({
+      where: { captainId, eventId: { in: eventIds } },
+      select: { eventId: true },
+    }),
+    prisma.team.groupBy({
+      by: ["eventId"],
+      where: { eventId: { in: eventIds } },
+      _count: { _all: true },
+    }),
+    Promise.all(events.map(async (event) => {
+      if (event.format !== "Single Elimination") return [event.id, false] as const;
+      const completedMatches = await prisma.match.count({ where: { eventId: event.id, status: "Completed" } });
+      return [event.id, completedMatches > 0] as const;
+    })),
+  ]);
+
+  const joinedEventIds = new Set(captainTeams.map((team) => team.eventId));
+  const teamCounts = new Map(teamCountRows.map((row) => [row.eventId, row._count._all]));
+  const lockedEventIds = new Set(lockedEntries.filter(([, locked]) => locked).map(([eventId]) => eventId));
+
+  return events
+    .map((event) => ({ ...event, registeredTeams: teamCounts.get(event.id) ?? 0 }))
+    .filter((event) => !joinedEventIds.has(event.id))
+    .filter((event) => event.registeredTeams < event.participantCap)
+    .filter((event) => !lockedEventIds.has(event.id));
 }
 
 /** Direct DB lookup by slug with no status filter. For admin pages that need to see Draft events. */
@@ -1029,35 +1068,63 @@ export async function autoTransitionEventToOngoing(eventId: string): Promise<voi
   });
 }
 
-/**
- * Registers a team via captain self sign-up (source = "demo").
- * Throws if the event bracket is already locked (first match recorded).
- */
+/** Registers one team for an existing captain while the event is still open. */
 export async function registerTeam(input: {
   eventId: string;
   captainId: string;
   name: string;
   tag: string;
 }): Promise<Team> {
-  const locked = await isEventBracketLocked(input.eventId);
-  if (locked) {
-    const event = await prisma.event.findUnique({ where: { id: input.eventId }, select: { slug: true } });
-    throw new Error(
-      `Event "${event?.slug}" already has recorded match results, so additional teams cannot be registered.`,
-    );
+  const event = await prisma.event.findUnique({
+    where: { id: input.eventId },
+    select: { id: true, slug: true, status: true, participantCap: true, format: true },
+  });
+  if (!event || event.status !== "Published") {
+    throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
   }
 
-  const row = await prisma.team.create({
-    data: {
-      eventId: input.eventId,
-      captainId: input.captainId,
-      name: input.name,
-      logoText: input.tag.slice(0, 2).toUpperCase(),
-      tag: input.tag.toUpperCase(),
-      source: "demo",
-    },
-  });
-  return mapTeam(row);
+  const [registeredTeams, existingCaptainTeam, completedMatches] = await Promise.all([
+    prisma.team.count({ where: { eventId: input.eventId } }),
+    prisma.team.findFirst({
+      where: { eventId: input.eventId, captainId: input.captainId },
+      select: { id: true },
+    }),
+    event.format === "Single Elimination"
+      ? prisma.match.count({ where: { eventId: input.eventId, status: "Completed" } })
+      : Promise.resolve(0),
+  ]);
+
+  if (registeredTeams >= event.participantCap) {
+    throw new Error("Slot pendaftaran event ini sudah penuh.");
+  }
+  if (existingCaptainTeam) {
+    throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
+  }
+  if (completedMatches > 0) {
+    throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
+  }
+
+  const tag = input.tag.toUpperCase();
+  try {
+    const row = await prisma.team.create({
+      data: {
+        eventId: input.eventId,
+        captainId: input.captainId,
+        name: input.name,
+        logoText: tag.slice(0, 2),
+        tag,
+        source: "registration",
+      },
+    });
+    return mapTeam(row);
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : "";
+    const message = error instanceof Error ? error.message : "";
+    if (code === "P2002" || message.includes("Unique constraint")) {
+      throw new Error("Tag atau nama tim sudah digunakan di event ini.");
+    }
+    throw error;
+  }
 }
 
 /**
