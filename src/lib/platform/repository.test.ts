@@ -810,18 +810,80 @@ describe("existing captain event registration", () => {
     });
   });
 
-  it("does not approve expired paid registration requests", async () => {
-    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({
-      id: "request-expired",
+  it("still approves a pending_review request whose original deadline already passed", async () => {
+    // A captain who uploaded proof before the deadline should never be blocked by an
+    // admin being slow to review it - only never-uploaded (pending_payment) requests
+    // are meant to expire.
+    const request = {
+      id: "request-late-review",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      teamId: null,
+      teamName: "Session United",
+      teamTag: "SES",
       status: "pending_review",
+      proofImageUrl: "/payment-proofs/request-late-review.png",
+      rejectReason: null,
       expiresAt: new Date("2026-01-01T00:00:00.000Z"),
+      approvedAt: null,
+      approvedById: null,
+      createdAt: new Date("2025-12-30T00:00:00.000Z"),
+      updatedAt: new Date("2025-12-30T00:00:00.000Z"),
       event: publishedEventRow({ id: "event-paid" }),
+      captain: { id: "captain-1", name: "Captain" },
+    };
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(request);
+    prisma.team.count.mockResolvedValue(3);
+    prisma.match.count.mockResolvedValue(0);
+    prisma.team.create.mockResolvedValue({
+      id: "team-late",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      name: "Session United",
+      tag: "SES",
+      source: "registration",
     });
 
-    await expect(approveTeamRegistrationRequest(platformAdmin, "request-expired")).rejects.toThrow(
-      "Pendaftaran pembayaran sudah kedaluwarsa.",
+    await expect(approveTeamRegistrationRequest(platformAdmin, "request-late-review")).resolves.toEqual(
+      expect.objectContaining({ id: "team-late", source: "registration" }),
     );
-    expect(prisma.team.create).not.toHaveBeenCalled();
+    expect(prisma.teamRegistrationRequest.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "expired" }) }),
+    );
+  });
+
+  it("does not auto-expire pending_review requests when sweeping stale requests", async () => {
+    // expireStaleRegistrationRequests() runs as a side effect of createTeamRegistrationRequest;
+    // its updateMany status filter must exclude pending_review so an uploaded-but-unreviewed
+    // request is never silently flipped to expired.
+    prisma.event.findUnique.mockResolvedValue({
+      ...publishedEventRow({ id: "event-paid", slug: "paid-cup" }),
+      registrationFeeRequired: true,
+      registrationFeeAmount: 25000,
+    });
+    prisma.team.count.mockResolvedValue(3);
+    prisma.team.findFirst.mockResolvedValue(null);
+    prisma.match.count.mockResolvedValue(0);
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(null);
+    prisma.teamRegistrationRequest.create.mockResolvedValue({
+      id: "request-2",
+      eventId: "event-paid",
+      captainId: "captain-2",
+      teamName: "Session United 2",
+      teamTag: "SE2",
+      status: "pending_payment",
+      expiresAt: new Date(),
+      event: publishedEventRow({ id: "event-paid" }),
+      captain: { id: "captain-2", name: "Captain 2" },
+    });
+
+    await createTeamRegistrationRequest({ eventId: "event-paid", captainId: "captain-2", name: "Session United 2", tag: "se2" });
+
+    expect(prisma.teamRegistrationRequest.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: expect.objectContaining({ in: expect.not.arrayContaining(["pending_review"]) }) }),
+      }),
+    );
   });
 
   it("stores global QRIS payment settings", async () => {
