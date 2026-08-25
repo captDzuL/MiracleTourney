@@ -2257,6 +2257,74 @@ export async function createCaptainWithTeam(input: {
   });
 }
 
+/**
+ * Atomically creates a captain User and a pending-payment TeamRegistrationRequest
+ * (no Team row yet) for paid events. Used by the self sign-up flow when the target
+ * event has registrationFeeRequired enabled.
+ */
+export async function createCaptainWithPendingPayment(input: {
+  email: string;
+  name: string;
+  passwordHash: string;
+  eventId: string;
+  teamName: string;
+  teamTag: string;
+}): Promise<{ userId: string; requestId: string }> {
+  const tag = input.teamTag.toUpperCase();
+
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: input.eventId },
+      select: { id: true, slug: true, status: true, participantCap: true, format: true, registrationFeeRequired: true },
+    });
+    if (!event || event.status !== "Published") {
+      throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
+    }
+    if (!event.registrationFeeRequired) {
+      throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");
+    }
+
+    const [registeredTeams, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
+      tx.team.count({ where: { eventId: input.eventId } }),
+      tx.team.findFirst({ where: { eventId: input.eventId, OR: [{ name: input.teamName }, { tag }] }, select: { id: true } }),
+      tx.teamRegistrationRequest.findFirst({
+        where: { eventId: input.eventId, status: { in: RESERVED_REGISTRATION_REQUEST_STATUSES }, OR: [{ teamName: input.teamName }, { teamTag: tag }] },
+        select: { id: true },
+      }),
+      event.format === "Single Elimination" ? tx.match.count({ where: { eventId: input.eventId, status: "Completed" } }) : Promise.resolve(0),
+    ]);
+    if (registeredTeams >= event.participantCap) {
+      throw new Error("Slot pendaftaran event ini sudah penuh.");
+    }
+    if (existingTeamIdentity || existingRequestIdentity) {
+      throw new Error("Tag atau nama tim sudah digunakan di event ini.");
+    }
+    if (completedMatches > 0) {
+      throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
+    }
+
+    const user = await tx.user.create({
+      data: {
+        email: input.email,
+        name: input.name,
+        role: "captain",
+        passwordHash: input.passwordHash,
+      },
+    });
+    const request = await tx.teamRegistrationRequest.create({
+      data: {
+        eventId: input.eventId,
+        captainId: user.id,
+        teamName: input.teamName,
+        teamTag: tag,
+        status: "pending_payment",
+        expiresAt: new Date(Date.now() + PAYMENT_REQUEST_TTL_MS),
+      },
+    });
+    return { userId: user.id, requestId: request.id };
+  });
+}
+
 // ── Round config (Best of N) ──────────────────────────────────────────────────
 
 /** Returns all Best-of-N round configurations for an event (one per round label). Cached 30s under tag "teams". */

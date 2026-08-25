@@ -8,6 +8,7 @@ const {
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
+  createCaptainWithPendingPayment,
   createCaptainWithTeam,
   createEvent,
   createTeamRegistrationRequest,
@@ -49,6 +50,7 @@ const {
   assertUserCanManageEvent: vi.fn(),
   assertUserCanReviewStatSubmission: vi.fn(),
   autoTransitionEventToOngoing: vi.fn(),
+  createCaptainWithPendingPayment: vi.fn(),
   createCaptainWithTeam: vi.fn(),
   createEvent: vi.fn(),
   createTeamRegistrationRequest: vi.fn(),
@@ -103,6 +105,7 @@ vi.mock("@/lib/platform/repository", () => ({
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
+  createCaptainWithPendingPayment,
   createCaptainWithTeam,
   createEvent,
   createTeamRegistrationRequest,
@@ -274,8 +277,9 @@ describe("captainSignUpAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getUserByEmail.mockResolvedValue(null);
-    getPublishedEvents.mockResolvedValue([{ id: "event-abc" }]);
+    getPublishedEvents.mockResolvedValue([{ id: "event-abc", registrationFeeRequired: false }]);
     createCaptainWithTeam.mockResolvedValue({ id: "captain-new" });
+    createCaptainWithPendingPayment.mockResolvedValue({ userId: "captain-new", requestId: "request-new" });
     signIn.mockResolvedValue({ ok: true, user: { role: "captain" } });
   });
 
@@ -341,6 +345,19 @@ describe("captainSignUpAction", () => {
     createCaptainWithTeam.mockRejectedValue(new Error("Unique constraint failed"));
 
     await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/register?error=");
+  });
+
+  it("creates a pending-payment request instead of a free team when the event requires a fee", async () => {
+    headers.mockResolvedValue(new Headers({ "x-forwarded-for": "10.0.0.99" }));
+    getPublishedEvents.mockResolvedValue([{ id: "event-abc", registrationFeeRequired: true }]);
+
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/captain?tab=registration&success=payment-pending",
+    );
+    expect(createCaptainWithPendingPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "budi@test.com", teamName: "Tim Budi", teamTag: "TBD" }),
+    );
+    expect(createCaptainWithTeam).not.toHaveBeenCalled();
   });
 });
 

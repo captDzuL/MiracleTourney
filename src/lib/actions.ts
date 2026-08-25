@@ -26,6 +26,7 @@ import {
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
+  createCaptainWithPendingPayment,
   createCaptainWithTeam,
   createEvent,
   createTeamRegistrationRequest,
@@ -276,12 +277,18 @@ export async function captainSignUpAction(formData: FormData) {
   if (existingUser) await signUpError("Email ini sudah terdaftar. Coba login.");
 
   const publishedEvents = await getPublishedEvents();
-  if (!publishedEvents.find((e) => e.id === eventId)) await signUpError("Event tidak valid atau sudah tidak tersedia.");
+  const event = publishedEvents.find((e) => e.id === eventId);
+  if (!event) await signUpError("Event tidak valid atau sudah tidak tersedia.");
 
   const passwordHash = await bcrypt.hash(password, 10);
+  const requiresPayment = event!.registrationFeeRequired;
 
   try {
-    await createCaptainWithTeam({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
+    if (requiresPayment) {
+      await createCaptainWithPendingPayment({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
+    } else {
+      await createCaptainWithTeam({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal membuat akun.";
     if (msg.includes("Unique constraint")) await signUpError("Tag atau nama tim sudah digunakan di event ini.");
@@ -291,7 +298,9 @@ export async function captainSignUpAction(formData: FormData) {
   const result = await signIn(email, password);
   if (!result.ok) await signUpError("Akun berhasil dibuat, tapi login gagal. Silakan login manual.");
 
-  await redirectToActiveLocale("/captain?success=registered" as never);
+  await redirectToActiveLocale(
+    requiresPayment ? "/captain?tab=registration&success=payment-pending" as never : "/captain?success=registered" as never,
+  );
 }
 
 /** Authenticates a user by email/password and redirects to /admin or /captain based on role. */
