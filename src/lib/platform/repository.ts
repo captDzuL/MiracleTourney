@@ -96,7 +96,9 @@ const PAYMENT_SETTINGS_ID = "global";
 const ACTIVE_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "pending_review", "approved"];
 const RESERVED_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "pending_review"];
 const PAYMENT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
-const EXPIRABLE_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "pending_review", "rejected"];
+// pending_review is deliberately excluded: once a captain has uploaded proof, the
+// deadline no longer applies - only an admin approve/reject should resolve the request.
+const EXPIRABLE_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "rejected"];
 
 async function expireStaleRegistrationRequests() {
   await prisma.teamRegistrationRequest.updateMany({
@@ -1343,10 +1345,6 @@ export async function approveTeamRegistrationRequest(user: AppUser, requestId: s
   if (!request) throw new Error("Pendaftaran pembayaran tidak ditemukan.");
   await assertUserCanManageEvent(user, request.eventId);
   if (request.status !== "pending_review") throw new Error("Pendaftaran belum siap diverifikasi.");
-  if (request.expiresAt <= new Date()) {
-    await prisma.teamRegistrationRequest.update({ where: { id: request.id }, data: { status: "expired" }, include: registrationRequestInclude });
-    throw new Error("Pendaftaran pembayaran sudah kedaluwarsa.");
-  }
   if (request.event.status !== "Published") throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
 
   const [registeredTeams, existingCaptainTeam, completedMatches] = await Promise.all([
