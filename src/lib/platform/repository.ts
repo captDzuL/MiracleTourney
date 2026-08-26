@@ -1349,23 +1349,32 @@ export async function approveTeamRegistrationRequest(user: AppUser, requestId: s
 
   const [registeredTeams, existingCaptainTeam, completedMatches] = await Promise.all([
     prisma.team.count({ where: { eventId: request.eventId } }),
-    prisma.team.findFirst({ where: { eventId: request.eventId, captainId: request.captainId }, select: { id: true } }),
+    prisma.team.findFirst({
+      where: {
+        eventId: request.eventId,
+        captainId: request.captainId,
+        ...(request.teamId ? { id: { not: request.teamId } } : {}),
+      },
+      select: { id: true },
+    }),
     request.event.format === "Single Elimination" ? prisma.match.count({ where: { eventId: request.eventId, status: "Completed" } }) : Promise.resolve(0),
   ]);
-  if (registeredTeams >= request.event.participantCap) throw new Error("Slot pendaftaran event ini sudah penuh.");
+  if (!request.teamId && registeredTeams >= request.event.participantCap) throw new Error("Slot pendaftaran event ini sudah penuh.");
   if (existingCaptainTeam) throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
   if (completedMatches > 0) throw new Error(`Event "${request.event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
 
-  const teamRow = await prisma.team.create({
-    data: {
-      eventId: request.eventId,
-      captainId: request.captainId,
-      name: request.teamName,
-      logoText: request.teamTag.slice(0, 2),
-      tag: request.teamTag,
-      source: "registration",
-    },
-  });
+  const teamRow = request.teamId
+    ? await prisma.team.update({ where: { id: request.teamId }, data: { source: "registration" } })
+    : await prisma.team.create({
+        data: {
+          eventId: request.eventId,
+          captainId: request.captainId,
+          name: request.teamName,
+          logoText: request.teamTag.slice(0, 2),
+          tag: request.teamTag,
+          source: "registration",
+        },
+      });
   await prisma.teamRegistrationRequest.update({
     where: { id: request.id },
     data: { status: "approved", teamId: teamRow.id, approvedAt: new Date(), approvedById: user.id },
