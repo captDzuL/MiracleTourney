@@ -61,12 +61,16 @@
     "teamsLabel": "tim",
     "issueLabel": "Event",
     "organizerLabel": "Organizer",
+    "prizePool": "Prize Pool",
+    "entryFee": "Biaya Pendaftaran",
     "noEvents": "Belum ada event yang dipublikasi. Event draft hanya terlihat di panel admin."
   },
   "eventDetail": {
     "liveNow": "Sedang Live",
     "issueLabel": "Event",
     "organizerLabel": "Organizer",
+    "prizePool": "Prize Pool",
+    "entryFee": "Biaya Pendaftaran",
     "register": "Daftar Event",
     "teamCount": "{registered}/{cap} tim terdaftar",
     "bracketStat": "Bracket / Fixture",
@@ -96,6 +100,7 @@
   "bracket": {
     "title": "Bracket {name}",
     "description": "Event single-elimination ditampilkan sebagai bracket ronde demi ronde yang terhubung dengan garis pohon.",
+    "backToEvent": "Kembali ke Event",
     "detailTitle": "Detail Bracket",
     "detailDescription": "Mode detail tersedia di bawah visual bracket, dengan kolom status dan jadwal yang jelas.",
     "playIn": "Babak Play-in",
@@ -130,6 +135,7 @@
   "leaderboard": {
     "sectionTitle": "Leaderboard Pemain {name}",
     "sectionDescription": "Agregasi statistik pribadi per event.",
+    "backToEvent": "Kembali ke Event",
     "player": "Pemain",
     "position": "Posisi",
     "matches": "Match",
@@ -138,6 +144,7 @@
   "standings": {
     "sectionTitle": "Klasemen {name}",
     "sectionDescription": "Sistem poin standar league: menang = 3, seri = 1, kalah = 0.",
+    "backToEvent": "Kembali ke Event",
     "rank": "#",
     "team": "Tim",
     "played": "M",
@@ -153,6 +160,7 @@
   "participants": {
     "sectionTitle": "Peserta {name}",
     "sectionDescription": "Tim terdaftar dan snapshot roster terkini.",
+    "backToEvent": "Kembali ke Event",
     "team": "Tim",
     "tag": "Tag",
     "captain": "Kapten",

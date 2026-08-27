@@ -24,6 +24,8 @@ export type Game = {
     orb2: string;
     ring: string;
     label: string;
+    /** Solid, fully-opaque hex used as the default event accent when the organizer hasn't set one. */
+    accent: string;
   };
 };
 

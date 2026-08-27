@@ -71,7 +71,11 @@ describe("resolveEventVisual", () => {
     expect(resolveEventVisual({ ...baseEvent, accentColor: "#ff5a1f" }).accentColor).toBe("#ff5a1f");
   });
 
-  it("defaults the accent colour to the platform lime", () => {
-    expect(resolveEventVisual(baseEvent).accentColor).toBe("#caff38");
+  it("defaults the accent colour to the event's game identity", () => {
+    expect(resolveEventVisual(baseEvent).accentColor).toBe("#4ade80");
+  });
+
+  it("defaults an unknown game to the platform lime", () => {
+    expect(resolveEventVisual({ ...baseEvent, gameId: "game-unknown" }).accentColor).toBe("#caff38");
   });
 });

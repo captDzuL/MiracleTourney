@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
+import { ConfettiField } from "@/components/public-v2/ConfettiField";
 import { EventVisual } from "@/components/public-v2/EventVisual";
 import type { PublicHomeV2Match } from "@/components/public-v2/PublicHomeV2";
 import { ShareButton } from "@/components/ShareButton";
@@ -17,6 +18,8 @@ export type PublicEventDetailV2Labels = {
   bracket: string;
   standings: string;
   leaderboards: string;
+  prizePool: string;
+  entryFee: string;
 };
 
 export type PublicEventDetailV2Props = {
@@ -67,11 +70,12 @@ export function PublicEventDetailV2({
   return (
     <div className="pv-event-detail grid gap-8 pb-12">
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,42%)] lg:items-start">
-        <div className="grid content-start gap-4">
+        <div className="relative grid content-start gap-4 lg:self-stretch">
+          <ConfettiField />
           <p className="pv-eyebrow text-[var(--pv-lime)]">
             {isLive ? labels.liveNow : event.status} / {game.name}
           </p>
-          <h1>{event.name}</h1>
+          <h1 className="pv-wordmark">{event.name}</h1>
           <p className="pv-muted max-w-2xl text-sm leading-7">{event.description}</p>
           <p className="pv-eyebrow text-[var(--pv-ink-muted)]">
             {labels.organizer}: {event.organizerName ?? "Miracle Organizer"}
@@ -81,7 +85,10 @@ export function PublicEventDetailV2({
             <Fact label={event.registrationWindow} value={event.startsAt} />
             <Fact label={labels.teamCount} value={`${teams.length}/${event.participantCap}`} />
             <Fact label={mode.name} value={event.format} />
-            <Fact label={event.registrationFeeLabel ?? event.venue} value={event.prizePoolLabel ?? event.venue} />
+            {event.prizePoolLabel ? <Fact label={labels.prizePool} value={event.prizePoolLabel} /> : null}
+            {event.registrationFeeRequired && event.registrationFeeLabel ? (
+              <Fact label={labels.entryFee} value={event.registrationFeeLabel} />
+            ) : null}
           </dl>
 
           <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -107,6 +114,7 @@ export function PublicEventDetailV2({
             alt=""
             priority
             headingRenderedByCaller
+            framed
             sizes="(max-width: 1024px) 100vw, 42vw"
             className="aspect-[4/5] w-full sm:aspect-[16/10] lg:aspect-[4/5]"
           />

@@ -1,3 +1,4 @@
+import { getGameArtTheme } from "./config";
 import type { Event } from "./types";
 
 export const DEFAULT_EVENT_ACCENT_COLOR = "#caff38";
@@ -14,9 +15,13 @@ export type ResolvableEvent = Pick<Event, "gameId" | "gameImageUrl" | "accentCol
 /**
  * Resolves the artwork a public surface should render, in precedence order:
  * approved active revision → legacy event background → deterministic typographic poster.
+ *
+ * The accent colour falls back to the event's game identity (not one flat
+ * platform lime) so events without an organizer-set accent still read as
+ * distinct per game.
  */
 export function resolveEventVisual(event: ResolvableEvent): ResolvedEventVisual {
-  const accentColor = event.accentColor ?? DEFAULT_EVENT_ACCENT_COLOR;
+  const accentColor = event.accentColor ?? getGameArtTheme(event.gameId).accent;
   const active = event.activeVisualAsset;
 
   if (active?.status === "approved" && active.url) {

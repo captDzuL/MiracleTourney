@@ -508,14 +508,19 @@ describe("captain actions", () => {
 
   it("uploads a payment proof for the authenticated captain", async () => {
     updateTeamRegistrationProof.mockResolvedValue({ id: "request-1", status: "pending_review" });
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-proofs/request-1.png" });
 
-    await expect(
-      captainUploadPaymentProofAction(fd({ requestId: "request-1", paymentProof: new File([png], "proof.png", { type: "image/png" }) })),
-    ).rejects.toThrow("REDIRECT:/captain?tab=registration&success=payment-proof-uploaded");
+    try {
+      await expect(
+        captainUploadPaymentProofAction(fd({ requestId: "request-1", paymentProof: validPngFile("proof.png") })),
+      ).rejects.toThrow("REDIRECT:/captain?tab=registration&success=payment-proof-uploaded");
 
-    expect(updateTeamRegistrationProof).toHaveBeenCalledWith("captain-1", "request-1", expect.stringContaining("payment-proofs/"));
-    expect(revalidatePath).toHaveBeenCalledWith("/captain");
+      expect(updateTeamRegistrationProof).toHaveBeenCalledWith("captain-1", "request-1", "https://blob.example.com/payment-proofs/request-1.png");
+      expect(revalidatePath).toHaveBeenCalledWith("/captain");
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
   });
   it("requires a captain session before adding a player", async () => {
     requireRole.mockResolvedValue(null);
@@ -1076,20 +1081,25 @@ describe("adminUpdateEventPublicInfoAction", () => {
 
   it("uploads a QRIS image file and uses it instead of the text URL field", async () => {
     updatePaymentSettings.mockResolvedValue({ id: "global", qrisImageUrl: "/payment-qris/global-123.png" });
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-qris/global.png" });
 
-    await expect(
-      adminUpdatePaymentSettingsAction(fd({
-        qrisImageUrl: "https://old-url-should-be-ignored.example/qris.png",
+    try {
+      await expect(
+        adminUpdatePaymentSettingsAction(fd({
+          qrisImageUrl: "https://old-url-should-be-ignored.example/qris.png",
+          instructions: "Scan QRIS lalu upload bukti.",
+          qrisImage: validPngFile("qris.png"),
+        })),
+      ).rejects.toThrow("REDIRECT:/admin?phase=payments&success=payment-settings-updated");
+
+      expect(updatePaymentSettings).toHaveBeenCalledWith({
+        qrisImageUrl: "https://blob.example.com/payment-qris/global.png",
         instructions: "Scan QRIS lalu upload bukti.",
-        qrisImage: new File([png], "qris.png", { type: "image/png" }),
-      })),
-    ).rejects.toThrow("REDIRECT:/admin?phase=payments&success=payment-settings-updated");
-
-    expect(updatePaymentSettings).toHaveBeenCalledWith({
-      qrisImageUrl: expect.stringContaining("payment-qris/"),
-      instructions: "Scan QRIS lalu upload bukti.",
-    });
+      });
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
   });
 
   it("approves paid registration requests from admin", async () => {

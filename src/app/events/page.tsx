@@ -95,6 +95,8 @@ export default async function EventsPage({
           noEvents: t("noEvents"),
           issue: t("issueLabel"),
           organizer: t("organizerLabel"),
+          prizePool: t("prizePool"),
+          entryFee: t("entryFee"),
         }}
       />
     );

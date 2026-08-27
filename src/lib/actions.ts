@@ -234,7 +234,6 @@ async function uploadImageAsset({
   }
 
   const filename = `${entityId}-${Date.now()}.${extension}`;
-  if (process.env.NODE_ENV === "test") return { url: `/${folder}/${filename}`, mimeType, ...dimensions };
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     const { put } = await import("@vercel/blob");
     const result = await put(`${folder}/${filename}`, buffer, {
@@ -1265,7 +1264,7 @@ export async function adminSaveMatchPlayerStatsAction(formData: FormData) {
   await adminWriteMatchPlayerStats({ matchId, teamId, eventId, adminId: user.id, stats });
   revalidateTag("stats");
   revalidatePath("/", "layout");
-  redirect(`/admin?phase=run&activeEventId=${eventId}&matchId=${matchId}&success=player-stats-saved` as never);
+  await redirectToActiveLocale(`/admin?phase=run&activeEventId=${eventId}&matchId=${matchId}&success=player-stats-saved`);
 }
 
 /** Sets the Best-of-N configuration for a specific round label in an event. Valid bestOf values are 1, 3, or 5. */
@@ -1353,10 +1352,10 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
     await updateEventCertificateAssets(eventId, { characterArtUrl: asset.url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
   revalidatePath("/admin");
-  redirect(`/admin?success=character-art-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=character-art-uploaded`);
 }
 
 export async function adminUploadEventLogoAction(formData: FormData) {
@@ -1375,12 +1374,12 @@ export async function adminUploadEventLogoAction(formData: FormData) {
     await updateEventBrandAssets(eventId, { logoUrl: asset.url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=event-logo-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=event-logo-uploaded`);
 }
 
 /**
@@ -1431,12 +1430,12 @@ export async function adminUploadEventVisualAction(formData: FormData) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=event-visual-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=event-visual-uploaded`);
 }
 
 /** Approves a revision that is waiting for review and makes it the active one. */
@@ -1452,12 +1451,12 @@ export async function adminApproveEventVisualAction(formData: FormData) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Approval failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=event-visual-approved` as never);
+  await redirectToActiveLocale(`/admin?success=event-visual-approved`);
 }
 
 /** Rejects a revision. The repository refuses to reject the active one. */
@@ -1471,12 +1470,12 @@ export async function adminRejectEventVisualAction(formData: FormData) {
     await rejectEventVisualAsset(user, eventId, assetId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Rejection failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=event-visual-rejected` as never);
+  await redirectToActiveLocale(`/admin?success=event-visual-rejected`);
 }
 
 /** Rolls back to an already approved revision by re-activating it. */
@@ -1492,12 +1491,12 @@ export async function adminActivateEventVisualAction(formData: FormData) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Activation failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=event-visual-activated` as never);
+  await redirectToActiveLocale(`/admin?success=event-visual-activated`);
 }
 
 /**
@@ -1516,12 +1515,12 @@ export async function adminSetEventVisualFocalPointAction(formData: FormData) {
     await setEventVisualFocalPoint(user, eventId, assetId, { x: focalX, y: focalY });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Focal point update failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=event-visual-focal-updated` as never);
+  await redirectToActiveLocale(`/admin?success=event-visual-focal-updated`);
 }
 
 export async function adminUploadTeamLogoAction(formData: FormData) {
@@ -1539,12 +1538,12 @@ export async function adminUploadTeamLogoAction(formData: FormData) {
     await updateTeamLogo(user, teamId, asset.url);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("teams");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=team-logo-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=team-logo-uploaded`);
 }
 
 /** Updates the accent color for an event's certificate. */
@@ -1555,7 +1554,7 @@ export async function adminSetAccentColorAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
   await updateEventCertificateAssets(eventId, { accentColor });
   revalidatePath("/admin");
-  redirect(`/admin?success=accent-color-saved` as never);
+  await redirectToActiveLocale(`/admin?success=accent-color-saved`);
 }
 
 /**

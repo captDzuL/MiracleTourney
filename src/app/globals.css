@@ -72,6 +72,18 @@ textarea {
   text-transform: uppercase;
 }
 
+/*
+ * Compressed athletic wordmark for event names — the signature typographic
+ * gesture from the approved poster reference. Horizontal compression plus a
+ * tight line-height is what reads as "condensed athletic" rather than a
+ * standard web heading; keep it to event names, not every heading.
+ */
+.public-visual-v2 .pv-wordmark {
+  transform: scaleX(0.94);
+  transform-origin: left;
+  line-height: 0.8;
+}
+
 .public-visual-v2 .pv-eyebrow {
   font-family: var(--pv-ui);
   font-weight: 600;
@@ -174,17 +186,9 @@ textarea {
   gap: 0.25rem;
   padding: clamp(0.75rem, 3cqw, 1.5rem);
   color: #f3f0e8;
-}
-
-.event-visual__court {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  stroke: var(--event-accent);
-  stroke-width: 0.6;
-  fill: none;
-  opacity: 0.35;
+  /* Per-game gradient wash carries the identity — colour, not line texture,
+     so it never competes with the initials/label sitting on top of it. */
+  background: var(--event-gradient, #080c0e);
 }
 
 .event-visual--typographic::after {
@@ -218,6 +222,407 @@ textarea {
   letter-spacing: 0.24em;
   text-transform: uppercase;
   color: rgba(243, 240, 232, 0.7);
+}
+
+/* Per-game accent bleeds onto the card edge instead of sitting flat. */
+.event-visual--typographic {
+  border-left: 3px solid var(--event-accent);
+}
+
+/* Large low-opacity watermark number — reserve for the hero/featured visual. */
+.event-visual__ghost-number {
+  position: absolute;
+  z-index: 0;
+  right: -0.05em;
+  bottom: -0.12em;
+  font-family: var(--font-display), "Teko", "Bahnschrift", sans-serif;
+  font-weight: 700;
+  font-size: clamp(4rem, 32cqw, 9rem);
+  line-height: 1;
+  color: rgba(243, 240, 232, 0.1);
+  pointer-events: none;
+}
+
+/* Rotated game-label chip, poster-corner style. */
+.event-visual__chip {
+  position: absolute;
+  z-index: 2;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  background: var(--event-accent, var(--pv-lime));
+  color: #080c0e;
+  font-family: var(--font-ui), "Chakra Petch", sans-serif;
+  font-weight: 700;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Vertical side-line rule down the framed visual's right edge. */
+.event-visual--framed::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 0.9rem;
+  bottom: 0.9rem;
+  right: 0.7rem;
+  width: 1.5px;
+  background: rgba(243, 240, 232, 0.5);
+  pointer-events: none;
+}
+
+/*
+ * Unreviewed organizer artwork (legacy `gameImageUrl`, never approved through
+ * the EventVisualAsset flow) is desaturated and tinted so it reads as part of
+ * the poster system rather than a foreign photo pasted on top. Reviewed
+ * revisions keep their true colour.
+ */
+.event-visual__image--legacy {
+  filter: grayscale(0.85) contrast(1.25) brightness(0.88);
+}
+
+/* Restrained signature gesture — the one thing allowed to move on an
+   otherwise static poster page. Neutralised globally for prefers-reduced-motion
+   by the rule below. */
+@keyframes pv-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 90, 90, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(255, 90, 90, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 90, 90, 0);
+  }
+}
+
+.pv-live-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #ff5a5a;
+  animation: pv-pulse 1.8s ease-out infinite;
+}
+
+/* Ambient confetti for the hero's empty text column — see ConfettiField.tsx. */
+.pv-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.pv-confetti__piece {
+  position: absolute;
+  top: -20px;
+  animation-name: pv-confetti-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes pv-confetti-fall {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0;
+  }
+  8% {
+    opacity: var(--piece-opacity, 1);
+  }
+  92% {
+    opacity: var(--piece-opacity, 1);
+  }
+  100% {
+    transform: translateY(340px) rotate(200deg);
+    opacity: 0;
+  }
+}
+
+/* Header links keep a visible focus indicator (accessibility), styled on
+   brand instead of the browser's default outline colour. */
+.public-visual-v2 header a:focus-visible {
+  outline: 2px solid var(--pv-lime);
+  outline-offset: 2px;
+}
+
+/*
+ * LocaleSwitcher and SessionNav are shared with the light admin/captain
+ * chrome and keep their slate/blue Tailwind classes for that context. These
+ * overrides re-skin them on the poster canvas instead of duplicating the
+ * components — same cascade technique as the rest of this section.
+ */
+.public-visual-v2 header .pv-locale-switch {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+}
+
+.public-visual-v2 header .pv-locale-btn {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 header .pv-locale-btn:hover {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 header .pv-locale-btn--active {
+  background: var(--pv-lime);
+  color: var(--pv-canvas);
+  box-shadow: none;
+}
+
+.public-visual-v2 header .pv-session-link {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 header .pv-session-link:hover {
+  background: var(--pv-canvas-raised);
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 header .pv-logout-btn,
+.public-visual-v2 header .pv-login-link {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 header .pv-logout-btn:hover,
+.public-visual-v2 header .pv-login-link:hover {
+  background: var(--pv-canvas);
+}
+
+.public-visual-v2 header .pv-logout-btn__icon {
+  color: var(--pv-ink-muted);
+}
+
+/*
+ * `Section` and `StatCard` (src/components/ui.tsx) are shared with the light
+ * admin chrome and keep their slate/white Tailwind classes there. These
+ * overrides re-skin them wherever they render inside the poster canvas —
+ * event detail supporting panels, bracket/standings/participants/leaderboard
+ * pages — without duplicating the components, matching the design intent
+ * that those surfaces inherit the v2 palette even though their layout stays calm.
+ */
+.public-visual-v2 .pv-section-card {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+  box-shadow: none;
+}
+
+.public-visual-v2 .pv-section-card__title {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-section-card__desc {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-stat-card {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas);
+}
+
+.public-visual-v2 .pv-stat-card__label {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-stat-card__value {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-stat-card__hint {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-livestream-card {
+  background: var(--pv-canvas-raised);
+  border-color: rgba(255, 90, 90, 0.35);
+}
+
+.public-visual-v2 .pv-livestream-card__header {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-livestream-card__label {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-livestream-card__hint,
+.public-visual-v2 .pv-livestream-card__fallback {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-livestream-card__link {
+  border-color: var(--pv-rule);
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-livestream-card__link:hover {
+  background: var(--pv-canvas);
+}
+
+.public-visual-v2 .pv-livestream-card__fallback {
+  background: var(--pv-canvas);
+}
+
+/* Compact top-performer callout — a single fact, sized to its content
+   instead of claiming a full Section/grid column. */
+.public-visual-v2 .pv-top-performer {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+}
+
+.public-visual-v2 .pv-top-performer__icon {
+  color: var(--pv-lime);
+}
+
+.public-visual-v2 .pv-top-performer__eyebrow,
+.public-visual-v2 .pv-top-performer__stats {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-top-performer__name {
+  color: var(--pv-ink);
+}
+
+/* ─── Bracket match card ──────────────────────────────────────────────────── */
+
+.public-visual-v2 .pv-match-card {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+  box-shadow: none;
+}
+
+.public-visual-v2 .pv-match-card__header,
+.public-visual-v2 .pv-match-card__detail,
+.public-visual-v2 .pv-match-card__schedule {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-match-card__slot {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-match-card__round,
+.public-visual-v2 .pv-match-card__side,
+.public-visual-v2 .pv-match-card__schedule,
+.public-visual-v2 .pv-match-card__summary {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-match-card__body {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-match-card__body > div {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-match-card__summary:hover {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-match-card__summary-icon {
+  border-color: var(--pv-rule);
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-match-card__game-row {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-match-card__series {
+  border-color: var(--pv-rule);
+  color: var(--pv-ink);
+}
+
+/* ─── Status pills ────────────────────────────────────────────────────────── */
+
+.public-visual-v2 .pv-pill--default {
+  background: var(--pv-canvas-raised);
+  color: var(--pv-ink-muted);
+  box-shadow: inset 0 0 0 1px var(--pv-rule);
+}
+
+.public-visual-v2 .pv-pill--success {
+  background: rgba(202, 255, 56, 0.14);
+  color: var(--pv-lime);
+}
+
+.public-visual-v2 .pv-pill--live {
+  background: rgba(255, 90, 90, 0.14);
+  color: #ff5a5a;
+}
+
+/* ─── Data table ──────────────────────────────────────────────────────────── */
+
+.public-visual-v2 .pv-data-table {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-data-table table {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-data-table__head {
+  background: var(--pv-canvas-raised);
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-data-table__row {
+  background: transparent;
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-data-table__row:nth-child(even) {
+  background: var(--pv-canvas-raised);
+}
+
+/* ─── Team avatar / identity ──────────────────────────────────────────────── */
+
+.public-visual-v2 .pv-team-avatar {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-team-identity__name {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-team-identity__meta {
+  color: var(--pv-ink-muted);
+}
+
+/* ─── Bracket round label + connector lines ──────────────────────────────── */
+
+.public-visual-v2 .pv-round-label {
+  color: var(--pv-lime);
+}
+
+.public-visual-v2 .pv-round-count {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .bracket-match--connect::after,
+.public-visual-v2 .bracket-pair::before,
+.public-visual-v2 .bracket-pair::after {
+  background: var(--pv-rule);
+}
+
+/* ─── Back-to-event link ──────────────────────────────────────────────────── */
+
+.public-visual-v2 .pv-back-link {
+  color: var(--pv-ink-muted);
+  border-bottom: 1px solid transparent;
+  transition: color 140ms ease-out, border-color 140ms ease-out;
+}
+
+.public-visual-v2 .pv-back-link:hover {
+  color: var(--pv-lime);
+  border-color: var(--pv-lime);
 }
 
 @media (prefers-reduced-motion: reduce) {

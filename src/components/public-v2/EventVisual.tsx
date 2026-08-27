@@ -1,7 +1,7 @@
 import Image from "next/image";
 
 import { resolveEventVisual, type ResolvableEvent } from "@/lib/platform/event-visual-assets";
-import { games } from "@/lib/platform/config";
+import { getGameArtTheme } from "@/lib/platform/config";
 
 export type EventVisualEvent = ResolvableEvent & {
   name: string;
@@ -19,6 +19,18 @@ export type EventVisualProps = {
    * heading, so the typographic fallback does not duplicate it for assistive tech.
    */
   headingRenderedByCaller?: boolean;
+  /**
+   * Large, low-opacity watermark number for the typographic poster
+   * fallback — the caller's list/issue index, since EventVisual has no
+   * notion of its own position among sibling cards.
+   */
+  ghostNumber?: string;
+  /**
+   * Adds the rotated game-label chip and a vertical rule down the right edge,
+   * mimicking a poster frame. Intended for the single hero/featured visual
+   * on a page, not repeated across every card in a listing.
+   */
+  framed?: boolean;
 };
 
 function getEventInitials(name: string) {
@@ -34,8 +46,7 @@ function getEventInitials(name: string) {
 }
 
 function getGameLabel(gameId: string) {
-  const game = games.find((item) => item.id === gameId);
-  return game?.artTheme?.label ?? game?.name ?? "MIRACLE";
+  return getGameArtTheme(gameId).label;
 }
 
 export function EventVisual({
@@ -45,9 +56,18 @@ export function EventVisual({
   sizes,
   className,
   headingRenderedByCaller = false,
+  ghostNumber,
+  framed = false,
 }: EventVisualProps) {
   const visual = resolveEventVisual(event);
-  const wrapperClassName = ["event-visual", className].filter(Boolean).join(" ");
+  const wrapperClassName = ["event-visual", framed ? "event-visual--framed" : null, className]
+    .filter(Boolean)
+    .join(" ");
+  // An approved EventVisualAsset has been through organizer review; a bare
+  // legacy `gameImageUrl` has not. Only the latter gets the poster-matching
+  // photo treatment — reviewed artwork keeps its true colour.
+  const isReviewedAsset =
+    event.activeVisualAsset?.status === "approved" && event.activeVisualAsset.url === visual.url;
 
   if (visual.url) {
     const objectPosition = `${visual.focalPoint.x * 100}% ${visual.focalPoint.y * 100}%`;
@@ -60,9 +80,16 @@ export function EventVisual({
           fill
           priority={priority}
           sizes={sizes}
-          className="event-visual__image"
+          className={["event-visual__image", isReviewedAsset ? null : "event-visual__image--legacy"]
+            .filter(Boolean)
+            .join(" ")}
           style={{ objectFit: "cover", objectPosition }}
         />
+        {framed ? (
+          <span className="event-visual__chip" aria-hidden="true">
+            {getGameLabel(event.gameId)}
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -71,19 +98,22 @@ export function EventVisual({
     <div
       className={`${wrapperClassName} event-visual--typographic`}
       data-event-art-source={visual.source}
-      style={{ ["--event-accent" as string]: visual.accentColor }}
+      style={{
+        ["--event-accent" as string]: visual.accentColor,
+        ["--event-gradient" as string]: getGameArtTheme(event.gameId).bg,
+      }}
     >
-      <svg
-        className="event-visual__court"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <path d="M-10 78 L58 -10" />
-        <path d="M14 110 L92 8" />
-        <path d="M48 112 L118 26" />
-      </svg>
+      {ghostNumber ? (
+        <span className="event-visual__ghost-number" aria-hidden="true">
+          {ghostNumber}
+        </span>
+      ) : null}
+
+      {framed ? (
+        <span className="event-visual__chip" aria-hidden="true">
+          {getGameLabel(event.gameId)}
+        </span>
+      ) : null}
 
       <span className="event-visual__initials" aria-hidden="true">
         {getEventInitials(event.name)}

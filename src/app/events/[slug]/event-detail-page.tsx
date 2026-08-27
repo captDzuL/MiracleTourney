@@ -98,6 +98,45 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
     ...(event.prizePoolLabel ? { "prize": event.prizePoolLabel } : {}),
   };
 
+  const isV2 = isFeatureEnabled("public_visual_v2");
+
+  const quickLinksSection = (
+    <Section title={t("quickLinks")} description={t("quickLinksDesc")} className="rounded-xl shadow-none">
+      <div className="grid gap-3 text-sm">
+        <EventLink href={buildEventHref(event.slug, "participants", locale)}>{t("participants")}</EventLink>
+        <EventLink href={buildEventHref(event.slug, "bracket", locale)}>{t("bracketLink")}</EventLink>
+        <EventLink href={buildEventHref(event.slug, "standings", locale)}>{t("standingsLink")}</EventLink>
+        <EventLink href={buildEventHref(event.slug, "leaderboards", locale)}>{t("leaderboardLink")}</EventLink>
+      </div>
+    </Section>
+  );
+
+  // v2 drops the format snapshot (already shown in the hero meta line) and
+  // shows the top performer as a compact callout instead of a full Section —
+  // it's a single fact, not three, so it shouldn't claim a whole grid column.
+  const topPerformer = leaderboard[0]
+    ? {
+        name: leaderboard[0].playerName,
+        stats: getOrderedStatEntries(leaderboard[0].totalStats, event.gameModeId, event.gameId)
+          .slice(0, 2)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join(" · "),
+      }
+    : null;
+
+  const topPerformerCallout = topPerformer ? (
+    <div className="pv-top-performer inline-flex max-w-sm items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <Trophy className="pv-top-performer__icon h-5 w-5 shrink-0 text-cyan-600" aria-hidden="true" />
+      <div className="min-w-0">
+        <p className="pv-top-performer__eyebrow text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          {t("topPerformer")}
+        </p>
+        <p className="pv-top-performer__name truncate text-sm font-semibold text-slate-950">{topPerformer.name}</p>
+        <p className="pv-top-performer__stats truncate text-xs text-slate-500">{topPerformer.stats}</p>
+      </div>
+    </div>
+  ) : null;
+
   const supportingSections = (
     <>
       {certificate ? (
@@ -118,48 +157,40 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
         />
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Section title={t("quickLinks")} description={t("quickLinksDesc")} className="rounded-xl shadow-none">
-          <div className="grid gap-3 text-sm">
-            <EventLink href={buildEventHref(event.slug, "participants", locale)}>{t("participants")}</EventLink>
-            <EventLink href={buildEventHref(event.slug, "bracket", locale)}>{t("bracketLink")}</EventLink>
-            <EventLink href={buildEventHref(event.slug, "standings", locale)}>{t("standingsLink")}</EventLink>
-            <EventLink href={buildEventHref(event.slug, "leaderboards", locale)}>{t("leaderboardLink")}</EventLink>
-          </div>
-        </Section>
+      {isV2 ? (
+        topPerformerCallout
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-3">
+          {quickLinksSection}
 
-        <Section title={t("formatSnapshot")} description={t("formatSnapshotDesc")} className="rounded-xl shadow-none">
-          <div className="space-y-3 text-sm text-slate-700">
-            <p className="flex items-center gap-2 font-medium text-slate-950">
-              <ListTree className="h-4 w-4 text-cyan-600" /> {event.format}
-            </p>
-            <p>{t("mode", { n: mode.teamSize })}</p>
-            <p>{t("rosterLimit", { n: mode.maxRosterSize })}</p>
-            <p>{t("trackedStats", { stats: trackedStatKeys.join(", ") })}</p>
-          </div>
-        </Section>
-
-        <Section title={t("topPerformer")} description={t("topPerformerDesc")} className="rounded-xl shadow-none">
-          {leaderboard[0] ? (
-            <div className="space-y-2 text-sm text-slate-700">
-              <p className="text-lg font-semibold text-slate-950">{leaderboard[0].playerName}</p>
-              <p>{leaderboard[0].position} - {leaderboard[0].matchesPlayed} matches</p>
-              <p className="font-medium text-cyan-700">
-                {getOrderedStatEntries(leaderboard[0].totalStats, event.gameModeId, event.gameId)
-                  .slice(0, 3)
-                  .map(([key, value]) => `${key}: ${value}`)
-                  .join(" - ")}
+          <Section title={t("formatSnapshot")} description={t("formatSnapshotDesc")} className="rounded-xl shadow-none">
+            <div className="space-y-3 text-sm text-slate-700">
+              <p className="flex items-center gap-2 font-medium text-slate-950">
+                <ListTree className="h-4 w-4 text-cyan-600" /> {event.format}
               </p>
+              <p>{t("mode", { n: mode.teamSize })}</p>
+              <p>{t("rosterLimit", { n: mode.maxRosterSize })}</p>
+              <p>{t("trackedStats", { stats: trackedStatKeys.join(", ") })}</p>
             </div>
-          ) : (
-            <p className="text-sm text-slate-500">{t("noStats")}</p>
-          )}
-        </Section>
-      </div>
+          </Section>
+
+          <Section title={t("topPerformer")} description={t("topPerformerDesc")} className="rounded-xl shadow-none">
+            {topPerformer ? (
+              <div className="space-y-2 text-sm text-slate-700">
+                <p className="text-lg font-semibold text-slate-950">{leaderboard[0].playerName}</p>
+                <p>{leaderboard[0].position} - {leaderboard[0].matchesPlayed} matches</p>
+                <p className="font-medium text-cyan-700">{topPerformer.stats}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">{t("noStats")}</p>
+            )}
+          </Section>
+        </div>
+      )}
     </>
   );
 
-  if (isFeatureEnabled("public_visual_v2")) {
+  if (isV2) {
     return (
       <>
         <script
@@ -184,6 +215,8 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
             bracket: t("bracketLink"),
             standings: t("standingsLink"),
             leaderboards: t("leaderboardLink"),
+            prizePool: t("prizePool"),
+            entryFee: t("entryFee"),
           }}
         >
           {supportingSections}

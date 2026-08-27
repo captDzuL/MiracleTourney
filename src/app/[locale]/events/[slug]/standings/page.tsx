@@ -33,5 +33,5 @@ export default async function LocalizedStandingsPage({
   const { locale, slug } = await params;
   setRequestLocale(locale as "id" | "en");
 
-  return renderStandingsPage(slug);
+  return renderStandingsPage(slug, locale as "id" | "en");
 }

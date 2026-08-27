@@ -252,6 +252,8 @@ const listLabels = {
   noEvents: "Belum ada event yang cocok.",
   issue: "Event",
   organizer: "Organizer",
+  prizePool: "Prize Pool",
+  entryFee: "Biaya Pendaftaran",
 };
 
 const statusFilters = [
@@ -371,6 +373,8 @@ const detailLabels = {
   bracket: "Bagan",
   standings: "Klasemen",
   leaderboards: "Papan Skor",
+  prizePool: "Prize Pool",
+  entryFee: "Biaya Pendaftaran",
 };
 
 describe("PublicEventDetailV2", () => {

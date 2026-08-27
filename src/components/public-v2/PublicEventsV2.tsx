@@ -12,6 +12,8 @@ export type PublicEventsV2Labels = {
   noEvents: string;
   issue: string;
   organizer: string;
+  prizePool: string;
+  entryFee: string;
 };
 
 export type PublicEventsV2Filters = {
@@ -104,6 +106,7 @@ export function PublicEventsV2({ events, games, teamsByEvent, filters, href, loc
                       event={event}
                       alt=""
                       headingRenderedByCaller
+                      ghostNumber={issueNumber(index)}
                       sizes="(max-width: 768px) 100vw, 240px"
                       className="aspect-[16/9] w-full md:aspect-[3/4] md:h-full"
                     />
@@ -116,7 +119,7 @@ export function PublicEventsV2({ events, games, teamsByEvent, filters, href, loc
                     <p className="pv-eyebrow text-[var(--pv-lime)]">
                       {event.status} / {game?.name ?? event.gameId}
                     </p>
-                    <h2>{event.name}</h2>
+                    <h2 className="pv-wordmark">{event.name}</h2>
                     <p className="pv-muted line-clamp-3 text-sm leading-6">{event.description}</p>
                     <p className="pv-eyebrow text-[var(--pv-ink-muted)]">
                       {labels.organizer}: {event.organizerName ?? "Miracle Organizer"}
@@ -136,10 +139,18 @@ export function PublicEventsV2({ events, games, teamsByEvent, filters, href, loc
                         <dt className="pv-eyebrow text-[var(--pv-ink-muted)]">{event.registrationWindow}</dt>
                         <dd className="font-semibold">{event.startsAt}</dd>
                       </div>
-                      <div>
-                        <dt className="pv-eyebrow text-[var(--pv-ink-muted)]">{event.registrationFeeLabel ?? event.venue}</dt>
-                        <dd className="font-semibold">{event.prizePoolLabel ?? event.venue}</dd>
-                      </div>
+                      {event.prizePoolLabel ? (
+                        <div>
+                          <dt className="pv-eyebrow text-[var(--pv-ink-muted)]">{labels.prizePool}</dt>
+                          <dd className="font-semibold">{event.prizePoolLabel}</dd>
+                        </div>
+                      ) : null}
+                      {event.registrationFeeRequired && event.registrationFeeLabel ? (
+                        <div>
+                          <dt className="pv-eyebrow text-[var(--pv-ink-muted)]">{labels.entryFee}</dt>
+                          <dd className="font-semibold">{event.registrationFeeLabel}</dd>
+                        </div>
+                      ) : null}
                     </dl>
                   </div>
                 </Link>

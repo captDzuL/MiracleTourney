@@ -1,5 +1,6 @@
 import { ArrowRight } from "lucide-react";
 
+import { ConfettiField } from "@/components/public-v2/ConfettiField";
 import { EventVisual } from "@/components/public-v2/EventVisual";
 import { Link } from "@/i18n/navigation";
 import { getDefaultModeLabel } from "@/lib/platform/config";
@@ -65,7 +66,8 @@ export function PublicHomeV2({
     <div className="pv-home grid gap-10 pb-12">
       <section className="pv-hero pv-grain relative isolate overflow-hidden bg-[var(--pv-canvas-raised)]">
         <div className="relative z-[2] grid gap-6 px-5 py-8 md:px-8 md:py-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] lg:items-end">
-          <div className="grid gap-4">
+          <div className="relative flex h-full flex-col justify-end gap-4 lg:self-stretch">
+            {featuredEvent ? <ConfettiField /> : null}
             <p className="pv-eyebrow" data-testid="pv-hero-eyebrow">
               {featuredEvent ? (
                 <>
@@ -82,7 +84,7 @@ export function PublicHomeV2({
               )}
             </p>
 
-            <h1 className="text-[clamp(2.75rem,9vw,6rem)]">
+            <h1 className="pv-wordmark text-[clamp(2.75rem,9vw,6rem)]">
               {featuredEvent ? featuredEvent.name : labels.eventDrop}
             </h1>
 
@@ -125,31 +127,27 @@ export function PublicHomeV2({
                 alt={featuredEvent.name}
                 priority
                 headingRenderedByCaller
+                framed
+                ghostNumber={issueNumber(0)}
                 sizes="(max-width: 768px) 100vw, 45vw"
                 className="aspect-[4/5] w-full sm:aspect-[16/10] lg:aspect-[4/5]"
               />
-              <span
-                aria-hidden="true"
-                className="pv-display pointer-events-none absolute -left-1 -top-6 text-[clamp(3rem,10vw,6.5rem)] leading-none text-[var(--pv-lime)] opacity-90"
-              >
-                {issueNumber(0)}
-              </span>
             </div>
           ) : null}
         </div>
 
         <div className="relative z-[2] border-t border-[var(--pv-rule)] px-5 py-4 md:px-8">
           <p className="pv-eyebrow mb-3 flex items-center gap-2">
-            <span aria-hidden="true" className="inline-block h-2 w-2 bg-[var(--pv-lime)]" />
+            {ticker.length > 0 ? <span className="pv-live-dot" aria-hidden="true" /> : null}
             {labels.liveFeed}
           </p>
           {ticker.length > 0 ? (
-            <ul className="grid gap-2">
+            <ul className="grid gap-2 sm:grid-cols-2">
               {ticker.map((match) => (
                 <li
                   key={match.id}
                   data-testid="pv-ticker-row"
-                  className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-[var(--pv-rule)] pb-2 text-sm last:border-b-0"
+                  className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border border-[var(--pv-rule)] px-3 py-2.5 text-sm"
                 >
                   <span className="pv-eyebrow">{match.roundLabel}</span>
                   <span className="truncate font-semibold">{teamName(match.homeTeamId)}</span>
@@ -214,6 +212,7 @@ export function PublicHomeV2({
                         event={event}
                         alt={event.name}
                         headingRenderedByCaller
+                        ghostNumber={issueNumber(index + 1)}
                         sizes="(max-width: 768px) 78vw, 30vw"
                         className="aspect-[3/4] w-full"
                       />
@@ -228,7 +227,7 @@ export function PublicHomeV2({
                       <p className="pv-eyebrow">
                         {statusLabel(event, labels)} <span aria-hidden="true">/</span> {game?.name ?? event.gameId}
                       </p>
-                      <h3 className="text-2xl">{event.name}</h3>
+                      <h3 className="pv-wordmark text-2xl">{event.name}</h3>
                       <p className="pv-muted text-xs">
                         {event.participantCap} {labels.teams} <span aria-hidden="true">·</span> {event.format}
                       </p>

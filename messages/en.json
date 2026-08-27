@@ -61,12 +61,16 @@
     "teamsLabel": "teams",
     "issueLabel": "Event",
     "organizerLabel": "Organizer",
+    "prizePool": "Prize Pool",
+    "entryFee": "Entry Fee",
     "noEvents": "No public events are published yet. Draft events stay visible only inside the admin panel."
   },
   "eventDetail": {
     "liveNow": "Live now",
     "issueLabel": "Event",
     "organizerLabel": "Organizer",
+    "prizePool": "Prize Pool",
+    "entryFee": "Entry Fee",
     "register": "Register Event",
     "teamCount": "{registered}/{cap} registered teams",
     "bracketStat": "Bracket / fixtures",
@@ -96,6 +100,7 @@
   "bracket": {
     "title": "{name} bracket",
     "description": "Single-elimination events render as a round-by-round bracket connected with tree lines.",
+    "backToEvent": "Back to Event",
     "detailTitle": "Bracket detail",
     "detailDescription": "Detail mode stays available below the visual bracket, with clearer status and schedule columns.",
     "playIn": "Play-in Round",
@@ -130,6 +135,7 @@
   "leaderboard": {
     "sectionTitle": "{name} Player Leaderboard",
     "sectionDescription": "Event-scoped aggregation of personal statistics.",
+    "backToEvent": "Back to Event",
     "player": "Player",
     "position": "Position",
     "matches": "Matches",
@@ -138,6 +144,7 @@
   "standings": {
     "sectionTitle": "{name} Standings",
     "sectionDescription": "Standard league scoring: win = 3, draw = 1, loss = 0.",
+    "backToEvent": "Back to Event",
     "rank": "#",
     "team": "Team",
     "played": "P",
@@ -153,6 +160,7 @@
   "participants": {
     "sectionTitle": "{name} Participants",
     "sectionDescription": "Registered teams and current roster snapshot.",
+    "backToEvent": "Back to Event",
     "team": "Team",
     "tag": "Tag",
     "captain": "Captain",
