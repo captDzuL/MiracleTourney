@@ -35,7 +35,6 @@ export const games: Game[] = [
     accent: "from-sky-500/30 to-cyan-500/10",
     defaultModeLabel: "3v3",
     fallbackLogoUrl: "https://lh3.googleusercontent.com/d/1nuG9zliyCINk1KXWNPYv_j9fmdQcWMXA",
-    defaultBackgroundUrl: "/game-backgrounds/kuroko.svg",
     primaryStatKey: "points",
     certificateThemeId: "kuroko",
     artTheme: {
@@ -88,7 +87,6 @@ export const games: Game[] = [
     accent: "from-amber-500/30 to-orange-500/10",
     defaultModeLabel: "5v5",
     primaryStatKey: "kills",
-    defaultBackgroundUrl: "/game-backgrounds/honor-of-kings.svg",
     certificateThemeId: "hok",
     artTheme: {
       bg: "linear-gradient(135deg, #431407 0%, #9a3412 52%, #f59e0b 100%)",
@@ -105,7 +103,6 @@ export const games: Game[] = [
     accent: "from-rose-500/30 to-red-500/10",
     defaultModeLabel: "5v5",
     primaryStatKey: "kills",
-    defaultBackgroundUrl: "/game-backgrounds/valorant.svg",
     certificateThemeId: "valorant",
     artTheme: {
       bg: "linear-gradient(135deg, #111827 0%, #991b1b 48%, #ef4444 100%)",
@@ -122,7 +119,6 @@ export const games: Game[] = [
     accent: "from-red-700/30 to-stone-500/10",
     defaultModeLabel: "5v5",
     primaryStatKey: "kills",
-    defaultBackgroundUrl: "/game-backgrounds/dota-2.svg",
     certificateThemeId: "dota2",
     artTheme: {
       bg: "linear-gradient(135deg, #1c1917 0%, #7f1d1d 55%, #b91c1c 100%)",

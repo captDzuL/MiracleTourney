@@ -7,11 +7,6 @@ const baseEvent: Pick<Event, "gameId" | "gameImageUrl" | "accentColor" | "active
   gameId: "game-flashpeak",
 };
 
-/** A game that has no configured default background, so it reaches the typographic poster. */
-const unskinnedEvent: Pick<Event, "gameId" | "gameImageUrl" | "accentColor" | "activeVisualAsset"> = {
-  gameId: "game-does-not-exist",
-};
-
 const asset: EventVisualAsset = {
   id: "asset-1",
   eventId: "event-1",
@@ -54,47 +49,22 @@ describe("resolveEventVisual", () => {
     ).toEqual({ x: 0.5, y: 0.5 });
   });
 
-  it("falls back to the configured game background when no event artwork exists", () => {
+  it("falls back to the typographic poster when no artwork exists", () => {
     expect(
       resolveEventVisual({ ...baseEvent, activeVisualAsset: undefined, gameImageUrl: undefined }),
-    ).toMatchObject({ source: "game_default", url: "/game-backgrounds/flashpeak.svg" });
-  });
-
-  it("centres the focal point for the game background", () => {
-    expect(
-      resolveEventVisual({ ...baseEvent, activeVisualAsset: undefined, gameImageUrl: undefined }).focalPoint,
-    ).toEqual({ x: 0.5, y: 0.5 });
-  });
-
-  it("prefers the legacy event background over the game background", () => {
-    expect(resolveEventVisual({ ...baseEvent, gameImageUrl: "/legacy.webp" })).toMatchObject({
-      source: "organizer_upload",
-      url: "/legacy.webp",
-    });
-  });
-
-  it("falls back to the typographic poster when the game has no background", () => {
-    expect(
-      resolveEventVisual({ ...unskinnedEvent, activeVisualAsset: undefined, gameImageUrl: undefined }),
     ).toMatchObject({ source: "typographic", url: undefined });
   });
 
   it("ignores an active revision that is not approved", () => {
     expect(
-      resolveEventVisual({ ...unskinnedEvent, activeVisualAsset: { ...asset, status: "ready_for_review" } }),
+      resolveEventVisual({ ...baseEvent, activeVisualAsset: { ...asset, status: "ready_for_review" } }),
     ).toMatchObject({ source: "typographic" });
   });
 
   it("ignores an approved revision that has no url", () => {
     expect(
-      resolveEventVisual({ ...unskinnedEvent, activeVisualAsset: { ...asset, url: undefined } }),
+      resolveEventVisual({ ...baseEvent, activeVisualAsset: { ...asset, url: undefined } }),
     ).toMatchObject({ source: "typographic" });
-  });
-
-  it("gives every configured game a default background", async () => {
-    const { games } = await import("./config");
-    const missing = games.filter((game) => !game.defaultBackgroundUrl).map((game) => game.id);
-    expect(missing).toEqual([]);
   });
 
   it("uses the event accent colour when set", () => {
