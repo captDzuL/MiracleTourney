@@ -53,7 +53,7 @@ export const games: Game[] = [
     defaultModeLabel: "5v5",
     fallbackLogoUrl: "https://lh3.googleusercontent.com/d/1m01dWpxKA6qXRzfFRrEovFzho1nTnV9B",
     defaultBackgroundUrl: "/game-backgrounds/flashpeak.svg",
-    primaryStatKey: "goals",
+    primaryStatKey: "goal",
     certificateThemeId: "flashpeak",
     artTheme: {
       bg: "linear-gradient(135deg, #052e16 0%, #14532d 50%, #166534 100%)",

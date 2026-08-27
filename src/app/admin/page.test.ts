@@ -65,10 +65,26 @@ describe("admin action buttons", () => {
     expect(source).toContain("Public Listing Settings");
     expect(source).toContain("adminUpdateEventPublicInfoAction");
     expect(source).toContain('name="prizePoolLabel"');
+    expect(source).toContain('name="registrationFeeRequired"');
+    expect(source).toContain('name="registrationFeeAmount"');
     expect(source).toContain('name="registrationFeeLabel"');
     expect(source).toContain('name="registrationUrl"');
   });
 
+
+  test("exposes a payment verification workspace", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain('activePhase === "payments"');
+    expect(source).toContain("PaymentWorkspacePhase");
+    expect(source).toContain("adminUpdatePaymentSettingsAction");
+    expect(source).toContain("adminApprovePaymentAction");
+    expect(source).toContain("adminRejectPaymentAction");
+    expect(source).toContain('name="qrisImageUrl"');
+    expect(source).toContain('name="qrisImage"');
+    expect(source).toContain('type="file"');
+    expect(source).toContain('name="requestId"');
+  });
   test("keeps long select values constrained inside responsive form columns", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
 

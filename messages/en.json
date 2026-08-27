@@ -214,6 +214,22 @@
     "playerUpdated": "Player updated successfully.",
     "playerDeleted": "Player deleted successfully.",
     "registered": "Team registered successfully!",
+    "teamCreated": "Team registered into the new event.",
+    "dashboardTabsLabel": "Captain dashboard navigation",
+    "registrationTab": "New Event Registration",
+    "rosterTab": "Roster Management",
+    "openRegistrationTitle": "Register for a New Event",
+    "openRegistrationDescription": "Choose an event currently open for registration and add one team.",
+    "noOpenRegistration": "No new event is currently open for this account.",
+    "eventCapacity": "{registered}/{cap} teams registered",
+    "registerTeamSubmit": "Register Team",
+    "teamName": "Team name",
+    "teamNamePlaceholder": "Miracle Five",
+    "teamTag": "Team tag",
+    "teamTagPlaceholder": "MFC",
+    "rosterManagementTitle": "Roster Management",
+    "rosterManagementDescription": "Manage players for teams that are already registered.",
+    "noRegisteredTeams": "No registered teams for this account yet.",
     "accountSettings": "Account settings",
     "submitStats": "Submit match stats →",
     "roster": "Roster · {count} player{count, plural, one {} other {s}}",
@@ -233,7 +249,19 @@
     "save": "Save",
     "edit": "Edit",
     "delete": "Delete",
-    "addPlayerSubmit": "Add Player"
+    "addPlayerSubmit": "Add Player",
+    "paymentPending": "Payment registration created. Upload payment proof so admin can verify it.",
+    "paymentProofUploaded": "Payment proof uploaded and awaiting admin verification.",
+    "paymentRequestsTitle": "Payment Status",
+    "paymentRequestsDescription": "Track paid event payments and upload payment proof.",
+    "paymentInstructionsTitle": "Payment instructions",
+    "uploadPaymentProof": "Upload Payment Proof",
+    "paymentProof": "Payment proof",
+    "noQrisConfigured": "QRIS is not available yet. Contact the organizer.",
+    "paymentStatus_pending_payment": "Awaiting payment",
+    "paymentStatus_pending_review": "Awaiting verification",
+    "paymentStatus_rejected": "Rejected",
+    "paymentStatus_expired": "Expired"
   },
   "captainSettings": {
     "title": "Account Settings",
@@ -354,7 +382,8 @@
       "prepare": "Prepare",
       "import": "Import",
       "run": "Match day",
-      "review": "Review"
+      "review": "Review",
+      "payments": "Payments"
     },
     "phases": {
       "prepare": {
@@ -372,6 +401,10 @@
       "review": {
         "title": "4. Review & Publish",
         "description": "Stats approval and certificates."
+      },
+      "payments": {
+        "title": "3. Payments",
+        "description": "Verify QRIS payment proofs."
       }
     },
     "nextActionByPhase": {
@@ -390,6 +423,10 @@
       "review": {
         "title": "Clear pending reviews",
         "description": "Approve player stats and finish certificate assets after matches."
+      },
+      "payments": {
+        "title": "Verify payments",
+        "description": "Check payment proofs, approve valid teams, or reject with a reason."
       }
     },
     "noActiveEvent": "No active event",
@@ -459,6 +496,23 @@
     "leaderboardRows": "Leaderboard rows",
     "leaderboardRowsHint": "Rows from approved stats",
     "gameLabel": "Game",
-    "matchesLabel": "Matches"
+    "matchesLabel": "Matches",
+    "paymentsWorkspaceTitle": "Payments",
+    "paymentsDescription": "Manage global QRIS and verify paid event payment proofs.",
+    "paymentQueueTitle": "Payment queue",
+    "paymentQueueDescription": "Filter payment requests by event and status.",
+    "paymentSettingsTitle": "Global QRIS",
+    "paymentSettingsDescription": "This QRIS and instructions are used for every paid event.",
+    "savePaymentSettings": "Save payment settings",
+    "noPaymentRequests": "No payment requests for this filter.",
+    "noPaymentProof": "No payment proof yet.",
+    "paymentRejectReason": "Rejection reason",
+    "paymentStatus": {
+      "pending_payment": "Awaiting payment",
+      "pending_review": "Awaiting verification",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "expired": "Expired"
+    }
   }
 }

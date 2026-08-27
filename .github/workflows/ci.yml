@@ -133,7 +133,7 @@ jobs:
         run: pnpm prisma db push --accept-data-loss --skip-generate
 
       - name: Run E2E tests
-        run: pnpm test:e2e
+        run: pnpm test:e2e:ci
         env:
           CI: true
           PLAYWRIGHT_PORT: "3100"

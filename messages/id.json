@@ -214,6 +214,22 @@
     "playerUpdated": "Data pemain berhasil diperbarui.",
     "playerDeleted": "Pemain berhasil dihapus.",
     "registered": "Tim berhasil didaftarkan!",
+    "teamCreated": "Tim berhasil didaftarkan ke event baru.",
+    "dashboardTabsLabel": "Navigasi dashboard kapten",
+    "registrationTab": "Pendaftaran Event Baru",
+    "rosterTab": "Management Roster",
+    "openRegistrationTitle": "Daftar Event Baru",
+    "openRegistrationDescription": "Pilih event yang sedang membuka pendaftaran dan daftarkan satu tim.",
+    "noOpenRegistration": "Tidak ada event baru yang sedang membuka pendaftaran untuk akun ini.",
+    "eventCapacity": "{registered}/{cap} tim terdaftar",
+    "registerTeamSubmit": "Daftarkan Tim",
+    "teamName": "Nama tim",
+    "teamNamePlaceholder": "Miracle Five",
+    "teamTag": "Tag tim",
+    "teamTagPlaceholder": "MFC",
+    "rosterManagementTitle": "Management Roster",
+    "rosterManagementDescription": "Kelola pemain untuk tim yang sudah terdaftar.",
+    "noRegisteredTeams": "Belum ada tim terdaftar di akun ini.",
     "accountSettings": "Pengaturan akun",
     "submitStats": "Submit statistik match →",
     "roster": "Roster · {count} pemain",
@@ -233,7 +249,19 @@
     "save": "Simpan",
     "edit": "Edit",
     "delete": "Hapus",
-    "addPlayerSubmit": "Tambah Pemain"
+    "addPlayerSubmit": "Tambah Pemain",
+    "paymentPending": "Pendaftaran pembayaran dibuat. Upload bukti bayar agar admin bisa verifikasi.",
+    "paymentProofUploaded": "Bukti pembayaran berhasil diupload dan menunggu verifikasi admin.",
+    "paymentRequestsTitle": "Status Pembayaran",
+    "paymentRequestsDescription": "Pantau pembayaran event berbayar dan upload bukti bayar.",
+    "paymentInstructionsTitle": "Instruksi pembayaran",
+    "uploadPaymentProof": "Upload Bukti Bayar",
+    "paymentProof": "Bukti bayar",
+    "noQrisConfigured": "QRIS belum tersedia. Hubungi organizer.",
+    "paymentStatus_pending_payment": "Menunggu pembayaran",
+    "paymentStatus_pending_review": "Menunggu verifikasi",
+    "paymentStatus_rejected": "Ditolak",
+    "paymentStatus_expired": "Kedaluwarsa"
   },
   "captainSettings": {
     "title": "Pengaturan Akun",
@@ -354,7 +382,8 @@
       "prepare": "Setup",
       "import": "Import",
       "run": "Hari match",
-      "review": "Review"
+      "review": "Review",
+      "payments": "Pembayaran"
     },
     "phases": {
       "prepare": {
@@ -372,6 +401,10 @@
       "review": {
         "title": "4. Review & Publish",
         "description": "Approval statistik dan sertifikat."
+      },
+      "payments": {
+        "title": "3. Pembayaran",
+        "description": "Verifikasi bukti bayar QRIS."
       }
     },
     "nextActionByPhase": {
@@ -390,6 +423,10 @@
       "review": {
         "title": "Bereskan review tertunda",
         "description": "Setujui statistik pemain dan lengkapi aset sertifikat setelah match."
+      },
+      "payments": {
+        "title": "Verifikasi pembayaran",
+        "description": "Cek bukti bayar, approve tim valid, atau reject dengan alasan."
       }
     },
     "noActiveEvent": "Belum ada event aktif",
@@ -459,6 +496,23 @@
     "leaderboardRows": "Baris leaderboard",
     "leaderboardRowsHint": "Baris dari statistik approved",
     "gameLabel": "Game",
-    "matchesLabel": "Match"
+    "matchesLabel": "Match",
+    "paymentsWorkspaceTitle": "Pembayaran",
+    "paymentsDescription": "Kelola QRIS global dan verifikasi bukti bayar event berbayar.",
+    "paymentQueueTitle": "Antrian pembayaran",
+    "paymentQueueDescription": "Filter request pembayaran per event dan status.",
+    "paymentSettingsTitle": "QRIS global",
+    "paymentSettingsDescription": "QRIS dan instruksi ini dipakai untuk semua event berbayar.",
+    "savePaymentSettings": "Simpan pengaturan pembayaran",
+    "noPaymentRequests": "Belum ada pembayaran untuk filter ini.",
+    "noPaymentProof": "Belum ada bukti bayar.",
+    "paymentRejectReason": "Alasan penolakan",
+    "paymentStatus": {
+      "pending_payment": "Menunggu pembayaran",
+      "pending_review": "Menunggu verifikasi",
+      "approved": "Approved",
+      "rejected": "Ditolak",
+      "expired": "Kedaluwarsa"
+    }
   }
 }

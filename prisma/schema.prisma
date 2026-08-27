@@ -18,6 +18,8 @@ model User {
   deactivatedAt        DateTime?
   organizedEvents      Event[]              @relation("EventOrganizer")
   captainOf            Team[]               @relation("TeamCaptain")
+  teamRegistrationRequests TeamRegistrationRequest[] @relation("RegistrationRequestCaptain")
+  approvedTeamRegistrationRequests TeamRegistrationRequest[] @relation("RegistrationRequestApprover")
   passwordResetTokens  PasswordResetToken[]
   organizerPlan        OrganizerPlan?
   notifications        Notification[]
@@ -48,6 +50,8 @@ model Event {
   organizerName        String?
   organizerVerified    Boolean            @default(false)
   prizePoolLabel       String?
+  registrationFeeRequired Boolean          @default(false)
+  registrationFeeAmount Int?
   registrationFeeLabel String?
   registrationUrl      String?
   characterArtUrl      String?
@@ -67,6 +71,7 @@ model Event {
   visualAssets         EventVisualAsset[] @relation("EventVisualAssets")
   activeVisualAssetId  String?            @unique
   activeVisualAsset    EventVisualAsset?  @relation("ActiveEventVisualAsset", fields: [activeVisualAssetId], references: [id], onDelete: SetNull)
+  teamRegistrationRequests TeamRegistrationRequest[]
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -131,10 +136,44 @@ model Team {
   certificates   Certificate[]
   checkIns       CheckIn[]
   registrationImportItems RegistrationImportItem[]
+  registrationRequest TeamRegistrationRequest?
   createdAt      DateTime      @default(now())
 
   @@unique([eventId, tag])
   @@unique([eventId, name])
+}
+
+
+model TeamRegistrationRequest {
+  id            String   @id @default(cuid())
+  eventId       String
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  captainId     String
+  captain       User     @relation("RegistrationRequestCaptain", fields: [captainId], references: [id], onDelete: Cascade)
+  teamId        String?  @unique
+  team          Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  teamName      String
+  teamTag       String
+  status        String   @default("pending_payment")
+  proofImageUrl String?
+  rejectReason  String?
+  expiresAt     DateTime
+  approvedAt    DateTime?
+  approvedById  String?
+  approvedBy    User?    @relation("RegistrationRequestApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([eventId])
+  @@index([captainId])
+}
+
+model PaymentSettings {
+  id           String   @id
+  qrisImageUrl String?
+  instructions String?
+  updatedAt    DateTime @updatedAt
 }
 
 model Player {

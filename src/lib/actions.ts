@@ -23,12 +23,15 @@ import {
   addPlayer,
   approveStatSubmission,
   approveEventVisualAsset,
+  approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
+  createCaptainWithPendingPayment,
   createCaptainWithTeam,
   createEvent,
   createEventVisualAsset,
+  createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
   getOrganizerUserById,
@@ -42,11 +45,14 @@ import {
   registerTeam,
   rejectStatSubmission,
   rejectEventVisualAsset,
+  rejectTeamRegistrationRequest,
   setEventStatus,
   setEventVisualFocalPoint,
   setMatchGames,
   setMatchResult,
   updateCaptainPassword,
+  updatePaymentSettings,
+  updateTeamRegistrationProof,
   updateEventPublicInfo,
   updateEventStream,
   updateEventBrandAssets,
@@ -65,6 +71,8 @@ const MAX_TEAM_IMPORT_CSV_BYTES = 256 * 1024;
 const MAX_REGISTRATION_INTAKE_BYTES = 5 * 1024 * 1024;
 const MAX_LOGO_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_BACKGROUND_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024;
+const MAX_QRIS_IMAGE_BYTES = 2 * 1024 * 1024;
 
 async function requireAdminSession(): Promise<AppUser> {
   const user =
@@ -173,6 +181,11 @@ type UploadedImageAsset = {
   height: number;
 };
 
+function appendActionError(basePath: string, message: string) {
+  const separator = basePath.includes("?") ? "&" : "?";
+  return `${basePath}${separator}error=${encodeURIComponent(message)}`;
+}
+
 /**
  * Single validation + storage boundary for every admin image upload.
  * Checks, in order: entity id shape, presence, byte size, declared MIME,
@@ -185,40 +198,43 @@ async function uploadImageAsset({
   entityId,
   label,
   maxBytes,
+  errorPath = "/admin",
 }: {
   file: FormDataEntryValue | null;
   folder: string;
   entityId: string;
   label: string;
   maxBytes: number;
+  errorPath?: string;
 }): Promise<UploadedImageAsset> {
   if (!isSafeEntityId(entityId)) {
-    redirect(`/admin?error=${encodeURIComponent(`Invalid ${label} ID.`)}` as never);
+    redirect(appendActionError(errorPath, `Invalid ${label} ID.`) as never);
   }
   if (!(file instanceof File) || file.size === 0) {
-    redirect(`/admin?error=${encodeURIComponent(`No ${label} file uploaded.`)}` as never);
+    redirect(appendActionError(errorPath, `No ${label} file uploaded.`) as never);
   }
   if (file.size > maxBytes) {
-    redirect(`/admin?error=${encodeURIComponent(`${label} file is too large.`)}` as never);
+    redirect(appendActionError(errorPath, `${label} file is too large.`) as never);
   }
 
   const extension = getImageExtension(file.type);
   if (!extension) {
-    redirect(`/admin?error=${encodeURIComponent(`${label} must be a PNG, JPEG, or WebP image.`)}` as never);
+    redirect(appendActionError(errorPath, `${label} must be a PNG, JPEG, or WebP image.`) as never);
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
   if (!hasImageSignature(buffer, extension)) {
-    redirect(`/admin?error=${encodeURIComponent(`${label} file content does not match its image type.`)}` as never);
+    redirect(appendActionError(errorPath, `${label} file content does not match its image type.`) as never);
   }
 
   const mimeType = file.type || "image/png";
   const dimensions = await readImageDimensions(buffer);
   if (!dimensions) {
-    redirect(`/admin?error=${encodeURIComponent(`${label} file could not be decoded as an image.`)}` as never);
+    redirect(appendActionError(errorPath, `${label} file could not be decoded as an image.`) as never);
   }
 
   const filename = `${entityId}-${Date.now()}.${extension}`;
+  if (process.env.NODE_ENV === "test") return { url: `/${folder}/${filename}`, mimeType, ...dimensions };
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     const { put } = await import("@vercel/blob");
     const result = await put(`${folder}/${filename}`, buffer, {
@@ -297,12 +313,18 @@ export async function captainSignUpAction(formData: FormData) {
   if (existingUser) await signUpError("Email ini sudah terdaftar. Coba login.");
 
   const publishedEvents = await getPublishedEvents();
-  if (!publishedEvents.find((e) => e.id === eventId)) await signUpError("Event tidak valid atau sudah tidak tersedia.");
+  const event = publishedEvents.find((e) => e.id === eventId);
+  if (!event) await signUpError("Event tidak valid atau sudah tidak tersedia.");
 
   const passwordHash = await bcrypt.hash(password, 10);
+  const requiresPayment = event!.registrationFeeRequired;
 
   try {
-    await createCaptainWithTeam({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
+    if (requiresPayment) {
+      await createCaptainWithPendingPayment({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
+    } else {
+      await createCaptainWithTeam({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal membuat akun.";
     if (msg.includes("Unique constraint")) await signUpError("Tag atau nama tim sudah digunakan di event ini.");
@@ -312,7 +334,9 @@ export async function captainSignUpAction(formData: FormData) {
   const result = await signIn(email, password);
   if (!result.ok) await signUpError("Akun berhasil dibuat, tapi login gagal. Silakan login manual.");
 
-  await redirectToActiveLocale("/captain?success=registered" as never);
+  await redirectToActiveLocale(
+    requiresPayment ? "/captain?tab=registration&success=payment-pending" as never : "/captain?success=registered" as never,
+  );
 }
 
 /** Authenticates a user by email/password and redirects to /admin or /captain based on role. */
@@ -350,20 +374,146 @@ export async function loginAction(formData: FormData) {
 /** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
 export async function captainRegisterTeamAction(formData: FormData) {
   const captain = await requireCaptainSession();
-  const input = z.object({
-    eventId: z.string().min(1),
-    name: z.string().min(2),
-    tag: z.string().min(2).max(4),
-  }).parse({
+  const registrationError = async (msg: string) =>
+    redirectToActiveLocale(`/captain?error=${encodeURIComponent(msg)}` as never);
+  const parsed = z.object({
+    eventId: z.string().trim().min(1),
+    name: z.string().trim().min(2, "Nama tim minimal 2 karakter."),
+    tag: z.string().trim().min(2, "Tag tim harus 2-4 karakter.").max(4, "Tag tim harus 2-4 karakter."),
+  }).safeParse({
     eventId: formData.get("eventId"),
     name: formData.get("name"),
     tag: formData.get("tag"),
   });
 
-  await registerTeam({ ...input, captainId: captain.id });
+  if (!parsed.success) {
+    return await registrationError(parsed.error.issues[0]?.message ?? "Data pendaftaran tidak valid.");
+  }
+
+  const input = { ...parsed.data, tag: parsed.data.tag.toUpperCase() };
+  const dataErrors = validateTeamData({ teamName: input.name, teamTag: input.tag, captainName: captain.name });
+  if (dataErrors.length > 0) {
+    return await registrationError(dataErrors.map((error) => error.message).join(". "));
+  }
+
+  try {
+    await registerTeam({ ...input, captainId: captain.id });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Gagal mendaftarkan tim.";
+    if (msg === "Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.") {
+      try {
+        await createTeamRegistrationRequest({ ...input, captainId: captain.id });
+      } catch (paymentError) {
+        const paymentMsg = paymentError instanceof Error ? paymentError.message : "Gagal membuat pendaftaran pembayaran.";
+        return await registrationError(paymentMsg);
+      }
+      revalidateTag("teams");
+      revalidatePath("/captain");
+      await redirectToActiveLocale("/captain?tab=registration&success=payment-pending");
+    }
+    return await registrationError(msg);
+  }
+
+  revalidateTag("teams");
+  revalidatePath("/captain");
   await redirectToActiveLocale("/captain?success=team-created");
 }
 
+
+export async function captainUploadPaymentProofAction(formData: FormData) {
+  const captain = await requireCaptainSession();
+  const requestId = z.string().trim().min(1).parse(formData.get("requestId"));
+  const proofAsset = await uploadImageAsset({
+    file: formData.get("paymentProof"),
+    folder: "payment-proofs",
+    entityId: requestId,
+    label: "Payment proof",
+    maxBytes: MAX_PAYMENT_PROOF_BYTES,
+    errorPath: "/captain?tab=registration",
+  });
+
+  try {
+    await updateTeamRegistrationProof(captain.id, requestId, proofAsset.url);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gagal mengupload bukti pembayaran.";
+    await redirectToActiveLocale(`/captain?tab=registration&error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidatePath("/captain");
+  await redirectToActiveLocale("/captain?tab=registration&success=payment-proof-uploaded" as never);
+}
+
+export async function adminUpdatePaymentSettingsAction(formData: FormData) {
+  await requireAdminSession();
+
+  const qrisImageFile = formData.get("qrisImage");
+  const uploadedQrisAsset = qrisImageFile instanceof File && qrisImageFile.size > 0
+    ? await uploadImageAsset({
+      file: qrisImageFile,
+      folder: "payment-qris",
+      entityId: "global",
+      label: "QRIS image",
+      maxBytes: MAX_QRIS_IMAGE_BYTES,
+      errorPath: "/admin?phase=payments",
+    })
+    : null;
+  const uploadedQrisUrl = uploadedQrisAsset?.url ?? null;
+
+  const input = z.object({
+    qrisImageUrl: optionalPublicUrlSchema.or(z.string().startsWith("/")).nullable(),
+    instructions: z.preprocess((value) => {
+      const text = String(value ?? "").trim();
+      return text === "" ? null : text;
+    }, z.string().max(500).nullable()),
+  }).parse({
+    qrisImageUrl: uploadedQrisUrl ?? formData.get("qrisImageUrl"),
+    instructions: formData.get("instructions"),
+  });
+
+  await updatePaymentSettings(input);
+  revalidatePath("/admin");
+  await redirectToActiveLocale("/admin?phase=payments&success=payment-settings-updated" as never);
+}
+
+export async function adminApprovePaymentAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const requestId = z.string().trim().min(1).parse(formData.get("requestId"));
+
+  try {
+    await approveTeamRegistrationRequest(user, requestId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gagal approve pembayaran.";
+    await redirectToActiveLocale(`/admin?phase=payments&error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidateTag("teams");
+  revalidateTag("events");
+  revalidatePath("/admin");
+  revalidatePath("/captain");
+  await redirectToActiveLocale("/admin?phase=payments&success=payment-approved" as never);
+}
+
+export async function adminRejectPaymentAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const input = z.object({
+    requestId: z.string().trim().min(1),
+    reason: z.string().trim().min(3).max(240),
+  }).parse({
+    requestId: formData.get("requestId"),
+    reason: formData.get("reason"),
+  });
+
+  try {
+    await rejectTeamRegistrationRequest(user, input.requestId, input.reason);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gagal reject pembayaran.";
+    await redirectToActiveLocale(`/admin?phase=payments&error=${encodeURIComponent(message)}` as never);
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/captain");
+  await redirectToActiveLocale("/admin?phase=payments&success=payment-rejected" as never);
+}
 /**
  * Changes the captain's password after verifying the current one.
  * Validates that new and confirm passwords match and meet the 8-character minimum.
@@ -730,7 +880,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
 
   if (!match) await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=Match%20not%20found.` as never);
   await autoTransitionEventToOngoing(input.eventId);
-  if (match) {
+  if (match?.roundLabel === "Final" && match.winnerTeamId) {
     try {
       await generateCertificateForFinalMatch(match.id, input.eventId);
     } catch (err) {
@@ -968,6 +1118,13 @@ export async function adminUpdateEventPublicInfoAction(formData: FormData) {
     startsAt: z.string().trim().min(2).max(120),
     venue: z.string().trim().min(2).max(120),
     prizePoolLabel: optionalPublicLabelSchema,
+    registrationFeeRequired: z.preprocess((value) => value === "on" || value === "true" || value === "paid", z.boolean()),
+    registrationFeeAmount: z.preprocess((value) => {
+      const text = String(value ?? "").trim();
+      if (!text) return null;
+      const number = Number(text);
+      return Number.isFinite(number) ? number : value;
+    }, z.number().int().positive().nullable()),
     registrationFeeLabel: optionalPublicLabelSchema,
     registrationUrl: optionalPublicUrlSchema,
   }).parse({
@@ -977,6 +1134,8 @@ export async function adminUpdateEventPublicInfoAction(formData: FormData) {
     startsAt: formData.get("startsAt"),
     venue: formData.get("venue"),
     prizePoolLabel: formData.get("prizePoolLabel"),
+    registrationFeeRequired: formData.get("registrationFeeRequired"),
+    registrationFeeAmount: formData.get("registrationFeeAmount"),
     registrationFeeLabel: formData.get("registrationFeeLabel"),
     registrationUrl: formData.get("registrationUrl"),
   });
@@ -987,7 +1146,10 @@ export async function adminUpdateEventPublicInfoAction(formData: FormData) {
     startsAt: input.startsAt,
     venue: input.venue,
     prizePoolLabel: input.prizePoolLabel,
+    registrationFeeRequired: input.registrationFeeRequired,
+    registrationFeeAmount: input.registrationFeeRequired ? input.registrationFeeAmount : null,
     registrationFeeLabel: input.registrationFeeLabel,
+
     registrationUrl: input.registrationUrl,
   });
 

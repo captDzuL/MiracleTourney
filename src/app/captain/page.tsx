@@ -1,9 +1,9 @@
-import { CalendarDays, Crown, Plus, Settings, Trophy, Users } from "lucide-react";
+import { CalendarDays, Clock, CreditCard, Crown, Plus, Settings, Trophy, Upload, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
-import { captainAddPlayerAction, captainDeletePlayerAction, captainSetDisplayCaptainAction, captainUpdatePlayerAction } from "@/lib/actions";
+import { captainAddPlayerAction, captainDeletePlayerAction, captainRegisterTeamAction, captainSetDisplayCaptainAction, captainUpdatePlayerAction, captainUploadPaymentProofAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import {
@@ -12,11 +12,14 @@ import {
   getEventsByIds,
   getGameForEvent,
   getModeForEvent,
+  getCaptainRegistrationRequests,
+  getOpenRegistrationEventsForCaptain,
+  getPaymentSettings,
   getPlayersForTeams,
   hasTempPassword,
 } from "@/lib/platform/repository";
 import type { Certificate } from "@/lib/platform/types";
-import type { Event, Game, GameMode, Player, Team } from "@/lib/platform/types";
+import type { Event, Game, GameMode, PaymentSettings, Player, Team, TeamRegistrationRequest } from "@/lib/platform/types";
 import { ShareCertificateButton } from "@/components/ShareCertificateButton";
 import { SubmitButton } from "@/components/submit-button";
 
@@ -31,7 +34,7 @@ const dangerButton = "inline-flex items-center justify-center rounded-lg bg-red-
 export default async function CaptainPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ edit?: string; confirm?: string; success?: string; error?: string }>;
+  searchParams?: Promise<{ edit?: string; confirm?: string; success?: string; error?: string; tab?: string }>;
 }) {
   const user = await requireRole("captain");
   if (!user) {
@@ -44,10 +47,15 @@ export default async function CaptainPage({
   const confirmDeleteId = params?.confirm;
   const success = params?.success;
   const error = params?.error;
+  const rosterSignals = new Set(["player-added", "player-updated", "player-deleted", "captain-display-updated"]);
+  const activeTab = params?.tab === "roster" || editPlayerId || confirmDeleteId || (success && rosterSignals.has(success)) ? "roster" : "registration";
 
-  const [teams, usingTempPassword] = await Promise.all([
+  const [teams, usingTempPassword, openRegistrationEvents, paymentRequests, paymentSettings] = await Promise.all([
     getCaptainTeams(user.id),
     hasTempPassword(user.id),
+    getOpenRegistrationEventsForCaptain(user.id),
+    getCaptainRegistrationRequests(user.id),
+    getPaymentSettings(),
   ]);
   const teamIds = teams.map((team) => team.id);
   const eventIds = [...new Set(teams.map((team) => team.eventId))];
@@ -83,38 +91,210 @@ export default async function CaptainPage({
       {success === "player-updated" ? <Notice tone="success">{t("playerUpdated")}</Notice> : null}
       {success === "player-deleted" ? <Notice tone="success">{t("playerDeleted")}</Notice> : null}
       {success === "registered" ? <Notice tone="success">{t("registered")}</Notice> : null}
+      {success === "team-created" ? <Notice tone="success">{t("teamCreated")}</Notice> : null}
+      {success === "payment-pending" ? <Notice tone="success">{t("paymentPending")}</Notice> : null}
+      {success === "payment-proof-uploaded" ? <Notice tone="success">{t("paymentProofUploaded")}</Notice> : null}
       {success === "captain-display-updated" ? <Notice tone="success">Tampilan kapten berhasil diperbarui.</Notice> : null}
       {error ? <Notice tone="danger">{decodeURIComponent(error)}</Notice> : null}
 
-      <div className="space-y-8">
-        {teamsWithPlayers.map(({ team, players }) => {
-          const event = events.find((item) => item.id === team.eventId);
-          if (!event) return null;
-          const game = getGameForEvent(event);
-          const mode = getModeForEvent(event);
-          const cert = certificates.get(team.id) ?? null;
+      <CaptainDashboardTabs activeTab={activeTab} t={t as TFn} />
 
-          return (
-            <div key={team.id} className="space-y-4">
-              {cert ? <ChampionCertificateBanner cert={cert} event={event} team={team} /> : null}
-              <TeamSection
-                team={team}
-                event={event}
-                game={game}
-                mode={mode}
-                players={players}
-                editPlayerId={editPlayerId}
-                confirmDeleteId={confirmDeleteId}
-                t={t as TFn}
-              />
-            </div>
-          );
-        })}
-      </div>
+      {activeTab === "registration" ? (
+        <div className="grid gap-6">
+          <OpenRegistrationSection events={openRegistrationEvents} t={t as TFn} />
+          <PaymentRequestsSection requests={paymentRequests} paymentSettings={paymentSettings} t={t as TFn} />
+        </div>
+      ) : (
+        <RosterManagementSection
+          teamsWithPlayers={teamsWithPlayers}
+          events={events}
+          certificates={certificates}
+          editPlayerId={editPlayerId}
+          confirmDeleteId={confirmDeleteId}
+          t={t as TFn}
+        />
+      )}
     </div>
   );
 }
 
+
+function CaptainDashboardTabs({ activeTab, t }: { activeTab: "registration" | "roster"; t: TFn }) {
+  const tabClass = (tab: "registration" | "roster") =>
+    `inline-flex items-center justify-center rounded-lg px-3.5 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
+      activeTab === tab
+        ? "bg-slate-950 text-white shadow-sm"
+        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+    }`;
+
+  return (
+    <nav aria-label={t("dashboardTabsLabel")} className="flex w-full gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+      <Link href="/captain?tab=registration" className={tabClass("registration")} aria-current={activeTab === "registration" ? "page" : undefined}>
+        {t("registrationTab")}
+      </Link>
+      <Link href="/captain?tab=roster" className={tabClass("roster")} aria-current={activeTab === "roster" ? "page" : undefined}>
+        {t("rosterTab")}
+      </Link>
+    </nav>
+  );
+}
+
+function RosterManagementSection({
+  teamsWithPlayers,
+  events,
+  certificates,
+  editPlayerId,
+  confirmDeleteId,
+  t,
+}: {
+  teamsWithPlayers: Array<{ team: Team; players: Player[] }>;
+  events: Event[];
+  certificates: Map<string, Certificate | null>;
+  editPlayerId?: string;
+  confirmDeleteId?: string;
+  t: TFn;
+}) {
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-950">{t("rosterManagementTitle")}</h2>
+        <p className="mt-1 text-sm text-slate-500">{t("rosterManagementDescription")}</p>
+      </div>
+      {teamsWithPlayers.length === 0 ? (
+        <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm">
+          {t("noRegisteredTeams")}
+        </p>
+      ) : (
+        <div className="space-y-8">
+          {teamsWithPlayers.map(({ team, players }) => {
+            const event = events.find((item) => item.id === team.eventId);
+            if (!event) return null;
+            const game = getGameForEvent(event);
+            const mode = getModeForEvent(event);
+            const cert = certificates.get(team.id) ?? null;
+
+            return (
+              <div key={team.id} className="space-y-4">
+                {cert ? <ChampionCertificateBanner cert={cert} event={event} team={team} /> : null}
+                <TeamSection
+                  team={team}
+                  event={event}
+                  game={game}
+                  mode={mode}
+                  players={players}
+                  editPlayerId={editPlayerId}
+                  confirmDeleteId={confirmDeleteId}
+                  t={t}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+function OpenRegistrationSection({ events, t }: { events: Array<Event & { registeredTeams: number }>; t: TFn }) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-950">{t("openRegistrationTitle")}</h2>
+          <p className="mt-1 text-sm text-slate-500">{t("openRegistrationDescription")}</p>
+        </div>
+      </div>
+
+      {events.length === 0 ? (
+        <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-600">
+          {t("noOpenRegistration")}
+        </p>
+      ) : (
+        <div className="mt-4 divide-y divide-slate-200 rounded-xl border border-slate-200 bg-slate-50">
+          {events.map((event) => (
+            <form key={event.id} action={captainRegisterTeamAction} data-registration-list-item="true" className="grid gap-4 p-4 lg:grid-cols-[minmax(12rem,1fr)_minmax(18rem,24rem)_auto] lg:items-end">
+              <input type="hidden" name="eventId" value={event.id} />
+              <div className="min-w-0">
+                <p className="truncate text-base font-semibold text-slate-950">{event.name}</p>
+                <p className="mt-1 text-sm text-slate-500">{event.startsAt} · {event.venue}</p>
+                <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-cyan-700">
+                  {t("eventCapacity", { registered: event.registeredTeams, cap: event.participantCap })}
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
+                <label className={labelClass}>
+                  {t("teamName")}
+                  <input className={inputClass} name="name" placeholder={t("teamNamePlaceholder")} minLength={2} required />
+                </label>
+                <label className={labelClass}>
+                  {t("teamTag")}
+                  <input className={`${inputClass} uppercase`} name="tag" placeholder={t("teamTagPlaceholder")} minLength={2} maxLength={4} required />
+                </label>
+              </div>
+              <div className="lg:justify-self-end">
+                <SubmitButton className={primaryButton}>{t("registerTeamSubmit")}</SubmitButton>
+              </div>
+            </form>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSettings: PaymentSettings; requests: TeamRegistrationRequest[]; t: TFn }) {
+  if (requests.length === 0) return null;
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-950">{t("paymentRequestsTitle")}</h2>
+          <p className="mt-1 text-sm text-slate-500">{t("paymentRequestsDescription")}</p>
+        </div>
+      </div>
+      <div className="mt-4 divide-y divide-slate-200 rounded-xl border border-slate-200 bg-slate-50">
+        {requests.map((request) => (
+          <div key={request.id} className="grid gap-4 p-4 lg:grid-cols-[minmax(14rem,1fr)_minmax(14rem,0.8fr)_minmax(16rem,24rem)] lg:items-start">
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold text-slate-950">{request.event?.name ?? request.eventId}</p>
+              <p className="mt-1 text-sm text-slate-600">{request.teamName} ({request.teamTag})</p>
+              <p className="mt-2 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                <Clock className="h-3.5 w-3.5" />
+                {t(`paymentStatus_${request.status}`)}
+              </p>
+              {request.rejectReason ? <p className="mt-2 text-sm text-red-700">{request.rejectReason}</p> : null}
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+              <p className="flex items-center gap-2 font-semibold text-slate-900"><CreditCard className="h-4 w-4" />{t("paymentInstructionsTitle")}</p>
+              {request.event?.registrationFeeLabel ? <p className="mt-2 font-medium text-slate-800">{request.event.registrationFeeLabel}</p> : null}
+              {paymentSettings.instructions ? <p className="mt-2 leading-6">{paymentSettings.instructions}</p> : null}
+              {paymentSettings.qrisImageUrl ? (
+                <img src={paymentSettings.qrisImageUrl} alt="QRIS" className="mt-3 aspect-square w-36 rounded-lg border border-slate-200 bg-white object-contain" />
+              ) : (
+                <p className="mt-2 text-amber-700">{t("noQrisConfigured")}</p>
+              )}
+            </div>
+            {request.status === "pending_payment" || request.status === "rejected" ? (
+              <form action={captainUploadPaymentProofAction} className="grid gap-3">
+                <input type="hidden" name="requestId" value={request.id} />
+                <label className={labelClass}>
+                  {t("paymentProof")}
+                  <input className={inputClass} name="paymentProof" type="file" accept="image/png,image/jpeg,image/webp" required />
+                </label>
+                <SubmitButton className={primaryButton}>
+                  <Upload className="h-4 w-4" />
+                  {t("uploadPaymentProof")}
+                </SubmitButton>
+              </form>
+            ) : (
+              <p className="rounded-lg border border-slate-200 bg-white p-3 text-sm font-medium text-slate-600">{t(`paymentStatus_${request.status}`)}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 function Notice({ children, tone }: { children: React.ReactNode; tone: "success" | "warning" | "danger" }) {
   const toneClass = {
     success: "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -310,7 +490,7 @@ function DeletePlayerCard({ player, t }: { player: Player; t: TFn }) {
           {t("confirmDelete")}
         </SubmitButton>
       </form>
-      <Link href="/captain" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+      <Link href="/captain?tab=roster" className="text-sm font-medium text-slate-600 hover:text-slate-900">
         {t("cancelAction")}
       </Link>
     </div>
@@ -358,7 +538,7 @@ function EditPlayerForm({ mode, player, t }: { mode: GameMode; player: Player; t
         <SubmitButton className={primaryButton}>
           {t("save")}
         </SubmitButton>
-        <Link href="/captain" className={quietButton}>
+        <Link href="/captain?tab=roster" className={quietButton}>
           {t("cancelAction")}
         </Link>
       </div>
@@ -402,10 +582,10 @@ function PlayerCard({ player, team, isCaptain, t }: { player: Player; team: Team
         {player.position}
       </p>
       <div className="mt-3 flex gap-2">
-        <Link href={`/captain?edit=${player.id}`} className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900">
+        <Link href={`/captain?tab=roster&edit=${player.id}`} className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900">
           {t("edit")}
         </Link>
-        <Link href={`/captain?confirm=${player.id}`} className="rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700">
+        <Link href={`/captain?tab=roster&confirm=${player.id}`} className="rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700">
           {t("delete")}
         </Link>
       </div>

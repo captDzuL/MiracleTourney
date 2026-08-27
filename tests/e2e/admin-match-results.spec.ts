@@ -37,9 +37,9 @@ test.describe("admin match result entry", () => {
 
     await resultForm.locator('input[name="homeScore"]').fill("10");
     await resultForm.locator('input[name="awayScore"]').fill("10");
-    await resultForm.getByRole("button", { name: /simpan/i }).click();
+    await resultForm.getByRole("button", { name: /simpan hasil match/i }).click();
 
-    await expect(page).toHaveURL(/error=/);
+    await expect(page).toHaveURL(/error=/, { timeout: 15_000 });
   });
 
   test("admin can save a BO1 match result and see bracket update", async ({ page }) => {
@@ -53,7 +53,7 @@ test.describe("admin match result entry", () => {
 
     await resultForm.locator('input[name="homeScore"]').fill("21");
     await resultForm.locator('input[name="awayScore"]').fill("18");
-    await resultForm.getByRole("button", { name: /simpan/i }).click();
+    await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
 
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
     await page.goto(`/id/events/${currentEvent.slug}/bracket`);
@@ -71,7 +71,7 @@ test.describe("admin match result entry", () => {
 
     await resultForm.locator('input[name="homeScore"]').fill("15");
     await resultForm.locator('input[name="awayScore"]').fill("21");
-    await resultForm.getByRole("button", { name: /simpan/i }).click();
+    await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
 
     await page.goto(`/id/events/${currentEvent.slug}`);
@@ -104,7 +104,7 @@ test.describe("public bracket page", () => {
     await expect(resultForm).toBeVisible();
     await resultForm.locator('input[name="homeScore"]').fill("19");
     await resultForm.locator('input[name="awayScore"]').fill("17");
-    await resultForm.getByRole("button", { name: /simpan/i }).click();
+    await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
 
     await page.goto(`/id/events/${slug}/bracket`);

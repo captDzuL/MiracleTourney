@@ -1,4 +1,4 @@
-﻿import { randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 
@@ -14,7 +14,7 @@ import {
   getGameModeConfig,
   getGamePrimaryStatKey,
 } from "@/lib/platform/config";
-import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventStream, EventVisualAsset, Match, MatchGame, Player, Team, TournamentFormat, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
+import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventStream, EventVisualAsset, Match, MatchGame, PaymentSettings, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, TournamentFormat, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import {
   aggregatePlayerLeaderboard,
@@ -80,7 +80,7 @@ function mapEvent(row: {
   participantCap: number; registrationWindow: string; startsAt: string;
   venue: string; characterArtUrl?: string | null; accentColor?: string | null;
   organizerUserId?: string | null; organizerName?: string | null; organizerVerified?: boolean | null;
-  prizePoolLabel?: string | null; registrationFeeLabel?: string | null; registrationUrl?: string | null;
+  prizePoolLabel?: string | null; registrationFeeRequired?: boolean | null; registrationFeeAmount?: number | null; registrationFeeLabel?: string | null; registrationUrl?: string | null;
   stream?: { platform: string; url: string; label: string; enabled: boolean; isLive: boolean; } | null;
   activeVisualAssetId?: string | null;
   activeVisualAsset?: EventVisualAssetRow | null;
@@ -92,6 +92,7 @@ function mapEvent(row: {
     status: row.status as EventStatus,
     participantCap: row.participantCap as Event["participantCap"],
     registrationWindow: row.registrationWindow, startsAt: row.startsAt, venue: row.venue,
+    registrationFeeRequired: row.registrationFeeRequired ?? false,
   };
   const logoUrl = row.logoUrl ?? getFallbackLogoUrl(row.gameId);
   if (logoUrl) event.logoUrl = logoUrl;
@@ -102,6 +103,7 @@ function mapEvent(row: {
   if (row.organizerName) event.organizerName = row.organizerName;
   if (row.organizerVerified != null) event.organizerVerified = row.organizerVerified;
   if (row.prizePoolLabel) event.prizePoolLabel = row.prizePoolLabel;
+  if (row.registrationFeeAmount != null) event.registrationFeeAmount = row.registrationFeeAmount;
   if (row.registrationFeeLabel) event.registrationFeeLabel = row.registrationFeeLabel;
   if (row.registrationUrl) event.registrationUrl = row.registrationUrl;
   if (row.activeVisualAssetId) event.activeVisualAssetId = row.activeVisualAssetId;
@@ -130,6 +132,78 @@ function mapTeam(row: {
     ...(row.captainContact ? { captainContact: row.captainContact } : {}),
     ...(row.captain != null ? { captain: row.captain } : {}),
     source: row.source as Team["source"],
+  };
+}
+
+
+const PAYMENT_SETTINGS_ID = "global";
+const ACTIVE_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "pending_review", "approved"];
+const RESERVED_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "pending_review"];
+const PAYMENT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
+// pending_review is deliberately excluded: once a captain has uploaded proof, the
+// deadline no longer applies - only an admin approve/reject should resolve the request.
+const EXPIRABLE_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "rejected"];
+
+async function expireStaleRegistrationRequests() {
+  await prisma.teamRegistrationRequest.updateMany({
+    where: {
+      status: { in: EXPIRABLE_REGISTRATION_REQUEST_STATUSES },
+      expiresAt: { lte: new Date() },
+    },
+    data: { status: "expired" },
+  });
+}
+
+function mapPaymentSettings(row: { id: string; qrisImageUrl: string | null; instructions: string | null; updatedAt?: Date } | null): PaymentSettings {
+  if (!row) return { id: PAYMENT_SETTINGS_ID };
+  return {
+    id: row.id,
+    ...(row.qrisImageUrl ? { qrisImageUrl: row.qrisImageUrl } : {}),
+    ...(row.instructions ? { instructions: row.instructions } : {}),
+    ...(row.updatedAt ? { updatedAt: row.updatedAt } : {}),
+  };
+}
+
+const registrationRequestInclude = {
+  event: { include: { stream: true } },
+  captain: { select: { id: true, name: true, email: true } },
+} as const;
+
+function mapTeamRegistrationRequest(row: {
+  id: string;
+  eventId: string;
+  captainId: string;
+  teamId: string | null;
+  teamName: string;
+  teamTag: string;
+  status: string;
+  proofImageUrl: string | null;
+  rejectReason: string | null;
+  expiresAt: Date;
+  approvedAt: Date | null;
+  approvedById: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  event?: Parameters<typeof mapEvent>[0] | null;
+  captain?: { id: string; name: string; email?: string } | null;
+}): TeamRegistrationRequest {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    captainId: row.captainId,
+    ...(row.teamId ? { teamId: row.teamId } : {}),
+    teamName: row.teamName,
+    teamTag: row.teamTag,
+    status: row.status as TeamRegistrationRequestStatus,
+    ...(row.proofImageUrl ? { proofImageUrl: row.proofImageUrl } : {}),
+    ...(row.rejectReason ? { rejectReason: row.rejectReason } : {}),
+    expiresAt: row.expiresAt,
+    ...(row.approvedAt ? { approvedAt: row.approvedAt } : {}),
+    ...(row.approvedById ? { approvedById: row.approvedById } : {}),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    ...(row.event ? { event: mapEvent(row.event) } : {}),
+    ...(row.captain !== undefined ? { captain: row.captain } : {}),
   };
 }
 
@@ -326,6 +400,8 @@ export type EventPublicInfoUpdates = {
   startsAt: string;
   venue: string;
   prizePoolLabel?: string | null;
+  registrationFeeRequired?: boolean;
+  registrationFeeAmount?: number | null;
   registrationFeeLabel?: string | null;
   registrationUrl?: string | null;
 };
@@ -377,6 +453,52 @@ export async function getPublishedEvents(): Promise<Event[]> {
     orderBy: { startsAt: "asc" },
   });
   return rows.map(mapEvent);
+}
+export async function getOpenRegistrationEventsForCaptain(captainId: string): Promise<Array<Event & { registeredTeams: number }>> {
+  if (!captainId) return [];
+
+  const rows = await prisma.event.findMany({
+    where: { status: "Published" },
+    include: { stream: true },
+    orderBy: { startsAt: "asc" },
+  });
+  const events = rows.map(mapEvent);
+  const eventIds = events.map((event) => event.id);
+  if (!eventIds.length) return [];
+
+  const [captainTeams, captainRequests, teamCountRows, lockedEntries] = await Promise.all([
+    prisma.team.findMany({
+      where: { captainId, eventId: { in: eventIds } },
+      select: { eventId: true },
+    }),
+    prisma.teamRegistrationRequest.findMany({
+      where: { captainId, eventId: { in: eventIds }, status: { in: ACTIVE_REGISTRATION_REQUEST_STATUSES } },
+      select: { eventId: true },
+    }),
+    prisma.team.groupBy({
+      by: ["eventId"],
+      where: { eventId: { in: eventIds } },
+      _count: { _all: true },
+    }),
+    Promise.all(events.map(async (event) => {
+      if (event.format !== "Single Elimination") return [event.id, false] as const;
+      const completedMatches = await prisma.match.count({ where: { eventId: event.id, status: "Completed" } });
+      return [event.id, completedMatches > 0] as const;
+    })),
+  ]);
+
+  const joinedEventIds = new Set([
+    ...captainTeams.map((team) => team.eventId),
+    ...(captainRequests ?? []).map((request) => request.eventId),
+  ]);
+  const teamCounts = new Map(teamCountRows.map((row) => [row.eventId, row._count._all]));
+  const lockedEventIds = new Set(lockedEntries.filter(([, locked]) => locked).map(([eventId]) => eventId));
+
+  return events
+    .map((event) => ({ ...event, registeredTeams: teamCounts.get(event.id) ?? 0 }))
+    .filter((event) => !joinedEventIds.has(event.id))
+    .filter((event) => event.registeredTeams < event.participantCap)
+    .filter((event) => !lockedEventIds.has(event.id));
 }
 
 /** Direct DB lookup by slug with no status filter. For admin pages that need to see Draft events. */
@@ -1205,37 +1327,268 @@ export async function autoTransitionEventToOngoing(eventId: string): Promise<voi
   });
 }
 
-/**
- * Registers a team via captain self sign-up (source = "demo").
- * Throws if the event bracket is already locked (first match recorded).
- */
+/** Registers one team for an existing captain while the event is still open. */
 export async function registerTeam(input: {
   eventId: string;
   captainId: string;
   name: string;
   tag: string;
 }): Promise<Team> {
-  const locked = await isEventBracketLocked(input.eventId);
-  if (locked) {
-    const event = await prisma.event.findUnique({ where: { id: input.eventId }, select: { slug: true } });
-    throw new Error(
-      `Event "${event?.slug}" already has recorded match results, so additional teams cannot be registered.`,
-    );
+  const event = await prisma.event.findUnique({
+    where: { id: input.eventId },
+    select: { id: true, slug: true, status: true, participantCap: true, format: true, registrationFeeRequired: true },
+  });
+  if (!event || event.status !== "Published") {
+    throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
   }
 
-  const row = await prisma.team.create({
-    data: {
-      eventId: input.eventId,
-      captainId: input.captainId,
-      name: input.name,
-      logoText: input.tag.slice(0, 2).toUpperCase(),
-      tag: input.tag.toUpperCase(),
-      source: "demo",
-    },
-  });
-  return mapTeam(row);
+  if (event.registrationFeeRequired) {
+    throw new Error("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.");
+  }
+
+  const [registeredTeams, existingCaptainTeam, completedMatches] = await Promise.all([
+    prisma.team.count({ where: { eventId: input.eventId } }),
+    prisma.team.findFirst({
+      where: { eventId: input.eventId, captainId: input.captainId },
+      select: { id: true },
+    }),
+    event.format === "Single Elimination"
+      ? prisma.match.count({ where: { eventId: input.eventId, status: "Completed" } })
+      : Promise.resolve(0),
+  ]);
+
+  if (registeredTeams >= event.participantCap) {
+    throw new Error("Slot pendaftaran event ini sudah penuh.");
+  }
+  if (existingCaptainTeam) {
+    throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
+  }
+  if (completedMatches > 0) {
+    throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
+  }
+
+  const tag = input.tag.toUpperCase();
+  try {
+    const row = await prisma.team.create({
+      data: {
+        eventId: input.eventId,
+        captainId: input.captainId,
+        name: input.name,
+        logoText: tag.slice(0, 2),
+        tag,
+        source: "registration",
+      },
+    });
+    return mapTeam(row);
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : "";
+    const message = error instanceof Error ? error.message : "";
+    if (code === "P2002" || message.includes("Unique constraint")) {
+      throw new Error("Tag atau nama tim sudah digunakan di event ini.");
+    }
+    throw error;
+  }
 }
 
+
+export async function createTeamRegistrationRequest(input: {
+  eventId: string;
+  captainId: string;
+  name: string;
+  tag: string;
+}): Promise<TeamRegistrationRequest> {
+  await expireStaleRegistrationRequests();
+  const event = await prisma.event.findUnique({
+    where: { id: input.eventId },
+    select: { id: true, slug: true, status: true, participantCap: true, format: true, registrationFeeRequired: true },
+  });
+  if (!event || event.status !== "Published") {
+    throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
+  }
+  if (!event.registrationFeeRequired) {
+    throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");
+  }
+
+  const tag = input.tag.toUpperCase();
+  const [registeredTeams, existingCaptainTeam, existingCaptainRequest, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
+    prisma.team.count({ where: { eventId: input.eventId } }),
+    prisma.team.findFirst({ where: { eventId: input.eventId, captainId: input.captainId }, select: { id: true } }),
+    prisma.teamRegistrationRequest.findFirst({
+      where: { eventId: input.eventId, captainId: input.captainId, status: { in: ACTIVE_REGISTRATION_REQUEST_STATUSES } },
+      select: { id: true },
+    }),
+    prisma.team.findFirst({
+      where: { eventId: input.eventId, OR: [{ name: input.name }, { tag }] },
+      select: { id: true },
+    }),
+    prisma.teamRegistrationRequest.findFirst({
+      where: { eventId: input.eventId, status: { in: RESERVED_REGISTRATION_REQUEST_STATUSES }, OR: [{ teamName: input.name }, { teamTag: tag }] },
+      select: { id: true },
+    }),
+    event.format === "Single Elimination" ? prisma.match.count({ where: { eventId: input.eventId, status: "Completed" } }) : Promise.resolve(0),
+  ]);
+
+  if (registeredTeams >= event.participantCap) {
+    throw new Error("Slot pendaftaran event ini sudah penuh.");
+  }
+  if (existingCaptainTeam || existingCaptainRequest) {
+    throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
+  }
+  if (completedMatches > 0) {
+    throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
+  }
+  if (existingTeamIdentity || existingRequestIdentity) {
+    throw new Error("Tag atau nama tim sudah digunakan di event ini.");
+  }
+
+  try {
+    const row = await prisma.teamRegistrationRequest.create({
+      data: {
+        eventId: input.eventId,
+        captainId: input.captainId,
+        teamName: input.name,
+        teamTag: tag,
+        status: "pending_payment",
+        expiresAt: new Date(Date.now() + PAYMENT_REQUEST_TTL_MS),
+      },
+      include: registrationRequestInclude,
+    });
+    return mapTeamRegistrationRequest(row);
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : "";
+    const message = error instanceof Error ? error.message : "";
+    if (code === "P2002" || message.includes("Unique constraint")) {
+      throw new Error("Tag atau nama tim sudah digunakan di event ini.");
+    }
+    throw error;
+  }
+}
+
+export async function updateTeamRegistrationProof(captainId: string, requestId: string, proofImageUrl: string): Promise<TeamRegistrationRequest> {
+  const request = await prisma.teamRegistrationRequest.findFirst({
+    where: { id: requestId, captainId },
+    include: registrationRequestInclude,
+  });
+  if (!request) throw new Error("Pendaftaran pembayaran tidak ditemukan.");
+  if (!["pending_payment", "rejected"].includes(request.status)) {
+    throw new Error("Bukti pembayaran untuk pendaftaran ini tidak bisa diubah.");
+  }
+  if (request.expiresAt <= new Date()) {
+    await prisma.teamRegistrationRequest.update({ where: { id: request.id }, data: { status: "expired" }, include: registrationRequestInclude });
+    throw new Error("Pendaftaran pembayaran sudah kedaluwarsa.");
+  }
+
+  const row = await prisma.teamRegistrationRequest.update({
+    where: { id: request.id },
+    data: { proofImageUrl, rejectReason: null, status: "pending_review" },
+    include: registrationRequestInclude,
+  });
+  return mapTeamRegistrationRequest(row);
+}
+
+export async function getCaptainRegistrationRequests(captainId: string): Promise<TeamRegistrationRequest[]> {
+  if (!captainId) return [];
+  await expireStaleRegistrationRequests();
+  const rows = await prisma.teamRegistrationRequest.findMany({
+    where: { captainId, status: { in: ["pending_payment", "pending_review", "rejected", "expired"] } },
+    include: registrationRequestInclude,
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map(mapTeamRegistrationRequest);
+}
+
+export async function getPaymentRegistrationRequestsForAdmin(user: AppUser, filters: { eventId?: string; status?: TeamRegistrationRequestStatus } = {}): Promise<TeamRegistrationRequest[]> {
+  await expireStaleRegistrationRequests();
+  const where: Prisma.TeamRegistrationRequestWhereInput = {};
+  if (filters.eventId) where.eventId = filters.eventId;
+  if (filters.status) where.status = filters.status;
+  if (user.role === "organizer") where.event = { organizerUserId: user.id };
+  else if (user.role !== "platform_admin" && user.role !== "admin") throw new Error("Not authorized");
+
+  const rows = await prisma.teamRegistrationRequest.findMany({
+    where,
+    include: registrationRequestInclude,
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map(mapTeamRegistrationRequest);
+}
+
+export async function approveTeamRegistrationRequest(user: AppUser, requestId: string): Promise<Team> {
+  const request = await prisma.teamRegistrationRequest.findFirst({
+    where: { id: requestId },
+    include: registrationRequestInclude,
+  });
+  if (!request) throw new Error("Pendaftaran pembayaran tidak ditemukan.");
+  await assertUserCanManageEvent(user, request.eventId);
+  if (request.status !== "pending_review") throw new Error("Pendaftaran belum siap diverifikasi.");
+  if (request.event.status !== "Published") throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
+
+  const [registeredTeams, existingCaptainTeam, completedMatches] = await Promise.all([
+    prisma.team.count({ where: { eventId: request.eventId } }),
+    prisma.team.findFirst({
+      where: {
+        eventId: request.eventId,
+        captainId: request.captainId,
+        ...(request.teamId ? { id: { not: request.teamId } } : {}),
+      },
+      select: { id: true },
+    }),
+    request.event.format === "Single Elimination" ? prisma.match.count({ where: { eventId: request.eventId, status: "Completed" } }) : Promise.resolve(0),
+  ]);
+  if (!request.teamId && registeredTeams >= request.event.participantCap) throw new Error("Slot pendaftaran event ini sudah penuh.");
+  if (existingCaptainTeam) throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
+  if (completedMatches > 0) throw new Error(`Event "${request.event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
+
+  const teamRow = request.teamId
+    ? await prisma.team.update({ where: { id: request.teamId }, data: { source: "registration" } })
+    : await prisma.team.create({
+        data: {
+          eventId: request.eventId,
+          captainId: request.captainId,
+          name: request.teamName,
+          logoText: request.teamTag.slice(0, 2),
+          tag: request.teamTag,
+          source: "registration",
+        },
+      });
+  await prisma.teamRegistrationRequest.update({
+    where: { id: request.id },
+    data: { status: "approved", teamId: teamRow.id, approvedAt: new Date(), approvedById: user.id },
+    include: registrationRequestInclude,
+  });
+  return mapTeam(teamRow);
+}
+
+export async function rejectTeamRegistrationRequest(user: AppUser, requestId: string, reason: string): Promise<TeamRegistrationRequest> {
+  const request = await prisma.teamRegistrationRequest.findFirst({ where: { id: requestId }, include: registrationRequestInclude });
+  if (!request) throw new Error("Pendaftaran pembayaran tidak ditemukan.");
+  await assertUserCanManageEvent(user, request.eventId);
+  if (!["pending_review", "pending_payment"].includes(request.status)) throw new Error("Pendaftaran ini tidak bisa ditolak.");
+  const row = await prisma.teamRegistrationRequest.update({
+    where: { id: request.id },
+    data: { status: "rejected", rejectReason: reason, proofImageUrl: null },
+    include: registrationRequestInclude,
+  });
+  return mapTeamRegistrationRequest(row);
+}
+
+export async function getPaymentSettings(): Promise<PaymentSettings> {
+  const row = await prisma.paymentSettings.findUnique({ where: { id: PAYMENT_SETTINGS_ID } });
+  return mapPaymentSettings(row);
+}
+
+export async function updatePaymentSettings(input: { qrisImageUrl?: string | null; instructions?: string | null }): Promise<PaymentSettings> {
+  const data = {
+    qrisImageUrl: input.qrisImageUrl ?? null,
+    instructions: input.instructions ?? null,
+  };
+  const row = await prisma.paymentSettings.upsert({
+    where: { id: PAYMENT_SETTINGS_ID },
+    update: data,
+    create: { id: PAYMENT_SETTINGS_ID, ...data },
+  });
+  return mapPaymentSettings(row);
+}
 /**
  * Bulk-imports teams from a validated CSV row list. For each team, generates a captain User
  * (upserted by email) with a temp password, then creates the Team row.
@@ -2075,6 +2428,74 @@ export async function createCaptainWithTeam(input: {
       },
     });
     return { userId: user.id, teamId: team.id };
+  });
+}
+
+/**
+ * Atomically creates a captain User and a pending-payment TeamRegistrationRequest
+ * (no Team row yet) for paid events. Used by the self sign-up flow when the target
+ * event has registrationFeeRequired enabled.
+ */
+export async function createCaptainWithPendingPayment(input: {
+  email: string;
+  name: string;
+  passwordHash: string;
+  eventId: string;
+  teamName: string;
+  teamTag: string;
+}): Promise<{ userId: string; requestId: string }> {
+  const tag = input.teamTag.toUpperCase();
+
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: input.eventId },
+      select: { id: true, slug: true, status: true, participantCap: true, format: true, registrationFeeRequired: true },
+    });
+    if (!event || event.status !== "Published") {
+      throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
+    }
+    if (!event.registrationFeeRequired) {
+      throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");
+    }
+
+    const [registeredTeams, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
+      tx.team.count({ where: { eventId: input.eventId } }),
+      tx.team.findFirst({ where: { eventId: input.eventId, OR: [{ name: input.teamName }, { tag }] }, select: { id: true } }),
+      tx.teamRegistrationRequest.findFirst({
+        where: { eventId: input.eventId, status: { in: RESERVED_REGISTRATION_REQUEST_STATUSES }, OR: [{ teamName: input.teamName }, { teamTag: tag }] },
+        select: { id: true },
+      }),
+      event.format === "Single Elimination" ? tx.match.count({ where: { eventId: input.eventId, status: "Completed" } }) : Promise.resolve(0),
+    ]);
+    if (registeredTeams >= event.participantCap) {
+      throw new Error("Slot pendaftaran event ini sudah penuh.");
+    }
+    if (existingTeamIdentity || existingRequestIdentity) {
+      throw new Error("Tag atau nama tim sudah digunakan di event ini.");
+    }
+    if (completedMatches > 0) {
+      throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
+    }
+
+    const user = await tx.user.create({
+      data: {
+        email: input.email,
+        name: input.name,
+        role: "captain",
+        passwordHash: input.passwordHash,
+      },
+    });
+    const request = await tx.teamRegistrationRequest.create({
+      data: {
+        eventId: input.eventId,
+        captainId: user.id,
+        teamName: input.teamName,
+        teamTag: tag,
+        status: "pending_payment",
+        expiresAt: new Date(Date.now() + PAYMENT_REQUEST_TTL_MS),
+      },
+    });
+    return { userId: user.id, requestId: request.id };
   });
 }
 
