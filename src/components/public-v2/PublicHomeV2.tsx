@@ -58,7 +58,7 @@ export function PublicHomeV2({
   labels,
 }: PublicHomeV2Props) {
   const railEvents = events.filter((event) => event.id !== featuredEvent?.id);
-  const ticker = featuredBracket.slice(0, 3);
+  const ticker = featuredEvent?.status === "Ongoing" ? featuredBracket.slice(0, 3) : [];
   const teamName = (teamId: string | null) => featuredTeams.find((team) => team.id === teamId)?.name ?? "TBD";
   const filters = [{ id: "all", name: labels.allGames }, ...games];
 

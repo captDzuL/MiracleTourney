@@ -196,6 +196,13 @@ describe("PublicHomeV2", () => {
     expect(container.textContent).toContain("Jadwal muncul setelah tim siap.");
   });
 
+  it("hides the live ticker when the featured event is not ongoing, even with bracket data", () => {
+    renderHome({ featuredEvent: { ...featuredEvent, status: "Published" } });
+
+    expect(container.querySelectorAll('[data-testid="pv-ticker-row"]')).toHaveLength(0);
+    expect(container.textContent).toContain("Jadwal muncul setelah tim siap.");
+  });
+
   it("renders the remaining events as an event drop rail with real text names", () => {
     renderHome();
 

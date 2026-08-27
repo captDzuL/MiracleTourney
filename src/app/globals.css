@@ -564,6 +564,7 @@ textarea {
 
 .public-visual-v2 .pv-data-table table {
   color: var(--pv-ink);
+  border-color: var(--pv-rule);
 }
 
 .public-visual-v2 .pv-data-table__head {
@@ -574,6 +575,10 @@ textarea {
 .public-visual-v2 .pv-data-table__row {
   background: transparent;
   border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-data-table__row td {
+  color: var(--pv-ink);
 }
 
 .public-visual-v2 .pv-data-table__row:nth-child(even) {
