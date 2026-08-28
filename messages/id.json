@@ -13,6 +13,12 @@
       "ready": "Siap Vercel + Neon"
     }
   },
+  "panelTheme": {
+    "label": "Tema panel",
+    "light": "Terang",
+    "dark": "Gelap",
+    "system": "Sistem"
+  },
   "home": {
     "season": "Musim 1 · Miracle League",
     "headline": "Lihat Turnamen Komunitas yang Lagi Berjalan",
@@ -36,16 +42,36 @@
     "viewStandings": "Lihat Klasemen",
     "viewEvent": "Lihat Event",
     "upToTeams": "Maks {cap} tim · {venue}",
-    "noEvents": "Belum ada event publik untuk game ini."
+    "noEvents": "Belum ada event publik untuk game ini.",
+    "eventDrop": "Event Drop",
+    "liveFeed": "Live Feed",
+    "tickerEmpty": "Jadwal muncul setelah tim siap.",
+    "exploreEvent": "Jelajahi Event",
+    "issueLabel": "Event",
+    "teamsLabel": "tim",
+    "statusOngoing": "BERLANGSUNG",
+    "statusUpNext": "SEGERA",
+    "statusFinished": "SELESAI"
   },
   "events": {
     "title": "Daftar Event",
     "description": "Daftar event kompetisi yang sudah dipublikasi, sedang berjalan, dan sudah selesai.",
     "capTeams": "Maks {n} tim",
+    "allGames": "Semua Game",
+    "teamsLabel": "tim",
+    "issueLabel": "Event",
+    "organizerLabel": "Organizer",
+    "prizePool": "Prize Pool",
+    "entryFee": "Biaya Pendaftaran",
     "noEvents": "Belum ada event yang dipublikasi. Event draft hanya terlihat di panel admin."
   },
   "eventDetail": {
     "liveNow": "Sedang Live",
+    "issueLabel": "Event",
+    "organizerLabel": "Organizer",
+    "prizePool": "Prize Pool",
+    "entryFee": "Biaya Pendaftaran",
+    "register": "Daftar Event",
     "teamCount": "{registered}/{cap} tim terdaftar",
     "bracketStat": "Bracket / Fixture",
     "bracketHint": "Proyeksi dari tim yang terdaftar",
@@ -74,6 +100,7 @@
   "bracket": {
     "title": "Bracket {name}",
     "description": "Event single-elimination ditampilkan sebagai bracket ronde demi ronde yang terhubung dengan garis pohon.",
+    "backToEvent": "Kembali ke Event",
     "detailTitle": "Detail Bracket",
     "detailDescription": "Mode detail tersedia di bawah visual bracket, dengan kolom status dan jadwal yang jelas.",
     "playIn": "Babak Play-in",
@@ -108,6 +135,7 @@
   "leaderboard": {
     "sectionTitle": "Leaderboard Pemain {name}",
     "sectionDescription": "Agregasi statistik pribadi per event.",
+    "backToEvent": "Kembali ke Event",
     "player": "Pemain",
     "position": "Posisi",
     "matches": "Match",
@@ -116,6 +144,7 @@
   "standings": {
     "sectionTitle": "Klasemen {name}",
     "sectionDescription": "Sistem poin standar league: menang = 3, seri = 1, kalah = 0.",
+    "backToEvent": "Kembali ke Event",
     "rank": "#",
     "team": "Tim",
     "played": "M",
@@ -131,6 +160,7 @@
   "participants": {
     "sectionTitle": "Peserta {name}",
     "sectionDescription": "Tim terdaftar dan snapshot roster terkini.",
+    "backToEvent": "Kembali ke Event",
     "team": "Tim",
     "tag": "Tag",
     "captain": "Kapten",

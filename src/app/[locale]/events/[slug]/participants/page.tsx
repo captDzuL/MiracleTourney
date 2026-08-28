@@ -33,5 +33,5 @@ export default async function LocalizedParticipantsPage({
   const { locale, slug } = await params;
   setRequestLocale(locale as "id" | "en");
 
-  return renderParticipantsPage(slug);
+  return renderParticipantsPage(slug, locale as "id" | "en");
 }

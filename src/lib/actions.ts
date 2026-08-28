@@ -22,6 +22,7 @@ import type { AppUser } from "@/lib/platform/types";
 import {
   addPlayer,
   approveStatSubmission,
+  approveEventVisualAsset,
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
@@ -29,6 +30,7 @@ import {
   createCaptainWithPendingPayment,
   createCaptainWithTeam,
   createEvent,
+  createEventVisualAsset,
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
@@ -42,8 +44,10 @@ import {
   commitRegistrationImportBatch,
   registerTeam,
   rejectStatSubmission,
+  rejectEventVisualAsset,
   rejectTeamRegistrationRequest,
   setEventStatus,
+  setEventVisualFocalPoint,
   setMatchGames,
   setMatchResult,
   updateCaptainPassword,
@@ -170,10 +174,24 @@ const optionalPublicUrlSchema = z.preprocess(
   z.string().refine(isHttpUrl, "Registration URL must use http or https.").nullable(),
 );
 
+type UploadedImageAsset = {
+  url: string;
+  mimeType: string;
+  width: number;
+  height: number;
+};
+
 function appendActionError(basePath: string, message: string) {
   const separator = basePath.includes("?") ? "&" : "?";
   return `${basePath}${separator}error=${encodeURIComponent(message)}`;
 }
+
+/**
+ * Single validation + storage boundary for every admin image upload.
+ * Checks, in order: entity id shape, presence, byte size, declared MIME,
+ * magic bytes, and finally real decodability through `sharp` (which also gives
+ * the dimensions we persist on a visual revision).
+ */
 async function uploadImageAsset({
   file,
   folder,
@@ -188,7 +206,7 @@ async function uploadImageAsset({
   label: string;
   maxBytes: number;
   errorPath?: string;
-}) {
+}): Promise<UploadedImageAsset> {
   if (!isSafeEntityId(entityId)) {
     redirect(appendActionError(errorPath, `Invalid ${label} ID.`) as never);
   }
@@ -209,21 +227,38 @@ async function uploadImageAsset({
     redirect(appendActionError(errorPath, `${label} file content does not match its image type.`) as never);
   }
 
+  const mimeType = file.type || "image/png";
+  const dimensions = await readImageDimensions(buffer);
+  if (!dimensions) {
+    redirect(appendActionError(errorPath, `${label} file could not be decoded as an image.`) as never);
+  }
+
   const filename = `${entityId}-${Date.now()}.${extension}`;
-  if (process.env.NODE_ENV === "test") return `/${folder}/${filename}`;
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     const { put } = await import("@vercel/blob");
     const result = await put(`${folder}/${filename}`, buffer, {
       access: "public",
-      contentType: file.type || "image/png",
+      contentType: mimeType,
     });
-    return result.url;
+    return { url: result.url, mimeType, ...dimensions };
   }
 
   const dir = path.join(process.cwd(), "public", folder);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, filename), buffer);
-  return `/${folder}/${filename}`;
+  return { url: `/${folder}/${filename}`, mimeType, ...dimensions };
+}
+
+/** Returns real pixel dimensions, or null when the bytes are not a decodable image. */
+async function readImageDimensions(buffer: Buffer): Promise<{ width: number; height: number } | null> {
+  try {
+    const sharp = (await import("sharp")).default;
+    const metadata = await sharp(buffer).metadata();
+    if (!metadata.width || !metadata.height) return null;
+    return { width: metadata.width, height: metadata.height };
+  } catch {
+    return null;
+  }
 }
 
 async function generateCertificateForFinalMatch(matchId: string, eventId: string) {
@@ -387,7 +422,7 @@ export async function captainRegisterTeamAction(formData: FormData) {
 export async function captainUploadPaymentProofAction(formData: FormData) {
   const captain = await requireCaptainSession();
   const requestId = z.string().trim().min(1).parse(formData.get("requestId"));
-  const proofImageUrl = await uploadImageAsset({
+  const proofAsset = await uploadImageAsset({
     file: formData.get("paymentProof"),
     folder: "payment-proofs",
     entityId: requestId,
@@ -397,7 +432,7 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
   });
 
   try {
-    await updateTeamRegistrationProof(captain.id, requestId, proofImageUrl);
+    await updateTeamRegistrationProof(captain.id, requestId, proofAsset.url);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal mengupload bukti pembayaran.";
     await redirectToActiveLocale(`/captain?tab=registration&error=${encodeURIComponent(message)}` as never);
@@ -411,7 +446,7 @@ export async function adminUpdatePaymentSettingsAction(formData: FormData) {
   await requireAdminSession();
 
   const qrisImageFile = formData.get("qrisImage");
-  const uploadedQrisUrl = qrisImageFile instanceof File && qrisImageFile.size > 0
+  const uploadedQrisAsset = qrisImageFile instanceof File && qrisImageFile.size > 0
     ? await uploadImageAsset({
       file: qrisImageFile,
       folder: "payment-qris",
@@ -421,6 +456,7 @@ export async function adminUpdatePaymentSettingsAction(formData: FormData) {
       errorPath: "/admin?phase=payments",
     })
     : null;
+  const uploadedQrisUrl = uploadedQrisAsset?.url ?? null;
 
   const input = z.object({
     qrisImageUrl: optionalPublicUrlSchema.or(z.string().startsWith("/")).nullable(),
@@ -1228,7 +1264,7 @@ export async function adminSaveMatchPlayerStatsAction(formData: FormData) {
   await adminWriteMatchPlayerStats({ matchId, teamId, eventId, adminId: user.id, stats });
   revalidateTag("stats");
   revalidatePath("/", "layout");
-  redirect(`/admin?phase=run&activeEventId=${eventId}&matchId=${matchId}&success=player-stats-saved` as never);
+  await redirectToActiveLocale(`/admin?phase=run&activeEventId=${eventId}&matchId=${matchId}&success=player-stats-saved`);
 }
 
 /** Sets the Best-of-N configuration for a specific round label in an event. Valid bestOf values are 1, 3, or 5. */
@@ -1306,20 +1342,20 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
 
   try {
-    const url = await uploadImageAsset({
+    const asset = await uploadImageAsset({
       file: formData.get("characterArt"),
       folder: "character-art",
       entityId: eventId,
       label: "Character art",
       maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
     });
-    await updateEventCertificateAssets(eventId, { characterArtUrl: url });
+    await updateEventCertificateAssets(eventId, { characterArtUrl: asset.url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
   revalidatePath("/admin");
-  redirect(`/admin?success=character-art-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=character-art-uploaded`);
 }
 
 export async function adminUploadEventLogoAction(formData: FormData) {
@@ -1328,46 +1364,163 @@ export async function adminUploadEventLogoAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
 
   try {
-    const url = await uploadImageAsset({
+    const asset = await uploadImageAsset({
       file: formData.get("eventLogo"),
       folder: "event-logos",
       entityId: eventId,
       label: "Event logo",
       maxBytes: MAX_LOGO_IMAGE_BYTES,
     });
-    await updateEventBrandAssets(eventId, { logoUrl: url });
+    await updateEventBrandAssets(eventId, { logoUrl: asset.url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=event-logo-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=event-logo-uploaded`);
 }
 
-export async function adminUploadEventBackgroundAction(formData: FormData) {
+/**
+ * While the legacy `Event.gameImageUrl` column still has readers, every
+ * approval mirrors the approved revision url back into it. Flip this to `false`
+ * (and delete the dual-write branch in `approveEventVisualAsset`) once all
+ * surfaces read through `resolveEventVisual`.
+ */
+const DUAL_WRITE_LEGACY_EVENT_IMAGE = true;
+
+/**
+ * Uploads an organizer-supplied event background as a new visual revision.
+ * Organizer uploads are trusted after the rights attestation, so the revision
+ * is created already approved and then activated through the repository.
+ */
+export async function adminUploadEventVisualAction(formData: FormData) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
-  await assertUserCanManageEvent(user, eventId);
 
   try {
-    const url = await uploadImageAsset({
-      file: formData.get("eventBackground"),
+    await assertUserCanManageEvent(user, eventId);
+
+    if (formData.get("rightsAttestation") !== "confirmed") {
+      throw new Error("Konfirmasi hak publikasi artwork terlebih dahulu.");
+    }
+
+    const asset = await uploadImageAsset({
+      file: formData.get("eventVisual"),
       folder: "event-backgrounds",
       entityId: eventId,
       label: "Event background",
       maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
     });
-    await updateEventBrandAssets(eventId, { gameImageUrl: url });
+
+    const revision = await createEventVisualAsset(user, {
+      eventId,
+      source: "organizer_upload",
+      status: "approved",
+      url: asset.url,
+      mimeType: asset.mimeType,
+      width: asset.width,
+      height: asset.height,
+      rightsAttestedAt: new Date(),
+    });
+
+    await approveEventVisualAsset(user, eventId, revision.id, {
+      dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=event-background-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=event-visual-uploaded`);
+}
+
+/** Approves a revision that is waiting for review and makes it the active one. */
+export async function adminApproveEventVisualAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const assetId = z.string().min(1).parse(formData.get("assetId"));
+
+  try {
+    await assertUserCanManageEvent(user, eventId);
+    await approveEventVisualAsset(user, eventId, assetId, {
+      dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Approval failed";
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale(`/admin?success=event-visual-approved`);
+}
+
+/** Rejects a revision. The repository refuses to reject the active one. */
+export async function adminRejectEventVisualAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const assetId = z.string().min(1).parse(formData.get("assetId"));
+
+  try {
+    await assertUserCanManageEvent(user, eventId);
+    await rejectEventVisualAsset(user, eventId, assetId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Rejection failed";
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale(`/admin?success=event-visual-rejected`);
+}
+
+/** Rolls back to an already approved revision by re-activating it. */
+export async function adminActivateEventVisualAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const assetId = z.string().min(1).parse(formData.get("assetId"));
+
+  try {
+    await assertUserCanManageEvent(user, eventId);
+    await approveEventVisualAsset(user, eventId, assetId, {
+      dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Activation failed";
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale(`/admin?success=event-visual-activated`);
+}
+
+/**
+ * Stores the focal point of a revision. Values are forwarded as parsed so the
+ * repository stays the single place that clamps them into the unit square.
+ */
+export async function adminSetEventVisualFocalPointAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const assetId = z.string().min(1).parse(formData.get("assetId"));
+  const focalX = z.coerce.number().finite().parse(formData.get("focalX"));
+  const focalY = z.coerce.number().finite().parse(formData.get("focalY"));
+
+  try {
+    await assertUserCanManageEvent(user, eventId);
+    await setEventVisualFocalPoint(user, eventId, assetId, { x: focalX, y: focalY });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Focal point update failed";
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale(`/admin?success=event-visual-focal-updated`);
 }
 
 export async function adminUploadTeamLogoAction(formData: FormData) {
@@ -1375,22 +1528,22 @@ export async function adminUploadTeamLogoAction(formData: FormData) {
   const teamId = z.string().min(1).parse(formData.get("teamId"));
 
   try {
-    const url = await uploadImageAsset({
+    const asset = await uploadImageAsset({
       file: formData.get("teamLogo"),
       folder: "team-logos",
       entityId: teamId,
       label: "Team logo",
       maxBytes: MAX_LOGO_IMAGE_BYTES,
     });
-    await updateTeamLogo(user, teamId, url);
+    await updateTeamLogo(user, teamId, asset.url);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("teams");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=team-logo-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=team-logo-uploaded`);
 }
 
 /** Updates the accent color for an event's certificate. */
@@ -1401,7 +1554,7 @@ export async function adminSetAccentColorAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
   await updateEventCertificateAssets(eventId, { accentColor });
   revalidatePath("/admin");
-  redirect(`/admin?success=accent-color-saved` as never);
+  await redirectToActiveLocale(`/admin?success=accent-color-saved`);
 }
 
 /**

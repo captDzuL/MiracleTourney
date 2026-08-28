@@ -13,6 +13,12 @@
       "ready": "Vercel + Neon ready"
     }
   },
+  "panelTheme": {
+    "label": "Panel theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
   "home": {
     "season": "Season 1 · Miracle League",
     "headline": "Explore Live Community Tournaments",
@@ -36,16 +42,36 @@
     "viewStandings": "View Standings",
     "viewEvent": "View Event",
     "upToTeams": "Up to {cap} teams · {venue}",
-    "noEvents": "No public events yet for this game."
+    "noEvents": "No public events yet for this game.",
+    "eventDrop": "Event Drop",
+    "liveFeed": "Live Feed",
+    "tickerEmpty": "Schedule appears once teams are locked in.",
+    "exploreEvent": "Explore Event",
+    "issueLabel": "Event",
+    "teamsLabel": "teams",
+    "statusOngoing": "ONGOING",
+    "statusUpNext": "UP NEXT",
+    "statusFinished": "FINISHED"
   },
   "events": {
     "title": "Event Hub",
     "description": "Public list of published, ongoing, and archived competition events.",
     "capTeams": "Cap {n} teams",
+    "allGames": "All Games",
+    "teamsLabel": "teams",
+    "issueLabel": "Event",
+    "organizerLabel": "Organizer",
+    "prizePool": "Prize Pool",
+    "entryFee": "Entry Fee",
     "noEvents": "No public events are published yet. Draft events stay visible only inside the admin panel."
   },
   "eventDetail": {
     "liveNow": "Live now",
+    "issueLabel": "Event",
+    "organizerLabel": "Organizer",
+    "prizePool": "Prize Pool",
+    "entryFee": "Entry Fee",
+    "register": "Register Event",
     "teamCount": "{registered}/{cap} registered teams",
     "bracketStat": "Bracket / fixtures",
     "bracketHint": "Projected from teams registered",
@@ -74,6 +100,7 @@
   "bracket": {
     "title": "{name} bracket",
     "description": "Single-elimination events render as a round-by-round bracket connected with tree lines.",
+    "backToEvent": "Back to Event",
     "detailTitle": "Bracket detail",
     "detailDescription": "Detail mode stays available below the visual bracket, with clearer status and schedule columns.",
     "playIn": "Play-in Round",
@@ -108,6 +135,7 @@
   "leaderboard": {
     "sectionTitle": "{name} Player Leaderboard",
     "sectionDescription": "Event-scoped aggregation of personal statistics.",
+    "backToEvent": "Back to Event",
     "player": "Player",
     "position": "Position",
     "matches": "Matches",
@@ -116,6 +144,7 @@
   "standings": {
     "sectionTitle": "{name} Standings",
     "sectionDescription": "Standard league scoring: win = 3, draw = 1, loss = 0.",
+    "backToEvent": "Back to Event",
     "rank": "#",
     "team": "Team",
     "played": "P",
@@ -131,6 +160,7 @@
   "participants": {
     "sectionTitle": "{name} Participants",
     "sectionDescription": "Registered teams and current roster snapshot.",
+    "backToEvent": "Back to Event",
     "team": "Team",
     "tag": "Tag",
     "captain": "Captain",

@@ -35,5 +35,5 @@ export default async function LocalizedBracketPage({
   const { locale, slug } = await params;
   setRequestLocale(locale as "id" | "en");
 
-  return renderBracketPage(slug);
+  return renderBracketPage(slug, locale as "id" | "en");
 }

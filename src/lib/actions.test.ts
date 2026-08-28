@@ -1,16 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   addPlayer,
+  approveEventVisualAsset,
   approveStatSubmission,
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
+  blobPut,
   createCaptainWithPendingPayment,
   createCaptainWithTeam,
   createEvent,
+  createEventVisualAsset,
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
@@ -20,6 +23,8 @@ const {
   getUserPasswordHashById,
   generateCertificateIfFinal,
   importTeams,
+  listEventVisualAssets,
+  rejectEventVisualAsset,
   rejectStatSubmission,
   rejectTeamRegistrationRequest,
   registerTeam,
@@ -27,12 +32,14 @@ const {
   revalidateTag,
   requireRole,
   setEventStatus,
+  setEventVisualFocalPoint,
   setMatchGames,
   setMatchResult,
   signIn,
   signOut,
   headers,
   updateCaptainPassword,
+  updateEventBrandAssets,
   updatePaymentSettings,
   updateTeamRegistrationProof,
   updateEventStream,
@@ -44,15 +51,18 @@ const {
   setTeamCaptainDisplay,
 } = vi.hoisted(() => ({
   addPlayer: vi.fn(),
+  approveEventVisualAsset: vi.fn(),
   approveStatSubmission: vi.fn(),
   approveTeamRegistrationRequest: vi.fn(),
   assertCaptainCanSubmitStats: vi.fn(),
   assertUserCanManageEvent: vi.fn(),
   assertUserCanReviewStatSubmission: vi.fn(),
   autoTransitionEventToOngoing: vi.fn(),
+  blobPut: vi.fn(),
   createCaptainWithPendingPayment: vi.fn(),
   createCaptainWithTeam: vi.fn(),
   createEvent: vi.fn(),
+  createEventVisualAsset: vi.fn(),
   createTeamRegistrationRequest: vi.fn(),
   deletePlayer: vi.fn(),
   getImportSnapshot: vi.fn(),
@@ -62,6 +72,8 @@ const {
   getUserPasswordHashById: vi.fn(),
   generateCertificateIfFinal: vi.fn(),
   importTeams: vi.fn(),
+  listEventVisualAssets: vi.fn(),
+  rejectEventVisualAsset: vi.fn(),
   rejectStatSubmission: vi.fn(),
   rejectTeamRegistrationRequest: vi.fn(),
   registerTeam: vi.fn(),
@@ -69,12 +81,14 @@ const {
   revalidateTag: vi.fn(),
   requireRole: vi.fn(),
   setEventStatus: vi.fn(),
+  setEventVisualFocalPoint: vi.fn(),
   setMatchGames: vi.fn(),
   setMatchResult: vi.fn(),
   signIn: vi.fn(),
   signOut: vi.fn(),
   headers: vi.fn(),
   updateCaptainPassword: vi.fn(),
+  updateEventBrandAssets: vi.fn(),
   updatePaymentSettings: vi.fn(),
   updateTeamRegistrationProof: vi.fn(),
   updateEventStream: vi.fn(),
@@ -97,8 +111,10 @@ vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut }));
 vi.mock("@/lib/imports/team-import", () => ({
   parseAndValidateTeamImport: vi.fn(),
 }));
+vi.mock("@vercel/blob", () => ({ put: blobPut }));
 vi.mock("@/lib/platform/repository", () => ({
   addPlayer,
+  approveEventVisualAsset,
   approveStatSubmission,
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
@@ -108,6 +124,7 @@ vi.mock("@/lib/platform/repository", () => ({
   createCaptainWithPendingPayment,
   createCaptainWithTeam,
   createEvent,
+  createEventVisualAsset,
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
@@ -116,13 +133,17 @@ vi.mock("@/lib/platform/repository", () => ({
   getUserByEmail,
   getUserPasswordHashById,
   importTeams,
+  listEventVisualAssets,
+  rejectEventVisualAsset,
   rejectStatSubmission,
   rejectTeamRegistrationRequest,
   registerTeam,
   setEventStatus,
+  setEventVisualFocalPoint,
   setMatchGames,
   setMatchResult,
   updateCaptainPassword,
+  updateEventBrandAssets,
   updatePaymentSettings,
   updateTeamRegistrationProof,
   updateEventCertificateAssets,
@@ -146,15 +167,20 @@ vi.mock("bcryptjs", () => ({
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import bcrypt from "bcryptjs";
 import {
+  adminActivateEventVisualAction,
+  adminApproveEventVisualAction,
   adminApproveStatAction,
   adminApprovePaymentAction,
   adminCreateEventAction,
   adminImportTeamsCsvAction,
+  adminRejectEventVisualAction,
   adminRejectStatAction,
+  adminSetEventVisualFocalPointAction,
   adminRejectPaymentAction,
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
   adminUploadCharacterArtAction,
+  adminUploadEventVisualAction,
   adminUpdateEventStatusAction,
   adminUpdateEventPublicInfoAction,
   adminUpdatePaymentSettingsAction,
@@ -482,14 +508,19 @@ describe("captain actions", () => {
 
   it("uploads a payment proof for the authenticated captain", async () => {
     updateTeamRegistrationProof.mockResolvedValue({ id: "request-1", status: "pending_review" });
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-proofs/request-1.png" });
 
-    await expect(
-      captainUploadPaymentProofAction(fd({ requestId: "request-1", paymentProof: new File([png], "proof.png", { type: "image/png" }) })),
-    ).rejects.toThrow("REDIRECT:/captain?tab=registration&success=payment-proof-uploaded");
+    try {
+      await expect(
+        captainUploadPaymentProofAction(fd({ requestId: "request-1", paymentProof: validPngFile("proof.png") })),
+      ).rejects.toThrow("REDIRECT:/captain?tab=registration&success=payment-proof-uploaded");
 
-    expect(updateTeamRegistrationProof).toHaveBeenCalledWith("captain-1", "request-1", expect.stringContaining("payment-proofs/"));
-    expect(revalidatePath).toHaveBeenCalledWith("/captain");
+      expect(updateTeamRegistrationProof).toHaveBeenCalledWith("captain-1", "request-1", "https://blob.example.com/payment-proofs/request-1.png");
+      expect(revalidatePath).toHaveBeenCalledWith("/captain");
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
   });
   it("requires a captain session before adding a player", async () => {
     requireRole.mockResolvedValue(null);
@@ -1050,20 +1081,25 @@ describe("adminUpdateEventPublicInfoAction", () => {
 
   it("uploads a QRIS image file and uses it instead of the text URL field", async () => {
     updatePaymentSettings.mockResolvedValue({ id: "global", qrisImageUrl: "/payment-qris/global-123.png" });
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-qris/global.png" });
 
-    await expect(
-      adminUpdatePaymentSettingsAction(fd({
-        qrisImageUrl: "https://old-url-should-be-ignored.example/qris.png",
+    try {
+      await expect(
+        adminUpdatePaymentSettingsAction(fd({
+          qrisImageUrl: "https://old-url-should-be-ignored.example/qris.png",
+          instructions: "Scan QRIS lalu upload bukti.",
+          qrisImage: validPngFile("qris.png"),
+        })),
+      ).rejects.toThrow("REDIRECT:/admin?phase=payments&success=payment-settings-updated");
+
+      expect(updatePaymentSettings).toHaveBeenCalledWith({
+        qrisImageUrl: "https://blob.example.com/payment-qris/global.png",
         instructions: "Scan QRIS lalu upload bukti.",
-        qrisImage: new File([png], "qris.png", { type: "image/png" }),
-      })),
-    ).rejects.toThrow("REDIRECT:/admin?phase=payments&success=payment-settings-updated");
-
-    expect(updatePaymentSettings).toHaveBeenCalledWith({
-      qrisImageUrl: expect.stringContaining("payment-qris/"),
-      instructions: "Scan QRIS lalu upload bukti.",
-    });
+      });
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
   });
 
   it("approves paid registration requests from admin", async () => {
@@ -1411,5 +1447,214 @@ describe("adminUploadCharacterArtAction", () => {
       })),
     ).rejects.toThrow("REDIRECT:/admin?error=");
     expect(updateEventCertificateAssets).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// Event visual revision actions (organizer upload + approval)
+// ────────────────────────────────────────────────────────────
+
+/** A real 16×9 PNG so `sharp` can decode it and report genuine dimensions. */
+const VALID_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAJCAIAAAC0SDtlAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAFUlEQVQYlWMQkFAgCTGMapAYDKEEANz3KIGzP4F1AAAAAElFTkSuQmCC";
+
+function validPngFile(name = "background.png") {
+  return new File([Buffer.from(VALID_PNG_BASE64, "base64")], name, { type: "image/png" });
+}
+
+function visualAsset(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "asset-new",
+    eventId: "event-safe",
+    source: "organizer_upload",
+    status: "approved",
+    url: "https://blob.example.com/event-visuals/event-safe.png",
+    focalX: 0.5,
+    focalY: 0.5,
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    updatedAt: new Date("2026-01-01T00:00:00Z"),
+    ...overrides,
+  };
+}
+
+describe("event visual revision actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    requireRole.mockResolvedValue(organizerSession());
+    blobPut.mockResolvedValue({ url: "https://blob.example.com/event-visuals/event-safe.png" });
+    createEventVisualAsset.mockResolvedValue(visualAsset());
+    approveEventVisualAsset.mockResolvedValue(visualAsset());
+    rejectEventVisualAsset.mockResolvedValue(visualAsset({ id: "asset-old", status: "rejected" }));
+    setEventVisualFocalPoint.mockResolvedValue(visualAsset({ focalX: 1, focalY: 0 }));
+  });
+
+  afterEach(() => {
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+  });
+
+  it("requires an organizer or admin session before creating a revision", async () => {
+    requireRole.mockResolvedValue(null);
+
+    await expect(
+      adminUploadEventVisualAction(fd({
+        eventId: "event-safe",
+        rightsAttestation: "confirmed",
+        eventVisual: validPngFile(),
+      })),
+    ).rejects.toThrow("REDIRECT:/login");
+    expect(assertUserCanManageEvent).not.toHaveBeenCalled();
+    expect(createEventVisualAsset).not.toHaveBeenCalled();
+    expect(blobPut).not.toHaveBeenCalled();
+  });
+
+  it("refuses uploads for events the organizer does not own", async () => {
+    assertUserCanManageEvent.mockRejectedValue(new Error("Not authorized"));
+
+    await expect(
+      adminUploadEventVisualAction(fd({
+        eventId: "event-of-another-organizer",
+        rightsAttestation: "confirmed",
+        eventVisual: validPngFile(),
+      })),
+    ).rejects.toThrow("REDIRECT:/admin?error=");
+    expect(createEventVisualAsset).not.toHaveBeenCalled();
+    expect(blobPut).not.toHaveBeenCalled();
+  });
+
+  it("refuses uploads without a confirmed rights attestation", async () => {
+    await expect(
+      adminUploadEventVisualAction(fd({
+        eventId: "event-safe",
+        eventVisual: validPngFile(),
+      })),
+    ).rejects.toThrow("REDIRECT:/admin?error=");
+    expect(createEventVisualAsset).not.toHaveBeenCalled();
+    expect(blobPut).not.toHaveBeenCalled();
+  });
+
+  it("rejects spoofed image bytes before anything reaches blob storage", async () => {
+    await expect(
+      adminUploadEventVisualAction(fd({
+        eventId: "event-safe",
+        rightsAttestation: "confirmed",
+        eventVisual: new File(["<script>alert(1)</script>"], "background.png", { type: "image/png" }),
+      })),
+    ).rejects.toThrow("REDIRECT:/admin?error=");
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(createEventVisualAsset).not.toHaveBeenCalled();
+  });
+
+  it("rejects uploads larger than 5 MiB", async () => {
+    const oversized = new File([new Uint8Array(5 * 1024 * 1024 + 1)], "background.png", { type: "image/png" });
+
+    await expect(
+      adminUploadEventVisualAction(fd({
+        eventId: "event-safe",
+        rightsAttestation: "confirmed",
+        eventVisual: oversized,
+      })),
+    ).rejects.toThrow("REDIRECT:/admin?error=");
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(createEventVisualAsset).not.toHaveBeenCalled();
+  });
+
+  it("creates an approved organizer revision with decoded image metadata", async () => {
+    await expect(
+      adminUploadEventVisualAction(fd({
+        eventId: "event-safe",
+        rightsAttestation: "confirmed",
+        eventVisual: validPngFile(),
+      })),
+    ).rejects.toThrow("REDIRECT:/admin?success=event-visual-uploaded");
+
+    expect(createEventVisualAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "organizer" }),
+      expect.objectContaining({
+        eventId: "event-safe",
+        source: "organizer_upload",
+        status: "approved",
+        rightsAttestedAt: expect.any(Date),
+      }),
+    );
+    expect(createEventVisualAsset).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        url: "https://blob.example.com/event-visuals/event-safe.png",
+        mimeType: "image/png",
+        width: 16,
+        height: 9,
+      }),
+    );
+    expect(approveEventVisualAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "organizer" }),
+      "event-safe",
+      "asset-new",
+      { dualWriteLegacyImage: true },
+    );
+    expect(revalidateTag).toHaveBeenCalledWith("events");
+    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("approves an AI revision and activates it through the repository boundary", async () => {
+    approveEventVisualAsset.mockResolvedValue(visualAsset({ id: "asset-ai", source: "ai_generated" }));
+
+    await expect(
+      adminApproveEventVisualAction(fd({ eventId: "event-safe", assetId: "asset-ai" })),
+    ).rejects.toThrow("REDIRECT:/admin?success=event-visual-approved");
+
+    expect(assertUserCanManageEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "organizer" }),
+      "event-safe",
+    );
+    expect(approveEventVisualAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "organizer" }),
+      "event-safe",
+      "asset-ai",
+      { dualWriteLegacyImage: true },
+    );
+    expect(revalidateTag).toHaveBeenCalledWith("events");
+  });
+
+  it("surfaces the repository guard when rejecting the active revision", async () => {
+    rejectEventVisualAsset.mockRejectedValue(new Error("Cannot reject the active visual revision"));
+
+    await expect(
+      adminRejectEventVisualAction(fd({ eventId: "event-safe", assetId: "asset-active" })),
+    ).rejects.toThrow(`REDIRECT:/admin?error=${encodeURIComponent("Cannot reject the active visual revision")}`);
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it("activates an older approved revision for rollback", async () => {
+    approveEventVisualAsset.mockResolvedValue(visualAsset({ id: "asset-old" }));
+
+    await expect(
+      adminActivateEventVisualAction(fd({ eventId: "event-safe", assetId: "asset-old" })),
+    ).rejects.toThrow("REDIRECT:/admin?success=event-visual-activated");
+
+    expect(approveEventVisualAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "organizer" }),
+      "event-safe",
+      "asset-old",
+      { dualWriteLegacyImage: true },
+    );
+  });
+
+  it("forwards focal values outside 0..1 to the repository clamp", async () => {
+    await expect(
+      adminSetEventVisualFocalPointAction(fd({
+        eventId: "event-safe",
+        assetId: "asset-new",
+        focalX: "1.4",
+        focalY: "-0.2",
+      })),
+    ).rejects.toThrow("REDIRECT:/admin?success=event-visual-focal-updated");
+
+    expect(setEventVisualFocalPoint).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "organizer" }),
+      "event-safe",
+      "asset-new",
+      { x: 1.4, y: -0.2 },
+    );
   });
 });

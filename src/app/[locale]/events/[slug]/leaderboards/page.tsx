@@ -33,5 +33,5 @@ export default async function LocalizedLeaderboardsPage({
   const { locale, slug } = await params;
   setRequestLocale(locale as "id" | "en");
 
-  return renderLeaderboardsPage(slug);
+  return renderLeaderboardsPage(slug, locale as "id" | "en");
 }

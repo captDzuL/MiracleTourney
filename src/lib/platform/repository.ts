@@ -14,7 +14,7 @@ import {
   getGameModeConfig,
   getGamePrimaryStatKey,
 } from "@/lib/platform/config";
-import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventStream, Match, MatchGame, PaymentSettings, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, TournamentFormat } from "@/lib/platform/types";
+import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventStream, EventVisualAsset, Match, MatchGame, PaymentSettings, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, TournamentFormat, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import {
   aggregatePlayerLeaderboard,
@@ -31,7 +31,47 @@ import { prisma } from "./db";
 
 const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration Closed", "Ongoing", "Finished"]);
 
+/** Single relation set every mapped-event query loads, so `mapEvent` stays the only mapping site. */
+const eventPublicInclude = { stream: true, activeVisualAsset: true } satisfies Prisma.EventInclude;
+
+type EventVisualAssetRow = {
+  id: string; eventId: string; source: string; status: string;
+  url?: string | null; mimeType?: string | null; width?: number | null; height?: number | null;
+  focalX: number; focalY: number;
+  provider?: string | null; model?: string | null; promptVersion?: string | null;
+  workflowRunId?: string | null; sourceUrl?: string | null; rightsAttestedAt?: Date | null;
+  errorCode?: string | null; createdByUserId?: string | null; approvedAt?: Date | null;
+  createdAt: Date; updatedAt: Date;
+};
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+function mapEventVisualAsset(row: EventVisualAssetRow): EventVisualAsset {
+  const asset: EventVisualAsset = {
+    id: row.id,
+    eventId: row.eventId,
+    source: row.source as VisualAssetSource,
+    status: row.status as VisualAssetStatus,
+    focalX: row.focalX,
+    focalY: row.focalY,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+  if (row.url) asset.url = row.url;
+  if (row.mimeType) asset.mimeType = row.mimeType;
+  if (row.width != null) asset.width = row.width;
+  if (row.height != null) asset.height = row.height;
+  if (row.provider) asset.provider = row.provider;
+  if (row.model) asset.model = row.model;
+  if (row.promptVersion) asset.promptVersion = row.promptVersion;
+  if (row.workflowRunId) asset.workflowRunId = row.workflowRunId;
+  if (row.sourceUrl) asset.sourceUrl = row.sourceUrl;
+  if (row.rightsAttestedAt) asset.rightsAttestedAt = row.rightsAttestedAt;
+  if (row.errorCode) asset.errorCode = row.errorCode;
+  if (row.createdByUserId) asset.createdByUserId = row.createdByUserId;
+  if (row.approvedAt) asset.approvedAt = row.approvedAt;
+  return asset;
+}
 
 function mapEvent(row: {
   id: string; slug: string; name: string; description: string;
@@ -42,6 +82,8 @@ function mapEvent(row: {
   organizerUserId?: string | null; organizerName?: string | null; organizerVerified?: boolean | null;
   prizePoolLabel?: string | null; registrationFeeRequired?: boolean | null; registrationFeeAmount?: number | null; registrationFeeLabel?: string | null; registrationUrl?: string | null;
   stream?: { platform: string; url: string; label: string; enabled: boolean; isLive: boolean; } | null;
+  activeVisualAssetId?: string | null;
+  activeVisualAsset?: EventVisualAssetRow | null;
 }): Event {
   const event: Event = {
     id: row.id, slug: row.slug, name: row.name, description: row.description,
@@ -64,6 +106,8 @@ function mapEvent(row: {
   if (row.registrationFeeAmount != null) event.registrationFeeAmount = row.registrationFeeAmount;
   if (row.registrationFeeLabel) event.registrationFeeLabel = row.registrationFeeLabel;
   if (row.registrationUrl) event.registrationUrl = row.registrationUrl;
+  if (row.activeVisualAssetId) event.activeVisualAssetId = row.activeVisualAssetId;
+  if (row.activeVisualAsset) event.activeVisualAsset = mapEventVisualAsset(row.activeVisualAsset);
   if (row.stream) {
     event.stream = {
       platform: row.stream.platform as EventStream["platform"],
@@ -285,7 +329,7 @@ export async function getAllPublicEvents(): Promise<Array<{ slug: string; update
 
 /** Returns all events (all statuses), ordered newest first. For admin use only. */
 export async function getEvents(): Promise<Event[]> {
-  const rows = await prisma.event.findMany({ include: { stream: true }, orderBy: { createdAt: "desc" } });
+  const rows = await prisma.event.findMany({ include: eventPublicInclude, orderBy: { createdAt: "desc" } });
   return rows.map(mapEvent);
 }
 
@@ -295,7 +339,7 @@ export async function getEventsByIds(eventIds: string[]): Promise<Event[]> {
   try {
     const rows = await prisma.event.findMany({
       where: { id: { in: eventIds } },
-      include: { stream: true },
+      include: eventPublicInclude,
       orderBy: { createdAt: "desc" },
     });
     return rows.map(mapEvent);
@@ -311,7 +355,7 @@ export async function getManageableEventsForUser(user: AppUser): Promise<Event[]
 
   const rows = await prisma.event.findMany({
     where: { organizerUserId: user.id },
-    include: { stream: true },
+    include: eventPublicInclude,
     orderBy: { createdAt: "desc" },
   });
   return rows.map(mapEvent);
@@ -372,7 +416,7 @@ export async function updateEventPublicInfo(
     const row = await prisma.event.update({
       where: { id: eventId },
       data: updates,
-      include: { stream: true },
+      include: eventPublicInclude,
     });
     return mapEvent(row);
   } catch (error) {
@@ -388,7 +432,7 @@ export async function getPublicEvents(): Promise<Event[]> {
   try {
     const rows = await prisma.event.findMany({
       where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
-      include: { stream: true },
+      include: eventPublicInclude,
       orderBy: { createdAt: "desc" },
     });
     return rows.map(mapEvent);
@@ -405,7 +449,7 @@ export async function getPublicEvents(): Promise<Event[]> {
 export async function getPublishedEvents(): Promise<Event[]> {
   const rows = await prisma.event.findMany({
     where: { status: "Published" },
-    include: { stream: true },
+    include: eventPublicInclude,
     orderBy: { startsAt: "asc" },
   });
   return rows.map(mapEvent);
@@ -460,7 +504,7 @@ export async function getOpenRegistrationEventsForCaptain(captainId: string): Pr
 /** Direct DB lookup by slug with no status filter. For admin pages that need to see Draft events. */
 export async function getEventBySlug(slug: string): Promise<Event | null> {
   try {
-    const row = await prisma.event.findUnique({ where: { slug }, include: { stream: true } });
+    const row = await prisma.event.findUnique({ where: { slug }, include: eventPublicInclude });
     return row ? mapEvent(row) : null;
   } catch {
     return demoStore.getEventBySlug(slug) ?? null;
@@ -477,7 +521,7 @@ export const getPublicEventBySlug = cache(
       try {
         const row = await prisma.event.findFirst({
           where: { slug, status: { in: [...PUBLIC_EVENT_STATUSES] } },
-          include: { stream: true },
+          include: eventPublicInclude,
         });
         return row ? mapEvent(row) : null;
       } catch {
@@ -488,6 +532,138 @@ export const getPublicEventBySlug = cache(
     { revalidate: 60, tags: ["events"] },
   ),
 );
+
+// ── Event visual assets ───────────────────────────────────────────────────────
+
+export type CreateEventVisualAssetInput = {
+  eventId: string;
+  source: VisualAssetSource;
+  status: VisualAssetStatus;
+  url?: string | null;
+  mimeType?: string | null;
+  width?: number | null;
+  height?: number | null;
+  provider?: string | null;
+  model?: string | null;
+  promptVersion?: string | null;
+  workflowRunId?: string | null;
+  sourceUrl?: string | null;
+  rightsAttestedAt?: Date | null;
+  errorCode?: string | null;
+};
+
+function clampFocalCoordinate(value: number): number {
+  if (!Number.isFinite(value)) return 0.5;
+  return Math.min(1, Math.max(0, value));
+}
+
+/** Lists every revision for an event, newest first. Organizer-scoped. */
+export async function listEventVisualAssets(user: AppUser, eventId: string): Promise<EventVisualAsset[]> {
+  await assertUserCanManageEvent(user, eventId);
+  try {
+    const rows = await prisma.eventVisualAsset.findMany({
+      where: { eventId },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(mapEventVisualAsset);
+  } catch {
+    return demoStore.listEventVisualAssets(eventId);
+  }
+}
+
+export async function createEventVisualAsset(
+  user: AppUser,
+  input: CreateEventVisualAssetInput,
+): Promise<EventVisualAsset> {
+  await assertUserCanManageEvent(user, input.eventId);
+  const row = await prisma.eventVisualAsset.create({
+    data: { ...input, createdByUserId: user.id },
+  });
+  return mapEventVisualAsset(row);
+}
+
+/**
+ * Approves a revision and points the event at it inside one transaction so the
+ * revision status and `Event.activeVisualAssetId` can never diverge. Already
+ * approved revisions stay approvable, which is how rollback works.
+ *
+ * `dualWriteLegacyImage` mirrors the approved url into the legacy
+ * `Event.gameImageUrl` column. It is only meant for the migration window while
+ * surfaces that still read the single legacy url are being retired.
+ */
+export async function approveEventVisualAsset(
+  user: AppUser,
+  eventId: string,
+  assetId: string,
+  options: { dualWriteLegacyImage?: boolean } = {},
+): Promise<EventVisualAsset> {
+  await assertUserCanManageEvent(user, eventId);
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.eventVisualAsset.findFirst({
+      where: { id: assetId, eventId, status: { in: ["ready_for_review", "approved"] } },
+      select: { id: true },
+    });
+    if (!existing) throw new Error("Visual revision is not available for approval");
+
+    const approved = await tx.eventVisualAsset.update({
+      where: { id: assetId },
+      data: { status: "approved", approvedAt: new Date() },
+    });
+    await tx.event.update({
+      where: { id: eventId },
+      data: {
+        activeVisualAssetId: assetId,
+        ...(options.dualWriteLegacyImage && approved.url ? { gameImageUrl: approved.url } : {}),
+      },
+    });
+    return mapEventVisualAsset(approved);
+  });
+}
+
+export async function rejectEventVisualAsset(
+  user: AppUser,
+  eventId: string,
+  assetId: string,
+): Promise<EventVisualAsset> {
+  await assertUserCanManageEvent(user, eventId);
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.event.findFirst({ where: { id: eventId }, select: { activeVisualAssetId: true } });
+    if (event?.activeVisualAssetId === assetId) throw new Error("Cannot reject the active visual revision");
+
+    const existing = await tx.eventVisualAsset.findFirst({ where: { id: assetId, eventId }, select: { id: true } });
+    if (!existing) throw new Error("Visual revision not found");
+
+    const rejected = await tx.eventVisualAsset.update({
+      where: { id: assetId },
+      data: { status: "rejected" },
+    });
+    return mapEventVisualAsset(rejected);
+  });
+}
+
+export async function setEventVisualFocalPoint(
+  user: AppUser,
+  eventId: string,
+  assetId: string,
+  focalPoint: { x: number; y: number },
+): Promise<EventVisualAsset> {
+  await assertUserCanManageEvent(user, eventId);
+  const existing = await prisma.eventVisualAsset.findFirst({ where: { id: assetId, eventId }, select: { id: true } });
+  if (!existing) throw new Error("Visual revision not found");
+
+  const row = await prisma.eventVisualAsset.update({
+    where: { id: assetId },
+    data: { focalX: clampFocalCoordinate(focalPoint.x), focalY: clampFocalCoordinate(focalPoint.y) },
+  });
+  return mapEventVisualAsset(row);
+}
+
+/** Counts AI generation attempts for an event since `since`, for rate limiting. */
+export async function countAiVisualAttempts(eventId: string, since: Date): Promise<number> {
+  return prisma.eventVisualAsset.count({
+    where: { eventId, source: "ai_generated", createdAt: { gte: since } },
+  });
+}
 
 // ── Teams ─────────────────────────────────────────────────────────────────────
 

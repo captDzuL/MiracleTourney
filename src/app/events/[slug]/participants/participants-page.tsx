@@ -1,12 +1,13 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
+import { BackToEvent } from "@/components/public-v2/BackToEvent";
 import { DataTable, Section } from "@/components/ui";
 import { TeamIdentity } from "@/components/TeamAvatar";
 import { getPlayersForTeams, getPublicEventBySlug, getTeamsForEvent } from "@/lib/platform/repository";
 import { getCaptainDisplayName } from "@/lib/team-display";
 
-export async function renderParticipantsPage(slug: string) {
+export async function renderParticipantsPage(slug: string, locale?: "id" | "en") {
   const t = await getTranslations("participants");
   const event = await getPublicEventBySlug(slug);
   if (!event) notFound();
@@ -17,10 +18,12 @@ export async function renderParticipantsPage(slug: string) {
   const teamsWithPlayers = teams.map((team) => ({ ...team, players: playersByTeam.get(team.id) ?? [] }));
 
   return (
-    <Section
-      title={t("sectionTitle", { name: event.name })}
-      description={t("sectionDescription")}
-    >
+    <>
+      <BackToEvent slug={slug} locale={locale} label={t("backToEvent")} />
+      <Section
+        title={t("sectionTitle", { name: event.name })}
+        description={t("sectionDescription")}
+      >
       <DataTable
         columns={[t("team"), t("tag"), t("captain"), t("roster")]}
         rows={teamsWithPlayers.map((team) => [
@@ -32,6 +35,7 @@ export async function renderParticipantsPage(slug: string) {
             : t("rosterPending"),
         ])}
       />
-    </Section>
+      </Section>
+    </>
   );
 }
