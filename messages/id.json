@@ -168,6 +168,11 @@
     "unassigned": "Belum Ditugaskan",
     "rosterPending": "Roster belum diisi"
   },
+  "notFound": {
+    "title": "Halaman Tidak Ditemukan",
+    "description": "Halaman yang kamu cari tidak tersedia atau sudah dipindahkan.",
+    "backHome": "Kembali ke Beranda"
+  },
   "login": {
     "title": "Masuk",
     "description": "Masukkan email dan password untuk mengakses portal turnamen.",
