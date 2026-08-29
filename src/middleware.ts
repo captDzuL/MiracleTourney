@@ -3,7 +3,7 @@ import createMiddleware from "next-intl/middleware";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { routing } from "./src/i18n/routing";
+import { routing } from "./i18n/routing";
 
 const JWT_COOKIE = "mfl_token";
 const DEFAULT_JWT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32chars-min";
