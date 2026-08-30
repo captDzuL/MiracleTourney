@@ -2146,7 +2146,9 @@ export async function updatePlayer(
   if (!player || player.team.captainId !== captainUserId) {
     throw new Error("Not authorized to edit this player.");
   }
-  await assertRosterEditable(player.team.eventId);
+  if (player.team.eventId) {
+    await assertRosterEditable(player.team.eventId);
+  }
   const row = await prisma.player.update({ where: { id }, data });
   return mapPlayer(row);
 }
@@ -2164,7 +2166,9 @@ export async function deletePlayer(id: string, captainUserId: string): Promise<v
   if (!player || player.team.captainId !== captainUserId) {
     throw new Error("Not authorized to delete this player.");
   }
-  await assertRosterEditable(player.team.eventId);
+  if (player.team.eventId) {
+    await assertRosterEditable(player.team.eventId);
+  }
   await prisma.player.delete({ where: { id } });
 }
 
