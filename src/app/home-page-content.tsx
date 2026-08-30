@@ -4,6 +4,8 @@ import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { GameArt, StatusBadge } from "@/components/GameArt";
+import { PublicHomeV2 } from "@/components/public-v2/PublicHomeV2";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getDefaultModeLabel } from "@/lib/platform/config";
 import { getPublicEvents as getDemoPublicEvents } from "@/lib/platform/demo-store";
 import { getAllGames, getBracketPreview, getGameForEvent, getPublicEvents, getTeamsForEvent } from "@/lib/platform/repository";
@@ -124,6 +126,34 @@ export async function HomePageContent({
         { label: t("standingsShortcut"), href: `/events/${featuredEvent.slug}/standings`, icon: Shield },
       ]
     : [];
+
+  if (isFeatureEnabled("public_visual_v2")) {
+    return (
+      <PublicHomeV2
+        events={filteredEvents}
+        games={games}
+        featuredEvent={featuredEvent}
+        featuredGame={featuredGame ?? undefined}
+        featuredTeams={featuredTeams}
+        featuredBracket={featuredBracket}
+        gameFilter={gameFilter}
+        labels={{
+          ongoing: t("statusOngoing"),
+          upNext: t("statusUpNext"),
+          finished: t("statusFinished"),
+          exploreEvent: t("exploreEvent"),
+          allEvents: t("allEvents"),
+          allGames: t("allGames"),
+          teams: t("teamsLabel"),
+          eventDrop: t("eventDrop"),
+          liveFeed: t("liveFeed"),
+          tickerEmpty: t("tickerEmpty"),
+          noEvents: t("noEvents"),
+          issue: t("issueLabel"),
+        }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-8">

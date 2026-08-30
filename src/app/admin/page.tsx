@@ -2,6 +2,7 @@ import {
   BadgeCheck,
   CalendarPlus,
   Check,
+  CreditCard,
   Download,
   Eye,
   FileSpreadsheet,
@@ -23,6 +24,7 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { SubmitButton } from "@/components/submit-button";
 import {
   adminApproveStatAction,
+  adminApprovePaymentAction,
   adminArchiveEventAction,
   adminAssignCaptainAction,
   adminCreateEventAction,
@@ -32,6 +34,7 @@ import {
   adminImportTeamsCsvAction,
   adminPreviewRegistrationImportAction,
   adminRejectStatAction,
+  adminRejectPaymentAction,
   adminSaveMatchPlayerStatsAction,
   adminSetAccentColorAction,
   adminSetMatchGamesAction,
@@ -39,11 +42,11 @@ import {
   adminUpdateEventStatusAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
-  adminUploadEventBackgroundAction,
   adminUploadEventLogoAction,
   adminUploadCharacterArtAction,
   adminUploadTeamLogoAction,
   adminUpdateEventPublicInfoAction,
+  adminUpdatePaymentSettingsAction,
 } from "@/lib/actions";
 import { requireAnyRole } from "@/lib/auth/session";
 import {
@@ -58,19 +61,24 @@ import {
   getGameModes,
   getImportedTeams,
   getLeaderboardForEvent,
+  listEventVisualAssets,
   getMatchGames,
   getMatchesForEvent,
   getOrganizerUsers,
   getPendingStatSubmissionCount,
   getPendingStatSubmissions,
+  getPaymentRegistrationRequestsForAdmin,
+  getPaymentSettings,
   getRegistrationImportBatchForAdmin,
   getRegistrationImportBatchesForEvent,
   getTeamCountsForEvents,
   getTeamsForEvents,
 } from "@/lib/platform/repository";
 import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
+import { EventVisualAssetsPanel } from "@/components/admin/EventVisualAssetsPanel";
 import { TeamAvatar, TeamIdentity } from "@/components/TeamAvatar";
 import { getGameModeDisplayLabel, getStatKeysForMode } from "@/lib/platform/config";
+import type { EventVisualAsset } from "@/lib/platform/types";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 import { getCaptainDisplayName } from "@/lib/team-display";
 
@@ -87,6 +95,7 @@ type AdminSearchParams = {
   matchEventId?: string;
   matchId?: string;
   registrationBatchId?: string;
+  paymentStatus?: string;
 };
 
 type EventItem = Awaited<ReturnType<typeof getManageableEventsForUser>>[number];
@@ -105,6 +114,8 @@ type RoundConfigItem = Awaited<ReturnType<typeof getEventRoundConfigs>>[number];
 type MatchGameItem = Awaited<ReturnType<typeof getMatchGames>>[number];
 type PendingSubmissionItem = Awaited<ReturnType<typeof getPendingStatSubmissions>>[number];
 type CertificateItem = Awaited<ReturnType<typeof getCertificatesForEvents>> extends Map<string, infer T> ? T : never;
+type PaymentRequestItem = Awaited<ReturnType<typeof getPaymentRegistrationRequestsForAdmin>>[number];
+type PaymentSettingsItem = Awaited<ReturnType<typeof getPaymentSettings>>;
 
 type AdminTranslator = Awaited<ReturnType<typeof getTranslations>>;
 type CaptainUser = { id: string; name: string; email: string };
@@ -112,6 +123,7 @@ type CaptainUser = { id: string; name: string; email: string };
 const phaseIcons = {
   prepare: CalendarPlus,
   import: FileSpreadsheet,
+  payments: CreditCard,
   run: Radio,
   review: BadgeCheck,
 } satisfies Record<AdminPhase, React.ComponentType<{ className?: string }>>;
@@ -194,7 +206,21 @@ export default async function AdminPage({
       : Promise.resolve(null),
   ]);
 
-  const importedTeamsWithEvents = importedTeamsRaw.filter((team): team is typeof team & { eventId: string } => Boolean(team.eventId));
+  // Visual revisions are only rendered inside the prepare phase, so they are
+  // loaded lazily to keep the other phases at their current query count.
+  const visualAssetsByEvent = activePhase === "prepare"
+    ? new Map(
+        await Promise.all(
+          events.map(async (event) =>
+            [event.id, await listEventVisualAssets(user, event.id)] as const,
+          ),
+        ),
+      )
+    : new Map<string, EventVisualAsset[]>();
+
+  const importedTeamsWithEvents = importedTeamsRaw.filter(
+    (team): team is (typeof importedTeamsRaw)[number] & { eventId: string } => Boolean(team.eventId),
+  );
   const importedTeams = importedTeamsWithEvents
     .map((team) => ({
       ...team,
@@ -231,6 +257,16 @@ export default async function AdminPage({
   const [certificatesByEvent, pendingSubmissions] = activePhase === "review"
     ? await Promise.all([getCertificatesForEvents(eventIds), getPendingStatSubmissions(user)])
     : [new Map(eventIds.map((eventId) => [eventId, null as CertificateItem])), [] as PendingSubmissionItem[]];
+
+  const paymentStatus = ["pending_payment", "pending_review", "approved", "rejected", "expired"].includes(resolvedSearchParams?.paymentStatus ?? "")
+    ? resolvedSearchParams?.paymentStatus as PaymentRequestItem["status"]
+    : undefined;
+  const [paymentRequests, paymentSettings] = activePhase === "payments"
+    ? await Promise.all([
+        getPaymentRegistrationRequestsForAdmin(user, { eventId: resolvedSearchParams?.activeEventId, status: paymentStatus }),
+        getPaymentSettings(),
+      ])
+    : [[] as PaymentRequestItem[], { id: "global" } as PaymentSettingsItem];
 
   const currentQuery = {
     activeEventId: activeEvent?.id,
@@ -280,6 +316,7 @@ export default async function AdminPage({
               organizerOptions={organizerOptions}
               t={t}
               userRole={user.role}
+              visualAssetsByEvent={visualAssetsByEvent}
             />
           ) : null}
 
@@ -293,6 +330,17 @@ export default async function AdminPage({
               registrationBatch={registrationBatch}
               registrationBatches={registrationBatches}
               registrationIntakeV2={registrationIntakeV2}
+              t={t}
+            />
+          ) : null}
+
+          {activePhase === "payments" ? (
+            <PaymentWorkspacePhase
+              activeEvent={activeEvent}
+              events={events}
+              paymentRequests={paymentRequests}
+              paymentSettings={paymentSettings}
+              paymentStatus={paymentStatus}
               t={t}
             />
           ) : null}
@@ -513,6 +561,7 @@ function PrepareEventPhase({
   organizerOptions,
   t,
   userRole,
+  visualAssetsByEvent,
 }: {
   activeEvent: EventItem | undefined;
   allTeamsByEvent: Map<string, TeamItem[]>;
@@ -522,6 +571,7 @@ function PrepareEventPhase({
   organizerOptions: OrganizerItem[];
   t: AdminTranslator;
   userRole: string;
+  visualAssetsByEvent: Map<string, EventVisualAsset[]>;
 }) {
   return (
     <PhaseSection
@@ -651,7 +701,7 @@ function PrepareEventPhase({
         </div>
       </div>
       <PublicListingSettingsSection events={events} t={t} />
-      <BrandAssetsSection allTeamsByEvent={allTeamsByEvent} events={events} t={t} />
+      <BrandAssetsSection allTeamsByEvent={allTeamsByEvent} events={events} t={t} visualAssetsByEvent={visualAssetsByEvent} />
 
       <Section title="Arsip / Hapus Event" description="Arsipkan event selesai atau hapus event Draft yang kosong." className="rounded-xl shadow-none">
         {events.length ? (
@@ -771,13 +821,21 @@ function PublicListingSettingsSection({
                     <input className={inputClass} name="venue" defaultValue={event.venue} maxLength={120} minLength={2} />
                   </label>
                 </div>
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-4">
                   <label className={labelClass}>
                     Hadiah pemenang
                     <input className={inputClass} name="prizePoolLabel" defaultValue={event.prizePoolLabel ?? ""} maxLength={80} placeholder="Rp3.000.000" />
                   </label>
+                  <label className="flex min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" name="registrationFeeRequired" defaultChecked={event.registrationFeeRequired} className="h-4 w-4 rounded border-slate-300 text-cyan-500" />
+                    Event berbayar
+                  </label>
                   <label className={labelClass}>
-                    Biaya registrasi
+                    Nominal fee
+                    <input className={inputClass} name="registrationFeeAmount" type="number" min="1" defaultValue={event.registrationFeeAmount ?? ""} placeholder="25000" />
+                  </label>
+                  <label className={labelClass}>
+                    Label biaya
                     <input className={inputClass} name="registrationFeeLabel" defaultValue={event.registrationFeeLabel ?? ""} maxLength={80} placeholder="Rp20.000 / team" />
                   </label>
                   <label className={labelClass}>
@@ -806,10 +864,12 @@ function BrandAssetsSection({
   allTeamsByEvent,
   events,
   t,
+  visualAssetsByEvent,
 }: {
   allTeamsByEvent: Map<string, TeamItem[]>;
   events: EventItem[];
   t: AdminTranslator;
+  visualAssetsByEvent: Map<string, EventVisualAsset[]>;
 }) {
   return (
     <Section title="Brand Assets" description="Upload logo event, background event, dan logo team untuk kartu publik dan halaman turnamen." className="rounded-xl shadow-none">
@@ -862,27 +922,12 @@ function BrandAssetsSection({
                       </div>
                     </form>
 
-                    <form action={adminUploadEventBackgroundAction} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <input type="hidden" name="eventId" value={event.id} />
-                      <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
-                        {backgroundUrl ? (
-                          <img src={backgroundUrl} alt={`${event.name} background preview`} className="aspect-video w-full object-cover" />
-                        ) : (
-                          <div className="flex aspect-video items-center justify-center text-sm text-slate-400">No background</div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">Event background</p>
-                        <p className="text-xs text-slate-500">Disarankan 16:9. PNG, JPG, atau WebP. Maks 5 MB.</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <input type="file" name="eventBackground" accept="image/png,image/webp,image/jpeg" className={`${inputClass} flex-1 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
-                        <SubmitButton className={quietButton}>
-                          <ImageUp className="h-4 w-4" />
-                          Upload
-                        </SubmitButton>
-                      </div>
-                    </form>
+                    <EventVisualAssetsPanel
+                      activeAssetId={event.activeVisualAssetId ?? undefined}
+                      assets={visualAssetsByEvent.get(event.id) ?? []}
+                      eventId={event.id}
+                      eventName={event.name}
+                    />
                   </div>
 
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -1202,6 +1247,144 @@ function ImportRegistrationPhase({
 type MatchRosterAndStats = Awaited<ReturnType<typeof getMatchWithRosterAndStats>>;
 type CompletedMatchWithEvent = { match: MatchItem; event: EventItem };
 
+function PaymentWorkspacePhase({
+  activeEvent,
+  events,
+  paymentRequests,
+  paymentSettings,
+  paymentStatus,
+  t,
+}: {
+  activeEvent: EventItem | undefined;
+  events: EventItem[];
+  paymentRequests: PaymentRequestItem[];
+  paymentSettings: PaymentSettingsItem;
+  paymentStatus?: PaymentRequestItem["status"];
+  t: AdminTranslator;
+}) {
+  const statusOptions = ["pending_payment", "pending_review", "approved", "rejected", "expired"] as const;
+
+  return (
+    <PhaseSection
+      action={<StatusChip tone={paymentRequests.some((request) => request.status === "pending_review") ? "warning" : "default"}>{paymentRequests.length} pembayaran</StatusChip>}
+      description={t("paymentsDescription")}
+      title={t("paymentsWorkspaceTitle")}
+    >
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(19rem,0.75fr)]">
+        <Section title={t("paymentQueueTitle")} description={t("paymentQueueDescription")} className="rounded-xl shadow-none">
+          <form action="" className="mb-4 grid gap-3 md:grid-cols-[1fr_14rem_auto] md:items-end">
+            <input type="hidden" name="phase" value="payments" />
+            <label className={labelClass}>
+              {t("eventLabel")}
+              <select className={inputClass} name="activeEventId" defaultValue={activeEvent?.id ?? ""}>
+                <option value="">Semua event</option>
+                <EventOptions events={events} />
+              </select>
+            </label>
+            <label className={labelClass}>
+              {t("statusLabel")}
+              <select className={inputClass} name="paymentStatus" defaultValue={paymentStatus ?? ""}>
+                <option value="">Semua status</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>{t(`paymentStatus.${status}`)}</option>
+                ))}
+              </select>
+            </label>
+            <button className={quietButton} type="submit">
+              <SlidersHorizontal className="h-4 w-4" />
+              Filter
+            </button>
+          </form>
+
+          {paymentRequests.length === 0 ? (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">{t("noPaymentRequests")}</p>
+          ) : (
+            <div className="grid gap-3">
+              {paymentRequests.map((request) => (
+                <details key={request.id} className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-950">{request.teamName} ({request.teamTag})</p>
+                      <p className="mt-1 truncate text-xs text-slate-500">
+                        {request.event?.name ?? request.eventId} - {request.captain?.name ?? request.captainId}
+                      </p>
+                    </div>
+                    <StatusChip tone={request.status === "pending_review" ? "warning" : request.status === "approved" ? "success" : "default"}>
+                      {t(`paymentStatus.${request.status}`)}
+                    </StatusChip>
+                  </summary>
+                  <div className="grid gap-4 border-t border-slate-200 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
+                    <div className="space-y-3 text-sm text-slate-600">
+                      <p><span className="font-semibold text-slate-900">Captain:</span> {request.captain?.email ?? request.captainId}</p>
+                      <p><span className="font-semibold text-slate-900">Fee:</span> {request.event?.registrationFeeLabel ?? request.event?.registrationFeeAmount ?? "-"}</p>
+                      <p><span className="font-semibold text-slate-900">Expired:</span> {new Date(request.expiresAt).toLocaleString()}</p>
+                      {request.rejectReason ? <p className="text-red-700">{request.rejectReason}</p> : null}
+                      <div className="flex flex-wrap gap-3">
+                        {request.status === "pending_review" ? (
+                          <form action={adminApprovePaymentAction}>
+                            <input type="hidden" name="requestId" value={request.id} />
+                            <SubmitButton className={primaryButton}>
+                              <Check className="h-4 w-4" />
+                              {t("approve")}
+                            </SubmitButton>
+                          </form>
+                        ) : null}
+                        {request.status === "pending_review" || request.status === "pending_payment" ? (
+                          <form action={adminRejectPaymentAction} className="flex flex-wrap gap-2">
+                            <input type="hidden" name="requestId" value={request.id} />
+                            <input className={inputClass} name="reason" placeholder={t("paymentRejectReason")} minLength={3} required />
+                            <SubmitButton className={quietButton}>
+                              <X className="h-4 w-4" />
+                              {t("reject")}
+                            </SubmitButton>
+                          </form>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      {request.proofImageUrl ? (
+                        <a href={request.proofImageUrl} target="_blank" rel="noreferrer" className="block">
+                          <img src={request.proofImageUrl} alt="Bukti bayar" className="aspect-square w-full rounded-lg object-contain" />
+                          <span className="mt-2 block break-all text-xs font-semibold text-cyan-700 underline">{request.proofImageUrl}</span>
+                        </a>
+                      ) : (
+                        <p className="text-sm text-slate-500">{t("noPaymentProof")}</p>
+                      )}
+                    </div>
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        <Section title={t("paymentSettingsTitle")} description={t("paymentSettingsDescription")} className="rounded-xl shadow-none">
+          <form action={adminUpdatePaymentSettingsAction} className="grid gap-4">
+            <label className={labelClass}>
+              Upload gambar QRIS (opsional, override URL di bawah)
+              <input type="file" name="qrisImage" accept="image/png,image/webp,image/jpeg" className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
+            </label>
+            <label className={labelClass}>
+              QRIS URL
+              <input className={inputClass} name="qrisImageUrl" defaultValue={paymentSettings.qrisImageUrl ?? ""} placeholder="https://... atau /payment/qris.png" />
+            </label>
+            <label className={labelClass}>
+              Instruksi pembayaran
+              <textarea className={`${inputClass} min-h-28 resize-y leading-6`} name="instructions" defaultValue={paymentSettings.instructions ?? ""} maxLength={500} />
+            </label>
+            {paymentSettings.qrisImageUrl ? (
+              <img src={paymentSettings.qrisImageUrl} alt="QRIS aktif" className="aspect-square w-44 rounded-lg border border-slate-200 bg-slate-50 object-contain" />
+            ) : null}
+            <SubmitButton className={primaryButton}>
+              <Save className="h-4 w-4" />
+              {t("savePaymentSettings")}
+            </SubmitButton>
+          </form>
+        </Section>
+      </div>
+    </PhaseSection>
+  );
+}
 function RunMatchDayPhase({
   activeEvent,
   completedMatchesWithEvent,

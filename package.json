@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "node scripts/vercel-build.mjs",
     "start": "next start",
     "lint": "tsc --noEmit",
     "test": "vitest run",
@@ -17,9 +18,12 @@
     "test:e2e:headed": "playwright test --headed",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:test": "tsx prisma/seed.ts --test",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:e2e:ci": "playwright test"
   },
   "dependencies": {
+    "@fontsource/chakra-petch": "^5.3.0",
+    "@fontsource/teko": "^5.3.0",
     "@prisma/client": "^6.0.0",
     "@vercel/blob": "^2.7.0",
     "@vercel/speed-insights": "^2.0.0",
@@ -36,6 +40,8 @@
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "resend": "^6.25.0",
+    "sharp": "^0.35.3",
     "tailwind-merge": "^3.3.1",
     "zod": "^4.0.17"
   },

@@ -14,7 +14,7 @@ describe("security smoke checks", () => {
   }
 
   it("middleware does not fall back to the public placeholder JWT secret", () => {
-    const source = fs.readFileSync(path.resolve(process.cwd(), "middleware.ts"), "utf8");
+    const source = fs.readFileSync(path.resolve(process.cwd(), "src/middleware.ts"), "utf8");
 
     expect(source).not.toContain("process.env.JWT_SECRET ??");
     expect(source).toContain("if (!secret || secret === DEFAULT_JWT_SECRET) return null");

@@ -22,7 +22,7 @@ export function LocaleSwitcher() {
 
   return (
     <div
-      className="inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5"
+      className="pv-locale-switch inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5"
       aria-label="Pilih bahasa / Select language"
     >
       {(["id", "en"] as const).map((lang) => (
@@ -31,9 +31,9 @@ export function LocaleSwitcher() {
           type="button"
           onClick={() => switchLocale(lang)}
           aria-pressed={locale === lang}
-          className={`min-w-[2rem] rounded-md px-2.5 py-1 text-xs font-semibold uppercase transition-colors ${
+          className={`pv-locale-btn min-w-[2rem] rounded-md px-2.5 py-1 text-xs font-semibold uppercase transition-colors ${
             locale === lang
-              ? "bg-blue-600 text-white shadow-sm"
+              ? "pv-locale-btn--active bg-blue-600 text-white shadow-sm"
               : "text-slate-500 hover:text-slate-800"
           }`}
         >

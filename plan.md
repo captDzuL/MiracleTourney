@@ -8,6 +8,77 @@
 
 **Tech Stack:** Next.js 15 App Router, React 19, TypeScript 5.9, Tailwind CSS 4, next-intl, Prisma 6/PostgreSQL, Vercel Blob/Image Optimization/Workflow, OpenAI JavaScript SDK with GPT Image 2, Sharp, Vitest, and Playwright.
 
+---
+
+## Implementation status — updated 2026-08-22
+
+> **Read this before touching anything.** The per-step `- [ ]` checkboxes further down were left as originally authored and are **not** a reliable progress signal. This table is the authority.
+
+**Branch:** `feat/public-visual-v2`, head `8d3b955`, 12 commits ahead of `main`, **not pushed to any remote yet.**
+
+| Task | Status | Commit |
+|---|---|---|
+| 1 — Persist visual revisions | Done | `764ab26` |
+| 2 — Resolver + revision lifecycle | Done | `43e96ec` |
+| 3 — Flags, fonts, image delivery, shell | Done | `dc5ae11` |
+| 4 — Homepage poster | Done, **fidelity disputed** | `5cdb8d8` |
+| 5 — Event listing + detail | Done, **fidelity disputed** | `7d5b4d6` |
+| 6 — Organizer visual revisions | Done | `516d4b8` |
+| 7 — Authenticated browser coverage | **Not started** — needs a reachable database | — |
+| 8 — GPT Image 2 provider | **Not started** | — |
+| 9 — Vercel Workflow | **Not started** | — |
+| 10 — AI review UI | **Not started** | — |
+| 11 — Release gate | Partial — steps 1–4, 6–8 done; see exclusions below | `0209d62` |
+
+Supporting commits: `cccd41d` (sharp + Fontsource deps), `c92ac08` (Playwright browser-channel escape hatch), `06b19cd` + `54755a0` (lane merges), `8d3b955` (per-game artwork fallback — **see deviation D1**).
+
+### Verification baseline
+
+Last measured on `8d3b955`:
+
+| Command | Result |
+|---|---|
+| `node node_modules\prisma\build\index.js validate` | exit 0 |
+| `pnpm lint` (`tsc --noEmit`) | exit 0 |
+| `pnpm test` (`vitest run`) | **325 passed**, 0 failed |
+| `pnpm build` | exit 0 |
+| `pnpm test:e2e:smoke`, `FEATURE_FLAG_PUBLIC_VISUAL_V2=true` | 14 passed |
+| `pnpm test:e2e:smoke`, flag false | 5 passed, 9 skipped |
+| `pnpm test:e2e` | **never run** — requires the database |
+
+Both feature flags remain `false` by default, so merging this branch does not change production rendering.
+
+### Open defect — highest priority
+
+**The v2 hero is not the approved composition.** `combined-homepage-v2.html` specifies a full-bleed poster: the artwork fills the entire hero and the text sits on top of it with gradient scrims. What was built in `PublicHomeV2.tsx` is a **two-column grid** (`lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]`) with the artwork boxed into an `aspect-[4/5]` panel on the right.
+
+That two-column split is the SaaS grammar `snapshot.md` records as rejected in round 2. Related gaps against the same reference: no giant issue numeral, no vertical side-line, no rotated lime game-label chip, ticker rendered as a plain list rather than the 4-column bordered grid, and event cards without the per-card accent, ghost numeral, and grayscale/contrast artwork treatment.
+
+Root cause: every task was implemented from the text of this plan. No step ever compared the rendered page against the approved HTML reference. **Any continuation should make that comparison a gate, not a one-off check.**
+
+The user has reviewed this and has **not** yet decided whether to rebuild for fidelity or revisit the direction. Do not start that rebuild without an explicit decision.
+
+### Deviations from this plan already in the code
+
+- **D1 — `8d3b955` adds a fourth precedence level.** `snapshot.md` → "Visual source precedence" defines exactly three levels (approved revision → legacy `gameImageUrl` → typographic poster). The commit inserts `game_default` between the second and third, backed by six SVGs in `public/game-backgrounds/`. Four of those SVGs were newly authored and use `linear-gradient` plus `font-family="Arial"` — both listed under "Explicitly rejected patterns" and contrary to the Teko/Chakra Petch typography rule. This is isolated: `git revert 8d3b955` undoes it cleanly.
+- **D2 — `approveEventVisualAsset` gained an optional 4th parameter** `{ dualWriteLegacyImage?: boolean }` instead of a signature change, to keep Task 2 tests passing.
+- **D3 — the migration window is a module constant** `DUAL_WRITE_LEGACY_EVENT_IMAGE` in `src/lib/actions.ts`, not a feature flag.
+- **D4 — `adminUploadEventBackgroundAction` was deleted**, replaced by the five new revision actions. `src/app/admin/page.test.ts` was updated accordingly even though Task 6 Step 8 does not list it.
+- **D5 — admin panel copy is hardcoded Indonesian**, not in `messages/*.json`.
+- **D6 — public V2 components take a `labels` prop** and stay synchronous instead of calling `getTranslations` internally, so they can be unit-tested in jsdom. `PublicEventDetailV2` renders supporting sections through `children`.
+- **D7 — Task 11 exclusions.** The `ai_event_art` sub-assertion in Step 5 and the whole of `pnpm test:e2e` in Step 6 were skipped: both need a database or the unbuilt AI milestone.
+
+### Environment constraints on the current machine
+
+These cost hours if rediscovered. All verified.
+
+- **Database unreachable.** Neon port 5432 is firewall-blocked (`P1001`); port 443 is fine. No Docker, no local Postgres. Therefore `prisma/migrations/20260822000000_event_visual_assets/migration.sql` was **hand-written and has never been applied to a real database** — run it on staging before production.
+- **TLS interception.** Prefix every Node/pnpm command with `$env:NODE_OPTIONS="--use-system-ca"` or downloads fail with `unable to get local issuer certificate`.
+- **`pnpm install` always fails** with `EBUSY` on `node_modules/.bin/*.ps1` (Windows Defender, tamper protection on). `node_modules` is nevertheless complete. Use `pnpm install --lockfile-only` for lockfile work, and run Prisma via `node node_modules\prisma\build\index.js <cmd>`.
+- **Playwright has no bundled Chromium** — `cdn.playwright.dev` is `ECONNRESET`. Both Playwright configs read `PLAYWRIGHT_CHANNEL`; set `$env:PLAYWRIGHT_CHANNEL="msedge"` to drive the locally installed Edge. Without it every browser test fails to launch.
+- **Flaky under load:** `src/middleware.test.ts` rate-limit and `src/lib/auth/session.test.ts` missing-JWT_SECRET can time out at 5000 ms on a cold run. Re-run warm before investigating; they are not regressions.
+- Next.js serves SVG **unoptimized** — no `/_next/image`, no `srcset`, and no `fetchpriority` attribute. Priority for an SVG hero is expressed only as `<link rel="preload" as="image">`. The Task 11 smoke spec accounts for both paths.
+
 ## Global Constraints
 
 - The authoritative design is `docs/superpowers/specs/2026-08-22-public-visual-system-and-ai-event-art-design.md`.

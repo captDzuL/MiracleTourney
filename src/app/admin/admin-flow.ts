@@ -1,4 +1,4 @@
-export const adminPhases = ["prepare", "import", "run", "review"] as const;
+export const adminPhases = ["prepare", "import", "payments", "run", "review"] as const;
 
 export type AdminPhase = (typeof adminPhases)[number];
 

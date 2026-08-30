@@ -3,7 +3,7 @@ import { setRequestLocale } from "next-intl/server";
 
 import { HomePageContent } from "../home-page-content";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-tourney.vercel.app";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
 
 export async function generateMetadata({
   params,
