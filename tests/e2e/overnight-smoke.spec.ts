@@ -4,6 +4,11 @@ import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
 
 const prisma = new PrismaClient();
+
+test.afterAll(async () => {
+  await prisma.$disconnect();
+});
+
 const csvHeader = "event_slug,team_name,team_tag,captain_name,captain_contact,Player 1 Nickname";
 
 function teamImportCsv(slug: string, teamNumbers: number[]) {
