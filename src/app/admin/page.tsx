@@ -42,7 +42,6 @@ import {
   adminUpdateEventStatusAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
-  adminUploadEventBackgroundAction,
   adminUploadEventLogoAction,
   adminUploadCharacterArtAction,
   adminUploadTeamLogoAction,
@@ -62,6 +61,7 @@ import {
   getGameModes,
   getImportedTeams,
   getLeaderboardForEvent,
+  listEventVisualAssets,
   getMatchGames,
   getMatchesForEvent,
   getOrganizerUsers,
@@ -75,8 +75,10 @@ import {
   getTeamsForEvents,
 } from "@/lib/platform/repository";
 import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
+import { EventVisualAssetsPanel } from "@/components/admin/EventVisualAssetsPanel";
 import { TeamAvatar, TeamIdentity } from "@/components/TeamAvatar";
 import { getGameModeDisplayLabel, getStatKeysForMode } from "@/lib/platform/config";
+import type { EventVisualAsset } from "@/lib/platform/types";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 import { getCaptainDisplayName } from "@/lib/team-display";
 
@@ -204,13 +206,28 @@ export default async function AdminPage({
       : Promise.resolve(null),
   ]);
 
-  const importedTeams = importedTeamsRaw
+  // Visual revisions are only rendered inside the prepare phase, so they are
+  // loaded lazily to keep the other phases at their current query count.
+  const visualAssetsByEvent = activePhase === "prepare"
+    ? new Map(
+        await Promise.all(
+          events.map(async (event) =>
+            [event.id, await listEventVisualAssets(user, event.id)] as const,
+          ),
+        ),
+      )
+    : new Map<string, EventVisualAsset[]>();
+
+  const importedTeamsWithEvents = importedTeamsRaw.filter(
+    (team): team is (typeof importedTeamsRaw)[number] & { eventId: string } => Boolean(team.eventId),
+  );
+  const importedTeams = importedTeamsWithEvents
     .map((team) => ({
       ...team,
       eventName: events.find((event) => event.id === team.eventId)?.name ?? "Unknown event",
     }))
     .reverse();
-  const importedEventIds = new Set(importedTeamsRaw.map((team) => team.eventId));
+  const importedEventIds = new Set(importedTeamsWithEvents.map((team) => team.eventId));
 
   const selectedMatchId = resolvedSearchParams?.matchId;
 
@@ -299,6 +316,7 @@ export default async function AdminPage({
               organizerOptions={organizerOptions}
               t={t}
               userRole={user.role}
+              visualAssetsByEvent={visualAssetsByEvent}
             />
           ) : null}
 
@@ -543,6 +561,7 @@ function PrepareEventPhase({
   organizerOptions,
   t,
   userRole,
+  visualAssetsByEvent,
 }: {
   activeEvent: EventItem | undefined;
   allTeamsByEvent: Map<string, TeamItem[]>;
@@ -552,6 +571,7 @@ function PrepareEventPhase({
   organizerOptions: OrganizerItem[];
   t: AdminTranslator;
   userRole: string;
+  visualAssetsByEvent: Map<string, EventVisualAsset[]>;
 }) {
   return (
     <PhaseSection
@@ -681,7 +701,7 @@ function PrepareEventPhase({
         </div>
       </div>
       <PublicListingSettingsSection events={events} t={t} />
-      <BrandAssetsSection allTeamsByEvent={allTeamsByEvent} events={events} t={t} />
+      <BrandAssetsSection allTeamsByEvent={allTeamsByEvent} events={events} t={t} visualAssetsByEvent={visualAssetsByEvent} />
 
       <Section title="Arsip / Hapus Event" description="Arsipkan event selesai atau hapus event Draft yang kosong." className="rounded-xl shadow-none">
         {events.length ? (
@@ -844,10 +864,12 @@ function BrandAssetsSection({
   allTeamsByEvent,
   events,
   t,
+  visualAssetsByEvent,
 }: {
   allTeamsByEvent: Map<string, TeamItem[]>;
   events: EventItem[];
   t: AdminTranslator;
+  visualAssetsByEvent: Map<string, EventVisualAsset[]>;
 }) {
   return (
     <Section title="Brand Assets" description="Upload logo event, background event, dan logo team untuk kartu publik dan halaman turnamen." className="rounded-xl shadow-none">
@@ -900,27 +922,12 @@ function BrandAssetsSection({
                       </div>
                     </form>
 
-                    <form action={adminUploadEventBackgroundAction} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <input type="hidden" name="eventId" value={event.id} />
-                      <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
-                        {backgroundUrl ? (
-                          <img src={backgroundUrl} alt={`${event.name} background preview`} className="aspect-video w-full object-cover" />
-                        ) : (
-                          <div className="flex aspect-video items-center justify-center text-sm text-slate-400">No background</div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">Event background</p>
-                        <p className="text-xs text-slate-500">Disarankan 16:9. PNG, JPG, atau WebP. Maks 5 MB.</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <input type="file" name="eventBackground" accept="image/png,image/webp,image/jpeg" className={`${inputClass} flex-1 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
-                        <SubmitButton className={quietButton}>
-                          <ImageUp className="h-4 w-4" />
-                          Upload
-                        </SubmitButton>
-                      </div>
-                    </form>
+                    <EventVisualAssetsPanel
+                      activeAssetId={event.activeVisualAssetId ?? undefined}
+                      assets={visualAssetsByEvent.get(event.id) ?? []}
+                      eventId={event.id}
+                      eventName={event.name}
+                    />
                   </div>
 
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">

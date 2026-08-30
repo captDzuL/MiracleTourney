@@ -22,18 +22,19 @@ import type { AppUser } from "@/lib/platform/types";
 import {
   addPlayer,
   approveStatSubmission,
+  approveEventVisualAsset,
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
-  createCaptainWithPendingPayment,
-  createCaptainWithTeam,
+  createCaptainAccount,
+  createOrUpdateCaptainDraftTeam,
   createEvent,
+  createEventVisualAsset,
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
   getOrganizerUserById,
-  getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
   autoTransitionEventToOngoing,
@@ -42,8 +43,10 @@ import {
   commitRegistrationImportBatch,
   registerTeam,
   rejectStatSubmission,
+  rejectEventVisualAsset,
   rejectTeamRegistrationRequest,
   setEventStatus,
+  setEventVisualFocalPoint,
   setMatchGames,
   setMatchResult,
   updateCaptainPassword,
@@ -54,6 +57,7 @@ import {
   updateEventBrandAssets,
   updateEventCertificateAssets,
   updateTeamLogo,
+  updateCaptainTeamLogo,
   updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
@@ -170,10 +174,24 @@ const optionalPublicUrlSchema = z.preprocess(
   z.string().refine(isHttpUrl, "Registration URL must use http or https.").nullable(),
 );
 
+type UploadedImageAsset = {
+  url: string;
+  mimeType: string;
+  width: number;
+  height: number;
+};
+
 function appendActionError(basePath: string, message: string) {
   const separator = basePath.includes("?") ? "&" : "?";
   return `${basePath}${separator}error=${encodeURIComponent(message)}`;
 }
+
+/**
+ * Single validation + storage boundary for every admin image upload.
+ * Checks, in order: entity id shape, presence, byte size, declared MIME,
+ * magic bytes, and finally real decodability through `sharp` (which also gives
+ * the dimensions we persist on a visual revision).
+ */
 async function uploadImageAsset({
   file,
   folder,
@@ -188,7 +206,7 @@ async function uploadImageAsset({
   label: string;
   maxBytes: number;
   errorPath?: string;
-}) {
+}): Promise<UploadedImageAsset> {
   if (!isSafeEntityId(entityId)) {
     redirect(appendActionError(errorPath, `Invalid ${label} ID.`) as never);
   }
@@ -209,21 +227,38 @@ async function uploadImageAsset({
     redirect(appendActionError(errorPath, `${label} file content does not match its image type.`) as never);
   }
 
+  const mimeType = file.type || "image/png";
+  const dimensions = await readImageDimensions(buffer);
+  if (!dimensions) {
+    redirect(appendActionError(errorPath, `${label} file could not be decoded as an image.`) as never);
+  }
+
   const filename = `${entityId}-${Date.now()}.${extension}`;
-  if (process.env.NODE_ENV === "test") return `/${folder}/${filename}`;
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     const { put } = await import("@vercel/blob");
     const result = await put(`${folder}/${filename}`, buffer, {
       access: "public",
-      contentType: file.type || "image/png",
+      contentType: mimeType,
     });
-    return result.url;
+    return { url: result.url, mimeType, ...dimensions };
   }
 
   const dir = path.join(process.cwd(), "public", folder);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, filename), buffer);
-  return `/${folder}/${filename}`;
+  return { url: `/${folder}/${filename}`, mimeType, ...dimensions };
+}
+
+/** Returns real pixel dimensions, or null when the bytes are not a decodable image. */
+async function readImageDimensions(buffer: Buffer): Promise<{ width: number; height: number } | null> {
+  try {
+    const sharp = (await import("sharp")).default;
+    const metadata = await sharp(buffer).metadata();
+    if (!metadata.width || !metadata.height) return null;
+    return { width: metadata.width, height: metadata.height };
+  } catch {
+    return null;
+  }
 }
 
 async function generateCertificateForFinalMatch(matchId: string, eventId: string) {
@@ -237,9 +272,8 @@ function isSafeStatToken(value: string) {
 }
 
 /**
- * Registers a new captain account and their team in a single atomic transaction.
- * Validates all fields, checks for duplicate email and team tag, hashes the password,
- * and signs in automatically after creation. Redirects to /captain on success.
+ * Registers a new captain account without requiring an active event.
+ * Team draft and event registration happen later from the captain dashboard.
  */
 export async function captainSignUpAction(formData: FormData) {
   const signUpError = async (msg: string) =>
@@ -248,16 +282,10 @@ export async function captainSignUpAction(formData: FormData) {
   const fullName = String(formData.get("fullName") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
-  const eventId = String(formData.get("eventId") ?? "").trim();
-  const teamName = String(formData.get("teamName") ?? "").trim();
-  const teamTag = String(formData.get("teamTag") ?? "").trim().toUpperCase();
 
   if (!fullName || fullName.length < 2) await signUpError("Nama lengkap minimal 2 karakter.");
   if (!z.string().email().safeParse(email).success) await signUpError("Format email tidak valid.");
   if (password.length < 8) await signUpError("Password minimal 8 karakter.");
-  if (!eventId) await signUpError("Pilih event terlebih dahulu.");
-  if (teamName.length < 2) await signUpError("Nama tim minimal 2 karakter.");
-  if (teamTag.length < 2 || teamTag.length > 5) await signUpError("Tag tim harus 2-5 karakter.");
 
   const ip = (await headers()).get("x-forwarded-for") ?? "unknown";
   if (!checkRateLimit(`register:${ip}`, 5, 15 * 60 * 1000)) {
@@ -268,39 +296,22 @@ export async function captainSignUpAction(formData: FormData) {
     await signUpError("Email sementara tidak diizinkan. Gunakan email aktif.");
   }
 
-  const dataErrors = validateTeamData({ teamName, teamTag, captainName: fullName });
-  if (dataErrors.length > 0) {
-    await signUpError(dataErrors.map((e) => e.message).join(". "));
-  }
-
   const existingUser = await getUserByEmail(email);
   if (existingUser) await signUpError("Email ini sudah terdaftar. Coba login.");
 
-  const publishedEvents = await getPublishedEvents();
-  const event = publishedEvents.find((e) => e.id === eventId);
-  if (!event) await signUpError("Event tidak valid atau sudah tidak tersedia.");
-
   const passwordHash = await bcrypt.hash(password, 10);
-  const requiresPayment = event!.registrationFeeRequired;
 
   try {
-    if (requiresPayment) {
-      await createCaptainWithPendingPayment({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
-    } else {
-      await createCaptainWithTeam({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
-    }
+    await createCaptainAccount({ email, name: fullName, passwordHash });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal membuat akun.";
-    if (msg.includes("Unique constraint")) await signUpError("Tag atau nama tim sudah digunakan di event ini.");
     await signUpError(msg);
   }
 
   const result = await signIn(email, password);
   if (!result.ok) await signUpError("Akun berhasil dibuat, tapi login gagal. Silakan login manual.");
 
-  await redirectToActiveLocale(
-    requiresPayment ? "/captain?tab=registration&success=payment-pending" as never : "/captain?success=registered" as never,
-  );
+  await redirectToActiveLocale("/captain?success=registered" as never);
 }
 
 /** Authenticates a user by email/password and redirects to /admin or /captain based on role. */
@@ -340,33 +351,41 @@ export async function captainRegisterTeamAction(formData: FormData) {
   const captain = await requireCaptainSession();
   const registrationError = async (msg: string) =>
     redirectToActiveLocale(`/captain?error=${encodeURIComponent(msg)}` as never);
+  const draftTeamId = String(formData.get("draftTeamId") ?? "").trim() || undefined;
   const parsed = z.object({
     eventId: z.string().trim().min(1),
-    name: z.string().trim().min(2, "Nama tim minimal 2 karakter."),
-    tag: z.string().trim().min(2, "Tag tim harus 2-4 karakter.").max(4, "Tag tim harus 2-4 karakter."),
+    name: z.string().trim().optional(),
+    tag: z.string().trim().optional(),
   }).safeParse({
     eventId: formData.get("eventId"),
-    name: formData.get("name"),
-    tag: formData.get("tag"),
+    name: String(formData.get("name") ?? "") || undefined,
+    tag: String(formData.get("tag") ?? "") || undefined,
   });
 
   if (!parsed.success) {
     return await registrationError(parsed.error.issues[0]?.message ?? "Data pendaftaran tidak valid.");
   }
 
-  const input = { ...parsed.data, tag: parsed.data.tag.toUpperCase() };
-  const dataErrors = validateTeamData({ teamName: input.name, teamTag: input.tag, captainName: captain.name });
-  if (dataErrors.length > 0) {
-    return await registrationError(dataErrors.map((error) => error.message).join(". "));
+  const input = {
+    ...parsed.data,
+    tag: parsed.data.tag ? parsed.data.tag.toUpperCase() : undefined,
+  };
+  if (!draftTeamId) {
+    if (!input.name || input.name.length < 2) return await registrationError("Nama tim minimal 2 karakter.");
+    if (!input.tag || input.tag.length < 2 || input.tag.length > 5) return await registrationError("Tag tim harus 2-5 karakter.");
+    const dataErrors = validateTeamData({ teamName: input.name, teamTag: input.tag, captainName: captain.name });
+    if (dataErrors.length > 0) {
+      return await registrationError(dataErrors.map((error) => error.message).join(". "));
+    }
   }
 
   try {
-    await registerTeam({ ...input, captainId: captain.id });
+    await registerTeam({ ...input, draftTeamId, captainId: captain.id });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal mendaftarkan tim.";
     if (msg === "Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.") {
       try {
-        await createTeamRegistrationRequest({ ...input, captainId: captain.id });
+        await createTeamRegistrationRequest({ ...input, draftTeamId, captainId: captain.id });
       } catch (paymentError) {
         const paymentMsg = paymentError instanceof Error ? paymentError.message : "Gagal membuat pendaftaran pembayaran.";
         return await registrationError(paymentMsg);
@@ -383,11 +402,46 @@ export async function captainRegisterTeamAction(formData: FormData) {
   await redirectToActiveLocale("/captain?success=team-created");
 }
 
+export async function captainSaveDraftTeamAction(formData: FormData) {
+  const captain = await requireCaptainSession();
+  const draftError = async (msg: string) =>
+    redirectToActiveLocale(`/captain?tab=roster&error=${encodeURIComponent(msg)}` as never);
+
+  const parsed = z.object({
+    name: z.string().trim().min(2, "Nama tim minimal 2 karakter."),
+    tag: z.string().trim().min(2, "Tag tim harus 2-5 karakter.").max(5, "Tag tim harus 2-5 karakter."),
+  }).safeParse({
+    name: formData.get("name"),
+    tag: formData.get("tag"),
+  });
+
+  if (!parsed.success) {
+    return await draftError(parsed.error.issues[0]?.message ?? "Data draft tim tidak valid.");
+  }
+
+  const input = { ...parsed.data, tag: parsed.data.tag.toUpperCase() };
+  const dataErrors = validateTeamData({ teamName: input.name, teamTag: input.tag, captainName: captain.name });
+  if (dataErrors.length > 0) {
+    return await draftError(dataErrors.map((error) => error.message).join(". "));
+  }
+
+  try {
+    await createOrUpdateCaptainDraftTeam({ ...input, captainId: captain.id, captainName: captain.name });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Gagal menyimpan draft tim.";
+    return await draftError(msg);
+  }
+
+  revalidateTag("teams");
+  revalidatePath("/captain");
+  await redirectToActiveLocale("/captain?tab=roster&success=draft-team-saved");
+}
+
 
 export async function captainUploadPaymentProofAction(formData: FormData) {
   const captain = await requireCaptainSession();
   const requestId = z.string().trim().min(1).parse(formData.get("requestId"));
-  const proofImageUrl = await uploadImageAsset({
+  const proofAsset = await uploadImageAsset({
     file: formData.get("paymentProof"),
     folder: "payment-proofs",
     entityId: requestId,
@@ -397,7 +451,7 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
   });
 
   try {
-    await updateTeamRegistrationProof(captain.id, requestId, proofImageUrl);
+    await updateTeamRegistrationProof(captain.id, requestId, proofAsset.url);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal mengupload bukti pembayaran.";
     await redirectToActiveLocale(`/captain?tab=registration&error=${encodeURIComponent(message)}` as never);
@@ -411,7 +465,7 @@ export async function adminUpdatePaymentSettingsAction(formData: FormData) {
   await requireAdminSession();
 
   const qrisImageFile = formData.get("qrisImage");
-  const uploadedQrisUrl = qrisImageFile instanceof File && qrisImageFile.size > 0
+  const uploadedQrisAsset = qrisImageFile instanceof File && qrisImageFile.size > 0
     ? await uploadImageAsset({
       file: qrisImageFile,
       folder: "payment-qris",
@@ -421,6 +475,7 @@ export async function adminUpdatePaymentSettingsAction(formData: FormData) {
       errorPath: "/admin?phase=payments",
     })
     : null;
+  const uploadedQrisUrl = uploadedQrisAsset?.url ?? null;
 
   const input = z.object({
     qrisImageUrl: optionalPublicUrlSchema.or(z.string().startsWith("/")).nullable(),
@@ -515,22 +570,46 @@ export async function changePasswordAction(formData: FormData) {
   await redirectToActiveLocale("/captain?success=password-changed");
 }
 
-/** Adds a player to the captain's team. Jersey number is optional; omitted if the field is blank. */
+export async function captainUploadTeamLogoAction(formData: FormData) {
+  const captain = await requireCaptainSession();
+
+  try {
+    const teamId = z.string().min(1).parse(formData.get("teamId"));
+    const asset = await uploadImageAsset({
+      file: formData.get("teamLogo"),
+      folder: "team-logos",
+      entityId: teamId,
+      label: "Team logo",
+      maxBytes: MAX_LOGO_IMAGE_BYTES,
+      errorPath: "/captain?tab=roster",
+    });
+    await updateCaptainTeamLogo(captain.id, teamId, asset.url);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    return await redirectToActiveLocale(`/captain?tab=roster&error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateTag("teams");
+  revalidatePath("/captain");
+  await redirectToActiveLocale("/captain?tab=roster&success=team-logo-updated");
+}
+
+/** Adds a player to the captain's team. UID and IGN are required; position is optional. */
 export async function captainAddPlayerAction(formData: FormData) {
-  await requireCaptainSession();
+  const captain = await requireCaptainSession();
 
   const input = z.object({
     teamId: z.string().min(1),
-    eventId: z.string().min(1),
-    displayName: z.string().min(2),
-    nickname: z.string().min(2),
-    position: z.string().min(2),
+    eventId: z.string().trim().optional(),
+    displayName: z.string().trim().min(2, "UID minimal 2 karakter."),
+    nickname: z.string().trim().min(2, "IGN minimal 2 karakter."),
+    position: z.string().trim().optional(),
   }).parse({
     teamId: formData.get("teamId"),
-    eventId: formData.get("eventId"),
+    eventId: String(formData.get("eventId") ?? "") || undefined,
     displayName: formData.get("displayName"),
     nickname: formData.get("nickname"),
-    position: formData.get("position"),
+    position: String(formData.get("position") ?? ""),
   });
 
   const jerseyRaw = formData.get("jerseyNumber");
@@ -540,7 +619,7 @@ export async function captainAddPlayerAction(formData: FormData) {
       : undefined;
 
   try {
-    await addPlayer({ ...input, jerseyNumber });
+    await addPlayer({ ...input, captainId: captain.id, position: input.position ?? "", jerseyNumber });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Tidak dapat menambahkan pemain.";
     return await redirectToActiveLocale("/captain?error=" + encodeURIComponent(msg));
@@ -563,9 +642,9 @@ export async function captainUpdatePlayerAction(formData: FormData) {
       : null;
 
   const data = {
-    displayName: z.string().min(2).parse(formData.get("displayName")),
-    nickname: z.string().min(2).parse(formData.get("nickname")),
-    position: z.string().min(2).parse(formData.get("position")),
+    displayName: z.string().trim().min(2).parse(formData.get("displayName")),
+    nickname: z.string().trim().min(2).parse(formData.get("nickname")),
+    position: String(formData.get("position") ?? "").trim(),
     jerseyNumber: jerseyNumber ?? undefined,
   };
 
@@ -701,7 +780,7 @@ export async function adminAssignCaptainAction(formData: FormData) {
     where: { id: teamId },
     select: { id: true, eventId: true },
   });
-  if (!team) {
+  if (!team?.eventId) {
     return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
   }
   await assertUserCanManageEvent(user, team.eventId);
@@ -761,7 +840,7 @@ export async function adminDeleteTeamAction(formData: FormData) {
     where: { id: teamId },
     include: { event: { select: { id: true, status: true } } },
   });
-  if (!team) {
+  if (!team?.event || !team.eventId) {
     return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
   }
   if (team.event.status !== "Draft") {
@@ -1228,7 +1307,7 @@ export async function adminSaveMatchPlayerStatsAction(formData: FormData) {
   await adminWriteMatchPlayerStats({ matchId, teamId, eventId, adminId: user.id, stats });
   revalidateTag("stats");
   revalidatePath("/", "layout");
-  redirect(`/admin?phase=run&activeEventId=${eventId}&matchId=${matchId}&success=player-stats-saved` as never);
+  await redirectToActiveLocale(`/admin?phase=run&activeEventId=${eventId}&matchId=${matchId}&success=player-stats-saved`);
 }
 
 /** Sets the Best-of-N configuration for a specific round label in an event. Valid bestOf values are 1, 3, or 5. */
@@ -1306,20 +1385,20 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
 
   try {
-    const url = await uploadImageAsset({
+    const asset = await uploadImageAsset({
       file: formData.get("characterArt"),
       folder: "character-art",
       entityId: eventId,
       label: "Character art",
       maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
     });
-    await updateEventCertificateAssets(eventId, { characterArtUrl: url });
+    await updateEventCertificateAssets(eventId, { characterArtUrl: asset.url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
   revalidatePath("/admin");
-  redirect(`/admin?success=character-art-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=character-art-uploaded`);
 }
 
 export async function adminUploadEventLogoAction(formData: FormData) {
@@ -1328,46 +1407,163 @@ export async function adminUploadEventLogoAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
 
   try {
-    const url = await uploadImageAsset({
+    const asset = await uploadImageAsset({
       file: formData.get("eventLogo"),
       folder: "event-logos",
       entityId: eventId,
       label: "Event logo",
       maxBytes: MAX_LOGO_IMAGE_BYTES,
     });
-    await updateEventBrandAssets(eventId, { logoUrl: url });
+    await updateEventBrandAssets(eventId, { logoUrl: asset.url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=event-logo-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=event-logo-uploaded`);
 }
 
-export async function adminUploadEventBackgroundAction(formData: FormData) {
+/**
+ * While the legacy `Event.gameImageUrl` column still has readers, every
+ * approval mirrors the approved revision url back into it. Flip this to `false`
+ * (and delete the dual-write branch in `approveEventVisualAsset`) once all
+ * surfaces read through `resolveEventVisual`.
+ */
+const DUAL_WRITE_LEGACY_EVENT_IMAGE = true;
+
+/**
+ * Uploads an organizer-supplied event background as a new visual revision.
+ * Organizer uploads are trusted after the rights attestation, so the revision
+ * is created already approved and then activated through the repository.
+ */
+export async function adminUploadEventVisualAction(formData: FormData) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
-  await assertUserCanManageEvent(user, eventId);
 
   try {
-    const url = await uploadImageAsset({
-      file: formData.get("eventBackground"),
+    await assertUserCanManageEvent(user, eventId);
+
+    if (formData.get("rightsAttestation") !== "confirmed") {
+      throw new Error("Konfirmasi hak publikasi artwork terlebih dahulu.");
+    }
+
+    const asset = await uploadImageAsset({
+      file: formData.get("eventVisual"),
       folder: "event-backgrounds",
       entityId: eventId,
       label: "Event background",
       maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
     });
-    await updateEventBrandAssets(eventId, { gameImageUrl: url });
+
+    const revision = await createEventVisualAsset(user, {
+      eventId,
+      source: "organizer_upload",
+      status: "approved",
+      url: asset.url,
+      mimeType: asset.mimeType,
+      width: asset.width,
+      height: asset.height,
+      rightsAttestedAt: new Date(),
+    });
+
+    await approveEventVisualAsset(user, eventId, revision.id, {
+      dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=event-background-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=event-visual-uploaded`);
+}
+
+/** Approves a revision that is waiting for review and makes it the active one. */
+export async function adminApproveEventVisualAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const assetId = z.string().min(1).parse(formData.get("assetId"));
+
+  try {
+    await assertUserCanManageEvent(user, eventId);
+    await approveEventVisualAsset(user, eventId, assetId, {
+      dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Approval failed";
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale(`/admin?success=event-visual-approved`);
+}
+
+/** Rejects a revision. The repository refuses to reject the active one. */
+export async function adminRejectEventVisualAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const assetId = z.string().min(1).parse(formData.get("assetId"));
+
+  try {
+    await assertUserCanManageEvent(user, eventId);
+    await rejectEventVisualAsset(user, eventId, assetId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Rejection failed";
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale(`/admin?success=event-visual-rejected`);
+}
+
+/** Rolls back to an already approved revision by re-activating it. */
+export async function adminActivateEventVisualAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const assetId = z.string().min(1).parse(formData.get("assetId"));
+
+  try {
+    await assertUserCanManageEvent(user, eventId);
+    await approveEventVisualAsset(user, eventId, assetId, {
+      dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Activation failed";
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale(`/admin?success=event-visual-activated`);
+}
+
+/**
+ * Stores the focal point of a revision. Values are forwarded as parsed so the
+ * repository stays the single place that clamps them into the unit square.
+ */
+export async function adminSetEventVisualFocalPointAction(formData: FormData) {
+  const user = await requireAdminSession();
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const assetId = z.string().min(1).parse(formData.get("assetId"));
+  const focalX = z.coerce.number().finite().parse(formData.get("focalX"));
+  const focalY = z.coerce.number().finite().parse(formData.get("focalY"));
+
+  try {
+    await assertUserCanManageEvent(user, eventId);
+    await setEventVisualFocalPoint(user, eventId, assetId, { x: focalX, y: focalY });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Focal point update failed";
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateTag("events");
+  revalidatePath("/", "layout");
+  await redirectToActiveLocale(`/admin?success=event-visual-focal-updated`);
 }
 
 export async function adminUploadTeamLogoAction(formData: FormData) {
@@ -1375,22 +1571,22 @@ export async function adminUploadTeamLogoAction(formData: FormData) {
   const teamId = z.string().min(1).parse(formData.get("teamId"));
 
   try {
-    const url = await uploadImageAsset({
+    const asset = await uploadImageAsset({
       file: formData.get("teamLogo"),
       folder: "team-logos",
       entityId: teamId,
       label: "Team logo",
       maxBytes: MAX_LOGO_IMAGE_BYTES,
     });
-    await updateTeamLogo(user, teamId, url);
+    await updateTeamLogo(user, teamId, asset.url);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(`/admin?error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
   revalidateTag("teams");
   revalidatePath("/", "layout");
-  redirect(`/admin?success=team-logo-uploaded` as never);
+  await redirectToActiveLocale(`/admin?success=team-logo-uploaded`);
 }
 
 /** Updates the accent color for an event's certificate. */
@@ -1401,13 +1597,13 @@ export async function adminSetAccentColorAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
   await updateEventCertificateAssets(eventId, { accentColor });
   revalidatePath("/admin");
-  redirect(`/admin?success=accent-color-saved` as never);
+  await redirectToActiveLocale(`/admin?success=accent-color-saved`);
 }
 
 /**
  * Requests a password reset link for a captain account.
  * Always redirects to sent=1 regardless of whether the email exists (security best practice).
- * The reset URL is logged to the console for Beta; real email can be wired later.
+ * Sends the reset link via sendEmail(), which itself never throws on delivery failure.
  */
 export async function requestPasswordResetAction(formData: FormData) {
   const emailRaw = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -1422,11 +1618,16 @@ export async function requestPasswordResetAction(formData: FormData) {
     const token = await createPasswordResetToken(user.id);
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
     const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
-    await sendEmail({
-      to: email.data,
-      subject: "Reset Password Miracle League",
-      html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 1 jam.</p>`,
-    });
+    try {
+      await sendEmail({
+        to: email.data,
+        subject: "Reset Password Miracle League",
+        html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 1 jam.</p>`,
+      });
+    } catch (err) {
+      // Never let an email-delivery failure change the response the caller sees (security).
+      console.error(`[requestPasswordResetAction] sendEmail threw for ${email.data}:`, err);
+    }
   }
   // Always redirect to sent=1 regardless of whether email exists (security)
   return redirectToActiveLocale("/forgot-password?sent=1" as never);

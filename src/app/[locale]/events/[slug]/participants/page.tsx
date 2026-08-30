@@ -4,7 +4,7 @@ import { setRequestLocale } from "next-intl/server";
 import { getPublicEventBySlug } from "@/lib/platform/repository";
 import { renderParticipantsPage } from "../../../../events/[slug]/participants/participants-page";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-tourney.vercel.app";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
 
 export async function generateMetadata({
   params,
@@ -33,5 +33,5 @@ export default async function LocalizedParticipantsPage({
   const { locale, slug } = await params;
   setRequestLocale(locale as "id" | "en");
 
-  return renderParticipantsPage(slug);
+  return renderParticipantsPage(slug, locale as "id" | "en");
 }

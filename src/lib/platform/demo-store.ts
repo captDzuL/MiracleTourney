@@ -7,7 +7,7 @@ import {
   getGameModeConfig,
   getGamePrimaryStatKey,
 } from "@/lib/platform/config";
-import type { AppUser, Event, Match, Player, Team } from "@/lib/platform/types";
+import type { AppUser, Event, EventVisualAsset, Match, Player, Team } from "@/lib/platform/types";
 import {
   aggregatePlayerLeaderboard,
   buildLeagueStandings,
@@ -430,6 +430,16 @@ export function getPublicEventBySlug(slug: string) {
   return getStore().events.find((event) => event.slug === slug && PUBLIC_EVENT_STATUSES.has(event.status));
 }
 
+/**
+ * Demo events carry no visual revisions, so they resolve through the legacy
+ * background or the typographic poster. Returning an empty list keeps the
+ * organizer panel renderable when Prisma is unreachable.
+ */
+export function listEventVisualAssets(eventId: string): EventVisualAsset[] {
+  const event = getStore().events.find((item) => item.id === eventId);
+  return event?.activeVisualAsset ? [event.activeVisualAsset] : [];
+}
+
 export function getGameForEvent(event: Event) {
   return getGameConfig(event.gameId);
 }
@@ -656,12 +666,14 @@ export function getImportSnapshot() {
       participantCap: event.participantCap,
       bracketLocked: isEventBracketLocked(event.id),
     })),
-    teams: store.teams.map((team) => ({ eventId: team.eventId, name: team.name, tag: team.tag })),
+    teams: store.teams.flatMap((team) => team.eventId ? [{ eventId: team.eventId, name: team.name, tag: team.tag }] : []),
   };
 }
 
 export function getImportedTeams() {
-  return getStore().teams.filter((team) => team.source === "csv-import");
+  return getStore().teams.filter(
+    (team) => Boolean(team.eventId) && (team.source === "csv-import" || team.source === "registration-intake"),
+  );
 }
 
 export function createEvent(input: {
@@ -752,6 +764,7 @@ export function updateTeamLogo(user: AppUser, teamId: string, logoUrl: string) {
   const team = getStore().teams.find((item) => item.id === teamId);
   if (!team) return null;
 
+  if (!team.eventId) return null;
   const event = getStore().events.find((item) => item.id === team.eventId);
   const canManage =
     user.role === "platform_admin"
@@ -763,11 +776,19 @@ export function updateTeamLogo(user: AppUser, teamId: string, logoUrl: string) {
   return team;
 }
 
+export function updateCaptainTeamLogo(captainId: string, teamId: string, logoUrl: string) {
+  const team = getStore().teams.find((item) => item.id === teamId && item.captainId === captainId);
+  if (!team) return null;
+  team.logoUrl = logoUrl;
+  return team;
+}
+
 export function registerTeam(input: {
   eventId: string;
   captainId: string;
-  name: string;
-  tag: string;
+  name?: string;
+  tag?: string;
+  draftTeamId?: string;
 }) {
   const event = getStore().events.find((item) => item.id === input.eventId);
 
@@ -781,9 +802,9 @@ export function registerTeam(input: {
     id: `team-${Date.now()}`,
     eventId: input.eventId,
     captainId: input.captainId,
-    name: input.name,
-    logoText: input.tag.slice(0, 2).toUpperCase(),
-    tag: input.tag.toUpperCase(),
+    name: input.name ?? "Draft Team",
+    logoText: (input.tag ?? "DT").slice(0, 2).toUpperCase(),
+    tag: (input.tag ?? "DT").toUpperCase(),
     source: "demo",
   };
 
@@ -832,18 +853,19 @@ export function importTeams(input: Array<{
 
 export function addPlayer(input: {
   teamId: string;
-  eventId: string;
+  eventId?: string;
+  captainId?: string;
   displayName: string;
   nickname: string;
-  position: string;
+  position?: string;
 }) {
   const player: Player = {
     id: `player-${Date.now()}`,
     teamId: input.teamId,
-    eventId: input.eventId,
+    ...(input.eventId ? { eventId: input.eventId } : {}),
     displayName: input.displayName,
     nickname: input.nickname,
-    position: input.position,
+    position: input.position ?? "",
   };
 
   getStore().players.push(player);

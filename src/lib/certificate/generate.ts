@@ -36,7 +36,7 @@ export async function generateCertificate(eventId: string, winnerTeamId: string)
   const certId = `${gameSlug.toUpperCase().slice(0, 2)}-${new Date().getFullYear()}-${String(certCount + 1).padStart(5, "0")}`;
 
   const date = new Intl.DateTimeFormat("id-ID", { year: "numeric", month: "long", day: "numeric" }).format(new Date());
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-tourney.vercel.app";
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
 
   const html = await buildCertificateHtml({
     eventName: event.name,

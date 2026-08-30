@@ -3,7 +3,7 @@ import createMiddleware from "next-intl/middleware";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { routing } from "./src/i18n/routing";
+import { routing } from "./i18n/routing";
 
 const JWT_COOKIE = "mfl_token";
 const DEFAULT_JWT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32chars-min";
@@ -47,8 +47,15 @@ const intlMiddleware = createMiddleware(routing);
 function isCrossSiteUnsafeRequest(request: NextRequest) {
   if (!UNSAFE_METHODS.has(request.method)) return false;
 
+  // Sec-Fetch-Site is set by the browser itself and cannot be spoofed by a
+  // page's own script, so trust it whenever present instead of falling
+  // through to the Origin comparison below. Comparing Origin against
+  // request.nextUrl.origin is unreliable behind hostname aliases (e.g.
+  // "127.0.0.1" vs "localhost" both point at the same dev server but
+  // produce different origin strings), which previously rejected same-site
+  // requests as cross-site.
   const fetchSite = request.headers.get("sec-fetch-site");
-  if (fetchSite === "cross-site") return true;
+  if (fetchSite) return fetchSite === "cross-site";
 
   const origin = request.headers.get("origin");
   if (!origin) return false;

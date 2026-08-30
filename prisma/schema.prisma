@@ -25,6 +25,7 @@ model User {
   notifications        Notification[]
   registrationImportProfiles RegistrationImportProfile[]
   registrationImportBatches  RegistrationImportBatch[]
+  createdVisualAssets  EventVisualAsset[]
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
 }
@@ -67,11 +68,44 @@ model Event {
   checkIns             CheckIn[]
   registrationImportProfiles RegistrationImportProfile[]
   registrationImportBatches  RegistrationImportBatch[]
+  visualAssets         EventVisualAsset[] @relation("EventVisualAssets")
+  activeVisualAssetId  String?            @unique
+  activeVisualAsset    EventVisualAsset?  @relation("ActiveEventVisualAsset", fields: [activeVisualAssetId], references: [id], onDelete: SetNull)
   teamRegistrationRequests TeamRegistrationRequest[]
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
   @@index([status])
+}
+
+model EventVisualAsset {
+  id               String    @id @default(cuid())
+  eventId          String
+  event            Event     @relation("EventVisualAssets", fields: [eventId], references: [id], onDelete: Cascade)
+  createdByUserId  String?
+  createdByUser    User?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  source           String
+  status           String
+  url              String?
+  mimeType         String?
+  width            Int?
+  height           Int?
+  focalX           Float     @default(0.5)
+  focalY           Float     @default(0.5)
+  provider         String?
+  model            String?
+  promptVersion    String?
+  workflowRunId    String?
+  sourceUrl        String?
+  rightsAttestedAt DateTime?
+  errorCode        String?
+  approvedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  activeForEvent   Event?    @relation("ActiveEventVisualAsset")
+
+  @@index([eventId, createdAt])
+  @@index([eventId, source, createdAt])
 }
 
 model EventStream {
@@ -87,8 +121,8 @@ model EventStream {
 
 model Team {
   id             String        @id @default(cuid())
-  eventId        String
-  event          Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId        String?
+  event          Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
   captainId      String?
   captain        User?         @relation("TeamCaptain", fields: [captainId], references: [id], onDelete: SetNull)
   name           String
@@ -146,11 +180,11 @@ model Player {
   id           String       @id @default(cuid())
   teamId       String
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  eventId      String
-  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId      String?
+  event        Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
   displayName  String
   nickname     String
-  position     String
+  position     String       @default("")
   jerseyNumber Int?
   stats        PlayerStat[]
   checkIns     CheckIn[]

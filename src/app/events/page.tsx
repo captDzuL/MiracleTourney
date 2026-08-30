@@ -3,7 +3,9 @@ import Link from "next/link";
 import { CalendarDays, Trophy, Users } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 
+import { PublicEventsV2 } from "@/components/public-v2/PublicEventsV2";
 import { Pill, Section } from "@/components/ui";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import type { Event } from "@/lib/platform/types";
 import { getAllGames, getGameForEvent, getModeForEvent, getPublicEvents, getTeamsForEvent } from "@/lib/platform/repository";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
@@ -74,6 +76,30 @@ export default async function EventsPage({
     const qs = query.toString();
     const base = locale === "id" || locale === "en" ? `/${locale}/events` : "/events";
     return qs ? `${base}?${qs}` : base;
+  }
+
+  if (isFeatureEnabled("public_visual_v2")) {
+    return (
+      <PublicEventsV2
+        events={events}
+        games={games}
+        teamsByEvent={teamsByEvent}
+        filters={{ statuses, activeStatus: statusFilter, activeGame: gameFilter }}
+        href={href}
+        locale={locale === "id" || locale === "en" ? locale : undefined}
+        labels={{
+          title: t("title"),
+          description: t("description"),
+          allGames: t("allGames"),
+          teams: t("teamsLabel"),
+          noEvents: t("noEvents"),
+          issue: t("issueLabel"),
+          organizer: t("organizerLabel"),
+          prizePool: t("prizePool"),
+          entryFee: t("entryFee"),
+        }}
+      />
+    );
   }
 
   return (
