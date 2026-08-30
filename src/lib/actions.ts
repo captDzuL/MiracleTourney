@@ -1560,7 +1560,7 @@ export async function adminSetAccentColorAction(formData: FormData) {
 /**
  * Requests a password reset link for a captain account.
  * Always redirects to sent=1 regardless of whether the email exists (security best practice).
- * The reset URL is logged to the console for Beta; real email can be wired later.
+ * Sends the reset link via sendEmail(), which itself never throws on delivery failure.
  */
 export async function requestPasswordResetAction(formData: FormData) {
   const emailRaw = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -1575,11 +1575,16 @@ export async function requestPasswordResetAction(formData: FormData) {
     const token = await createPasswordResetToken(user.id);
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
     const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
-    await sendEmail({
-      to: email.data,
-      subject: "Reset Password Miracle League",
-      html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 1 jam.</p>`,
-    });
+    try {
+      await sendEmail({
+        to: email.data,
+        subject: "Reset Password Miracle League",
+        html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 1 jam.</p>`,
+      });
+    } catch (err) {
+      // Never let an email-delivery failure change the response the caller sees (security).
+      console.error(`[requestPasswordResetAction] sendEmail threw for ${email.data}:`, err);
+    }
   }
   // Always redirect to sent=1 regardless of whether email exists (security)
   return redirectToActiveLocale("/forgot-password?sent=1" as never);

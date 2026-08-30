@@ -34,7 +34,7 @@ const uiFont = localFont({
   ],
 });
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-tourney.vercel.app";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));

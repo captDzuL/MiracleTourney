@@ -14,6 +14,7 @@ const {
   createCaptainWithTeam,
   createEvent,
   createEventVisualAsset,
+  createPasswordResetToken,
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
@@ -31,6 +32,7 @@ const {
   revalidatePath,
   revalidateTag,
   requireRole,
+  sendEmail,
   setEventStatus,
   setEventVisualFocalPoint,
   setMatchGames,
@@ -63,6 +65,7 @@ const {
   createCaptainWithTeam: vi.fn(),
   createEvent: vi.fn(),
   createEventVisualAsset: vi.fn(),
+  createPasswordResetToken: vi.fn(),
   createTeamRegistrationRequest: vi.fn(),
   deletePlayer: vi.fn(),
   getImportSnapshot: vi.fn(),
@@ -80,6 +83,7 @@ const {
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
   requireRole: vi.fn(),
+  sendEmail: vi.fn(),
   setEventStatus: vi.fn(),
   setEventVisualFocalPoint: vi.fn(),
   setMatchGames: vi.fn(),
@@ -157,6 +161,12 @@ vi.mock("@/lib/platform/repository", () => ({
 vi.mock("@/lib/certificate/generate", () => ({
   generateCertificateIfFinal,
 }));
+vi.mock("@/lib/platform/password-reset", () => ({
+  createPasswordResetToken,
+}));
+vi.mock("@/lib/email/send", () => ({
+  sendEmail,
+}));
 vi.mock("bcryptjs", () => ({
   default: {
     hash: vi.fn().mockResolvedValue("$hashed$"),
@@ -196,6 +206,7 @@ import {
   captainUpdatePlayerAction,
   changePasswordAction,
   loginAction,
+  requestPasswordResetAction,
 } from "./actions";
 import { logoutAction } from "./session-actions";
 
@@ -452,6 +463,54 @@ describe("changePasswordAction", () => {
     await expect(changePasswordAction(fd(validData))).rejects.toThrow(
       "REDIRECT:/captain/settings?error=",
     );
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// requestPasswordResetAction
+// ────────────────────────────────────────────────────────────
+
+describe("requestPasswordResetAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    createPasswordResetToken.mockResolvedValue("a".repeat(64));
+  });
+
+  it("redirects to sent=1 and sends an email for an existing captain", async () => {
+    getUserByEmail.mockResolvedValue({ id: "captain-1", role: "captain" });
+    sendEmail.mockResolvedValue(undefined);
+
+    await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "cap@test.com" }),
+    );
+  });
+
+  it("redirects to sent=1 without sending an email when the account does not exist", async () => {
+    getUserByEmail.mockResolvedValue(null);
+
+    await expect(requestPasswordResetAction(fd({ email: "nobody@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("still redirects to sent=1 even if sendEmail rejects", async () => {
+    getUserByEmail.mockResolvedValue({ id: "captain-1", role: "captain" });
+    sendEmail.mockRejectedValue(new Error("Resend API unreachable"));
+
+    await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+  });
+
+  it("rejects an invalid email format", async () => {
+    await expect(requestPasswordResetAction(fd({ email: "not-an-email" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?error=",
+    );
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 });
 
