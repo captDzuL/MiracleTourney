@@ -194,13 +194,14 @@ export default async function AdminPage({
       : Promise.resolve(null),
   ]);
 
-  const importedTeams = importedTeamsRaw
+  const importedTeamsWithEvents = importedTeamsRaw.filter((team): team is typeof team & { eventId: string } => Boolean(team.eventId));
+  const importedTeams = importedTeamsWithEvents
     .map((team) => ({
       ...team,
       eventName: events.find((event) => event.id === team.eventId)?.name ?? "Unknown event",
     }))
     .reverse();
-  const importedEventIds = new Set(importedTeamsRaw.map((team) => team.eventId));
+  const importedEventIds = new Set(importedTeamsWithEvents.map((team) => team.eventId));
 
   const selectedMatchId = resolvedSearchParams?.matchId;
 
