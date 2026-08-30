@@ -10,8 +10,10 @@ const {
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   blobPut,
+  createCaptainAccount,
   createCaptainWithPendingPayment,
   createCaptainWithTeam,
+  createOrUpdateCaptainDraftTeam,
   createEvent,
   createEventVisualAsset,
   createPasswordResetToken,
@@ -45,6 +47,7 @@ const {
   updatePaymentSettings,
   updateTeamRegistrationProof,
   updateEventStream,
+  updateCaptainTeamLogo,
   updatePlayer,
   updateEventCertificateAssets,
   updateEventPublicInfo,
@@ -61,8 +64,10 @@ const {
   assertUserCanReviewStatSubmission: vi.fn(),
   autoTransitionEventToOngoing: vi.fn(),
   blobPut: vi.fn(),
+  createCaptainAccount: vi.fn(),
   createCaptainWithPendingPayment: vi.fn(),
   createCaptainWithTeam: vi.fn(),
+  createOrUpdateCaptainDraftTeam: vi.fn(),
   createEvent: vi.fn(),
   createEventVisualAsset: vi.fn(),
   createPasswordResetToken: vi.fn(),
@@ -96,6 +101,7 @@ const {
   updatePaymentSettings: vi.fn(),
   updateTeamRegistrationProof: vi.fn(),
   updateEventStream: vi.fn(),
+  updateCaptainTeamLogo: vi.fn(),
   updatePlayer: vi.fn(),
   updateEventCertificateAssets: vi.fn(),
   updateEventPublicInfo: vi.fn(),
@@ -125,8 +131,10 @@ vi.mock("@/lib/platform/repository", () => ({
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
+  createCaptainAccount,
   createCaptainWithPendingPayment,
   createCaptainWithTeam,
+  createOrUpdateCaptainDraftTeam,
   createEvent,
   createEventVisualAsset,
   createTeamRegistrationRequest,
@@ -150,6 +158,7 @@ vi.mock("@/lib/platform/repository", () => ({
   updateEventBrandAssets,
   updatePaymentSettings,
   updateTeamRegistrationProof,
+  updateCaptainTeamLogo,
   updateEventCertificateAssets,
   updateEventPublicInfo,
   updateEventStream,
@@ -315,6 +324,7 @@ describe("captainSignUpAction", () => {
     vi.clearAllMocks();
     getUserByEmail.mockResolvedValue(null);
     getPublishedEvents.mockResolvedValue([{ id: "event-abc", registrationFeeRequired: false }]);
+    createCaptainAccount.mockResolvedValue({ userId: "captain-new" });
     createCaptainWithTeam.mockResolvedValue({ id: "captain-new" });
     createCaptainWithPendingPayment.mockResolvedValue({ userId: "captain-new", requestId: "request-new" });
     signIn.mockResolvedValue({ ok: true, user: { role: "captain" } });
@@ -324,9 +334,11 @@ describe("captainSignUpAction", () => {
     await expect(captainSignUpAction(fd(validData))).rejects.toThrow(
       "REDIRECT:/captain?success=registered",
     );
-    expect(createCaptainWithTeam).toHaveBeenCalledWith(
-      expect.objectContaining({ email: "budi@test.com", teamName: "Tim Budi", teamTag: "TBD" }),
+    expect(createCaptainAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "budi@test.com", name: "Budi Santoso", passwordHash: expect.any(String) }),
     );
+    expect(createCaptainWithTeam).not.toHaveBeenCalled();
+    expect(createCaptainWithPendingPayment).not.toHaveBeenCalled();
   });
 
   it("hashes password before creating account", async () => {
@@ -338,7 +350,7 @@ describe("captainSignUpAction", () => {
     await expect(captainSignUpAction(fd({ ...validData, fullName: "A" }))).rejects.toThrow(
       "REDIRECT:/register?error=",
     );
-    expect(createCaptainWithTeam).not.toHaveBeenCalled();
+    expect(createCaptainAccount).not.toHaveBeenCalled();
   });
 
   it("rejects invalid email format", async () => {
@@ -353,54 +365,59 @@ describe("captainSignUpAction", () => {
     );
   });
 
-  it("rejects missing eventId", async () => {
+  it("does not require an event during captain sign-up", async () => {
     await expect(captainSignUpAction(fd({ ...validData, eventId: "" }))).rejects.toThrow(
-      "REDIRECT:/register?error=",
+      "REDIRECT:/captain?success=registered",
     );
+    expect(createCaptainAccount).toHaveBeenCalled();
   });
 
-  it("rejects teamTag longer than 4 characters", async () => {
+  it("does not validate team fields during captain sign-up", async () => {
     await expect(captainSignUpAction(fd({ ...validData, teamTag: "TOOLONG" }))).rejects.toThrow(
-      "REDIRECT:/register?error=",
+      "REDIRECT:/captain?success=registered",
     );
+    expect(createCaptainAccount).toHaveBeenCalled();
   });
 
   it("rejects duplicate email", async () => {
     getUserByEmail.mockResolvedValue({ id: "existing-user" });
 
     await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/register?error=");
-    expect(createCaptainWithTeam).not.toHaveBeenCalled();
+    expect(createCaptainAccount).not.toHaveBeenCalled();
   });
 
-  it("rejects event not in published list", async () => {
+  it("does not query published events during captain sign-up", async () => {
+    headers.mockResolvedValue(new Headers({ "x-forwarded-for": "10.0.0.98" }));
     getPublishedEvents.mockResolvedValue([{ id: "other-event" }]);
 
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/captain?success=registered");
+    expect(getPublishedEvents).not.toHaveBeenCalled();
+  });
+
+  it("redirects with an error when account creation fails", async () => {
+    createCaptainAccount.mockRejectedValue(new Error("Unique constraint failed"));
+
     await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/register?error=");
   });
 
-  it("redirects with duplicate-tag message when createCaptainWithTeam throws Unique constraint", async () => {
-    createCaptainWithTeam.mockRejectedValue(new Error("Unique constraint failed"));
-
-    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/register?error=");
-  });
-
-  it("creates a pending-payment request instead of a free team when the event requires a fee", async () => {
+  it("does not create a pending-payment request during captain sign-up", async () => {
     headers.mockResolvedValue(new Headers({ "x-forwarded-for": "10.0.0.99" }));
     getPublishedEvents.mockResolvedValue([{ id: "event-abc", registrationFeeRequired: true }]);
 
     await expect(captainSignUpAction(fd(validData))).rejects.toThrow(
-      "REDIRECT:/captain?tab=registration&success=payment-pending",
+      "REDIRECT:/captain?success=registered",
     );
-    expect(createCaptainWithPendingPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ email: "budi@test.com", teamName: "Tim Budi", teamTag: "TBD" }),
+    expect(createCaptainAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "budi@test.com", name: "Budi Santoso" }),
     );
+    expect(createCaptainWithPendingPayment).not.toHaveBeenCalled();
     expect(createCaptainWithTeam).not.toHaveBeenCalled();
   });
 });
 
-// ────────────────────────────────────────────────────────────
+// ------------------------------------------------------------
 // changePasswordAction
-// ────────────────────────────────────────────────────────────
+// ------------------------------------------------------------
 
 describe("changePasswordAction", () => {
   const validData = {

@@ -56,6 +56,7 @@ const { prisma } = vi.hoisted(() => ({
       createMany: vi.fn(),
       deleteMany: vi.fn(),
       findMany: vi.fn(),
+      updateMany: vi.fn(),
     },
     registrationImportBatch: {
       create: vi.fn(),
@@ -1142,7 +1143,7 @@ describe("existing captain event registration", () => {
     expect(prisma.team.create).not.toHaveBeenCalled();
     expect(prisma.team.update).toHaveBeenCalledWith({
       where: { id: "team-atl" },
-      data: { source: "registration" },
+      data: { eventId: "event-paid", source: "registration" },
     });
     expect(prisma.teamRegistrationRequest.update).toHaveBeenCalledWith({
       where: { id: "request-atl" },

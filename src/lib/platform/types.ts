@@ -131,7 +131,7 @@ export type Certificate = {
 
 export type Team = {
   id: string;
-  eventId: string;
+  eventId?: string;
   captainId: string;
   name: string;
   logoText: string;
@@ -140,7 +140,7 @@ export type Team = {
   captainName?: string;
   captainContact?: string;
   captain?: { id: string; name: string } | null;
-  source?: "demo" | "csv-import" | "registration" | "registration-intake";
+  source?: "demo" | "csv-import" | "registration" | "registration-intake" | "draft";
 };
 
 export type TeamRegistrationRequestStatus = "pending_payment" | "pending_review" | "approved" | "rejected" | "expired";
@@ -174,7 +174,7 @@ export type PaymentSettings = {
 export type Player = {
   id: string;
   teamId: string;
-  eventId: string;
+  eventId?: string;
   displayName: string;
   nickname: string;
   position: string;
