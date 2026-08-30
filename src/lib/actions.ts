@@ -27,15 +27,14 @@ import {
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
-  createCaptainWithPendingPayment,
-  createCaptainWithTeam,
+  createCaptainAccount,
+  createOrUpdateCaptainDraftTeam,
   createEvent,
   createEventVisualAsset,
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
   getOrganizerUserById,
-  getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
   autoTransitionEventToOngoing,
@@ -58,6 +57,7 @@ import {
   updateEventBrandAssets,
   updateEventCertificateAssets,
   updateTeamLogo,
+  updateCaptainTeamLogo,
   updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
@@ -272,9 +272,8 @@ function isSafeStatToken(value: string) {
 }
 
 /**
- * Registers a new captain account and their team in a single atomic transaction.
- * Validates all fields, checks for duplicate email and team tag, hashes the password,
- * and signs in automatically after creation. Redirects to /captain on success.
+ * Registers a new captain account without requiring an active event.
+ * Team draft and event registration happen later from the captain dashboard.
  */
 export async function captainSignUpAction(formData: FormData) {
   const signUpError = async (msg: string) =>
@@ -283,16 +282,10 @@ export async function captainSignUpAction(formData: FormData) {
   const fullName = String(formData.get("fullName") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
-  const eventId = String(formData.get("eventId") ?? "").trim();
-  const teamName = String(formData.get("teamName") ?? "").trim();
-  const teamTag = String(formData.get("teamTag") ?? "").trim().toUpperCase();
 
   if (!fullName || fullName.length < 2) await signUpError("Nama lengkap minimal 2 karakter.");
   if (!z.string().email().safeParse(email).success) await signUpError("Format email tidak valid.");
   if (password.length < 8) await signUpError("Password minimal 8 karakter.");
-  if (!eventId) await signUpError("Pilih event terlebih dahulu.");
-  if (teamName.length < 2) await signUpError("Nama tim minimal 2 karakter.");
-  if (teamTag.length < 2 || teamTag.length > 5) await signUpError("Tag tim harus 2-5 karakter.");
 
   const ip = (await headers()).get("x-forwarded-for") ?? "unknown";
   if (!checkRateLimit(`register:${ip}`, 5, 15 * 60 * 1000)) {
@@ -303,39 +296,22 @@ export async function captainSignUpAction(formData: FormData) {
     await signUpError("Email sementara tidak diizinkan. Gunakan email aktif.");
   }
 
-  const dataErrors = validateTeamData({ teamName, teamTag, captainName: fullName });
-  if (dataErrors.length > 0) {
-    await signUpError(dataErrors.map((e) => e.message).join(". "));
-  }
-
   const existingUser = await getUserByEmail(email);
   if (existingUser) await signUpError("Email ini sudah terdaftar. Coba login.");
 
-  const publishedEvents = await getPublishedEvents();
-  const event = publishedEvents.find((e) => e.id === eventId);
-  if (!event) await signUpError("Event tidak valid atau sudah tidak tersedia.");
-
   const passwordHash = await bcrypt.hash(password, 10);
-  const requiresPayment = event!.registrationFeeRequired;
 
   try {
-    if (requiresPayment) {
-      await createCaptainWithPendingPayment({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
-    } else {
-      await createCaptainWithTeam({ email, name: fullName, passwordHash, eventId, teamName, teamTag });
-    }
+    await createCaptainAccount({ email, name: fullName, passwordHash });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal membuat akun.";
-    if (msg.includes("Unique constraint")) await signUpError("Tag atau nama tim sudah digunakan di event ini.");
     await signUpError(msg);
   }
 
   const result = await signIn(email, password);
   if (!result.ok) await signUpError("Akun berhasil dibuat, tapi login gagal. Silakan login manual.");
 
-  await redirectToActiveLocale(
-    requiresPayment ? "/captain?tab=registration&success=payment-pending" as never : "/captain?success=registered" as never,
-  );
+  await redirectToActiveLocale("/captain?success=registered" as never);
 }
 
 /** Authenticates a user by email/password and redirects to /admin or /captain based on role. */
@@ -375,33 +351,41 @@ export async function captainRegisterTeamAction(formData: FormData) {
   const captain = await requireCaptainSession();
   const registrationError = async (msg: string) =>
     redirectToActiveLocale(`/captain?error=${encodeURIComponent(msg)}` as never);
+  const draftTeamId = String(formData.get("draftTeamId") ?? "").trim() || undefined;
   const parsed = z.object({
     eventId: z.string().trim().min(1),
-    name: z.string().trim().min(2, "Nama tim minimal 2 karakter."),
-    tag: z.string().trim().min(2, "Tag tim harus 2-4 karakter.").max(4, "Tag tim harus 2-4 karakter."),
+    name: z.string().trim().optional(),
+    tag: z.string().trim().optional(),
   }).safeParse({
     eventId: formData.get("eventId"),
-    name: formData.get("name"),
-    tag: formData.get("tag"),
+    name: String(formData.get("name") ?? "") || undefined,
+    tag: String(formData.get("tag") ?? "") || undefined,
   });
 
   if (!parsed.success) {
     return await registrationError(parsed.error.issues[0]?.message ?? "Data pendaftaran tidak valid.");
   }
 
-  const input = { ...parsed.data, tag: parsed.data.tag.toUpperCase() };
-  const dataErrors = validateTeamData({ teamName: input.name, teamTag: input.tag, captainName: captain.name });
-  if (dataErrors.length > 0) {
-    return await registrationError(dataErrors.map((error) => error.message).join(". "));
+  const input = {
+    ...parsed.data,
+    tag: parsed.data.tag ? parsed.data.tag.toUpperCase() : undefined,
+  };
+  if (!draftTeamId) {
+    if (!input.name || input.name.length < 2) return await registrationError("Nama tim minimal 2 karakter.");
+    if (!input.tag || input.tag.length < 2 || input.tag.length > 5) return await registrationError("Tag tim harus 2-5 karakter.");
+    const dataErrors = validateTeamData({ teamName: input.name, teamTag: input.tag, captainName: captain.name });
+    if (dataErrors.length > 0) {
+      return await registrationError(dataErrors.map((error) => error.message).join(". "));
+    }
   }
 
   try {
-    await registerTeam({ ...input, captainId: captain.id });
+    await registerTeam({ ...input, draftTeamId, captainId: captain.id });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal mendaftarkan tim.";
     if (msg === "Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.") {
       try {
-        await createTeamRegistrationRequest({ ...input, captainId: captain.id });
+        await createTeamRegistrationRequest({ ...input, draftTeamId, captainId: captain.id });
       } catch (paymentError) {
         const paymentMsg = paymentError instanceof Error ? paymentError.message : "Gagal membuat pendaftaran pembayaran.";
         return await registrationError(paymentMsg);
@@ -416,6 +400,41 @@ export async function captainRegisterTeamAction(formData: FormData) {
   revalidateTag("teams");
   revalidatePath("/captain");
   await redirectToActiveLocale("/captain?success=team-created");
+}
+
+export async function captainSaveDraftTeamAction(formData: FormData) {
+  const captain = await requireCaptainSession();
+  const draftError = async (msg: string) =>
+    redirectToActiveLocale(`/captain?tab=roster&error=${encodeURIComponent(msg)}` as never);
+
+  const parsed = z.object({
+    name: z.string().trim().min(2, "Nama tim minimal 2 karakter."),
+    tag: z.string().trim().min(2, "Tag tim harus 2-5 karakter.").max(5, "Tag tim harus 2-5 karakter."),
+  }).safeParse({
+    name: formData.get("name"),
+    tag: formData.get("tag"),
+  });
+
+  if (!parsed.success) {
+    return await draftError(parsed.error.issues[0]?.message ?? "Data draft tim tidak valid.");
+  }
+
+  const input = { ...parsed.data, tag: parsed.data.tag.toUpperCase() };
+  const dataErrors = validateTeamData({ teamName: input.name, teamTag: input.tag, captainName: captain.name });
+  if (dataErrors.length > 0) {
+    return await draftError(dataErrors.map((error) => error.message).join(". "));
+  }
+
+  try {
+    await createOrUpdateCaptainDraftTeam({ ...input, captainId: captain.id, captainName: captain.name });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Gagal menyimpan draft tim.";
+    return await draftError(msg);
+  }
+
+  revalidateTag("teams");
+  revalidatePath("/captain");
+  await redirectToActiveLocale("/captain?tab=roster&success=draft-team-saved");
 }
 
 
@@ -551,22 +570,46 @@ export async function changePasswordAction(formData: FormData) {
   await redirectToActiveLocale("/captain?success=password-changed");
 }
 
-/** Adds a player to the captain's team. Jersey number is optional; omitted if the field is blank. */
+export async function captainUploadTeamLogoAction(formData: FormData) {
+  const captain = await requireCaptainSession();
+
+  try {
+    const teamId = z.string().min(1).parse(formData.get("teamId"));
+    const asset = await uploadImageAsset({
+      file: formData.get("teamLogo"),
+      folder: "team-logos",
+      entityId: teamId,
+      label: "Team logo",
+      maxBytes: MAX_LOGO_IMAGE_BYTES,
+      errorPath: "/captain?tab=roster",
+    });
+    await updateCaptainTeamLogo(captain.id, teamId, asset.url);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    return await redirectToActiveLocale(`/captain?tab=roster&error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateTag("teams");
+  revalidatePath("/captain");
+  await redirectToActiveLocale("/captain?tab=roster&success=team-logo-updated");
+}
+
+/** Adds a player to the captain's team. UID and IGN are required; position is optional. */
 export async function captainAddPlayerAction(formData: FormData) {
-  await requireCaptainSession();
+  const captain = await requireCaptainSession();
 
   const input = z.object({
     teamId: z.string().min(1),
-    eventId: z.string().min(1),
-    displayName: z.string().min(2),
-    nickname: z.string().min(2),
-    position: z.string().min(2),
+    eventId: z.string().trim().optional(),
+    displayName: z.string().trim().min(2, "UID minimal 2 karakter."),
+    nickname: z.string().trim().min(2, "IGN minimal 2 karakter."),
+    position: z.string().trim().optional(),
   }).parse({
     teamId: formData.get("teamId"),
-    eventId: formData.get("eventId"),
+    eventId: String(formData.get("eventId") ?? "") || undefined,
     displayName: formData.get("displayName"),
     nickname: formData.get("nickname"),
-    position: formData.get("position"),
+    position: String(formData.get("position") ?? ""),
   });
 
   const jerseyRaw = formData.get("jerseyNumber");
@@ -576,7 +619,7 @@ export async function captainAddPlayerAction(formData: FormData) {
       : undefined;
 
   try {
-    await addPlayer({ ...input, jerseyNumber });
+    await addPlayer({ ...input, captainId: captain.id, position: input.position ?? "", jerseyNumber });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Tidak dapat menambahkan pemain.";
     return await redirectToActiveLocale("/captain?error=" + encodeURIComponent(msg));
@@ -599,9 +642,9 @@ export async function captainUpdatePlayerAction(formData: FormData) {
       : null;
 
   const data = {
-    displayName: z.string().min(2).parse(formData.get("displayName")),
-    nickname: z.string().min(2).parse(formData.get("nickname")),
-    position: z.string().min(2).parse(formData.get("position")),
+    displayName: z.string().trim().min(2).parse(formData.get("displayName")),
+    nickname: z.string().trim().min(2).parse(formData.get("nickname")),
+    position: String(formData.get("position") ?? "").trim(),
     jerseyNumber: jerseyNumber ?? undefined,
   };
 
@@ -737,7 +780,7 @@ export async function adminAssignCaptainAction(formData: FormData) {
     where: { id: teamId },
     select: { id: true, eventId: true },
   });
-  if (!team) {
+  if (!team?.eventId) {
     return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
   }
   await assertUserCanManageEvent(user, team.eventId);
@@ -797,7 +840,7 @@ export async function adminDeleteTeamAction(formData: FormData) {
     where: { id: teamId },
     include: { event: { select: { id: true, status: true } } },
   });
-  if (!team) {
+  if (!team?.event || !team.eventId) {
     return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
   }
   if (team.event.status !== "Draft") {
@@ -1560,7 +1603,7 @@ export async function adminSetAccentColorAction(formData: FormData) {
 /**
  * Requests a password reset link for a captain account.
  * Always redirects to sent=1 regardless of whether the email exists (security best practice).
- * The reset URL is logged to the console for Beta; real email can be wired later.
+ * Sends the reset link via sendEmail(), which itself never throws on delivery failure.
  */
 export async function requestPasswordResetAction(formData: FormData) {
   const emailRaw = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -1575,11 +1618,16 @@ export async function requestPasswordResetAction(formData: FormData) {
     const token = await createPasswordResetToken(user.id);
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
     const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
-    await sendEmail({
-      to: email.data,
-      subject: "Reset Password Miracle League",
-      html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 1 jam.</p>`,
-    });
+    try {
+      await sendEmail({
+        to: email.data,
+        subject: "Reset Password Miracle League",
+        html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 1 jam.</p>`,
+      });
+    } catch (err) {
+      // Never let an email-delivery failure change the response the caller sees (security).
+      console.error(`[requestPasswordResetAction] sendEmail threw for ${email.data}:`, err);
+    }
   }
   // Always redirect to sent=1 regardless of whether email exists (security)
   return redirectToActiveLocale("/forgot-password?sent=1" as never);

@@ -121,8 +121,8 @@ model EventStream {
 
 model Team {
   id             String        @id @default(cuid())
-  eventId        String
-  event          Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId        String?
+  event          Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
   captainId      String?
   captain        User?         @relation("TeamCaptain", fields: [captainId], references: [id], onDelete: SetNull)
   name           String
@@ -180,11 +180,11 @@ model Player {
   id           String       @id @default(cuid())
   teamId       String
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  eventId      String
-  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId      String?
+  event        Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
   displayName  String
   nickname     String
-  position     String
+  position     String       @default("")
   jerseyNumber Int?
   stats        PlayerStat[]
   checkIns     CheckIn[]

@@ -53,12 +53,12 @@ export async function renderLoginPage(
             className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
             placeholder="........"
           />
-          <a
+          <Link
             href="/forgot-password"
             className="mt-1 block text-right text-sm text-cyan-400 hover:text-cyan-300"
           >
             Lupa password?
-          </a>
+          </Link>
         </div>
         <SubmitButton className="mt-2 w-full rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300">
           {t("submit")}

@@ -119,13 +119,14 @@ function mapEvent(row: {
 }
 
 function mapTeam(row: {
-  id: string; eventId: string; captainId: string | null;
+  id: string; eventId: string | null; captainId: string | null;
   name: string; logoText: string; logoUrl?: string | null; tag: string;
   captainName: string | null; captainContact: string | null; source: string;
   captain?: { id: string; name: string } | null;
 }): Team {
   return {
-    id: row.id, eventId: row.eventId, captainId: row.captainId ?? "",
+    id: row.id, captainId: row.captainId ?? "",
+    ...(row.eventId ? { eventId: row.eventId } : {}),
     name: row.name, logoText: row.logoText, tag: row.tag,
     ...(row.logoUrl ? { logoUrl: row.logoUrl } : {}),
     ...(row.captainName ? { captainName: row.captainName } : {}),
@@ -208,11 +209,12 @@ function mapTeamRegistrationRequest(row: {
 }
 
 function mapPlayer(row: {
-  id: string; teamId: string; eventId: string;
+  id: string; teamId: string; eventId: string | null;
   displayName: string; nickname: string; position: string; jerseyNumber: number | null;
 }): Player {
   return {
-    id: row.id, teamId: row.teamId, eventId: row.eventId,
+    id: row.id, teamId: row.teamId,
+    ...(row.eventId ? { eventId: row.eventId } : {}),
     displayName: row.displayName, nickname: row.nickname, position: row.position,
     ...(row.jerseyNumber != null ? { jerseyNumber: row.jerseyNumber } : {}),
   };
@@ -389,7 +391,7 @@ export async function assertUserCanManageTeam(user: AppUser, teamId: string): Pr
     select: { id: true, eventId: true },
   });
 
-  if (!team) throw new Error("Not authorized");
+  if (!team?.eventId) throw new Error("Not authorized");
   await assertUserCanManageEvent(user, team.eventId);
   return { eventId: team.eventId };
 }
@@ -699,7 +701,7 @@ export async function getTeamsForEvents(eventIds: string[]): Promise<Map<string,
       include: { captain: { select: { id: true, name: true } } },
     });
     for (const team of rows.map(mapTeam)) {
-      teamsByEvent.get(team.eventId)?.push(team);
+      if (team.eventId) teamsByEvent.get(team.eventId)?.push(team);
     }
   } catch {
     for (const eventId of eventIds) {
@@ -722,7 +724,7 @@ export async function getTeamCountsForEvents(eventIds: string[]): Promise<Map<st
       _count: { _all: true },
     });
     for (const row of rows) {
-      counts.set(row.eventId, row._count._all);
+      if (row.eventId) counts.set(row.eventId, row._count._all);
     }
   } catch {
     for (const eventId of eventIds) {
@@ -751,6 +753,27 @@ export async function updateTeamLogo(user: AppUser, teamId: string, logoUrl: str
   } catch (error) {
     if (error instanceof Error && error.message === "Not authorized") throw error;
     const team = demoStore.updateTeamLogo(user, teamId, logoUrl);
+    if (!team) throw new Error("Not authorized");
+    return team;
+  }
+}
+
+export async function updateCaptainTeamLogo(captainId: string, teamId: string, logoUrl: string): Promise<Team> {
+  try {
+    const team = await prisma.team.findFirst({
+      where: { id: teamId, captainId },
+      select: { id: true },
+    });
+    if (!team) throw new Error("Not authorized");
+
+    const row = await prisma.team.update({
+      where: { id: teamId },
+      data: { logoUrl },
+    });
+    return mapTeam(row);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Not authorized") throw error;
+    const team = demoStore.updateCaptainTeamLogo(captainId, teamId, logoUrl);
     if (!team) throw new Error("Not authorized");
     return team;
   }
@@ -1207,7 +1230,7 @@ export async function getImportSnapshot(user?: AppUser) {
   });
   const eventIds = events.map((event) => event.id);
   const teams = await prisma.team.findMany({
-    where: eventWhere ? { eventId: { in: eventIds } } : undefined,
+    where: eventWhere ? { eventId: { in: eventIds } } : { eventId: { not: null } },
     select: { eventId: true, name: true, tag: true },
   });
 
@@ -1226,7 +1249,7 @@ export async function getImportSnapshot(user?: AppUser) {
       participantCap: event.participantCap,
       bracketLocked: lockedSet.has(event.id),
     })),
-    teams: teams.map((team) => ({ eventId: team.eventId, name: team.name, tag: team.tag })),
+    teams: teams.flatMap((team) => team.eventId ? [{ eventId: team.eventId, name: team.name, tag: team.tag }] : []),
   };
 }
 
@@ -1234,6 +1257,7 @@ export async function getImportSnapshot(user?: AppUser) {
 export async function getImportedTeams(user?: AppUser): Promise<Team[]> {
   const rows = await prisma.team.findMany({
     where: {
+      eventId: { not: null },
       source: { in: ["csv-import", "registration-intake"] },
       ...(user?.role === "organizer" ? { event: { organizerUserId: user.id } } : {}),
     },
@@ -1327,12 +1351,79 @@ export async function autoTransitionEventToOngoing(eventId: string): Promise<voi
   });
 }
 
+type CaptainRegistrationDraft = {
+  id: string;
+  name: string;
+  tag: string;
+  logoText: string;
+  logoUrl: string | null;
+  captainName: string | null;
+  captainContact: string | null;
+  players: Array<{
+    displayName: string;
+    nickname: string;
+    position: string;
+    jerseyNumber: number | null;
+  }>;
+};
+
+async function resolveCaptainRegistrationTeam(input: {
+  captainId: string;
+  name?: string;
+  tag?: string;
+  draftTeamId?: string;
+}): Promise<{ name: string; tag: string; draftTeam: CaptainRegistrationDraft | null }> {
+  let name = input.name?.trim() ?? "";
+  let tag = input.tag?.trim().toUpperCase() ?? "";
+  let draftTeam: CaptainRegistrationDraft | null = null;
+
+  if (input.draftTeamId) {
+    draftTeam = await prisma.team.findFirst({
+      where: { id: input.draftTeamId, captainId: input.captainId, eventId: null, source: "draft" },
+      include: { players: { orderBy: { createdAt: "asc" } } },
+    });
+    if (!draftTeam) {
+      throw new Error("Draft tim tidak ditemukan untuk akun ini.");
+    }
+
+    name = draftTeam.name.trim();
+    tag = draftTeam.tag.trim().toUpperCase();
+    const hasInvalidRoster = draftTeam.players.some(
+      (player) => player.displayName.trim().length < 2 || player.nickname.trim().length < 2,
+    );
+    if (draftTeam.players.length === 0 || hasInvalidRoster) {
+      throw new Error("Lengkapi UID dan IGN roster draft sebelum mendaftar event.");
+    }
+  }
+
+  if (name.length < 2) {
+    throw new Error("Nama tim minimal 2 karakter.");
+  }
+  if (tag.length < 2 || tag.length > 5) {
+    throw new Error("Tag tim harus 2-5 karakter.");
+  }
+
+  return { name, tag, draftTeam };
+}
+
+function copyDraftPlayersForEvent(draftTeam: CaptainRegistrationDraft, teamId: string, eventId: string) {
+  return draftTeam.players.map((player) => ({
+    teamId,
+    eventId,
+    displayName: player.displayName.trim(),
+    nickname: player.nickname.trim(),
+    position: player.position?.trim() ?? "",
+    jerseyNumber: player.jerseyNumber,
+  }));
+}
+
 /** Registers one team for an existing captain while the event is still open. */
 export async function registerTeam(input: {
   eventId: string;
   captainId: string;
-  name: string;
-  tag: string;
+  name?: string;
+  tag?: string;
+  draftTeamId?: string;
 }): Promise<Team> {
   const event = await prisma.event.findUnique({
     where: { id: input.eventId },
@@ -1341,6 +1432,8 @@ export async function registerTeam(input: {
   if (!event || event.status !== "Published") {
     throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
   }
+
+  const { name, tag, draftTeam } = await resolveCaptainRegistrationTeam(input);
 
   if (event.registrationFeeRequired) {
     throw new Error("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.");
@@ -1367,13 +1460,32 @@ export async function registerTeam(input: {
     throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
   }
 
-  const tag = input.tag.toUpperCase();
   try {
+    if (draftTeam) {
+      return prisma.$transaction(async (tx) => {
+        const row = await tx.team.create({
+          data: {
+            eventId: input.eventId,
+            captainId: input.captainId,
+            name,
+            logoText: draftTeam.logoText || tag.slice(0, 2),
+            logoUrl: draftTeam.logoUrl,
+            tag,
+            captainName: draftTeam.captainName,
+            captainContact: draftTeam.captainContact,
+            source: "registration",
+          },
+        });
+        await tx.player.createMany({ data: copyDraftPlayersForEvent(draftTeam, row.id, input.eventId) });
+        return mapTeam(row);
+      });
+    }
+
     const row = await prisma.team.create({
       data: {
         eventId: input.eventId,
         captainId: input.captainId,
-        name: input.name,
+        name,
         logoText: tag.slice(0, 2),
         tag,
         source: "registration",
@@ -1390,12 +1502,12 @@ export async function registerTeam(input: {
   }
 }
 
-
 export async function createTeamRegistrationRequest(input: {
   eventId: string;
   captainId: string;
-  name: string;
-  tag: string;
+  name?: string;
+  tag?: string;
+  draftTeamId?: string;
 }): Promise<TeamRegistrationRequest> {
   await expireStaleRegistrationRequests();
   const event = await prisma.event.findUnique({
@@ -1409,7 +1521,7 @@ export async function createTeamRegistrationRequest(input: {
     throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");
   }
 
-  const tag = input.tag.toUpperCase();
+  const { name, tag, draftTeam } = await resolveCaptainRegistrationTeam(input);
   const [registeredTeams, existingCaptainTeam, existingCaptainRequest, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
     prisma.team.count({ where: { eventId: input.eventId } }),
     prisma.team.findFirst({ where: { eventId: input.eventId, captainId: input.captainId }, select: { id: true } }),
@@ -1418,11 +1530,11 @@ export async function createTeamRegistrationRequest(input: {
       select: { id: true },
     }),
     prisma.team.findFirst({
-      where: { eventId: input.eventId, OR: [{ name: input.name }, { tag }] },
+      where: { eventId: input.eventId, OR: [{ name }, { tag }] },
       select: { id: true },
     }),
     prisma.teamRegistrationRequest.findFirst({
-      where: { eventId: input.eventId, status: { in: RESERVED_REGISTRATION_REQUEST_STATUSES }, OR: [{ teamName: input.name }, { teamTag: tag }] },
+      where: { eventId: input.eventId, status: { in: RESERVED_REGISTRATION_REQUEST_STATUSES }, OR: [{ teamName: name }, { teamTag: tag }] },
       select: { id: true },
     }),
     event.format === "Single Elimination" ? prisma.match.count({ where: { eventId: input.eventId, status: "Completed" } }) : Promise.resolve(0),
@@ -1442,18 +1554,48 @@ export async function createTeamRegistrationRequest(input: {
   }
 
   try {
-    const row = await prisma.teamRegistrationRequest.create({
-      data: {
-        eventId: input.eventId,
-        captainId: input.captainId,
-        teamName: input.name,
-        teamTag: tag,
-        status: "pending_payment",
-        expiresAt: new Date(Date.now() + PAYMENT_REQUEST_TTL_MS),
-      },
-      include: registrationRequestInclude,
+    return await prisma.$transaction(async (tx) => {
+      let pendingTeamId: string | undefined;
+      if (draftTeam) {
+        const pendingTeam = await tx.team.create({
+          data: {
+            eventId: null,
+            captainId: input.captainId,
+            name,
+            logoText: draftTeam.logoText || tag.slice(0, 2),
+            logoUrl: draftTeam.logoUrl,
+            tag,
+            captainName: draftTeam.captainName,
+            captainContact: draftTeam.captainContact,
+            source: "registration-intake",
+          },
+        });
+        pendingTeamId = pendingTeam.id;
+        await tx.player.createMany({
+          data: draftTeam.players.map((player) => ({
+            teamId: pendingTeam.id,
+            displayName: player.displayName.trim(),
+            nickname: player.nickname.trim(),
+            position: player.position?.trim() ?? "",
+            jerseyNumber: player.jerseyNumber,
+          })),
+        });
+      }
+
+      const row = await tx.teamRegistrationRequest.create({
+        data: {
+          eventId: input.eventId,
+          captainId: input.captainId,
+          ...(pendingTeamId ? { teamId: pendingTeamId } : {}),
+          teamName: name,
+          teamTag: tag,
+          status: "pending_payment",
+          expiresAt: new Date(Date.now() + PAYMENT_REQUEST_TTL_MS),
+        },
+        include: registrationRequestInclude,
+      });
+      return mapTeamRegistrationRequest(row);
     });
-    return mapTeamRegistrationRequest(row);
   } catch (error) {
     const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : "";
     const message = error instanceof Error ? error.message : "";
@@ -1462,6 +1604,35 @@ export async function createTeamRegistrationRequest(input: {
     }
     throw error;
   }
+}
+
+/** Creates or updates the captain's reusable draft team outside any event. */
+export async function createOrUpdateCaptainDraftTeam(input: {
+  captainId: string;
+  captainName: string;
+  name: string;
+  tag: string;
+}): Promise<Team> {
+  const tag = input.tag.trim().toUpperCase();
+  const existing = await prisma.team.findFirst({
+    where: { captainId: input.captainId, eventId: null, source: "draft" },
+    select: { id: true },
+  });
+  const data = {
+    eventId: null,
+    captainId: input.captainId,
+    captainName: input.captainName,
+    name: input.name.trim(),
+    logoText: tag.slice(0, 2),
+    tag,
+    source: "draft",
+  };
+
+  const row = existing
+    ? await prisma.team.update({ where: { id: existing.id }, data })
+    : await prisma.team.create({ data });
+
+  return mapTeam(row);
 }
 
 export async function updateTeamRegistrationProof(captainId: string, requestId: string, proofImageUrl: string): Promise<TeamRegistrationRequest> {
@@ -1535,26 +1706,30 @@ export async function approveTeamRegistrationRequest(user: AppUser, requestId: s
     }),
     request.event.format === "Single Elimination" ? prisma.match.count({ where: { eventId: request.eventId, status: "Completed" } }) : Promise.resolve(0),
   ]);
-  if (!request.teamId && registeredTeams >= request.event.participantCap) throw new Error("Slot pendaftaran event ini sudah penuh.");
+  if (registeredTeams >= request.event.participantCap) throw new Error("Slot pendaftaran event ini sudah penuh.");
   if (existingCaptainTeam) throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
   if (completedMatches > 0) throw new Error(`Event "${request.event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
 
-  const teamRow = request.teamId
-    ? await prisma.team.update({ where: { id: request.teamId }, data: { source: "registration" } })
-    : await prisma.team.create({
-        data: {
-          eventId: request.eventId,
-          captainId: request.captainId,
-          name: request.teamName,
-          logoText: request.teamTag.slice(0, 2),
-          tag: request.teamTag,
-          source: "registration",
-        },
-      });
-  await prisma.teamRegistrationRequest.update({
-    where: { id: request.id },
-    data: { status: "approved", teamId: teamRow.id, approvedAt: new Date(), approvedById: user.id },
-    include: registrationRequestInclude,
+  const teamRow = await prisma.$transaction(async (tx) => {
+    const row = request.teamId
+      ? await tx.team.update({ where: { id: request.teamId }, data: { eventId: request.eventId, source: "registration" } })
+      : await tx.team.create({
+          data: {
+            eventId: request.eventId,
+            captainId: request.captainId,
+            name: request.teamName,
+            logoText: request.teamTag.slice(0, 2),
+            tag: request.teamTag,
+            source: "registration",
+          },
+        });
+    await tx.player.updateMany({ where: { teamId: row.id }, data: { eventId: request.eventId } });
+    await tx.teamRegistrationRequest.update({
+      where: { id: request.id },
+      data: { status: "approved", teamId: row.id, approvedAt: new Date(), approvedById: user.id },
+      include: registrationRequestInclude,
+    });
+    return row;
   });
   return mapTeam(teamRow);
 }
@@ -1895,21 +2070,60 @@ export async function commitRegistrationImportBatch(
   return { importedCount: prepared.length, credentials };
 }
 
-/** Adds a new player to a team. Jersey number is optional and stored as null when not provided. */
+/** Throws if the event's roster is locked (event is Ongoing or Finished). */
+async function assertRosterEditable(eventId: string): Promise<void> {
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { status: true },
+  });
+  if (!event) {
+    throw new Error("Event tidak ditemukan.");
+  }
+  if (event.status === "Ongoing" || event.status === "Finished") {
+    throw new Error("Roster tim sudah terkunci karena turnamen sudah berjalan atau selesai.");
+  }
+}
+
+/** Adds a new player to a team. UID and IGN are required; position and jersey number remain optional. */
 export async function addPlayer(input: {
   teamId: string;
-  eventId: string;
+  eventId?: string;
+  captainId?: string;
   displayName: string;
   nickname: string;
-  position: string;
+  position?: string;
   jerseyNumber?: number;
 }): Promise<Player> {
+  const team = await prisma.team.findFirst({
+    where: { id: input.teamId, ...(input.captainId ? { captainId: input.captainId } : {}) },
+    select: { eventId: true },
+  });
+  if (!team) {
+    throw new Error("Tim tidak ditemukan untuk akun ini.");
+  }
+  if (input.eventId && team.eventId && input.eventId !== team.eventId) {
+    throw new Error("Data event pemain tidak cocok dengan tim.");
+  }
+
+  const eventId = input.eventId ?? team.eventId ?? undefined;
+  if (eventId) {
+    await assertRosterEditable(eventId);
+  }
+  const data = {
+    teamId: input.teamId,
+    ...(eventId ? { eventId } : {}),
+    displayName: input.displayName.trim(),
+    nickname: input.nickname.trim(),
+    position: input.position?.trim() ?? "",
+    ...(input.jerseyNumber != null ? { jerseyNumber: input.jerseyNumber } : {}),
+  };
+
   try {
-    const row = await prisma.player.create({ data: input });
+    const row = await prisma.player.create({ data });
     return mapPlayer(row);
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      throw new Error("Pemain dengan nickname ini sudah ada di tim.");
+      throw new Error("Pemain dengan IGN ini sudah ada di tim.");
     }
     throw e;
   }
@@ -1918,6 +2132,7 @@ export async function addPlayer(input: {
 /**
  * Updates a player's profile. Throws "Not authorized" if the player's team does not
  * belong to `captainUserId`. Ownership is enforced at the DB layer, not the action layer.
+ * Also throws if the team's event roster is locked (event Ongoing/Finished).
  */
 export async function updatePlayer(
   id: string,
@@ -1926,10 +2141,13 @@ export async function updatePlayer(
 ): Promise<Player> {
   const player = await prisma.player.findUnique({
     where: { id },
-    include: { team: { select: { captainId: true } } },
+    include: { team: { select: { captainId: true, eventId: true } } },
   });
   if (!player || player.team.captainId !== captainUserId) {
     throw new Error("Not authorized to edit this player.");
+  }
+  if (player.team.eventId) {
+    await assertRosterEditable(player.team.eventId);
   }
   const row = await prisma.player.update({ where: { id }, data });
   return mapPlayer(row);
@@ -1937,15 +2155,19 @@ export async function updatePlayer(
 
 /**
  * Deletes a player. Throws "Not authorized" if the player's team does not belong to `captainUserId`.
- * Ownership check mirrors `updatePlayer`.
+ * Ownership check mirrors `updatePlayer`. Also throws if the team's event roster is locked
+ * (event Ongoing/Finished).
  */
 export async function deletePlayer(id: string, captainUserId: string): Promise<void> {
   const player = await prisma.player.findUnique({
     where: { id },
-    include: { team: { select: { captainId: true } } },
+    include: { team: { select: { captainId: true, eventId: true } } },
   });
   if (!player || player.team.captainId !== captainUserId) {
     throw new Error("Not authorized to delete this player.");
+  }
+  if (player.team.eventId) {
+    await assertRosterEditable(player.team.eventId);
   }
   await prisma.player.delete({ where: { id } });
 }
@@ -1995,8 +2217,11 @@ export async function getCompletedMatchesForCaptain(captainId: string): Promise<
   });
   if (captainTeams.length === 0) return [];
 
-  const teamIds = captainTeams.map((t) => t.id);
-  const eventIds = [...new Set(captainTeams.map((t) => t.eventId))];
+  const eventTeams = captainTeams.filter((team): team is (typeof captainTeams)[number] & { eventId: string } => Boolean(team.eventId));
+  if (eventTeams.length === 0) return [];
+
+  const teamIds = eventTeams.map((t) => t.id);
+  const eventIds = [...new Set(eventTeams.map((t) => t.eventId))];
 
   const [matches, events, allTeams, submissions] = await Promise.all([
     prisma.match.findMany({
@@ -2399,6 +2624,23 @@ export async function updateEventStream(eventId: string, url: string, label: str
  * Atomically creates a captain User and their first Team in a Prisma transaction.
  * Used by the self sign-up flow; teamTag is uppercased and used as the logoText.
  */
+/** Creates a captain User without requiring an active event or team registration. */
+export async function createCaptainAccount(input: {
+  email: string;
+  name: string;
+  passwordHash: string;
+}): Promise<{ userId: string }> {
+  const user = await prisma.user.create({
+    data: {
+      email: input.email,
+      name: input.name,
+      role: "captain",
+      passwordHash: input.passwordHash,
+    },
+  });
+  return { userId: user.id };
+}
+
 export async function createCaptainWithTeam(input: {
   email: string;
   name: string;

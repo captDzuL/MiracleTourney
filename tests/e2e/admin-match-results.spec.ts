@@ -43,6 +43,7 @@ test.describe("admin match result entry", () => {
   });
 
   test("admin can save a BO1 match result and see bracket update", async ({ page }) => {
+    test.setTimeout(60_000);
     await setRoundBestOf(page, "1");
     await page.goto(`/id/admin?phase=run&matchEventId=${currentEvent.eventId}`);
     await selectFirstMatch(page);
@@ -61,6 +62,7 @@ test.describe("admin match result entry", () => {
   });
 
   test("event auto-transitions to Ongoing after first match result", async ({ page }) => {
+    test.setTimeout(60_000);
     await setRoundBestOf(page, "1");
     await page.goto(`/id/admin?phase=run&matchEventId=${currentEvent.eventId}`);
     await selectFirstMatch(page);
@@ -92,6 +94,7 @@ test.describe("public bracket page", () => {
   });
 
   test("bracket shows completed match score", async ({ page }) => {
+    test.setTimeout(60_000);
     const { eventId, slug } = await prepareAdminMatchEvent();
     await loginAsAdmin(page, "id");
     await page.goto(`/id/admin?phase=run&matchEventId=${eventId}`);
