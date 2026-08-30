@@ -53,9 +53,13 @@ const { prisma } = vi.hoisted(() => ({
       findUnique: vi.fn(),
     },
     player: {
+      create: vi.fn(),
       createMany: vi.fn(),
+      delete: vi.fn(),
       deleteMany: vi.fn(),
       findMany: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
       updateMany: vi.fn(),
     },
     registrationImportBatch: {
@@ -85,11 +89,13 @@ vi.mock("next/cache", () => ({
 }));
 
 import {
+  addPlayer,
   approveEventVisualAsset,
   assertUserCanManageEvent,
   assertCaptainCanSubmitStats,
   countAiVisualAttempts,
   createEventVisualAsset,
+  deletePlayer,
   getEventRoundConfigs,
   getEventsByIds,
   getOpenRegistrationEventsForCaptain,
@@ -118,6 +124,7 @@ import {
   updateEventPublicInfo,
   updatePaymentSettings,
   updateTeamLogo,
+  updatePlayer,
 } from "./repository";
 
 const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
@@ -1302,5 +1309,91 @@ describe("public demo fallback reads", () => {
         expect.objectContaining({ playerName: "Taiga Kagami" }),
       ]),
     );
+  });
+});
+
+describe("captain roster edits respect the event lifecycle", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(["Published", "Registration Closed"] as const)(
+    "allows addPlayer when the event is %s",
+    async (status) => {
+      prisma.team.findFirst.mockResolvedValue({ eventId: "event-1" });
+      prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-1", status }));
+      prisma.player.create.mockResolvedValue({
+        id: "player-1",
+        teamId: "team-1",
+        eventId: "event-1",
+        displayName: "New Player",
+        nickname: "NP",
+        position: "Top",
+        jerseyNumber: null,
+      });
+
+      await expect(
+        addPlayer({ teamId: "team-1", eventId: "event-1", displayName: "New Player", nickname: "NP", position: "Top" }),
+      ).resolves.toEqual(expect.objectContaining({ id: "player-1" }));
+      expect(prisma.player.create).toHaveBeenCalled();
+    },
+  );
+
+  it.each(["Ongoing", "Finished"] as const)("rejects addPlayer when the event is %s", async (status) => {
+    prisma.team.findFirst.mockResolvedValue({ eventId: "event-1" });
+    prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-1", status }));
+
+    await expect(
+      addPlayer({ teamId: "team-1", eventId: "event-1", displayName: "New Player", nickname: "NP", position: "Top" }),
+    ).rejects.toThrow("Roster tim sudah terkunci karena turnamen sudah berjalan atau selesai.");
+    expect(prisma.player.create).not.toHaveBeenCalled();
+  });
+
+  it.each(["Published", "Registration Closed"] as const)(
+    "allows updatePlayer/deletePlayer when the event is %s",
+    async (status) => {
+      prisma.player.findUnique.mockResolvedValue({
+        id: "player-1",
+        team: { captainId: "captain-1", eventId: "event-1" },
+      });
+      prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-1", status }));
+      prisma.player.update.mockResolvedValue({ id: "player-1", displayName: "Updated" });
+
+      await expect(updatePlayer("player-1", "captain-1", { displayName: "Updated" })).resolves.toEqual(
+        expect.objectContaining({ id: "player-1" }),
+      );
+      await expect(deletePlayer("player-1", "captain-1")).resolves.toBeUndefined();
+      expect(prisma.player.update).toHaveBeenCalled();
+      expect(prisma.player.delete).toHaveBeenCalled();
+    },
+  );
+
+  it.each(["Ongoing", "Finished"] as const)("rejects updatePlayer/deletePlayer when the event is %s", async (status) => {
+    prisma.player.findUnique.mockResolvedValue({
+      id: "player-1",
+      team: { captainId: "captain-1", eventId: "event-1" },
+    });
+    prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-1", status }));
+
+    await expect(updatePlayer("player-1", "captain-1", { displayName: "Updated" })).rejects.toThrow(
+      "Roster tim sudah terkunci karena turnamen sudah berjalan atau selesai.",
+    );
+    await expect(deletePlayer("player-1", "captain-1")).rejects.toThrow(
+      "Roster tim sudah terkunci karena turnamen sudah berjalan atau selesai.",
+    );
+    expect(prisma.player.update).not.toHaveBeenCalled();
+    expect(prisma.player.delete).not.toHaveBeenCalled();
+  });
+
+  it("still enforces ownership before checking the event status", async () => {
+    prisma.player.findUnique.mockResolvedValue({
+      id: "player-1",
+      team: { captainId: "other-captain", eventId: "event-1" },
+    });
+
+    await expect(updatePlayer("player-1", "captain-1", { displayName: "Updated" })).rejects.toThrow(
+      "Not authorized to edit this player.",
+    );
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
   });
 });

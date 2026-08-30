@@ -2070,6 +2070,20 @@ export async function commitRegistrationImportBatch(
   return { importedCount: prepared.length, credentials };
 }
 
+/** Throws if the event's roster is locked (event is Ongoing or Finished). */
+async function assertRosterEditable(eventId: string): Promise<void> {
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { status: true },
+  });
+  if (!event) {
+    throw new Error("Event tidak ditemukan.");
+  }
+  if (event.status === "Ongoing" || event.status === "Finished") {
+    throw new Error("Roster tim sudah terkunci karena turnamen sudah berjalan atau selesai.");
+  }
+}
+
 /** Adds a new player to a team. UID and IGN are required; position and jersey number remain optional. */
 export async function addPlayer(input: {
   teamId: string;
@@ -2092,6 +2106,9 @@ export async function addPlayer(input: {
   }
 
   const eventId = input.eventId ?? team.eventId ?? undefined;
+  if (eventId) {
+    await assertRosterEditable(eventId);
+  }
   const data = {
     teamId: input.teamId,
     ...(eventId ? { eventId } : {}),
@@ -2115,6 +2132,7 @@ export async function addPlayer(input: {
 /**
  * Updates a player's profile. Throws "Not authorized" if the player's team does not
  * belong to `captainUserId`. Ownership is enforced at the DB layer, not the action layer.
+ * Also throws if the team's event roster is locked (event Ongoing/Finished).
  */
 export async function updatePlayer(
   id: string,
@@ -2123,10 +2141,13 @@ export async function updatePlayer(
 ): Promise<Player> {
   const player = await prisma.player.findUnique({
     where: { id },
-    include: { team: { select: { captainId: true } } },
+    include: { team: { select: { captainId: true, eventId: true } } },
   });
   if (!player || player.team.captainId !== captainUserId) {
     throw new Error("Not authorized to edit this player.");
+  }
+  if (player.team.eventId) {
+    await assertRosterEditable(player.team.eventId);
   }
   const row = await prisma.player.update({ where: { id }, data });
   return mapPlayer(row);
@@ -2134,15 +2155,19 @@ export async function updatePlayer(
 
 /**
  * Deletes a player. Throws "Not authorized" if the player's team does not belong to `captainUserId`.
- * Ownership check mirrors `updatePlayer`.
+ * Ownership check mirrors `updatePlayer`. Also throws if the team's event roster is locked
+ * (event Ongoing/Finished).
  */
 export async function deletePlayer(id: string, captainUserId: string): Promise<void> {
   const player = await prisma.player.findUnique({
     where: { id },
-    include: { team: { select: { captainId: true } } },
+    include: { team: { select: { captainId: true, eventId: true } } },
   });
   if (!player || player.team.captainId !== captainUserId) {
     throw new Error("Not authorized to delete this player.");
+  }
+  if (player.team.eventId) {
+    await assertRosterEditable(player.team.eventId);
   }
   await prisma.player.delete({ where: { id } });
 }
