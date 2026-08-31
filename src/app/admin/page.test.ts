@@ -91,6 +91,13 @@ describe("admin action buttons", () => {
     expect(source).toContain('const inputClass = "w-full min-w-0');
     expect(source).toContain('const labelClass = "grid min-w-0');
   });
+  test("keeps match day cards readable in the split layout", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+    expect(source).not.toContain("grid gap-2 sm:grid-cols-2 xl:grid-cols-3");
+    expect(source).toContain("const matchDeskCardGridClass");
+    expect(source).toContain("whitespace-nowrap");
+    expect(source).toContain("shrink-0");
+  });
 
   test("shows organizer assignment on draft creation for platform admins", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
