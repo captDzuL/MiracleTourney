@@ -9,8 +9,7 @@
     "login": "Sign In",
     "logoutLabel": "Sign Out",
     "footer": {
-      "tagline": "Multi-game community tournament platform",
-      "ready": "Vercel + Neon ready"
+      "tagline": "Multi-game community tournament platform"
     }
   },
   "panelTheme": {

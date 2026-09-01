@@ -1,4 +1,4 @@
-import { Trophy, Users, ShieldCheck } from "lucide-react";
+import { Trophy, Users } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { Link } from "@/i18n/navigation";
@@ -82,10 +82,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="inline-flex items-center gap-1.5">
             <Users className="h-3.5 w-3.5" />
             {t("footer.tagline")}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            {t("footer.ready")}
           </span>
         </div>
       </footer>
