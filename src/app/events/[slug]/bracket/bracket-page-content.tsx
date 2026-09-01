@@ -301,13 +301,17 @@ function MatchCard({
       </div>
 
       <div className="pv-match-card__body divide-y divide-slate-200">
-        <div className="flex items-center justify-between px-4 py-3">
-          {renderTeamSlot(teamLookup, match.homeTeamId, "TBD")}
-          <span className="pv-match-card__side mono text-xs text-slate-500">{t("home")}</span>
+        <div className="pv-match-card__team-row flex items-center justify-between gap-3 px-4 py-3">
+          <span className="pv-match-card__team-slot min-w-0">
+            {renderTeamSlot(teamLookup, match.homeTeamId, "TBD")}
+          </span>
+          <span className="pv-match-card__side mono shrink-0 whitespace-nowrap text-right text-xs text-slate-500">{t("home")}</span>
         </div>
-        <div className="flex items-center justify-between px-4 py-3">
-          {renderTeamSlot(teamLookup, match.awayTeamId, match.byeForTeamId ? "BYE" : "TBD")}
-          <span className="pv-match-card__side mono text-xs text-slate-500">{t("away")}</span>
+        <div className="pv-match-card__team-row flex items-center justify-between gap-3 px-4 py-3">
+          <span className="pv-match-card__team-slot min-w-0">
+            {renderTeamSlot(teamLookup, match.awayTeamId, match.byeForTeamId ? "BYE" : "TBD")}
+          </span>
+          <span className="pv-match-card__side mono shrink-0 whitespace-nowrap text-right text-xs text-slate-500">{t("away")}</span>
         </div>
       </div>
 
@@ -319,21 +323,27 @@ function MatchCard({
               i
             </span>
           </summary>
-          <div className="border-t border-slate-100 px-4 pb-3 pt-2">
+          <div className="pv-match-card__games border-t border-slate-100 px-4 pb-3 pt-2">
             {series.games.map((game) => {
               const homeWon = series.teamsSwapped
                 ? game.awayScore > game.homeScore
                 : game.homeScore > game.awayScore;
               const displayHome = series.teamsSwapped ? game.awayScore : game.homeScore;
               const displayAway = series.teamsSwapped ? game.homeScore : game.awayScore;
+              const homeScoreClass = homeWon
+                ? "pv-match-card__game-score pv-match-card__game-score--winner font-semibold tabular-nums text-slate-900"
+                : "pv-match-card__game-score tabular-nums text-slate-400";
+              const awayScoreClass = !homeWon
+                ? "pv-match-card__game-score pv-match-card__game-score--winner font-semibold tabular-nums text-slate-900"
+                : "pv-match-card__game-score tabular-nums text-slate-400";
 
               return (
                 <div key={game.gameNumber} className="pv-match-card__game-row flex items-center gap-2 border-b border-slate-100 py-1 text-xs last:border-0">
-                  <span className="w-5 font-mono text-slate-400">G{game.gameNumber}</span>
-                  <span className={homeWon ? "font-medium text-slate-900" : "text-slate-400"}>{displayHome}</span>
-                  <span className="text-slate-300">-</span>
-                  <span className={!homeWon ? "font-medium text-slate-900" : "text-slate-400"}>{displayAway}</span>
-                  <span className="ml-auto max-w-[90px] truncate text-slate-400">
+                  <span className="pv-match-card__game-label w-5 shrink-0 font-mono text-slate-400">G{game.gameNumber}</span>
+                  <span className={homeScoreClass}>{displayHome}</span>
+                  <span className="pv-match-card__game-separator text-slate-300">-</span>
+                  <span className={awayScoreClass}>{displayAway}</span>
+                  <span className="pv-match-card__game-winner ml-auto min-w-0 max-w-[90px] truncate text-right text-slate-400">
                     {homeWon ? homeName : awayName} wins
                   </span>
                 </div>
