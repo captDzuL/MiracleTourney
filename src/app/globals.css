@@ -529,8 +529,30 @@ textarea {
   color: var(--pv-ink-muted);
 }
 
+.public-visual-v2 .pv-match-card__team-row,
+.public-visual-v2 .pv-match-card__team-slot {
+  min-width: 0;
+}
+
+.public-visual-v2 .pv-match-card__team-slot {
+  display: flex;
+  overflow: hidden;
+}
+
+.public-visual-v2 .pv-match-card__games,
 .public-visual-v2 .pv-match-card__game-row {
   border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-match-card__game-label,
+.public-visual-v2 .pv-match-card__game-score,
+.public-visual-v2 .pv-match-card__game-separator,
+.public-visual-v2 .pv-match-card__game-winner {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-match-card__game-score--winner {
+  color: var(--pv-ink);
 }
 
 .public-visual-v2 .pv-match-card__series {
