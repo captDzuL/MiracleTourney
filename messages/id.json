@@ -9,8 +9,7 @@
     "login": "Masuk",
     "logoutLabel": "Keluar",
     "footer": {
-      "tagline": "Platform turnamen komunitas multi-game",
-      "ready": "Siap Vercel + Neon"
+      "tagline": "Platform turnamen komunitas multi-game"
     }
   },
   "home": {
