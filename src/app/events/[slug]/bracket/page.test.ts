@@ -197,6 +197,10 @@ describe("public bracket page", () => {
     expect(markup).toContain("4 - 2");
     expect(markup).toContain("1 - 1");
   });
+  it("renders completed scores with a high-contrast chip", async () => {
+    const markup = await renderBracket("flashpeak-open-league");
+    expect(markup).toMatch(/class="[^"]*bg-slate-950[^"]*text-white[^"]*"[^>]*>4 - 2<\/span>/);
+  });
 
   it("shows per-game BO3 detail for a completed public bracket match", async () => {
     const event = createEvent({

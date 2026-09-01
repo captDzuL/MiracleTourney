@@ -221,6 +221,21 @@ function renderTeamSlot(teamLookup: Map<string, Team>, teamId: string | null, fa
   return <TeamIdentity logoText={team.logoText} logoUrl={team.logoUrl} name={team.name} size="sm" />;
 }
 
+function isScoreStatus(status: string) {
+  return /^\d+\s*-\s*\d+(?:\s*\(BO\d+\))?$/.test(status);
+}
+
+function MatchStatePill({ status, tone }: { status: string; tone: "default" | "live" | "success" }) {
+  if (isScoreStatus(status)) {
+    return (
+      <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-slate-950 px-3 py-1 font-mono text-xs font-semibold tabular-nums text-white shadow-sm">
+        {status}
+      </span>
+    );
+  }
+
+  return <Pill tone={tone}>{status}</Pill>;
+}
 function chunkIntoPairs<T>(items: T[]): T[][] {
   const pairs: T[][] = [];
   for (let i = 0; i < items.length; i += 2) {
@@ -282,7 +297,7 @@ function MatchCard({
             {getRoundName(match.round, totalRounds, roundNames, { playInRound })}
           </p>
         </div>
-        <Pill tone={state.tone}>{state.status}</Pill>
+        <MatchStatePill status={state.status} tone={state.tone} />
       </div>
 
       <div className="pv-match-card__body divide-y divide-slate-200">
@@ -389,9 +404,7 @@ export async function renderBracketPage(slug: string, locale?: "id" | "en") {
             return [
               roundNames.roundN(item.round),
               `${renderTeamName(teamLookup, item.homeTeamId, "TBD")} vs ${renderTeamName(teamLookup, item.awayTeamId, "TBD")}`,
-              <Pill key={`${item.id}-league-status`} tone={state.tone}>
-                {state.status}
-              </Pill>,
+              <MatchStatePill key={`${item.id}-league-status`} status={state.status} tone={state.tone} />,
               state.schedule,
             ];
           })}
@@ -576,9 +589,7 @@ export async function renderBracketPage(slug: string, locale?: "id" | "en") {
                 match.awayTeamId,
                 match.byeForTeamId ? "BYE" : "TBD",
               )}`,
-              <Pill key={`${match.id}-detail-status`} tone={state.tone}>
-                {state.status}
-              </Pill>,
+              <MatchStatePill key={`${match.id}-detail-status`} status={state.status} tone={state.tone} />,
               scheduleLabel,
             ];
           })}

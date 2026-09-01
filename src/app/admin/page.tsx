@@ -132,6 +132,7 @@ const inputClass = "w-full min-w-0 rounded-lg border border-slate-200 bg-white p
 const labelClass = "grid min-w-0 gap-2 text-sm font-medium text-slate-700";
 const quietButton = "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
 const primaryButton = "inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-400 px-3.5 py-2.5 text-sm font-semibold text-cyan-950 shadow-sm transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
+const matchDeskCardGridClass = "grid gap-3 md:grid-cols-2";
 
 export default async function AdminPage({
   searchParams,
@@ -1385,6 +1386,19 @@ function PaymentWorkspacePhase({
     </PhaseSection>
   );
 }
+function MatchupNames({ homeName, awayName, size = "sm" }: { homeName: string; awayName: string; size?: "sm" | "base" }) {
+  const textSize = size === "base" ? "text-base" : "text-sm";
+
+  return (
+    <span className={`grid min-w-0 gap-1 font-semibold leading-snug text-slate-900 ${textSize}`}>
+      <span className="min-w-0 truncate" title={homeName}>{homeName}</span>
+      <span className="flex min-w-0 items-baseline gap-1.5">
+        <span className="shrink-0 text-xs font-normal uppercase text-slate-400">vs</span>
+        <span className="min-w-0 truncate" title={awayName}>{awayName}</span>
+      </span>
+    </span>
+  );
+}
 function RunMatchDayPhase({
   activeEvent,
   completedMatchesWithEvent,
@@ -1456,10 +1470,12 @@ function RunMatchDayPhase({
                   </SubmitButton>
                 </form>
 
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                <div className={matchDeskCardGridClass}>
                   {manageableMatches.map((match) => {
                     const bo = roundConfigMap.get(match.roundLabel) ?? 1;
                     const isSelected = selectedMatch?.id === match.id;
+                    const homeTeamName = teamName(match.homeTeamId);
+                    const awayTeamName = teamName(match.awayTeamId);
                     return (
                       <a
                         key={match.id}
@@ -1470,19 +1486,15 @@ function RunMatchDayPhase({
                             : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                         }`}
                       >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        <span className="flex min-w-0 items-start justify-between gap-2">
+                          <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-400">
                             {match.roundLabel} · M{match.slot}
                           </span>
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                          <span className="shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
                             BO{bo}
                           </span>
                         </span>
-                        <span className="text-sm font-semibold leading-snug text-slate-900">
-                          {teamName(match.homeTeamId)}
-                          <span className="mx-1.5 font-normal text-slate-400">vs</span>
-                          {teamName(match.awayTeamId)}
-                        </span>
+                        <MatchupNames homeName={homeTeamName} awayName={awayTeamName} />
                       </a>
                     );
                   })}
@@ -1496,11 +1508,13 @@ function RunMatchDayPhase({
                 description={`Match selesai di ${activeEvent?.name ?? "event aktif"} — klik untuk input atau edit statistik pemain.`}
                 className="rounded-xl shadow-none"
               >
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                <div className={matchDeskCardGridClass}>
                   {completedMatchesWithEvent.map(({ match }) => {
                     const isSelected = selectedMatch?.id === match.id;
                     const homeScore = match.homeScore;
                     const awayScore = match.awayScore;
+                    const homeTeamName = teamName(match.homeTeamId);
+                    const awayTeamName = teamName(match.awayTeamId);
                     return (
                       <a
                         key={match.id}
@@ -1511,24 +1525,20 @@ function RunMatchDayPhase({
                             : "border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/50"
                         }`}
                       >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        <span className="flex min-w-0 items-start justify-between gap-2">
+                          <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-400">
                             {match.roundLabel}
                           </span>
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                          <span className="shrink-0 whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
                             Selesai
                           </span>
                         </span>
-                        <span className="text-sm font-semibold leading-snug text-slate-900">
-                          {teamName(match.homeTeamId)}
-                          <span className="mx-1.5 font-normal text-slate-400">vs</span>
-                          {teamName(match.awayTeamId)}
-                        </span>
-                        <span className="flex items-center gap-2">
+                        <MatchupNames homeName={homeTeamName} awayName={awayTeamName} />
+                        <span className="flex min-w-0 items-center gap-2">
                           <span className="rounded-md bg-slate-900 px-2.5 py-1 text-sm font-bold tabular-nums text-white">
                             {homeScore} – {awayScore}
                           </span>
-                          <span className="text-xs text-slate-400">Klik untuk statistik</span>
+                          <span className="min-w-0 truncate text-xs text-slate-400">Klik untuk statistik</span>
                         </span>
                       </a>
                     );
@@ -1572,17 +1582,13 @@ function RunMatchDayPhase({
                 <div className="grid gap-5">
                   <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                     <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-400">
                         {selectedMatch.roundLabel}{selectedMatch.slot ? ` · Match ${selectedMatch.slot}` : ""}
                       </p>
                     </div>
                     <div className="px-4 py-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-base font-semibold text-slate-900">
-                          {teamName(selectedMatch.homeTeamId)}
-                          <span className="mx-2 font-normal text-slate-400">vs</span>
-                          {teamName(selectedMatch.awayTeamId)}
-                        </p>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <MatchupNames homeName={teamName(selectedMatch.homeTeamId)} awayName={teamName(selectedMatch.awayTeamId)} size="base" />
                         <StatusChip tone={selectedMatch.status === "Completed" ? "success" : "warning"}>
                           {selectedMatch.status === "Completed" ? `${selectedMatch.homeScore} – ${selectedMatch.awayScore}` : `BO${selectedMatchBestOf}`}
                         </StatusChip>
@@ -1931,7 +1937,7 @@ function StatusChip({ children, tone = "default" }: { children: React.ReactNode;
   }[tone];
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
+    <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
       {children}
     </span>
   );
