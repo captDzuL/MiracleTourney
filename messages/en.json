@@ -64,6 +64,13 @@
     "entryFee": "Entry Fee",
     "noEvents": "No public events are published yet. Draft events stay visible only inside the admin panel."
   },
+  "tiktokStream": {
+    "subtitle": "Follow the organizer's broadcast",
+    "description": "Watch the tournament broadcast and join the chat directly on TikTok.",
+    "watch": "Watch on TikTok",
+    "newTab": "Opens TikTok in a new tab",
+    "availability": "Video plays on TikTok. Check stream availability there."
+  },
   "eventDetail": {
     "liveNow": "Live now",
     "issueLabel": "Event",

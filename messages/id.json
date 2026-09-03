@@ -64,6 +64,13 @@
     "entryFee": "Biaya Pendaftaran",
     "noEvents": "Belum ada event yang dipublikasi. Event draft hanya terlihat di panel admin."
   },
+  "tiktokStream": {
+    "subtitle": "Ikuti siaran dari penyelenggara",
+    "description": "Ikuti siaran pertandingan dan ikut meramaikan chat langsung di TikTok.",
+    "watch": "Tonton di TikTok",
+    "newTab": "Membuka TikTok di tab baru",
+    "availability": "Video diputar di TikTok. Cek ketersediaan siaran di sana."
+  },
   "eventDetail": {
     "liveNow": "Sedang Live",
     "issueLabel": "Event",

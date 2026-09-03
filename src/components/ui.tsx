@@ -2,6 +2,8 @@ import { ExternalLink, Radio } from "lucide-react";
 
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
+import { getTikTokLiveHandle } from "@/lib/streams";
+import { TikTokLiveCard } from "@/components/TikTokLiveCard";
 
 export const buttonStyles = {
   primary:
@@ -114,6 +116,11 @@ export function LiveStreamCard({
   embedUrl: string | null;
   shouldEmbed: boolean;
 }) {
+  const tikTokHandle = getTikTokLiveHandle(watchUrl);
+  if (tikTokHandle) {
+    return <TikTokLiveCard label={label} watchUrl={watchUrl} handle={tikTokHandle} />;
+  }
+
   return (
     <div className="pv-livestream-card overflow-hidden rounded-2xl border border-red-200 bg-white">
       <div className="pv-livestream-card__header flex items-center justify-between border-b border-slate-200 px-4 py-3">
