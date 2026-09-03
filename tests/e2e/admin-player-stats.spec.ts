@@ -178,6 +178,8 @@ test.describe("admin player stats entry", () => {
   });
 
   test("captain submissions count only after approval", async ({ page }) => {
+    // Includes login, multiple dashboard loads, and the approval write against Neon.
+    test.setTimeout(90_000);
     const card = page.locator(`a[href*="matchId=${fixture.matchId}"]`).filter({ hasText: "Stats Home" });
     const stats = Object.fromEntries(fixture.homePlayers.map((player) => [player.id, { goal: 0, assist: 0, passing: 0, defense: 0 }]));
     const submission = await prisma.statSubmission.create({ data: {
@@ -193,8 +195,10 @@ test.describe("admin player stats entry", () => {
     await page.goto(`/id/admin?phase=review&activeEventId=${fixture.eventId}`);
     const review = page.locator('details').filter({ has: page.locator(`input[name="submissionId"][value="${submission.id}"]`) });
     await review.locator('summary').click();
-    await review.getByRole('button', { name: 'Setujui', exact: true }).click();
-    await expect(page).toHaveURL(/success=stat-approved/, { timeout: 15000 });
+    await Promise.all([
+      page.waitForURL(/success=stat-approved/, { waitUntil: "load", timeout: 15_000 }),
+      review.getByRole('button', { name: 'Setujui', exact: true }).click(),
+    ]);
     await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
     await expect(card.getByText("Sebagian tercatat", { exact: true })).toBeVisible();
     const homeForm = page.locator('form').filter({ has: page.locator(`input[name="teamId"][value="${fixture.homeTeamId}"]`) });
