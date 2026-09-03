@@ -12,6 +12,23 @@ describe("admin action buttons", () => {
     );
   });
 
+  test("offers a certificate regenerate control wired to the admin action", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain("adminRegenerateCertificateAction");
+    expect(source).toContain("action={adminRegenerateCertificateAction}");
+    expect(source).toContain('t("certificateRegenerate")');
+  });
+
+  test("surfaces the reason a certificate failed instead of showing it as missing", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain('cert?.status === "failed"');
+    expect(source).toContain('t("certificateFailed")');
+    expect(source).toContain('t("certificateLastError")');
+    expect(source).toContain("cert.lastError");
+  });
+
   test("shows a match operations section with result entry controls", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
 

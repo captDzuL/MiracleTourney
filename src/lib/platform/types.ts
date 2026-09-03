@@ -121,12 +121,18 @@ export type Event = {
   activeVisualAsset?: EventVisualAsset;
 };
 
+export type CertificateStatus = "ready" | "failed";
+
 export type Certificate = {
   id: string;
   eventId: string;
   teamId: string;
   imageUrl: string;
+  status: CertificateStatus;
+  lastError: string | null;
+  attemptCount: number;
   createdAt: Date;
+  updatedAt: Date;
 };
 
 export type Team = {
