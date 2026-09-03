@@ -40,3 +40,825 @@ select,
 textarea {
   outline: none;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Public visual v2 — street-sport poster system.
+   Scoped to .public-visual-v2 so admin/captain surfaces keep their current look.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.public-visual-v2 {
+  --pv-canvas: #080c0e;
+  --pv-canvas-raised: #101619;
+  --pv-ink: #f3f0e8;
+  --pv-ink-muted: #9aa3a1;
+  --pv-lime: #caff38;
+  --pv-rule: rgba(243, 240, 232, 0.14);
+  --pv-display: var(--font-display), "Teko", "Bahnschrift", sans-serif;
+  --pv-ui: var(--font-ui), "Chakra Petch", "Segoe UI", sans-serif;
+
+  background-color: var(--pv-canvas);
+  color: var(--pv-ink);
+  font-family: var(--pv-ui);
+}
+
+.public-visual-v2 h1,
+.public-visual-v2 h2,
+.public-visual-v2 h3,
+.public-visual-v2 .pv-display {
+  font-family: var(--pv-display);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+/*
+ * Compressed athletic wordmark for event names — the signature typographic
+ * gesture from the approved poster reference. Horizontal compression plus a
+ * tight line-height is what reads as "condensed athletic" rather than a
+ * standard web heading; keep it to event names, not every heading.
+ */
+.public-visual-v2 .pv-wordmark {
+  transform: scaleX(0.94);
+  transform-origin: left;
+  line-height: 0.8;
+}
+
+.public-visual-v2 .pv-eyebrow {
+  font-family: var(--pv-ui);
+  font-weight: 600;
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-muted {
+  color: var(--pv-ink-muted);
+}
+
+/* Clipped corner button — the only accent surface that may use lime fill. */
+.public-visual-v2 .pv-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-family: var(--pv-ui);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: var(--pv-lime);
+  color: var(--pv-canvas);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+  transition: filter 140ms ease-out;
+}
+
+.public-visual-v2 .pv-button:hover {
+  filter: brightness(1.08);
+}
+
+.public-visual-v2 .pv-button--ghost {
+  background: transparent;
+  color: var(--pv-ink);
+  box-shadow: inset 0 0 0 1px var(--pv-rule);
+}
+
+/*
+ * The clipped corner also clips any focus ring painted outside the button box,
+ * so the keyboard indicator is drawn inside the clipped shape instead.
+ */
+.public-visual-v2 .pv-button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--pv-canvas);
+}
+
+.public-visual-v2 .pv-button--ghost:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--pv-lime);
+}
+
+/* Hairline poster rule used to separate blocks instead of card borders. */
+.public-visual-v2 .pv-rule {
+  border: 0;
+  border-top: 1px solid var(--pv-rule);
+}
+
+/* Decorative film grain — pure CSS, no extra network bytes. */
+.public-visual-v2 .pv-grain {
+  position: relative;
+  isolation: isolate;
+}
+
+.public-visual-v2 .pv-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.16;
+  mix-blend-mode: overlay;
+  background-image: repeating-conic-gradient(
+    rgba(243, 240, 232, 0.5) 0% 25%,
+    transparent 0% 50%
+  );
+  background-size: 3px 3px;
+}
+
+/* ─── Event artwork ───────────────────────────────────────────────────────── */
+
+.event-visual {
+  position: relative;
+  overflow: hidden;
+  container-type: inline-size;
+  background-color: #080c0e;
+}
+
+.event-visual__image {
+  z-index: 0;
+}
+
+.event-visual--typographic {
+  --event-accent: #caff38;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  padding: clamp(0.75rem, 3cqw, 1.5rem);
+  color: #f3f0e8;
+  /* Per-game gradient wash carries the identity — colour, not line texture,
+     so it never competes with the initials/label sitting on top of it. */
+  background: var(--event-gradient, #080c0e);
+}
+
+.event-visual--typographic::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.22;
+  background-image: radial-gradient(circle, rgba(243, 240, 232, 0.55) 0.7px, transparent 0.8px);
+  background-size: 5px 5px;
+}
+
+.event-visual__initials {
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-display), "Teko", "Bahnschrift", sans-serif;
+  font-weight: 700;
+  font-size: clamp(2.5rem, 22cqw, 6rem);
+  line-height: 0.82;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  color: var(--event-accent);
+}
+
+.event-visual__game {
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-ui), "Chakra Petch", sans-serif;
+  font-weight: 600;
+  font-size: 0.6875rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(243, 240, 232, 0.7);
+}
+
+/* Per-game accent bleeds onto the card edge instead of sitting flat. */
+.event-visual--typographic {
+  border-left: 3px solid var(--event-accent);
+}
+
+/* Large low-opacity watermark number — reserve for the hero/featured visual. */
+.event-visual__ghost-number {
+  position: absolute;
+  z-index: 0;
+  right: -0.05em;
+  bottom: -0.12em;
+  font-family: var(--font-display), "Teko", "Bahnschrift", sans-serif;
+  font-weight: 700;
+  font-size: clamp(4rem, 32cqw, 9rem);
+  line-height: 1;
+  color: rgba(243, 240, 232, 0.1);
+  pointer-events: none;
+}
+
+/* Rotated game-label chip, poster-corner style. */
+.event-visual__chip {
+  position: absolute;
+  z-index: 2;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  background: var(--event-accent, var(--pv-lime));
+  color: #080c0e;
+  font-family: var(--font-ui), "Chakra Petch", sans-serif;
+  font-weight: 700;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Vertical side-line rule down the framed visual's right edge. */
+.event-visual--framed::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 0.9rem;
+  bottom: 0.9rem;
+  right: 0.7rem;
+  width: 1.5px;
+  background: rgba(243, 240, 232, 0.5);
+  pointer-events: none;
+}
+
+/*
+ * Unreviewed organizer artwork (legacy `gameImageUrl`, never approved through
+ * the EventVisualAsset flow) is desaturated and tinted so it reads as part of
+ * the poster system rather than a foreign photo pasted on top. Reviewed
+ * revisions keep their true colour.
+ */
+.event-visual__image--legacy {
+  filter: grayscale(0.85) contrast(1.25) brightness(0.88);
+}
+
+/* Restrained signature gesture — the one thing allowed to move on an
+   otherwise static poster page. Neutralised globally for prefers-reduced-motion
+   by the rule below. */
+@keyframes pv-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 90, 90, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(255, 90, 90, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 90, 90, 0);
+  }
+}
+
+.pv-live-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #ff5a5a;
+  animation: pv-pulse 1.8s ease-out infinite;
+}
+
+/* Ambient confetti for the hero's empty text column — see ConfettiField.tsx. */
+.pv-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.pv-confetti__piece {
+  position: absolute;
+  top: -20px;
+  animation-name: pv-confetti-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes pv-confetti-fall {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0;
+  }
+  8% {
+    opacity: var(--piece-opacity, 1);
+  }
+  92% {
+    opacity: var(--piece-opacity, 1);
+  }
+  100% {
+    transform: translateY(340px) rotate(200deg);
+    opacity: 0;
+  }
+}
+
+/* Header links keep a visible focus indicator (accessibility), styled on
+   brand instead of the browser's default outline colour. */
+.public-visual-v2 header a:focus-visible {
+  outline: 2px solid var(--pv-lime);
+  outline-offset: 2px;
+}
+
+/*
+ * LocaleSwitcher and SessionNav are shared with the light admin/captain
+ * chrome and keep their slate/blue Tailwind classes for that context. These
+ * overrides re-skin them on the poster canvas instead of duplicating the
+ * components — same cascade technique as the rest of this section.
+ */
+.public-visual-v2 header .pv-locale-switch {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+}
+
+.public-visual-v2 header .pv-locale-btn {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 header .pv-locale-btn:hover {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 header .pv-locale-btn--active {
+  background: var(--pv-lime);
+  color: var(--pv-canvas);
+  box-shadow: none;
+}
+
+.public-visual-v2 header .pv-session-link {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 header .pv-session-link:hover {
+  background: var(--pv-canvas-raised);
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 header .pv-logout-btn,
+.public-visual-v2 header .pv-login-link {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 header .pv-logout-btn:hover,
+.public-visual-v2 header .pv-login-link:hover {
+  background: var(--pv-canvas);
+}
+
+.public-visual-v2 header .pv-logout-btn__icon {
+  color: var(--pv-ink-muted);
+}
+
+/*
+ * `Section` and `StatCard` (src/components/ui.tsx) are shared with the light
+ * admin chrome and keep their slate/white Tailwind classes there. These
+ * overrides re-skin them wherever they render inside the poster canvas —
+ * event detail supporting panels, bracket/standings/participants/leaderboard
+ * pages — without duplicating the components, matching the design intent
+ * that those surfaces inherit the v2 palette even though their layout stays calm.
+ */
+.public-visual-v2 .pv-section-card {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+  box-shadow: none;
+}
+
+.public-visual-v2 .pv-section-card__title {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-section-card__desc {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-stat-card {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas);
+}
+
+.public-visual-v2 .pv-stat-card__label {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-stat-card__value {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-stat-card__hint {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-livestream-card {
+  background: var(--pv-canvas-raised);
+  border-color: rgba(255, 90, 90, 0.35);
+}
+
+.public-visual-v2 .pv-livestream-card__header {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-livestream-card__label {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-livestream-card__hint,
+.public-visual-v2 .pv-livestream-card__fallback {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-livestream-card__link {
+  border-color: var(--pv-rule);
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-livestream-card__link:hover {
+  background: var(--pv-canvas);
+}
+
+.public-visual-v2 .pv-livestream-card__fallback {
+  background: var(--pv-canvas);
+}
+
+/* Compact top-performer callout — a single fact, sized to its content
+   instead of claiming a full Section/grid column. */
+.public-visual-v2 .pv-top-performer {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+}
+
+.public-visual-v2 .pv-top-performer__icon {
+  color: var(--pv-lime);
+}
+
+.public-visual-v2 .pv-top-performer__eyebrow,
+.public-visual-v2 .pv-top-performer__stats {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-top-performer__name {
+  color: var(--pv-ink);
+}
+
+/* ─── Bracket match card ──────────────────────────────────────────────────── */
+
+.public-visual-v2 .pv-match-card {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+  box-shadow: none;
+}
+
+.public-visual-v2 .pv-match-card__header,
+.public-visual-v2 .pv-match-card__detail,
+.public-visual-v2 .pv-match-card__schedule {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-match-card__slot {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-match-card__round,
+.public-visual-v2 .pv-match-card__side,
+.public-visual-v2 .pv-match-card__schedule,
+.public-visual-v2 .pv-match-card__summary {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-match-card__body {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-match-card__body > div {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-match-card__summary:hover {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-match-card__summary-icon {
+  border-color: var(--pv-rule);
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-match-card__team-row,
+.public-visual-v2 .pv-match-card__team-slot {
+  min-width: 0;
+}
+
+.public-visual-v2 .pv-match-card__team-slot {
+  display: flex;
+  overflow: hidden;
+}
+
+.public-visual-v2 .pv-match-card__games,
+.public-visual-v2 .pv-match-card__game-row {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-match-card__game-label,
+.public-visual-v2 .pv-match-card__game-score,
+.public-visual-v2 .pv-match-card__game-separator,
+.public-visual-v2 .pv-match-card__game-winner {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-match-card__game-score--winner {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-match-card__series {
+  border-color: var(--pv-rule);
+  color: var(--pv-ink);
+}
+
+/* ─── Status pills ────────────────────────────────────────────────────────── */
+
+.public-visual-v2 .pv-pill--default {
+  background: var(--pv-canvas-raised);
+  color: var(--pv-ink-muted);
+  box-shadow: inset 0 0 0 1px var(--pv-rule);
+}
+
+.public-visual-v2 .pv-pill--success {
+  background: rgba(202, 255, 56, 0.14);
+  color: var(--pv-lime);
+}
+
+.public-visual-v2 .pv-pill--live {
+  background: rgba(255, 90, 90, 0.14);
+  color: #ff5a5a;
+}
+
+/* ─── Data table ──────────────────────────────────────────────────────────── */
+
+.public-visual-v2 .pv-data-table {
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-data-table table {
+  color: var(--pv-ink);
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-data-table__head {
+  background: var(--pv-canvas-raised);
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .pv-data-table__row {
+  background: transparent;
+  border-color: var(--pv-rule);
+}
+
+.public-visual-v2 .pv-data-table__row td {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-data-table__row:nth-child(even) {
+  background: var(--pv-canvas-raised);
+}
+
+/* ─── Team avatar / identity ──────────────────────────────────────────────── */
+
+.public-visual-v2 .pv-team-avatar {
+  border-color: var(--pv-rule);
+  background: var(--pv-canvas-raised);
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-team-identity__name {
+  color: var(--pv-ink);
+}
+
+.public-visual-v2 .pv-team-identity__meta {
+  color: var(--pv-ink-muted);
+}
+
+/* ─── Bracket round label + connector lines ──────────────────────────────── */
+
+.public-visual-v2 .pv-round-label {
+  color: var(--pv-lime);
+}
+
+.public-visual-v2 .pv-round-count {
+  color: var(--pv-ink-muted);
+}
+
+.public-visual-v2 .bracket-match--connect::after,
+.public-visual-v2 .bracket-pair::before,
+.public-visual-v2 .bracket-pair::after {
+  background: var(--pv-rule);
+}
+
+/* ─── Back-to-event link ──────────────────────────────────────────────────── */
+
+.public-visual-v2 .pv-back-link {
+  color: var(--pv-ink-muted);
+  border-bottom: 1px solid transparent;
+  transition: color 140ms ease-out, border-color 140ms ease-out;
+}
+
+.public-visual-v2 .pv-back-link:hover {
+  color: var(--pv-lime);
+  border-color: var(--pv-lime);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-visual-v2 *,
+  .public-visual-v2 *::before,
+  .public-visual-v2 *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Panel dark mode — admin / captain / organizer only.
+
+   Public pages are deliberately excluded. The poster system above is dark by
+   design and is not a switchable theme.
+
+   Two layers, and both are needed:
+
+     1. Variable remap — Tailwind 4 compiles every colour utility down to
+        `var(--color-*)`, so redefining those variables inside this scope
+        re-skins the existing markup without editing a single className.
+        In here, variables serve TEXT and LINES.
+
+     2. Utility override — a few shades do two jobs at once. `--color-red-600`
+        is both a solid button fill and the text colour sitting on a red tint;
+        brightening it fixes the text and ruins the button. Those cases override
+        the `.bg-*` class instead, background-colour only, so `text-white` on
+        solid buttons keeps working.
+
+   `:has(.panel-scope)` is what keeps the blast radius on operator routes while
+   still letting the shared header and footer follow the panel. `.panel-scope`
+   is rendered by PanelShell; `.app-root` is the AppShell wrapper.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) {
+  color-scheme: dark;
+
+  --panel-surface: #101619;
+  --panel-surface-sunken: #0b1012;
+  --panel-chip: #242c30;
+  --panel-lime: #caff38;
+
+  /* Surfaces and hairlines become dark. */
+  --color-slate-50: #161d20;
+  --color-slate-100: #1d2427;
+  --color-slate-200: #232a2d;
+  --color-slate-300: #2a3134;
+
+  /* Inks become light. */
+  --color-slate-400: #7d8583;
+  --color-slate-500: #9aa3a1;
+  --color-slate-600: #b0aea5;
+  --color-slate-700: #c6c3ba;
+  --color-slate-800: #ddd9d0;
+  --color-slate-900: #f3f0e8;
+  --color-slate-950: #f8f6ef;
+
+  /* Accent tints darken; the text shades paired with them lighten.
+     cyan-400 and cyan-600 keep their stock values: they are the panel's action
+     colours, and lime is reserved for focus so the two never compete. */
+  --color-cyan-50: #0a2b33;
+  --color-cyan-100: #0e3a45;
+  --color-cyan-200: #12495a;
+  --color-cyan-300: #1c6478;
+  --color-cyan-800: #6fe0f2;
+
+  --color-emerald-50: #0d2318;
+  --color-emerald-100: #123022;
+  --color-emerald-200: #17402e;
+  --color-emerald-300: #1e5239;
+  --color-emerald-700: #7ff0b4;
+  --color-emerald-800: #9af5c6;
+
+  --color-amber-50: #2a2109;
+  --color-amber-100: #392d0d;
+  --color-amber-200: #4a3b11;
+  --color-amber-700: #f2c86b;
+  --color-amber-800: #f7d68d;
+  --color-amber-950: #ffe9b0;
+  /* amber-400 and amber-900 are left alone on purpose: the captain crown chip
+     is a bright amber block with dark text, and it still reads correctly. */
+
+  --color-red-50: #2e1414;
+  --color-red-100: #3d1b1b;
+  --color-red-200: #502424;
+  --color-red-600: #ff9c9c;
+  --color-red-700: #ffb4b4;
+
+  --color-blue-50: #10202f;
+  --color-blue-100: #16304a;
+  --color-blue-200: #1d4166;
+  --color-blue-300: #2a5c8f;
+  --color-blue-700: #8fc2ff;
+
+  background-color: #080c0e;
+  background-image: linear-gradient(180deg, #070a0b, #080c0e 55%, #090d0f);
+  color: var(--color-slate-900);
+}
+
+/* Two shades sit on the wrong side of the surface/ink split above, because the
+   codebase uses them for both jobs. Correct them by class rather than by
+   variable, so borders and status fills keep the value they need. */
+
+/* `text-slate-300` is body copy on the organizer hero, not a hairline. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .text-slate-300 {
+  color: #c6c3ba;
+}
+
+/* `bg-slate-500` is the "Finished" status badge and carries white text. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-slate-500 {
+  background-color: #3f4a4f;
+}
+
+/* ── Layer 2: surfaces whose variable is already spoken for by text ───────── */
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-white {
+  background-color: var(--panel-surface);
+}
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(input, select, textarea).bg-white {
+  background-color: var(--panel-surface-sunken);
+}
+
+/* Chips that were already dark on a light page — never invert these. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-slate-900,
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-slate-950 {
+  background-color: var(--panel-chip);
+}
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-slate-950\/35 {
+  background-color: rgba(3, 6, 8, 0.55);
+}
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .hover\:bg-slate-800:hover {
+  background-color: #2f383d;
+}
+
+/* Destructive actions stay a solid red block — that emphasis is the point. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .bg-red-600 {
+  background-color: #dc2626;
+}
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .hover\:bg-red-500:hover {
+  background-color: #ef4444;
+}
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .hover\:bg-red-700:hover {
+  background-color: #b91c1c;
+}
+
+/* ── Action hierarchy: one primary emphasis per row ───────────────────────── */
+
+/* Primary submits keep their solid cyan fill. Their label is written as
+   `text-slate-950`, which inverts to a light ink in this scope and would strand
+   it on a bright fill, so the label is pinned back to a dark teal. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(a, button, summary, label).bg-cyan-400 {
+  color: #04222a;
+}
+
+/* `--color-cyan-300` is a hairline elsewhere, so the primary hover is restored
+   by class rather than by variable. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .hover\:bg-cyan-300:hover {
+  background-color: #67e8f9;
+}
+
+/* Secondary emphasis drops to a quiet surface so it stops competing with the
+   primary submit and the destructive button beside it. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(a, button, summary, label).bg-cyan-600 {
+  background-color: var(--panel-surface-sunken);
+  border: 1px solid var(--color-slate-300);
+  color: var(--color-slate-900);
+}
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(a, button, summary, label).bg-cyan-600:hover,
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) .hover\:bg-cyan-500:hover {
+  background-color: var(--color-slate-100);
+}
+
+/* Focus is the one place the poster accent still shows up. */
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(:focus, :focus-visible) {
+  --tw-ring-color: var(--panel-lime);
+}
+
+html[data-panel-theme="dark"] .app-root:has(.panel-scope) :is(input, select, textarea):focus {
+  border-color: var(--panel-lime);
+  box-shadow: 0 0 0 3px rgba(202, 255, 56, 0.18);
+}
+
+/* ── Shared chrome follows the panel on operator routes ───────────────────── */
+
+/* With the public poster flag on, the header and footer would otherwise stay
+   dark-and-lime while the panel below them is a light surface. Remapping the
+   poster tokens here keeps the two in step in both themes. */
+.app-root.public-visual-v2:has(.panel-scope) {
+  --pv-canvas: #ffffff;
+  --pv-canvas-raised: #f8fafc;
+  --pv-ink: #0f172a;
+  --pv-ink-muted: #64748b;
+  --pv-lime: #2563eb;
+  --pv-rule: rgba(15, 23, 42, 0.12);
+  font-family: var(--font-inter), sans-serif;
+}
+
+html[data-panel-theme="dark"] .app-root.public-visual-v2:has(.panel-scope) {
+  --pv-canvas: #101619;
+  --pv-canvas-raised: #161d20;
+  --pv-ink: #f3f0e8;
+  --pv-ink-muted: #9aa3a1;
+  --pv-lime: #caff38;
+  --pv-rule: rgba(243, 240, 232, 0.14);
+}

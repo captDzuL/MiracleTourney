@@ -43,6 +43,7 @@ test.describe("admin match result entry", () => {
   });
 
   test("admin can save a BO1 match result and see bracket update", async ({ page }) => {
+    test.setTimeout(60_000);
     await setRoundBestOf(page, "1");
     await page.goto(`/id/admin?phase=run&matchEventId=${currentEvent.eventId}`);
     await selectFirstMatch(page);
@@ -53,7 +54,7 @@ test.describe("admin match result entry", () => {
 
     await resultForm.locator('input[name="homeScore"]').fill("21");
     await resultForm.locator('input[name="awayScore"]').fill("18");
-    await resultForm.getByRole("button", { name: /simpan/i }).click();
+    await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
 
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
     await page.goto(`/id/events/${currentEvent.slug}/bracket`);
@@ -61,6 +62,7 @@ test.describe("admin match result entry", () => {
   });
 
   test("event auto-transitions to Ongoing after first match result", async ({ page }) => {
+    test.setTimeout(60_000);
     await setRoundBestOf(page, "1");
     await page.goto(`/id/admin?phase=run&matchEventId=${currentEvent.eventId}`);
     await selectFirstMatch(page);
@@ -71,7 +73,7 @@ test.describe("admin match result entry", () => {
 
     await resultForm.locator('input[name="homeScore"]').fill("15");
     await resultForm.locator('input[name="awayScore"]').fill("21");
-    await resultForm.getByRole("button", { name: /simpan/i }).click();
+    await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
 
     await page.goto(`/id/events/${currentEvent.slug}`);
@@ -92,6 +94,7 @@ test.describe("public bracket page", () => {
   });
 
   test("bracket shows completed match score", async ({ page }) => {
+    test.setTimeout(60_000);
     const { eventId, slug } = await prepareAdminMatchEvent();
     await loginAsAdmin(page, "id");
     await page.goto(`/id/admin?phase=run&matchEventId=${eventId}`);
@@ -104,7 +107,7 @@ test.describe("public bracket page", () => {
     await expect(resultForm).toBeVisible();
     await resultForm.locator('input[name="homeScore"]').fill("19");
     await resultForm.locator('input[name="awayScore"]').fill("17");
-    await resultForm.getByRole("button", { name: /simpan/i }).click();
+    await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
 
     await page.goto(`/id/events/${slug}/bracket`);

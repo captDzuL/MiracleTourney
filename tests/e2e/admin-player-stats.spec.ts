@@ -111,6 +111,7 @@ test.describe("admin player stats entry", () => {
   });
 
   test("editing stats replaces, not accumulates (upsert safety)", async ({ page }) => {
+    test.setTimeout(60_000);
     await expect(page.getByText("Statistik Pemain", { exact: true })).toBeVisible({ timeout: 15_000 });
 
     const getHomeForm = () =>

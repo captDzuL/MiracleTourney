@@ -43,6 +43,7 @@ export const games: Game[] = [
       orb2: "rgba(147,197,253,0.10)",
       ring: "rgba(147,197,253,0.12)",
       label: "KNB",
+      accent: "#3b82f6",
     },
   },
   {
@@ -53,7 +54,7 @@ export const games: Game[] = [
     defaultModeLabel: "5v5",
     fallbackLogoUrl: "https://lh3.googleusercontent.com/d/1m01dWpxKA6qXRzfFRrEovFzho1nTnV9B",
     defaultBackgroundUrl: "/game-backgrounds/flashpeak.svg",
-    primaryStatKey: "goals",
+    primaryStatKey: "goal",
     certificateThemeId: "flashpeak",
     artTheme: {
       bg: "linear-gradient(135deg, #052e16 0%, #14532d 50%, #166534 100%)",
@@ -61,6 +62,7 @@ export const games: Game[] = [
       orb2: "rgba(134,239,172,0.10)",
       ring: "rgba(134,239,172,0.12)",
       label: "FP",
+      accent: "#4ade80",
     },
   },
   {
@@ -78,6 +80,7 @@ export const games: Game[] = [
       orb2: "rgba(165,180,252,0.10)",
       ring: "rgba(191,219,254,0.18)",
       label: "ML",
+      accent: "#818cf8",
     },
   },
   {
@@ -94,6 +97,7 @@ export const games: Game[] = [
       orb2: "rgba(253,186,116,0.12)",
       ring: "rgba(254,215,170,0.18)",
       label: "HOK",
+      accent: "#fbbf24",
     },
   },
   {
@@ -110,6 +114,7 @@ export const games: Game[] = [
       orb2: "rgba(254,202,202,0.10)",
       ring: "rgba(254,205,211,0.16)",
       label: "VLR",
+      accent: "#f87171",
     },
   },
   {
@@ -126,6 +131,7 @@ export const games: Game[] = [
       orb2: "rgba(254,226,226,0.08)",
       ring: "rgba(252,165,165,0.15)",
       label: "D2",
+      accent: "#dc2626",
     },
   },
 ];
@@ -208,6 +214,7 @@ const genericGameArtTheme = {
   orb2: "rgba(203,213,225,0.10)",
   ring: "rgba(203,213,225,0.12)",
   label: "EV",
+  accent: "#caff38",
 } as const;
 
 export function findGameConfig(gameId: string) {

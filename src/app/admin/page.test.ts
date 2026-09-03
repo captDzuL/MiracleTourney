@@ -12,6 +12,23 @@ describe("admin action buttons", () => {
     );
   });
 
+  test("offers a certificate regenerate control wired to the admin action", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain("adminRegenerateCertificateAction");
+    expect(source).toContain("action={adminRegenerateCertificateAction}");
+    expect(source).toContain('t("certificateRegenerate")');
+  });
+
+  test("surfaces the reason a certificate failed instead of showing it as missing", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain('cert?.status === "failed"');
+    expect(source).toContain('t("certificateFailed")');
+    expect(source).toContain('t("certificateLastError")');
+    expect(source).toContain("cert.lastError");
+  });
+
   test("shows a match operations section with result entry controls", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
 
@@ -46,7 +63,10 @@ describe("admin action buttons", () => {
 
     expect(source).toContain("Brand Assets");
     expect(source).toContain("adminUploadEventLogoAction");
-    expect(source).toContain("adminUploadEventBackgroundAction");
+    // The single-shot background upload was replaced by the reviewable
+    // revision panel, which owns adminUploadEventVisualAction.
+    expect(source).not.toContain("adminUploadEventBackgroundAction");
+    expect(source).toContain("EventVisualAssetsPanel");
     expect(source).toContain("adminUploadTeamLogoAction");
   });
 
@@ -62,15 +82,38 @@ describe("admin action buttons", () => {
     expect(source).toContain("Public Listing Settings");
     expect(source).toContain("adminUpdateEventPublicInfoAction");
     expect(source).toContain('name="prizePoolLabel"');
+    expect(source).toContain('name="registrationFeeRequired"');
+    expect(source).toContain('name="registrationFeeAmount"');
     expect(source).toContain('name="registrationFeeLabel"');
     expect(source).toContain('name="registrationUrl"');
   });
 
+
+  test("exposes a payment verification workspace", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain('activePhase === "payments"');
+    expect(source).toContain("PaymentWorkspacePhase");
+    expect(source).toContain("adminUpdatePaymentSettingsAction");
+    expect(source).toContain("adminApprovePaymentAction");
+    expect(source).toContain("adminRejectPaymentAction");
+    expect(source).toContain('name="qrisImageUrl"');
+    expect(source).toContain('name="qrisImage"');
+    expect(source).toContain('type="file"');
+    expect(source).toContain('name="requestId"');
+  });
   test("keeps long select values constrained inside responsive form columns", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
 
     expect(source).toContain('const inputClass = "w-full min-w-0');
     expect(source).toContain('const labelClass = "grid min-w-0');
+  });
+  test("keeps match day cards readable in the split layout", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+    expect(source).not.toContain("grid gap-2 sm:grid-cols-2 xl:grid-cols-3");
+    expect(source).toContain("const matchDeskCardGridClass");
+    expect(source).toContain("whitespace-nowrap");
+    expect(source).toContain("shrink-0");
   });
 
   test("shows organizer assignment on draft creation for platform admins", () => {

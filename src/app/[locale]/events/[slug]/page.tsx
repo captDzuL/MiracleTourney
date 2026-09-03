@@ -4,7 +4,7 @@ import { setRequestLocale } from "next-intl/server";
 import { getPublicEventBySlug } from "@/lib/platform/repository";
 import { renderEventDetailPage } from "../../../events/[slug]/event-detail-page";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-tourney.vercel.app";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
 
 export async function generateMetadata({
   params,

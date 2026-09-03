@@ -22,10 +22,10 @@ export function Section({
   className?: string;
 }) {
   return (
-    <section className={cn("rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_24px_80px_rgba(0,102,255,0.08)]", className)}>
+    <section className={cn("pv-section-card rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_24px_80px_rgba(0,102,255,0.08)]", className)}>
       <div className="mb-5">
-        <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
+        <h2 className="pv-section-card__title text-xl font-semibold text-slate-900">{title}</h2>
+        {description ? <p className="pv-section-card__desc mt-1 text-sm text-slate-500">{description}</p> : null}
       </div>
       {children}
     </section>
@@ -42,10 +42,10 @@ export function StatCard({
   hint?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="mono text-sm text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
-      {hint ? <p className="mt-2 text-xs text-slate-500">{hint}</p> : null}
+    <div className="pv-stat-card rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <p className="pv-stat-card__label mono text-sm text-slate-500">{label}</p>
+      <p className="pv-stat-card__value mt-2 text-2xl font-semibold text-slate-900">{value}</p>
+      {hint ? <p className="pv-stat-card__hint mt-2 text-xs text-slate-500">{hint}</p> : null}
     </div>
   );
 }
@@ -54,10 +54,10 @@ export function Pill({ children, tone = "default" }: { children: React.ReactNode
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium",
-        tone === "default" && "bg-slate-100 text-slate-700",
-        tone === "success" && "bg-emerald-100 text-emerald-700",
-        tone === "live" && "bg-red-100 text-red-600",
+        "pv-pill inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium",
+        tone === "default" && "pv-pill--default bg-slate-100 text-slate-700",
+        tone === "success" && "pv-pill--success bg-emerald-100 text-emerald-700",
+        tone === "live" && "pv-pill--live bg-red-100 text-red-600",
       )}
     >
       {tone === "live" ? <Radio className="h-3.5 w-3.5" /> : null}
@@ -76,12 +76,12 @@ export function DataTable({
   rows: Array<Array<React.ReactNode>>;
 }) {
   return (
-    <div className="w-full overflow-x-auto rounded-2xl border border-slate-200">
+    <div className="pv-data-table w-full overflow-x-auto rounded-2xl border border-slate-200">
       <table className="w-full divide-y divide-slate-200 text-left text-sm" style={{ minWidth: minTableWidth }}>
-        <thead className="bg-slate-50 text-slate-500">
+        <thead className="pv-data-table__head bg-slate-50 text-slate-500">
           <tr>
-            {columns.map((column) => (
-              <th key={column} className="px-4 py-3 align-top font-medium">
+            {columns.map((column, columnIndex) => (
+              <th key={columnIndex} className="px-4 py-3 align-top font-medium">
                 {column}
               </th>
             ))}
@@ -89,7 +89,7 @@ export function DataTable({
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className={rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50/70"}>
+            <tr key={rowIndex} className={cn("pv-data-table__row", rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50/70")}>
               {row.map((cell, cellIndex) => (
                 <td key={`${rowIndex}-${cellIndex}`} className="px-4 py-3 align-top text-slate-700">
                   {cell}
@@ -115,17 +115,17 @@ export function LiveStreamCard({
   shouldEmbed: boolean;
 }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-red-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+    <div className="pv-livestream-card overflow-hidden rounded-2xl border border-red-200 bg-white">
+      <div className="pv-livestream-card__header flex items-center justify-between border-b border-slate-200 px-4 py-3">
         <div>
-          <p className="text-sm font-medium text-slate-900">{label}</p>
-          <p className="text-xs text-slate-500">Live coverage attached at event level</p>
+          <p className="pv-livestream-card__label text-sm font-medium text-slate-900">{label}</p>
+          <p className="pv-livestream-card__hint text-xs text-slate-500">Live coverage attached at event level</p>
         </div>
         <a
           href={watchUrl}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
+          className="pv-livestream-card__link inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
         >
           Watch source
           <ExternalLink className="h-3.5 w-3.5" />
@@ -140,7 +140,7 @@ export function LiveStreamCard({
           allowFullScreen
         />
       ) : (
-        <div className="flex aspect-video items-center justify-center bg-slate-50 p-6 text-center text-sm text-slate-500">
+        <div className="pv-livestream-card__fallback flex aspect-video items-center justify-center bg-slate-50 p-6 text-center text-sm text-slate-500">
           External platform stream is linked here to keep the site lightweight and reliable.
         </div>
       )}

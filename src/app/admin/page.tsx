@@ -2,6 +2,7 @@ import {
   BadgeCheck,
   CalendarPlus,
   Check,
+  CreditCard,
   Download,
   Eye,
   FileSpreadsheet,
@@ -23,6 +24,7 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { SubmitButton } from "@/components/submit-button";
 import {
   adminApproveStatAction,
+  adminApprovePaymentAction,
   adminArchiveEventAction,
   adminAssignCaptainAction,
   adminCreateEventAction,
@@ -32,6 +34,8 @@ import {
   adminImportTeamsCsvAction,
   adminPreviewRegistrationImportAction,
   adminRejectStatAction,
+  adminRejectPaymentAction,
+  adminRegenerateCertificateAction,
   adminSaveMatchPlayerStatsAction,
   adminSetAccentColorAction,
   adminSetMatchGamesAction,
@@ -39,11 +43,11 @@ import {
   adminUpdateEventStatusAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
-  adminUploadEventBackgroundAction,
   adminUploadEventLogoAction,
   adminUploadCharacterArtAction,
   adminUploadTeamLogoAction,
   adminUpdateEventPublicInfoAction,
+  adminUpdatePaymentSettingsAction,
 } from "@/lib/actions";
 import { requireAnyRole } from "@/lib/auth/session";
 import {
@@ -58,19 +62,24 @@ import {
   getGameModes,
   getImportedTeams,
   getLeaderboardForEvent,
+  listEventVisualAssets,
   getMatchGames,
   getMatchesForEvent,
   getOrganizerUsers,
   getPendingStatSubmissionCount,
   getPendingStatSubmissions,
+  getPaymentRegistrationRequestsForAdmin,
+  getPaymentSettings,
   getRegistrationImportBatchForAdmin,
   getRegistrationImportBatchesForEvent,
   getTeamCountsForEvents,
   getTeamsForEvents,
 } from "@/lib/platform/repository";
 import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
+import { EventVisualAssetsPanel } from "@/components/admin/EventVisualAssetsPanel";
 import { TeamAvatar, TeamIdentity } from "@/components/TeamAvatar";
 import { getGameModeDisplayLabel, getStatKeysForMode } from "@/lib/platform/config";
+import type { EventVisualAsset } from "@/lib/platform/types";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 import { getCaptainDisplayName } from "@/lib/team-display";
 import { getMatchStatRecordings } from "@/lib/platform/stat-recording-repository";
@@ -79,6 +88,14 @@ import type { MatchStatRecording, TeamStatRecordingStatus } from "@/lib/platform
 import { type AdminPhase, adminPhases, buildAdminPhaseHref, resolveAdminPhase } from "./admin-flow";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Certificate rendering launches a headless Chromium and, on a cold start, downloads and inflates
+ * a ~70 MB browser pack. Server actions inherit the invoking route's config, so this ceiling
+ * covers both saving a Final result and the manual regenerate button.
+ * 60s is the maximum on the Vercel Hobby plan.
+ */
+export const maxDuration = 60;
 
 type AdminSearchParams = {
   activeEventId?: string;
@@ -89,6 +106,7 @@ type AdminSearchParams = {
   matchEventId?: string;
   matchId?: string;
   registrationBatchId?: string;
+  paymentStatus?: string;
 };
 
 type EventItem = Awaited<ReturnType<typeof getManageableEventsForUser>>[number];
@@ -107,6 +125,8 @@ type RoundConfigItem = Awaited<ReturnType<typeof getEventRoundConfigs>>[number];
 type MatchGameItem = Awaited<ReturnType<typeof getMatchGames>>[number];
 type PendingSubmissionItem = Awaited<ReturnType<typeof getPendingStatSubmissions>>[number];
 type CertificateItem = Awaited<ReturnType<typeof getCertificatesForEvents>> extends Map<string, infer T> ? T : never;
+type PaymentRequestItem = Awaited<ReturnType<typeof getPaymentRegistrationRequestsForAdmin>>[number];
+type PaymentSettingsItem = Awaited<ReturnType<typeof getPaymentSettings>>;
 
 type AdminTranslator = Awaited<ReturnType<typeof getTranslations>>;
 type CaptainUser = { id: string; name: string; email: string };
@@ -114,6 +134,7 @@ type CaptainUser = { id: string; name: string; email: string };
 const phaseIcons = {
   prepare: CalendarPlus,
   import: FileSpreadsheet,
+  payments: CreditCard,
   run: Radio,
   review: BadgeCheck,
 } satisfies Record<AdminPhase, React.ComponentType<{ className?: string }>>;
@@ -122,6 +143,7 @@ const inputClass = "w-full min-w-0 rounded-lg border border-slate-200 bg-white p
 const labelClass = "grid min-w-0 gap-2 text-sm font-medium text-slate-700";
 const quietButton = "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
 const primaryButton = "inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-400 px-3.5 py-2.5 text-sm font-semibold text-cyan-950 shadow-sm transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400";
+const matchDeskCardGridClass = "grid gap-3 md:grid-cols-2";
 
 export default async function AdminPage({
   searchParams,
@@ -196,7 +218,21 @@ export default async function AdminPage({
       : Promise.resolve(null),
   ]);
 
-  const importedTeamsWithEvents = importedTeamsRaw.filter((team): team is typeof team & { eventId: string } => Boolean(team.eventId));
+  // Visual revisions are only rendered inside the prepare phase, so they are
+  // loaded lazily to keep the other phases at their current query count.
+  const visualAssetsByEvent = activePhase === "prepare"
+    ? new Map(
+        await Promise.all(
+          events.map(async (event) =>
+            [event.id, await listEventVisualAssets(user, event.id)] as const,
+          ),
+        ),
+      )
+    : new Map<string, EventVisualAsset[]>();
+
+  const importedTeamsWithEvents = importedTeamsRaw.filter(
+    (team): team is (typeof importedTeamsRaw)[number] & { eventId: string } => Boolean(team.eventId),
+  );
   const importedTeams = importedTeamsWithEvents
     .map((team) => ({
       ...team,
@@ -238,6 +274,16 @@ export default async function AdminPage({
   const [certificatesByEvent, pendingSubmissions] = activePhase === "review"
     ? await Promise.all([getCertificatesForEvents(eventIds), getPendingStatSubmissions(user)])
     : [new Map(eventIds.map((eventId) => [eventId, null as CertificateItem])), [] as PendingSubmissionItem[]];
+
+  const paymentStatus = ["pending_payment", "pending_review", "approved", "rejected", "expired"].includes(resolvedSearchParams?.paymentStatus ?? "")
+    ? resolvedSearchParams?.paymentStatus as PaymentRequestItem["status"]
+    : undefined;
+  const [paymentRequests, paymentSettings] = activePhase === "payments"
+    ? await Promise.all([
+        getPaymentRegistrationRequestsForAdmin(user, { eventId: resolvedSearchParams?.activeEventId, status: paymentStatus }),
+        getPaymentSettings(),
+      ])
+    : [[] as PaymentRequestItem[], { id: "global" } as PaymentSettingsItem];
 
   const currentQuery = {
     activeEventId: activeEvent?.id,
@@ -287,6 +333,7 @@ export default async function AdminPage({
               organizerOptions={organizerOptions}
               t={t}
               userRole={user.role}
+              visualAssetsByEvent={visualAssetsByEvent}
             />
           ) : null}
 
@@ -300,6 +347,17 @@ export default async function AdminPage({
               registrationBatch={registrationBatch}
               registrationBatches={registrationBatches}
               registrationIntakeV2={registrationIntakeV2}
+              t={t}
+            />
+          ) : null}
+
+          {activePhase === "payments" ? (
+            <PaymentWorkspacePhase
+              activeEvent={activeEvent}
+              events={events}
+              paymentRequests={paymentRequests}
+              paymentSettings={paymentSettings}
+              paymentStatus={paymentStatus}
               t={t}
             />
           ) : null}
@@ -521,6 +579,7 @@ function PrepareEventPhase({
   organizerOptions,
   t,
   userRole,
+  visualAssetsByEvent,
 }: {
   activeEvent: EventItem | undefined;
   allTeamsByEvent: Map<string, TeamItem[]>;
@@ -530,6 +589,7 @@ function PrepareEventPhase({
   organizerOptions: OrganizerItem[];
   t: AdminTranslator;
   userRole: string;
+  visualAssetsByEvent: Map<string, EventVisualAsset[]>;
 }) {
   return (
     <PhaseSection
@@ -659,7 +719,7 @@ function PrepareEventPhase({
         </div>
       </div>
       <PublicListingSettingsSection events={events} t={t} />
-      <BrandAssetsSection allTeamsByEvent={allTeamsByEvent} events={events} t={t} />
+      <BrandAssetsSection allTeamsByEvent={allTeamsByEvent} events={events} t={t} visualAssetsByEvent={visualAssetsByEvent} />
 
       <Section title="Arsip / Hapus Event" description="Arsipkan event selesai atau hapus event Draft yang kosong." className="rounded-xl shadow-none">
         {events.length ? (
@@ -779,13 +839,21 @@ function PublicListingSettingsSection({
                     <input className={inputClass} name="venue" defaultValue={event.venue} maxLength={120} minLength={2} />
                   </label>
                 </div>
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-4">
                   <label className={labelClass}>
                     Hadiah pemenang
                     <input className={inputClass} name="prizePoolLabel" defaultValue={event.prizePoolLabel ?? ""} maxLength={80} placeholder="Rp3.000.000" />
                   </label>
+                  <label className="flex min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" name="registrationFeeRequired" defaultChecked={event.registrationFeeRequired} className="h-4 w-4 rounded border-slate-300 text-cyan-500" />
+                    Event berbayar
+                  </label>
                   <label className={labelClass}>
-                    Biaya registrasi
+                    Nominal fee
+                    <input className={inputClass} name="registrationFeeAmount" type="number" min="1" defaultValue={event.registrationFeeAmount ?? ""} placeholder="25000" />
+                  </label>
+                  <label className={labelClass}>
+                    Label biaya
                     <input className={inputClass} name="registrationFeeLabel" defaultValue={event.registrationFeeLabel ?? ""} maxLength={80} placeholder="Rp20.000 / team" />
                   </label>
                   <label className={labelClass}>
@@ -814,10 +882,12 @@ function BrandAssetsSection({
   allTeamsByEvent,
   events,
   t,
+  visualAssetsByEvent,
 }: {
   allTeamsByEvent: Map<string, TeamItem[]>;
   events: EventItem[];
   t: AdminTranslator;
+  visualAssetsByEvent: Map<string, EventVisualAsset[]>;
 }) {
   return (
     <Section title="Brand Assets" description="Upload logo event, background event, dan logo team untuk kartu publik dan halaman turnamen." className="rounded-xl shadow-none">
@@ -870,27 +940,12 @@ function BrandAssetsSection({
                       </div>
                     </form>
 
-                    <form action={adminUploadEventBackgroundAction} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <input type="hidden" name="eventId" value={event.id} />
-                      <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
-                        {backgroundUrl ? (
-                          <img src={backgroundUrl} alt={`${event.name} background preview`} className="aspect-video w-full object-cover" />
-                        ) : (
-                          <div className="flex aspect-video items-center justify-center text-sm text-slate-400">No background</div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">Event background</p>
-                        <p className="text-xs text-slate-500">Disarankan 16:9. PNG, JPG, atau WebP. Maks 5 MB.</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <input type="file" name="eventBackground" accept="image/png,image/webp,image/jpeg" className={`${inputClass} flex-1 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
-                        <SubmitButton className={quietButton}>
-                          <ImageUp className="h-4 w-4" />
-                          Upload
-                        </SubmitButton>
-                      </div>
-                    </form>
+                    <EventVisualAssetsPanel
+                      activeAssetId={event.activeVisualAssetId ?? undefined}
+                      assets={visualAssetsByEvent.get(event.id) ?? []}
+                      eventId={event.id}
+                      eventName={event.name}
+                    />
                   </div>
 
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -1210,6 +1265,157 @@ function ImportRegistrationPhase({
 type MatchRosterAndStats = Awaited<ReturnType<typeof getMatchWithRosterAndStats>>;
 type CompletedMatchWithEvent = { match: MatchItem; event: EventItem };
 
+function PaymentWorkspacePhase({
+  activeEvent,
+  events,
+  paymentRequests,
+  paymentSettings,
+  paymentStatus,
+  t,
+}: {
+  activeEvent: EventItem | undefined;
+  events: EventItem[];
+  paymentRequests: PaymentRequestItem[];
+  paymentSettings: PaymentSettingsItem;
+  paymentStatus?: PaymentRequestItem["status"];
+  t: AdminTranslator;
+}) {
+  const statusOptions = ["pending_payment", "pending_review", "approved", "rejected", "expired"] as const;
+
+  return (
+    <PhaseSection
+      action={<StatusChip tone={paymentRequests.some((request) => request.status === "pending_review") ? "warning" : "default"}>{paymentRequests.length} pembayaran</StatusChip>}
+      description={t("paymentsDescription")}
+      title={t("paymentsWorkspaceTitle")}
+    >
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(19rem,0.75fr)]">
+        <Section title={t("paymentQueueTitle")} description={t("paymentQueueDescription")} className="rounded-xl shadow-none">
+          <form action="" className="mb-4 grid gap-3 md:grid-cols-[1fr_14rem_auto] md:items-end">
+            <input type="hidden" name="phase" value="payments" />
+            <label className={labelClass}>
+              {t("eventLabel")}
+              <select className={inputClass} name="activeEventId" defaultValue={activeEvent?.id ?? ""}>
+                <option value="">Semua event</option>
+                <EventOptions events={events} />
+              </select>
+            </label>
+            <label className={labelClass}>
+              {t("statusLabel")}
+              <select className={inputClass} name="paymentStatus" defaultValue={paymentStatus ?? ""}>
+                <option value="">Semua status</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>{t(`paymentStatus.${status}`)}</option>
+                ))}
+              </select>
+            </label>
+            <button className={quietButton} type="submit">
+              <SlidersHorizontal className="h-4 w-4" />
+              Filter
+            </button>
+          </form>
+
+          {paymentRequests.length === 0 ? (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">{t("noPaymentRequests")}</p>
+          ) : (
+            <div className="grid gap-3">
+              {paymentRequests.map((request) => (
+                <details key={request.id} className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-950">{request.teamName} ({request.teamTag})</p>
+                      <p className="mt-1 truncate text-xs text-slate-500">
+                        {request.event?.name ?? request.eventId} - {request.captain?.name ?? request.captainId}
+                      </p>
+                    </div>
+                    <StatusChip tone={request.status === "pending_review" ? "warning" : request.status === "approved" ? "success" : "default"}>
+                      {t(`paymentStatus.${request.status}`)}
+                    </StatusChip>
+                  </summary>
+                  <div className="grid gap-4 border-t border-slate-200 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
+                    <div className="space-y-3 text-sm text-slate-600">
+                      <p><span className="font-semibold text-slate-900">Captain:</span> {request.captain?.email ?? request.captainId}</p>
+                      <p><span className="font-semibold text-slate-900">Fee:</span> {request.event?.registrationFeeLabel ?? request.event?.registrationFeeAmount ?? "-"}</p>
+                      <p><span className="font-semibold text-slate-900">Expired:</span> {new Date(request.expiresAt).toLocaleString()}</p>
+                      {request.rejectReason ? <p className="text-red-700">{request.rejectReason}</p> : null}
+                      <div className="flex flex-wrap gap-3">
+                        {request.status === "pending_review" ? (
+                          <form action={adminApprovePaymentAction}>
+                            <input type="hidden" name="requestId" value={request.id} />
+                            <SubmitButton className={primaryButton}>
+                              <Check className="h-4 w-4" />
+                              {t("approve")}
+                            </SubmitButton>
+                          </form>
+                        ) : null}
+                        {request.status === "pending_review" || request.status === "pending_payment" ? (
+                          <form action={adminRejectPaymentAction} className="flex flex-wrap gap-2">
+                            <input type="hidden" name="requestId" value={request.id} />
+                            <input className={inputClass} name="reason" placeholder={t("paymentRejectReason")} minLength={3} required />
+                            <SubmitButton className={quietButton}>
+                              <X className="h-4 w-4" />
+                              {t("reject")}
+                            </SubmitButton>
+                          </form>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      {request.proofImageUrl ? (
+                        <a href={request.proofImageUrl} target="_blank" rel="noreferrer" className="block">
+                          <img src={request.proofImageUrl} alt="Bukti bayar" className="aspect-square w-full rounded-lg object-contain" />
+                          <span className="mt-2 block break-all text-xs font-semibold text-cyan-700 underline">{request.proofImageUrl}</span>
+                        </a>
+                      ) : (
+                        <p className="text-sm text-slate-500">{t("noPaymentProof")}</p>
+                      )}
+                    </div>
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        <Section title={t("paymentSettingsTitle")} description={t("paymentSettingsDescription")} className="rounded-xl shadow-none">
+          <form action={adminUpdatePaymentSettingsAction} className="grid gap-4">
+            <label className={labelClass}>
+              Upload gambar QRIS (opsional, override URL di bawah)
+              <input type="file" name="qrisImage" accept="image/png,image/webp,image/jpeg" className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
+            </label>
+            <label className={labelClass}>
+              QRIS URL
+              <input className={inputClass} name="qrisImageUrl" defaultValue={paymentSettings.qrisImageUrl ?? ""} placeholder="https://... atau /payment/qris.png" />
+            </label>
+            <label className={labelClass}>
+              Instruksi pembayaran
+              <textarea className={`${inputClass} min-h-28 resize-y leading-6`} name="instructions" defaultValue={paymentSettings.instructions ?? ""} maxLength={500} />
+            </label>
+            {paymentSettings.qrisImageUrl ? (
+              <img src={paymentSettings.qrisImageUrl} alt="QRIS aktif" className="aspect-square w-44 rounded-lg border border-slate-200 bg-slate-50 object-contain" />
+            ) : null}
+            <SubmitButton className={primaryButton}>
+              <Save className="h-4 w-4" />
+              {t("savePaymentSettings")}
+            </SubmitButton>
+          </form>
+        </Section>
+      </div>
+    </PhaseSection>
+  );
+}
+function MatchupNames({ homeName, awayName, size = "sm" }: { homeName: string; awayName: string; size?: "sm" | "base" }) {
+  const textSize = size === "base" ? "text-base" : "text-sm";
+
+  return (
+    <span className={`grid min-w-0 gap-1 font-semibold leading-snug text-slate-900 ${textSize}`}>
+      <span className="min-w-0 truncate" title={homeName}>{homeName}</span>
+      <span className="flex min-w-0 items-baseline gap-1.5">
+        <span className="shrink-0 text-xs font-normal uppercase text-slate-400">vs</span>
+        <span className="min-w-0 truncate" title={awayName}>{awayName}</span>
+      </span>
+    </span>
+  );
+}
 function RunMatchDayPhase({
   activeEvent,
   completedMatchesWithEvent,
@@ -1283,10 +1489,12 @@ function RunMatchDayPhase({
                   </SubmitButton>
                 </form>
 
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                <div className={matchDeskCardGridClass}>
                   {manageableMatches.map((match) => {
                     const bo = roundConfigMap.get(match.roundLabel) ?? 1;
                     const isSelected = selectedMatch?.id === match.id;
+                    const homeTeamName = teamName(match.homeTeamId);
+                    const awayTeamName = teamName(match.awayTeamId);
                     return (
                       <a
                         key={match.id}
@@ -1297,19 +1505,15 @@ function RunMatchDayPhase({
                             : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                         }`}
                       >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        <span className="flex min-w-0 items-start justify-between gap-2">
+                          <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-400">
                             {match.roundLabel} · M{match.slot}
                           </span>
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                          <span className="shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
                             BO{bo}
                           </span>
                         </span>
-                        <span className="text-sm font-semibold leading-snug text-slate-900">
-                          {teamName(match.homeTeamId)}
-                          <span className="mx-1.5 font-normal text-slate-400">vs</span>
-                          {teamName(match.awayTeamId)}
-                        </span>
+                        <MatchupNames homeName={homeTeamName} awayName={awayTeamName} />
                       </a>
                     );
                   })}
@@ -1323,12 +1527,14 @@ function RunMatchDayPhase({
                 description={t("statRecording.description", { event: activeEvent?.name ?? "" })}
                 className="rounded-xl shadow-none"
               >
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className={matchDeskCardGridClass}>
                   {completedMatchesWithEvent.map(({ match }) => {
                     const recording = matchStatRecordings.get(match.id)!;
                     const isSelected = selectedMatch?.id === match.id;
                     const homeScore = match.homeScore;
                     const awayScore = match.awayScore;
+                    const homeTeamName = teamName(match.homeTeamId);
+                    const awayTeamName = teamName(match.awayTeamId);
                     return (
                       <a
                         key={match.id}
@@ -1345,11 +1551,7 @@ function RunMatchDayPhase({
                           </span>
                           <StatRecordingBadge status={recording.status} t={t} />
                         </span>
-                        <span className="text-sm font-semibold leading-snug text-slate-900">
-                          {teamName(match.homeTeamId)}
-                          <span className="mx-1.5 font-normal text-slate-400">vs</span>
-                          {teamName(match.awayTeamId)}
-                        </span>
+                        <MatchupNames homeName={homeTeamName} awayName={awayTeamName} />
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="rounded-md bg-slate-900 px-2.5 py-1 text-sm font-bold tabular-nums text-white">
                             {homeScore} – {awayScore}
@@ -1400,17 +1602,13 @@ function RunMatchDayPhase({
                 <div className="grid gap-5">
                   <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                     <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-400">
                         {selectedMatch.roundLabel}{selectedMatch.slot ? ` · Match ${selectedMatch.slot}` : ""}
                       </p>
                     </div>
                     <div className="px-4 py-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-base font-semibold text-slate-900">
-                          {teamName(selectedMatch.homeTeamId)}
-                          <span className="mx-2 font-normal text-slate-400">vs</span>
-                          {teamName(selectedMatch.awayTeamId)}
-                        </p>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <MatchupNames homeName={teamName(selectedMatch.homeTeamId)} awayName={teamName(selectedMatch.awayTeamId)} size="base" />
                         <StatusChip tone={selectedMatch.status === "Completed" ? "success" : "warning"}>
                           {selectedMatch.status === "Completed" ? `${selectedMatch.homeScore} – ${selectedMatch.awayScore}` : `BO${selectedMatchBestOf}`}
                         </StatusChip>
@@ -1609,6 +1807,8 @@ function ReviewPublishPhase({
           <div className="space-y-4">
             {events.map((event) => {
               const cert = certificatesByEvent.get(event.id);
+              const certFailed = cert?.status === "failed";
+              const certReady = cert?.status === "ready" && Boolean(cert.imageUrl);
               return (
                 <details key={event.id} className="rounded-lg border border-slate-200 bg-slate-50">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
@@ -1617,8 +1817,8 @@ function ReviewPublishPhase({
                       <p className="text-xs text-slate-500">{getGameForEvent(event).name} - {event.status}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <StatusChip tone={cert ? "success" : "default"}>
-                        {cert ? t("certificateReady") : t("noCertificate")}
+                      <StatusChip tone={certReady ? "success" : certFailed ? "danger" : "default"}>
+                        {certReady ? t("certificateReady") : certFailed ? t("certificateFailed") : t("noCertificate")}
                       </StatusChip>
                       {event.accentColor ? (
                         <span className="inline-block h-5 w-5 rounded-full border border-slate-300" style={{ background: event.accentColor }} />
@@ -1651,7 +1851,16 @@ function ReviewPublishPhase({
                         {t("saveColor")}
                       </SubmitButton>
                     </form>
-                    {cert ? (
+                    {certFailed ? (
+                      <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                        <p className="mb-1 text-xs font-semibold text-rose-700">
+                          {t("certificateLastError")}
+                          {cert.attemptCount > 1 ? ` (${t("certificateAttempts", { count: cert.attemptCount })})` : null}
+                        </p>
+                        <p className="break-words text-xs text-rose-700">{cert.lastError ?? "-"}</p>
+                      </div>
+                    ) : null}
+                    {certReady ? (
                       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                         <p className="mb-1 text-xs font-semibold text-emerald-700">{t("championCertificate")}</p>
                         <a href={cert.imageUrl} target="_blank" rel="noopener noreferrer" className="break-all text-xs text-emerald-700 underline">
@@ -1659,6 +1868,14 @@ function ReviewPublishPhase({
                         </a>
                       </div>
                     ) : null}
+                    <form action={adminRegenerateCertificateAction} className="flex flex-wrap items-center gap-3">
+                      <input type="hidden" name="eventId" value={event.id} />
+                      <SubmitButton className={quietButton}>
+                        <RefreshCw className="h-4 w-4" />
+                        {t("certificateRegenerate")}
+                      </SubmitButton>
+                      <p className="text-xs text-slate-500">{t("certificateRegenerateHint")}</p>
+                    </form>
                   </div>
                 </details>
               );
@@ -1752,16 +1969,17 @@ function EventOptions({ events }: { events: EventItem[] }) {
   );
 }
 
-function StatusChip({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "info" | "success" | "warning" }) {
+function StatusChip({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "info" | "success" | "warning" | "danger" }) {
   const toneClass = {
     default: "border-slate-200 bg-slate-50 text-slate-600",
     info: "border-cyan-200 bg-cyan-50 text-cyan-800",
     success: "border-emerald-200 bg-emerald-50 text-emerald-800",
     warning: "border-amber-200 bg-amber-50 text-amber-800",
+    danger: "border-rose-200 bg-rose-50 text-rose-800",
   }[tone];
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
+    <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
       {children}
     </span>
   );

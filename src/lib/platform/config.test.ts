@@ -17,7 +17,7 @@ import {
 describe("game registry config", () => {
   it("exposes primary stat keys through the registry instead of hardcoded game checks", () => {
     expect(getGamePrimaryStatKey("game-kuroko")).toBe("points");
-    expect(getGamePrimaryStatKey("game-flashpeak")).toBe("goals");
+    expect(getGamePrimaryStatKey("game-flashpeak")).toBe("goal");
   });
 
   it("exposes default mode labels and visual metadata for current games", () => {

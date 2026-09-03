@@ -107,6 +107,13 @@ describe("public bracket page", () => {
     expect(localizedRouteSource).not.toContain("generateStaticParams");
   });
 
+  test("keeps bracket team labels readable with long team names", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./bracket-page-content.tsx"), "utf8");
+
+    expect(source).toContain("pv-match-card__team-row flex items-center justify-between gap-3");
+    expect(source).toContain("pv-match-card__team-slot min-w-0");
+    expect(source).toContain("pv-match-card__side mono shrink-0 whitespace-nowrap");
+  });
   it("hides unresolved downstream rounds for a single-elimination bracket with byes", async () => {
     const event = createEvent({
       name: "Bye path visibility test",
@@ -197,6 +204,10 @@ describe("public bracket page", () => {
     expect(markup).toContain("4 - 2");
     expect(markup).toContain("1 - 1");
   });
+  it("renders completed scores with a high-contrast chip", async () => {
+    const markup = await renderBracket("flashpeak-open-league");
+    expect(markup).toMatch(/class="[^"]*bg-slate-950[^"]*text-white[^"]*"[^>]*>4 - 2<\/span>/);
+  });
 
   it("shows per-game BO3 detail for a completed public bracket match", async () => {
     const event = createEvent({
@@ -258,6 +269,9 @@ describe("public bracket page", () => {
     expect(markup).toContain("G2");
     expect(markup).toContain("G3");
     expect(markup).toContain("Series");
+    expect(markup).toContain("pv-match-card__game-score");
+    expect(markup).toContain("pv-match-card__game-score--winner");
+    expect(markup).toContain("pv-match-card__game-winner");
   });
 
   it("shows partial BO5 detail before the series winner is decided", async () => {

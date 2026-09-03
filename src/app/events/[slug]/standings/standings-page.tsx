@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
+import { BackToEvent } from "@/components/public-v2/BackToEvent";
 import { DataTable, Section } from "@/components/ui";
 import { TeamIdentity } from "@/components/TeamAvatar";
 import { getPublicEventBySlug, getTeamsForEvent, getTeamStandings } from "@/lib/platform/repository";
 
-export async function renderStandingsPage(slug: string) {
+export async function renderStandingsPage(slug: string, locale?: "id" | "en") {
   const t = await getTranslations("standings");
   const event = await getPublicEventBySlug(slug);
   if (!event) notFound();
@@ -17,10 +18,12 @@ export async function renderStandingsPage(slug: string) {
   const teamLookup = new Map(teams.map((team) => [team.id, team]));
 
   return (
-    <Section
-      title={t("sectionTitle", { name: event.name })}
-      description={t("sectionDescription")}
-    >
+    <>
+      <BackToEvent slug={slug} locale={locale} label={t("backToEvent")} />
+      <Section
+        title={t("sectionTitle", { name: event.name })}
+        description={t("sectionDescription")}
+      >
       <DataTable
         columns={[
           t("rank"), t("team"), t("played"), t("win"),
@@ -45,6 +48,7 @@ export async function renderStandingsPage(slug: string) {
           standing.scoreDifference,
         ])}
       />
-    </Section>
+      </Section>
+    </>
   );
 }

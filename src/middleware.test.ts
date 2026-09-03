@@ -18,7 +18,7 @@ describe("middleware security controls", () => {
   });
 
   it("rate-limits repeated login POST attempts from the same IP", async () => {
-    const { middleware } = await import("../middleware");
+    const { middleware } = await import("./middleware");
     const ip = "203.0.113.10";
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -34,7 +34,7 @@ describe("middleware security controls", () => {
   });
 
   it("keeps login rate limits scoped by client IP", async () => {
-    const { middleware } = await import("../middleware");
+    const { middleware } = await import("./middleware");
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await middleware(postLoginRequest("203.0.113.20"));
@@ -46,7 +46,7 @@ describe("middleware security controls", () => {
   });
 
   it("rejects cross-origin unsafe requests before server actions run", async () => {
-    const { middleware } = await import("../middleware");
+    const { middleware } = await import("./middleware");
 
     const response = await middleware(postLoginRequest("203.0.113.30", {
       origin: "https://evil.example",
@@ -58,7 +58,7 @@ describe("middleware security controls", () => {
   });
 
   it("allows same-origin unsafe requests through the normal middleware flow", async () => {
-    const { middleware } = await import("../middleware");
+    const { middleware } = await import("./middleware");
 
     const response = await middleware(postLoginRequest("203.0.113.31", {
       origin: "http://localhost",

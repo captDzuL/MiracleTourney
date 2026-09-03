@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
+import { BackToEvent } from "@/components/public-v2/BackToEvent";
 import { TeamIdentity } from "@/components/TeamAvatar";
 import { DataTable, Pill, Section } from "@/components/ui";
 import {
@@ -215,11 +216,26 @@ function renderTeamName(teamLookup: Map<string, Team>, teamId: string | null, fa
 
 function renderTeamSlot(teamLookup: Map<string, Team>, teamId: string | null, fallback: string) {
   const team = teamId ? teamLookup.get(teamId) : undefined;
-  if (!team) return <span className="font-medium text-slate-500">{fallback}</span>;
+  if (!team) return <span className="pv-team-identity__meta font-medium text-slate-500">{fallback}</span>;
 
   return <TeamIdentity logoText={team.logoText} logoUrl={team.logoUrl} name={team.name} size="sm" />;
 }
 
+function isScoreStatus(status: string) {
+  return /^\d+\s*-\s*\d+(?:\s*\(BO\d+\))?$/.test(status);
+}
+
+function MatchStatePill({ status, tone }: { status: string; tone: "default" | "live" | "success" }) {
+  if (isScoreStatus(status)) {
+    return (
+      <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-slate-950 px-3 py-1 font-mono text-xs font-semibold tabular-nums text-white shadow-sm">
+        {status}
+      </span>
+    );
+  }
+
+  return <Pill tone={tone}>{status}</Pill>;
+}
 function chunkIntoPairs<T>(items: T[]): T[][] {
   const pairs: T[][] = [];
   for (let i = 0; i < items.length; i += 2) {
@@ -270,67 +286,77 @@ function MatchCard({
 
   return (
     <article
-      className={`bracket-match relative rounded-2xl border border-slate-200 bg-white shadow-sm ${
+      className={`pv-match-card bracket-match relative rounded-2xl border border-slate-200 bg-white shadow-sm ${
         connect ? "bracket-match--connect" : ""
       }`}
     >
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+      <div className="pv-match-card__header flex items-center justify-between border-b border-slate-200 px-4 py-3">
         <div>
-          <p className="text-sm font-medium text-slate-900">{t("matchCard", { n: match.slot })}</p>
-          <p className="text-xs text-slate-500">
+          <p className="pv-match-card__slot text-sm font-medium text-slate-900">{t("matchCard", { n: match.slot })}</p>
+          <p className="pv-match-card__round text-xs text-slate-500">
             {getRoundName(match.round, totalRounds, roundNames, { playInRound })}
           </p>
         </div>
-        <Pill tone={state.tone}>{state.status}</Pill>
+        <MatchStatePill status={state.status} tone={state.tone} />
       </div>
 
-      <div className="divide-y divide-slate-200">
-        <div className="flex items-center justify-between px-4 py-3">
-          {renderTeamSlot(teamLookup, match.homeTeamId, "TBD")}
-          <span className="mono text-xs text-slate-500">{t("home")}</span>
+      <div className="pv-match-card__body divide-y divide-slate-200">
+        <div className="pv-match-card__team-row flex items-center justify-between gap-3 px-4 py-3">
+          <span className="pv-match-card__team-slot min-w-0">
+            {renderTeamSlot(teamLookup, match.homeTeamId, "TBD")}
+          </span>
+          <span className="pv-match-card__side mono shrink-0 whitespace-nowrap text-right text-xs text-slate-500">{t("home")}</span>
         </div>
-        <div className="flex items-center justify-between px-4 py-3">
-          {renderTeamSlot(teamLookup, match.awayTeamId, match.byeForTeamId ? "BYE" : "TBD")}
-          <span className="mono text-xs text-slate-500">{t("away")}</span>
+        <div className="pv-match-card__team-row flex items-center justify-between gap-3 px-4 py-3">
+          <span className="pv-match-card__team-slot min-w-0">
+            {renderTeamSlot(teamLookup, match.awayTeamId, match.byeForTeamId ? "BYE" : "TBD")}
+          </span>
+          <span className="pv-match-card__side mono shrink-0 whitespace-nowrap text-right text-xs text-slate-500">{t("away")}</span>
         </div>
       </div>
 
       {showDetail ? (
-        <details className="group border-t border-slate-200">
-          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2 text-xs text-slate-500 hover:text-slate-700 [&::-webkit-details-marker]:hidden">
+        <details className="pv-match-card__detail group border-t border-slate-200">
+          <summary className="pv-match-card__summary flex cursor-pointer list-none items-center justify-between px-4 py-2 text-xs text-slate-500 hover:text-slate-700 [&::-webkit-details-marker]:hidden">
             <span>{t("gameDetail")}</span>
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-[11px] font-medium leading-none text-slate-400 group-open:border-slate-600 group-open:text-slate-600">
+            <span className="pv-match-card__summary-icon inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-[11px] font-medium leading-none text-slate-400 group-open:border-slate-600 group-open:text-slate-600">
               i
             </span>
           </summary>
-          <div className="border-t border-slate-100 px-4 pb-3 pt-2">
+          <div className="pv-match-card__games border-t border-slate-100 px-4 pb-3 pt-2">
             {series.games.map((game) => {
               const homeWon = series.teamsSwapped
                 ? game.awayScore > game.homeScore
                 : game.homeScore > game.awayScore;
               const displayHome = series.teamsSwapped ? game.awayScore : game.homeScore;
               const displayAway = series.teamsSwapped ? game.homeScore : game.awayScore;
+              const homeScoreClass = homeWon
+                ? "pv-match-card__game-score pv-match-card__game-score--winner font-semibold tabular-nums text-slate-900"
+                : "pv-match-card__game-score tabular-nums text-slate-400";
+              const awayScoreClass = !homeWon
+                ? "pv-match-card__game-score pv-match-card__game-score--winner font-semibold tabular-nums text-slate-900"
+                : "pv-match-card__game-score tabular-nums text-slate-400";
 
               return (
-                <div key={game.gameNumber} className="flex items-center gap-2 border-b border-slate-100 py-1 text-xs last:border-0">
-                  <span className="w-5 font-mono text-slate-400">G{game.gameNumber}</span>
-                  <span className={homeWon ? "font-medium text-slate-900" : "text-slate-400"}>{displayHome}</span>
-                  <span className="text-slate-300">-</span>
-                  <span className={!homeWon ? "font-medium text-slate-900" : "text-slate-400"}>{displayAway}</span>
-                  <span className="ml-auto max-w-[90px] truncate text-slate-400">
+                <div key={game.gameNumber} className="pv-match-card__game-row flex items-center gap-2 border-b border-slate-100 py-1 text-xs last:border-0">
+                  <span className="pv-match-card__game-label w-5 shrink-0 font-mono text-slate-400">G{game.gameNumber}</span>
+                  <span className={homeScoreClass}>{displayHome}</span>
+                  <span className="pv-match-card__game-separator text-slate-300">-</span>
+                  <span className={awayScoreClass}>{displayAway}</span>
+                  <span className="pv-match-card__game-winner ml-auto min-w-0 max-w-[90px] truncate text-right text-slate-400">
                     {homeWon ? homeName : awayName} wins
                   </span>
                 </div>
               );
             })}
-            <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 text-xs font-medium text-slate-600">
+            <div className="pv-match-card__series mt-2 flex justify-between border-t border-slate-200 pt-2 text-xs font-medium text-slate-600">
               <span>{t("series")}</span>
               <span>{series.homeSeriesWins} - {series.awaySeriesWins}</span>
             </div>
           </div>
         </details>
       ) : (
-        <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
+        <div className="pv-match-card__schedule border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
           {t("schedule", { schedule: state.schedule })}
         </div>
       )}
@@ -338,7 +364,7 @@ function MatchCard({
   );
 }
 
-export async function renderBracketPage(slug: string) {
+export async function renderBracketPage(slug: string, locale?: "id" | "en") {
   const event = await getPublicEventBySlug(slug);
   if (!event) notFound();
 
@@ -374,10 +400,12 @@ export async function renderBracketPage(slug: string) {
 
   if (event.format === "League") {
     return (
-      <Section
-        title={t("title", { name: event.name })}
-        description={t("leagueDescription")}
-      >
+      <>
+        <BackToEvent slug={slug} locale={locale} label={t("backToEvent")} />
+        <Section
+          title={t("title", { name: event.name })}
+          description={t("leagueDescription")}
+        >
         <DataTable
           columns={[t("roundCol"), t("fixtureCol"), t("statusCol"), t("scheduleCol")]}
           rows={items.map((item) => {
@@ -386,14 +414,13 @@ export async function renderBracketPage(slug: string) {
             return [
               roundNames.roundN(item.round),
               `${renderTeamName(teamLookup, item.homeTeamId, "TBD")} vs ${renderTeamName(teamLookup, item.awayTeamId, "TBD")}`,
-              <Pill key={`${item.id}-league-status`} tone={state.tone}>
-                {state.status}
-              </Pill>,
+              <MatchStatePill key={`${item.id}-league-status`} status={state.status} tone={state.tone} />,
               state.schedule,
             ];
           })}
         />
-      </Section>
+        </Section>
+      </>
     );
   }
 
@@ -459,6 +486,8 @@ export async function renderBracketPage(slug: string) {
         }
       `}</style>
 
+      <BackToEvent slug={slug} locale={locale} label={t("backToEvent")} />
+
       <Section
         title={t("title", { name: event.name })}
         description={t("description")}
@@ -472,10 +501,10 @@ export async function renderBracketPage(slug: string) {
                 return (
                   <div key={roundIndex} className="flex min-w-[280px] flex-col gap-4">
                     <div>
-                      <p className="mono text-xs uppercase tracking-[0.24em] text-cyan-600">
+                      <p className="pv-round-label mono text-xs uppercase tracking-[0.24em] text-cyan-600">
                         {getRoundName(visibleRounds[roundIndex], totalRounds, roundNames, { playInRound })}
                       </p>
-                      <p className="mt-1 text-sm text-slate-500">
+                      <p className="pv-round-count mt-1 text-sm text-slate-500">
                         {t("matchCount", { count: roundMatches.length })}
                       </p>
                     </div>
@@ -570,9 +599,7 @@ export async function renderBracketPage(slug: string) {
                 match.awayTeamId,
                 match.byeForTeamId ? "BYE" : "TBD",
               )}`,
-              <Pill key={`${match.id}-detail-status`} tone={state.tone}>
-                {state.status}
-              </Pill>,
+              <MatchStatePill key={`${match.id}-detail-status`} status={state.status} tone={state.tone} />,
               scheduleLabel,
             ];
           })}

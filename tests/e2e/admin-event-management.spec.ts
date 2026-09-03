@@ -4,6 +4,10 @@ import { loginAsAdmin } from "./helpers/auth";
 
 const prisma = new PrismaClient();
 
+test.afterAll(async () => {
+  await prisma.$disconnect();
+});
+
 async function uploadRegistrationFile(page: import("@playwright/test").Page, file: {
   name: string;
   mimeType: string;
