@@ -283,6 +283,28 @@
     "draft": "Draft"
   },
   "admin": {
+    "statRecording": {
+      "title": "Hasil & Statistik",
+      "description": "Pertandingan selesai di {event} — lihat status pencatatan dan lengkapi statistik pemain.",
+      "statuses": {
+        "unrecorded": "Belum dicatat",
+        "partial": "Sebagian tercatat",
+        "recorded": "Tercatat",
+        "notRequired": "Selesai",
+        "missingRoster": "Lengkapi roster"
+      },
+      "hints": {
+        "unrecorded": "Input statistik",
+        "partial": "Lengkapi statistik",
+        "recorded": "Lihat / edit statistik",
+        "notRequired": "Lihat hasil",
+        "missingRoster": "Lengkapi roster"
+      },
+      "missingRosterHelp": "Tambahkan pemain ke roster tim terlebih dahulu agar statistik dapat dicatat.",
+      "playerStats": "Statistik Pemain",
+      "player": "Pemain",
+      "saveTeam": "Simpan Statistik {team}"
+    },
     "title": "Panel Admin",
     "createEventTitle": "Buat Draft Event",
     "eventNameLabel": "Nama event",
