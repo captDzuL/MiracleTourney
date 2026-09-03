@@ -82,6 +82,8 @@ import { getGameModeDisplayLabel, getStatKeysForMode } from "@/lib/platform/conf
 import type { EventVisualAsset } from "@/lib/platform/types";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 import { getCaptainDisplayName } from "@/lib/team-display";
+import { getMatchStatRecordings } from "@/lib/platform/stat-recording-repository";
+import type { MatchStatRecording, TeamStatRecordingStatus } from "@/lib/platform/stat-recording";
 
 import { type AdminPhase, adminPhases, buildAdminPhaseHref, resolveAdminPhase } from "./admin-flow";
 
@@ -244,7 +246,7 @@ export default async function AdminPage({
   // Completed matches for the currently active event only.
   // Filtered by activeEvent so "Hasil & Statistik" stays scoped to what the admin is working on.
   const completedMatchesWithEvent: { match: MatchItem; event: EventItem }[] = activePhase === "run" && activeEvent
-    ? (await getMatchesForEvent(activeEvent.id))
+    ? activeMatches
         .filter((m) => m.status === "Completed")
         .map((match) => ({ match, event: activeEvent }))
     : [];
@@ -253,10 +255,15 @@ export default async function AdminPage({
     ? completedMatchesWithEvent.find((item) => item.match.id === selectedMatchId)
     : undefined;
 
-  const [roundConfigs, selectedMatchGames, selectedMatchRosterAndStats] = await Promise.all([
+  const authorizedMatchId = selectedMatchId && (completedMatchItem || manageableMatches.some((match) => match.id === selectedMatchId))
+    ? selectedMatchId : undefined;
+  const [roundConfigs, selectedMatchGames, selectedMatchRosterAndStats, matchStatRecordings] = await Promise.all([
     activePhase === "run" && selectedManageableEvent ? getEventRoundConfigs(selectedManageableEvent.event.id) : Promise.resolve([]),
-    activePhase === "run" && selectedMatchId ? getMatchGames(selectedMatchId) : Promise.resolve([]),
-    activePhase === "run" && selectedMatchId ? getMatchWithRosterAndStats(selectedMatchId) : Promise.resolve(null),
+    activePhase === "run" && authorizedMatchId ? getMatchGames(authorizedMatchId) : Promise.resolve([]),
+    activePhase === "run" && authorizedMatchId ? getMatchWithRosterAndStats(authorizedMatchId) : Promise.resolve(null),
+    activePhase === "run" && activeEvent
+      ? getMatchStatRecordings(activeEvent.id, completedMatchesWithEvent.map(({ match }) => match), getStatKeysForMode(activeEvent.gameModeId, activeEvent.gameId))
+      : Promise.resolve(new Map<string, MatchStatRecording>()),
   ]);
   const roundConfigMap = new Map(roundConfigs.map((config) => [config.roundLabel, config.bestOf]));
   const selectedMatch = selectedMatchId
@@ -359,6 +366,7 @@ export default async function AdminPage({
             <RunMatchDayPhase
               activeEvent={activeEvent}
               completedMatchesWithEvent={completedMatchesWithEvent}
+              matchStatRecordings={matchStatRecordings}
               completedMatchItem={completedMatchItem}
               manageableEvents={manageableEvents}
               manageableMatches={manageableMatches}
@@ -1411,6 +1419,7 @@ function MatchupNames({ homeName, awayName, size = "sm" }: { homeName: string; a
 function RunMatchDayPhase({
   activeEvent,
   completedMatchesWithEvent,
+  matchStatRecordings,
   completedMatchItem,
   manageableEvents,
   manageableMatches,
@@ -1426,6 +1435,7 @@ function RunMatchDayPhase({
 }: {
   activeEvent: EventItem | undefined;
   completedMatchesWithEvent: CompletedMatchWithEvent[];
+  matchStatRecordings: Map<string, MatchStatRecording>;
   completedMatchItem: CompletedMatchWithEvent | undefined;
   manageableEvents: ManageableEventItem[];
   manageableMatches: MatchItem[];
@@ -1513,12 +1523,13 @@ function RunMatchDayPhase({
 
             {completedMatchesWithEvent.length > 0 ? (
               <Section
-                title="Hasil & Statistik"
-                description={`Match selesai di ${activeEvent?.name ?? "event aktif"} — klik untuk input atau edit statistik pemain.`}
+                title={t("statRecording.title")}
+                description={t("statRecording.description", { event: activeEvent?.name ?? "" })}
                 className="rounded-xl shadow-none"
               >
                 <div className={matchDeskCardGridClass}>
                   {completedMatchesWithEvent.map(({ match }) => {
+                    const recording = matchStatRecordings.get(match.id)!;
                     const isSelected = selectedMatch?.id === match.id;
                     const homeScore = match.homeScore;
                     const awayScore = match.awayScore;
@@ -1534,20 +1545,20 @@ function RunMatchDayPhase({
                             : "border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/50"
                         }`}
                       >
-                        <span className="flex min-w-0 items-start justify-between gap-2">
+                        <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
                           <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-400">
                             {match.roundLabel}
                           </span>
-                          <span className="shrink-0 whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
-                            Selesai
-                          </span>
+                          <StatRecordingBadge status={recording.status} t={t} />
                         </span>
                         <MatchupNames homeName={homeTeamName} awayName={awayTeamName} />
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="rounded-md bg-slate-900 px-2.5 py-1 text-sm font-bold tabular-nums text-white">
                             {homeScore} – {awayScore}
                           </span>
-                          <span className="min-w-0 truncate text-xs text-slate-400">Klik untuk statistik</span>
+                          <span className="min-w-0 text-xs text-slate-500">
+                            {t(`statRecording.hints.${recording.home === "missingRoster" || recording.away === "missingRoster" ? "missingRoster" : recording.status}`)}
+                          </span>
                         </span>
                       </a>
                     );
@@ -1671,6 +1682,8 @@ function RunMatchDayPhase({
               )}
               {selectedMatchRosterAndStats?.match.status === "Completed" && (completedMatchItem?.event ?? activeEvent) ? (
                 <PlayerStatsSection
+                  t={t}
+                  recording={matchStatRecordings.get(selectedMatchRosterAndStats.match.id)!}
                   eventId={(completedMatchItem?.event ?? activeEvent)!.id}
                   gameModeId={(completedMatchItem?.event ?? activeEvent)!.gameModeId}
                   gameId={(completedMatchItem?.event ?? activeEvent)!.gameId}
@@ -1974,7 +1987,24 @@ function StatusChip({ children, tone = "default" }: { children: React.ReactNode;
 
 type PlayerInfo = { id: string; displayName: string; nickname: string };
 
+function StatRecordingBadge({ status, t }: { status: TeamStatRecordingStatus; t: AdminTranslator }) {
+  const tones = {
+    unrecorded: "bg-slate-100 text-slate-600",
+    partial: "bg-amber-100 text-amber-800",
+    recorded: "bg-emerald-100 text-emerald-700",
+    notRequired: "bg-emerald-100 text-emerald-700",
+    missingRoster: "bg-amber-100 text-amber-800",
+  };
+  return (
+    <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-bold ${tones[status]}`}>
+      {t(`statRecording.statuses.${status}`)}
+    </span>
+  );
+}
+
 function PlayerStatsSection({
+  t,
+  recording,
   eventId,
   gameModeId,
   gameId,
@@ -1998,80 +2028,83 @@ function PlayerStatsSection({
   homeTeamName: string;
   awayTeamName: string;
   existingStats: Record<string, Record<string, number>>;
+  t: AdminTranslator;
+  recording: MatchStatRecording;
 }) {
   const statKeys = getStatKeysForMode(gameModeId, gameId);
-  const hasHomePlayers = homePlayers.length > 0;
-  const hasAwayPlayers = awayPlayers.length > 0;
-
-  if (!statKeys.length || (!hasHomePlayers && !hasAwayPlayers)) return null;
+  if (!statKeys.length) return null;
 
   const statColWidth = statKeys.length <= 3 ? "5rem" : "4rem";
   const gridCols = `grid-cols-[minmax(8rem,1fr)_repeat(${statKeys.length},${statColWidth})]`;
 
   function TeamStatForm({ teamId, teamName, players }: { teamId: string; teamName: string; players: PlayerInfo[] }) {
+    const status = teamId === homeTeamId ? recording.home : recording.away;
     return (
       <form action={adminSaveMatchPlayerStatsAction} className="grid gap-0">
         <input type="hidden" name="matchId" value={matchId} />
         <input type="hidden" name="teamId" value={teamId} />
         <input type="hidden" name="eventId" value={eventId} />
 
-        <div className="mb-3 flex items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-cyan-400" />
           <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{teamName}</p>
+          <StatRecordingBadge status={status} t={t} />
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className={`grid gap-0 border-b border-slate-100 bg-slate-50 px-3 py-2 ${gridCols}`}>
-            <p className="text-xs font-semibold text-slate-400">Pemain</p>
-            {statKeys.map((key) => (
-              <p key={key} className="text-center text-xs font-bold capitalize text-slate-500">{key}</p>
-            ))}
-          </div>
+        {players.length === 0 ? (
+          <p className="text-sm text-slate-600">{t("statRecording.missingRosterHelp")}</p>
+        ) : (
+          <>
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className={`grid gap-0 border-b border-slate-100 bg-slate-50 px-3 py-2 ${gridCols}`}>
+                <p className="text-xs font-semibold text-slate-400">{t("statRecording.player")}</p>
+                {statKeys.map((key) => (
+                  <p key={key} className="text-center text-xs font-bold capitalize text-slate-500">{key}</p>
+                ))}
+              </div>
 
-          {players.map((player, i) => (
-            <div
-              key={player.id}
-              className={`grid items-center gap-0 px-3 py-2 ${gridCols} ${i < players.length - 1 ? "border-b border-slate-100" : ""}`}
-            >
-              <p className="truncate pr-2 text-sm font-medium text-slate-800">{player.nickname}</p>
-              {statKeys.map((key) => (
-                <input
-                  key={key}
-                  className="mx-0.5 w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-center text-sm font-semibold text-slate-900 outline-none transition focus:border-cyan-400 focus:bg-white focus:ring-2 focus:ring-cyan-100"
-                  name={`stat_${player.id}_${key}`}
-                  type="number"
-                  min="0"
-                  max="9999"
-                  defaultValue={existingStats[player.id]?.[key] ?? 0}
-                />
+              {players.map((player, i) => (
+                <div
+                  key={player.id}
+                  className={`grid items-center gap-0 px-3 py-2 ${gridCols} ${i < players.length - 1 ? "border-b border-slate-100" : ""}`}
+                >
+                  <p className="truncate pr-2 text-sm font-medium text-slate-800">{player.nickname}</p>
+                  {statKeys.map((key) => (
+                    <input
+                      key={key}
+                      className="mx-0.5 w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-center text-sm font-semibold text-slate-900 outline-none transition focus:border-cyan-400 focus:bg-white focus:ring-2 focus:ring-cyan-100"
+                      name={`stat_${player.id}_${key}`}
+                      type="number"
+                      min="0"
+                      max="9999"
+                      defaultValue={existingStats[player.id]?.[key] ?? 0}
+                    />
+                  ))}
+                </div>
               ))}
             </div>
-          ))}
-        </div>
 
-        <SubmitButton className={`${primaryButton} mt-3`}>
-          <Save className="h-4 w-4" />
-          Simpan Statistik {teamName}
-        </SubmitButton>
+            <SubmitButton className={`${primaryButton} mt-3`}>
+              <Save className="h-4 w-4" />
+              {t("statRecording.saveTeam", { team: teamName })}
+            </SubmitButton>
+          </>
+        )}
       </form>
     );
   }
 
   return (
     <div className="grid gap-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <div className="flex items-center gap-3">
-        <p className="text-sm font-bold text-slate-700">Statistik Pemain</p>
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-sm font-bold text-slate-700">{t("statRecording.playerStats")}</p>
         <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-500">
           {statKeys.join(" · ")}
         </span>
       </div>
-      {hasHomePlayers ? (
-        <TeamStatForm teamId={homeTeamId} teamName={homeTeamName} players={homePlayers} />
-      ) : null}
-      {hasHomePlayers && hasAwayPlayers ? <hr className="border-slate-200" /> : null}
-      {hasAwayPlayers ? (
-        <TeamStatForm teamId={awayTeamId} teamName={awayTeamName} players={awayPlayers} />
-      ) : null}
+      <TeamStatForm teamId={homeTeamId} teamName={homeTeamName} players={homePlayers} />
+      <hr className="border-slate-200" />
+      <TeamStatForm teamId={awayTeamId} teamName={awayTeamName} players={awayPlayers} />
     </div>
   );
 }

@@ -38,11 +38,11 @@ test.describe("admin player stats entry", () => {
     const sectionHeading = page.getByRole("heading", { name: /hasil & statistik/i });
     await expect(sectionHeading).toBeVisible({ timeout: 15_000 });
 
-    // Use the "Selesai" badge to uniquely identify the completed match card,
+    // Use the recording badge to uniquely identify the completed match card,
     // avoiding the sidebar step link which also carries matchId in its href.
     const matchCard = page
       .locator(`a[href*="matchId=${fixture.matchId}"]`)
-      .filter({ has: page.getByText("Selesai") });
+      .filter({ has: page.getByText("Belum dicatat", { exact: true }) });
     await expect(matchCard).toBeVisible();
     await expect(matchCard.getByText("Stats Home", { exact: false })).toBeVisible();
     await expect(matchCard.getByText("Stats Away", { exact: false })).toBeVisible();
@@ -136,11 +136,92 @@ test.describe("admin player stats entry", () => {
     await expect(getHomeForm().locator('input[type="number"]').first()).toHaveValue("3");
   });
 
+  test("recording status follows both saved teams, reload, edits, and locale", async ({ page }) => {
+    test.setTimeout(90_000);
+    const card = page.locator(`a[href*="matchId=${fixture.matchId}"]`).filter({ hasText: "Stats Home" });
+    const teamForm = (teamId: string) => page.locator("form").filter({
+      has: page.locator(`input[name="teamId"][value="${teamId}"]`),
+    });
+    await expect(card.getByText("Belum dicatat", { exact: true })).toBeVisible();
+    await expect(card.getByText("Input statistik", { exact: true })).toBeVisible();
+    await teamForm(fixture.homeTeamId).getByRole("button", { name: /simpan statistik/i }).click();
+    await expect(card.getByText("Sebagian tercatat", { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(teamForm(fixture.homeTeamId).getByText("Tercatat", { exact: true })).toBeVisible();
+    await expect(teamForm(fixture.awayTeamId).getByText("Belum dicatat", { exact: true })).toBeVisible();
+    await teamForm(fixture.awayTeamId).getByRole("button", { name: /simpan statistik/i }).click();
+    await expect(card.getByText("Tercatat", { exact: true })).toBeVisible({ timeout: 15000 });
+    await page.reload();
+    await expect(card.getByText("Lihat / edit statistik", { exact: true })).toBeVisible();
+    await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
+    await teamForm(fixture.homeTeamId).locator('input[type="number"]').first().fill("5");
+    await Promise.all([
+      page.waitForURL(/success=player-stats-saved/, { waitUntil: "load" }),
+      teamForm(fixture.homeTeamId).getByRole("button", { name: /simpan statistik/i }).click(),
+    ]);
+    await page.reload();
+    await expect(teamForm(fixture.homeTeamId).locator('input[type="number"]').first()).toHaveValue("5");
+    await expect(card.getByText("Tercatat", { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(card.getByText("Tercatat", { exact: true })).toBeVisible();
+    const cardBox = await card.boundingBox();
+    const badgeBox = await card.getByText("Tercatat", { exact: true }).boundingBox();
+    expect(cardBox).not.toBeNull();
+    expect(badgeBox).not.toBeNull();
+    expect(badgeBox!.x).toBeGreaterThanOrEqual(cardBox!.x);
+    expect(badgeBox!.x + badgeBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width);
+    await page.goto(`/en/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
+    await expect(card.getByText("Recorded", { exact: true })).toBeVisible();
+    await expect(card.getByText("View / edit statistics", { exact: true })).toBeVisible();
+    await card.screenshot({ path: "tmp/stat-recording/recorded-mobile-en.png" });
+    const savedMatch = await prisma.match.findUniqueOrThrow({ where: { id: fixture.matchId } });
+    expect(savedMatch.status).toBe("Completed");
+  });
+
+  test("captain submissions count only after approval", async ({ page }) => {
+    // Includes login, multiple dashboard loads, and the approval write against Neon.
+    test.setTimeout(90_000);
+    const card = page.locator(`a[href*="matchId=${fixture.matchId}"]`).filter({ hasText: "Stats Home" });
+    const stats = Object.fromEntries(fixture.homePlayers.map((player) => [player.id, { goal: 0, assist: 0, passing: 0, defense: 0 }]));
+    const submission = await prisma.statSubmission.create({ data: {
+      eventId: fixture.eventId, matchId: fixture.matchId, teamId: fixture.homeTeamId,
+      submittedBy: "captain-recording-e2e", status: "pending", stats,
+    } });
+    await page.reload();
+    await expect(card.getByText("Belum dicatat", { exact: true })).toBeVisible();
+    await prisma.statSubmission.update({ where: { id: submission.id }, data: { status: "rejected" } });
+    await page.reload();
+    await expect(card.getByText("Belum dicatat", { exact: true })).toBeVisible();
+    await prisma.statSubmission.update({ where: { id: submission.id }, data: { status: "pending" } });
+    await page.goto(`/id/admin?phase=review&activeEventId=${fixture.eventId}`);
+    const review = page.locator('details').filter({ has: page.locator(`input[name="submissionId"][value="${submission.id}"]`) });
+    await review.locator('summary').click();
+    await Promise.all([
+      page.waitForURL(/success=stat-approved/, { waitUntil: "load", timeout: 15_000 }),
+      review.getByRole('button', { name: 'Setujui', exact: true }).click(),
+    ]);
+    await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
+    await expect(card.getByText("Sebagian tercatat", { exact: true })).toBeVisible();
+    const homeForm = page.locator('form').filter({ has: page.locator(`input[name="teamId"][value="${fixture.homeTeamId}"]`) });
+    await expect(homeForm.getByText("Tercatat", { exact: true })).toBeVisible();
+    const savedRows = await prisma.playerStat.findMany({ where: { matchId: fixture.matchId } });
+    expect(savedRows).toHaveLength(fixture.homePlayers.length);
+    expect(savedRows.every((row) => row.source === 'captain')).toBe(true);
+  });
+
   test("no stats form without a selected match", async ({ page }) => {
     await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}`);
     await expect(page).toHaveURL(new RegExp(`activeEventId=${fixture.eventId}`), { timeout: 15_000 });
 
     await expect(page.getByText("Statistik Pemain", { exact: true })).not.toBeVisible({ timeout: 5_000 });
+  });
+  test("empty roster remains unrecorded and explains how to complete it", async ({ page }) => {
+    await prisma.player.deleteMany({ where: { teamId: { in: [fixture.homeTeamId, fixture.awayTeamId] } } });
+    await page.reload();
+    const card = page.locator(`a[href*="matchId=${fixture.matchId}"]`).filter({ hasText: "Stats Home" });
+    await expect(card.getByText("Belum dicatat", { exact: true })).toBeVisible();
+    await expect(card.getByText("Lengkapi roster", { exact: true })).toBeVisible();
+    await expect(page.getByText("Tambahkan pemain ke roster tim terlebih dahulu agar statistik dapat dicatat.")).toHaveCount(2);
+    await expect(page.getByRole("button", { name: /simpan statistik/i })).toHaveCount(0);
   });
 });
 

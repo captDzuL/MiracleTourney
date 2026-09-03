@@ -329,6 +329,28 @@
     "draft": "Draft"
   },
   "admin": {
+    "statRecording": {
+      "title": "Results & Statistics",
+      "description": "Completed matches in {event} — check recording progress and complete player statistics.",
+      "statuses": {
+        "unrecorded": "Not recorded",
+        "partial": "Partially recorded",
+        "recorded": "Recorded",
+        "notRequired": "Completed",
+        "missingRoster": "Complete roster"
+      },
+      "hints": {
+        "unrecorded": "Enter statistics",
+        "partial": "Complete statistics",
+        "recorded": "View / edit statistics",
+        "notRequired": "View result",
+        "missingRoster": "Complete roster"
+      },
+      "missingRosterHelp": "Add players to the team roster before recording statistics.",
+      "playerStats": "Player Statistics",
+      "player": "Player",
+      "saveTeam": "Save Statistics {team}"
+    },
     "title": "Admin Panel",
     "createEventTitle": "Create Draft Event",
     "eventNameLabel": "Event name",
