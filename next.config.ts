@@ -37,7 +37,7 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  serverExternalPackages: ["playwright-core"],
+  serverExternalPackages: ["playwright-core", "@sparticuz/chromium-min"],
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",

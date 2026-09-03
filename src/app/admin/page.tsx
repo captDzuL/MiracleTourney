@@ -35,6 +35,7 @@ import {
   adminPreviewRegistrationImportAction,
   adminRejectStatAction,
   adminRejectPaymentAction,
+  adminRegenerateCertificateAction,
   adminSaveMatchPlayerStatsAction,
   adminSetAccentColorAction,
   adminSetMatchGamesAction,
@@ -85,6 +86,14 @@ import { getCaptainDisplayName } from "@/lib/team-display";
 import { type AdminPhase, adminPhases, buildAdminPhaseHref, resolveAdminPhase } from "./admin-flow";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Certificate rendering launches a headless Chromium and, on a cold start, downloads and inflates
+ * a ~70 MB browser pack. Server actions inherit the invoking route's config, so this ceiling
+ * covers both saving a Final result and the manual regenerate button.
+ * 60s is the maximum on the Vercel Hobby plan.
+ */
+export const maxDuration = 60;
 
 type AdminSearchParams = {
   activeEventId?: string;
@@ -1785,6 +1794,8 @@ function ReviewPublishPhase({
           <div className="space-y-4">
             {events.map((event) => {
               const cert = certificatesByEvent.get(event.id);
+              const certFailed = cert?.status === "failed";
+              const certReady = cert?.status === "ready" && Boolean(cert.imageUrl);
               return (
                 <details key={event.id} className="rounded-lg border border-slate-200 bg-slate-50">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
@@ -1793,8 +1804,8 @@ function ReviewPublishPhase({
                       <p className="text-xs text-slate-500">{getGameForEvent(event).name} - {event.status}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <StatusChip tone={cert ? "success" : "default"}>
-                        {cert ? t("certificateReady") : t("noCertificate")}
+                      <StatusChip tone={certReady ? "success" : certFailed ? "danger" : "default"}>
+                        {certReady ? t("certificateReady") : certFailed ? t("certificateFailed") : t("noCertificate")}
                       </StatusChip>
                       {event.accentColor ? (
                         <span className="inline-block h-5 w-5 rounded-full border border-slate-300" style={{ background: event.accentColor }} />
@@ -1827,7 +1838,16 @@ function ReviewPublishPhase({
                         {t("saveColor")}
                       </SubmitButton>
                     </form>
-                    {cert ? (
+                    {certFailed ? (
+                      <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                        <p className="mb-1 text-xs font-semibold text-rose-700">
+                          {t("certificateLastError")}
+                          {cert.attemptCount > 1 ? ` (${t("certificateAttempts", { count: cert.attemptCount })})` : null}
+                        </p>
+                        <p className="break-words text-xs text-rose-700">{cert.lastError ?? "-"}</p>
+                      </div>
+                    ) : null}
+                    {certReady ? (
                       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                         <p className="mb-1 text-xs font-semibold text-emerald-700">{t("championCertificate")}</p>
                         <a href={cert.imageUrl} target="_blank" rel="noopener noreferrer" className="break-all text-xs text-emerald-700 underline">
@@ -1835,6 +1855,14 @@ function ReviewPublishPhase({
                         </a>
                       </div>
                     ) : null}
+                    <form action={adminRegenerateCertificateAction} className="flex flex-wrap items-center gap-3">
+                      <input type="hidden" name="eventId" value={event.id} />
+                      <SubmitButton className={quietButton}>
+                        <RefreshCw className="h-4 w-4" />
+                        {t("certificateRegenerate")}
+                      </SubmitButton>
+                      <p className="text-xs text-slate-500">{t("certificateRegenerateHint")}</p>
+                    </form>
                   </div>
                 </details>
               );
@@ -1928,12 +1956,13 @@ function EventOptions({ events }: { events: EventItem[] }) {
   );
 }
 
-function StatusChip({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "info" | "success" | "warning" }) {
+function StatusChip({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "info" | "success" | "warning" | "danger" }) {
   const toneClass = {
     default: "border-slate-200 bg-slate-50 text-slate-600",
     info: "border-cyan-200 bg-cyan-50 text-cyan-800",
     success: "border-emerald-200 bg-emerald-50 text-emerald-800",
     warning: "border-amber-200 bg-amber-50 text-amber-800",
+    danger: "border-rose-200 bg-rose-50 text-rose-800",
   }[tone];
 
   return (

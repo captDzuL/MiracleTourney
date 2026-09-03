@@ -277,13 +277,17 @@ model StatSubmission {
 }
 
 model Certificate {
-  id        String   @id @default(cuid())
-  eventId   String   @unique
-  teamId    String
-  imageUrl  String
-  createdAt DateTime @default(now())
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  team      Team     @relation(fields: [teamId], references: [id])
+  id           String   @id @default(cuid())
+  eventId      String   @unique
+  teamId       String
+  imageUrl     String   @default("")
+  status       String   @default("ready")
+  lastError    String?
+  attemptCount Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  team         Team     @relation(fields: [teamId], references: [id])
 }
 
 model PasswordResetToken {

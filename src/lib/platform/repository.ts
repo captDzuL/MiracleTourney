@@ -2910,21 +2910,65 @@ export async function updateEventBrandAssets(
   }
 }
 
-/** Stores a generated certificate record for an event's champion team. */
-export async function createCertificate(eventId: string, teamId: string, imageUrl: string): Promise<Certificate> {
+/** Longest error message we persist on a failed certificate row. */
+const MAX_CERTIFICATE_ERROR_LENGTH = 500;
+
+type CertificateRow = {
+  id: string;
+  eventId: string;
+  teamId: string;
+  imageUrl: string;
+  status: string;
+  lastError: string | null;
+  attemptCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+function toCertificate(row: CertificateRow): Certificate {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    teamId: row.teamId,
+    imageUrl: row.imageUrl,
+    status: row.status === "failed" ? "failed" : "ready",
+    lastError: row.lastError,
+    attemptCount: row.attemptCount,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/** Marks an event's certificate as successfully generated, clearing any previous failure. */
+export async function recordCertificateSuccess(eventId: string, teamId: string, imageUrl: string): Promise<Certificate> {
   const row = await prisma.certificate.upsert({
     where: { eventId },
-    update: { teamId, imageUrl },
-    create: { eventId, teamId, imageUrl },
+    update: { teamId, imageUrl, status: "ready", lastError: null, attemptCount: { increment: 1 } },
+    create: { eventId, teamId, imageUrl, status: "ready", lastError: null, attemptCount: 1 },
   });
-  return { id: row.id, eventId: row.eventId, teamId: row.teamId, imageUrl: row.imageUrl, createdAt: row.createdAt };
+  return toCertificate(row);
+}
+
+/**
+ * Records a failed generation attempt so the admin panel can surface the reason and offer a retry.
+ * Keeps the row (and its unique eventId slot) so the failure is visible instead of looking like
+ * "no certificate yet".
+ */
+export async function recordCertificateFailure(eventId: string, teamId: string, message: string): Promise<Certificate> {
+  const lastError = message.slice(0, MAX_CERTIFICATE_ERROR_LENGTH);
+  const row = await prisma.certificate.upsert({
+    where: { eventId },
+    update: { teamId, status: "failed", lastError, attemptCount: { increment: 1 } },
+    create: { eventId, teamId, imageUrl: "", status: "failed", lastError, attemptCount: 1 },
+  });
+  return toCertificate(row);
 }
 
 /** Returns the certificate for an event, or null if none has been generated. */
 export async function getCertificateByEvent(eventId: string): Promise<Certificate | null> {
   const row = await prisma.certificate.findUnique({ where: { eventId } });
   if (!row) return null;
-  return { id: row.id, eventId: row.eventId, teamId: row.teamId, imageUrl: row.imageUrl, createdAt: row.createdAt };
+  return toCertificate(row);
 }
 
 /** Batch-fetches generated certificates for multiple events. */
@@ -2935,13 +2979,7 @@ export async function getCertificatesForEvents(eventIds: string[]): Promise<Map<
   try {
     const rows = await prisma.certificate.findMany({ where: { eventId: { in: eventIds } } });
     for (const row of rows) {
-      certificates.set(row.eventId, {
-        id: row.id,
-        eventId: row.eventId,
-        teamId: row.teamId,
-        imageUrl: row.imageUrl,
-        createdAt: row.createdAt,
-      });
+      certificates.set(row.eventId, toCertificate(row));
     }
   } catch {
     await Promise.all(
@@ -2954,7 +2992,10 @@ export async function getCertificatesForEvents(eventIds: string[]): Promise<Map<
   return certificates;
 }
 
-/** Counts existing certificates for a given game prefix (e.g. "game-flashpeak") to generate sequential IDs. */
+/**
+ * Counts successfully generated certificates for a given game prefix (e.g. "game-flashpeak")
+ * to generate sequential IDs. Failed attempts are excluded so the sequence has no gaps.
+ */
 export async function countCertificatesForGame(gameId: string): Promise<number> {
-  return prisma.certificate.count({ where: { event: { gameId } } });
+  return prisma.certificate.count({ where: { status: "ready", event: { gameId } } });
 }
