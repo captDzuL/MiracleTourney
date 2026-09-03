@@ -21,8 +21,11 @@ export const CHROMIUM_PACK_URL_ENV = "CHROMIUM_PACK_URL";
  * Pure and dependency-free so the decision can be unit tested without touching a browser.
  * An explicit `PLAYWRIGHT_CHANNEL` wins over serverless detection: a developer who has asked
  * for a specific local browser should always get it.
+ *
+ * Accepts a partial env (rather than the full `NodeJS.ProcessEnv`) since callers — including
+ * tests — only ever care about a handful of variables and should not need to fabricate one.
  */
-export function resolveLaunchStrategy(env: NodeJS.ProcessEnv): LaunchStrategy {
+export function resolveLaunchStrategy(env: Partial<NodeJS.ProcessEnv>): LaunchStrategy {
   if (env.PLAYWRIGHT_CHANNEL) return "channel";
   if (env.VERCEL || env.AWS_LAMBDA_FUNCTION_NAME) return "lambda";
   return "local";
