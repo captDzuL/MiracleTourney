@@ -1,0 +1,38 @@
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Roboto:wght@400;500;700;900&display=swap");
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:24px}.choice{border:1px solid #dbe2ef;background:#f9f7f7;border-radius:18px;overflow:hidden;cursor:pointer;transition:.18s ease}.choice:hover{transform:translateY(-2px);box-shadow:0 16px 35px rgba(17,45,78,.11)}.choice.selected{outline:3px solid #3f72af;outline-offset:2px}.sample.montserrat{font-family:Montserrat,sans-serif}.sample.roboto{font-family:Roboto,sans-serif}
+  .bar{height:47px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;border-bottom:1px solid #dbe2ef;padding:0 14px;color:#112d4e}.mini-brand{display:flex;gap:7px;align-items:center;font-size:10px;font-weight:800}.mark{width:24px;height:24px;border-radius:7px;background:#112d4e;color:#f9f7f7;display:grid;place-items:center}.bar-title{text-align:center;font-size:11px;font-weight:800;letter-spacing:.08em}.bar-action{text-align:right;font-size:9px;font-weight:700}
+  .hero{display:grid;grid-template-columns:1fr 45%;gap:0;min-height:250px;background:#112d4e;color:#f9f7f7}.hero-copy{padding:28px 24px;display:flex;flex-direction:column;justify-content:center}.eyebrow{font-size:9px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;opacity:.72}.hero h3{font-size:28px;line-height:1.05;margin:7px 0 9px;font-weight:800}.hero p{font-size:11px;line-height:1.55;opacity:.76;margin:0}.primary{display:inline-flex;align-self:flex-start;margin-top:15px;border-radius:8px;background:#3f72af;color:#f9f7f7;padding:8px 11px;font-size:10px;font-weight:800}
+  .poster-wrap{padding:18px 18px 18px 0;display:flex;align-items:center}.poster{aspect-ratio:4/5;width:100%;max-height:215px;border:4px solid #f9f7f7;border-radius:10px;background:#3f72af;color:#f9f7f7;box-shadow:0 12px 26px rgba(0,0,0,.24);display:flex;flex-direction:column;justify-content:space-between;padding:14px;overflow:hidden;position:relative}.poster:before{content:"";position:absolute;width:150px;height:150px;border:30px solid rgba(249,247,247,.16);border-radius:50%;right:-68px;top:25px}.poster-top{font-size:8px;font-weight:700;letter-spacing:.12em;z-index:1}.poster-title{font-size:22px;font-weight:900;line-height:.92;z-index:1}.poster-meta{display:flex;justify-content:space-between;font-size:7px;font-weight:700;z-index:1}
+  .meta-row{display:grid;grid-template-columns:repeat(3,1fr);background:#dbe2ef;gap:1px}.meta{background:#f9f7f7;padding:11px 12px;color:#112d4e}.meta small{display:block;font-size:8px;opacity:.55;text-transform:uppercase}.meta b{display:block;font-size:10px;margin-top:3px}.caption{padding:16px 17px;border-top:1px solid #dbe2ef}.caption h3{font-size:17px;margin:0 0 5px;color:#112d4e}.caption p{font-size:12px;line-height:1.5;color:rgba(17,45,78,.66);margin:0}.trait{display:inline-flex;margin-top:10px;padding:4px 8px;border-radius:999px;background:#dbe2ef;color:#112d4e;font-size:10px;font-weight:750}
+  .poster-plan{margin-top:22px;border:1px solid #dbe2ef;border-radius:14px;background:#f9f7f7;padding:17px;color:#112d4e}.poster-plan h3{margin:0 0 10px;font-size:16px}.usage{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.use{border-left:3px solid #3f72af;background:rgba(219,226,239,.45);padding:10px;border-radius:0 8px 8px 0}.use b{font-size:12px;display:block}.use span{font-size:10px;line-height:1.45;opacity:.66;display:block;margin-top:3px}
+  @media(max-width:900px){.compare{grid-template-columns:1fr}.usage{grid-template-columns:1fr}.hero{grid-template-columns:1fr}.poster-wrap{padding:0 24px 24px}.poster{max-width:230px;margin:auto}}
+</style>
+
+<h2>Montserrat atau Roboto?</h2>
+<p class="subtitle">Konten dan posisi poster dibuat sama supaya karakter font mudah dibandingkan. Klik tampilan yang terasa paling cocok untuk Miracle League.</p>
+
+<div class="compare">
+  <div class="choice option" data-choice="montserrat" onclick="toggleSelect(this)">
+    <div class="sample montserrat">
+      <div class="bar"><div class="mini-brand"><span class="mark">M</span>Miracle League</div><div class="bar-title">EVENT</div><div class="bar-action">Masuk</div></div>
+      <div class="hero"><div class="hero-copy"><span class="eyebrow">Turnamen komunitas</span><h3>Miracle Open Cup Season 2</h3><p>Kompetisi Mobile Legends untuk tim komunitas yang siap naik level dan bertanding secara profesional.</p><span class="primary">Daftar sekarang</span></div><div class="poster-wrap"><div class="poster"><span class="poster-top">MIRACLE LEAGUE · 2026</span><strong class="poster-title">OPEN<br>CUP<br>S2</strong><span class="poster-meta"><b>32 TEAMS</b><b>JAKARTA</b></span></div></div></div>
+      <div class="meta-row"><div class="meta"><small>Tanggal</small><b>20–24 September</b></div><div class="meta"><small>Lokasi</small><b>Hybrid</b></div><div class="meta"><small>Hadiah</small><b>Rp10.000.000</b></div></div>
+    </div>
+    <div class="caption"><h3>A · Montserrat</h3><p>Lebih berkarakter, geometris, dan kuat untuk heading event. Cocok jika Miracle League ingin terasa seperti brand kompetisi.</p><span class="trait">Brand-forward</span></div>
+  </div>
+
+  <div class="choice option" data-choice="roboto" onclick="toggleSelect(this)">
+    <div class="sample roboto">
+      <div class="bar"><div class="mini-brand"><span class="mark">M</span>Miracle League</div><div class="bar-title">EVENT</div><div class="bar-action">Masuk</div></div>
+      <div class="hero"><div class="hero-copy"><span class="eyebrow">Turnamen komunitas</span><h3>Miracle Open Cup Season 2</h3><p>Kompetisi Mobile Legends untuk tim komunitas yang siap naik level dan bertanding secara profesional.</p><span class="primary">Daftar sekarang</span></div><div class="poster-wrap"><div class="poster"><span class="poster-top">MIRACLE LEAGUE · 2026</span><strong class="poster-title">OPEN<br>CUP<br>S2</strong><span class="poster-meta"><b>32 TEAMS</b><b>JAKARTA</b></span></div></div></div>
+      <div class="meta-row"><div class="meta"><small>Tanggal</small><b>20–24 September</b></div><div class="meta"><small>Lokasi</small><b>Hybrid</b></div><div class="meta"><small>Hadiah</small><b>Rp10.000.000</b></div></div>
+    </div>
+    <div class="caption"><h3>B · Roboto</h3><p>Lebih netral, familiar, dan sangat mudah dibaca pada form serta dashboard. Karakter mereknya lebih tenang.</p><span class="trait">Utility-first</span></div>
+  </div>
+</div>
+
+<div class="poster-plan">
+  <h3>Rencana penempatan poster</h3>
+  <div class="usage"><div class="use"><b>Wizard · Halaman Publik</b><span>Organizer mengunggah poster rasio 4:5, melihat crop, dan mendapat panduan ukuran.</span></div><div class="use"><b>Detail event</b><span>Poster tampil di sisi kanan hero; di mobile tampil sebelum ringkasan event.</span></div><div class="use"><b>Kartu event</b><span>Poster dipakai sebagai thumbnail dengan crop otomatis dan fallback bawaan.</span></div></div>
+</div>

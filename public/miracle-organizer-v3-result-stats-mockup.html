@@ -1,0 +1,244 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Miracle V3 — Result & Stats Desk</title><link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet"><style>
+:root{color-scheme:dark;--bg:#09111e;--surface:#101b2b;--surface2:#0c1523;--active:#1c293e;--line:#29374a;--text:#f3efe7;--muted:#aab7c9;--cyan:#49d1ec;--violet:#aa8bff;--cream:#f6dfb1;--button:#7250d1;--ok:#56d6a1;--warn:#f0bf68;--bad:#ee7b8a;--shadow:0 18px 50px rgba(0,0,0,.22)}*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:radial-gradient(circle at 80% -10%,rgba(114,80,209,.15),transparent 30%),var(--bg);color:var(--text);font:13px/1.62 Montserrat,system-ui,sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}a{color:inherit;text-decoration:none}*:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}.icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.top{height:72px;border-bottom:1px solid var(--line);background:rgba(9,17,30,.9);position:sticky;top:0;z-index:20;padding:0 27px;display:grid;grid-template-columns:220px 1fr 250px;align-items:center}.brand{display:flex;align-items:center;gap:9px;color:var(--cream);font-size:17px;font-weight:800;letter-spacing:.11em}.brand svg{width:34px;height:31px}.top-title{text-align:center;font-weight:600;font-size:12px}.top-title span{display:block;color:var(--muted);font-size:9px;font-weight:400}.top-tools{display:flex;justify-content:flex-end;align-items:center;gap:9px}.btn{min-height:40px;border:1px solid var(--line);border-radius:9px;background:transparent;color:var(--text);padding:0 14px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600}.btn:hover:not(:disabled){filter:brightness(1.14)}.primary{background:var(--button);border-color:var(--button);color:#fff}.soft{background:rgba(255,255,255,.035)}.danger{color:var(--bad);border-color:rgba(238,123,138,.38)}.avatar{width:34px;height:34px;border-radius:50%;background:var(--active);display:grid;place-items:center;font-size:10px;font-weight:700}.layout{display:grid;grid-template-columns:225px minmax(0,1fr);min-height:calc(100vh - 72px)}.sidebar{border-right:1px solid var(--line);padding:23px 13px;display:flex;flex-direction:column}.back{padding:0 12px 20px;color:var(--muted);font-size:10px}.event-mini{display:flex;gap:10px;align-items:center;padding:14px 10px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:18px}.event-mark,.crest{width:36px;height:36px;border:1px solid var(--line);border-radius:9px;display:grid;place-items:center;font-weight:800;color:var(--cyan)}.event-mini small{display:block;color:var(--muted);font-size:8px}.nav{display:grid;gap:4px}.nav button{width:100%;border:0;background:transparent;color:var(--muted);padding:11px 12px;border-radius:9px;text-align:left}.nav button.active{background:var(--active);color:var(--text);font-weight:600}.side-note{margin-top:auto;padding:12px;color:var(--muted);font-size:9px}.main{min-width:0;padding:27px 32px 0;max-width:1450px;width:100%;margin:auto}.crumb{font-size:9px;color:var(--muted);margin-bottom:12px}.page-head{display:flex;justify-content:space-between;align-items:end;gap:20px}.page-head h1{font-size:27px;margin:0}.page-head p{margin:4px 0 0;color:var(--muted)}.head-actions{display:flex;gap:9px}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:5px 9px;font-size:8px;font-weight:700;white-space:nowrap}.pill.info{color:var(--cyan);border-color:rgba(73,209,236,.35);background:rgba(73,209,236,.07)}.pill.ready{color:var(--ok);border-color:rgba(86,214,161,.35);background:rgba(86,214,161,.07)}.pill.warning{color:var(--warn);border-color:rgba(240,191,104,.35);background:rgba(240,191,104,.07)}.pill.critical{color:var(--bad);border-color:rgba(238,123,138,.38);background:rgba(238,123,138,.07)}.tabs{display:flex;gap:4px;margin:20px 0;padding:5px;border:1px solid var(--line);background:var(--surface2);border-radius:11px}.tab{border:0;background:transparent;color:var(--muted);padding:9px 14px;border-radius:8px;font-weight:600}.tab.active{background:var(--active);color:var(--text)}.card{border:1px solid var(--line);border-radius:15px;background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,.008));box-shadow:var(--shadow)}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px}.stack{display:grid;gap:15px}.card-head{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:17px 19px;border-bottom:1px solid var(--line)}.card-head h2,.card-head h3{margin:0}.card-head h2{font-size:16px}.card-head h3{font-size:13px}.result-body{padding:21px}.matchup{display:grid;grid-template-columns:1fr 130px 1fr;gap:16px;align-items:center;text-align:center;border-bottom:1px solid var(--line);padding-bottom:20px}.team .crest{width:58px;height:58px;margin:auto;border-radius:16px;font-size:17px}.team h3{font-size:15px;margin:9px 0 0}.team span{font-size:9px;color:var(--muted)}.series strong{font-size:32px;display:block;white-space:nowrap}.series span{font-size:9px;color:var(--muted)}.game-grid{margin-top:18px}.game-head,.game-row{display:grid;grid-template-columns:90px 1fr 42px 1fr;gap:12px;align-items:center}.game-head{font-size:8px;color:var(--muted);text-transform:uppercase;padding:0 0 8px}.game-row{border-top:1px solid var(--line);padding:11px 0}.game-row b{font-size:10px}.score-input{width:100%;min-height:42px;background:var(--surface2);border:1px solid var(--line);border-radius:8px;color:var(--text);text-align:center;font-weight:700;font-size:16px}.dash{text-align:center;color:var(--muted)}.validation{margin-top:13px;border:1px solid rgba(73,209,236,.28);background:rgba(73,209,236,.06);border-radius:11px;padding:12px;color:var(--muted);font-size:9px}.validation b{color:var(--cyan)}.validation.error{border-color:rgba(238,123,138,.35);background:rgba(238,123,138,.06)}.validation.error b{color:var(--bad)}.action-row{display:flex;justify-content:space-between;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.panel{padding:18px}.panel h3{margin:0}.facts{margin-top:9px}.fact{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line)}.fact span{color:var(--muted)}.fact b{text-align:right}.impact{border:1px solid rgba(86,214,161,.3);background:rgba(86,214,161,.06);border-radius:11px;padding:13px;margin-top:12px;color:var(--muted);font-size:9px}.impact b{color:var(--ok);display:block}.timeline{display:grid;gap:8px;margin-top:12px}.timeline div{display:grid;grid-template-columns:52px 1fr;gap:9px;color:var(--muted);font-size:8px}.timeline b{color:var(--text)}.official-banner{border:1px solid rgba(86,214,161,.38);background:linear-gradient(100deg,rgba(86,214,161,.08),rgba(73,209,236,.05));border-radius:13px;padding:16px;display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:15px}.official-banner h2{font-size:16px;margin:0}.official-banner p{color:var(--muted);font-size:9px;margin:3px 0 0}.stats-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px}.stats-card{overflow:hidden}.team-tabs{display:flex;gap:7px;padding:14px 18px;border-bottom:1px solid var(--line)}.team-tab{border:1px solid var(--line);background:transparent;color:var(--muted);padding:8px 12px;border-radius:8px;font-weight:600}.team-tab.active{background:var(--active);color:var(--text);border-color:var(--violet)}.source-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 18px;background:var(--surface2);border-bottom:1px solid var(--line)}.source-bar b{display:block;font-size:10px}.source-bar span{font-size:8px;color:var(--muted)}.table-wrap{overflow:auto}.stat-table{width:100%;border-collapse:collapse;min-width:650px}.stat-table th,.stat-table td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left}.stat-table th{font-size:8px;color:var(--muted);text-transform:uppercase}.stat-table td{font-size:9px}.player{display:flex;align-items:center;gap:9px}.player .crest{width:30px;height:30px;font-size:8px}.player small{display:block;color:var(--muted)}.stat-input{width:66px;background:var(--surface2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:7px;text-align:center}.total-row{background:rgba(255,255,255,.02);font-weight:700}.autosave{display:flex;align-items:center;gap:6px;color:var(--ok);font-size:8px}.stats-actions{padding:15px 18px;display:flex;justify-content:space-between;gap:10px}.checklist{display:grid;gap:8px;margin-top:12px}.check{display:flex;align-items:flex-start;gap:8px;border:1px solid var(--line);border-radius:9px;padding:10px;font-size:9px;color:var(--muted)}.check .icon{color:var(--ok)}.attachment{border:1px dashed #52657f;border-radius:10px;padding:13px;margin-top:11px;text-align:center;color:var(--muted);font-size:9px}.review-card{border-left:3px solid var(--warn);padding:12px;background:var(--surface2);border-radius:9px;margin-top:10px}.review-card b{font-size:10px}.review-card p{font-size:8px;color:var(--muted)}.modal-layer,.drawer-layer{position:fixed;inset:0;background:rgba(3,8,16,.76);z-index:50;display:grid;place-items:center;padding:18px}.modal{width:min(520px,100%);padding:24px}.modal-head,.drawer-head{display:flex;justify-content:space-between;gap:15px}.modal h2,.drawer h2{margin:5px 0}.modal p,.drawer p{color:var(--muted)}.close{width:35px;height:35px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--text)}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:17px}.drawer-layer{place-items:stretch end;padding:0}.drawer{width:min(470px,100%);height:100%;background:var(--surface);border-left:1px solid var(--line);padding:24px;overflow:auto}.field{display:grid;gap:6px;margin-top:11px;font-size:9px;font-weight:600}.input{width:100%;min-height:40px;background:var(--surface2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:9px 10px}.audit-row{display:grid;grid-template-columns:62px 1fr;gap:9px;padding:10px 0;border-bottom:1px solid var(--line);font-size:8px;color:var(--muted)}.audit-row b{color:var(--text)}.toast{position:fixed;right:20px;bottom:20px;background:var(--cream);color:#111827;border-radius:10px;padding:12px 16px;font-weight:700;z-index:70;box-shadow:var(--shadow)}footer{border-top:1px solid var(--line);margin-top:30px;padding:21px 0;color:var(--muted);font-size:9px}.foot{display:flex;justify-content:space-between}.socials{display:flex;gap:14px;color:var(--text)}
+@media(max-width:1020px){.top{grid-template-columns:1fr auto}.top-title{display:none}.layout{grid-template-columns:1fr}.sidebar{display:none}.main{padding:22px 18px 0}.workspace,.stats-layout{grid-template-columns:1fr}}@media(max-width:620px){.top{height:64px;padding:0 11px}.brand{font-size:14px}.top-tools #theme{display:none}.main{padding:16px 10px 0}.page-head{align-items:start;flex-direction:column}.head-actions{width:100%}.head-actions .btn{flex:1}.tabs{overflow:auto}.tab{white-space:nowrap}.matchup{grid-template-columns:1fr 70px 1fr}.game-head,.game-row{grid-template-columns:55px 1fr 24px 1fr}.action-row,.stats-actions,.official-banner{align-items:stretch;flex-direction:column}.action-row .btn,.stats-actions .btn{width:100%}.modal-actions{flex-direction:column-reverse}.modal-actions .btn{width:100%}.foot{flex-direction:column;gap:13px}}
+</style></head><body>
+
+<svg width="0" height="0" aria-hidden="true"><defs>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15.5A8.5 8.5 0 1 1 8.5 4 7 7 0 0 0 20 15.5Z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16h16V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><path d="m21 11-8.5 8.5a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.9-2.8L15 5.7"/></symbol>
+</defs></svg>
+<header class="top">
+  <a class="brand" href="#"><img src="logo/miracle-symbol.svg" alt="" style="width:34px;height:31px">MIRACLE</a>
+  <div class="top-title">Flash Peak Championship <span>Organizer workspace · WIB</span></div>
+  <div class="top-tools"><button class="btn" id="theme"><svg class="icon"><use href="#i-moon"/></svg>Tema</button><div class="avatar">OB</div></div>
+</header>
+<div class="layout">
+<aside class="sidebar">
+  <a class="back" href="#">← Semua event</a>
+  <div class="event-mini"><div class="event-mark">FP</div><div><b>Flash Peak</b><small>Ongoing · 32 tim</small></div></div>
+  <nav class="nav" aria-label="Workspace event">
+    <button>Ringkasan</button><button>Pendaftaran</button><button>Peserta</button><button>Bracket</button><button>Jadwal</button><button class="active">Match Control</button><button>Publikasi</button>
+  </nav>
+  <div class="side-note">Draft tersimpan otomatis<br>Zona waktu event: WIB</div>
+</aside>
+<main class="main">
+  <div class="crumb">Flash Peak Championship / Match Control / Match 14</div>
+  <div class="page-head">
+    <div><h1>Hasil & Statistik</h1><p>Selesaikan hasil pertandingan sekarang. Statistik pemain dapat diperiksa dan diterbitkan setelahnya.</p></div>
+    <div class="head-actions"><button class="btn" id="evidenceBtn"><svg class="icon"><use href="#i-clip"/></svg>Bukti & insiden</button><span class="pill warning" id="pageStatus">MENUNGGU HASIL</span></div>
+  </div>
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="result">Hasil resmi</button>
+    <button class="tab" data-tab="stats">Statistik pemain <span class="pill warning" id="statsTabPill">DRAFT</span></button>
+    <button class="tab" data-tab="audit">Riwayat aktivitas</button>
+  </div>
+
+  <section id="resultView">
+    <div class="official-banner" id="officialBanner" hidden><div><span class="pill ready">HASIL RESMI</span><h2>Garuda Nova menang 2–1</h2><p>Bracket dan jadwal lanjutan sudah diperbarui. Statistik pemain masih dapat dilengkapi.</p></div><button class="btn danger" id="reopenBtn">Ajukan koreksi</button></div>
+    <div class="workspace">
+      <div class="stack">
+        <article class="card">
+          <div class="card-head"><div><h2>Match 14 · Round of 32</h2><span class="pill info">BEST OF 3</span></div><span style="color:var(--muted);font-size:9px">21.00 WIB · Arena Utama</span></div>
+          <div class="result-body">
+            <div class="matchup">
+              <div class="team"><div class="crest">GN</div><h3>Garuda Nova</h3><span>Seed #4</span></div>
+              <div class="series"><strong id="seriesScore">2 — 1</strong><span id="seriesState">Prediksi pemenang: Garuda Nova</span></div>
+              <div class="team"><div class="crest" style="color:var(--violet)">VI</div><h3>Vortex ID</h3><span>Seed #13</span></div>
+            </div>
+            <div class="game-grid" id="gameGrid">
+              <div class="game-head"><span>Game</span><span>Garuda Nova</span><span></span><span>Vortex ID</span></div>
+              <div class="game-row"><b>Game 1</b><input class="score-input home-score" type="number" min="0" value="3" aria-label="Skor Garuda game 1"><span class="dash">—</span><input class="score-input away-score" type="number" min="0" value="1" aria-label="Skor Vortex game 1"></div>
+              <div class="game-row"><b>Game 2</b><input class="score-input home-score" type="number" min="0" value="1" aria-label="Skor Garuda game 2"><span class="dash">—</span><input class="score-input away-score" type="number" min="0" value="2" aria-label="Skor Vortex game 2"></div>
+              <div class="game-row"><b>Game 3</b><input class="score-input home-score" type="number" min="0" value="4" aria-label="Skor Garuda game 3"><span class="dash">—</span><input class="score-input away-score" type="number" min="0" value="2" aria-label="Skor Vortex game 3"></div>
+            </div>
+            <div class="validation" id="validation"><b>Siap disahkan.</b> Garuda Nova menang 2 game. Periksa sekali lagi sebelum menyimpan hasil resmi.</div>
+            <div class="action-row"><button class="btn" id="incidentBtn">Catat insiden</button><button class="btn primary" id="saveOfficial">Simpan hasil resmi</button></div>
+          </div>
+        </article>
+        <article class="card" id="nextMatchCard">
+          <div class="card-head"><div><h3>Match berikutnya yang terdampak</h3><span style="color:var(--muted);font-size:9px">Quarterfinal 2 · Match 25</span></div><span class="pill warning" id="nextMatchStatus">MENUNGGU PEMENANG</span></div>
+          <div class="panel"><div class="fact"><span>Slot peserta</span><b id="nextSlot">Pemenang Match 14</b></div><div class="fact"><span>Estimasi mulai</span><b id="nextTime">22.20 WIB · tentatif</b></div></div>
+        </article>
+      </div>
+      <aside class="stack">
+        <article class="card"><div class="panel"><h3>Dampak setelah disimpan</h3><div class="impact"><b>Langsung diproses</b>Bracket tidak menunggu statistik pemain.</div><div class="facts"><div class="fact"><span>Pemenang</span><b id="impactWinner">Garuda Nova</b></div><div class="fact"><span>Bracket</span><b>Masuk Quarterfinal 2</b></div><div class="fact"><span>Jadwal</span><b>Slot Match 25 terbuka</b></div><div class="fact"><span>Notifikasi</span><b>Kedua captain</b></div></div></div></article>
+        <article class="card"><div class="panel"><h3>Kelengkapan hasil</h3><div class="checklist"><div class="check"><svg class="icon"><use href="#i-check"/></svg><span><b>Skor seri valid</b><br>Best of 3 memiliki pemenang.</span></div><div class="check"><svg class="icon"><use href="#i-check"/></svg><span><b>Roster terkunci</b><br>Tidak ada perubahan pemain aktif.</span></div><div class="check"><svg class="icon"><use href="#i-check"/></svg><span><b>Readiness tercatat</b><br>Kedua tim hadir sebelum match.</span></div></div></div></article>
+      </aside>
+    </div>
+  </section>
+
+  <section id="statsView" hidden>
+    <div class="official-banner"><div><span class="pill ready" id="statsResultPill">HASIL RESMI 2–1</span><h2>Statistik tidak menahan pertandingan berikutnya</h2><p id="statsBannerText">Data disimpan otomatis sebagai draft sampai organizer menerbitkannya.</p></div><span class="pill warning" id="statsPublishStatus">BELUM DIPUBLIKASIKAN</span></div>
+    <div class="stats-layout">
+      <article class="card stats-card">
+        <div class="team-tabs"><button class="team-tab active" data-team="garuda">Garuda Nova</button><button class="team-tab" data-team="vortex">Vortex ID</button></div>
+        <div class="source-bar"><div><b id="sourceTitle">Dikirim oleh captain Garuda Nova</b><span id="sourceDetail">Hari ini, 21.47 WIB · menunggu pemeriksaan organizer</span></div><span class="pill warning" id="sourcePill">PERLU DITINJAU</span></div>
+        <div class="table-wrap"><table class="stat-table"><thead><tr><th>Pemain</th><th>Goal</th><th>Assist</th><th>Save</th><th>Interception</th></tr></thead><tbody id="statsBody"></tbody><tfoot id="statsFoot"></tfoot></table></div>
+        <div class="stats-actions"><div class="autosave" id="autosave"><svg class="icon"><use href="#i-check"/></svg>Draft tersimpan otomatis</div><div style="display:flex;gap:8px"><button class="btn danger" id="rejectStats">Kembalikan</button><button class="btn primary" id="publishStats">Setujui & terbitkan</button></div></div>
+      </article>
+      <aside class="stack">
+        <article class="card"><div class="panel"><h3>Pemeriksaan otomatis</h3><div class="checklist"><div class="check"><svg class="icon"><use href="#i-check"/></svg><span><b>5 pemain sesuai roster</b><br>Semua pemain terdaftar di match.</span></div><div class="check"><svg class="icon"><use href="#i-check"/></svg><span><b>Nilai valid</b><br>Tidak ada angka negatif.</span></div><div class="check"><svg class="icon"><use href="#i-check"/></svg><span><b>Total dapat dihitung</b><br>Perubahan terlihat sebelum publikasi.</span></div></div></div></article>
+        <article class="card"><div class="panel"><h3>Pemeriksaan organizer</h3><div class="review-card"><b>Bandingkan dengan bukti pertandingan</b><p>Lampiran bersifat opsional. Jika ada selisih, kembalikan data kepada captain dengan alasan.</p><button class="btn soft" id="reviewEvidence" style="width:100%">Lihat bukti & catatan</button></div></div></article>
+      </aside>
+    </div>
+  </section>
+
+  <section id="auditView" hidden>
+    <div class="workspace">
+      <article class="card"><div class="card-head"><h2>Riwayat Match 14</h2><span class="pill info">AUDIT LOG</span></div><div class="panel" id="auditList">
+        <div class="audit-row"><span>21.47 WIB</span><div><b>Statistik dikirim captain Garuda Nova</b><br>Menunggu pemeriksaan organizer.</div></div>
+        <div class="audit-row"><span>21.43 WIB</span><div><b>Game 3 selesai</b><br>Skor sementara diperbarui operator meja.</div></div>
+        <div class="audit-row"><span>20.55 WIB</span><div><b>Kedua tim siap</b><br>Readiness dikonfirmasi organizer.</div></div>
+      </div></article>
+      <aside class="card"><div class="panel"><h3>Jejak perubahan</h3><p style="color:var(--muted);font-size:9px">Setiap pengesahan, koreksi, publikasi statistik, dan alasan penolakan tersimpan dengan waktu serta pelakunya.</p></div></aside>
+    </div>
+  </section>
+
+  <footer><div class="foot"><span>© 2026 Miracle. All rights reserved. · Powered by Miracle</span><div class="socials"><a href="#">Instagram</a><a href="#">Discord</a><a href="#">Kontak</a></div></div></footer>
+</main></div>
+
+<div class="modal-layer" id="modalLayer" hidden><div class="modal card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal-head"><div><span class="pill info" id="modalPill">KONFIRMASI</span><h2 id="modalTitle">Konfirmasi hasil resmi</h2></div><button class="close" data-close aria-label="Tutup">×</button></div><div id="modalBody"></div><div class="modal-actions" id="modalActions"></div></div></div>
+<div class="drawer-layer" id="drawerLayer" hidden><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"><div class="drawer-head"><div><span class="pill info">DETAIL MATCH</span><h2 id="drawerTitle">Bukti & insiden</h2></div><button class="close" data-close aria-label="Tutup">×</button></div><div id="drawerBody"></div></aside></div>
+<div class="toast" id="toast" hidden></div>
+
+
+<script>
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const views={result:$('#resultView'),stats:$('#statsView'),audit:$('#auditView')};
+let official=false, activeTeam='garuda', saveTimer;
+const publishedTeams={garuda:false,vortex:false};
+const teams={
+  garuda:{name:'Garuda Nova',initials:'GN',source:'captain',players:[
+    ['Raihan','#07',2,1,0,4],['Velo','#11',1,2,1,3],['Nexa','#18',2,0,2,5],['Kuro','#23',0,1,4,2],['Saya','#31',1,1,2,4]]},
+  vortex:{name:'Vortex ID',initials:'VI',source:'organizer',players:[
+    ['Axel','#03',1,1,2,3],['Mora','#09',1,0,3,2],['Jett','#14',0,1,1,4],['Luma','#21',1,1,2,3],['Rex','#28',0,0,4,2]]}
+};
+function showToast(message){const t=$('#toast');t.textContent=message;t.hidden=false;clearTimeout(t._timer);t._timer=setTimeout(()=>t.hidden=true,2600)}
+function setTab(name){
+  $$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+  Object.entries(views).forEach(([key,el])=>el.hidden=key!==name);
+}
+$$('.tab').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
+function calculateSeries(){
+  let home=0,away=0,invalid=false,complete=0;
+  $$('.game-row').forEach(row=>{
+    const h=Number($('.home-score',row).value), a=Number($('.away-score',row).value);
+    if($('.home-score',row).value===''||$('.away-score',row).value==='')return;
+    complete++;
+    if(h===a) invalid=true; else if(h>a)home++; else away++;
+  });
+  $('#seriesScore').textContent=home+' — '+away;
+  const winner=home>=2?'Garuda Nova':away>=2?'Vortex ID':null;
+  $('#seriesState').textContent=winner?'Prediksi pemenang: '+winner:'Belum ada pemenang seri';
+  $('#impactWinner').textContent=winner||'Belum ditentukan';
+  const val=$('#validation');
+  if(invalid){val.className='validation error';val.innerHTML='<b>Skor game tidak boleh seri.</b> Periksa game yang memiliki skor sama.'}
+  else if(!winner){val.className='validation error';val.innerHTML='<b>Seri belum memiliki pemenang.</b> Lengkapi skor sampai salah satu tim memenangkan 2 game.'}
+  else{val.className='validation';val.innerHTML='<b>Siap disahkan.</b> '+winner+' menang '+Math.max(home,away)+' game. Periksa sekali lagi sebelum menyimpan hasil resmi.'}
+  $('#saveOfficial').disabled=invalid||!winner||official;
+  return {home,away,winner,valid:!invalid&&!!winner};
+}
+$$('.score-input').forEach(i=>i.addEventListener('input',calculateSeries));
+function openModal({title,pill='KONFIRMASI',body,actions}){
+  $('#modalTitle').textContent=title;$('#modalPill').textContent=pill;$('#modalBody').innerHTML=body;$('#modalActions').innerHTML=actions;
+  $('#modalLayer').hidden=false;setTimeout(()=>$('#modalLayer .close').focus(),0);
+}
+function openDrawer(title,body){$('#drawerTitle').textContent=title;$('#drawerBody').innerHTML=body;$('#drawerLayer').hidden=false;setTimeout(()=>$('#drawerLayer .close').focus(),0)}
+function closeLayers(){$('#modalLayer').hidden=true;$('#drawerLayer').hidden=true}
+$$('[data-close]').forEach(b=>b.addEventListener('click',closeLayers));
+[$('#modalLayer'),$('#drawerLayer')].forEach(layer=>layer.addEventListener('click',e=>{if(e.target===layer)closeLayers()}));
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLayers()});
+$('#saveOfficial').addEventListener('click',()=>{
+  const s=calculateSeries(); if(!s.valid)return;
+  openModal({
+    title:'Sahkan '+s.winner+' sebagai pemenang?',
+    body:'<p>Hasil <b>'+s.home+'–'+s.away+'</b> akan langsung menyelesaikan Match 14 dan memproses fase berikutnya.</p><div class="impact"><b>Dampak langsung</b>Garuda Nova masuk Quarterfinal 2 · slot Match 25 terbuka · jadwal dipastikan pukul 22.20 WIB · kedua captain menerima notifikasi.</div><p style="font-size:9px">Statistik pemain tetap berstatus draft dan dapat diterbitkan belakangan.</p>',
+    actions:'<button class="btn" data-close>Batal</button><button class="btn primary" id="confirmOfficial">Ya, simpan hasil resmi</button>'
+  });
+});
+document.addEventListener('click',e=>{
+  if(e.target.matches('[data-close]'))closeLayers();
+  if(e.target.id==='confirmOfficial'){
+    official=true;closeLayers();$('#officialBanner').hidden=false;$('#pageStatus').className='pill ready';$('#pageStatus').textContent='MATCH SELESAI';
+    $$('.score-input').forEach(i=>i.disabled=true);$('#saveOfficial').disabled=true;$('#saveOfficial').textContent='Hasil sudah resmi';
+    $('#nextMatchStatus').className='pill ready';$('#nextMatchStatus').textContent='TERJADWAL';
+    $('#nextSlot').textContent='Garuda Nova vs Merapi Force';$('#nextTime').textContent='22.20 WIB · dikonfirmasi';
+    $('#statsTabPill').textContent='SIAP DIISI';$('#statsTabPill').className='pill info';
+    $('#auditList').insertAdjacentHTML('afterbegin','<div class="audit-row"><span>Sekarang</span><div><b>Hasil resmi disahkan organizer</b><br>Garuda Nova menang 2–1. Bracket dan jadwal Match 25 diperbarui.</div></div>');
+    showToast('Hasil resmi tersimpan. Bracket dan jadwal diperbarui.');
+  }
+  if(e.target.id==='confirmReject'){
+    const reason=$('#rejectReason');if(!reason.value.trim()){reason.style.borderColor='var(--bad)';reason.focus();return}
+    closeLayers();$('#sourcePill').className='pill critical';$('#sourcePill').textContent='DIKEMBALIKAN';$('#sourceDetail').textContent='Dikembalikan ke captain · alasan tersimpan di riwayat';
+    showToast('Statistik dikembalikan kepada captain.');
+  }
+  if(e.target.id==='confirmPublish'){
+    publishedTeams[activeTeam]=true;closeLayers();
+    const allPublished=Object.values(publishedTeams).every(Boolean);
+    $('#statsPublishStatus').className=allPublished?'pill ready':'pill info';$('#statsPublishStatus').textContent=allPublished?'DIPUBLIKASIKAN':'1/2 TIM DIPUBLIKASIKAN';
+    $('#statsTabPill').className=allPublished?'pill ready':'pill info';$('#statsTabPill').textContent=allPublished?'PUBLIK':'SEBAGIAN PUBLIK';
+    $('#statsBannerText').textContent=allPublished?'Statistik kedua tim sudah tampil di halaman publik dan leaderboard pemain diperbarui.':'Statistik '+teams[activeTeam].name+' sudah publik. Tim lainnya masih dapat diperiksa tanpa menahan bracket.';
+    $('#publishStats').textContent='Statistik dipublikasikan';$('#publishStats').disabled=true;$('#rejectStats').disabled=true;
+    $('#auditList').insertAdjacentHTML('afterbegin','<div class="audit-row"><span>Sekarang</span><div><b>Statistik pemain dipublikasikan</b><br>Leaderboard publik diperbarui tanpa mengubah hasil resmi.</div></div>');
+    showToast('Statistik diterbitkan dan leaderboard diperbarui.');
+  }
+  if(e.target.id==='submitCorrection'){
+    const reason=$('#correctionReason');if(!reason.value.trim()){reason.style.borderColor='var(--bad)';reason.focus();return}
+    closeLayers();showToast('Permintaan koreksi tercatat untuk ditinjau.');
+  }
+});
+$('#reopenBtn').addEventListener('click',()=>openModal({
+  title:'Ajukan koreksi hasil',pill:'PERLU ALASAN',
+  body:'<p>Match berikutnya sudah dijadwalkan tetapi belum dimulai. Sistem akan menampilkan dampak sebelum koreksi diterapkan.</p><div class="impact"><b>Dampak yang perlu ditinjau</b>Slot Quarterfinal 2, jadwal Match 25, dan notifikasi captain akan diperbarui ulang. Statistik yang sudah terbit akan ditandai perlu pemeriksaan.</div><label class="field">Alasan koreksi<textarea class="input" id="correctionReason" rows="3" placeholder="Contoh: skor Game 2 salah dimasukkan"></textarea></label>',
+  actions:'<button class="btn" data-close>Batal</button><button class="btn danger" id="submitCorrection">Ajukan koreksi</button>'
+}));
+function evidenceContent(focusIncident=false){
+ return '<p>Bukti bersifat opsional dan tidak menghalangi penyelesaian match. Insiden tersimpan terpisah agar halaman hasil tetap ringkas.</p><div class="attachment"><svg class="icon"><use href="#i-file"/></svg><br><b>Tambahkan screenshot atau tautan VOD</b><br>PNG, JPG, atau tautan siaran pertandingan</div><label class="field">Tautan bukti<input class="input" placeholder="https://..."></label><label class="field">Catatan insiden<textarea class="input" id="incidentField" rows="4" placeholder="Contoh: pause teknis pada Game 2"></textarea></label><button class="btn primary" id="saveEvidence" style="width:100%;margin-top:14px">Simpan catatan</button><div class="timeline"><div><span>21.31</span><b>Pause teknis · 4 menit</b></div><div><span>20.58</span><b>Lobby dikonfirmasi kedua captain</b></div></div>';
+}
+$('#evidenceBtn').addEventListener('click',()=>openDrawer('Bukti & insiden',evidenceContent()));
+$('#incidentBtn').addEventListener('click',()=>{openDrawer('Catat insiden',evidenceContent(true));setTimeout(()=>$('#incidentField').focus(),20)});
+$('#reviewEvidence').addEventListener('click',()=>openDrawer('Bukti & catatan statistik',evidenceContent()));
+document.addEventListener('click',e=>{if(e.target.id==='saveEvidence'){closeLayers();showToast('Bukti dan catatan tersimpan.')}});
+function renderStats(){
+ const team=teams[activeTeam], tbody=$('#statsBody');tbody.innerHTML='';
+ team.players.forEach((p,index)=>{
+   tbody.insertAdjacentHTML('beforeend','<tr><td><div class="player"><div class="crest">'+team.initials+'</div><div><b>'+p[0]+'</b><small>'+p[1]+' · Starter</small></div></div></td>'+p.slice(2).map((v,i)=>'<td><input class="stat-input" type="number" min="0" value="'+v+'" data-row="'+index+'" data-stat="'+i+'" aria-label="'+p[0]+' statistik '+i+'"></td>').join('')+'</tr>');
+ });
+ renderTotals();
+ if(team.source==='captain'){
+   $('#sourceTitle').textContent='Dikirim oleh captain '+team.name;$('#sourceDetail').textContent='Hari ini, 21.47 WIB · menunggu pemeriksaan organizer';
+   $('#sourcePill').className='pill warning';$('#sourcePill').textContent='PERLU DITINJAU';$('#publishStats').textContent='Setujui & terbitkan';$('#rejectStats').hidden=false;
+ }else{
+   $('#sourceTitle').textContent='Diisi oleh organizer untuk '+team.name;$('#sourceDetail').textContent='Captain belum mengirim data · draft lokal organizer';
+   $('#sourcePill').className='pill info';$('#sourcePill').textContent='DRAFT ORGANIZER';$('#publishStats').textContent='Terbitkan statistik';$('#rejectStats').hidden=true;
+ }
+ const teamPublished=publishedTeams[activeTeam];$('#publishStats').disabled=teamPublished;$('#rejectStats').disabled=teamPublished;if(teamPublished)$('#publishStats').textContent='Statistik dipublikasikan'
+}
+function renderTotals(){
+ const totals=[0,0,0,0];$$('#statsBody .stat-input').forEach(i=>totals[Number(i.dataset.stat)]+=Number(i.value)||0);
+ $('#statsFoot').innerHTML='<tr class="total-row"><td>TOTAL TIM</td>'+totals.map(v=>'<td>'+v+'</td>').join('')+'</tr>';
+}
+$$('.team-tab').forEach(b=>b.addEventListener('click',()=>{activeTeam=b.dataset.team;$$('.team-tab').forEach(x=>x.classList.toggle('active',x===b));renderStats()}));
+$('#statsBody').addEventListener('input',e=>{if(!e.target.matches('.stat-input'))return;const i=e.target;teams[activeTeam].players[Number(i.dataset.row)][Number(i.dataset.stat)+2]=Math.max(0,Number(i.value)||0);renderTotals();$('#autosave').textContent='Menyimpan perubahan…';clearTimeout(saveTimer);saveTimer=setTimeout(()=>{$('#autosave').innerHTML='<svg class="icon"><use href="#i-check"/></svg>Draft tersimpan otomatis'},650)});
+$('#publishStats').addEventListener('click',()=>openModal({
+ title:activeTeam==='garuda'?'Setujui dan terbitkan statistik?':'Terbitkan statistik pemain?',pill:'PUBLIKASI',
+ body:'<p>Data '+teams[activeTeam].name+' akan tampil di halaman publik dan dihitung ke leaderboard.</p><div class="impact"><b>Hasil pertandingan tetap 2–1</b>Publikasi statistik tidak mengubah bracket atau jadwal yang sudah berjalan.</div>',
+ actions:'<button class="btn" data-close>Batal</button><button class="btn primary" id="confirmPublish">Terbitkan sekarang</button>'
+}));
+$('#rejectStats').addEventListener('click',()=>openModal({
+ title:'Kembalikan statistik ke captain',pill:'PERLU PERBAIKAN',
+ body:'<p>Jelaskan data yang perlu diperbaiki. Hasil resmi dan pertandingan berikutnya tetap berjalan.</p><label class="field">Alasan<textarea class="input" id="rejectReason" rows="3" placeholder="Contoh: total save Raihan berbeda dari rekaman"></textarea></label>',
+ actions:'<button class="btn" data-close>Batal</button><button class="btn danger" id="confirmReject">Kirim alasan</button>'
+}));
+$('#theme').addEventListener('click',()=>{
+ const light=document.body.classList.toggle('light');
+ if(light){document.documentElement.style.cssText+=';--bg:#f3f5f8;--surface:#fff;--surface2:#edf1f5;--active:#e2e8f0;--line:#cbd5e1;--text:#172033;--muted:#5f6d82;--shadow:0 18px 45px rgba(20,34,54,.1)';document.documentElement.style.colorScheme='light'}
+ else{document.documentElement.removeAttribute('style')}
+});
+renderStats();calculateSeries();
+</script></body></html>
+
+
+
