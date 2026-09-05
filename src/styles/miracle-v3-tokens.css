@@ -1,0 +1,80 @@
+.miracle-v3 {
+  color-scheme: dark;
+  --font-miracle-v3: "Montserrat", sans-serif;
+
+  --color-brand-cyan: #49D1EC;
+  --color-brand-violet: #AA8BFF;
+  --color-brand-cream: #F6DFB1;
+
+  --color-bg: #09111E;
+  --color-surface: #101B2B;
+  --color-surface-subtle: #0C1523;
+  --color-surface-selected: #1C293E;
+  --color-text: #F3EFE7;
+  --color-text-muted: #AAB7C9;
+  --color-text-subtle: #77869A;
+  --color-text-inverse: #09111E;
+  --color-border: #29374A;
+  --color-border-strong: #40516A;
+  --color-focus-ring: var(--color-brand-cyan);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+  --control-height-compact: 36px;
+  --control-height-default: 40px;
+  --control-height-prominent: 48px;
+  --content-width-public: 1220px;
+  --content-width-operator: 1500px;
+  --sidebar-width-operator: 220px;
+
+  --elevation-card: 0 8px 24px rgb(0 0 0 / 0.2);
+  --elevation-panel: 0 16px 40px rgb(0 0 0 / 0.28);
+  --motion-duration-fast: 140ms;
+  --motion-duration-default: 200ms;
+  --motion-ease-standard: ease-out;
+
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-miracle-v3);
+}
+
+.miracle-v3[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #F7F9FC;
+  --color-surface: #FFFFFF;
+  --color-surface-subtle: #EEF2F7;
+  --color-surface-selected: #E2E8F0;
+  --color-text: #102033;
+  --color-text-muted: #5B6B7F;
+  --color-text-subtle: #748196;
+  --color-text-inverse: #F7F9FC;
+  --color-border: #CBD5E1;
+  --color-border-strong: #94A3B8;
+  --elevation-card: 0 8px 24px rgb(16 32 51 / 0.08);
+  --elevation-panel: 0 16px 40px rgb(16 32 51 / 0.12);
+}
+
+.miracle-v3 .miracle-v3-feedback {
+  --color-feedback-success: var(--color-brand-cyan);
+  --color-feedback-warning: var(--color-brand-cream);
+  --color-feedback-error: #E69393;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .miracle-v3 {
+    --motion-duration-fast: 0ms;
+    --motion-duration-default: 0ms;
+  }
+}
