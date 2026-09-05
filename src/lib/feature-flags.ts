@@ -6,7 +6,8 @@ type FeatureFlag =
   | "premium_notifications"
   | "email_password_reset"
   | "public_visual_v2"
-  | "ai_event_art";
+  | "ai_event_art"
+  | "ui_v3_foundation";
 
 const DEFAULTS: Record<FeatureFlag, boolean> = {
   premium_event_promotion: false,
@@ -17,6 +18,7 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   email_password_reset: false,
   public_visual_v2: false,
   ai_event_art: false,
+  ui_v3_foundation: false,
 };
 
 export function isFeatureEnabled(flag: FeatureFlag): boolean {
