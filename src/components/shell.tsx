@@ -34,7 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (visualV3) {
     return (
       <V3ShellRouter
-        actions={<LocaleSwitcher />}
+        actions={<LocaleSwitcher variant="v3" />}
         footer={
           <SiteFooter
             copyright={v3Footer("copyright")}

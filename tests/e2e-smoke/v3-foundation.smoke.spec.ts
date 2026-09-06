@@ -106,3 +106,25 @@ for (const viewport of viewports) {
     });
   }
 }
+
+test("V3 locale buttons are keyboard reachable with visible focus", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockSession(page, null);
+  await page.goto("/id");
+
+  let focused = page.locator(":focus");
+  for (let index = 0; index < 12; index += 1) {
+    await page.keyboard.press("Tab");
+    focused = page.locator(":focus");
+    if ((await focused.textContent())?.trim() === "id") break;
+  }
+  expect((await focused.textContent())?.trim()).toBe("id");
+  await expectVisibleFocus(focused);
+
+  await page.keyboard.press("Tab");
+  const english = page.locator(":focus");
+  expect((await english.textContent())?.trim()).toBe("en");
+  await expectVisibleFocus(english);
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/en$/);
+});

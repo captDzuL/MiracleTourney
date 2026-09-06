@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import en from "../../../messages/en.json";
 import id from "../../../messages/id.json";
 import { AppShell } from "../shell";
+import { PanelShell } from "../panel/PanelShell";
 import { EventWorkspaceShell } from "./EventWorkspaceShell";
 import { OperatorShell } from "./OperatorShell";
 import { SiteFooter } from "./SiteFooter";
@@ -64,6 +65,15 @@ afterEach(() => {
 });
 
 describe("V3 shell integration", () => {
+  it("keeps an actual operator panel on legacy classes when the V3 flag is disabled", async () => {
+    vi.stubEnv("FEATURE_FLAG_UI_V3_FOUNDATION", "false");
+    await render(<AppShell><PanelShell><h1>Legacy operator</h1></PanelShell></AppShell>);
+    const panel = container.querySelector(".panel-scope")!;
+    expect(panel).not.toBeNull();
+    expect(panel.classList.contains("miracle-v3")).toBe(false);
+    expect(panel.querySelector('[role="group"]')?.className).toContain("border-slate-200");
+    expect(panel.querySelector("button")?.className).not.toContain("miracle-focus-ring");
+  });
   it.each(["en", "id"])("preserves %s through the locale navigation boundary and marks nested event paths active", async locale => {
     route.locale = locale;
     route.pathname = `/${locale}/events/cup/participants`;

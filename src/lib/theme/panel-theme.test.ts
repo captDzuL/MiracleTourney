@@ -121,11 +121,12 @@ describe("PANEL_THEME_INIT_SCRIPT", () => {
   });
 });
 describe("V3 panel theme integration", () => {
-  it("uses V3 tokens in the toggle instead of legacy slate colors", () => {
+  it("keeps separate V3 and legacy toggle contracts", () => {
     const source = readFileSync(join(process.cwd(), "src", "components", "panel", "PanelThemeToggle.tsx"), "utf8");
     expect(source).toContain("var(--color-surface-subtle)");
     expect(source).toContain("miracle-focus-ring");
-    expect(source).not.toContain("border-slate-200");
+    expect(source).toContain("border-slate-200");
+    expect(source).toContain('variant?: "legacy" | "v3"');
   });
 
   it("maps the pre-paint html theme onto V3 operator scopes", () => {

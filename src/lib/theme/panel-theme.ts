@@ -11,6 +11,7 @@
 
 export const PANEL_THEME_STORAGE_KEY = "mt-panel-theme";
 export const PANEL_THEME_ATTRIBUTE = "data-panel-theme";
+export const PANEL_THEME_CHANGE_EVENT = "mt-panel-theme-change";
 
 export const PANEL_THEME_MODES = ["light", "dark", "system"] as const;
 

@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
+import { PanelThemeSync } from "@/components/panel/PanelThemeSync";
 import { AppShell } from "@/components/shell";
 import { routing } from "@/i18n/routing";
 import { PANEL_THEME_INIT_SCRIPT } from "@/lib/theme/panel-theme";
@@ -99,6 +100,7 @@ export default async function LocaleLayout({
       </head>
       <body className={`${displayFont.variable} ${uiFont.variable}`}>
         <NextIntlClientProvider locale={locale} messages={messages}>
+          <PanelThemeSync />
           <AppShell>{children}</AppShell>
         </NextIntlClientProvider>
         <SpeedInsights />

@@ -1,16 +1,14 @@
 import { PanelThemeToggle } from "@/components/panel/PanelThemeToggle";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 
-/**
- * Wraps an operator surface (admin / captain / organizer) and hosts the theme
- * toggle. The `.panel-surface` scope itself is applied by `AppShell` so that
- * the header and footer follow the same theme; this component only adds the
- * control bar above the page content.
- */
+/** Wraps operator content while preserving the legacy rollback surface. */
 export function PanelShell({ children }: { children: React.ReactNode }) {
+  const visualV3 = isFeatureEnabled("ui_v3_foundation");
+
   return (
-    <div className="panel-scope miracle-v3">
+    <div className={visualV3 ? "panel-scope miracle-v3" : "panel-scope"}>
       <div className="mx-auto flex w-full max-w-7xl justify-end px-4 pt-4 sm:px-6">
-        <PanelThemeToggle />
+        <PanelThemeToggle variant={visualV3 ? "v3" : "legacy"} />
       </div>
       {children}
     </div>
