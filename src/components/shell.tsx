@@ -12,6 +12,7 @@ import { isFeatureEnabled } from "@/lib/feature-flags";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const t = useTranslations("nav");
   const v3Footer = useTranslations("v3Footer");
+  const v3Shell = useTranslations("v3Shell");
   const visualV2 = isFeatureEnabled("public_visual_v2");
   const visualV3 = isFeatureEnabled("ui_v3_foundation");
 
@@ -33,7 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (visualV3) {
     return (
       <V3ShellRouter
-        actions={actions}
+        actions={<LocaleSwitcher />}
         footer={
           <SiteFooter
             copyright={v3Footer("copyright")}
@@ -46,8 +47,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         publicNavigation={[{ href: "/events", label: t("events") }]}
         operatorNavigation={[
           { href: "/events", label: t("events") },
-          { href: "/captain", label: t("captain") },
-          { href: "/admin", label: t("admin") },
+          { href: "/captain", label: t("captain"), roles: ["captain"] },
+          { href: "/captain/stats", label: t("matchStats"), roles: ["captain"] },
+          { href: "/organizer", label: v3Shell("organizerHome"), roles: ["organizer", "platform_admin", "admin"] },
+          { href: "/admin", label: t("admin"), roles: ["organizer", "platform_admin", "admin"] },
         ]}
       >
         {children}

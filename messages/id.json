@@ -573,5 +573,6 @@
       "expired": "Kedaluwarsa"
     }
   },
+  "v3Shell": {"skipToContent":"Lewati ke konten","primaryNavigation":"Navigasi utama","operatorNavigation":"Navigasi operator","eventNavigation":"Navigasi event","nextAction":"Tindakan berikutnya","nextStep":"Langkah berikutnya","openNavigation":"Buka navigasi","closeNavigation":"Tutup navigasi","organizerHome":"Beranda organizer"},
   "v3Footer": {"copyright":"Copyright © Miracle","tagline":"Platform turnamen komunitas multi-game","socialLabel":"Kontak sosial Miracle","mobileMenu":"Buka navigasi"}
 }
