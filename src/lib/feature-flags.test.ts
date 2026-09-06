@@ -6,6 +6,8 @@ const OWNED_KEYS = [
   "FEATURE_FLAG_PUBLIC_VISUAL_V2",
   "FEATURE_FLAG_AI_EVENT_ART",
   "FEATURE_FLAG_UI_V3_FOUNDATION",
+  "FEATURE_FLAG_ORGANIZER_WORKSPACE_V3",
+  "FEATURE_FLAG_REGISTRATION_WORKSPACE_V3",
 ] as const;
 
 afterEach(() => {
@@ -23,6 +25,20 @@ describe("public visual feature flags", () => {
 
   it("defaults ui_v3_foundation to false", () => {
     expect(isFeatureEnabled("ui_v3_foundation")).toBe(false);
+  });
+
+  it("keeps the organizer workspace disabled until it is explicitly enabled", () => {
+    expect(isFeatureEnabled("organizer_workspace_v3")).toBe(false);
+
+    process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = "true";
+    expect(isFeatureEnabled("organizer_workspace_v3")).toBe(true);
+  });
+
+  it("keeps the registration workspace disabled until it is explicitly enabled", () => {
+    expect(isFeatureEnabled("registration_workspace_v3")).toBe(false);
+
+    process.env.FEATURE_FLAG_REGISTRATION_WORKSPACE_V3 = "true";
+    expect(isFeatureEnabled("registration_workspace_v3")).toBe(true);
   });
 
   it("enables ui_v3_foundation when the environment override is true", () => {

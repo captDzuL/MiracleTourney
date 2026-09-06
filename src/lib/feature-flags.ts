@@ -7,7 +7,9 @@ type FeatureFlag =
   | "email_password_reset"
   | "public_visual_v2"
   | "ai_event_art"
-  | "ui_v3_foundation";
+  | "ui_v3_foundation"
+  | "organizer_workspace_v3"
+  | "registration_workspace_v3";
 
 const DEFAULTS: Record<FeatureFlag, boolean> = {
   premium_event_promotion: false,
@@ -19,6 +21,8 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   public_visual_v2: false,
   ai_event_art: false,
   ui_v3_foundation: false,
+  organizer_workspace_v3: false,
+  registration_workspace_v3: false,
 };
 
 export function isFeatureEnabled(flag: FeatureFlag): boolean {

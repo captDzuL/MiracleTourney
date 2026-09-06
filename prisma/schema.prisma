@@ -22,12 +22,27 @@ model User {
   approvedTeamRegistrationRequests TeamRegistrationRequest[] @relation("RegistrationRequestApprover")
   passwordResetTokens  PasswordResetToken[]
   organizerPlan        OrganizerPlan?
+  organizerProfile     OrganizerProfile?
+  createdPreviewTokens EventPreviewToken[] @relation("EventPreviewTokenCreator")
   notifications        Notification[]
   registrationImportProfiles RegistrationImportProfile[]
   registrationImportBatches  RegistrationImportBatch[]
   createdVisualAssets  EventVisualAsset[]
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
+}
+
+model OrganizerProfile {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationName String
+  contactChannel   String
+  contactValue     String
+  verified         Boolean   @default(false)
+  verifiedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model Event {
@@ -44,6 +59,14 @@ model Event {
   participantCap       Int
   registrationWindow   String
   startsAt             String
+  registrationOpensAt  DateTime?
+  registrationClosesAt DateTime?
+  eventStartsAt        DateTime?
+  timezone             String             @default("Asia/Jakarta")
+  venueAddress         String?
+  draftRevision        Int                @default(0)
+  publishedAt          DateTime?
+  previewRevision      Int                @default(0)
   venue                String
   organizerUserId      String?
   organizer            User?              @relation("EventOrganizer", fields: [organizerUserId], references: [id], onDelete: SetNull)
@@ -72,10 +95,25 @@ model Event {
   activeVisualAssetId  String?            @unique
   activeVisualAsset    EventVisualAsset?  @relation("ActiveEventVisualAsset", fields: [activeVisualAssetId], references: [id], onDelete: SetNull)
   teamRegistrationRequests TeamRegistrationRequest[]
+  previewTokens        EventPreviewToken[]
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
   @@index([status])
+}
+
+model EventPreviewToken {
+  id              String    @id @default(cuid())
+  eventId         String
+  event           Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tokenHash       String    @unique
+  createdByUserId String?
+  createdByUser   User?     @relation("EventPreviewTokenCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([eventId, revokedAt, expiresAt])
 }
 
 model EventVisualAsset {
