@@ -70,7 +70,7 @@ export function PanelThemeToggle() {
 
   return (
     <div
-      className="inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5"
+      className="inline-flex items-center gap-0.5 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-0.5"
       role="group"
       aria-label={t("label")}
     >
@@ -86,8 +86,10 @@ export function PanelThemeToggle() {
             aria-pressed={active}
             title={t(option)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
-              active ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-800",
+              "inline-flex min-h-9 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]",
+              active
+                ? "bg-[var(--color-surface-selected)] text-[var(--color-text)]"
+                : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]",
             )}
           >
             <Icon className="h-3.5 w-3.5" aria-hidden="true" />

@@ -45,8 +45,11 @@ test("panel route exposes the theme scope and toggle", async ({ page }) => {
   await expect(page.getByRole("group", { name: /tema panel/i })).toBeVisible();
 });
 
-test("choosing dark repaints the panel and survives a reload", async ({ page }) => {
+test("new sessions start dark and choosing dark survives a reload", async ({ page }) => {
   await page.goto(PANEL_ROUTE);
+  await expect(page.locator("html")).toHaveAttribute("data-panel-theme", "dark");
+
+  await page.getByRole("button", { name: "Terang", exact: true }).click();
 
   // Tailwind 4 emits oklch() and Chromium serialises computed styles in the
   // authored colour space, so the colour is resolved by painting it rather

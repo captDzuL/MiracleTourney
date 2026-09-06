@@ -17,7 +17,7 @@ export const PANEL_THEME_MODES = ["light", "dark", "system"] as const;
 export type PanelThemeMode = (typeof PANEL_THEME_MODES)[number];
 export type ResolvedPanelTheme = "light" | "dark";
 
-export const DEFAULT_PANEL_THEME_MODE: PanelThemeMode = "system";
+export const DEFAULT_PANEL_THEME_MODE: PanelThemeMode = "dark";
 
 export const PREFERS_DARK_QUERY = "(prefers-color-scheme: dark)";
 
@@ -45,8 +45,8 @@ export const PANEL_THEME_INIT_SCRIPT = [
   "(function(){try{",
   `var k=${JSON.stringify(PANEL_THEME_STORAGE_KEY)};`,
   "var m=window.localStorage.getItem(k);",
-  'if(m!=="light"&&m!=="dark"&&m!=="system"){m="system";}',
+  'if(m!=="light"&&m!=="dark"&&m!=="system"){m="dark";}',
   `var d=m==="dark"||(m==="system"&&window.matchMedia(${JSON.stringify(PREFERS_DARK_QUERY)}).matches);`,
   `document.documentElement.setAttribute(${JSON.stringify(PANEL_THEME_ATTRIBUTE)},d?"dark":"light");`,
-  `}catch(e){document.documentElement.setAttribute(${JSON.stringify(PANEL_THEME_ATTRIBUTE)},"light");}})();`,
+  `}catch(e){document.documentElement.setAttribute(${JSON.stringify(PANEL_THEME_ATTRIBUTE)},"dark");}})();`,
 ].join("");

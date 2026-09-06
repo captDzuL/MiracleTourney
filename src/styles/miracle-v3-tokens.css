@@ -50,7 +50,14 @@
   font-family: var(--font-miracle-v3);
 }
 
-.miracle-v3[data-theme="light"] {
+html[data-panel-theme="dark"] .miracle-v3:has(.panel-scope),
+html[data-panel-theme="dark"] .miracle-v3.panel-scope {
+  color-scheme: dark;
+}
+
+.miracle-v3[data-theme="light"],
+html[data-panel-theme="light"] .miracle-v3:has(.panel-scope),
+html[data-panel-theme="light"] .miracle-v3.panel-scope {
   color-scheme: light;
   --color-bg: #F7F9FC;
   --color-surface: #FFFFFF;

@@ -8,7 +8,7 @@ import { PanelThemeToggle } from "@/components/panel/PanelThemeToggle";
  */
 export function PanelShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="panel-scope">
+    <div className="panel-scope miracle-v3">
       <div className="mx-auto flex w-full max-w-7xl justify-end px-4 pt-4 sm:px-6">
         <PanelThemeToggle />
       </div>
