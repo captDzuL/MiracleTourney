@@ -26,7 +26,7 @@ export function SiteFooter({ copyright, tagline, socialLabel = "Social", socials
             {socials.map((social) => (
               <a
                 key={`${social.label}-${social.href}`}
-                className="font-semibold text-[var(--color-text)] underline-offset-4 hover:text-[var(--color-brand-cyan)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
+                className="font-semibold text-[var(--color-text)] underline-offset-4 hover:text-[var(--color-brand-cyan)] hover:underline miracle-focus-ring"
                 href={social.href}
                 rel="noreferrer"
                 target="_blank"

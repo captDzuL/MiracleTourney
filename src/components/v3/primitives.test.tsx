@@ -126,8 +126,7 @@ describe("V3 brand primitives", () => {
     });
 
     const button = container.querySelector("button");
-    expect(button?.className).toContain("focus-visible:outline");
-    expect(button?.className).toContain("focus-visible:outline-[var(--color-focus-ring)]");
+    expect(button?.className).toContain("miracle-focus-ring");
   });
 
   it("uses a token-driven raised surface for grouped content", () => {
