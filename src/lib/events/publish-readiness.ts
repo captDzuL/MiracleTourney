@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { prisma } from "@/lib/platform/db";
+import { getLegacyTournamentFormat, tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 
 const requiredText = z.string().trim().min(1);
 const participantCap = z.union([z.literal(8), z.literal(12), z.literal(16), z.literal(24), z.literal(32), z.literal(64), z.literal(128), z.literal(256)]);
 export const publishEventSchema = z.object({
   slug: requiredText, name: requiredText, description: requiredText, gameId: requiredText, gameModeId: requiredText,
-  format: z.enum(["Single Elimination", "League"]), participantCap,
+  format: z.enum(["Single Elimination", "League"]), formatConfig: tournamentFormatConfigSchema.nullable().optional(), participantCap,
   registrationOpensAt: z.date(), registrationClosesAt: z.date(), eventStartsAt: z.date(),
   timezone: requiredText, venue: requiredText, venueAddress: z.string().trim().nullable().optional(),
   registrationFeeRequired: z.boolean(), registrationFeeAmount: z.number().int().nonnegative().nullable().optional(),
@@ -19,6 +20,9 @@ const organizerContactSchema = z.object({
   organizer: z.object({ organizerProfile: z.object({ contactChannel: z.string(), contactValue: z.string() }).nullable().optional() }).nullable().optional(),
 }).passthrough();
 const crossFieldSchema = z.object({
+  format: z.unknown().optional(),
+  formatConfig: z.unknown().optional(),
+  participantCap: z.unknown().optional(),
   registrationOpensAt: z.unknown().optional(),
   registrationClosesAt: z.unknown().optional(),
   registrationFeeRequired: z.unknown().optional(),
@@ -26,7 +30,7 @@ const crossFieldSchema = z.object({
 }).passthrough();
 const fieldSections: Record<string, PublishReadinessItem["section"]> = {
   slug: "identity", name: "identity", description: "identity", gameId: "identity", gameModeId: "identity",
-  format: "schedule", participantCap: "schedule", registrationOpensAt: "schedule",
+  format: "schedule", formatConfig: "schedule", participantCap: "schedule", registrationOpensAt: "schedule",
   registrationClosesAt: "schedule", eventStartsAt: "schedule", timezone: "schedule", venue: "schedule",
   registrationFeeRequired: "registration", registrationFeeAmount: "registration",
 };
@@ -45,13 +49,23 @@ export function evaluatePublishReadiness(event: unknown, options: { hasScheduleO
   if (!parsed.success) {
     for (const issue of parsed.error.issues) {
       const field = String(issue.path[0] ?? "event");
-      addItem(field, field, fieldSections[field] ?? "identity");
+      addItem(field === "formatConfig" ? "format_config" : field, field, fieldSections[field] ?? "identity");
     }
   }
 
   const crossFields = crossFieldSchema.safeParse(event);
   if (crossFields.success) {
     const values = crossFields.data;
+    const formatConfig = tournamentFormatConfigSchema.safeParse(values.formatConfig);
+    if (formatConfig.success && values.format !== getLegacyTournamentFormat(formatConfig.data)) {
+      addItem("format_config_mismatch", "formatConfig", "schedule");
+    }
+    if (formatConfig.success && formatConfig.data.kind === "group_playoffs" && typeof values.participantCap === "number") {
+      const groupSize = values.participantCap / formatConfig.data.groupCount;
+      if (!Number.isInteger(groupSize) || formatConfig.data.qualifiersPerGroup >= groupSize) {
+        addItem("group_allocation", "formatConfig", "schedule");
+      }
+    }
     if (
       values.registrationOpensAt instanceof Date &&
       values.registrationClosesAt instanceof Date &&
@@ -77,6 +91,7 @@ export function evaluatePublishReadiness(event: unknown, options: { hasScheduleO
 const publishCandidateSelect = {
   id: true, slug: true, status: true, organizerUserId: true, draftRevision: true,
   name: true, description: true, gameId: true, gameModeId: true, format: true, participantCap: true,
+  formatConfig: true,
   registrationOpensAt: true, registrationClosesAt: true, eventStartsAt: true, timezone: true, venue: true,
   venueAddress: true, registrationFeeRequired: true, registrationFeeAmount: true,
   organizer: { select: { organizerProfile: { select: { contactChannel: true, contactValue: true } } } },

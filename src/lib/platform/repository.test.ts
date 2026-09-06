@@ -39,6 +39,9 @@ const { prisma } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       update: vi.fn(),
     },
+    eventPreviewToken: {
+      updateMany: vi.fn(),
+    },
     eventVisualAsset: {
       count: vi.fn(),
       create: vi.fn(),
@@ -105,6 +108,7 @@ import {
   getPaymentSettings,
   getLeaderboardForEvent,
   getManageableEventsForUser,
+  getManageableEventDraft,
   getMatchGamesForEvent,
   getMatchesForEvent,
   getOrganizerUserById,
@@ -117,6 +121,7 @@ import {
   getTeamsForEvents,
   listEventVisualAssets,
   rejectEventVisualAsset,
+  setEventStatus,
   setEventVisualFocalPoint,
   registerTeam,
   rejectTeamRegistrationRequest,
@@ -129,6 +134,30 @@ import {
 
 const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
 const organizer = { id: "org-1", role: "organizer" as const, email: "org@test.com", name: "Organizer" };
+
+describe("event lifecycle status", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
+  });
+
+  it("revokes every active preview token atomically on an explicit status transition", async () => {
+    prisma.event.update.mockResolvedValue({
+      id: "event-1", slug: "miracle-open", name: "Miracle Open", description: "Event",
+      logoUrl: null, gameImageUrl: null, gameId: "game-1", gameModeId: "mode-1",
+      format: "Single Elimination", status: "Draft", participantCap: 16,
+      registrationWindow: "TBD", startsAt: "TBD", venue: "Online", stream: null,
+    });
+    prisma.eventPreviewToken.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(setEventStatus("event-1", "Draft")).resolves.toMatchObject({ status: "Draft" });
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(prisma.eventPreviewToken.updateMany).toHaveBeenCalledWith({
+      where: { eventId: "event-1", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+  });
+});
 
 describe("organizer user lookups", () => {
   beforeEach(() => {
@@ -418,6 +447,37 @@ describe("organizer event ownership", () => {
     prisma.event.findFirst.mockResolvedValue(null);
 
     await expect(assertUserCanManageEvent(organizer, "event-other")).rejects.toThrow("Not authorized");
+  });
+
+  it("loads draft workspace data only through the organizer ownership filter", async () => {
+    prisma.event.findFirst.mockResolvedValue({
+      id: "event-1", slug: "owned-event", name: "Owned Event", description: "Owned", gameId: "game-1", gameModeId: "mode-1",
+      format: "Single Elimination", formatConfig: null, participantCap: 8, registrationOpensAt: null,
+      registrationClosesAt: null, eventStartsAt: null, timezone: "Asia/Jakarta", venue: "Online", venueAddress: null,
+      registrationFeeRequired: false, registrationFeeAmount: null, logoUrl: null, gameImageUrl: null,
+      draftRevision: 3, status: "Draft", organizer: { organizerProfile: null },
+    });
+
+    await expect(getManageableEventDraft(organizer, "event-1")).resolves.toEqual(expect.objectContaining({
+      id: "event-1", name: "Owned Event", formatConfig: null, draftRevision: 3, status: "Draft",
+    }));
+    expect(prisma.event.findFirst).toHaveBeenCalledWith({
+      where: { id: "event-1", organizerUserId: "org-1" },
+      select: expect.objectContaining({ id: true, name: true, draftRevision: true, organizer: expect.any(Object) }),
+    });
+  });
+
+  it("lets platform admins load a draft without an organizer ownership filter", async () => {
+    prisma.event.findFirst.mockResolvedValue({
+      id: "event-1", name: "Owned Event", formatConfig: null, draftRevision: 3, status: "Draft",
+    });
+
+    await getManageableEventDraft(platformAdmin, "event-1");
+
+    expect(prisma.event.findFirst).toHaveBeenCalledWith({
+      where: { id: "event-1" },
+      select: expect.objectContaining({ id: true, name: true, draftRevision: true, organizer: expect.any(Object) }),
+    });
   });
 
   it("updates a team logo only when the organizer owns the team's event", async () => {

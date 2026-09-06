@@ -202,6 +202,8 @@ import {
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
   adminUploadCharacterArtAction,
+  organizerUploadEventLogoAction,
+  organizerUploadEventVisualAction,
   adminUploadEventVisualAction,
   adminUpdateEventStatusAction,
   adminUpdateEventPublicInfoAction,
@@ -1699,6 +1701,33 @@ describe("event visual revision actions", () => {
     );
     expect(revalidateTag).toHaveBeenCalledWith("events");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("returns a workspace poster upload to the locale-aware visual section", async () => {
+    await expect(
+      organizerUploadEventVisualAction(fd({
+        eventId: "event-safe",
+        locale: "id",
+        rightsAttestation: "confirmed",
+        eventVisual: validPngFile(),
+      })),
+    ).rejects.toThrow("REDIRECT:/id/organizer/events/event-safe/overview?success=event-visual-uploaded#section-visuals");
+
+    expect(createEventVisualAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "organizer" }),
+      expect.objectContaining({ eventId: "event-safe", status: "approved" }),
+    );
+  });
+
+  it("returns a workspace logo upload failure to the same visual section", async () => {
+    await expect(
+      organizerUploadEventLogoAction(fd({
+        eventId: "event-safe",
+        locale: "en",
+      })),
+    ).rejects.toThrow("REDIRECT:/en/organizer/events/event-safe/overview?error=");
+
+    expect(updateEventBrandAssets).not.toHaveBeenCalled();
   });
 
   it("approves an AI revision and activates it through the repository boundary", async () => {

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { prisma } = vi.hoisted(() => ({
@@ -25,6 +26,21 @@ describe("event draft validation", () => {
   it("rejects a blank submitted slug while allowing it to be omitted", () => {
     expect(eventDraftSchema.parse({ description: "Still incomplete" })).toEqual({ description: "Still incomplete" });
     expect(() => eventDraftSchema.parse({ slug: "   " })).toThrow();
+  });
+
+  it("accepts a versioned V3 format config and rejects unsupported persisted input", () => {
+    const formatConfig = {
+      version: 1 as const,
+      kind: "single_elimination" as const,
+      bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 },
+      thirdPlace: "required" as const,
+    };
+    expect(eventDraftSchema.parse({ format: "Single Elimination", formatConfig })).toEqual({
+      format: "Single Elimination",
+      formatConfig,
+    });
+    expect(() => eventDraftSchema.parse({ formatConfig: { version: 1, kind: "swiss" } })).toThrow();
+    expect(() => eventDraftSchema.parse({ format: "League", formatConfig })).toThrow();
   });
 });
 
@@ -69,6 +85,58 @@ describe("saveEventDraft", () => {
       eventId: "event-1", actor: { id: "organizer-1", role: "organizer" },
       expectedRevision: 5, mutationId, draft: { name: "Miracle Open" },
     })).resolves.toMatchObject({ status: "saved", revision: 6, retry: true });
+  });
+
+  it("recognizes a retry when the stored JSON format config is structurally equal", async () => {
+    const formatConfig = {
+      version: 1 as const,
+      kind: "round_robin" as const,
+      legs: 1 as const,
+      points: { win: 3, draw: 1, loss: 0 },
+      tiebreakers: ["head_to_head", "score_difference"] as const,
+    };
+    prisma.event.updateMany.mockResolvedValue({ count: 0 });
+    prisma.event.findFirst.mockResolvedValue({
+      draftRevision: 6, lastDraftMutationId: mutationId, status: "Draft",
+      format: "League", formatConfig: JSON.parse(JSON.stringify(formatConfig)),
+    });
+
+    await expect(saveEventDraft({
+      eventId: "event-1", actor: { id: "organizer-1", role: "organizer" },
+      expectedRevision: 5, mutationId, draft: { formatConfig },
+    })).resolves.toMatchObject({ status: "saved", revision: 6, retry: true });
+  });
+
+  it("persists the derived legacy format with a V3 format config", async () => {
+    const formatConfig = {
+      version: 1 as const,
+      kind: "double_elimination" as const,
+      bestOf: { earlyRounds: 1, upperFinal: 3, lowerFinal: 3, grandFinal: 5 },
+      thirdPlace: "lower_final_loser" as const,
+    };
+    prisma.event.updateMany.mockResolvedValue({ count: 1 });
+
+    await saveEventDraft({
+      eventId: "event-1", actor: { id: "organizer-1", role: "organizer" },
+      expectedRevision: 2, mutationId, draft: { formatConfig },
+    });
+
+    expect(prisma.event.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ format: "Single Elimination", formatConfig }),
+    }));
+  });
+
+  it("clears V3 configuration when a legacy-only format edit is saved", async () => {
+    prisma.event.updateMany.mockResolvedValue({ count: 1 });
+
+    await saveEventDraft({
+      eventId: "event-1", actor: { id: "organizer-1", role: "organizer" },
+      expectedRevision: 2, mutationId, draft: { format: "League" },
+    });
+
+    expect(prisma.event.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ format: "League", formatConfig: Prisma.DbNull }),
+    }));
   });
 
   it("rejects reuse of the same mutation ID with a different normalized payload", async () => {

@@ -178,9 +178,14 @@ describe("V3 shell integration", () => {
   });
 
   it("localizes workspace navigation and next action while retaining the current locale", async () => {
-    await render(<EventWorkspaceShell eventTitle="Community Cup" organizerLabel="Community" navigation={[{ href: "/organizer/events/cup", label: "Overview", active: true }]} nextAction={<button>Continue setup</button>}><p>Workspace</p></EventWorkspaceShell>);
+    await render(<EventWorkspaceShell eventTitle="Community Cup" organizerLabel="Community" navigation={[
+      { href: "/organizer/events/cup/overview#section-identity", label: "Identity", active: true },
+      { href: "/organizer/events/cup/overview#section-schedule", label: "Schedule" },
+    ]} nextAction={<button>Continue setup</button>}><p>Workspace</p></EventWorkspaceShell>);
     expect(container.querySelector('nav[aria-label="Event navigation"]')).not.toBeNull();
-    expect(links()).toContain("/en/organizer/events/cup");
+    expect(links()).toContain("/en/organizer/events/cup/overview#section-identity");
+    expect(links()).toContain("/en/organizer/events/cup/overview#section-schedule");
+    expect(container.querySelectorAll('nav[aria-label="Event navigation"] a[tabindex="-1"]')).toHaveLength(0);
     expect(container.querySelector('aside[aria-label="Next action"]')?.textContent).toContain("Continue setup");
     expect(container.querySelector("h1")?.textContent).toBe("Community Cup");
   });

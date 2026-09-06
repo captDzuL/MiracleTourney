@@ -1436,7 +1436,7 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
   await redirectToActiveLocale(`/admin?success=character-art-uploaded`);
 }
 
-export async function adminUploadEventLogoAction(formData: FormData) {
+async function uploadEventLogo(formData: FormData, returnPath: string) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
@@ -1448,16 +1448,27 @@ export async function adminUploadEventLogoAction(formData: FormData) {
       entityId: eventId,
       label: "Event logo",
       maxBytes: MAX_LOGO_IMAGE_BYTES,
+      errorPath: returnPath,
     });
     await updateEventBrandAssets(eventId, { logoUrl: asset.url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+    redirect(appendActionError(returnPath, message) as never);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=event-logo-uploaded`);
+  redirect(`${returnPath}?success=event-logo-uploaded#section-visuals` as never);
+}
+
+export async function adminUploadEventLogoAction(formData: FormData) {
+  return uploadEventLogo(formData, "/admin");
+}
+
+export async function organizerUploadEventLogoAction(formData: FormData) {
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const locale = z.enum(["id", "en"]).parse(formData.get("locale"));
+  return uploadEventLogo(formData, `/${locale}/organizer/events/${eventId}/overview`);
 }
 
 /**
@@ -1473,7 +1484,7 @@ const DUAL_WRITE_LEGACY_EVENT_IMAGE = true;
  * Organizer uploads are trusted after the rights attestation, so the revision
  * is created already approved and then activated through the repository.
  */
-export async function adminUploadEventVisualAction(formData: FormData) {
+async function uploadEventVisual(formData: FormData, returnPath: string) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
 
@@ -1490,6 +1501,7 @@ export async function adminUploadEventVisualAction(formData: FormData) {
       entityId: eventId,
       label: "Event background",
       maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
+      errorPath: returnPath,
     });
 
     const revision = await createEventVisualAsset(user, {
@@ -1508,12 +1520,22 @@ export async function adminUploadEventVisualAction(formData: FormData) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+    redirect(appendActionError(returnPath, message) as never);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=event-visual-uploaded`);
+  redirect(`${returnPath}?success=event-visual-uploaded#section-visuals` as never);
+}
+
+export async function adminUploadEventVisualAction(formData: FormData) {
+  return uploadEventVisual(formData, "/admin");
+}
+
+export async function organizerUploadEventVisualAction(formData: FormData) {
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const locale = z.enum(["id", "en"]).parse(formData.get("locale"));
+  return uploadEventVisual(formData, `/${locale}/organizer/events/${eventId}/overview`);
 }
 
 /** Approves a revision that is waiting for review and makes it the active one. */

@@ -16,6 +16,7 @@ import {
 } from "@/lib/platform/config";
 import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventStream, EventVisualAsset, Match, MatchGame, PaymentSettings, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, TournamentFormat, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
+import { tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 import {
   aggregatePlayerLeaderboard,
   buildLeagueStandings,
@@ -32,7 +33,7 @@ import { prisma } from "./db";
 const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration Closed", "Ongoing", "Finished"]);
 
 /** Single relation set every mapped-event query loads, so `mapEvent` stays the only mapping site. */
-const eventPublicInclude = { stream: true, activeVisualAsset: true } satisfies Prisma.EventInclude;
+export const eventPublicInclude = { stream: true, activeVisualAsset: true } satisfies Prisma.EventInclude;
 
 type EventVisualAssetRow = {
   id: string; eventId: string; source: string; status: string;
@@ -73,10 +74,11 @@ function mapEventVisualAsset(row: EventVisualAssetRow): EventVisualAsset {
   return asset;
 }
 
-function mapEvent(row: {
+export function mapEvent(row: {
   id: string; slug: string; name: string; description: string;
   logoUrl: string | null; gameImageUrl: string | null;
   gameId: string; gameModeId: string; format: string; status: string;
+  formatConfig?: Prisma.JsonValue | null;
   participantCap: number; registrationWindow: string; startsAt: string;
   venue: string; characterArtUrl?: string | null; accentColor?: string | null;
   organizerUserId?: string | null; organizerName?: string | null; organizerVerified?: boolean | null;
@@ -106,6 +108,8 @@ function mapEvent(row: {
   if (row.registrationFeeAmount != null) event.registrationFeeAmount = row.registrationFeeAmount;
   if (row.registrationFeeLabel) event.registrationFeeLabel = row.registrationFeeLabel;
   if (row.registrationUrl) event.registrationUrl = row.registrationUrl;
+  const formatConfig = tournamentFormatConfigSchema.safeParse(row.formatConfig);
+  if (formatConfig.success) event.formatConfig = formatConfig.data;
   if (row.activeVisualAssetId) event.activeVisualAssetId = row.activeVisualAssetId;
   if (row.activeVisualAsset) event.activeVisualAsset = mapEventVisualAsset(row.activeVisualAsset);
   if (row.stream) {
@@ -372,6 +376,55 @@ export async function assertUserCanManageEvent(user: AppUser, eventId: string): 
     select: { id: true },
   });
   if (!row) throw new Error("Not authorized");
+}
+
+export async function getManageableEventDraft(user: AppUser, eventId: string) {
+  if (user.role !== "organizer" && user.role !== "platform_admin" && user.role !== "admin") return null;
+  const row = await prisma.event.findFirst({
+    where: {
+      id: eventId,
+      ...(user.role === "organizer" ? { organizerUserId: user.id } : {}),
+    },
+    select: {
+      id: true, slug: true, name: true, description: true, gameId: true, gameModeId: true,
+      format: true, formatConfig: true, participantCap: true,
+      registrationOpensAt: true, registrationClosesAt: true, eventStartsAt: true,
+      timezone: true, venue: true, venueAddress: true,
+      registrationFeeRequired: true, registrationFeeAmount: true,
+      logoUrl: true, gameImageUrl: true, draftRevision: true, status: true,
+      organizer: { select: { organizerProfile: { select: { contactChannel: true, contactValue: true } } } },
+    },
+  });
+  if (!row) return null;
+  const formatConfig = tournamentFormatConfigSchema.safeParse(row.formatConfig);
+  return {
+    ...row,
+    formatConfig: formatConfig.success ? formatConfig.data : null,
+    status: row.status as EventStatus,
+  };
+}
+
+export async function updateEventOrganizerContact(
+  user: AppUser,
+  input: { eventId: string; contactChannel: string; contactValue: string },
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const event = await tx.event.findFirst({
+      where: { id: input.eventId, ...(user.role === "organizer" ? { organizerUserId: user.id } : {}) },
+      select: { organizerUserId: true, organizerName: true },
+    });
+    if (!event?.organizerUserId) throw new Error("Not authorized");
+    await tx.organizerProfile.upsert({
+      where: { userId: event.organizerUserId },
+      update: { contactChannel: input.contactChannel, contactValue: input.contactValue },
+      create: {
+        userId: event.organizerUserId,
+        organizationName: event.organizerName ?? user.name,
+        contactChannel: input.contactChannel,
+        contactValue: input.contactValue,
+      },
+    });
+  });
 }
 
 export async function assertUserCanReviewStatSubmission(user: AppUser, submissionId: string): Promise<void> {
@@ -1306,6 +1359,7 @@ export async function createEvent(input: {
   slug: string;
   gameModeId: string;
   format: Event["format"];
+  formatConfig?: import("@/lib/tournament/formats/types").TournamentFormatConfig;
   participantCap: Event["participantCap"];
   organizerUserId?: string;
   organizerName?: string;
@@ -1320,6 +1374,7 @@ export async function createEvent(input: {
       gameId,
       gameModeId: input.gameModeId,
       format: input.format,
+      formatConfig: input.formatConfig,
       status: "Draft",
       participantCap: input.participantCap,
       registrationWindow: "TBD",
@@ -1336,7 +1391,14 @@ export async function createEvent(input: {
 
 /** Updates an event's lifecycle status. Use `autoTransitionEventToOngoing` for the match-triggered transition. */
 export async function setEventStatus(eventId: string, status: Event["status"]): Promise<Event | null> {
-  const row = await prisma.event.update({ where: { id: eventId }, data: { status }, include: { stream: true } });
+  const row = await prisma.$transaction(async (tx) => {
+    const updatedEvent = await tx.event.update({ where: { id: eventId }, data: { status }, include: { stream: true } });
+    await tx.eventPreviewToken.updateMany({
+      where: { eventId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return updatedEvent;
+  });
   return mapEvent(row);
 }
 

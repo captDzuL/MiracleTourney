@@ -8,6 +8,7 @@ const OWNED_KEYS = [
   "FEATURE_FLAG_UI_V3_FOUNDATION",
   "FEATURE_FLAG_ORGANIZER_WORKSPACE_V3",
   "FEATURE_FLAG_REGISTRATION_WORKSPACE_V3",
+  "FEATURE_FLAG_COMPETITION_OPERATIONS_V3",
 ] as const;
 
 afterEach(() => {
@@ -39,6 +40,13 @@ describe("public visual feature flags", () => {
 
     process.env.FEATURE_FLAG_REGISTRATION_WORKSPACE_V3 = "true";
     expect(isFeatureEnabled("registration_workspace_v3")).toBe(true);
+  });
+
+  it("keeps competition operations disabled until explicitly enabled", () => {
+    expect(isFeatureEnabled("competition_operations_v3")).toBe(false);
+
+    process.env.FEATURE_FLAG_COMPETITION_OPERATIONS_V3 = "true";
+    expect(isFeatureEnabled("competition_operations_v3")).toBe(true);
   });
 
   it("enables ui_v3_foundation when the environment override is true", () => {

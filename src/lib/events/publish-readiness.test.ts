@@ -69,6 +69,60 @@ describe("evaluatePublishReadiness", () => {
       ready: true, incomplete: [], notices: [{ code: "schedule_overlap", severity: "info" }],
     });
   });
+
+  it("keeps legacy events publishable while rejecting a malformed present V3 format config", () => {
+    expect(evaluatePublishReadiness(completeEvent)).toMatchObject({ ready: true });
+    expect(evaluatePublishReadiness({
+      ...completeEvent,
+      formatConfig: { version: 1, kind: "swiss" },
+    })).toMatchObject({
+      ready: false,
+      incomplete: [{ code: "format_config", field: "formatConfig", section: "schedule" }],
+    });
+  });
+
+  it("blocks contradictory legacy/V3 formats and impossible group allocation", () => {
+    expect(evaluatePublishReadiness({
+      ...completeEvent,
+      format: "League",
+      formatConfig: {
+        version: 1,
+        kind: "single_elimination",
+        bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 },
+        thirdPlace: "required",
+      },
+    })).toMatchObject({
+      ready: false,
+      incomplete: [{ code: "format_config_mismatch", field: "formatConfig", section: "schedule" }],
+    });
+
+    expect(evaluatePublishReadiness({
+      ...completeEvent,
+      format: "League",
+      participantCap: 8,
+      formatConfig: {
+        version: 1,
+        kind: "group_playoffs",
+        groupCount: 4,
+        qualifiersPerGroup: 2,
+        groupStage: {
+          legs: 1,
+          points: { win: 3, draw: 1, loss: 0 },
+          tiebreakers: ["head_to_head", "score_difference"],
+        },
+        playoffs: {
+          version: 1,
+          kind: "single_elimination",
+          bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 },
+          thirdPlace: "required",
+          avoidImmediateGroupRematches: true,
+        },
+      },
+    })).toMatchObject({
+      ready: false,
+      incomplete: [{ code: "group_allocation", field: "formatConfig", section: "schedule" }],
+    });
+  });
 });
 
 describe("publishEvent", () => {

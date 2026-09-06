@@ -55,6 +55,7 @@ model Event {
   gameId               String
   gameModeId           String
   format               String
+  formatConfig         Json?
   status               String
   participantCap       Int
   registrationWindow   String

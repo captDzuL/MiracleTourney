@@ -48,7 +48,10 @@ export type EventStatus =
   | "Ongoing"
   | "Finished";
 
+import type { TournamentFormatConfig } from "@/lib/tournament/formats/types";
+
 export type TournamentFormat = "Single Elimination" | "League";
+export type { StandingsTiebreaker, TournamentFormatConfig } from "@/lib/tournament/formats/types";
 
 export type EventStream = {
   platform: "youtube" | "tiktok" | "external";
@@ -101,6 +104,7 @@ export type Event = {
   gameId: string;
   gameModeId: string;
   format: TournamentFormat;
+  formatConfig?: TournamentFormatConfig;
   status: EventStatus;
   participantCap: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
   registrationWindow: string;
