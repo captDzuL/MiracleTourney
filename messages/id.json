@@ -572,5 +572,6 @@
       "rejected": "Ditolak",
       "expired": "Kedaluwarsa"
     }
-  }
+  },
+  "v3Footer": {"copyright":"Copyright © Miracle","tagline":"Platform turnamen komunitas multi-game","socialLabel":"Kontak sosial Miracle","mobileMenu":"Buka navigasi"}
 }
