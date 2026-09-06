@@ -124,7 +124,7 @@ describe("V3 panel theme integration", () => {
   it("uses V3 tokens in the toggle instead of legacy slate colors", () => {
     const source = readFileSync(join(process.cwd(), "src", "components", "panel", "PanelThemeToggle.tsx"), "utf8");
     expect(source).toContain("var(--color-surface-subtle)");
-    expect(source).toContain("var(--color-focus-ring)");
+    expect(source).toContain("miracle-focus-ring");
     expect(source).not.toContain("border-slate-200");
   });
 
@@ -132,5 +132,7 @@ describe("V3 panel theme integration", () => {
     const css = readFileSync(join(process.cwd(), "src", "styles", "miracle-v3-tokens.css"), "utf8");
     expect(css).toContain('html[data-panel-theme="light"] .miracle-v3:has(.panel-scope)');
     expect(css).toContain('html[data-panel-theme="dark"] .miracle-v3:has(.panel-scope)');
+    expect(css).toContain(".miracle-v3 .miracle-focus-ring:focus-visible");
+    expect(css).toContain("outline: 2px solid var(--color-focus-ring)");
   });
 });

@@ -86,7 +86,7 @@ export function PanelThemeToggle() {
             aria-pressed={active}
             title={t(option)}
             className={cn(
-              "inline-flex min-h-9 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]",
+              "inline-flex min-h-9 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors miracle-focus-ring",
               active
                 ? "bg-[var(--color-surface-selected)] text-[var(--color-text)]"
                 : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]",

@@ -326,3 +326,17 @@ The light theme uses neutral replacements only. Semantic status combines one bra
 
 Each stage ships behind an explicit feature flag, preserves existing behavior until parity, and has a rollback path that disables the V3 route or composition without deleting data.
 
+
+## Foundation implementation notes
+
+The first implementation slice intentionally translates the HTML mockups into a shared production shell rather than copying their page-specific chrome.
+
+- Public navigation becomes desktop navigation at 620 px. Operator navigation keeps the drawer until 980 px so dense controls retain useful width. Event workspaces collapse at 1100 px.
+- Public, organizer, captain, and platform-admin states share one locale-aware navigation system. Links are filtered by the signed-in role and active state is derived from the longest matching route.
+- The official horizontal Miracle SVG is the shell lockup. The symbol variant remains available for compact compositions; decorative mockup wordmarks are not recreated in CSS.
+- The footer always renders `Copyright © Miracle` and the platform description. Social links render only after official contact URLs are configured, avoiding placeholder or invented destinations.
+- Dark is applied before paint and is the default for the public and operator token scopes. Operator light, dark, and system choices continue to use the existing saved theme contract.
+- Keyboard focus, skip navigation, drawer focus containment, Escape-to-close, focus return, and body scroll locking are production accessibility requirements even where the static mockups do not illustrate them.
+- The browser foundation smoke suite uses the database-free organizer route as the shared operator canvas, then supplies organizer, captain, and platform-admin session responses to verify role-specific shell navigation. Authenticated page data remains covered by the existing seeded end-to-end suite.
+
+These differences preserve the approved hierarchy, Montserrat typography, logo-led three-color palette, borders, and dark visual direction while making the shell reusable and accessible.

@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+process.env.FEATURE_FLAG_UI_V3_FOUNDATION ??= "true";
+
 const port = process.env.PLAYWRIGHT_SMOKE_PORT ?? "3101";
 const baseURL = `http://127.0.0.1:${port}`;
 // Optional escape hatch: reuse a locally installed browser (e.g. "msedge", "chrome")
@@ -10,6 +12,7 @@ const webServer =
     ? undefined
     : {
         command: `node .\\node_modules\\next\\dist\\bin\\next dev --hostname 127.0.0.1 --port ${port}`,
+        env: { ...process.env, FEATURE_FLAG_UI_V3_FOUNDATION: "true" },
         url: `${baseURL}/id/login`,
         reuseExistingServer: !process.env.CI,
       };

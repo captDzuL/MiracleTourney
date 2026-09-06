@@ -73,6 +73,10 @@ html[data-panel-theme="light"] .miracle-v3.panel-scope {
   --elevation-panel: 0 16px 40px rgb(16 32 51 / 0.12);
 }
 
+.miracle-v3 .miracle-focus-ring:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
 .miracle-v3 .miracle-v3-feedback {
   --color-feedback-success: var(--color-brand-cyan);
   --color-feedback-warning: var(--color-brand-cream);

@@ -7,7 +7,7 @@ import { Link, usePathname } from "@/i18n/navigation";
 import { BrandLogo } from "./BrandLogo";
 
 export type ShellNavigationItem = { href: string; label: string; active?: boolean; roles?: string[] };
-export const shellFocus = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]";
+export const shellFocus = "miracle-focus-ring";
 const navigationLink = `rounded-[var(--radius-control)] px-3 py-2.5 text-sm font-semibold text-[var(--color-text-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)] aria-[current=page]:bg-[var(--color-surface-selected)] aria-[current=page]:text-[var(--color-text)] ${shellFocus}`;
 
 export function ShellNavigation({ navigation, label, onNavigate, className = "space-y-1" }: { navigation: ShellNavigationItem[]; label: string; onNavigate?: () => void; className?: string }) {

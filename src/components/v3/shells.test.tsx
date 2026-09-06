@@ -130,7 +130,7 @@ describe("V3 shell integration", () => {
     await render();
     const trigger = menu();
     expect(trigger.getAttribute("aria-label")).toBe("Open navigation");
-    expect(trigger.className).toContain("focus-visible:outline");
+    expect(trigger.className).toContain("miracle-focus-ring");
     trigger.focus();
     click(trigger);
     const dialog = container.querySelector<HTMLElement>('[role="dialog"]')!;
