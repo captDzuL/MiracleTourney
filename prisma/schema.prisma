@@ -65,6 +65,7 @@ model Event {
   timezone             String             @default("Asia/Jakarta")
   venueAddress         String?
   draftRevision        Int                @default(0)
+  lastDraftMutationId  String?
   publishedAt          DateTime?
   previewRevision      Int                @default(0)
   venue                String

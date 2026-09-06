@@ -35,6 +35,7 @@ const {
   revalidateTag,
   requireRole,
   sendEmail,
+  publishEvent,
   setEventStatus,
   setEventVisualFocalPoint,
   setMatchGames,
@@ -89,6 +90,7 @@ const {
   revalidateTag: vi.fn(),
   requireRole: vi.fn(),
   sendEmail: vi.fn(),
+  publishEvent: vi.fn(),
   setEventStatus: vi.fn(),
   setEventVisualFocalPoint: vi.fn(),
   setMatchGames: vi.fn(),
@@ -173,6 +175,7 @@ vi.mock("@/lib/certificate/generate", () => ({
 vi.mock("@/lib/platform/password-reset", () => ({
   createPasswordResetToken,
 }));
+vi.mock("@/lib/events/publish-readiness", () => ({ publishEvent }));
 vi.mock("@/lib/email/send", () => ({
   sendEmail,
 }));
@@ -909,6 +912,32 @@ describe("adminUpdateEventStatusAction", () => {
     await expect(
       adminUpdateEventStatusAction(fd({ eventId: "e-missing", status: "Published" })),
     ).rejects.toThrow("REDIRECT:/admin?error=");
+  });
+  it.each(["conflict", "not_draft"] as const)("does not report legacy publication success for %s", async (status) => {
+    process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = "true";
+    publishEvent.mockResolvedValue(status === "not_draft" ? { status, slug: "miracle-league" } : { status });
+
+    try {
+      await expect(
+        adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Published" })),
+      ).rejects.toThrow("REDIRECT:/admin?error=event-publish-conflict");
+    } finally {
+      delete process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3;
+    }
+  });
+  it("uses the shared readiness guard for legacy publish while organizer V3 is enabled", async () => {
+    process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = "true";
+    publishEvent.mockResolvedValue({ status: "blocked", readiness: { incomplete: [{ code: "description" }] } });
+
+    try {
+      await expect(
+        adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Published" })),
+      ).rejects.toThrow("REDIRECT:/admin?error=event-not-ready");
+      expect(publishEvent).toHaveBeenCalledWith("e1", { id: "admin-1", role: "platform_admin" });
+      expect(setEventStatus).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3;
+    }
   });
 });
 

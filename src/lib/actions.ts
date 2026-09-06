@@ -7,6 +7,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { publishEvent } from "@/lib/events/publish-readiness";
 import { prisma } from "@/lib/platform/db";
 import { createPasswordResetToken, consumePasswordResetToken } from "@/lib/platform/password-reset";
 import { routing } from "@/i18n/routing";
@@ -770,6 +772,28 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
   });
 
   await assertUserCanManageEvent(user, input.eventId);
+
+  if (input.status === "Published" && isFeatureEnabled("organizer_workspace_v3")) {
+    const publication = await publishEvent(input.eventId, {
+      id: user.id,
+      role: z.enum(["organizer", "platform_admin", "admin"]).parse(user.role),
+    });
+    if (publication.status === "not_found") {
+      return redirectToActiveLocale("/admin?error=Event%20not%20found.");
+    }
+    if (publication.status === "blocked") {
+      return redirectToActiveLocale("/admin?error=event-not-ready");
+    }
+
+    if (publication.status !== "published" && publication.status !== "already_published") {
+      return redirectToActiveLocale("/admin?error=event-publish-conflict");
+    }
+
+    revalidateTag("events");
+    revalidatePath("/", "layout");
+    return redirectToActiveLocale(`/admin?success=event-status-updated&event=${publication.slug}`);
+  }
+
   const event = await setEventStatus(input.eventId, input.status);
 
   if (!event) {

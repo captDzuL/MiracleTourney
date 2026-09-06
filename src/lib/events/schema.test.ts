@@ -48,6 +48,7 @@ describe("event lifecycle Prisma contract", () => {
     expect(field("Event", "timezone")).toMatchObject({ type: "String", default: "Asia/Jakarta" });
     expect(field("Event", "venueAddress")).toMatchObject({ type: "String", isRequired: false });
     expect(field("Event", "draftRevision")).toMatchObject({ type: "Int", default: 0 });
+    expect(field("Event", "lastDraftMutationId")).toMatchObject({ type: "String", isRequired: false });
     expect(field("Event", "previewRevision")).toMatchObject({ type: "Int", default: 0 });
     expect(field("Event", "registrationWindow")).toMatchObject({ type: "String", isRequired: true });
     expect(field("Event", "startsAt")).toMatchObject({ type: "String", isRequired: true });
@@ -96,5 +97,15 @@ describe("event lifecycle migration", () => {
       'CREATE INDEX "EventPreviewToken_eventId_revokedAt_expiresAt_idx" ON "EventPreviewToken"("eventId", "revokedAt", "expiresAt")',
     );
     expect(migration).not.toMatch(/"token"\s+TEXT/);
+  });
+});
+describe("event draft idempotency migration", () => {
+  it("adds a nullable mutation identity without rewriting existing event rows", () => {
+    const migrationPath = fileURLToPath(
+      new URL("../../../prisma/migrations/20260905011000_v3_event_draft_idempotency/migration.sql", import.meta.url),
+    );
+    const migration = readFileSync(migrationPath, "utf8");
+    expect(migration).toContain('ADD COLUMN "lastDraftMutationId" TEXT');
+    expect(migration).not.toContain('NOT NULL');
   });
 });
