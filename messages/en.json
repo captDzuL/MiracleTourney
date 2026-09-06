@@ -572,5 +572,6 @@
       "rejected": "Rejected",
       "expired": "Expired"
     }
-  }
+  },
+  "v3Footer": {"copyright":"Copyright © Miracle","tagline":"Multi-game community tournament platform","socialLabel":"Miracle social contacts","mobileMenu":"Open navigation"}
 }
