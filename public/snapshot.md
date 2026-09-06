@@ -307,3 +307,35 @@ Default-off flags preserve rollback during the transition:
 - `adaptive_public_event_v3`
 
 Completion and certificate UI remains dependent on the competition-operation rollout; its records are versioned and its public output appears through the adaptive Event Page. The next action is implementation Phase 1: Miracle V3 design foundation.
+
+## V3 implementation handoff — 6 September 2026
+
+Current implementation branch: `feature/ui/release/1.0`.
+
+Completed commits:
+- `084d740` — V3 design foundation and rollout hardening.
+- `b770318` — additive event lifecycle schema and preview-token foundation.
+- `b379060` — reliable event draft autosave and guarded publication.
+
+Task 2 production contract:
+- Autosave accepts incomplete Draft patches and never injects an omitted timezone; new events retain the database default `Asia/Jakarta`.
+- Every autosave mutation carries a UUID. A retry is accepted only when the next revision, stored mutation ID, and normalized submitted values all match.
+- A stale or changed request returns a conflict and cannot overwrite a newer draft. Published events are not editable through the draft service.
+- Publish readiness reports independent field and cross-field blockers, requires a non-blank slug and organizer contact, accepts a zero-value fee, and treats another organizer event on the same WIB date as informational.
+- Publication runs in one actor-scoped transaction, requires the exact checked draft revision and Draft state, prevents duplicate publication, records `publishedAt`, and revokes active private-preview tokens.
+- When `organizer_workspace_v3` is enabled, the legacy admin publish action uses the same readiness guard. Default-off flags retain the current interface as rollback.
+
+Verification at this checkpoint:
+- Focused Task 2 suite: 151 tests passed.
+- Full Vitest suite: 500 tests passed across 44 files.
+- TypeScript: passed.
+- Prisma schema validation: passed.
+- Production build: passed.
+- Independent review: PASS after two fix rounds; all authorization, revision race, sparse patch, slug, blocker completeness, and retry identity findings were closed.
+- No migration was applied to a shared or production database.
+
+Handoff next action:
+- Implement Event Lifecycle Task 3 from `docs/superpowers/plans/2026-09-05-miracle-v3-event-lifecycle-registration.md`.
+- Preview tokens must be unguessable, hash-only, expiring, replaceable/revocable, uncached, noindex, no-referrer, and readable without login only while the event remains Draft.
+- Extract a shared event view model so private preview and the later adaptive public Event Page render the same normalized event identity without exposing edit, registration, share, or public-navigation controls in preview mode.
+- Before building the multiformat Create Event UI, land the validated V3 format configuration contract while retaining legacy format strings as compatibility fields.

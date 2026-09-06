@@ -324,3 +324,29 @@ The approved design work is now consolidated into one architecture blueprint and
 Execution order is foundation, organizer lifecycle and registration, competition operations, completion and certificates, then the adaptive public Event Page. Each composition ships behind a default-off feature flag with the current experience retained as rollback until parity and full-story verification pass.
 
 The architecture confirms there will be no separate Live Tournament Match Center or Final Public Recap. `/[locale]/events/[slug]` is the permanent public destination and becomes the recap when the tournament finishes.
+
+## V3 implementation checkpoint — 6 September 2026
+
+The V3 rollout is now implementation work, not only a visual reskin. The approved HTML mockups remain the canonical product references; completion of the foundation does not imply that the organizer, captain, registration, Match Day, completion, certificate, adaptive event, or homepage compositions already match those references.
+
+Completed on `feature/ui/release/1.0`:
+- Design foundation through `084d740`: official Miracle branding, Montserrat, three-color token system, dark-default operator theme with light/system controls, responsive shells, footer, locale-safe navigation, and accessibility coverage.
+- Event Lifecycle Task 1 in `b770318`: default-off organizer/registration flags, organizer profile, structured registration and event dates, WIB default, draft/preview revisions, and hashed preview-token persistence.
+- Event Lifecycle Task 2 in `b379060`: Draft-only revision-aware autosave, UUID-backed retry idempotency, stale-tab conflicts, exact publish-readiness blockers, non-blocking same-WIB-day overlap notices, actor-scoped transactional publication, legacy publish-gate parity, and preview-token revocation on publication.
+
+Migration order was corrected to preserve dependencies:
+1. `20260905010000_v3_event_lifecycle`
+2. `20260905011000_v3_event_draft_idempotency`
+
+These migrations are committed but have not been applied to a shared or production database. Apply them through the normal deployment migration process before enabling organizer workspace writes.
+
+### Corrected implementation order from this checkpoint
+
+1. Event Lifecycle Task 3: secure private preview without login, using the same event presentation in read-only mode.
+2. Competition Task 1 and persistence contract: add validated Single/Double Elimination, Round-Robin, and Group + Playoffs configuration without changing legacy `Event.format` behavior.
+3. Event Lifecycle Task 4: build the contextual Create Event workspace from the approved contextual and multiformat mockups.
+4. Event Lifecycle Task 5: unified Miracle/direct/import registration queue with 10/25/50 server pagination.
+5. Event Lifecycle Task 6: full organizer lifecycle verification.
+6. Continue Match Day, completion/certificates, adaptive public Event Page, and homepage workstreams in their dependency order.
+
+Single Elimination keeps the required Third Place Match when two semifinals exist. The optional toggle visible in an older mockup is superseded by this approved rule.
