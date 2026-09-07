@@ -1,18 +1,63 @@
 import { PrismaClient as DefaultPrismaClient } from "@prisma/client";
 import { pathToFileURL } from "node:url";
+import { loadE2eEnvironment } from "./e2e-env.mjs";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const KNOWN_NEON_PROD_HOST = "ep-sparkling-night-azr6wxwd";
 
-function configuredDatabaseUrl(env) {
-  return env.DIRECT_URL || env.DATABASE_URL || "";
+function parseDatabaseUrl(value) {
+  if (!value) return null;
+
+  try {
+    const url = new URL(value);
+    return url.hostname ? url : null;
+  } catch {
+    return null;
+  }
 }
 
-function safeHostFromUrl(value) {
-  try {
-    return new URL(value).host || "(unknown host)";
-  } catch {
-    return "(invalid database URL)";
+function isProductionHost(host, env) {
+  const configuredProductionHost = env.NEON_PROD_HOST?.trim().toLowerCase();
+  const normalizedHost = host.toLowerCase();
+
+  return normalizedHost.includes(KNOWN_NEON_PROD_HOST)
+    || Boolean(configuredProductionHost && normalizedHost.includes(configuredProductionHost));
+}
+
+function databaseConfiguration(env) {
+  const databaseUrl = env.DATABASE_URL ?? "";
+  const directUrl = env.DIRECT_URL ?? "";
+  const parsedDatabaseUrl = parseDatabaseUrl(databaseUrl);
+  const parsedDirectUrl = parseDatabaseUrl(directUrl);
+  const configuredUrls = [parsedDatabaseUrl, parsedDirectUrl].filter(Boolean);
+  const productionUrl = configuredUrls.find((url) => isProductionHost(url.hostname, env));
+
+  if (productionUrl) {
+    return {
+      ok: false,
+      host: productionUrl.host,
+      message: "Blocked: a database URL points to the production Neon branch. Set DATABASE_URL and DIRECT_URL to the isolated test branch before running E2E tests.",
+    };
   }
+
+  if ((databaseUrl && !parsedDatabaseUrl) || (directUrl && !parsedDirectUrl)) {
+    return {
+      ok: false,
+      host: "(invalid database URL)",
+      message: "DATABASE_URL and DIRECT_URL must be valid absolute URLs before running DB-backed E2E tests.",
+    };
+  }
+
+  const connectionUrl = parsedDirectUrl ?? parsedDatabaseUrl;
+  if (!connectionUrl) {
+    return {
+      ok: false,
+      host: "(not configured)",
+      message: "DATABASE_URL or DIRECT_URL must be set before running DB-backed E2E tests.",
+    };
+  }
+
+  return { ok: true, host: connectionUrl.host };
 }
 
 function describeError(error) {
@@ -41,23 +86,9 @@ export async function checkE2eDatabaseConnection({
   PrismaClient = DefaultPrismaClient,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) {
-  const databaseUrl = configuredDatabaseUrl(env);
-  if (!databaseUrl) {
-    return {
-      ok: false,
-      host: "(not configured)",
-      message: "DATABASE_URL or DIRECT_URL must be set before running DB-backed E2E tests.",
-    };
-  }
-
-  const host = safeHostFromUrl(databaseUrl);
-  const prodHost = (env.NEON_PROD_HOST ?? "").trim();
-  if (prodHost && host.includes(prodHost)) {
-    return {
-      ok: false,
-      host,
-      message: "Blocked: DATABASE_URL points to the production Neon branch. Set DIRECT_URL / DATABASE_URL to the test branch before running E2E tests.",
-    };
+  const configuration = databaseConfiguration(env);
+  if (!configuration.ok) {
+    return configuration;
   }
 
   const prisma = new PrismaClient();
@@ -65,13 +96,13 @@ export async function checkE2eDatabaseConnection({
     await withTimeout(prisma.$connect(), timeoutMs);
     return {
       ok: true,
-      host,
+      host: configuration.host,
       message: "Database connection is reachable for DB-backed E2E tests.",
     };
   } catch (error) {
     return {
       ok: false,
-      host,
+      host: configuration.host,
       message: describeError(error),
     };
   } finally {
@@ -79,7 +110,14 @@ export async function checkE2eDatabaseConnection({
   }
 }
 
+export function requireE2eDatabaseResetPermission(env = process.env) {
+  if (env.E2E_DATABASE_RESET_ALLOWED !== "true") {
+    throw new Error("Blocked: set E2E_DATABASE_RESET_ALLOWED=true in .env.test before resetting the E2E database.");
+  }
+}
+
 async function main() {
+  loadE2eEnvironment();
   const result = await checkE2eDatabaseConnection();
   const prefix = result.ok ? "[e2e-db-preflight] OK" : "[e2e-db-preflight] BLOCKED";
   const output = `${prefix}: ${result.message} Host: ${result.host}`;

@@ -49,6 +49,9 @@ importers:
       disposable-email-domains:
         specifier: ^1.0.62
         version: 1.0.62
+      dotenv:
+        specifier: 16.6.1
+        version: 16.6.1
       exceljs:
         specifier: ^4.4.0
         version: 4.4.0

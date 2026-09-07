@@ -1,4 +1,7 @@
 import { defineConfig } from "@playwright/test";
+import { loadE2eEnvironment } from "./scripts/e2e-env.mjs";
+
+loadE2eEnvironment();
 
 const port = process.env.PLAYWRIGHT_PORT ?? "3100";
 const baseURL = `http://127.0.0.1:${port}`;
@@ -12,7 +15,7 @@ export default defineConfig({
   workers: 1, // serial execution to avoid shared-DB conflicts between test files
   retries: process.env.CI ? 2 : 0, // retry known Neon-latency flakes in CI; no retries needed locally
   webServer: {
-    command: `pnpm dev --hostname 127.0.0.1 --port ${port}`,
+    command: `pnpm dev:e2e -- --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
   },
