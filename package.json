@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "test:e2e": "pnpm test:e2e:prepare && playwright test",
     "test:e2e:preflight": "node scripts/e2e-db-preflight.mjs",
-    "test:e2e:prepare": "pnpm test:e2e:preflight",
+    "test:e2e:prepare": "node scripts/e2e-db-prepare.mjs",
     "dev:e2e": "node scripts/e2e-dev.mjs",
     "test:e2e:smoke": "node scripts/run-smoke-e2e.mjs",
     "test:pressure:smoke": "node scripts/run-smoke-pressure.mjs",
