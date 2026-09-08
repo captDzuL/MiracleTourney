@@ -1,0 +1,9 @@
+{
+  "orphanEventOwners": {
+    "event-id-1": "organizer-user-id-1",
+    "event-id-2": "organizer-user-id-2"
+  },
+  "legacyAdminUserIds": [
+    "legacy-admin-user-id-1"
+  ]
+}

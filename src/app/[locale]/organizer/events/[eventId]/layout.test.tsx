@@ -4,17 +4,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 Object.assign(globalThis, { React });
 
-const { requireAnyRole, getManageableEventDraft, isFeatureEnabled, notFound, redirectToActiveLocale } = vi.hoisted(() => ({
+const {
+  requireAnyRole,
+  getManageableEventDraft,
+  isFeatureEnabled,
+  notFound,
+  redirectToActiveLocale,
+  updateEventOrganizerContactAction,
+} = vi.hoisted(() => ({
   requireAnyRole: vi.fn(),
   getManageableEventDraft: vi.fn(),
   isFeatureEnabled: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
   redirectToActiveLocale: vi.fn(() => { throw new Error("REDIRECT"); }),
+  updateEventOrganizerContactAction: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft }));
+vi.mock("@/modules/events", () => ({ getManageableEventDraft, updateEventOrganizerContactAction }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale }));
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/lib/events/publish-readiness", () => ({
@@ -52,7 +60,10 @@ describe("organizer event layout", () => {
     const markup = renderToStaticMarkup(layout);
 
     expect(requireAnyRole).toHaveBeenCalledWith(["organizer", "platform_admin", "admin"]);
-    expect(getManageableEventDraft).toHaveBeenCalledWith(expect.objectContaining({ id: "org-1" }), "event-1");
+    expect(getManageableEventDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "org-1", role: "organizer", tenantId: "org-1" }),
+      "event-1",
+    );
     expect(markup).toContain('href="/organizer/events/event-1/overview#section-identity"');
     expect(markup).toContain('href="/organizer/events/event-1/overview#section-format"');
     expect(markup).not.toContain('aria-current="page"');

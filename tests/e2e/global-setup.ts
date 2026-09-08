@@ -14,6 +14,11 @@ export default async function globalSetup() {
       : undefined
   );
   try {
+    const organizer = await prisma.user.findUniqueOrThrow({
+      where: { email: "test-organizer@miraclefc.gg" },
+      select: { id: true },
+    });
+
     // Clean up test-created events — explicit cascade to defeat any FK ordering issues
     const testSlugs = ["flashpeak-24", "flashpeak-open-league", "admin-match-e2e", "admin-stats-e2e", "admin-stats-nav-e2e"];
     const testEvents = await prisma.event.findMany({
@@ -42,7 +47,7 @@ export default async function globalSetup() {
     // Ensure kuroko-summer-cup exists with Draft status
     await prisma.event.upsert({
       where: { slug: "kuroko-summer-cup" },
-      update: { status: "Draft" },
+      update: { status: "Draft", organizerUserId: organizer.id },
       create: {
         name: "Kuroko Street Rival Summer Cup",
         slug: "kuroko-summer-cup",
@@ -55,6 +60,7 @@ export default async function globalSetup() {
         registrationWindow: "Open",
         startsAt: "2026-09-01",
         venue: "Online",
+        organizerUserId: organizer.id,
       },
     });
 

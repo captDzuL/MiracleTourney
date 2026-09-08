@@ -4,29 +4,30 @@ import { getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import {
-  captainAddPlayerAction,
-  captainDeletePlayerAction,
   captainRegisterTeamAction,
   captainSaveDraftTeamAction,
-  captainSetDisplayCaptainAction,
-  captainUpdatePlayerAction,
   captainUploadPaymentProofAction,
-  captainUploadTeamLogoAction,
-} from "@/lib/actions";
+  getCaptainRegistrationRequests,
+  getPaymentSettings,
+} from "@/modules/registrations";
 import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import {
-  getCaptainTeams,
-  getCertificatesForEvents,
-  getEventsByIds,
   getGameForEvent,
   getModeForEvent,
-  getCaptainRegistrationRequests,
-  getOpenRegistrationEventsForCaptain,
-  getPaymentSettings,
-  getPlayersForTeams,
   hasTempPassword,
 } from "@/lib/platform/repository";
+import { getEventsByIds, getOpenRegistrationEventsForCaptain } from "@/modules/events";
+import { getCertificatesForEvents } from "@/modules/certificates";
+import {
+  captainAddPlayerAction,
+  captainDeletePlayerAction,
+  captainSetDisplayCaptainAction,
+  captainUpdatePlayerAction,
+  captainUploadTeamLogoAction,
+  getCaptainTeams,
+  getPlayersForTeams,
+} from "@/modules/teams";
 import type { Certificate } from "@/lib/platform/types";
 import type { Event, Game, GameMode, PaymentSettings, Player, Team, TeamRegistrationRequest } from "@/lib/platform/types";
 import { ShareCertificateButton } from "@/components/ShareCertificateButton";

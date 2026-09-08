@@ -1,4 +1,4 @@
-import { updateEventOrganizerContactAction } from "@/lib/actions/event-v3-actions";
+import { updateEventOrganizerContactAction } from "@/modules/events";
 
 type OrganizerContactFormProps = {
   eventId: string;

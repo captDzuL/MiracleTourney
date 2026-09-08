@@ -7,8 +7,45 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
+import { changePasswordAction as changePasswordIdentityAction } from "@/modules/identity";
+import {
+  adminArchiveEventAction as adminArchiveEventActionFromModule,
+  adminCreateEventAction as adminCreateEventActionFromModule,
+  adminUpdateEventPublicInfoAction as adminUpdateEventPublicInfoActionFromModule,
+  adminUpdateEventStatusAction as adminUpdateEventStatusActionFromModule,
+} from "@/modules/events";
+import {
+  adminActivateEventVisualAction as adminActivateEventVisualActionFromModule,
+  adminApproveEventVisualAction as adminApproveEventVisualActionFromModule,
+  adminRejectEventVisualAction as adminRejectEventVisualActionFromModule,
+  adminSetEventVisualFocalPointAction as adminSetEventVisualFocalPointActionFromModule,
+  adminUploadEventVisualAction as adminUploadEventVisualActionFromModule,
+  organizerUploadEventVisualAction as organizerUploadEventVisualActionFromModule,
+} from "@/modules/visual-assets";
+import {
+  adminRegenerateCertificateAction as adminRegenerateCertificateActionFromModule,
+  adminSetAccentColorAction as adminSetAccentColorActionFromModule,
+  adminUploadCharacterArtAction as adminUploadCharacterArtActionFromModule,
+} from "@/modules/certificates";
+import {
+  adminAssignCaptainAction as adminAssignCaptainActionFromModule,
+  adminDeleteTeamAction as adminDeleteTeamActionFromModule,
+  adminUploadTeamLogoAction as adminUploadTeamLogoActionFromModule,
+  captainAddPlayerAction as captainAddPlayerActionFromModule,
+  captainDeletePlayerAction as captainDeletePlayerActionFromModule,
+  captainSetDisplayCaptainAction as captainSetDisplayCaptainActionFromModule,
+  captainUpdatePlayerAction as captainUpdatePlayerActionFromModule,
+  captainUploadTeamLogoAction as captainUploadTeamLogoActionFromModule,
+} from "@/modules/teams";
+import {
+  adminApprovePaymentAction as adminApprovePaymentActionFromModule,
+  adminRejectPaymentAction as adminRejectPaymentActionFromModule,
+  adminUpdatePaymentSettingsAction as adminUpdatePaymentSettingsActionFromModule,
+  captainRegisterTeamAction as captainRegisterTeamActionFromModule,
+  captainSaveDraftTeamAction as captainSaveDraftTeamActionFromModule,
+  captainUploadPaymentProofAction as captainUploadPaymentProofActionFromModule,
+} from "@/modules/registrations";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { publishEvent } from "@/lib/events/publish-readiness";
 import { prisma } from "@/lib/platform/db";
 import { createPasswordResetToken, consumePasswordResetToken } from "@/lib/platform/password-reset";
 import { routing } from "@/i18n/routing";
@@ -22,48 +59,31 @@ import { validateTeamData } from "@/lib/validation/team-data";
 import { getGameModeConfig } from "@/lib/platform/config";
 import type { AppUser } from "@/lib/platform/types";
 import {
-  addPlayer,
   approveStatSubmission,
-  approveEventVisualAsset,
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
   assertUserCanReviewStatSubmission,
   createCaptainAccount,
   createOrUpdateCaptainDraftTeam,
-  createEvent,
-  createEventVisualAsset,
   createTeamRegistrationRequest,
-  deletePlayer,
   getImportSnapshot,
-  getOrganizerUserById,
   getUserByEmail,
-  getUserPasswordHashById,
   autoTransitionEventToOngoing,
   importTeams,
   saveRegistrationImportPreviewBatch,
   commitRegistrationImportBatch,
   registerTeam,
   rejectStatSubmission,
-  rejectEventVisualAsset,
   rejectTeamRegistrationRequest,
-  setEventStatus,
-  setEventVisualFocalPoint,
   setMatchGames,
   setMatchResult,
-  updateCaptainPassword,
   updatePaymentSettings,
   updateTeamRegistrationProof,
-  updateEventPublicInfo,
   updateEventStream,
   updateEventBrandAssets,
-  updateEventCertificateAssets,
-  updateTeamLogo,
-  updateCaptainTeamLogo,
-  updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
-  setTeamCaptainDisplay,
   adminWriteMatchPlayerStats,
 } from "@/lib/platform/repository";
 import fs from "fs";
@@ -72,7 +92,6 @@ import path from "path";
 const MAX_TEAM_IMPORT_CSV_BYTES = 256 * 1024;
 const MAX_REGISTRATION_INTAKE_BYTES = 5 * 1024 * 1024;
 const MAX_LOGO_IMAGE_BYTES = 2 * 1024 * 1024;
-const MAX_BACKGROUND_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024;
 const MAX_QRIS_IMAGE_BYTES = 2 * 1024 * 1024;
 
@@ -272,7 +291,7 @@ async function readImageDimensions(buffer: Buffer): Promise<{ width: number; hei
  */
 async function generateCertificateForFinalMatch(matchId: string, eventId: string) {
   try {
-    const { generateCertificateIfFinal } = await import("@/lib/certificate/generate");
+    const { generateCertificateIfFinal } = await import("@/modules/certificates");
     await generateCertificateIfFinal(matchId, eventId);
   } catch (err) {
     console.error(`Certificate generation failed for event ${eventId}:`, err);
@@ -360,284 +379,33 @@ export async function loginAction(formData: FormData) {
 }
 
 /** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
-export async function captainRegisterTeamAction(formData: FormData) {
-  const captain = await requireCaptainSession();
-  const registrationError = async (msg: string) =>
-    redirectToActiveLocale(`/captain?error=${encodeURIComponent(msg)}` as never);
-  const draftTeamId = String(formData.get("draftTeamId") ?? "").trim() || undefined;
-  const parsed = z.object({
-    eventId: z.string().trim().min(1),
-    name: z.string().trim().optional(),
-    tag: z.string().trim().optional(),
-  }).safeParse({
-    eventId: formData.get("eventId"),
-    name: String(formData.get("name") ?? "") || undefined,
-    tag: String(formData.get("tag") ?? "") || undefined,
-  });
+export const captainRegisterTeamAction = captainRegisterTeamActionFromModule;
 
-  if (!parsed.success) {
-    return await registrationError(parsed.error.issues[0]?.message ?? "Data pendaftaran tidak valid.");
-  }
-
-  const input = {
-    ...parsed.data,
-    tag: parsed.data.tag ? parsed.data.tag.toUpperCase() : undefined,
-  };
-  if (!draftTeamId) {
-    if (!input.name || input.name.length < 2) return await registrationError("Nama tim minimal 2 karakter.");
-    if (!input.tag || input.tag.length < 2 || input.tag.length > 5) return await registrationError("Tag tim harus 2-5 karakter.");
-    const dataErrors = validateTeamData({ teamName: input.name, teamTag: input.tag, captainName: captain.name });
-    if (dataErrors.length > 0) {
-      return await registrationError(dataErrors.map((error) => error.message).join(". "));
-    }
-  }
-
-  try {
-    await registerTeam({ ...input, draftTeamId, captainId: captain.id });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Gagal mendaftarkan tim.";
-    if (msg === "Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.") {
-      try {
-        await createTeamRegistrationRequest({ ...input, draftTeamId, captainId: captain.id });
-      } catch (paymentError) {
-        const paymentMsg = paymentError instanceof Error ? paymentError.message : "Gagal membuat pendaftaran pembayaran.";
-        return await registrationError(paymentMsg);
-      }
-      revalidateTag("teams");
-      revalidatePath("/captain");
-      await redirectToActiveLocale("/captain?tab=registration&success=payment-pending");
-    }
-    return await registrationError(msg);
-  }
-
-  revalidateTag("teams");
-  revalidatePath("/captain");
-  await redirectToActiveLocale("/captain?success=team-created");
-}
-
-export async function captainSaveDraftTeamAction(formData: FormData) {
-  const captain = await requireCaptainSession();
-  const draftError = async (msg: string) =>
-    redirectToActiveLocale(`/captain?tab=roster&error=${encodeURIComponent(msg)}` as never);
-
-  const parsed = z.object({
-    name: z.string().trim().min(2, "Nama tim minimal 2 karakter."),
-    tag: z.string().trim().min(2, "Tag tim harus 2-5 karakter.").max(5, "Tag tim harus 2-5 karakter."),
-  }).safeParse({
-    name: formData.get("name"),
-    tag: formData.get("tag"),
-  });
-
-  if (!parsed.success) {
-    return await draftError(parsed.error.issues[0]?.message ?? "Data draft tim tidak valid.");
-  }
-
-  const input = { ...parsed.data, tag: parsed.data.tag.toUpperCase() };
-  const dataErrors = validateTeamData({ teamName: input.name, teamTag: input.tag, captainName: captain.name });
-  if (dataErrors.length > 0) {
-    return await draftError(dataErrors.map((error) => error.message).join(". "));
-  }
-
-  try {
-    await createOrUpdateCaptainDraftTeam({ ...input, captainId: captain.id, captainName: captain.name });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Gagal menyimpan draft tim.";
-    return await draftError(msg);
-  }
-
-  revalidateTag("teams");
-  revalidatePath("/captain");
-  await redirectToActiveLocale("/captain?tab=roster&success=draft-team-saved");
-}
+export const captainSaveDraftTeamAction = captainSaveDraftTeamActionFromModule;
 
 
-export async function captainUploadPaymentProofAction(formData: FormData) {
-  const captain = await requireCaptainSession();
-  const requestId = z.string().trim().min(1).parse(formData.get("requestId"));
-  const proofAsset = await uploadImageAsset({
-    file: formData.get("paymentProof"),
-    folder: "payment-proofs",
-    entityId: requestId,
-    label: "Payment proof",
-    maxBytes: MAX_PAYMENT_PROOF_BYTES,
-    errorPath: "/captain?tab=registration",
-  });
+export const captainUploadPaymentProofAction = captainUploadPaymentProofActionFromModule;
 
-  try {
-    await updateTeamRegistrationProof(captain.id, requestId, proofAsset.url);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Gagal mengupload bukti pembayaran.";
-    await redirectToActiveLocale(`/captain?tab=registration&error=${encodeURIComponent(message)}` as never);
-  }
+export const adminUpdatePaymentSettingsAction = adminUpdatePaymentSettingsActionFromModule;
 
-  revalidatePath("/captain");
-  await redirectToActiveLocale("/captain?tab=registration&success=payment-proof-uploaded" as never);
-}
+export const adminApprovePaymentAction = adminApprovePaymentActionFromModule;
 
-export async function adminUpdatePaymentSettingsAction(formData: FormData) {
-  await requireAdminSession();
-
-  const qrisImageFile = formData.get("qrisImage");
-  const uploadedQrisAsset = qrisImageFile instanceof File && qrisImageFile.size > 0
-    ? await uploadImageAsset({
-      file: qrisImageFile,
-      folder: "payment-qris",
-      entityId: "global",
-      label: "QRIS image",
-      maxBytes: MAX_QRIS_IMAGE_BYTES,
-      errorPath: "/admin?phase=payments",
-    })
-    : null;
-  const uploadedQrisUrl = uploadedQrisAsset?.url ?? null;
-
-  const input = z.object({
-    qrisImageUrl: optionalPublicUrlSchema.or(z.string().startsWith("/")).nullable(),
-    instructions: z.preprocess((value) => {
-      const text = String(value ?? "").trim();
-      return text === "" ? null : text;
-    }, z.string().max(500).nullable()),
-  }).parse({
-    qrisImageUrl: uploadedQrisUrl ?? formData.get("qrisImageUrl"),
-    instructions: formData.get("instructions"),
-  });
-
-  await updatePaymentSettings(input);
-  revalidatePath("/admin");
-  await redirectToActiveLocale("/admin?phase=payments&success=payment-settings-updated" as never);
-}
-
-export async function adminApprovePaymentAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const requestId = z.string().trim().min(1).parse(formData.get("requestId"));
-
-  try {
-    await approveTeamRegistrationRequest(user, requestId);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Gagal approve pembayaran.";
-    await redirectToActiveLocale(`/admin?phase=payments&error=${encodeURIComponent(message)}` as never);
-  }
-
-  revalidateTag("teams");
-  revalidateTag("events");
-  revalidatePath("/admin");
-  revalidatePath("/captain");
-  await redirectToActiveLocale("/admin?phase=payments&success=payment-approved" as never);
-}
-
-export async function adminRejectPaymentAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const input = z.object({
-    requestId: z.string().trim().min(1),
-    reason: z.string().trim().min(3).max(240),
-  }).parse({
-    requestId: formData.get("requestId"),
-    reason: formData.get("reason"),
-  });
-
-  try {
-    await rejectTeamRegistrationRequest(user, input.requestId, input.reason);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Gagal reject pembayaran.";
-    await redirectToActiveLocale(`/admin?phase=payments&error=${encodeURIComponent(message)}` as never);
-  }
-
-  revalidatePath("/admin");
-  revalidatePath("/captain");
-  await redirectToActiveLocale("/admin?phase=payments&success=payment-rejected" as never);
-}
+export const adminRejectPaymentAction = adminRejectPaymentActionFromModule;
 /**
  * Changes the captain's password after verifying the current one.
  * Validates that new and confirm passwords match and meet the 8-character minimum.
  */
 export async function changePasswordAction(formData: FormData) {
-  const user = await requireCaptainSession();
-
-  const currentPassword = String(formData.get("currentPassword") ?? "");
-  const newPassword = String(formData.get("newPassword") ?? "");
-  const confirmPassword = String(formData.get("confirmPassword") ?? "");
-
-  const settingsError = async (msg: string) =>
-    redirectToActiveLocale(`/captain/settings?error=${encodeURIComponent(msg)}` as never);
-
-  if (!currentPassword || !newPassword || !confirmPassword) {
-    await settingsError("Semua field harus diisi.");
-  }
-  if (newPassword.length < 8) {
-    await settingsError("Password baru minimal 8 karakter.");
-  }
-  if (newPassword !== confirmPassword) {
-    await settingsError("Konfirmasi password tidak cocok.");
-  }
-
-  const currentHash = await getUserPasswordHashById(user.id);
-  if (!currentHash) {
-    return settingsError("Terjadi kesalahan. Coba lagi.");
-  }
-
-  const valid = await bcrypt.compare(currentPassword, currentHash);
-  if (!valid) {
-    return settingsError("Password saat ini tidak tepat.");
-  }
-
-  await updateCaptainPassword(user.id, await bcrypt.hash(newPassword, 10));
-  await redirectToActiveLocale("/captain?success=password-changed");
+  return changePasswordIdentityAction(formData);
 }
 
 export async function captainUploadTeamLogoAction(formData: FormData) {
-  const captain = await requireCaptainSession();
-
-  try {
-    const teamId = z.string().min(1).parse(formData.get("teamId"));
-    const asset = await uploadImageAsset({
-      file: formData.get("teamLogo"),
-      folder: "team-logos",
-      entityId: teamId,
-      label: "Team logo",
-      maxBytes: MAX_LOGO_IMAGE_BYTES,
-      errorPath: "/captain?tab=roster",
-    });
-    await updateCaptainTeamLogo(captain.id, teamId, asset.url);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
-    return await redirectToActiveLocale(`/captain?tab=roster&error=${encodeURIComponent(message)}`);
-  }
-
-  revalidateTag("teams");
-  revalidatePath("/captain");
-  await redirectToActiveLocale("/captain?tab=roster&success=team-logo-updated");
+  return captainUploadTeamLogoActionFromModule(formData);
 }
 
 /** Adds a player to the captain's team. UID and IGN are required; position is optional. */
 export async function captainAddPlayerAction(formData: FormData) {
-  const captain = await requireCaptainSession();
-
-  const input = z.object({
-    teamId: z.string().min(1),
-    eventId: z.string().trim().optional(),
-    displayName: z.string().trim().min(2, "UID minimal 2 karakter."),
-    nickname: z.string().trim().min(2, "IGN minimal 2 karakter."),
-    position: z.string().trim().optional(),
-  }).parse({
-    teamId: formData.get("teamId"),
-    eventId: String(formData.get("eventId") ?? "") || undefined,
-    displayName: formData.get("displayName"),
-    nickname: formData.get("nickname"),
-    position: String(formData.get("position") ?? ""),
-  });
-
-  const jerseyRaw = formData.get("jerseyNumber");
-  const jerseyNumber =
-    jerseyRaw && String(jerseyRaw).trim() !== ""
-      ? parseInt(String(jerseyRaw), 10)
-      : undefined;
-
-  try {
-    await addPlayer({ ...input, captainId: captain.id, position: input.position ?? "", jerseyNumber });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Tidak dapat menambahkan pemain.";
-    return await redirectToActiveLocale("/captain?error=" + encodeURIComponent(msg));
-  }
-  await redirectToActiveLocale("/captain?success=player-added");
+  return captainAddPlayerActionFromModule(formData);
 }
 
 /**
@@ -645,30 +413,7 @@ export async function captainAddPlayerAction(formData: FormData) {
  * the action redirects with an error if the player does not belong to the authenticated captain.
  */
 export async function captainUpdatePlayerAction(formData: FormData) {
-  const user = await requireCaptainSession();
-
-  const id = z.string().min(1).parse(formData.get("playerId"));
-  const jerseyRaw = formData.get("jerseyNumber");
-  const jerseyNumber =
-    jerseyRaw && String(jerseyRaw).trim() !== ""
-      ? parseInt(String(jerseyRaw), 10)
-      : null;
-
-  const data = {
-    displayName: z.string().trim().min(2).parse(formData.get("displayName")),
-    nickname: z.string().trim().min(2).parse(formData.get("nickname")),
-    position: String(formData.get("position") ?? "").trim(),
-    jerseyNumber: jerseyNumber ?? undefined,
-  };
-
-  try {
-    await updatePlayer(id, user.id, data);
-  } catch {
-    await redirectToActiveLocale("/captain?error=Tidak+dapat+mengedit+pemain+ini.");
-  }
-
-  revalidatePath("/captain");
-  await redirectToActiveLocale("/captain?success=player-updated");
+  return captainUpdatePlayerActionFromModule(formData);
 }
 
 /**
@@ -676,171 +421,26 @@ export async function captainUpdatePlayerAction(formData: FormData) {
  * any exception redirects to /captain with an error message.
  */
 export async function captainDeletePlayerAction(formData: FormData) {
-  const user = await requireCaptainSession();
-  const id = z.string().min(1).parse(formData.get("playerId"));
-
-  try {
-    await deletePlayer(id, user.id);
-  } catch {
-    await redirectToActiveLocale("/captain?error=Tidak+dapat+menghapus+pemain+ini.");
-  }
-
-  revalidatePath("/captain");
-  await redirectToActiveLocale("/captain?success=player-deleted");
+  return captainDeletePlayerActionFromModule(formData);
 }
 
 export async function captainSetDisplayCaptainAction(formData: FormData) {
-  const user = await requireCaptainSession();
-  const teamId = z.string().min(1).parse(formData.get("teamId"));
-  const playerId = z.string().min(1).parse(formData.get("playerId"));
-
-  try {
-    await setTeamCaptainDisplay(teamId, user.id, playerId);
-  } catch {
-    return await redirectToActiveLocale("/captain?error=" + encodeURIComponent("Tidak dapat mengubah tampilan kapten."));
-  }
-
-  revalidatePath("/", "layout");
-  await redirectToActiveLocale("/captain?success=captain-display-updated");
+  return captainSetDisplayCaptainActionFromModule(formData);
 }
 
 /** Creates a new tournament event. Supported participant caps: 8, 12, 16, 24, 32, 64, 128, 256. */
 export async function adminCreateEventAction(formData: FormData) {
-  const user = await requireAdminSession();
-
-  const input = z.object({
-    name: z.string().min(3),
-    slug: z.string().min(3),
-    gameModeId: z.string().min(1),
-    format: z.enum(["Single Elimination", "League"]),
-    participantCap: z.union([z.literal(8), z.literal(12), z.literal(16), z.literal(24), z.literal(32), z.literal(64), z.literal(128), z.literal(256)]),
-    organizerUserId: z.string().min(1).optional(),
-  }).parse({
-    name: formData.get("name"),
-    slug: formData.get("slug"),
-    gameModeId: formData.get("gameModeId"),
-    format: formData.get("format"),
-    participantCap: Number(formData.get("participantCap")),
-    organizerUserId: formData.get("organizerUserId") || undefined,
-  });
-
-  let organizerAssignment: Pick<AppUser, "id" | "name"> | undefined;
-  if (user.role === "organizer") {
-    organizerAssignment = user;
-  } else if (input.organizerUserId) {
-    const organizer = await getOrganizerUserById(input.organizerUserId);
-    if (!organizer) {
-      await redirectToActiveLocale("/admin?error=Organizer%20not%20found.");
-    } else {
-      organizerAssignment = organizer;
-    }
-  }
-
-  try {
-    await createEvent({
-      name: input.name,
-      slug: input.slug,
-      gameModeId: input.gameModeId,
-      format: input.format,
-      participantCap: input.participantCap,
-      organizerUserId: organizerAssignment?.id,
-      organizerName: organizerAssignment?.name,
-      organizerVerified: false,
-    });
-  } catch (error) {
-    const code = (error as { code?: string })?.code;
-    if (code === "P2002") {
-      await redirectToActiveLocale("/admin?error=slug-already-exists");
-    }
-    throw error;
-  }
-  revalidateTag("events");
-  revalidatePath("/", "layout");
-  await redirectToActiveLocale("/admin?success=event-created");
+  return adminCreateEventActionFromModule(formData);
 }
 
 /** Changes an event's lifecycle status (Draft → Published → Registration Closed → Ongoing → Finished). */
 export async function adminUpdateEventStatusAction(formData: FormData) {
-  const user = await requireAdminSession();
-
-  const input = z.object({
-    eventId: z.string().min(1),
-    status: z.enum(["Draft", "Published", "Registration Closed", "Ongoing", "Finished"]),
-  }).parse({
-    eventId: formData.get("eventId"),
-    status: formData.get("status"),
-  });
-
-  await assertUserCanManageEvent(user, input.eventId);
-
-  if (input.status === "Published" && isFeatureEnabled("organizer_workspace_v3")) {
-    const publication = await publishEvent(input.eventId, {
-      id: user.id,
-      role: z.enum(["organizer", "platform_admin", "admin"]).parse(user.role),
-    });
-    if (publication.status === "not_found") {
-      return redirectToActiveLocale("/admin?error=Event%20not%20found.");
-    }
-    if (publication.status === "blocked") {
-      return redirectToActiveLocale("/admin?error=event-not-ready");
-    }
-
-    if (publication.status !== "published" && publication.status !== "already_published") {
-      return redirectToActiveLocale("/admin?error=event-publish-conflict");
-    }
-
-    revalidateTag("events");
-    revalidatePath("/", "layout");
-    return redirectToActiveLocale(`/admin?success=event-status-updated&event=${publication.slug}`);
-  }
-
-  const event = await setEventStatus(input.eventId, input.status);
-
-  if (!event) {
-    return redirectToActiveLocale("/admin?error=Event%20not%20found.");
-  }
-
-  revalidateTag("events");
-  revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=event-status-updated&event=${event.slug}`);
+  return adminUpdateEventStatusActionFromModule(formData);
 }
 
 /** Assigns or clears the captain user for an imported team. */
 export async function adminAssignCaptainAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const teamId = z.string().min(1).parse(formData.get("teamId"));
-  const captainUserId = String(formData.get("captainUserId") ?? "").trim() || null;
-
-  const team = await prisma.team.findUnique({
-    where: { id: teamId },
-    select: { id: true, eventId: true },
-  });
-  if (!team?.eventId) {
-    return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
-  }
-  await assertUserCanManageEvent(user, team.eventId);
-
-  if (captainUserId) {
-    const captain = await prisma.user.findUnique({
-      where: { id: captainUserId, role: "captain" },
-      select: { id: true, name: true },
-    });
-    if (!captain) {
-      return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Kapten tidak ditemukan.")}` as never);
-    }
-    await prisma.team.update({
-      where: { id: teamId },
-      data: { captainId: captain.id, captainName: captain.name },
-    });
-  } else {
-    await prisma.team.update({
-      where: { id: teamId },
-      data: { captainId: null, captainName: null },
-    });
-  }
-
-  revalidatePath("/", "layout");
-  return redirectToActiveLocale("/admin?success=captain-assigned" as never);
+  return adminAssignCaptainActionFromModule(formData);
 }
 
 /** Deactivates a captain account (platform_admin only). Deactivated users cannot log in. */
@@ -868,60 +468,12 @@ export async function adminDeactivateUserAction(formData: FormData) {
 
 /** Deletes a team from a Draft-status event. Blocks if event has started. */
 export async function adminDeleteTeamAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const teamId = z.string().min(1).parse(formData.get("teamId"));
-
-  const team = await prisma.team.findUnique({
-    where: { id: teamId },
-    include: { event: { select: { id: true, status: true } } },
-  });
-  if (!team?.event || !team.eventId) {
-    return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
-  }
-  if (team.event.status !== "Draft") {
-    return redirectToActiveLocale(
-      `/admin?error=${encodeURIComponent("Tim hanya dapat dihapus dari event Draft.")}` as never
-    );
-  }
-  await assertUserCanManageEvent(user, team.eventId);
-  await prisma.team.delete({ where: { id: teamId } });
-  revalidatePath("/", "layout");
-  return redirectToActiveLocale("/admin?success=team-deleted" as never);
+  return adminDeleteTeamActionFromModule(formData);
 }
 
 /** Archives event (sets to Finished) or hard-deletes Draft events with no teams. */
 export async function adminArchiveEventAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const action = z.enum(["archive", "delete"]).parse(formData.get("action"));
-  await assertUserCanManageEvent(user, eventId);
-
-  const event = await prisma.event.findUnique({
-    where: { id: eventId },
-    include: { _count: { select: { teams: true } } },
-  });
-  if (!event) {
-    return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Event tidak ditemukan.")}` as never);
-  }
-
-  if (action === "delete") {
-    if (event.status !== "Draft") {
-      return redirectToActiveLocale(
-        `/admin?error=${encodeURIComponent("Hanya event Draft yang dapat dihapus.")}` as never
-      );
-    }
-    if (event._count.teams > 0) {
-      return redirectToActiveLocale(
-        `/admin?error=${encodeURIComponent("Event dengan tim tidak dapat dihapus. Hapus tim terlebih dahulu.")}` as never
-      );
-    }
-    await prisma.event.delete({ where: { id: eventId } });
-  } else {
-    await prisma.event.update({ where: { id: eventId }, data: { status: "Finished" } });
-  }
-
-  revalidatePath("/", "layout");
-  return redirectToActiveLocale("/admin?success=event-archived" as never);
+  return adminArchiveEventActionFromModule(formData);
 }
 
 /**
@@ -1186,53 +738,7 @@ export async function adminUpdateStreamAction(formData: FormData) {
 }
 
 export async function adminUpdateEventPublicInfoAction(formData: FormData) {
-  const user = await requireAdminSession();
-
-  const input = z.object({
-    eventId: z.string().min(1),
-    description: z.string().trim().min(10).max(500),
-    registrationWindow: z.string().trim().min(2).max(120),
-    startsAt: z.string().trim().min(2).max(120),
-    venue: z.string().trim().min(2).max(120),
-    prizePoolLabel: optionalPublicLabelSchema,
-    registrationFeeRequired: z.preprocess((value) => value === "on" || value === "true" || value === "paid", z.boolean()),
-    registrationFeeAmount: z.preprocess((value) => {
-      const text = String(value ?? "").trim();
-      if (!text) return null;
-      const number = Number(text);
-      return Number.isFinite(number) ? number : value;
-    }, z.number().int().positive().nullable()),
-    registrationFeeLabel: optionalPublicLabelSchema,
-    registrationUrl: optionalPublicUrlSchema,
-  }).parse({
-    eventId: formData.get("eventId"),
-    description: formData.get("description"),
-    registrationWindow: formData.get("registrationWindow"),
-    startsAt: formData.get("startsAt"),
-    venue: formData.get("venue"),
-    prizePoolLabel: formData.get("prizePoolLabel"),
-    registrationFeeRequired: formData.get("registrationFeeRequired"),
-    registrationFeeAmount: formData.get("registrationFeeAmount"),
-    registrationFeeLabel: formData.get("registrationFeeLabel"),
-    registrationUrl: formData.get("registrationUrl"),
-  });
-
-  const event = await updateEventPublicInfo(user, input.eventId, {
-    description: input.description,
-    registrationWindow: input.registrationWindow,
-    startsAt: input.startsAt,
-    venue: input.venue,
-    prizePoolLabel: input.prizePoolLabel,
-    registrationFeeRequired: input.registrationFeeRequired,
-    registrationFeeAmount: input.registrationFeeRequired ? input.registrationFeeAmount : null,
-    registrationFeeLabel: input.registrationFeeLabel,
-
-    registrationUrl: input.registrationUrl,
-  });
-
-  revalidateTag("events");
-  revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=event-public-info-updated&event=${event.slug}`);
+  return adminUpdateEventPublicInfoActionFromModule(formData);
 }
 
 /**
@@ -1413,27 +919,12 @@ export async function adminSetMatchGamesAction(formData: FormData) {
   await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-games-saved` as never);
 }
 
-/** Uploads a character art PNG for an event's certificate to Vercel Blob and stores the URL. */
+/**
+ * Certificate character-art upload, accent-color, and regeneration workflows now live in
+ * `@/modules/certificates`; these are thin re-exports for existing callers.
+ */
 export async function adminUploadCharacterArtAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  await assertUserCanManageEvent(user, eventId);
-
-  try {
-    const asset = await uploadImageAsset({
-      file: formData.get("characterArt"),
-      folder: "character-art",
-      entityId: eventId,
-      label: "Character art",
-      maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
-    });
-    await updateEventCertificateAssets(eventId, { characterArtUrl: asset.url });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
-    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
-  }
-  revalidatePath("/admin");
-  await redirectToActiveLocale(`/admin?success=character-art-uploaded`);
+  return adminUploadCharacterArtActionFromModule(formData);
 }
 
 async function uploadEventLogo(formData: FormData, returnPath: string) {
@@ -1472,230 +963,44 @@ export async function organizerUploadEventLogoAction(formData: FormData) {
 }
 
 /**
- * While the legacy `Event.gameImageUrl` column still has readers, every
- * approval mirrors the approved revision url back into it. Flip this to `false`
- * (and delete the dual-write branch in `approveEventVisualAsset`) once all
- * surfaces read through `resolveEventVisual`.
+ * Visual asset upload/approval/rejection/focal-point workflows now live in
+ * `@/modules/visual-assets`; these are thin re-exports for existing callers.
  */
-const DUAL_WRITE_LEGACY_EVENT_IMAGE = true;
-
-/**
- * Uploads an organizer-supplied event background as a new visual revision.
- * Organizer uploads are trusted after the rights attestation, so the revision
- * is created already approved and then activated through the repository.
- */
-async function uploadEventVisual(formData: FormData, returnPath: string) {
-  const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-
-  try {
-    await assertUserCanManageEvent(user, eventId);
-
-    if (formData.get("rightsAttestation") !== "confirmed") {
-      throw new Error("Konfirmasi hak publikasi artwork terlebih dahulu.");
-    }
-
-    const asset = await uploadImageAsset({
-      file: formData.get("eventVisual"),
-      folder: "event-backgrounds",
-      entityId: eventId,
-      label: "Event background",
-      maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
-      errorPath: returnPath,
-    });
-
-    const revision = await createEventVisualAsset(user, {
-      eventId,
-      source: "organizer_upload",
-      status: "approved",
-      url: asset.url,
-      mimeType: asset.mimeType,
-      width: asset.width,
-      height: asset.height,
-      rightsAttestedAt: new Date(),
-    });
-
-    await approveEventVisualAsset(user, eventId, revision.id, {
-      dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(appendActionError(returnPath, message) as never);
-  }
-
-  revalidateTag("events");
-  revalidatePath("/", "layout");
-  redirect(`${returnPath}?success=event-visual-uploaded#section-visuals` as never);
-}
-
 export async function adminUploadEventVisualAction(formData: FormData) {
-  return uploadEventVisual(formData, "/admin");
+  return adminUploadEventVisualActionFromModule(formData);
 }
 
 export async function organizerUploadEventVisualAction(formData: FormData) {
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const locale = z.enum(["id", "en"]).parse(formData.get("locale"));
-  return uploadEventVisual(formData, `/${locale}/organizer/events/${eventId}/overview`);
+  return organizerUploadEventVisualActionFromModule(formData);
 }
 
-/** Approves a revision that is waiting for review and makes it the active one. */
 export async function adminApproveEventVisualAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const assetId = z.string().min(1).parse(formData.get("assetId"));
-
-  try {
-    await assertUserCanManageEvent(user, eventId);
-    await approveEventVisualAsset(user, eventId, assetId, {
-      dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Approval failed";
-    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
-  }
-
-  revalidateTag("events");
-  revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=event-visual-approved`);
+  return adminApproveEventVisualActionFromModule(formData);
 }
 
-/** Rejects a revision. The repository refuses to reject the active one. */
 export async function adminRejectEventVisualAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const assetId = z.string().min(1).parse(formData.get("assetId"));
-
-  try {
-    await assertUserCanManageEvent(user, eventId);
-    await rejectEventVisualAsset(user, eventId, assetId);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Rejection failed";
-    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
-  }
-
-  revalidateTag("events");
-  revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=event-visual-rejected`);
+  return adminRejectEventVisualActionFromModule(formData);
 }
 
-/** Rolls back to an already approved revision by re-activating it. */
 export async function adminActivateEventVisualAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const assetId = z.string().min(1).parse(formData.get("assetId"));
-
-  try {
-    await assertUserCanManageEvent(user, eventId);
-    await approveEventVisualAsset(user, eventId, assetId, {
-      dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Activation failed";
-    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
-  }
-
-  revalidateTag("events");
-  revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=event-visual-activated`);
+  return adminActivateEventVisualActionFromModule(formData);
 }
 
-/**
- * Stores the focal point of a revision. Values are forwarded as parsed so the
- * repository stays the single place that clamps them into the unit square.
- */
 export async function adminSetEventVisualFocalPointAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const assetId = z.string().min(1).parse(formData.get("assetId"));
-  const focalX = z.coerce.number().finite().parse(formData.get("focalX"));
-  const focalY = z.coerce.number().finite().parse(formData.get("focalY"));
-
-  try {
-    await assertUserCanManageEvent(user, eventId);
-    await setEventVisualFocalPoint(user, eventId, assetId, { x: focalX, y: focalY });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Focal point update failed";
-    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
-  }
-
-  revalidateTag("events");
-  revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=event-visual-focal-updated`);
+  return adminSetEventVisualFocalPointActionFromModule(formData);
 }
+
 
 export async function adminUploadTeamLogoAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const teamId = z.string().min(1).parse(formData.get("teamId"));
-
-  try {
-    const asset = await uploadImageAsset({
-      file: formData.get("teamLogo"),
-      folder: "team-logos",
-      entityId: teamId,
-      label: "Team logo",
-      maxBytes: MAX_LOGO_IMAGE_BYTES,
-    });
-    await updateTeamLogo(user, teamId, asset.url);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
-    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
-  }
-
-  revalidateTag("teams");
-  revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=team-logo-uploaded`);
+  return adminUploadTeamLogoActionFromModule(formData);
 }
 
-/** Updates the accent color for an event's certificate. */
 export async function adminSetAccentColorAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const accentColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).parse(formData.get("accentColor"));
-  await assertUserCanManageEvent(user, eventId);
-  await updateEventCertificateAssets(eventId, { accentColor });
-  revalidatePath("/admin");
-  await redirectToActiveLocale(`/admin?success=accent-color-saved`);
+  return adminSetAccentColorActionFromModule(formData);
 }
 
-/**
- * Re-renders the champion certificate for an event, replacing whatever is stored.
- *
- * Used to recover from a failed generation (headless Chromium is the usual culprit) and to pick up
- * a new accent color or character art. Rate limited because each run boots a browser.
- */
 export async function adminRegenerateCertificateAction(formData: FormData) {
-  const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  await assertUserCanManageEvent(user, eventId);
-
-  if (!checkRateLimit(`cert-regen:${eventId}`, 3, 5 * 60 * 1000)) {
-    await redirectToActiveLocale(
-      `/admin?error=${encodeURIComponent("Terlalu banyak percobaan. Coba lagi dalam beberapa menit.")}`,
-    );
-  }
-
-  const finalMatch = await prisma.match.findFirst({
-    where: { eventId, roundLabel: "Final", winnerTeamId: { not: null } },
-  });
-  const winnerTeamId = finalMatch?.winnerTeamId;
-  if (!winnerTeamId) {
-    await redirectToActiveLocale(
-      `/admin?error=${encodeURIComponent("Belum ada juara. Simpan hasil match Final terlebih dahulu.")}`,
-    );
-    return;
-  }
-
-  try {
-    const { generateCertificate } = await import("@/lib/certificate/generate");
-    await generateCertificate(eventId, winnerTeamId);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Certificate generation failed";
-    revalidatePath("/admin");
-    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
-  }
-
-  revalidatePath("/admin");
-  await redirectToActiveLocale(`/admin?success=certificate-regenerated`);
+  return adminRegenerateCertificateActionFromModule(formData);
 }
 
 /**

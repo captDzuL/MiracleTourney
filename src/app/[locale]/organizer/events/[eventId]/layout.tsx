@@ -9,7 +9,8 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
 import { evaluatePublishReadiness } from "@/lib/events/publish-readiness";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getManageableEventDraft } from "@/lib/platform/repository";
+import { getManageableEventDraft } from "@/modules/events";
+import { toEventReadActorCompatibility } from "@/modules/identity";
 
 type EventLayoutProps = {
   children: ReactNode;
@@ -23,7 +24,7 @@ export default async function EventLayout({ children, params }: EventLayoutProps
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
   if (!user) return redirectToActiveLocale("/login");
 
-  const event = await getManageableEventDraft(user, eventId);
+  const event = await getManageableEventDraft(toEventReadActorCompatibility(user), eventId);
   if (!event) notFound();
 
   const overview = `/organizer/events/${event.id}/overview`;

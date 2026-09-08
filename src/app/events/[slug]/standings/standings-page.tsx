@@ -4,7 +4,9 @@ import { getTranslations } from "next-intl/server";
 import { BackToEvent } from "@/components/public-v2/BackToEvent";
 import { DataTable, Section } from "@/components/ui";
 import { TeamIdentity } from "@/components/TeamAvatar";
-import { getPublicEventBySlug, getTeamsForEvent, getTeamStandings } from "@/lib/platform/repository";
+import { getTeamStandings } from "@/lib/platform/repository";
+import { getPublicEventBySlug } from "@/modules/events";
+import { getTeamsForEvent } from "@/modules/teams";
 
 export async function renderStandingsPage(slug: string, locale?: "id" | "en") {
   const t = await getTranslations("standings");

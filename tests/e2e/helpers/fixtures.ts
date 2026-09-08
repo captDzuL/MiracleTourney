@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 export async function prepareAdminMatchEvent() {
   const suffix = randomUUID().slice(0, 8);
   const slug = `admin-match-e2e-${suffix}`;
+  const organizer = await prisma.user.findUniqueOrThrow({ where: { email: "test-organizer@miraclefc.gg" } });
 
   const event = await prisma.event.create({
     data: {
@@ -20,6 +21,7 @@ export async function prepareAdminMatchEvent() {
       registrationWindow: "Open",
       startsAt: "2026-09-01",
       venue: "Online",
+      organizerUserId: organizer.id,
     },
   });
 
@@ -43,6 +45,7 @@ export async function prepareAdminMatchEvent() {
  * Use a unique slug per test group to avoid 60s unstable_cache stale-read across tests.
  */
 export async function prepareCompletedMatchWithPlayers(slug = "admin-stats-e2e") {
+  const organizer = await prisma.user.findUniqueOrThrow({ where: { email: "test-organizer@miraclefc.gg" } });
 
   const event = await prisma.event.upsert({
     where: { slug },
@@ -50,6 +53,7 @@ export async function prepareCompletedMatchWithPlayers(slug = "admin-stats-e2e")
       status: "Ongoing",
       gameId: "game-flashpeak",
       gameModeId: "mode-flashpeak-5v5",
+      organizerUserId: organizer.id,
     },
     create: {
       slug,
@@ -63,6 +67,7 @@ export async function prepareCompletedMatchWithPlayers(slug = "admin-stats-e2e")
       registrationWindow: "Open",
       startsAt: "2026-09-01",
       venue: "Online",
+      organizerUserId: organizer.id,
     },
   });
 

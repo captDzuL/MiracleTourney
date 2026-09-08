@@ -3,8 +3,8 @@
 import { useState, useTransition } from "react";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
-import { publishEventV3Action } from "@/lib/actions/event-v3-actions";
-import type { PublishReadiness as PublishReadinessResult } from "@/lib/events/publish-readiness";
+import { publishEventV3Action } from "@/modules/events/actions";
+import type { PublishReadiness as PublishReadinessResult } from "@/modules/events/publish-readiness";
 
 type PublishReadinessProps = {
   eventId?: string;

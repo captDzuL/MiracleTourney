@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
-import { createEventV3Action } from "@/lib/actions/event-v3-actions";
+import { createEventV3Action } from "@/modules/events";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getGameModes } from "@/lib/platform/repository";
 

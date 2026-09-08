@@ -6,8 +6,8 @@ import {
   adminRejectEventVisualAction,
   adminSetEventVisualFocalPointAction,
   adminUploadEventVisualAction,
-} from "@/lib/actions";
-import type { EventVisualAsset } from "@/lib/platform/types";
+  type EventVisualAsset,
+} from "@/modules/visual-assets";
 
 const SOURCE_LABELS: Record<string, string> = {
   organizer_upload: "Upload organizer",

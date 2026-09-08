@@ -24,57 +24,63 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { SubmitButton } from "@/components/submit-button";
 import {
   adminApproveStatAction,
-  adminApprovePaymentAction,
   adminArchiveEventAction,
-  adminAssignCaptainAction,
   adminCreateEventAction,
   adminDeactivateUserAction,
-  adminDeleteTeamAction,
   adminCommitRegistrationImportAction,
   adminImportTeamsCsvAction,
   adminPreviewRegistrationImportAction,
   adminRejectStatAction,
-  adminRejectPaymentAction,
-  adminRegenerateCertificateAction,
   adminSaveMatchPlayerStatsAction,
-  adminSetAccentColorAction,
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
   adminUpdateEventStatusAction,
   adminUpdateMatchResultAction,
   adminUpdateStreamAction,
   adminUploadEventLogoAction,
-  adminUploadCharacterArtAction,
-  adminUploadTeamLogoAction,
   adminUpdateEventPublicInfoAction,
-  adminUpdatePaymentSettingsAction,
 } from "@/lib/actions";
+import {
+  adminApprovePaymentAction,
+  adminRejectPaymentAction,
+  adminUpdatePaymentSettingsAction,
+  getPaymentRegistrationRequestsForAdmin,
+  getPaymentSettings,
+} from "@/modules/registrations";
 import { requireAnyRole } from "@/lib/auth/session";
 import {
   getBracketManageableMatchesForEvent,
   getCaptainUsersForAdmin,
   getMatchWithRosterAndStats,
-  getCertificatesForEvents,
-  getEventBySlug,
   getEventRoundConfigs,
-  getManageableEventsForUser,
   getGameForEvent,
   getGameModes,
   getImportedTeams,
   getLeaderboardForEvent,
-  listEventVisualAssets,
   getMatchGames,
   getMatchesForEvent,
   getOrganizerUsers,
   getPendingStatSubmissionCount,
   getPendingStatSubmissions,
-  getPaymentRegistrationRequestsForAdmin,
-  getPaymentSettings,
   getRegistrationImportBatchForAdmin,
   getRegistrationImportBatchesForEvent,
+} from "@/lib/platform/repository";
+import { getEventBySlug, getManageableEventsForUser } from "@/modules/events";
+import { listEventVisualAssets } from "@/modules/visual-assets";
+import {
+  adminAssignCaptainAction,
+  adminDeleteTeamAction,
+  adminUploadTeamLogoAction,
   getTeamCountsForEvents,
   getTeamsForEvents,
-} from "@/lib/platform/repository";
+} from "@/modules/teams";
+import {
+  adminRegenerateCertificateAction,
+  adminSetAccentColorAction,
+  adminUploadCharacterArtAction,
+  getCertificatesForEvents,
+} from "@/modules/certificates";
+
 import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
 import { EventVisualAssetsPanel } from "@/components/admin/EventVisualAssetsPanel";
 import { TeamAvatar, TeamIdentity } from "@/components/TeamAvatar";
@@ -84,6 +90,7 @@ import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 import { getCaptainDisplayName } from "@/lib/team-display";
 import { getMatchStatRecordings } from "@/lib/platform/stat-recording-repository";
 import type { MatchStatRecording, TeamStatRecordingStatus } from "@/lib/platform/stat-recording";
+import { toEventReadActorCompatibility } from "@/modules/identity";
 
 import { type AdminPhase, adminPhases, buildAdminPhaseHref, resolveAdminPhase } from "./admin-flow";
 
@@ -156,10 +163,11 @@ export default async function AdminPage({
   }
 
   const [t, resolvedSearchParams] = await Promise.all([getTranslations("admin"), searchParams]);
+  const actor = toEventReadActorCompatibility(user);
   const activePhase = resolveAdminPhase(resolvedSearchParams?.phase);
   const registrationIntakeV2 = process.env.REGISTRATION_INTAKE_V2 !== "false";
   const [events, pendingCount, organizerOptions] = await Promise.all([
-    getManageableEventsForUser(user),
+    getManageableEventsForUser(actor),
     getPendingStatSubmissionCount(user),
     user.role === "platform_admin" || user.role === "admin" ? getOrganizerUsers() : Promise.resolve([]),
   ]);
@@ -224,7 +232,7 @@ export default async function AdminPage({
     ? new Map(
         await Promise.all(
           events.map(async (event) =>
-            [event.id, await listEventVisualAssets(user, event.id)] as const,
+            [event.id, await listEventVisualAssets(actor, event.id)] as const,
           ),
         ),
       )
@@ -280,7 +288,7 @@ export default async function AdminPage({
     : undefined;
   const [paymentRequests, paymentSettings] = activePhase === "payments"
     ? await Promise.all([
-        getPaymentRegistrationRequestsForAdmin(user, { eventId: resolvedSearchParams?.activeEventId, status: paymentStatus }),
+        getPaymentRegistrationRequestsForAdmin(toEventReadActorCompatibility(user)!, { eventId: resolvedSearchParams?.activeEventId, status: paymentStatus }),
         getPaymentSettings(),
       ])
     : [[] as PaymentRequestItem[], { id: "global" } as PaymentSettingsItem];
@@ -617,7 +625,7 @@ function PrepareEventPhase({
               {userRole === "platform_admin" || userRole === "admin" ? (
                 <label className={labelClass}>
                   {t("createEventOrganizerLabel")}
-                  <select className={inputClass} name="organizerUserId" defaultValue="">
+                  <select className={inputClass} name="organizerUserId" defaultValue="" required>
                     <option value="">{t("createEventOrganizerPlaceholder")}</option>
                     {organizerOptions.map((organizer) => (
                       <option key={organizer.id} value={organizer.id}>

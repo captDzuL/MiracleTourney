@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { ExternalLink, Eye, Link2Off } from "lucide-react";
 
-import { createEventPreviewAction, revokeEventPreviewAction } from "@/lib/actions/event-v3-actions";
+import { createEventPreviewAction, revokeEventPreviewAction } from "@/modules/events/actions";
 
 type CreatePreview = typeof createEventPreviewAction;
 type RevokePreview = typeof revokeEventPreviewAction;

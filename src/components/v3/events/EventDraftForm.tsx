@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { organizerUploadEventLogoAction, organizerUploadEventVisualAction } from "@/lib/actions";
-import { saveEventDraftAction } from "@/lib/actions/event-v3-actions";
+import { saveEventDraftAction } from "@/modules/events/actions";
 import { eventDateToLocalInput, eventLocalInputToIso } from "@/lib/events/event-datetime";
 import { tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { DraftStatus } from "./DraftStatus";

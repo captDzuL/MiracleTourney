@@ -4,7 +4,8 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { captainSubmitStatsAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { getStatKeysForMode } from "@/lib/platform/config";
-import { getCompletedMatchesForCaptain, getPlayersForTeams } from "@/lib/platform/repository";
+import { getCompletedMatchesForCaptain } from "@/lib/platform/repository";
+import { getPlayersForTeams } from "@/modules/teams";
 import { Section } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 

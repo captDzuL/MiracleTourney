@@ -5,6 +5,7 @@ const { prisma } = vi.hoisted(() => ({
     match: {
       count: vi.fn(),
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       findMany: vi.fn(),
     },
     eventRoundConfig: {
@@ -17,6 +18,7 @@ const { prisma } = vi.hoisted(() => ({
       count: vi.fn(),
       create: vi.fn(),
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       findMany: vi.fn(),
       groupBy: vi.fn(),
       update: vi.fn(),
@@ -433,6 +435,18 @@ describe("organizer event ownership", () => {
     });
   });
 
+  it("scopes legacy admin manageable event reads as organizer-owned by self tenant", async () => {
+    const legacyAdmin = { id: "legacy-admin-1", role: "admin" as const, email: "legacy-admin@test.com", name: "Legacy Admin" };
+
+    await getManageableEventsForUser(legacyAdmin);
+
+    expect(prisma.event.findMany).toHaveBeenCalledWith({
+      where: { organizerUserId: "legacy-admin-1" },
+      include: { stream: true, activeVisualAsset: true },
+      orderBy: { createdAt: "desc" },
+    });
+  });
+
   it("allows an organizer to manage only their own event", async () => {
     prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
 
@@ -476,6 +490,17 @@ describe("organizer event ownership", () => {
 
     expect(prisma.event.findFirst).toHaveBeenCalledWith({
       where: { id: "event-1" },
+      select: expect.objectContaining({ id: true, name: true, draftRevision: true, organizer: expect.any(Object) }),
+    });
+  });
+
+  it("prevents legacy admin from loading another organizer draft via migrated facade path", async () => {
+    const legacyAdmin = { id: "legacy-admin-1", role: "admin" as const, email: "legacy-admin@test.com", name: "Legacy Admin" };
+    prisma.event.findFirst.mockResolvedValue(null);
+
+    await expect(getManageableEventDraft(legacyAdmin, "event-other")).resolves.toBeNull();
+    expect(prisma.event.findFirst).toHaveBeenCalledWith({
+      where: { id: "event-other", organizerUserId: "legacy-admin-1" },
       select: expect.objectContaining({ id: true, name: true, draftRevision: true, organizer: expect.any(Object) }),
     });
   });
@@ -1185,6 +1210,7 @@ describe("existing captain event registration", () => {
     prisma.match.count.mockResolvedValue(0);
     // existingCaptainTeam lookup must exclude the request's own linked team, so it resolves null
     prisma.team.findFirst.mockResolvedValue(null);
+    prisma.team.findUnique.mockResolvedValue({ id: "team-atl", captainId: "captain-1", eventId: "event-paid", source: "registration" });
     prisma.team.update.mockResolvedValue({
       id: "team-atl",
       eventId: "event-paid",
@@ -1304,7 +1330,7 @@ describe("existing captain event registration", () => {
     });
 
     await expect(
-      updatePaymentSettings({ qrisImageUrl: "/payment/qris.png", instructions: "Transfer lalu upload bukti." }),
+      updatePaymentSettings(platformAdmin, { qrisImageUrl: "/payment/qris.png", instructions: "Transfer lalu upload bukti." }),
     ).resolves.toEqual(expect.objectContaining({ id: "global", qrisImageUrl: "/payment/qris.png" }));
 
     expect(prisma.paymentSettings.upsert).toHaveBeenCalledWith({

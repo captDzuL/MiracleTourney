@@ -46,13 +46,25 @@ vi.mock("next-intl/server", async () => {
 vi.mock("@/lib/platform/repository", async () => {
   const store = await import("@/lib/platform/demo-store");
   return {
-    getPublicEventBySlug: (slug: string) => Promise.resolve(store.getPublicEventBySlug(slug)),
-    getTeamsForEvent: (eventId: string) => Promise.resolve(store.getTeamsForEvent(eventId)),
     getPublicVisibleBracketPreview: (eventId: string) => Promise.resolve(store.getPublicVisibleBracketPreview(eventId)),
     getMatchesForEvent: (eventId: string) => getMatchesForEventMock(eventId, store),
     getBracketPreview: (eventId: string) => Promise.resolve(store.getBracketPreview(eventId)),
     getEventRoundConfigs: (eventId: string) => getEventRoundConfigsMock(eventId, store),
     getMatchGamesForEvent: (eventId: string) => getMatchGamesForEventMock(eventId, store),
+  };
+});
+
+vi.mock("@/modules/teams", async () => {
+  const store = await import("@/lib/platform/demo-store");
+  return {
+    getTeamsForEvent: (eventId: string) => Promise.resolve(store.getTeamsForEvent(eventId)),
+  };
+});
+
+vi.mock("@/modules/events", async () => {
+  const store = await import("@/lib/platform/demo-store");
+  return {
+    getPublicEventBySlug: (slug: string) => Promise.resolve(store.getPublicEventBySlug(slug)),
   };
 });
 

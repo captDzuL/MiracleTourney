@@ -12,13 +12,13 @@ import type { Event } from "@/lib/platform/types";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 import {
   getBracketPreview,
-  getCertificateByEvent,
   getGameForEvent,
   getLeaderboardForEvent,
   getModeForEvent,
-  getPublicEventBySlug,
-  getTeamsForEvent,
 } from "@/lib/platform/repository";
+import { getPublicEventBySlug } from "@/modules/events";
+import { getTeamsForEvent } from "@/modules/teams";
+import { getCertificateByEvent } from "@/modules/certificates";
 import { getLiveStreamPresentation } from "@/lib/tournament/engine";
 
 const fallbackEventsBySlug: Record<string, Event> = {

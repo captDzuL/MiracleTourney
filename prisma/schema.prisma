@@ -70,8 +70,8 @@ model Event {
   publishedAt          DateTime?
   previewRevision      Int                @default(0)
   venue                String
-  organizerUserId      String?
-  organizer            User?              @relation("EventOrganizer", fields: [organizerUserId], references: [id], onDelete: SetNull)
+  organizerUserId      String
+  organizer            User               @relation("EventOrganizer", fields: [organizerUserId], references: [id], onDelete: Restrict)
   organizerName        String?
   organizerVerified    Boolean            @default(false)
   prizePoolLabel       String?
@@ -102,6 +102,7 @@ model Event {
   updatedAt            DateTime           @updatedAt
 
   @@index([status])
+  @@index([organizerUserId])
 }
 
 model EventPreviewToken {

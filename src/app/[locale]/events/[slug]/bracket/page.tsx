@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { setRequestLocale } from "next-intl/server";
 
-import { getPublicEventBySlug } from "@/lib/platform/repository";
+import { getPublicEventBySlug } from "@/modules/events";
 import { renderBracketPage } from "../../../../events/[slug]/bracket/bracket-page-content";
 
 export const dynamic = "force-dynamic";

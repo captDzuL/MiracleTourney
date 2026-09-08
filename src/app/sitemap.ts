@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-import { getAllPublicEvents } from "@/lib/platform/repository";
+import { getAllPublicEvents } from "@/modules/events";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
 

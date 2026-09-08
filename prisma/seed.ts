@@ -20,6 +20,7 @@ function demoTeamId(eventSlug: string, index: number) {
 async function seedTest() {
   const adminPasswordHash = await bcrypt.hash("TestAdmin123!", 10);
   const captainPasswordHash = await bcrypt.hash("TestCaptain123!", 10);
+  const organizerPasswordHash = await bcrypt.hash("TestOrganizer123!", 10);
 
   await prisma.user.upsert({
     where: { email: "test-admin@miraclefc.gg" },
@@ -33,9 +34,21 @@ async function seedTest() {
     create: { email: "test-captain@miraclefc.gg", name: "Test Captain", role: "captain", passwordHash: captainPasswordHash },
   });
 
+  const organizer = await prisma.user.upsert({
+    where: { email: "test-organizer@miraclefc.gg" },
+    update: { name: "Test Organizer", role: "organizer", passwordHash: organizerPasswordHash },
+    create: { email: "test-organizer@miraclefc.gg", name: "Test Organizer", role: "organizer", passwordHash: organizerPasswordHash },
+  });
+
   const event = await prisma.event.upsert({
     where: { slug: "test-event-e2e" },
-    update: { name: "E2E Test Event", status: "Ongoing" },
+    update: {
+      name: "E2E Test Event",
+      status: "Ongoing",
+      organizerUserId: organizer.id,
+      organizerName: organizer.name,
+      organizerVerified: true,
+    },
     create: {
       slug: "test-event-e2e",
       name: "E2E Test Event",
@@ -48,6 +61,9 @@ async function seedTest() {
       registrationWindow: "2026-01-01 - 2026-01-07",
       startsAt: "2026-01-08",
       venue: "Online",
+      organizerUserId: organizer.id,
+      organizerName: organizer.name,
+      organizerVerified: true,
     },
   });
 

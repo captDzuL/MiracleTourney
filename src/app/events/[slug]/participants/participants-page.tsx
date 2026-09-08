@@ -4,8 +4,9 @@ import { getTranslations } from "next-intl/server";
 import { BackToEvent } from "@/components/public-v2/BackToEvent";
 import { DataTable, Section } from "@/components/ui";
 import { TeamIdentity } from "@/components/TeamAvatar";
-import { getPlayersForTeams, getPublicEventBySlug, getTeamsForEvent } from "@/lib/platform/repository";
 import { getCaptainDisplayName } from "@/lib/team-display";
+import { getPublicEventBySlug } from "@/modules/events";
+import { getPlayersForTeams, getTeamsForEvent } from "@/modules/teams";
 
 export async function renderParticipantsPage(slug: string, locale?: "id" | "en") {
   const t = await getTranslations("participants");

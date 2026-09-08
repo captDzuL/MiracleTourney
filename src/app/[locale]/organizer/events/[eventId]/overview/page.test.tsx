@@ -14,7 +14,7 @@ const { requireAnyRole, getManageableEventDraft, isFeatureEnabled, notFound, red
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft }));
+vi.mock("@/modules/events", () => ({ getManageableEventDraft }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale }));
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/components/v3/events/EventDraftForm", () => ({
@@ -38,7 +38,10 @@ describe("organizer event overview", () => {
     const markup = renderToStaticMarkup(page);
 
     expect(requireAnyRole).toHaveBeenCalledWith(["organizer", "platform_admin", "admin"]);
-    expect(getManageableEventDraft).toHaveBeenCalledWith(expect.objectContaining({ id: "org-1" }), "event-1");
+    expect(getManageableEventDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "org-1", role: "organizer", tenantId: "org-1" }),
+      "event-1",
+    );
     expect(markup).toContain('data-revision="3"');
     expect(markup).not.toContain("Event navigation");
   });

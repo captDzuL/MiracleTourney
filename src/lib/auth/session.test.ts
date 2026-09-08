@@ -2,18 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const cookiesMock = vi.hoisted(() => vi.fn());
 const getUserWithPasswordByEmail = vi.hoisted(() => vi.fn());
-const getCaptainById = vi.hoisted(() => vi.fn());
-const getUserByEmail = vi.hoisted(() => vi.fn());
+const getUserById = vi.hoisted(() => vi.fn());
 const compare = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 
 vi.mock("next/headers", () => ({
   cookies: cookiesMock,
 }));
 
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/modules/identity/repository", () => ({
   getUserWithPasswordByEmail,
-  getCaptainById,
-  getUserByEmail,
+  getUserById,
+  getCaptainById: vi.fn(),
 }));
 
 vi.mock("bcryptjs", () => ({
@@ -113,8 +112,7 @@ describe("auth session hardening", () => {
     const { requireAnyRole, signIn } = await import("./session");
     const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
     cookiesMock.mockResolvedValue(cookieStore);
-    getCaptainById.mockResolvedValue(null);
-    getUserByEmail.mockResolvedValue({
+    getUserById.mockResolvedValue({
       id: "org-1",
       email: "organizer@test.com",
       name: "Organizer",
@@ -141,8 +139,7 @@ describe("auth session hardening", () => {
     const { requireAnyRole, signIn } = await import("./session");
     const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
     cookiesMock.mockResolvedValue(cookieStore);
-    getCaptainById.mockResolvedValue(null);
-    getUserByEmail.mockResolvedValue({
+    getUserById.mockResolvedValue({
       id: "captain-1",
       email: "captain@test.com",
       name: "Captain",
@@ -195,7 +192,7 @@ describe("auth session hardening", () => {
 
     await signIn("captain@test.com", "secret123");
     cookieStore.get.mockReturnValue({ value: cookieStore.set.mock.calls[0][1] });
-    getCaptainById.mockResolvedValue({
+    getUserById.mockResolvedValue({
       id: "captain-1",
       email: "captain@test.com",
       name: "Captain",

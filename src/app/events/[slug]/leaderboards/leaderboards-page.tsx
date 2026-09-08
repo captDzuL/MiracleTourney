@@ -5,7 +5,9 @@ import { BackToEvent } from "@/components/public-v2/BackToEvent";
 import { TeamIdentity } from "@/components/TeamAvatar";
 import { DataTable, Section } from "@/components/ui";
 import { getOrderedStatEntries } from "@/lib/platform/config";
-import { getEventBySlug, getLeaderboardForEvent, getTeamsForEvent } from "@/lib/platform/repository";
+import { getLeaderboardForEvent } from "@/lib/platform/repository";
+import { getEventBySlug } from "@/modules/events";
+import { getTeamsForEvent } from "@/modules/teams";
 
 export async function renderLeaderboardsPage(slug: string, locale?: "id" | "en") {
   const t = await getTranslations("leaderboard");

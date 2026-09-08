@@ -1,8 +1,34 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  adminArchiveEventActionFromModule,
+  adminCreateEventActionFromModule,
+  adminUpdateEventPublicInfoActionFromModule,
+  adminUpdateEventStatusActionFromModule,
+  adminActivateEventVisualActionFromModule,
+  adminApproveEventVisualActionFromModule,
+  adminRejectEventVisualActionFromModule,
+  adminSetEventVisualFocalPointActionFromModule,
+  adminUploadEventVisualActionFromModule,
+  organizerUploadEventVisualActionFromModule,
+  adminRegenerateCertificateActionFromModule,
+  adminSetAccentColorActionFromModule,
+  adminUploadCharacterArtActionFromModule,
+  adminAssignCaptainActionFromModule,
+  adminDeleteTeamActionFromModule,
+  adminUploadTeamLogoActionFromModule,
+  captainAddPlayerActionFromModule,
+  captainDeletePlayerActionFromModule,
+  captainSetDisplayCaptainActionFromModule,
+  captainUpdatePlayerActionFromModule,
+  captainUploadTeamLogoActionFromModule,
+  captainRegisterTeamActionFromModule,
+  captainSaveDraftTeamActionFromModule,
+  captainUploadPaymentProofActionFromModule,
+  adminApprovePaymentActionFromModule,
+  adminRejectPaymentActionFromModule,
+  adminUpdatePaymentSettingsActionFromModule,
   addPlayer,
-  approveEventVisualAsset,
   approveStatSubmission,
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
@@ -14,50 +40,65 @@ const {
   createCaptainWithPendingPayment,
   createCaptainWithTeam,
   createOrUpdateCaptainDraftTeam,
-  createEvent,
-  createEventVisualAsset,
   createPasswordResetToken,
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
-  getOrganizerUserById,
   getPublishedEvents,
   getUserByEmail,
-  getUserPasswordHashById,
   generateCertificateIfFinal,
   importTeams,
-  listEventVisualAssets,
-  rejectEventVisualAsset,
   rejectStatSubmission,
   rejectTeamRegistrationRequest,
   registerTeam,
   revalidatePath,
   revalidateTag,
+  requireAnyRole,
   requireRole,
   sendEmail,
-  publishEvent,
-  setEventStatus,
-  setEventVisualFocalPoint,
   setMatchGames,
   setMatchResult,
   signIn,
   signOut,
   headers,
-  updateCaptainPassword,
   updateEventBrandAssets,
   updatePaymentSettings,
   updateTeamRegistrationProof,
   updateEventStream,
   updateCaptainTeamLogo,
   updatePlayer,
-  updateEventCertificateAssets,
-  updateEventPublicInfo,
   upsertRoundConfig,
   upsertStatSubmission,
   setTeamCaptainDisplay,
 } = vi.hoisted(() => ({
+  adminArchiveEventActionFromModule: vi.fn(),
+  adminCreateEventActionFromModule: vi.fn(),
+  adminUpdateEventPublicInfoActionFromModule: vi.fn(),
+  adminUpdateEventStatusActionFromModule: vi.fn(),
+  adminActivateEventVisualActionFromModule: vi.fn(),
+  adminApproveEventVisualActionFromModule: vi.fn(),
+  adminRejectEventVisualActionFromModule: vi.fn(),
+  adminSetEventVisualFocalPointActionFromModule: vi.fn(),
+  adminUploadEventVisualActionFromModule: vi.fn(),
+  organizerUploadEventVisualActionFromModule: vi.fn(),
+  adminRegenerateCertificateActionFromModule: vi.fn(),
+  adminSetAccentColorActionFromModule: vi.fn(),
+  adminUploadCharacterArtActionFromModule: vi.fn(),
+  adminAssignCaptainActionFromModule: vi.fn(),
+  adminDeleteTeamActionFromModule: vi.fn(),
+  adminUploadTeamLogoActionFromModule: vi.fn(),
+  captainAddPlayerActionFromModule: vi.fn(),
+  captainDeletePlayerActionFromModule: vi.fn(),
+  captainSetDisplayCaptainActionFromModule: vi.fn(),
+  captainUpdatePlayerActionFromModule: vi.fn(),
+  captainUploadTeamLogoActionFromModule: vi.fn(),
+  captainRegisterTeamActionFromModule: vi.fn(),
+  captainSaveDraftTeamActionFromModule: vi.fn(),
+  captainUploadPaymentProofActionFromModule: vi.fn(),
+  adminApprovePaymentActionFromModule: vi.fn(),
+  adminRejectPaymentActionFromModule: vi.fn(),
+  adminUpdatePaymentSettingsActionFromModule: vi.fn(),
   addPlayer: vi.fn(),
-  approveEventVisualAsset: vi.fn(),
   approveStatSubmission: vi.fn(),
   approveTeamRegistrationRequest: vi.fn(),
   assertCaptainCanSubmitStats: vi.fn(),
@@ -69,44 +110,33 @@ const {
   createCaptainWithPendingPayment: vi.fn(),
   createCaptainWithTeam: vi.fn(),
   createOrUpdateCaptainDraftTeam: vi.fn(),
-  createEvent: vi.fn(),
-  createEventVisualAsset: vi.fn(),
   createPasswordResetToken: vi.fn(),
   createTeamRegistrationRequest: vi.fn(),
   deletePlayer: vi.fn(),
   getImportSnapshot: vi.fn(),
-  getOrganizerUserById: vi.fn(),
   getPublishedEvents: vi.fn(),
   getUserByEmail: vi.fn(),
-  getUserPasswordHashById: vi.fn(),
   generateCertificateIfFinal: vi.fn(),
   importTeams: vi.fn(),
-  listEventVisualAssets: vi.fn(),
-  rejectEventVisualAsset: vi.fn(),
   rejectStatSubmission: vi.fn(),
   rejectTeamRegistrationRequest: vi.fn(),
   registerTeam: vi.fn(),
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
+  requireAnyRole: vi.fn(),
   requireRole: vi.fn(),
   sendEmail: vi.fn(),
-  publishEvent: vi.fn(),
-  setEventStatus: vi.fn(),
-  setEventVisualFocalPoint: vi.fn(),
   setMatchGames: vi.fn(),
   setMatchResult: vi.fn(),
   signIn: vi.fn(),
   signOut: vi.fn(),
   headers: vi.fn(),
-  updateCaptainPassword: vi.fn(),
   updateEventBrandAssets: vi.fn(),
   updatePaymentSettings: vi.fn(),
   updateTeamRegistrationProof: vi.fn(),
   updateEventStream: vi.fn(),
   updateCaptainTeamLogo: vi.fn(),
   updatePlayer: vi.fn(),
-  updateEventCertificateAssets: vi.fn(),
-  updateEventPublicInfo: vi.fn(),
   upsertRoundConfig: vi.fn(),
   upsertStatSubmission: vi.fn(),
   setTeamCaptainDisplay: vi.fn(),
@@ -119,14 +149,13 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("next/headers", () => ({ headers }));
-vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut }));
+vi.mock("@/lib/auth/session", () => ({ requireAnyRole, requireRole, signIn, signOut }));
 vi.mock("@/lib/imports/team-import", () => ({
   parseAndValidateTeamImport: vi.fn(),
 }));
 vi.mock("@vercel/blob", () => ({ put: blobPut }));
 vi.mock("@/lib/platform/repository", () => ({
   addPlayer,
-  approveEventVisualAsset,
   approveStatSubmission,
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
@@ -137,45 +166,68 @@ vi.mock("@/lib/platform/repository", () => ({
   createCaptainWithPendingPayment,
   createCaptainWithTeam,
   createOrUpdateCaptainDraftTeam,
-  createEvent,
-  createEventVisualAsset,
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
-  getOrganizerUserById,
   getPublishedEvents,
   getUserByEmail,
-  getUserPasswordHashById,
   importTeams,
-  listEventVisualAssets,
-  rejectEventVisualAsset,
   rejectStatSubmission,
   rejectTeamRegistrationRequest,
   registerTeam,
-  setEventStatus,
-  setEventVisualFocalPoint,
   setMatchGames,
   setMatchResult,
-  updateCaptainPassword,
   updateEventBrandAssets,
   updatePaymentSettings,
   updateTeamRegistrationProof,
   updateCaptainTeamLogo,
-  updateEventCertificateAssets,
-  updateEventPublicInfo,
   updateEventStream,
   updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
   setTeamCaptainDisplay,
 }));
-vi.mock("@/lib/certificate/generate", () => ({
+vi.mock("@/modules/events", () => ({
+  adminArchiveEventAction: adminArchiveEventActionFromModule,
+  adminCreateEventAction: adminCreateEventActionFromModule,
+  adminUpdateEventPublicInfoAction: adminUpdateEventPublicInfoActionFromModule,
+  adminUpdateEventStatusAction: adminUpdateEventStatusActionFromModule,
+}));
+vi.mock("@/modules/visual-assets", () => ({
+  adminActivateEventVisualAction: adminActivateEventVisualActionFromModule,
+  adminApproveEventVisualAction: adminApproveEventVisualActionFromModule,
+  adminRejectEventVisualAction: adminRejectEventVisualActionFromModule,
+  adminSetEventVisualFocalPointAction: adminSetEventVisualFocalPointActionFromModule,
+  adminUploadEventVisualAction: adminUploadEventVisualActionFromModule,
+  organizerUploadEventVisualAction: organizerUploadEventVisualActionFromModule,
+}));
+vi.mock("@/modules/certificates", () => ({
   generateCertificateIfFinal,
+  adminRegenerateCertificateAction: adminRegenerateCertificateActionFromModule,
+  adminSetAccentColorAction: adminSetAccentColorActionFromModule,
+  adminUploadCharacterArtAction: adminUploadCharacterArtActionFromModule,
+}));
+vi.mock("@/modules/teams", () => ({
+  adminAssignCaptainAction: adminAssignCaptainActionFromModule,
+  adminDeleteTeamAction: adminDeleteTeamActionFromModule,
+  adminUploadTeamLogoAction: adminUploadTeamLogoActionFromModule,
+  captainAddPlayerAction: captainAddPlayerActionFromModule,
+  captainDeletePlayerAction: captainDeletePlayerActionFromModule,
+  captainSetDisplayCaptainAction: captainSetDisplayCaptainActionFromModule,
+  captainUpdatePlayerAction: captainUpdatePlayerActionFromModule,
+  captainUploadTeamLogoAction: captainUploadTeamLogoActionFromModule,
+}));
+vi.mock("@/modules/registrations", () => ({
+  captainRegisterTeamAction: captainRegisterTeamActionFromModule,
+  captainSaveDraftTeamAction: captainSaveDraftTeamActionFromModule,
+  captainUploadPaymentProofAction: captainUploadPaymentProofActionFromModule,
+  adminApprovePaymentAction: adminApprovePaymentActionFromModule,
+  adminRejectPaymentAction: adminRejectPaymentActionFromModule,
+  adminUpdatePaymentSettingsAction: adminUpdatePaymentSettingsActionFromModule,
 }));
 vi.mock("@/lib/platform/password-reset", () => ({
   createPasswordResetToken,
 }));
-vi.mock("@/lib/events/publish-readiness", () => ({ publishEvent }));
 vi.mock("@/lib/email/send", () => ({
   sendEmail,
 }));
@@ -199,6 +251,8 @@ import {
   adminRejectStatAction,
   adminSetEventVisualFocalPointAction,
   adminRejectPaymentAction,
+  adminRegenerateCertificateAction,
+  adminSetAccentColorAction,
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
   adminUploadCharacterArtAction,
@@ -213,12 +267,12 @@ import {
   captainAddPlayerAction,
   captainDeletePlayerAction,
   captainRegisterTeamAction,
+  captainSaveDraftTeamAction,
   captainUploadPaymentProofAction,
   captainSetDisplayCaptainAction,
   captainSignUpAction,
   captainSubmitStatsAction,
   captainUpdatePlayerAction,
-  changePasswordAction,
   loginAction,
   requestPasswordResetAction,
 } from "./actions";
@@ -254,6 +308,13 @@ beforeEach(() => {
   assertUserCanManageEvent.mockResolvedValue(undefined);
   assertUserCanReviewStatSubmission.mockResolvedValue(undefined);
   headers.mockResolvedValue(new Headers({ "x-forwarded-for": "127.0.0.1" }));
+  requireAnyRole.mockImplementation(async (roles: string[]) => {
+    for (const role of roles) {
+      const user = await requireRole(role);
+      if (user) return user;
+    }
+    return null;
+  });
 });
 
 describe("loginAction", () => {
@@ -420,74 +481,6 @@ describe("captainSignUpAction", () => {
   });
 });
 
-// ------------------------------------------------------------
-// changePasswordAction
-// ------------------------------------------------------------
-
-describe("changePasswordAction", () => {
-  const validData = {
-    currentPassword: "oldpass123",
-    newPassword: "newpass123",
-    confirmPassword: "newpass123",
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    requireRole.mockResolvedValue(captainSession());
-    getUserPasswordHashById.mockResolvedValue("$hash$");
-    (bcrypt.compare as ReturnType<typeof vi.fn>).mockResolvedValue(true);
-  });
-
-  it("changes password and redirects to /captain?success=password-changed", async () => {
-    await expect(changePasswordAction(fd(validData))).rejects.toThrow(
-      "REDIRECT:/captain?success=password-changed",
-    );
-    expect(updateCaptainPassword).toHaveBeenCalledWith("captain-1", "$hashed$");
-  });
-
-  it("requires captain session", async () => {
-    requireRole.mockResolvedValue(null);
-
-    await expect(changePasswordAction(fd(validData))).rejects.toThrow("REDIRECT:/login");
-    expect(updateCaptainPassword).not.toHaveBeenCalled();
-  });
-
-  it("rejects empty fields", async () => {
-    await expect(
-      changePasswordAction(fd({ currentPassword: "", newPassword: "newpass123", confirmPassword: "newpass123" })),
-    ).rejects.toThrow("REDIRECT:/captain/settings?error=");
-  });
-
-  it("rejects new password shorter than 8 characters", async () => {
-    await expect(
-      changePasswordAction(fd({ ...validData, newPassword: "short", confirmPassword: "short" })),
-    ).rejects.toThrow("REDIRECT:/captain/settings?error=");
-  });
-
-  it("rejects mismatched confirm password", async () => {
-    await expect(
-      changePasswordAction(fd({ ...validData, confirmPassword: "different" })),
-    ).rejects.toThrow("REDIRECT:/captain/settings?error=");
-  });
-
-  it("rejects wrong current password", async () => {
-    (bcrypt.compare as ReturnType<typeof vi.fn>).mockResolvedValue(false);
-
-    await expect(changePasswordAction(fd(validData))).rejects.toThrow(
-      "REDIRECT:/captain/settings?error=",
-    );
-    expect(updateCaptainPassword).not.toHaveBeenCalled();
-  });
-
-  it("redirects with error when no password hash found", async () => {
-    getUserPasswordHashById.mockResolvedValue(null);
-
-    await expect(changePasswordAction(fd(validData))).rejects.toThrow(
-      "REDIRECT:/captain/settings?error=",
-    );
-  });
-});
-
 // ────────────────────────────────────────────────────────────
 // requestPasswordResetAction
 // ────────────────────────────────────────────────────────────
@@ -547,80 +540,23 @@ describe("captain actions", () => {
     assertCaptainCanSubmitStats.mockResolvedValue(undefined);
   });
 
-  it("requires a captain session before registering a team", async () => {
-    requireRole.mockResolvedValue(null);
+  it.each([
+    [captainRegisterTeamAction, captainRegisterTeamActionFromModule, { eventId: "event-1", name: "Team A", tag: "TA" }],
+    [captainSaveDraftTeamAction, captainSaveDraftTeamActionFromModule, { name: "Team A", tag: "TA" }],
+    [captainUploadPaymentProofAction, captainUploadPaymentProofActionFromModule, { requestId: "request-1" }],
+  ])("delegates registration actions to the owning module", async (legacyAction, moduleAction, data) => {
+    const formData = fd(data);
+    moduleAction.mockResolvedValue("delegated");
 
-    await expect(captainRegisterTeamAction(fd({ eventId: "e1", name: "Team A", tag: "TA" }))).rejects.toThrow(
-      "REDIRECT:/login",
-    );
-    expect(registerTeam).not.toHaveBeenCalled();
+    await expect(legacyAction(formData)).resolves.toBe("delegated");
+    expect(moduleAction).toHaveBeenCalledWith(formData);
   });
+  it("delegates captain add-player to the teams module", async () => {
+    const formData = fd({ teamId: "t1", eventId: "e1", displayName: "Ahmad Dhani", nickname: "Dhani" });
+    captainAddPlayerActionFromModule.mockResolvedValue("delegated");
 
-  it("derives the registering captain from the authenticated session", async () => {
-    await expect(
-      captainRegisterTeamAction(fd({ eventId: "event-flashpeak-open", name: "Session United", tag: "SES" })),
-    ).rejects.toThrow("REDIRECT:/captain?success=team-created");
-    expect(registerTeam).toHaveBeenCalledWith({
-      eventId: "event-flashpeak-open",
-      captainId: "captain-1",
-      name: "Session United",
-      tag: "SES",
-    });
-  });
-
-
-  it("creates a pending payment request when the event requires a fee", async () => {
-    registerTeam.mockRejectedValue(new Error("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif."));
-    createTeamRegistrationRequest.mockResolvedValue({ id: "request-1", status: "pending_payment" });
-
-    await expect(
-      captainRegisterTeamAction(fd({ eventId: "event-paid", name: "Paid United", tag: "PDU" })),
-    ).rejects.toThrow("REDIRECT:/captain?tab=registration&success=payment-pending");
-
-    expect(createTeamRegistrationRequest).toHaveBeenCalledWith({
-      eventId: "event-paid",
-      captainId: "captain-1",
-      name: "Paid United",
-      tag: "PDU",
-    });
-    expect(revalidateTag).toHaveBeenCalledWith("teams");
-    expect(revalidatePath).toHaveBeenCalledWith("/captain");
-  });
-
-  it("uploads a payment proof for the authenticated captain", async () => {
-    updateTeamRegistrationProof.mockResolvedValue({ id: "request-1", status: "pending_review" });
-    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
-    blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-proofs/request-1.png" });
-
-    try {
-      await expect(
-        captainUploadPaymentProofAction(fd({ requestId: "request-1", paymentProof: validPngFile("proof.png") })),
-      ).rejects.toThrow("REDIRECT:/captain?tab=registration&success=payment-proof-uploaded");
-
-      expect(updateTeamRegistrationProof).toHaveBeenCalledWith("captain-1", "request-1", "https://blob.example.com/payment-proofs/request-1.png");
-      expect(revalidatePath).toHaveBeenCalledWith("/captain");
-    } finally {
-      delete process.env.BLOB_READ_WRITE_TOKEN;
-    }
-  });
-  it("requires a captain session before adding a player", async () => {
-    requireRole.mockResolvedValue(null);
-
-    await expect(
-      captainAddPlayerAction(fd({ teamId: "t1", eventId: "e1", displayName: "Player", nickname: "PL", position: "Guard" })),
-    ).rejects.toThrow("REDIRECT:/login");
-    expect(addPlayer).not.toHaveBeenCalled();
-  });
-
-  it("adds player and redirects on success", async () => {
-    await expect(
-      captainAddPlayerAction(
-        fd({ teamId: "t1", eventId: "e1", displayName: "Ahmad Dhani", nickname: "Dhani", position: "Forward" }),
-      ),
-    ).rejects.toThrow("REDIRECT:/captain?success=player-added");
-    expect(addPlayer).toHaveBeenCalledWith(
-      expect.objectContaining({ displayName: "Ahmad Dhani", nickname: "Dhani" }),
-    );
+    await expect(captainAddPlayerAction(formData)).resolves.toBe("delegated");
+    expect(captainAddPlayerActionFromModule).toHaveBeenCalledWith(formData);
   });
 });
 
@@ -628,41 +564,19 @@ describe("captain actions", () => {
 // captainUpdatePlayerAction
 // ────────────────────────────────────────────────────────────
 
-describe("captainUpdatePlayerAction", () => {
-  const validData = {
-    playerId: "player-1",
-    displayName: "Updated Name",
-    nickname: "Upd",
-    position: "Midfielder",
-  };
+describe("captain roster action facades", () => {
+  beforeEach(() => vi.clearAllMocks());
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    requireRole.mockResolvedValue(captainSession());
-  });
+  it.each([
+    [captainUpdatePlayerAction, captainUpdatePlayerActionFromModule, { playerId: "player-1" }],
+    [captainDeletePlayerAction, captainDeletePlayerActionFromModule, { playerId: "player-1" }],
+    [captainSetDisplayCaptainAction, captainSetDisplayCaptainActionFromModule, { teamId: "team-1", playerId: "player-1" }],
+  ])("delegates to the owning teams-module action", async (legacyAction, moduleAction, data) => {
+    const formData = fd(data);
+    moduleAction.mockResolvedValue("delegated");
 
-  it("requires a captain session", async () => {
-    requireRole.mockResolvedValue(null);
-    await expect(captainUpdatePlayerAction(fd(validData))).rejects.toThrow("REDIRECT:/login");
-  });
-
-  it("updates player and redirects to /captain?success=player-updated", async () => {
-    await expect(captainUpdatePlayerAction(fd(validData))).rejects.toThrow(
-      "REDIRECT:/captain?success=player-updated",
-    );
-    expect(updatePlayer).toHaveBeenCalledWith(
-      "player-1",
-      "captain-1",
-      expect.objectContaining({ displayName: "Updated Name" }),
-    );
-  });
-
-  it("redirects with error when updatePlayer throws", async () => {
-    updatePlayer.mockRejectedValue(new Error("Forbidden"));
-
-    await expect(captainUpdatePlayerAction(fd(validData))).rejects.toThrow(
-      "REDIRECT:/captain?error=",
-    );
+    await expect(legacyAction(formData)).resolves.toBe("delegated");
+    expect(moduleAction).toHaveBeenCalledWith(formData);
   });
 });
 
@@ -670,190 +584,35 @@ describe("captainUpdatePlayerAction", () => {
 // captainDeletePlayerAction
 // ────────────────────────────────────────────────────────────
 
-describe("captainDeletePlayerAction", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    requireRole.mockResolvedValue(captainSession());
-  });
-
-  it("requires a captain session", async () => {
-    requireRole.mockResolvedValue(null);
-    await expect(captainDeletePlayerAction(fd({ playerId: "p1" }))).rejects.toThrow("REDIRECT:/login");
-  });
-
-  it("deletes player and redirects to /captain?success=player-deleted", async () => {
-    await expect(captainDeletePlayerAction(fd({ playerId: "p1" }))).rejects.toThrow(
-      "REDIRECT:/captain?success=player-deleted",
-    );
-    expect(deletePlayer).toHaveBeenCalledWith("p1", "captain-1");
-  });
-
-  it("redirects with error when deletePlayer throws", async () => {
-    deletePlayer.mockRejectedValue(new Error("Not your player"));
-
-    await expect(captainDeletePlayerAction(fd({ playerId: "p1" }))).rejects.toThrow(
-      "REDIRECT:/captain?error=",
-    );
-  });
-});
-
-// ────────────────────────────────────────────────────────────
-// captainSetDisplayCaptainAction
-// ────────────────────────────────────────────────────────────
-
-describe("captainSetDisplayCaptainAction", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    requireRole.mockResolvedValue(captainSession());
-    setTeamCaptainDisplay.mockResolvedValue(undefined);
-  });
-
-  it("requires a captain session", async () => {
-    requireRole.mockResolvedValue(null);
-    await expect(
-      captainSetDisplayCaptainAction(fd({ teamId: "t1", playerId: "p1" })),
-    ).rejects.toThrow("REDIRECT:/login");
-  });
-
-  it("calls setTeamCaptainDisplay with playerId and redirects to success", async () => {
-    await expect(
-      captainSetDisplayCaptainAction(fd({ teamId: "t1", playerId: "p1" })),
-    ).rejects.toThrow("REDIRECT:/captain?success=captain-display-updated");
-    expect(setTeamCaptainDisplay).toHaveBeenCalledWith("t1", "captain-1", "p1");
-  });
-
-  it("does not accept displayName from client — action only passes playerId", async () => {
-    await captainSetDisplayCaptainAction(fd({ teamId: "t1", playerId: "p1", displayName: "INJECTED" })).catch(() => {});
-    expect(setTeamCaptainDisplay).toHaveBeenCalledWith("t1", "captain-1", "p1");
-    expect(setTeamCaptainDisplay).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), "INJECTED");
-  });
-
-  it("redirects with error when player does not belong to the team", async () => {
-    setTeamCaptainDisplay.mockRejectedValue(new Error("Not authorized to update this team."));
-    await expect(
-      captainSetDisplayCaptainAction(fd({ teamId: "t1", playerId: "other-team-player" })),
-    ).rejects.toThrow("REDIRECT:/captain?error=");
-  });
-
-  it("redirects with error when team does not belong to the captain", async () => {
-    setTeamCaptainDisplay.mockRejectedValue(new Error("Not authorized to update this team."));
-    await expect(
-      captainSetDisplayCaptainAction(fd({ teamId: "other-team", playerId: "p1" })),
-    ).rejects.toThrow("REDIRECT:/captain?error=");
-  });
-});
-
 // ────────────────────────────────────────────────────────────
 // adminCreateEventAction
 // ────────────────────────────────────────────────────────────
 
 describe("adminCreateEventAction", () => {
-  const validData = {
+  const baseData = {
     name: "New Event 2026",
     slug: "new-event-2026",
     gameModeId: "mode-1",
     format: "Single Elimination",
     participantCap: "8",
   };
+  const validData = { ...baseData, organizerUserId: "organizer-target" };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    requireRole.mockResolvedValue(adminSession());
+    adminCreateEventActionFromModule.mockRejectedValue(new Error("REDIRECT:/admin?success=event-created"));
   });
 
-  it("requires an admin session", async () => {
-    requireRole.mockResolvedValue(null);
-    await expect(adminCreateEventAction(fd(validData))).rejects.toThrow("REDIRECT:/login");
-    expect(createEvent).not.toHaveBeenCalled();
-  });
-
-  it("creates event and redirects to /admin?success=event-created", async () => {
+  it("delegates create to modules/events owner", async () => {
     await expect(adminCreateEventAction(fd(validData))).rejects.toThrow(
       "REDIRECT:/admin?success=event-created",
     );
-    expect(createEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "New Event 2026", participantCap: 8 }),
-    );
-    expect(revalidateTag).toHaveBeenCalledWith("events");
-    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+    expect(adminCreateEventActionFromModule).toHaveBeenCalledWith(expect.any(FormData));
   });
 
-  it("lets a platform admin assign a new event to an organizer", async () => {
-    getOrganizerUserById.mockResolvedValue({
-      id: "organizer-target",
-      email: "target@test.com",
-      name: "Target Organizer",
-      role: "organizer",
-    });
-
-    await expect(adminCreateEventAction(fd({ ...validData, organizerUserId: "organizer-target" }))).rejects.toThrow(
-      "REDIRECT:/admin?success=event-created",
-    );
-
-    expect(getOrganizerUserById).toHaveBeenCalledWith("organizer-target");
-    expect(createEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organizerUserId: "organizer-target",
-        organizerName: "Target Organizer",
-        organizerVerified: false,
-      }),
-    );
-  });
-
-  it("rejects platform admin assignment to an unknown organizer", async () => {
-    getOrganizerUserById.mockResolvedValue(null);
-
-    await expect(adminCreateEventAction(fd({ ...validData, organizerUserId: "missing-organizer" }))).rejects.toThrow(
-      "REDIRECT:/admin?error=Organizer%20not%20found.",
-    );
-
-    expect(createEvent).not.toHaveBeenCalled();
-  });
-
-  it("assigns event ownership from the authenticated organizer session", async () => {
-    requireRole.mockResolvedValue(organizerSession());
-
-    await expect(adminCreateEventAction(fd(validData))).rejects.toThrow(
-      "REDIRECT:/admin?success=event-created",
-    );
-
-    expect(createEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organizerUserId: "organizer-1",
-        organizerName: "Organizer One",
-        organizerVerified: false,
-      }),
-    );
-  });
-
-  it("ignores organizer assignment spoofing from a non-platform organizer", async () => {
-    requireRole.mockResolvedValue(organizerSession());
-
-    await expect(adminCreateEventAction(fd({ ...validData, organizerUserId: "organizer-target" }))).rejects.toThrow(
-      "REDIRECT:/admin?success=event-created",
-    );
-
-    expect(getOrganizerUserById).not.toHaveBeenCalled();
-    expect(createEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organizerUserId: "organizer-1",
-        organizerName: "Organizer One",
-      }),
-    );
-  });
-
-  it("throws Zod error for invalid format value", async () => {
-    await expect(
-      adminCreateEventAction(fd({ ...validData, format: "Round Robin" })),
-    ).rejects.toThrow();
-    expect(createEvent).not.toHaveBeenCalled();
-  });
-
-  it("throws Zod error for unsupported participantCap", async () => {
-    await expect(
-      adminCreateEventAction(fd({ ...validData, participantCap: "7" })),
-    ).rejects.toThrow();
-    expect(createEvent).not.toHaveBeenCalled();
+  it("forwards module validation/error contracts", async () => {
+    adminCreateEventActionFromModule.mockRejectedValueOnce(new Error("REDIRECT:/admin?error=Organizer%20selection%20is%20required."));
+    await expect(adminCreateEventAction(fd(baseData))).rejects.toThrow("REDIRECT:/admin?error=Organizer%20selection%20is%20required.");
   });
 });
 
@@ -864,82 +623,19 @@ describe("adminCreateEventAction", () => {
 describe("adminUpdateEventStatusAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireRole.mockResolvedValue(adminSession());
+    adminUpdateEventStatusActionFromModule.mockRejectedValue(new Error("REDIRECT:/admin?success=event-status-updated&event=miracle-league"));
   });
 
-  it("requires an admin session", async () => {
-    requireRole.mockResolvedValue(null);
-    await expect(
-      adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Published" })),
-    ).rejects.toThrow("REDIRECT:/login");
-  });
-
-  it("updates status and redirects with success", async () => {
-    setEventStatus.mockResolvedValue({ slug: "miracle-league" });
-
+  it("delegates status updates to modules/events owner", async () => {
     await expect(
       adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Ongoing" })),
     ).rejects.toThrow("REDIRECT:/admin?success=event-status-updated&event=miracle-league");
-    expect(setEventStatus).toHaveBeenCalledWith("e1", "Ongoing");
-    expect(revalidateTag).toHaveBeenCalledWith("events");
-    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+    expect(adminUpdateEventStatusActionFromModule).toHaveBeenCalledWith(expect.any(FormData));
   });
 
-  it("checks organizer ownership before updating event status", async () => {
-    requireRole.mockResolvedValue(organizerSession());
-    setEventStatus.mockResolvedValue({ slug: "miracle-league" });
-
-    await expect(
-      adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Ongoing" })),
-    ).rejects.toThrow("REDIRECT:/admin?success=event-status-updated&event=miracle-league");
-
-    expect(assertUserCanManageEvent).toHaveBeenCalledWith(organizerSession(), "e1");
-    expect(setEventStatus).toHaveBeenCalledWith("e1", "Ongoing");
-  });
-
-  it("blocks direct status updates for events outside the organizer scope", async () => {
-    requireRole.mockResolvedValue(organizerSession());
-    assertUserCanManageEvent.mockRejectedValue(new Error("Not authorized"));
-
-    await expect(
-      adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Ongoing" })),
-    ).rejects.toThrow("Not authorized");
-
-    expect(setEventStatus).not.toHaveBeenCalled();
-  });
-
-  it("redirects with error when event not found", async () => {
-    setEventStatus.mockResolvedValue(null);
-
-    await expect(
-      adminUpdateEventStatusAction(fd({ eventId: "e-missing", status: "Published" })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
-  });
-  it.each(["conflict", "not_draft"] as const)("does not report legacy publication success for %s", async (status) => {
-    process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = "true";
-    publishEvent.mockResolvedValue(status === "not_draft" ? { status, slug: "miracle-league" } : { status });
-
-    try {
-      await expect(
-        adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Published" })),
-      ).rejects.toThrow("REDIRECT:/admin?error=event-publish-conflict");
-    } finally {
-      delete process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3;
-    }
-  });
-  it("uses the shared readiness guard for legacy publish while organizer V3 is enabled", async () => {
-    process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = "true";
-    publishEvent.mockResolvedValue({ status: "blocked", readiness: { incomplete: [{ code: "description" }] } });
-
-    try {
-      await expect(
-        adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Published" })),
-      ).rejects.toThrow("REDIRECT:/admin?error=event-not-ready");
-      expect(publishEvent).toHaveBeenCalledWith("e1", { id: "admin-1", role: "platform_admin" });
-      expect(setEventStatus).not.toHaveBeenCalled();
-    } finally {
-      delete process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3;
-    }
+  it("forwards module publish-readiness redirects", async () => {
+    adminUpdateEventStatusActionFromModule.mockRejectedValueOnce(new Error("REDIRECT:/admin?error=event-not-ready"));
+    await expect(adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Published" }))).rejects.toThrow("REDIRECT:/admin?error=event-not-ready");
   });
 });
 
@@ -1130,104 +826,33 @@ describe("adminUpdateEventPublicInfoAction", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    requireRole.mockResolvedValue(organizerSession());
-    updateEventPublicInfo.mockResolvedValue({ slug: "owned-event" });
+    adminUpdateEventPublicInfoActionFromModule.mockRejectedValue(new Error("REDIRECT:/admin?success=event-public-info-updated&event=owned-event"));
   });
 
-  it("requires an organizer/admin session", async () => {
-    requireRole.mockResolvedValue(null);
-
-    await expect(adminUpdateEventPublicInfoAction(fd(validData))).rejects.toThrow("REDIRECT:/login");
-    expect(updateEventPublicInfo).not.toHaveBeenCalled();
-  });
-
-  it("normalizes empty optional labels and updates public event info", async () => {
+  it("delegates public info update to modules/events owner", async () => {
     await expect(adminUpdateEventPublicInfoAction(fd(validData))).rejects.toThrow(
       "REDIRECT:/admin?success=event-public-info-updated&event=owned-event",
     );
-
-    expect(updateEventPublicInfo).toHaveBeenCalledWith(
-      organizerSession(),
-      "event-1",
-      {
-        description: "A public listing description for this tournament.",
-        registrationWindow: "August 20 - August 28, 2026",
-        startsAt: "August 30, 2026",
-        venue: "Online",
-        prizePoolLabel: "Rp1.000.000",
-        registrationFeeRequired: true,
-        registrationFeeAmount: 25000,
-        registrationFeeLabel: "Rp25.000 / team",
-        registrationUrl: null,
-      },
-    );
-    expect(revalidateTag).toHaveBeenCalledWith("events");
-    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+    expect(adminUpdateEventPublicInfoActionFromModule).toHaveBeenCalledWith(expect.any(FormData));
   });
 
-  it("rejects non-http registration URLs", async () => {
-    await expect(
-      adminUpdateEventPublicInfoAction(fd({ ...validData, registrationUrl: "javascript:alert(1)" })),
-    ).rejects.toThrow();
-
-    expect(updateEventPublicInfo).not.toHaveBeenCalled();
+  it("forwards module-side validation failures", async () => {
+    adminUpdateEventPublicInfoActionFromModule.mockRejectedValueOnce(new Error("bad-url"));
+    await expect(adminUpdateEventPublicInfoAction(fd({ ...validData, registrationUrl: "javascript:alert(1)" }))).rejects.toThrow("bad-url");
   });
 });
 
 
-  it("updates global payment settings", async () => {
-    updatePaymentSettings.mockResolvedValue({ id: "global", qrisImageUrl: "/payment/qris.png" });
+  it.each([
+    [adminUpdatePaymentSettingsAction, adminUpdatePaymentSettingsActionFromModule, { qrisImageUrl: "/payment/qris.png" }],
+    [adminApprovePaymentAction, adminApprovePaymentActionFromModule, { requestId: "request-1" }],
+    [adminRejectPaymentAction, adminRejectPaymentActionFromModule, { requestId: "request-1", reason: "Bukti tidak sesuai." }],
+  ])("delegates payment actions to the owning module", async (legacyAction, moduleAction, data) => {
+    const formData = fd(data);
+    moduleAction.mockResolvedValue("delegated");
 
-    await expect(
-      adminUpdatePaymentSettingsAction(fd({ qrisImageUrl: "/payment/qris.png", instructions: "Scan QRIS lalu upload bukti." })),
-    ).rejects.toThrow("REDIRECT:/admin?phase=payments&success=payment-settings-updated");
-
-    expect(updatePaymentSettings).toHaveBeenCalledWith({ qrisImageUrl: "/payment/qris.png", instructions: "Scan QRIS lalu upload bukti." });
-    expect(revalidatePath).toHaveBeenCalledWith("/admin");
-  });
-
-  it("uploads a QRIS image file and uses it instead of the text URL field", async () => {
-    updatePaymentSettings.mockResolvedValue({ id: "global", qrisImageUrl: "/payment-qris/global-123.png" });
-    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
-    blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-qris/global.png" });
-
-    try {
-      await expect(
-        adminUpdatePaymentSettingsAction(fd({
-          qrisImageUrl: "https://old-url-should-be-ignored.example/qris.png",
-          instructions: "Scan QRIS lalu upload bukti.",
-          qrisImage: validPngFile("qris.png"),
-        })),
-      ).rejects.toThrow("REDIRECT:/admin?phase=payments&success=payment-settings-updated");
-
-      expect(updatePaymentSettings).toHaveBeenCalledWith({
-        qrisImageUrl: "https://blob.example.com/payment-qris/global.png",
-        instructions: "Scan QRIS lalu upload bukti.",
-      });
-    } finally {
-      delete process.env.BLOB_READ_WRITE_TOKEN;
-    }
-  });
-
-  it("approves paid registration requests from admin", async () => {
-    approveTeamRegistrationRequest.mockResolvedValue({ id: "team-paid" });
-
-    await expect(adminApprovePaymentAction(fd({ requestId: "request-1" }))).rejects.toThrow(
-      "REDIRECT:/admin?phase=payments&success=payment-approved",
-    );
-
-    expect(approveTeamRegistrationRequest).toHaveBeenCalledWith(organizerSession(), "request-1");
-    expect(revalidateTag).toHaveBeenCalledWith("teams");
-  });
-
-  it("rejects paid registration requests with a reason", async () => {
-    rejectTeamRegistrationRequest.mockResolvedValue({ id: "request-1", status: "rejected" });
-
-    await expect(adminRejectPaymentAction(fd({ requestId: "request-1", reason: "Bukti tidak sesuai." }))).rejects.toThrow(
-      "REDIRECT:/admin?phase=payments&success=payment-rejected",
-    );
-
-    expect(rejectTeamRegistrationRequest).toHaveBeenCalledWith(organizerSession(), "request-1", "Bukti tidak sesuai.");
+    await expect(legacyAction(formData)).resolves.toBe("delegated");
+    expect(moduleAction).toHaveBeenCalledWith(formData);
   });
 describe("captainSubmitStatsAction", () => {
   beforeEach(() => {
@@ -1508,52 +1133,37 @@ describe("adminSetMatchGamesAction", () => {
   });
 });
 
-describe("adminUploadCharacterArtAction", () => {
+describe("certificate actions (delegated to @/modules/certificates)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireRole.mockResolvedValue(adminSession());
   });
 
-  it("requires an admin session", async () => {
-    requireRole.mockResolvedValue(null);
+  it("adminUploadCharacterArtAction delegates to the certificates module", async () => {
+    adminUploadCharacterArtActionFromModule.mockResolvedValue(undefined);
+    const formData = fd({ eventId: "event-safe", characterArt: new File(["fake"], "art.png", { type: "image/png" }) });
 
-    await expect(
-      adminUploadCharacterArtAction(fd({
-        eventId: "event-safe",
-        characterArt: new File(["fake"], "art.png", { type: "image/png" }),
-      })),
-    ).rejects.toThrow("REDIRECT:/login");
-    expect(updateEventCertificateAssets).not.toHaveBeenCalled();
+    await adminUploadCharacterArtAction(formData);
+
+    expect(adminUploadCharacterArtActionFromModule).toHaveBeenCalledWith(formData);
   });
 
-  it("rejects non-image uploads before persisting certificate assets", async () => {
-    await expect(
-      adminUploadCharacterArtAction(fd({
-        eventId: "event-safe",
-        characterArt: new File(["not an image"], "payload.txt", { type: "text/plain" }),
-      })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
-    expect(updateEventCertificateAssets).not.toHaveBeenCalled();
+  it("adminSetAccentColorAction delegates to the certificates module", async () => {
+    adminSetAccentColorActionFromModule.mockResolvedValue(undefined);
+    const formData = fd({ eventId: "event-safe", accentColor: "#16a34a" });
+
+    await adminSetAccentColorAction(formData);
+
+    expect(adminSetAccentColorActionFromModule).toHaveBeenCalledWith(formData);
   });
 
-  it("rejects spoofed image uploads whose bytes do not match the declared MIME type", async () => {
-    await expect(
-      adminUploadCharacterArtAction(fd({
-        eventId: "event-safe",
-        characterArt: new File(["<script>alert(1)</script>"], "art.png", { type: "image/png" }),
-      })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
-    expect(updateEventCertificateAssets).not.toHaveBeenCalled();
-  });
+  it("adminRegenerateCertificateAction delegates to the certificates module", async () => {
+    adminRegenerateCertificateActionFromModule.mockResolvedValue(undefined);
+    const formData = fd({ eventId: "event-safe" });
 
-  it("rejects unsafe event IDs before building a local file path", async () => {
-    await expect(
-      adminUploadCharacterArtAction(fd({
-        eventId: "../outside",
-        characterArt: new File(["fake"], "art.png", { type: "image/png" }),
-      })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
-    expect(updateEventCertificateAssets).not.toHaveBeenCalled();
+    await adminRegenerateCertificateAction(formData);
+
+    expect(adminRegenerateCertificateActionFromModule).toHaveBeenCalledWith(formData);
   });
 });
 
@@ -1569,154 +1179,69 @@ function validPngFile(name = "background.png") {
   return new File([Buffer.from(VALID_PNG_BASE64, "base64")], name, { type: "image/png" });
 }
 
-function visualAsset(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "asset-new",
-    eventId: "event-safe",
-    source: "organizer_upload",
-    status: "approved",
-    url: "https://blob.example.com/event-visuals/event-safe.png",
-    focalX: 0.5,
-    focalY: 0.5,
-    createdAt: new Date("2026-01-01T00:00:00Z"),
-    updatedAt: new Date("2026-01-01T00:00:00Z"),
-    ...overrides,
-  };
-}
-
 describe("event visual revision actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
-    requireRole.mockResolvedValue(organizerSession());
-    blobPut.mockResolvedValue({ url: "https://blob.example.com/event-visuals/event-safe.png" });
-    createEventVisualAsset.mockResolvedValue(visualAsset());
-    approveEventVisualAsset.mockResolvedValue(visualAsset());
-    rejectEventVisualAsset.mockResolvedValue(visualAsset({ id: "asset-old", status: "rejected" }));
-    setEventVisualFocalPoint.mockResolvedValue(visualAsset({ focalX: 1, focalY: 0 }));
+    adminUploadEventVisualActionFromModule.mockRejectedValue(new Error("REDIRECT:/admin?success=event-visual-uploaded"));
+    organizerUploadEventVisualActionFromModule.mockRejectedValue(
+      new Error("REDIRECT:/id/organizer/events/event-safe/overview?success=event-visual-uploaded#section-visuals"),
+    );
+    adminApproveEventVisualActionFromModule.mockRejectedValue(new Error("REDIRECT:/admin?success=event-visual-approved"));
+    adminRejectEventVisualActionFromModule.mockRejectedValue(new Error("REDIRECT:/admin?success=event-visual-rejected"));
+    adminActivateEventVisualActionFromModule.mockRejectedValue(new Error("REDIRECT:/admin?success=event-visual-activated"));
+    adminSetEventVisualFocalPointActionFromModule.mockRejectedValue(new Error("REDIRECT:/admin?success=event-visual-focal-updated"));
   });
 
-  afterEach(() => {
-    delete process.env.BLOB_READ_WRITE_TOKEN;
-  });
-
-  it("requires an organizer or admin session before creating a revision", async () => {
-    requireRole.mockResolvedValue(null);
-
+  it("delegates organizer background uploads to modules/visual-assets", async () => {
     await expect(
-      adminUploadEventVisualAction(fd({
-        eventId: "event-safe",
-        rightsAttestation: "confirmed",
-        eventVisual: validPngFile(),
-      })),
-    ).rejects.toThrow("REDIRECT:/login");
-    expect(assertUserCanManageEvent).not.toHaveBeenCalled();
-    expect(createEventVisualAsset).not.toHaveBeenCalled();
-    expect(blobPut).not.toHaveBeenCalled();
-  });
-
-  it("refuses uploads for events the organizer does not own", async () => {
-    assertUserCanManageEvent.mockRejectedValue(new Error("Not authorized"));
-
-    await expect(
-      adminUploadEventVisualAction(fd({
-        eventId: "event-of-another-organizer",
-        rightsAttestation: "confirmed",
-        eventVisual: validPngFile(),
-      })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
-    expect(createEventVisualAsset).not.toHaveBeenCalled();
-    expect(blobPut).not.toHaveBeenCalled();
-  });
-
-  it("refuses uploads without a confirmed rights attestation", async () => {
-    await expect(
-      adminUploadEventVisualAction(fd({
-        eventId: "event-safe",
-        eventVisual: validPngFile(),
-      })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
-    expect(createEventVisualAsset).not.toHaveBeenCalled();
-    expect(blobPut).not.toHaveBeenCalled();
-  });
-
-  it("rejects spoofed image bytes before anything reaches blob storage", async () => {
-    await expect(
-      adminUploadEventVisualAction(fd({
-        eventId: "event-safe",
-        rightsAttestation: "confirmed",
-        eventVisual: new File(["<script>alert(1)</script>"], "background.png", { type: "image/png" }),
-      })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
-    expect(blobPut).not.toHaveBeenCalled();
-    expect(createEventVisualAsset).not.toHaveBeenCalled();
-  });
-
-  it("rejects uploads larger than 5 MiB", async () => {
-    const oversized = new File([new Uint8Array(5 * 1024 * 1024 + 1)], "background.png", { type: "image/png" });
-
-    await expect(
-      adminUploadEventVisualAction(fd({
-        eventId: "event-safe",
-        rightsAttestation: "confirmed",
-        eventVisual: oversized,
-      })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
-    expect(blobPut).not.toHaveBeenCalled();
-    expect(createEventVisualAsset).not.toHaveBeenCalled();
-  });
-
-  it("creates an approved organizer revision with decoded image metadata", async () => {
-    await expect(
-      adminUploadEventVisualAction(fd({
-        eventId: "event-safe",
-        rightsAttestation: "confirmed",
-        eventVisual: validPngFile(),
-      })),
+      adminUploadEventVisualAction(fd({ eventId: "event-safe", rightsAttestation: "confirmed", eventVisual: validPngFile() })),
     ).rejects.toThrow("REDIRECT:/admin?success=event-visual-uploaded");
-
-    expect(createEventVisualAsset).toHaveBeenCalledWith(
-      expect.objectContaining({ role: "organizer" }),
-      expect.objectContaining({
-        eventId: "event-safe",
-        source: "organizer_upload",
-        status: "approved",
-        rightsAttestedAt: expect.any(Date),
-      }),
-    );
-    expect(createEventVisualAsset).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        url: "https://blob.example.com/event-visuals/event-safe.png",
-        mimeType: "image/png",
-        width: 16,
-        height: 9,
-      }),
-    );
-    expect(approveEventVisualAsset).toHaveBeenCalledWith(
-      expect.objectContaining({ role: "organizer" }),
-      "event-safe",
-      "asset-new",
-      { dualWriteLegacyImage: true },
-    );
-    expect(revalidateTag).toHaveBeenCalledWith("events");
-    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+    expect(adminUploadEventVisualActionFromModule).toHaveBeenCalledWith(expect.any(FormData));
   });
 
-  it("returns a workspace poster upload to the locale-aware visual section", async () => {
+  it("delegates locale-aware organizer workspace uploads to modules/visual-assets", async () => {
     await expect(
-      organizerUploadEventVisualAction(fd({
-        eventId: "event-safe",
-        locale: "id",
-        rightsAttestation: "confirmed",
-        eventVisual: validPngFile(),
-      })),
+      organizerUploadEventVisualAction(fd({ eventId: "event-safe", locale: "id", rightsAttestation: "confirmed", eventVisual: validPngFile() })),
     ).rejects.toThrow("REDIRECT:/id/organizer/events/event-safe/overview?success=event-visual-uploaded#section-visuals");
+    expect(organizerUploadEventVisualActionFromModule).toHaveBeenCalledWith(expect.any(FormData));
+  });
 
-    expect(createEventVisualAsset).toHaveBeenCalledWith(
-      expect.objectContaining({ role: "organizer" }),
-      expect.objectContaining({ eventId: "event-safe", status: "approved" }),
+  it("delegates approval to modules/visual-assets", async () => {
+    await expect(
+      adminApproveEventVisualAction(fd({ eventId: "event-safe", assetId: "asset-new" })),
+    ).rejects.toThrow("REDIRECT:/admin?success=event-visual-approved");
+    expect(adminApproveEventVisualActionFromModule).toHaveBeenCalledWith(expect.any(FormData));
+  });
+
+  it("delegates rejection to modules/visual-assets and forwards its error contract", async () => {
+    adminRejectEventVisualActionFromModule.mockRejectedValueOnce(
+      new Error(`REDIRECT:/admin?error=${encodeURIComponent("Cannot reject the active visual revision")}`),
     );
+    await expect(
+      adminRejectEventVisualAction(fd({ eventId: "event-safe", assetId: "asset-active" })),
+    ).rejects.toThrow(`REDIRECT:/admin?error=${encodeURIComponent("Cannot reject the active visual revision")}`);
+    expect(adminRejectEventVisualActionFromModule).toHaveBeenCalledWith(expect.any(FormData));
+  });
+
+  it("delegates rollback activation to modules/visual-assets", async () => {
+    await expect(
+      adminActivateEventVisualAction(fd({ eventId: "event-safe", assetId: "asset-old" })),
+    ).rejects.toThrow("REDIRECT:/admin?success=event-visual-activated");
+    expect(adminActivateEventVisualActionFromModule).toHaveBeenCalledWith(expect.any(FormData));
+  });
+
+  it("delegates focal point updates to modules/visual-assets", async () => {
+    await expect(
+      adminSetEventVisualFocalPointAction(fd({ eventId: "event-safe", assetId: "asset-new", focalX: "1.4", focalY: "-0.2" })),
+    ).rejects.toThrow("REDIRECT:/admin?success=event-visual-focal-updated");
+    expect(adminSetEventVisualFocalPointActionFromModule).toHaveBeenCalledWith(expect.any(FormData));
+  });
+});
+
+describe("organizerUploadEventLogoAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(organizerSession());
   });
 
   it("returns a workspace logo upload failure to the same visual section", async () => {
@@ -1728,67 +1253,5 @@ describe("event visual revision actions", () => {
     ).rejects.toThrow("REDIRECT:/en/organizer/events/event-safe/overview?error=");
 
     expect(updateEventBrandAssets).not.toHaveBeenCalled();
-  });
-
-  it("approves an AI revision and activates it through the repository boundary", async () => {
-    approveEventVisualAsset.mockResolvedValue(visualAsset({ id: "asset-ai", source: "ai_generated" }));
-
-    await expect(
-      adminApproveEventVisualAction(fd({ eventId: "event-safe", assetId: "asset-ai" })),
-    ).rejects.toThrow("REDIRECT:/admin?success=event-visual-approved");
-
-    expect(assertUserCanManageEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ role: "organizer" }),
-      "event-safe",
-    );
-    expect(approveEventVisualAsset).toHaveBeenCalledWith(
-      expect.objectContaining({ role: "organizer" }),
-      "event-safe",
-      "asset-ai",
-      { dualWriteLegacyImage: true },
-    );
-    expect(revalidateTag).toHaveBeenCalledWith("events");
-  });
-
-  it("surfaces the repository guard when rejecting the active revision", async () => {
-    rejectEventVisualAsset.mockRejectedValue(new Error("Cannot reject the active visual revision"));
-
-    await expect(
-      adminRejectEventVisualAction(fd({ eventId: "event-safe", assetId: "asset-active" })),
-    ).rejects.toThrow(`REDIRECT:/admin?error=${encodeURIComponent("Cannot reject the active visual revision")}`);
-    expect(revalidateTag).not.toHaveBeenCalled();
-  });
-
-  it("activates an older approved revision for rollback", async () => {
-    approveEventVisualAsset.mockResolvedValue(visualAsset({ id: "asset-old" }));
-
-    await expect(
-      adminActivateEventVisualAction(fd({ eventId: "event-safe", assetId: "asset-old" })),
-    ).rejects.toThrow("REDIRECT:/admin?success=event-visual-activated");
-
-    expect(approveEventVisualAsset).toHaveBeenCalledWith(
-      expect.objectContaining({ role: "organizer" }),
-      "event-safe",
-      "asset-old",
-      { dualWriteLegacyImage: true },
-    );
-  });
-
-  it("forwards focal values outside 0..1 to the repository clamp", async () => {
-    await expect(
-      adminSetEventVisualFocalPointAction(fd({
-        eventId: "event-safe",
-        assetId: "asset-new",
-        focalX: "1.4",
-        focalY: "-0.2",
-      })),
-    ).rejects.toThrow("REDIRECT:/admin?success=event-visual-focal-updated");
-
-    expect(setEventVisualFocalPoint).toHaveBeenCalledWith(
-      expect.objectContaining({ role: "organizer" }),
-      "event-safe",
-      "asset-new",
-      { x: 1.4, y: -0.2 },
-    );
   });
 });

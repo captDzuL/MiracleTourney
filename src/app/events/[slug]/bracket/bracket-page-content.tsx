@@ -9,10 +9,10 @@ import {
   getEventRoundConfigs,
   getMatchesForEvent,
   getMatchGamesForEvent,
-  getPublicEventBySlug,
   getPublicVisibleBracketPreview,
-  getTeamsForEvent,
 } from "@/lib/platform/repository";
+import { getPublicEventBySlug } from "@/modules/events";
+import { getTeamsForEvent } from "@/modules/teams";
 import type { Match, MatchGame, Team } from "@/lib/platform/types";
 import type { BracketMatch } from "@/lib/tournament/types";
 

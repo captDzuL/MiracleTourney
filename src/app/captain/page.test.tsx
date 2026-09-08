@@ -3,6 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  captainAddPlayerAction,
+  captainDeletePlayerAction,
+  captainSetDisplayCaptainAction,
+  captainUpdatePlayerAction,
+  captainUploadTeamLogoAction,
   getCaptainTeams,
   getCertificatesForEvents,
   getEventsByIds,
@@ -15,6 +20,11 @@ const {
   hasTempPassword,
   requireRole,
 } = vi.hoisted(() => ({
+  captainAddPlayerAction: vi.fn(),
+  captainDeletePlayerAction: vi.fn(),
+  captainSetDisplayCaptainAction: vi.fn(),
+  captainUpdatePlayerAction: vi.fn(),
+  captainUploadTeamLogoAction: vi.fn(),
   getCaptainTeams: vi.fn(),
   getCertificatesForEvents: vi.fn(),
   getEventsByIds: vi.fn(),
@@ -77,16 +87,32 @@ vi.mock("@/i18n/redirect", () => ({
 }));
 vi.mock("@/lib/auth/session", () => ({ requireRole }));
 vi.mock("@/lib/platform/repository", () => ({
-  getCaptainTeams,
-  getCertificatesForEvents,
-  getEventsByIds,
   getGameForEvent,
   getModeForEvent,
-  getCaptainRegistrationRequests,
-  getOpenRegistrationEventsForCaptain,
-  getPaymentSettings,
-  getPlayersForTeams,
   hasTempPassword,
+}));
+vi.mock("@/modules/registrations", () => ({
+  captainRegisterTeamAction: vi.fn(),
+  captainSaveDraftTeamAction: vi.fn(),
+  captainUploadPaymentProofAction: vi.fn(),
+  getCaptainRegistrationRequests,
+  getPaymentSettings,
+}));
+vi.mock("@/modules/teams", () => ({
+  captainAddPlayerAction,
+  captainDeletePlayerAction,
+  captainSetDisplayCaptainAction,
+  captainUpdatePlayerAction,
+  captainUploadTeamLogoAction,
+  getCaptainTeams,
+  getPlayersForTeams,
+}));
+vi.mock("@/modules/events", () => ({
+  getEventsByIds,
+  getOpenRegistrationEventsForCaptain,
+}));
+vi.mock("@/modules/certificates", () => ({
+  getCertificatesForEvents,
 }));
 vi.mock("@/components/GameArt", () => ({
   GameArt: () => <div />,

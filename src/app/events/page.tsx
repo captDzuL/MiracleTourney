@@ -7,7 +7,9 @@ import { PublicEventsV2 } from "@/components/public-v2/PublicEventsV2";
 import { Pill, Section } from "@/components/ui";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import type { Event } from "@/lib/platform/types";
-import { getAllGames, getGameForEvent, getModeForEvent, getPublicEvents, getTeamsForEvent } from "@/lib/platform/repository";
+import { getAllGames, getGameForEvent, getModeForEvent } from "@/lib/platform/repository";
+import { getPublicEvents } from "@/modules/events";
+import { getTeamsForEvent } from "@/modules/teams";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 
 const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });

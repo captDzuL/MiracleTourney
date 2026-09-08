@@ -8,7 +8,9 @@ import { PublicHomeV2 } from "@/components/public-v2/PublicHomeV2";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getDefaultModeLabel } from "@/lib/platform/config";
 import { getPublicEvents as getDemoPublicEvents } from "@/lib/platform/demo-store";
-import { getAllGames, getBracketPreview, getGameForEvent, getPublicEvents, getTeamsForEvent } from "@/lib/platform/repository";
+import { getAllGames, getBracketPreview, getGameForEvent } from "@/lib/platform/repository";
+import { getPublicEvents } from "@/modules/events";
+import { getTeamsForEvent } from "@/modules/teams";
 import type { Event, Game } from "@/lib/platform/types";
 
 const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });
