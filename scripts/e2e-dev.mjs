@@ -2,6 +2,7 @@ import { spawn as defaultSpawn } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { validateE2eDatabaseConfiguration } from "./e2e-db-preflight.mjs";
 import { loadE2eEnvironment } from "./e2e-env.mjs";
 
 const E2E_V3_FEATURE_FLAGS = [
@@ -18,6 +19,10 @@ export function startE2eDevServer({
   spawnImpl = defaultSpawn,
 } = {}) {
   const serverEnvironment = loadE2eEnvironment({ cwd, env });
+  const validation = validateE2eDatabaseConfiguration(serverEnvironment);
+  if (!validation.ok) {
+    throw new Error(`[e2e-db-preflight] ${validation.message} Host: ${validation.host}`);
+  }
 
   for (const flag of E2E_V3_FEATURE_FLAGS) {
     serverEnvironment[flag] = "true";

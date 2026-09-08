@@ -43,6 +43,24 @@ describe("E2E environment loader", () => {
     expect(environment.E2E_DATABASE_RESET_ALLOWED).toBe("true");
   });
 
+  it("pins omitted E2E keys so Next cannot restore inherited database settings", async () => {
+    const directory = await writeTestEnvironment(
+      "DATABASE_URL=postgresql://test-user:test-password@ep-test.example.test/testdb",
+    );
+
+    const environment = loadE2eEnvironment({
+      cwd: directory,
+      env: {
+        DIRECT_URL: "postgresql://prod-user:prod-password@ep-sparkling-night-azr6wxwd.example.test/proddb",
+        E2E_DATABASE_RESET_ALLOWED: "true",
+      },
+    });
+
+    expect(environment.DIRECT_URL).toBe("");
+    expect(environment.NEON_PROD_HOST).toBe("");
+    expect(environment.E2E_DATABASE_RESET_ALLOWED).toBe("");
+  });
+
   it("fails clearly when .env.test is missing instead of retaining inherited settings", () => {
     const missingDirectory = join(tmpdir(), `miracle-e2e-env-missing-${Date.now()}`);
     const environment = {

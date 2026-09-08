@@ -10,6 +10,7 @@ function parseDatabaseUrl(value) {
 
   try {
     const url = new URL(value);
+    if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") return null;
     return url.hostname ? url : null;
   } catch {
     return null;
@@ -24,7 +25,7 @@ function isProductionHost(host, env) {
     || Boolean(configuredProductionHost && normalizedHost.includes(configuredProductionHost));
 }
 
-function databaseConfiguration(env) {
+export function validateE2eDatabaseConfiguration(env) {
   const databaseUrl = env.DATABASE_URL ?? "";
   const directUrl = env.DIRECT_URL ?? "";
   const parsedDatabaseUrl = parseDatabaseUrl(databaseUrl);
@@ -44,7 +45,7 @@ function databaseConfiguration(env) {
     return {
       ok: false,
       host: "(invalid database URL)",
-      message: "DATABASE_URL and DIRECT_URL must be valid absolute URLs before running DB-backed E2E tests.",
+      message: "DATABASE_URL and DIRECT_URL must be valid PostgreSQL URLs before running DB-backed E2E tests.",
     };
   }
 
@@ -86,7 +87,7 @@ export async function checkE2eDatabaseConnection({
   PrismaClient = DefaultPrismaClient,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) {
-  const configuration = databaseConfiguration(env);
+  const configuration = validateE2eDatabaseConfiguration(env);
   if (!configuration.ok) {
     return configuration;
   }

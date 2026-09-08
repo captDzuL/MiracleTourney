@@ -9,20 +9,29 @@ import { startE2eDevServer } from "../scripts/e2e-dev.mjs";
 
 const temporaryDirectories: string[] = [];
 
+async function createEnvironment(contents: string) {
+  const cwd = await mkdtemp(join(tmpdir(), "miracle-e2e-dev-"));
+  temporaryDirectories.push(cwd);
+  await writeFile(join(cwd, ".env.test"), contents, "utf8");
+  return cwd;
+}
+
+function spawnMock() {
+  return vi.fn((_command: string, _args: string[], _options: SpawnOptions) =>
+    ({ on: vi.fn() }) as unknown as ChildProcess);
+}
+
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
 describe("E2E development server", () => {
   it("starts Next locally with .env.test database settings and all V3 flags", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "miracle-e2e-dev-"));
-    temporaryDirectories.push(cwd);
-    await writeFile(join(cwd, ".env.test"), [
+    const cwd = await createEnvironment([
       "DATABASE_URL=postgresql://test-user:test-password@test.example.test/testdb",
       "DIRECT_URL=postgresql://test-user:test-password@test-direct.example.test/testdb",
-    ].join("\n"), "utf8");
-    const spawnImpl = vi.fn((_command: string, _args: string[], _options: SpawnOptions) =>
-      ({ on: vi.fn() }) as unknown as ChildProcess);
+    ].join("\n"));
+    const spawnImpl = spawnMock();
 
     startE2eDevServer({
       cwd,
@@ -54,5 +63,17 @@ describe("E2E development server", () => {
         FEATURE_FLAG_COMPETITION_OPERATIONS_V3: "true",
       },
     });
+  });
+
+  it("blocks a production database before spawning Next", async () => {
+    const cwd = await createEnvironment([
+      "DATABASE_URL=postgresql://prod-user:prod-password@ep-sparkling-night-azr6wxwd.example.test/proddb",
+      "DIRECT_URL=postgresql://test-user:test-password@test-direct.example.test/testdb",
+    ].join("\n"));
+    const spawnImpl = spawnMock();
+
+    expect(() => startE2eDevServer({ cwd, env: {}, spawnImpl }))
+      .toThrow(/production Neon branch/);
+    expect(spawnImpl).not.toHaveBeenCalled();
   });
 });

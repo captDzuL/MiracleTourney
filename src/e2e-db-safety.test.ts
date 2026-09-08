@@ -42,10 +42,29 @@ describe("E2E database safety", () => {
     expect(result).toEqual({
       ok: false,
       host: "(invalid database URL)",
-      message: "DATABASE_URL and DIRECT_URL must be valid absolute URLs before running DB-backed E2E tests.",
+      message: "DATABASE_URL and DIRECT_URL must be valid PostgreSQL URLs before running DB-backed E2E tests.",
     });
     expect(PrismaClient).not.toHaveBeenCalled();
   });
+
+  it.each(["https:", "mysql:", "file:"])(
+    "blocks the non-Postgres %s scheme before Prisma connects",
+    async (scheme) => {
+      const PrismaClient = vi.fn();
+
+      const result = await checkE2eDatabaseConnection({
+        env: { DATABASE_URL: `${scheme}//user:password@example.test/database` },
+        PrismaClient,
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        host: "(invalid database URL)",
+        message: "DATABASE_URL and DIRECT_URL must be valid PostgreSQL URLs before running DB-backed E2E tests.",
+      });
+      expect(PrismaClient).not.toHaveBeenCalled();
+    },
+  );
 
   it("blocks missing database URLs before Prisma connects", async () => {
     const PrismaClient = vi.fn();

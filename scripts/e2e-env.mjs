@@ -31,5 +31,9 @@ export function loadE2eEnvironment({
     throw new Error(`Unable to load E2E environment file .env.test: ${result.error.message}`);
   }
 
+  for (const key of E2E_DATABASE_ENVIRONMENT_KEYS) {
+    env[key] ??= "";
+  }
+
   return env;
 }
