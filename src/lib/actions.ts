@@ -36,6 +36,7 @@ import {
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
+  getEventsByIds,
   getOrganizerUserById,
   getUserByEmail,
   getUserPasswordHashById,
@@ -289,8 +290,16 @@ function isSafeStatToken(value: string) {
  * Team draft and event registration happen later from the captain dashboard.
  */
 export async function captainSignUpAction(formData: FormData) {
-  const signUpError = async (msg: string) =>
-    redirectToActiveLocale(`/register?error=${encodeURIComponent(msg)}` as never);
+  const requestedLocale = String(formData.get("locale") ?? "").trim();
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const hasSafeEventId = Boolean(eventId && isSafeEntityId(eventId));
+  const signUpError = async (msg: string) => {
+    const context = hasSafeEventId ? `eventId=${encodeURIComponent(eventId)}&` : "";
+    return redirectToRequestedLocale(
+      `/register?${context}error=${encodeURIComponent(msg)}`,
+      requestedLocale,
+    );
+  };
 
   const fullName = String(formData.get("fullName") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -299,6 +308,14 @@ export async function captainSignUpAction(formData: FormData) {
   if (!fullName || fullName.length < 2) await signUpError("Nama lengkap minimal 2 karakter.");
   if (!z.string().email().safeParse(email).success) await signUpError("Format email tidak valid.");
   if (password.length < 8) await signUpError("Password minimal 8 karakter.");
+
+  if (eventId) {
+    if (!hasSafeEventId) await signUpError("Event tidak valid.");
+    const [event] = await getEventsByIds([eventId]);
+    if (!event || !["Published", "Registration Closed"].includes(event.status)) {
+      await signUpError("Event tidak tersedia.");
+    }
+  }
 
   const ip = (await headers()).get("x-forwarded-for") ?? "unknown";
   if (!checkRateLimit(`register:${ip}`, 5, 15 * 60 * 1000)) {
@@ -324,9 +341,13 @@ export async function captainSignUpAction(formData: FormData) {
   const result = await signIn(email, password);
   if (!result.ok) await signUpError("Akun berhasil dibuat, tapi login gagal. Silakan login manual.");
 
-  await redirectToActiveLocale("/captain?success=registered" as never);
+  await redirectToRequestedLocale(
+    eventId
+      ? `/captain?tab=registration&eventId=${encodeURIComponent(eventId)}`
+      : "/captain?success=registered",
+    requestedLocale,
+  );
 }
-
 /** Authenticates a user by email/password and redirects to their role-specific workspace. */
 export async function loginAction(formData: FormData) {
   const requestedLocale = String(formData.get("locale") ?? "").trim();

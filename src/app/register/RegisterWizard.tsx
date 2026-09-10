@@ -24,7 +24,7 @@ const labelCls = "block text-sm font-medium text-slate-300";
 
 
 
-export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
+export function RegisterWizard({ errorMsg, eventId, locale }: { errorMsg?: string; eventId?: string; locale?: "id" | "en" }) {
 
   const t = useTranslations("register");
 
@@ -99,6 +99,9 @@ export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
         className="space-y-4"
 
       >
+
+        {eventId ? <input type="hidden" name="eventId" value={eventId} /> : null}
+        {locale ? <input type="hidden" name="locale" value={locale} /> : null}
 
         <h1 className="text-3xl font-semibold text-white">{t("step1Title")}</h1>
 
