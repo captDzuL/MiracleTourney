@@ -10,6 +10,7 @@ type PublishReadinessProps = {
   eventId?: string;
   publishEvent?: typeof publishEventV3Action;
   readiness: PublishReadinessResult;
+  organizerSection?: "organizer" | "review";
 };
 
 const sectionLabels = {
@@ -39,7 +40,7 @@ const blockerLabels: Record<string, string> = {
   organizer_contact: "Add an organizer contact channel",
 };
 
-export function PublishReadiness({ eventId, publishEvent = publishEventV3Action, readiness }: PublishReadinessProps) {
+export function PublishReadiness({ eventId, publishEvent = publishEventV3Action, readiness, organizerSection = "organizer" }: PublishReadinessProps) {
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const grouped = Object.entries(sectionLabels).map(([section, label]) => ({
@@ -81,7 +82,7 @@ export function PublishReadiness({ eventId, publishEvent = publishEventV3Action,
       <h3 className="text-xs font-extrabold uppercase text-[var(--color-text-muted)]">{group.label}</h3>
       <ul className="mt-2 grid gap-1 text-sm text-[var(--color-text)]">
         {group.items.map((item) => <li key={`${item.field}:${item.code}`}>
-          <a className="underline decoration-[var(--color-border-strong)] underline-offset-4" href={`#section-${group.section}`}>
+          <a className="underline decoration-[var(--color-border-strong)] underline-offset-4" href={`#section-${group.section === "organizer" ? organizerSection : group.section}`}>
             {blockerLabels[item.code] ?? "Complete this required field"}
           </a>
         </li>)}

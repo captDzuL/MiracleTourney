@@ -268,6 +268,20 @@ describe("loginAction", () => {
     expect(signIn).toHaveBeenCalledWith("admin@test.com", "secret123");
   });
 
+  it("redirects organizer to /organizer on valid credentials", async () => {
+    signIn.mockResolvedValue({ ok: true, user: { role: "organizer" } });
+
+    await expect(loginAction(fd({ email: "organizer@test.com", password: "secret123" }))).rejects.toThrow(
+      "REDIRECT:/organizer",
+    );
+  });
+  it("requires a newly provisioned organizer to change the temporary password first", async () => {
+    signIn.mockResolvedValue({ ok: true, user: { role: "organizer", mustChangePassword: true } });
+
+    await expect(loginAction(fd({ email: "organizer@test.com", password: "Temporary123!" }))).rejects.toThrow(
+      "REDIRECT:/organizer/change-password",
+    );
+  });
   it("redirects captain to /captain on valid credentials", async () => {
     signIn.mockResolvedValue({ ok: true, user: { role: "captain" } });
 

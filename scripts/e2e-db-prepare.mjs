@@ -47,7 +47,7 @@ export async function prepareE2eDatabase({
   requireResetPermission(env);
   log(`[e2e-db-prepare] Preflight passed for isolated test host ${preflight.host}.`);
 
-  await execute("pnpm", ["exec", "prisma", "migrate", "reset", "--force", "--skip-seed"]);
+  await execute("pnpm", ["exec", "prisma", "migrate", "reset", "--force", "--skip-seed", "--skip-generate"]);
   await execute("pnpm", ["db:seed"]);
 
   log("[e2e-db-prepare] Test database reset and seeded.");

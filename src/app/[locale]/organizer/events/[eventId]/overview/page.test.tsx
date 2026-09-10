@@ -16,6 +16,7 @@ vi.mock("@/lib/auth/session", () => ({ requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
 vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale }));
+vi.mock("@/i18n/navigation", () => ({ Link: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a> }));
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/components/v3/events/EventDraftForm", () => ({
   EventDraftForm: ({ eventId, initialRevision }: { eventId: string; initialRevision: number }) => <div data-event-id={eventId} data-revision={initialRevision}>Draft editor</div>,
@@ -29,7 +30,7 @@ describe("organizer event overview", () => {
     isFeatureEnabled.mockReturnValue(true);
     requireAnyRole.mockResolvedValue({ id: "org-1", role: "organizer", name: "Organizer" });
     getManageableEventDraft.mockResolvedValue({
-      id: "event-1", name: "Miracle Open", formatConfig: null, draftRevision: 3, status: "Draft",
+      id: "event-1", name: "Miracle Open", organizerUserId: "org-1", organizer: { organizerProfile: null }, formatConfig: null, draftRevision: 3, status: "Draft",
     });
   });
 

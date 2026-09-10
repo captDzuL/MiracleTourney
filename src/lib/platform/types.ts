@@ -6,6 +6,7 @@ export type AppUser = {
   name: string;
   role: Exclude<UserRole, "public">;
   deactivatedAt?: Date | null;
+  mustChangePassword?: boolean;
 };
 
 export type Game = {

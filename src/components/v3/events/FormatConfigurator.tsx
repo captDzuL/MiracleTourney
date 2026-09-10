@@ -7,6 +7,8 @@ type FormatConfiguratorProps = {
   allowAdvanced?: boolean;
   value: TournamentFormatConfig | null;
   onChange: (value: TournamentFormatConfig) => void;
+  disabled?: boolean;
+  lockedReason?: string;
 };
 
 const formatOptions = [
@@ -36,12 +38,16 @@ function BestOfSelect({ label, name, value, onChange }: { label: string; name: s
 }
 
 function AdvancedFormatControls({ value, onChange }: FormatConfiguratorProps & { value: TournamentFormatConfig }) {
-  if (value.kind === "single_elimination") return <div className="grid gap-3 min-[700px]:grid-cols-2">
-    {([
-      ["earlyRounds", "Early rounds"], ["semifinals", "Semifinals"], ["thirdPlace", "Third place"], ["final", "Final"],
-    ] as const).map(([field, label]) => <BestOfSelect key={field} label={label} name={field} value={value.bestOf[field]} onChange={(bestOf) => onChange({ ...value, bestOf: { ...value.bestOf, [field]: bestOf } })} />)}
+  if (value.kind === "single_elimination") return <div className="grid gap-4">
+    <div className="grid gap-3 min-[700px]:grid-cols-2">
+      {(["earlyRounds", "semifinals", "final"] as const).map((field) => <BestOfSelect key={field} label={{ earlyRounds: "Early rounds", semifinals: "Semifinals", final: "Final" }[field]} name={field} value={value.bestOf[field]} onChange={(bestOf) => onChange({ ...value, bestOf: { ...value.bestOf, [field]: bestOf } })} />)}
+    </div>
+    <label className="flex min-h-11 items-center gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 text-sm font-bold text-[var(--color-text)]">
+      <input checked={value.thirdPlace === "required"} name="thirdPlaceEnabled" onChange={(event) => onChange({ ...value, thirdPlace: event.target.checked ? "required" : "none" })} type="checkbox" />
+      Include a third-place match
+    </label>
+    {value.thirdPlace === "required" && <BestOfSelect label="Third-place match" name="thirdPlace" value={value.bestOf.thirdPlace} onChange={(bestOf) => onChange({ ...value, bestOf: { ...value.bestOf, thirdPlace: bestOf } })} />}
   </div>;
-
   if (value.kind === "double_elimination") return <div className="grid gap-3 min-[700px]:grid-cols-2">
     {([
       ["earlyRounds", "Early rounds"], ["upperFinal", "Upper final"], ["lowerFinal", "Lower final"], ["grandFinal", "Grand final"],
@@ -84,7 +90,7 @@ function AdvancedFormatControls({ value, onChange }: FormatConfiguratorProps & {
         : {
             version: 1, kind: "single_elimination",
             bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 },
-            thirdPlace: "required", avoidImmediateGroupRematches: true,
+            thirdPlace: "none", avoidImmediateGroupRematches: true,
           },
     })} value={value.playoffs.kind}>
       <option value="single_elimination">Single Elimination</option><option value="double_elimination">Double Elimination</option>
@@ -92,13 +98,14 @@ function AdvancedFormatControls({ value, onChange }: FormatConfiguratorProps & {
   </div>;
 }
 
-export function FormatConfigurator({ allowAdvanced = true, value, onChange }: FormatConfiguratorProps) {
+export function FormatConfigurator({ allowAdvanced = true, value, onChange, disabled = false, lockedReason }: FormatConfiguratorProps) {
   const availableOptions = allowAdvanced ? formatOptions : formatOptions.slice(0, 1);
-  return <section aria-labelledby="format-heading" className="grid gap-4">
+  return <fieldset aria-labelledby="format-heading" className="grid gap-4 disabled:opacity-70" disabled={disabled}>
     <div>
       <h2 id="format-heading" className="text-lg font-extrabold text-[var(--color-text)]">Competition format</h2>
       <p className="mt-1 text-sm text-[var(--color-text-subtle)]">Choose how teams progress through the tournament.</p>
     </div>
+    {lockedReason && <p className="rounded-[var(--radius-control)] border border-[var(--color-brand-cream)] px-3 py-2 text-sm text-[var(--color-brand-cream)]" data-lock-reason>{lockedReason}</p>}
     <div aria-label="Competition format" className="grid gap-3 sm:grid-cols-2" role="group">
       {availableOptions.map((option) => <button
         aria-pressed={value?.kind === option.kind}
@@ -114,5 +121,5 @@ export function FormatConfigurator({ allowAdvanced = true, value, onChange }: Fo
       <p className="text-sm text-[var(--color-text-subtle)]">Adjust the supported rules before publishing.</p>
       <AdvancedFormatControls onChange={onChange} value={value} />
     </fieldset>}
-  </section>;
+  </fieldset>;
 }

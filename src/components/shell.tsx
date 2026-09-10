@@ -46,11 +46,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         mobileMenuLabel={v3Footer("mobileMenu")}
         publicNavigation={[{ href: "/events", label: t("events") }]}
         operatorNavigation={[
-          { href: "/events", label: t("events") },
+          { href: "/organizer", label: v3Shell("organizerHome"), roles: ["organizer"] },
+          { href: "/organizer/events/new", label: "Create event", roles: ["organizer"] },
+          { href: "/organizer/profile", label: "Organizer profile", roles: ["organizer"] },
           { href: "/captain", label: t("captain"), roles: ["captain"] },
           { href: "/captain/stats", label: t("matchStats"), roles: ["captain"] },
-          { href: "/organizer", label: v3Shell("organizerHome"), roles: ["organizer", "platform_admin", "admin"] },
-          { href: "/admin", label: t("admin"), roles: ["organizer", "platform_admin", "admin"] },
+          { href: "/admin", label: t("admin"), roles: ["platform_admin", "admin"] },
+          { href: "/admin/events/new", label: "Create event", roles: ["platform_admin", "admin"] },
+          { href: "/admin/platform-profile", label: "Miracle contact", roles: ["platform_admin", "admin"] },
+          { href: "/events", label: t("events") },
         ]}
       >
         {children}

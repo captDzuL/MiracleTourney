@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { isFeatureEnabled } from "./feature-flags";
 
@@ -10,6 +10,10 @@ const OWNED_KEYS = [
   "FEATURE_FLAG_REGISTRATION_WORKSPACE_V3",
   "FEATURE_FLAG_COMPETITION_OPERATIONS_V3",
 ] as const;
+
+beforeEach(() => {
+  for (const key of OWNED_KEYS) delete process.env[key];
+});
 
 afterEach(() => {
   for (const key of OWNED_KEYS) delete process.env[key];

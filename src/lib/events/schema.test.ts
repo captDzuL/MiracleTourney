@@ -109,3 +109,31 @@ describe("event draft idempotency migration", () => {
     expect(migration).not.toContain('NOT NULL');
   });
 });
+
+describe("published event revision V3 Prisma contract", () => {
+  const migrationPath = fileURLToPath(
+    new URL("../../../prisma/migrations/20260909010000_published_event_revision_v3/migration.sql", import.meta.url),
+  );
+  const migration = readFileSync(migrationPath, "utf8");
+
+  it("stores private revisions separately from the public event", () => {
+    expect(field("Event", "publishedRevision")).toMatchObject({ type: "Int", default: 0 });
+    expect(field("EventEditRevision", "event")).toMatchObject({
+      kind: "object",
+      type: "Event",
+      isRequired: true,
+    });
+    expect(field("EventEditRevision", "payload")).toMatchObject({ type: "Json", isRequired: true });
+    expect(field("EventEditRevision", "basePublishedRevision")).toMatchObject({ type: "Int", isRequired: true });
+    expect(field("EventEditRevision", "revision")).toMatchObject({ type: "Int", default: 0 });
+    expect(field("EventPreviewToken", "revisionId")).toMatchObject({ type: "String", isRequired: false });
+  });
+
+  it("enforces one active Draft and records permanent slug redirects", () => {
+    expect(models.has("EventSlugRedirect")).toBe(true);
+    expect(field("EventSlugRedirect", "oldSlug")).toMatchObject({ type: "String", isUnique: true });
+    expect(migration).toContain('CREATE UNIQUE INDEX "EventEditRevision_one_active_draft_per_event"');
+    expect(migration).toContain('WHERE "status" = \'Draft\'');
+    expect(migration).toContain('CREATE UNIQUE INDEX "EventSlugRedirect_oldSlug_key"');
+  });
+});

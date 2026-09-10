@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { renderEventDetailPage } from "@/app/events/[slug]/event-detail-page";
+import { resolveEventRevisionPreviewToken } from "@/lib/events/event-revision";
 import { resolveEventPreviewToken } from "@/lib/events/preview-token";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export default async function PreviewEventPage({
   if (locale !== "id" && locale !== "en") notFound();
   setRequestLocale(locale);
 
-  const preview = await resolveEventPreviewToken(token);
+  const preview = await resolveEventPreviewToken(token) ?? await resolveEventRevisionPreviewToken(token);
   if (!preview) notFound();
 
   const t = await getTranslations("eventPreview");

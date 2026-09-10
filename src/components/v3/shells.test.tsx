@@ -104,7 +104,7 @@ describe("V3 shell integration", () => {
 
   it.each([
     ["captain", "/en/captain/stats", "/en/captain/stats", ["/en/admin", "/en/organizer"]],
-    ["organizer", "/en/organizer", "/en/organizer", ["/en/captain"]],
+    ["organizer", "/en/organizer", "/en/organizer", ["/en/captain", "/en/admin"]],
     ["platform_admin", "/en/admin", "/en/admin", ["/en/captain"]],
     ["admin", "/en/admin", "/en/admin", ["/en/captain"]],
   ])("shows only permitted navigation for %s and selects the deepest route", async (userRole, path, active, forbidden) => {
@@ -194,7 +194,9 @@ describe("V3 shell integration", () => {
     role = "organizer";
     route.pathname = "/en/organizer";
     await render();
-    expect(container.querySelector('aside a[href="/en/admin"]')?.textContent).toContain("2");
+    expect(container.querySelector('aside a[href="/en/admin"]')).toBeNull();
+    expect(container.querySelector('aside a[href="/en/organizer/events/new"]')).not.toBeNull();
+    expect(container.querySelector('aside a[href="/en/organizer/profile"]')).not.toBeNull();
     expect(container.querySelector('form button[aria-label="Sign Out"]')).not.toBeNull();
   });
 

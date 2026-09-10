@@ -14,7 +14,7 @@ const singleEliminationSchema = z.object({
     thirdPlace: bestOfSchema,
     final: bestOfSchema,
   }).strict(),
-  thirdPlace: z.literal("required"),
+  thirdPlace: z.enum(["required", "none"]),
 }).strict();
 
 const doubleEliminationSchema = z.object({
@@ -97,7 +97,7 @@ const presetInput = {
     version: 1,
     kind: "single_elimination",
     bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 },
-    thirdPlace: "required",
+    thirdPlace: "none",
   },
   doubleElimination: {
     version: 1,
@@ -126,7 +126,7 @@ const presetInput = {
       version: 1,
       kind: "single_elimination",
       bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 },
-      thirdPlace: "required",
+      thirdPlace: "none",
       avoidImmediateGroupRematches: true,
     },
   },

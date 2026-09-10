@@ -52,4 +52,9 @@ describe("organizer new event page", () => {
     requireAnyRole.mockResolvedValue(null);
     await expect(NewEventPage({ params: Promise.resolve({ locale: "en" }) })).rejects.toThrow("REDIRECT");
   });
+  it("renders the V3 live structure preview beside the creation form", async () => {
+    const markup = renderToStaticMarkup(await NewEventPage({ params: Promise.resolve({ locale: "en" }) }));
+    expect(markup).toContain("Live structure preview");
+    expect(markup).toContain("data-format-preview");
+  });
 });

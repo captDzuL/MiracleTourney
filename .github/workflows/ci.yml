@@ -10,22 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Typecheck
         run: pnpm lint
-
       - name: ESLint
         run: pnpm exec next lint --quiet || true
 
@@ -34,28 +29,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Generate JWT secret
         shell: bash
         run: |
           JWT_SECRET="$(openssl rand -base64 32)"
           echo "::add-mask::$JWT_SECRET"
           echo "JWT_SECRET=$JWT_SECRET" >> "$GITHUB_ENV"
-
       - name: Unit tests
-        run: pnpm test
+        run: pnpm test:unit
 
   e2e-tests:
     name: E2E Tests
@@ -65,80 +55,57 @@ jobs:
     concurrency:
       group: e2e-neon-test-db
       cancel-in-progress: false
-    # Only run E2E when the Neon test branch secrets are available
-    # (skipped on forks and dependabot PRs that lack access to secrets)
     if: ${{ vars.E2E_ENABLED == 'true' }}
-    env:
-      DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
-      DIRECT_URL: ${{ secrets.NEON_TEST_DIRECT_URL }}
-      NEON_PROD_HOST: ${{ secrets.NEON_PROD_HOST }}
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
+      - name: Create isolated E2E environment
+        shell: bash
+        env:
+          TEST_DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
+          TEST_DIRECT_URL: ${{ secrets.NEON_TEST_DIRECT_URL }}
+          PRODUCTION_NEON_HOST: ${{ secrets.NEON_PROD_HOST }}
+        run: |
+          umask 077
+          {
+            printf 'DATABASE_URL=%s\n' "$TEST_DATABASE_URL"
+            printf 'DIRECT_URL=%s\n' "$TEST_DIRECT_URL"
+            printf 'NEON_PROD_HOST=%s\n' "$PRODUCTION_NEON_HOST"
+            printf 'E2E_DATABASE_RESET_ALLOWED=true\n'
+          } > .env.test
       - name: Get Playwright version
         id: playwright-version
         run: echo "version=$(pnpm exec playwright --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
-
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.playwright-version.outputs.version }}-chromium
-
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install chromium
-
-      - name: Install Chromium system dependencies
-        run: |
-          sudo apt-get install -y --no-install-recommends \
-            libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
-            libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
-            libxfixes3 libxrandr2 libgbm1 libasound2
-
+        run: pnpm exec playwright install chromium --with-deps
       - name: Generate JWT secret
         shell: bash
         run: |
           JWT_SECRET="$(openssl rand -base64 32)"
           echo "::add-mask::$JWT_SECRET"
           echo "JWT_SECRET=$JWT_SECRET" >> "$GITHUB_ENV"
-
-      - name: Verify test DB (not production)
-        shell: bash
-        run: |
-          for i in 1 2 3 4 5; do
-            pnpm test:e2e:preflight && exit 0
-            echo "Attempt $i: DB not ready, waiting 20s..."
-            sleep 20
-          done
-          pnpm test:e2e:preflight
-
-      - name: Sync test DB schema
-        env:
-          DATABASE_URL: ${{ secrets.NEON_TEST_DIRECT_URL }}
-        run: pnpm prisma db push --accept-data-loss --skip-generate
-
+      - name: Reset and seed isolated test database
+        run: pnpm test:e2e:prepare
       - name: Run E2E tests
-        run: pnpm test:e2e:ci
+        run: pnpm test:e2e
         env:
           CI: true
           PLAYWRIGHT_PORT: "3100"
-          DATABASE_URL: ${{ secrets.NEON_TEST_DIRECT_URL }}
-
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4

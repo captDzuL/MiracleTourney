@@ -87,6 +87,59 @@ describe("EventDraftForm", () => {
     vi.useRealTimers();
   });
 
+  it("keeps one setup session visible at a time and advances through the numbered journey", () => {
+    act(() => root.render(<EventDraftForm
+      eventId="event-1"
+      initialDraft={{ name: "Miracle Open", formatConfig: null }}
+      initialRevision={3}
+      reviewPanel={<div data-review-panel>Review controls</div>}
+    />));
+
+    expect(container.querySelector("#section-identity")?.className).not.toContain("hidden");
+    expect(container.querySelector("#section-format")?.className).toContain("hidden");
+    expect(container.querySelector("[data-live-preview]")).not.toBeNull();
+    expect(container.querySelector("[data-workspace-step-controls]")?.textContent).toContain("Step 1 of 5");
+
+    act(() => (container.querySelector("[data-workspace-step-controls] button:last-child") as HTMLButtonElement).click());
+
+    expect(container.querySelector("#section-identity")?.className).toContain("hidden");
+    expect(container.querySelector("#section-format")?.className).not.toContain("hidden");
+    expect(window.location.hash).toBe("#section-format");
+  });
+
+  it("updates the public prize in the live preview before autosave completes", () => {
+    window.history.replaceState(null, "", "#section-public");
+    act(() => root.render(<EventDraftForm
+      eventId="event-1"
+      initialDraft={{ name: "Miracle Open", formatConfig: null, prizePoolLabel: null }}
+      initialRevision={3}
+      saveDraft={vi.fn()}
+    />));
+
+    const prize = container.querySelector<HTMLInputElement>('input[name="prizePoolLabel"]')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(prize, "Rp5.000.000 + merchandise");
+      prize.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(container.querySelector("[data-live-preview]")?.textContent).toContain("Hadiah");
+    expect(container.querySelector("[data-live-preview]")?.textContent).toContain("Rp5.000.000 + merchandise");
+  });
+
+  it("separates a published event notice from its read-only preview", () => {
+    act(() => root.render(<EventDraftForm
+      editable={false}
+      eventId="event-1"
+      initialDraft={{ name: "Miracle Open", formatConfig: null, prizePoolLabel: "Rp5.000.000" }}
+      initialRevision={3}
+      locale="id"
+    />));
+
+    expect(container.querySelector("[data-event-read-only-unused]")).toBeNull();
+    expect(container.querySelector("[data-event-read-only]")?.textContent).toContain("Event sudah diterbitkan");
+    expect(container.querySelector("[data-live-preview]")?.textContent).toContain("Rp5.000.000");
+    expect(container.querySelector('input[name="prizePoolLabel"]')).toBeNull();
+  });
   it("debounces a field edit and advances to the saved server revision", async () => {
     const saveDraft = vi.fn().mockResolvedValue({
       status: "saved", revision: 4, fields: { name: { state: "saved" } },
@@ -315,7 +368,7 @@ describe("EventDraftForm", () => {
     expect(localStorage.getItem("miracle:event-draft:event-1")).toBeNull();
   });
 
-  it("organizes identity, schedule, registration, and visual fields into contextual sections", () => {
+  it("organizes identity, format-and-schedule, registration, and public-page fields into contextual sections", () => {
     act(() => root.render(<EventDraftForm
       eventId="event-1"
       initialDraft={{
@@ -329,13 +382,11 @@ describe("EventDraftForm", () => {
     />));
 
     expect(container.querySelector("#section-identity input[name=slug]")).not.toBeNull();
-    expect(container.querySelector("#section-schedule input[name=registrationOpensAt]")).not.toBeNull();
+    expect(container.querySelector("#section-registration input[name=registrationOpensAt]")).not.toBeNull();
     expect(container.querySelector("#section-registration input[name=registrationFeeRequired]")).not.toBeNull();
-    expect(container.querySelector("#section-visuals input[name=gameImageUrl]")).not.toBeNull();
-    expect(container.querySelector("#section-visuals input[name=logoUrl]")).not.toBeNull();
-    expect(container.querySelector("#section-visuals input[name=eventVisual][type=file]")).not.toBeNull();
-    expect(container.querySelector("#section-visuals input[name=rightsAttestation][type=checkbox]")).not.toBeNull();
-    expect(container.querySelector("#section-visuals input[name=eventLogo][type=file]")).not.toBeNull();
+    expect(container.querySelector("#section-public input[name=eventVisual][type=file]")).not.toBeNull();
+    expect(container.querySelector("#section-public input[name=rightsAttestation][type=checkbox]")).not.toBeNull();
+    expect(container.querySelector("#section-public input[name=eventLogo][type=file]")).not.toBeNull();
     expect(Array.from(container.querySelectorAll('[id^="section-"]')).every((section) => section.getAttribute("tabindex") === "-1")).toBe(true);
   });
 
@@ -406,6 +457,24 @@ describe("EventDraftForm", () => {
       draft: { eventStartsAt: "2026-09-20T02:00:00.000Z", timezone: "Asia/Jakarta" },
     }));
   });
+
+  it("disables locked revision fields and explains why", () => {
+    act(() => root.render(<EventDraftForm
+      editorLabel="Revisi privat"
+      eventId="event-1"
+      fieldLocks={{ name: "matches_exist", slug: "slug_published" }}
+      initialDraft={{ name: "Miracle Open", slug: "miracle-open", formatConfig: null }}
+      initialRevision={2}
+      journalNamespace="event-edit-revision"
+      saveDraft={vi.fn()}
+      saveTargetId="revision-1"
+    />));
+    expect(container.querySelector<HTMLInputElement>('input[name="name"]')?.disabled).toBe(true);
+    expect(container.querySelector<HTMLInputElement>('input[name="slug"]')?.disabled).toBe(true);
+    expect(container.querySelector('[data-field-lock="name"]')?.textContent).toContain("Pertandingan sudah dibuat");
+    expect(container.querySelector('[data-live-preview]')?.textContent).toContain("Revisi privat");
+  });
+
 });
 
 describe("PreviewControls", () => {

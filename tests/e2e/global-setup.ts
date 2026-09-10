@@ -1,5 +1,5 @@
-import { requireE2eDatabaseResetPermission } from "../../scripts/e2e-db-preflight.mjs";
-
 export default async function globalSetup() {
-  requireE2eDatabaseResetPermission();
+  if (process.env.E2E_DATABASE_RESET_ALLOWED !== "true") {
+    throw new Error("Blocked: set E2E_DATABASE_RESET_ALLOWED=true in .env.test before running DB-backed E2E tests.");
+  }
 }

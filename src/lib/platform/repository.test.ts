@@ -38,9 +38,21 @@ const { prisma } = vi.hoisted(() => ({
       findMany: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    organizerProfile: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
     },
     eventPreviewToken: {
       updateMany: vi.fn(),
+    },
+    eventEditRevision: {
+      updateMany: vi.fn(),
+    },
+    eventSlugRedirect: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
     },
     eventVisualAsset: {
       count: vi.fn(),
@@ -109,6 +121,7 @@ import {
   getLeaderboardForEvent,
   getManageableEventsForUser,
   getManageableEventDraft,
+  getOrganizerProfileForUser,
   getMatchGamesForEvent,
   getMatchesForEvent,
   getOrganizerUserById,
@@ -127,6 +140,8 @@ import {
   rejectTeamRegistrationRequest,
   updateTeamRegistrationProof,
   updateEventPublicInfo,
+  updatePublishedEventSlugAsAdmin,
+  updateOrganizerProfileForUser,
   updatePaymentSettings,
   updateTeamLogo,
   updatePlayer,
@@ -157,8 +172,71 @@ describe("event lifecycle status", () => {
       data: { revokedAt: expect.any(Date) },
     });
   });
+
+
+  it("discards an active revision when status becomes Ongoing", async () => {
+    prisma.event.update.mockResolvedValue({
+      id: "event-1", slug: "miracle-open", name: "Miracle Open", description: "Event",
+      logoUrl: null, gameImageUrl: null, gameId: "game-1", gameModeId: "mode-1",
+      format: "Single Elimination", status: "Ongoing", participantCap: 16,
+      registrationWindow: "TBD", startsAt: "TBD", venue: "Online", stream: null, activeVisualAsset: null,
+    });
+    prisma.eventEditRevision.updateMany.mockResolvedValue({ count: 1 });
+    prisma.eventPreviewToken.updateMany.mockResolvedValue({ count: 1 });
+    await setEventStatus("event-1", "Ongoing");
+    expect(prisma.eventEditRevision.updateMany).toHaveBeenCalledWith({
+      where: { eventId: "event-1", status: "Draft" },
+      data: { status: "Discarded", discardedAt: expect.any(Date), discardReason: "event_started" },
+    });
+  });
+
+  it("lets only platform admins change a published slug while preserving the old URL", async () => {
+    prisma.event.findFirst
+      .mockResolvedValueOnce({ id: "event-1", slug: "old-slug" })
+      .mockResolvedValueOnce(null);
+    prisma.eventSlugRedirect.findUnique.mockResolvedValue(null);
+    prisma.eventSlugRedirect.create.mockResolvedValue({ id: "redirect-1" });
+    prisma.event.update.mockResolvedValue({ id: "event-1" });
+    await expect(updatePublishedEventSlugAsAdmin(platformAdmin, "event-1", "new-slug"))
+      .resolves.toEqual({ oldSlug: "old-slug", slug: "new-slug" });
+    expect(prisma.eventSlugRedirect.create).toHaveBeenCalledWith({ data: { oldSlug: "old-slug", eventId: "event-1" } });
+    expect(prisma.event.update).toHaveBeenCalledWith({
+      where: { id: "event-1" }, data: { slug: "new-slug", publishedRevision: { increment: 1 } },
+    });
+    await expect(updatePublishedEventSlugAsAdmin(organizer, "event-1", "nope"))
+      .rejects.toThrow("Not authorized");
+  });
 });
 
+describe("organizer profile repository", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
+  });
+
+  it("reads only the signed-in organizer profile", async () => {
+    prisma.organizerProfile.findUnique.mockResolvedValue({ organizationName: "Miracle Esports", contactChannel: "WhatsApp", contactValue: "+628123456789", verified: false });
+    await expect(getOrganizerProfileForUser(organizer)).resolves.toMatchObject({ organizationName: "Miracle Esports" });
+    expect(prisma.organizerProfile.findUnique).toHaveBeenCalledWith({
+      where: { userId: "org-1" },
+      select: { organizationName: true, contactChannel: true, contactValue: true, verified: true },
+    });
+  });
+
+  it("upserts the organizer profile and propagates its public name only to owned events", async () => {
+    await updateOrganizerProfileForUser(organizer, { organizationName: "Miracle Esports", contactChannel: "WhatsApp", contactValue: "+628123456789" });
+    expect(prisma.organizerProfile.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: "org-1" },
+      create: expect.objectContaining({ userId: "org-1", organizationName: "Miracle Esports" }),
+    }));
+    expect(prisma.event.updateMany).toHaveBeenCalledWith({ where: { organizerUserId: "org-1" }, data: { organizerName: "Miracle Esports" } });
+  });
+
+  it("does not expose or write an organizer profile to another role", async () => {
+    await expect(getOrganizerProfileForUser(platformAdmin)).resolves.toBeNull();
+    await expect(updateOrganizerProfileForUser(platformAdmin, { organizationName: "Admin", contactChannel: "Email", contactValue: "admin@example.com" })).rejects.toThrow("Not authorized");
+  });
+});
 describe("organizer user lookups", () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import { permanentRedirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 
-import { getPublicEventBySlug } from "@/lib/platform/repository";
+import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
 import { renderStandingsPage } from "../../../../events/[slug]/standings/standings-page";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
@@ -32,6 +33,12 @@ export default async function LocalizedStandingsPage({
 }) {
   const { locale, slug } = await params;
   setRequestLocale(locale as "id" | "en");
+
+  const event = await getPublicEventBySlug(slug);
+  if (!event) {
+    const redirectSlug = await getPublicEventSlugRedirect(slug);
+    if (redirectSlug) permanentRedirect(`/${locale}/events/${redirectSlug}/standings`);
+  }
 
   return renderStandingsPage(slug, locale as "id" | "en");
 }

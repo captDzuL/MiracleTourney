@@ -224,13 +224,14 @@ function mapPlayer(row: {
   };
 }
 
-function mapUser(row: { id: string; email: string; name: string; role: string; deactivatedAt?: Date | null }): AppUser {
+function mapUser(row: { id: string; email: string; name: string; role: string; deactivatedAt?: Date | null; mustChangePassword?: boolean }): AppUser {
   return {
     id: row.id,
     email: row.email,
     name: row.name,
     role: row.role as AppUser["role"],
     ...(row.deactivatedAt ? { deactivatedAt: row.deactivatedAt } : {}),
+    ...(row.mustChangePassword ? { mustChangePassword: true } : {}),
   };
 }
 
@@ -367,6 +368,59 @@ export async function getManageableEventsForUser(user: AppUser): Promise<Event[]
   return rows.map(mapEvent);
 }
 
+export type PlatformProfileSummary = {
+  displayName: string;
+  contactChannel: string;
+  contactValue: string;
+};
+
+export async function getPlatformProfile(): Promise<PlatformProfileSummary | null> {
+  return prisma.platformProfile.findUnique({
+    where: { id: "global" },
+    select: { displayName: true, contactChannel: true, contactValue: true },
+  });
+}
+
+export async function updatePlatformProfile(input: PlatformProfileSummary): Promise<void> {
+  await prisma.platformProfile.upsert({
+    where: { id: "global" },
+    update: input,
+    create: { id: "global", ...input },
+  });
+}
+export type OrganizerProfileSummary = {
+  organizationName: string;
+  contactChannel: string;
+  contactValue: string;
+  verified: boolean;
+};
+
+export async function getOrganizerProfileForUser(user: AppUser): Promise<OrganizerProfileSummary | null> {
+  if (user.role !== "organizer") return null;
+  const profile = await prisma.organizerProfile.findUnique({
+    where: { userId: user.id },
+    select: { organizationName: true, contactChannel: true, contactValue: true, verified: true },
+  });
+  return profile;
+}
+
+export async function updateOrganizerProfileForUser(
+  user: AppUser,
+  input: { organizationName: string; contactChannel: string; contactValue: string },
+): Promise<void> {
+  if (user.role !== "organizer") throw new Error("Not authorized");
+  await prisma.$transaction(async (tx) => {
+    await tx.organizerProfile.upsert({
+      where: { userId: user.id },
+      update: input,
+      create: { userId: user.id, ...input },
+    });
+    await tx.event.updateMany({
+      where: { organizerUserId: user.id },
+      data: { organizerName: input.organizationName },
+    });
+  });
+}
 export async function assertUserCanManageEvent(user: AppUser, eventId: string): Promise<void> {
   if (user.role === "platform_admin" || user.role === "admin") return;
   if (user.role !== "organizer") throw new Error("Not authorized");
@@ -387,11 +441,13 @@ export async function getManageableEventDraft(user: AppUser, eventId: string) {
     },
     select: {
       id: true, slug: true, name: true, description: true, gameId: true, gameModeId: true,
+      organizerUserId: true, organizerName: true, organizerVerified: true,
       format: true, formatConfig: true, participantCap: true,
       registrationOpensAt: true, registrationClosesAt: true, eventStartsAt: true,
       timezone: true, venue: true, venueAddress: true,
-      registrationFeeRequired: true, registrationFeeAmount: true,
-      logoUrl: true, gameImageUrl: true, draftRevision: true, status: true,
+      registrationFeeRequired: true, registrationFeeAmount: true, prizePoolLabel: true,
+      logoUrl: true, gameImageUrl: true, draftRevision: true, publishedRevision: true, status: true,
+      _count: { select: { matches: true } },
       organizer: { select: { organizerProfile: { select: { contactChannel: true, contactValue: true } } } },
     },
   });
@@ -589,6 +645,44 @@ export const getPublicEventBySlug = cache(
 );
 
 // ── Event visual assets ───────────────────────────────────────────────────────
+
+
+export async function updatePublishedEventSlugAsAdmin(
+  user: AppUser,
+  eventId: string,
+  nextSlug: string,
+): Promise<{ oldSlug: string; slug: string }> {
+  if (user.role !== "platform_admin" && user.role !== "admin") throw new Error("Not authorized");
+  const slug = nextSlug.trim().toLowerCase();
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Invalid slug");
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.event.findFirst({
+      where: { id: eventId, status: { in: ["Published", "Registration Closed"] } },
+      select: { id: true, slug: true },
+    });
+    if (!event) throw new Error("Event is not editable");
+    if (event.slug === slug) return { oldSlug: event.slug, slug };
+    const occupied = await tx.event.findFirst({ where: { slug }, select: { id: true } });
+    const redirectOccupied = await tx.eventSlugRedirect.findUnique({ where: { oldSlug: slug }, select: { id: true } });
+    if (occupied || redirectOccupied) throw new Error("Slug already exists");
+    await tx.eventSlugRedirect.create({ data: { oldSlug: event.slug, eventId: event.id } });
+    await tx.event.update({
+      where: { id: event.id },
+      data: { slug, publishedRevision: { increment: 1 } },
+    });
+    return { oldSlug: event.slug, slug };
+  });
+}
+
+export async function getPublicEventSlugRedirect(oldSlug: string): Promise<string | null> {
+  const redirect = await prisma.eventSlugRedirect.findUnique({
+    where: { oldSlug },
+    select: { event: { select: { slug: true, status: true } } },
+  });
+  return redirect && PUBLIC_EVENT_STATUSES.has(redirect.event.status as EventStatus)
+    ? redirect.event.slug
+    : null;
+}
 
 export type CreateEventVisualAssetInput = {
   eventId: string;
@@ -1261,14 +1355,18 @@ export async function hasTempPassword(userId: string): Promise<boolean> {
   return row?.tempPassword != null;
 }
 
-/** Updates the captain's password hash and clears the `tempPassword` field in one write. */
-export async function updateCaptainPassword(userId: string, newHash: string): Promise<void> {
+/** Updates a password hash and clears any first-login lock without retaining the temporary secret. */
+export async function updateUserPassword(userId: string, newHash: string): Promise<void> {
   await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash: newHash, tempPassword: null },
+    data: { passwordHash: newHash, tempPassword: null, mustChangePassword: false } as never,
   });
 }
 
+/** Legacy captain alias retained for current captain settings and imports. */
+export async function updateCaptainPassword(userId: string, newHash: string): Promise<void> {
+  await updateUserPassword(userId, newHash);
+}
 // ── Import snapshot ───────────────────────────────────────────────────────────
 
 /**
@@ -1350,6 +1448,75 @@ export async function getCaptainCredentialsForEvent(eventId: string) {
 
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
+export type CreateOrganizerAndEventDraftInput = {
+  actorId: string;
+  organizer: {
+    name: string;
+    organizationName: string;
+    email: string;
+    contactChannel: string;
+    contactValue: string;
+    temporaryPassword: string;
+  };
+  event: {
+    name: string;
+    slug: string;
+    gameModeId: string;
+    format: Event["format"];
+    formatConfig?: import("@/lib/tournament/formats/types").TournamentFormatConfig;
+    participantCap: Event["participantCap"];
+    organizerName: string;
+  };
+};
+
+/** Creates a first-login-protected organizer, its public profile, and its Draft event atomically. */
+export async function createOrganizerAndEventDraft(input: CreateOrganizerAndEventDraftInput): Promise<{ organizer: AppUser; event: Event }> {
+  const passwordHash = await bcrypt.hash(input.organizer.temporaryPassword, 10);
+  const gameId = getGameIdForMode(input.event.gameModeId);
+
+  return prisma.$transaction(async (tx) => {
+    const organizer = await tx.user.create({
+      data: {
+        email: input.organizer.email,
+        name: input.organizer.name,
+        role: "organizer",
+        passwordHash,
+        // The temporary password is never persisted in plaintext. The flag is
+        // enforced by login and V3 organizer actions until it is changed.
+        mustChangePassword: true,
+      } as never,
+    });
+    await tx.organizerProfile.create({
+      data: {
+        userId: organizer.id,
+        organizationName: input.organizer.organizationName,
+        contactChannel: input.organizer.contactChannel,
+        contactValue: input.organizer.contactValue,
+      },
+    });
+    const event = await tx.event.create({
+      data: {
+        slug: input.event.slug,
+        name: input.event.name,
+        description: "New event created from platform admin.",
+        gameId,
+        gameModeId: input.event.gameModeId,
+        format: input.event.format,
+        formatConfig: input.event.formatConfig,
+        status: "Draft",
+        participantCap: input.event.participantCap,
+        registrationWindow: "TBD",
+        startsAt: "TBD",
+        venue: "Online",
+        organizerUserId: organizer.id,
+        organizerName: input.event.organizerName,
+        organizerVerified: false,
+      },
+      include: { stream: true },
+    });
+    return { organizer: mapUser(organizer), event: mapEvent(event) };
+  });
+}
 /**
  * Creates a new event in "Draft" status. Game ID is resolved from the gameModeId.
  * Default description, venue ("Online"), and dates ("TBD") are set automatically.
@@ -1391,11 +1558,18 @@ export async function createEvent(input: {
 
 /** Updates an event's lifecycle status. Use `autoTransitionEventToOngoing` for the match-triggered transition. */
 export async function setEventStatus(eventId: string, status: Event["status"]): Promise<Event | null> {
+  const now = new Date();
   const row = await prisma.$transaction(async (tx) => {
-    const updatedEvent = await tx.event.update({ where: { id: eventId }, data: { status }, include: { stream: true } });
+    const updatedEvent = await tx.event.update({ where: { id: eventId }, data: { status }, include: eventPublicInclude });
+    if (status === "Ongoing" || status === "Finished") {
+      await tx.eventEditRevision.updateMany({
+        where: { eventId, status: "Draft" },
+        data: { status: "Discarded", discardedAt: now, discardReason: status === "Finished" ? "event_finished" : "event_started" },
+      });
+    }
     await tx.eventPreviewToken.updateMany({
       where: { eventId, revokedAt: null },
-      data: { revokedAt: new Date() },
+      data: { revokedAt: now },
     });
     return updatedEvent;
   });
@@ -1404,12 +1578,24 @@ export async function setEventStatus(eventId: string, status: Event["status"]): 
 
 /**
  * Idempotently transitions an event from "Published" or "Registration Closed" to "Ongoing".
- * No-op if the event is already "Ongoing" or "Finished". Safe to call on every match save.
+ * The same transaction discards active private revisions and revokes every preview token.
  */
 export async function autoTransitionEventToOngoing(eventId: string): Promise<void> {
-  await prisma.event.updateMany({
-    where: { id: eventId, status: { in: ["Published", "Registration Closed"] } },
-    data: { status: "Ongoing" },
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    const transitioned = await tx.event.updateMany({
+      where: { id: eventId, status: { in: ["Published", "Registration Closed"] } },
+      data: { status: "Ongoing" },
+    });
+    if (transitioned.count === 0) return;
+    await tx.eventEditRevision.updateMany({
+      where: { eventId, status: "Draft" },
+      data: { status: "Discarded", discardedAt: now, discardReason: "event_started" },
+    });
+    await tx.eventPreviewToken.updateMany({
+      where: { eventId, revokedAt: null },
+      data: { revokedAt: now },
+    });
   });
 }
 

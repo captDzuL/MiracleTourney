@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 Object.assign(globalThis, { React });
 
-const { requireAnyRole, getManageableEventDraft, isFeatureEnabled, notFound, redirectToActiveLocale } = vi.hoisted(() => ({
+const { requireAnyRole, getManageableEventDraft, getPlatformProfile, isFeatureEnabled, notFound, redirectToActiveLocale } = vi.hoisted(() => ({
   requireAnyRole: vi.fn(),
   getManageableEventDraft: vi.fn(),
+  getPlatformProfile: vi.fn(),
   isFeatureEnabled: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
   redirectToActiveLocale: vi.fn(() => { throw new Error("REDIRECT"); }),
@@ -14,7 +15,7 @@ const { requireAnyRole, getManageableEventDraft, isFeatureEnabled, notFound, red
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft }));
+vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft, getPlatformProfile }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale }));
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/lib/events/publish-readiness", () => ({
@@ -41,7 +42,7 @@ describe("organizer event layout", () => {
     vi.clearAllMocks();
     isFeatureEnabled.mockReturnValue(true);
     requireAnyRole.mockResolvedValue({ id: "org-1", role: "organizer", name: "Organizer" });
-    getManageableEventDraft.mockResolvedValue({ id: "event-1", name: "Miracle Open", status: "Draft" });
+    getManageableEventDraft.mockResolvedValue({ id: "event-1", name: "Miracle Open", status: "Draft", organizerUserId: "org-1", organizer: { organizerProfile: { contactChannel: "WhatsApp", contactValue: "+6281" } } });
   });
 
   it("guards the workspace and exposes contextual editor sections", async () => {
@@ -56,12 +57,10 @@ describe("organizer event layout", () => {
     expect(markup).toContain('href="/organizer/events/event-1/overview#section-identity"');
     expect(markup).toContain('href="/organizer/events/event-1/overview#section-format"');
     expect(markup).not.toContain('aria-current="page"');
-    expect(markup).toContain('id="section-organizer"');
-    expect(markup).toContain('name="contactChannel"');
+    expect(markup).toContain('href="/organizer/events/event-1/overview#section-review"');
+    expect(markup).not.toContain('aria-label="Next action"');
     expect(markup).not.toContain('/registration');
     expect(markup).not.toContain('/matches');
-    expect(markup).toContain("Preview controls");
-    expect(markup).toContain("Publish readiness");
   });
 
   it("keeps the event workspace unavailable while its feature flag is off", async () => {

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/platform/db";
 import { getLegacyTournamentFormat, tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
@@ -18,6 +19,7 @@ export type EventPublicationActor = { id: string; role: "organizer" | "admin" | 
 
 const organizerContactSchema = z.object({
   organizer: z.object({ organizerProfile: z.object({ contactChannel: z.string(), contactValue: z.string() }).nullable().optional() }).nullable().optional(),
+  platformProfile: z.object({ contactChannel: z.string(), contactValue: z.string() }).nullable().optional(),
 }).passthrough();
 const crossFieldSchema = z.object({
   format: z.unknown().optional(),
@@ -82,7 +84,7 @@ export function evaluatePublishReadiness(event: unknown, options: { hasScheduleO
   }
 
   const contactResult = organizerContactSchema.safeParse(event);
-  const contact = contactResult.success ? contactResult.data.organizer?.organizerProfile : null;
+  const contact = contactResult.success ? (contactResult.data.organizer?.organizerProfile ?? contactResult.data.platformProfile) : null;
   if (!contact?.contactChannel.trim() || !contact.contactValue.trim()) addItem("organizer_contact", "organizerContact", "organizer");
 
   return { ready: incomplete.length === 0, incomplete, notices: options.hasScheduleOverlap ? [{ code: "schedule_overlap", severity: "info" }] : [] };
@@ -119,7 +121,13 @@ export async function publishEvent(eventId: string, actor: EventPublicationActor
         where: { id: { not: eventId }, eventStartsAt: { gte: start, lt: end } }, select: { id: true },
       }));
     }
-    const readiness = evaluatePublishReadiness(event, { hasScheduleOverlap });
+    const platformProfile = event.organizerUserId
+      ? null
+      : await tx.platformProfile.findUnique({
+          where: { id: "global" },
+          select: { displayName: true, contactChannel: true, contactValue: true },
+        });
+    const readiness = evaluatePublishReadiness({ ...event, platformProfile }, { hasScheduleOverlap });
     if (!readiness.ready) return { status: "blocked" as const, readiness };
 
     const publishedAt = new Date();

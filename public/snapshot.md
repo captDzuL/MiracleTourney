@@ -339,3 +339,77 @@ Handoff next action:
 - Preview tokens must be unguessable, hash-only, expiring, replaceable/revocable, uncached, noindex, no-referrer, and readable without login only while the event remains Draft.
 - Extract a shared event view model so private preview and the later adaptive public Event Page render the same normalized event identity without exposing edit, registration, share, or public-navigation controls in preview mode.
 - Before building the multiformat Create Event UI, land the validated V3 format configuration contract while retaining legacy format strings as compatibility fields.
+
+## Organizer Command Center checkpoint — 8 September 2026
+
+Branch remains `feature/ui/release/1.0` in the dedicated worktree. The organizer entry point is now `/<locale>/organizer`, guarded for the organizer role and `organizer_workspace_v3` feature flag. It reads `getManageableEventsForUser`, which scopes event inventory to `organizerUserId`, and opens each record at `/<locale>/organizer/events/<eventId>/overview`.
+
+Organizer navigation contains the Command Center, Create Event, and Organizer Profile. Platform Admin navigation contains `/admin`; an organizer request to `/admin` is redirected to `/organizer`. Organizer profile writes use `updateOrganizerProfileForUser`, enforce organizer ownership, and update only that user's event `organizerName` records.
+
+E2E login helpers assign distinct RFC 2544 test-net client addresses per browser login. This keeps the real per-IP brute-force middleware enabled while preventing a serial test suite from self-triggering its ten-login rate limit. Local retries remain disabled so deterministic failures stay visible.
+
+Verification on the isolated Delicate database (`.env.test`): `pnpm test:unit` 606 passed; lint and TypeScript passed; `pnpm test:e2e:full` 39 passed and 2 skipped. No production database operation was performed.
+
+## V3 Create Event and Platform Admin handoff — 8 September 2026
+
+Working tree: `feature/ui/release/1.0` in `.worktrees/miracle-ui-release-1.0-full`.
+
+Feature flags needed to expose the current V3 work:
+- `FEATURE_FLAG_UI_V3_FOUNDATION=true`
+- `FEATURE_FLAG_ORGANIZER_WORKSPACE_V3=true`
+- `FEATURE_FLAG_COMPETITION_OPERATIONS_V3=true` for Double Elimination, Round-Robin, and Group + Playoffs
+
+Current contracts:
+- V3 create event sends organizers to `/<locale>/organizer/events/<id>/overview`; Platform Admin sends all created events to `/<locale>/admin/events/<id>/overview`.
+- The shared surface presents Miracle ownership, existing-organizer ownership, and atomic new-organizer ownership. New organizer password material is hash-only and `mustChangePassword` prevents access to organizer workspace and mutations until changed.
+- Platform-owned Drafts are publish-ready only when global `PlatformProfile` contact is configured. The pending migration adds `PlatformProfile` and `User.mustChangePassword`.
+- Group + Playoffs values from the create preview persist as `formatConfig`; invalid group capacity or qualification layouts are rejected.
+- E2E, local test server, Prisma reset/seed, CI, and preview safety use `.env.test` and the isolated Delicate Neon branch only. The production host is rejected by preflight before Prisma operations.
+
+Verification performed after this checkpoint:
+- `pnpm prisma validate`: passed.
+- `pnpm exec tsc --noEmit`: passed.
+- full unit suite: 618 passed across 61 files.
+- focused V3 action, readiness, create-page, organizer-profile, security, and workspace-layout tests: passed.
+- `pnpm test:e2e:preflight` and `pnpm test:e2e:prepare`: passed against Delicate; migrations including `20260908020000_platform_profile_and_forced_password` and deterministic seed completed.
+- targeted browser lifecycle (`v3-organizer-lifecycle.spec.ts`): passed on Delicate.
+- production build compiled, emitted build artifacts, and completed type validation.
+
+Before enabling the schema-backed Platform Admin flow in a shared environment:
+1. Apply `20260908020000_platform_profile_and_forced_password` through the normal test/preview migration process only.
+2. Run `pnpm test:e2e:prepare` and `pnpm test:e2e` with `.env.test`.
+3. Run the full unit suite, lint, production build, and browser suite.
+
+Known implementation gap: the Create Event surface currently creates a Draft and continues in the existing autosaving workspace. It has the approved five-stage guidance and live structure preview, but its separate step panels and per-step save behavior are not yet full mockup parity. Registration, Match Day, Results & Stats, Completion, Certificates, and Adaptive Public Event remain planned work as detailed in the V3 Delivery Register in `public/plan.md`.
+### Latest UI correction — 8 September 2026
+
+The workspace setup rail is horizontal and numbered. The Draft editor renders a live public-structure preview from current autosaved values. Single Elimination now defaults to no third-place match; organizers may enable it explicitly.
+
+### Workspace journey correction — 8 September 2026
+
+The V3 event workspace now follows the approved journey model rather than showing every edit area at once. The top bar is a numbered horizontal sequence: **Identity → Schedule → Registration → Visuals → Format → Review & publish**. One session is visible at a time; **Back** and **Continue** move the organizer through it, and the URL hash keeps the active session in sync with the numbered bar. The live public-structure preview remains beside every session and updates from the current Draft state. The distracting right-side “Next action” panel is removed. Its necessary functions are retained only in the final Review & publish session: organizer or Miracle contact, readiness blockers, private preview, revoke, and publication.
+
+This changes the Delivery Register status for **Organizer contextual workspace** to: *numbered single-session editing, live preview, autosave, preview/revoke/publish implemented; detailed visual polish and downstream operations remain.* It changes **Multiformat create event** only in the continuation workspace: the initial Create Event wizard is still a separate surface and has not yet reached full per-step mockup parity.
+
+## Published Event Revision V3 handoff — 10 September 2026
+
+Current branch remains `feature/ui/release/1.0` in `.worktrees/miracle-ui-release-1.0-full`. The working tree also contains the previously accumulated Create Event, Platform Admin, organizer profile, test-database, CI, and V3 shell work; do not reset or discard those changes when continuing.
+
+Implemented revision lifecycle:
+- Published and Registration Closed events expose **Edit event** and reuse one active private revision as **Lanjutkan revisi**.
+- Ongoing and Finished event edit routes render a locked explanation and never open an editable form.
+- The shared five-session editor autosaves into `EventEditRevision`, renders revision values in live preview, stages poster/logo changes, supports preview/revoke/discard, and applies only through **Perbarui event publik**.
+- Registration date/fee fields lock after registration closes. Structure fields lock once a Match exists. Public descriptive and visual fields remain editable until the event becomes Ongoing.
+- Platform Admin may change the published slug through the dedicated action. `EventSlugRedirect` preserves the old permanent event URL and its public detail subroutes.
+- Explicit or automatic transition to Ongoing discards active revisions and revokes previews. Finished is also fully locked.
+
+Database and environment safety:
+- Migration `20260909010000_published_event_revision_v3` adds `publishedRevision`, `EventEditRevision`, revision-bound preview tokens, and `EventSlugRedirect` with a partial unique index for one Draft revision per event.
+- The migration was applied only by `pnpm test:e2e:prepare` after preflight confirmed `ep-delicate-forest-azuodo4q` (Neon Delicate). No production database operation was performed.
+- `scripts/e2e-db-prepare.mjs` now uses `--skip-generate` during reset so Windows DLL locks cannot produce a misleading Prisma generate error. Client generation remains a separate build/install concern.
+
+Verification checkpoint:
+- full Vitest suite: 651 passed across 65 files;
+- TypeScript/lint command: passed;
+- production build through the `.env.test` loader: passed;
+- Published Event Revision E2E from a clean Delicate reset: 5 passed serially (private edit/autosave/preview/apply, Registration Closed locks, Ongoing/Finished locks, Platform Admin slug redirect, and 360 px overflow).

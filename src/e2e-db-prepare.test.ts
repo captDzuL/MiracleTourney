@@ -38,13 +38,13 @@ describe("E2E database preparation", () => {
 
     expect(events).toEqual([
       "preflight",
-      "pnpm exec prisma migrate reset --force --skip-seed",
+      "pnpm exec prisma migrate reset --force --skip-seed --skip-generate",
       "pnpm db:seed",
     ]);
     expect(runCommand).toHaveBeenNthCalledWith(
       1,
       "pnpm",
-      ["exec", "prisma", "migrate", "reset", "--force", "--skip-seed"],
+      ["exec", "prisma", "migrate", "reset", "--force", "--skip-seed", "--skip-generate"],
     );
     expect(runCommand).toHaveBeenNthCalledWith(2, "pnpm", ["db:seed"]);
   });

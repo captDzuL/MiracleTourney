@@ -194,7 +194,7 @@ function appendActionError(basePath: string, message: string) {
  * magic bytes, and finally real decodability through `sharp` (which also gives
  * the dimensions we persist on a visual revision).
  */
-async function uploadImageAsset({
+export async function uploadImageAsset({
   file,
   folder,
   entityId,
@@ -327,7 +327,7 @@ export async function captainSignUpAction(formData: FormData) {
   await redirectToActiveLocale("/captain?success=registered" as never);
 }
 
-/** Authenticates a user by email/password and redirects to /admin or /captain based on role. */
+/** Authenticates a user by email/password and redirects to their role-specific workspace. */
 export async function loginAction(formData: FormData) {
   const requestedLocale = String(formData.get("locale") ?? "").trim();
   const email = z.string().email().parse(formData.get("email"));
@@ -354,7 +354,9 @@ export async function loginAction(formData: FormData) {
   }
 
   await redirectToRequestedLocale(
-    user.role === "platform_admin" || user.role === "organizer" || user.role === "admin" ? "/admin" : "/captain",
+    user.role === "organizer" && user.mustChangePassword
+      ? "/organizer/change-password"
+      : user.role === "organizer" ? "/organizer" : user.role === "platform_admin" || user.role === "admin" ? "/admin" : "/captain",
     requestedLocale,
   );
 }

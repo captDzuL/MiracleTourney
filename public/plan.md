@@ -350,3 +350,104 @@ These migrations are committed but have not been applied to a shared or producti
 6. Continue Match Day, completion/certificates, adaptive public Event Page, and homepage workstreams in their dependency order.
 
 Single Elimination keeps the required Third Place Match when two semifinals exist. The optional toggle visible in an older mockup is superseded by this approved rule.
+
+## Organizer Command Center V3 — implemented (8 September 2026)
+
+`/[locale]/organizer` is now the authenticated V3 work home for an organizer. It lists only events owned by the active organizer, separates unfinished Drafts as priority work, shows registration capacity, and links each card to its existing V3 event workspace. The sidebar now provides Event saya, Buat event, and Profil organizer. The command center also exposes a compact profile card so a new organizer can immediately add the organization name and public contact needed for publish readiness.
+
+`/[locale]/admin` remains the platform administration surface. An organizer who reaches that URL is redirected to their Command Center, while platform-admin and admin roles retain the legacy platform operations.
+
+The organizer profile is owner-scoped. Updating it upserts organization name and contact details, and propagates the organization name only to events owned by that organizer. The verification state remains read-only for this release.
+
+Validation checkpoint:
+- full unit suite: 606 passed;
+- TypeScript and lint: passed;
+- full serial browser suite on Delicate: 39 passed, 2 skipped;
+- browser contract covers organizer landing, sidebar access, admin redirect, create/autosave/preview/revoke/publish lifecycle, and 360px workspace width.
+
+Next implementation focus: migrate the remaining organizer operations from the legacy admin surface into format-aware event workspaces, beginning with registration intake and Match Day control.
+
+## V3 Delivery Register — implementation truth (8 September 2026)
+
+The approved mockups remain the product reference. This register separates an approved design from working production behavior so foundation work is never represented as visual parity.
+
+| Experience | Canonical mockup | Approved | Actual implementation | Remaining gap | Next milestone |
+| --- | --- | --- | --- | --- | --- |
+| Homepage | `miracle-homepage-mockup.html` | Yes | Brand tokens, logo, Montserrat, dark shell, footer foundation | Homepage information architecture and public journey are not rebuilt | Public experience rollout |
+| Public tournament | `miracle-public-tournament-mockup.html` | Yes | Existing public event route remains available | Full information-first tournament composition is not at mockup parity | Adaptive public event |
+| Adaptive public event | `miracle-public-v3-adaptive-event-page-mockup.html` | Yes | Lifecycle decision and data foundation only | Registration, ongoing, and completed responsive public compositions are not implemented | Adaptive public event rollout |
+| Captain direct registration | `miracle-captain-v3-direct-registration-mockup.html` | Yes | Existing registration/payment workflow remains | V3 contextual registration UI is not implemented | Registration workspace |
+| Captain match day | approved captain Match Day mockup | Yes | Existing schedule/status remains | Check-in, call-up, and captain-ready workflow are not implemented | Competition operations |
+| Organizer contextual workspace | approved contextual workspace mockup | Yes | V3 Draft workspace, revision-safe autosave, readiness, preview/revoke/publish are working behind flags | Contextual polish and all operation panels remain incomplete | Registration and Match Day panels |
+| Multiformat create event | `miracle-organizer-v3-multiformat-create-event-mockup.html` | Yes | V3 creation surface shows full game + mode labels, format choices, ownership choices, and live structure preview | It creates the Draft then enters the workspace; five-step content parity and per-step persistence are still incomplete | Create wizard parity |
+| Registration import | approved registration-import mockup | Yes | Legacy CSV/import remains | V3 paginated review surface is not implemented | Registration workspace |
+| Match control | `miracle-organizer-v3-match-control-mockup.html` | Yes | Scheduling algorithm contract recorded | Command-center UI and scheduler are not implemented | Competition operations |
+| Format-aware Match Day | `miracle-organizer-v3-format-aware-match-day-mockup.html` | Yes | Validated V3 format configuration is persisted | Format-aware operations UI is not implemented | Competition operations |
+| Group Match Day | `miracle-organizer-v3-group-matchday-mockup.html` | Yes | Group + playoff configuration persists | Fixture, standings, and qualification UI are not implemented | Competition operations |
+| Result & Stats | `miracle-organizer-v3-result-stats-mockup.html` | Yes | Existing score/stat handling remains | Official-result and stat-review V3 desk is not implemented | Competition operations |
+| Tournament completion | `miracle-organizer-v3-tournament-completion-mockup.html` | Yes | Existing completion behavior remains | Format-aware completion, awards, and recap are not implemented | Completion rollout |
+| Certificate studio | `miracle-organizer-v3-certificate-studio-mockup.html` | Yes | Existing certificate system remains | Premium template, assets, safe zones, and seven awards are not implemented | Completion rollout |
+| Organizer Command Center | approved organizer command-center direction | Yes | `/[locale]/organizer` has owner-scoped Draft/Published inventory, Create Event, profile, and V3 workspace links | Critical action queue and all operational workspaces are not implemented | Registration and Match Day panels |
+
+### Working V3 ownership and creation rules
+
+- Organizer enters through `/[locale]/organizer`; an organizer who reaches `/[locale]/admin` returns to the Command Center.
+- Platform Admin remains on `/[locale]/admin`, can open the shared V3 creation surface, and may create a Miracle-owned event, assign an event to an existing organizer, or provision a new organizer together with its Draft in one transaction.
+- A Miracle-owned event has `organizerUserId = null`, appears publicly as **by Miracle**, and its publish readiness uses the editable global Miracle contact.
+- A new organizer receives an admin-selected temporary password only as a bcrypt hash. `mustChangePassword` blocks organizer pages and server actions until the first password change succeeds.
+- Draft creation uses the same event persistence as the V3 workspace. Workspace autosave is Draft-only, revision-safe, retry-idempotent, and owner-scoped. Publication is actor-scoped and atomically revokes private previews.
+
+### Approved product rules
+
+| Rule | Decision |
+| --- | --- |
+| Visual system | Dark default, Montserrat, Miracle logo as the palette source, maximum three brand colors; organizer supports light/night/system preference. |
+| Persistent shell | Footer retains copyright by Miracle and social/contact links. |
+| Audience priority | Organizer first, then public visitor, then captain. |
+| Event essentials | WIB is the default timezone; venue name is required while full address is optional; registration open/close and event start are distinct. |
+| Draft and preview | Every Draft must be saveable; an expiring private preview opens without login, remains read-only, can be revoked, and becomes invalid when published. |
+| First-release formats | Single Elimination, Double Elimination, Round-Robin, and Group + Playoffs only. |
+| Podium rule | Single Elimination exposes an optional third-place match, disabled by default; Double Elimination uses the lower-final loser for third; league uses final standings. |
+| Results and stats | Official results progress brackets/schedules immediately; player statistics are draft/review/publish work and never block progression. |
+| Certificates | Champion, Runner-up, Third Place, MVP, Top Scorer, Top Defender, and Top Assist; team logo is primary for podiums, character art primary for individual awards. |
+| Public event | One permanent adaptive Event Page replaces separate live-center and final-recap routes. |
+### Superseding format decision — 8 September 2026
+
+The third-place match is no longer mandatory in Single Elimination. It is disabled by default and the organizer may enable it in Format settings; only then does its Best-of control and planned match enter the live structure preview.
+
+### Workspace journey correction — 8 September 2026
+
+The V3 event workspace now follows the approved journey model rather than showing every edit area at once. The top bar is a numbered horizontal sequence: **Identity → Schedule → Registration → Visuals → Format → Review & publish**. One session is visible at a time; **Back** and **Continue** move the organizer through it, and the URL hash keeps the active session in sync with the numbered bar. The live public-structure preview remains beside every session and updates from the current Draft state. The distracting right-side “Next action” panel is removed. Its necessary functions are retained only in the final Review & publish session: organizer or Miracle contact, readiness blockers, private preview, revoke, and publication.
+
+This changes the Delivery Register status for **Organizer contextual workspace** to: *numbered single-session editing, live preview, autosave, preview/revoke/publish implemented; detailed visual polish and downstream operations remain.* It changes **Multiformat create event** only in the continuation workspace: the initial Create Event wizard is still a separate surface and has not yet reached full per-step mockup parity.
+
+## Published Event Revision V3 — implemented (10 September 2026)
+
+Published event editing now uses a private revision instead of mutating the public Event row. Organizer and Platform Admin open the same five-session editor, retain revision-safe autosave and live preview, and explicitly apply the result through **Perbarui event publik**. Until apply succeeds, the permanent public Event Page continues to render the previously published values.
+
+Routes and entry points:
+- Organizer: `/<locale>/organizer/events/<eventId>/edit`.
+- Platform Admin: `/<locale>/admin/events/<eventId>/edit`.
+- Organizer Command Center and Platform Admin inventory show **Lanjutkan setup** for Draft, **Edit event/Lanjutkan revisi** for editable published states, and read-only workspace/public actions for locked states.
+- Event workspace exposes public page, edit/continue revision, and discard revision actions according to event status.
+
+Status and field contract:
+
+| Event state | Revision access | Registration period and fee | Public content | Structure fields |
+| --- | --- | --- | --- | --- |
+| Published, registration open | Editable | Editable | Editable | Editable until a Match exists |
+| Published, registration time elapsed | Editable | Locked | Editable | Editable until a Match exists |
+| Registration Closed | Editable | Locked | Editable | Editable until a Match exists |
+| Ongoing | Locked; active revision discarded and preview revoked | Locked | Locked | Locked |
+| Finished | Locked; active revision discarded and preview revoked | Locked | Locked | Locked |
+
+Public content includes description, prize information, poster, event logo, venue, and match channel. Structure fields include event name, start date and timezone, game/mode, capacity, tournament format, groups, Best-of settings, and third-place configuration. Organizer slug is immutable after publish. Platform Admin has a dedicated slug action that records a permanent redirect, including public bracket, standings, participants, and leaderboard subroutes.
+
+Persistence and concurrency contract:
+- `Event.publishedRevision` identifies the exact public version on which a private revision is based.
+- `EventEditRevision` stores one active Draft per event, its creator, validated payload, autosave revision, mutation identity, and Applied/Discarded history.
+- Autosave returns `saved`, `conflict`, `locked`, or `not_editable`; identical retries remain idempotent and stale tabs cannot overwrite newer work.
+- Applying a revision atomically claims the revision, checks ownership and event status, rechecks field locks and public revision, updates Event and stream data, then revokes revision preview tokens.
+- Revision poster uploads remain inactive until apply. Private preview tokens are hash-only, expiring, replaceable, revocable, and invalid after apply, discard, or event start.
+
+This closes the implementation gap for editing Published and Registration Closed event information. Registration operations, Match Day, Results & Stats, Completion, Certificates, and full Adaptive Public Event compositions remain separate milestones in the V3 Delivery Register.

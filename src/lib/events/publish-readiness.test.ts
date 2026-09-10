@@ -5,6 +5,7 @@ const { prisma } = vi.hoisted(() => ({
     $transaction: vi.fn(),
     event: { findUnique: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() },
     eventPreviewToken: { updateMany: vi.fn() },
+    platformProfile: { findUnique: vi.fn() },
   },
 }));
 vi.mock("@/lib/platform/db", () => ({ prisma }));
@@ -62,6 +63,14 @@ describe("evaluatePublishReadiness", () => {
 
   it("accepts zero-value fees and an absent venue address", () => {
     expect(evaluatePublishReadiness({ ...completeEvent, venueAddress: null })).toEqual({ ready: true, incomplete: [], notices: [] });
+  });
+  it("uses the official Miracle contact for a platform-owned event", () => {
+    expect(evaluatePublishReadiness({
+      ...completeEvent,
+      organizerUserId: null,
+      organizer: null,
+      platformProfile: { displayName: "Miracle", contactChannel: "WhatsApp", contactValue: "+62 811 0000 0000" },
+    })).toEqual({ ready: true, incomplete: [], notices: [] });
   });
 
   it("reports overlapping events as information without blocking publication", () => {
@@ -180,6 +189,15 @@ describe("publishEvent", () => {
     expect(prisma.eventPreviewToken.updateMany).not.toHaveBeenCalled();
   });
 
+  it("loads Miracle contact while publishing a platform-owned Draft", async () => {
+    prisma.event.findUnique.mockResolvedValue({ id: "event-platform", status: "Draft", organizerUserId: null, draftRevision: 2, ...completeEvent, organizer: null });
+    prisma.platformProfile.findUnique.mockResolvedValue({ displayName: "Miracle", contactChannel: "WhatsApp", contactValue: "+628110000000" });
+    prisma.event.updateMany.mockResolvedValue({ count: 1 });
+    prisma.eventPreviewToken.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(publishEvent("event-platform", { id: "admin-1", role: "platform_admin" })).resolves.toMatchObject({ status: "published" });
+    expect(prisma.platformProfile.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "global" } }));
+  });
   it("adds a notice when another event starts on the same WIB calendar day", async () => {
     prisma.event.findUnique.mockResolvedValue({
       id: "event-1", status: "Draft", organizerUserId: "organizer-1", draftRevision: 7, ...completeEvent,

@@ -15,6 +15,7 @@ model User {
   role                 String
   passwordHash         String
   tempPassword         String?
+  mustChangePassword   Boolean              @default(false)
   deactivatedAt        DateTime?
   organizedEvents      Event[]              @relation("EventOrganizer")
   captainOf            Team[]               @relation("TeamCaptain")
@@ -24,6 +25,7 @@ model User {
   organizerPlan        OrganizerPlan?
   organizerProfile     OrganizerProfile?
   createdPreviewTokens EventPreviewToken[] @relation("EventPreviewTokenCreator")
+  createdEventEditRevisions EventEditRevision[] @relation("EventEditRevisionCreator")
   notifications        Notification[]
   registrationImportProfiles RegistrationImportProfile[]
   registrationImportBatches  RegistrationImportBatch[]
@@ -43,6 +45,15 @@ model OrganizerProfile {
   verifiedAt       DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+}
+
+model PlatformProfile {
+  id             String   @id @default("global")
+  displayName    String   @default("Miracle")
+  contactChannel String
+  contactValue   String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model Event {
@@ -69,6 +80,7 @@ model Event {
   lastDraftMutationId  String?
   publishedAt          DateTime?
   previewRevision      Int                @default(0)
+  publishedRevision    Int                @default(0)
   venue                String
   organizerUserId      String?
   organizer            User?              @relation("EventOrganizer", fields: [organizerUserId], references: [id], onDelete: SetNull)
@@ -98,6 +110,8 @@ model Event {
   activeVisualAsset    EventVisualAsset?  @relation("ActiveEventVisualAsset", fields: [activeVisualAssetId], references: [id], onDelete: SetNull)
   teamRegistrationRequests TeamRegistrationRequest[]
   previewTokens        EventPreviewToken[]
+  editRevisions        EventEditRevision[]
+  slugRedirects        EventSlugRedirect[]
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -111,11 +125,46 @@ model EventPreviewToken {
   tokenHash       String    @unique
   createdByUserId String?
   createdByUser   User?     @relation("EventPreviewTokenCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  revisionId      String?
+  revision        EventEditRevision? @relation(fields: [revisionId], references: [id], onDelete: Cascade)
   expiresAt       DateTime
   revokedAt       DateTime?
   createdAt       DateTime  @default(now())
 
   @@index([eventId, revokedAt, expiresAt])
+  @@index([revisionId, revokedAt, expiresAt])
+}
+
+model EventEditRevision {
+  id                    String   @id @default(cuid())
+  eventId               String
+  event                 Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdByUserId       String?
+  createdByUser         User?    @relation("EventEditRevisionCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  status                String
+  basePublishedRevision Int
+  revision              Int      @default(0)
+  lastMutationId        String?
+  lastMutationPayload   Json?
+  payload               Json
+  appliedAt             DateTime?
+  discardedAt           DateTime?
+  discardReason         String?
+  previewTokens         EventPreviewToken[]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([eventId, status])
+}
+
+model EventSlugRedirect {
+  id        String   @id @default(cuid())
+  oldSlug   String   @unique
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([eventId])
 }
 
 model EventVisualAsset {

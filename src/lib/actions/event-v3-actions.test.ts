@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requireAnyRole, saveEventDraft, publishEvent, createEvent, createEventPreviewToken, revokeEventPreviewTokens, assertUserCanManageEvent, updateEventOrganizerContact, isFeatureEnabled, redirect, revalidatePath, revalidateTag } = vi.hoisted(() => ({
+const { requireAnyRole, saveEventDraft, publishEvent, createEvent, createOrganizerAndEventDraft, getOrganizerUserById, createEventPreviewToken, revokeEventPreviewTokens, assertUserCanManageEvent, updateEventOrganizerContact, isFeatureEnabled, redirect, revalidatePath, revalidateTag } = vi.hoisted(() => ({
   requireAnyRole: vi.fn(), saveEventDraft: vi.fn(), publishEvent: vi.fn(), assertUserCanManageEvent: vi.fn(),
-  createEvent: vi.fn(), redirect: vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`); }),
+  createEvent: vi.fn(), createOrganizerAndEventDraft: vi.fn(), getOrganizerUserById: vi.fn(), redirect: vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`); }),
   createEventPreviewToken: vi.fn(), revokeEventPreviewTokens: vi.fn(),
   updateEventOrganizerContact: vi.fn(),
   isFeatureEnabled: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("@/lib/events/event-draft", async (importOriginal) => ({
 vi.mock("@/lib/events/publish-readiness", () => ({ publishEvent }));
 vi.mock("@/lib/events/preview-token", () => ({ createEventPreviewToken, revokeEventPreviewTokens }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent, createEvent, updateEventOrganizerContact }));
+vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent, createEvent, createOrganizerAndEventDraft, getOrganizerUserById, updateEventOrganizerContact }));
 vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
 vi.mock("next/navigation", () => ({ redirect }));
 
@@ -76,6 +76,54 @@ describe("event V3 actions", () => {
     }));
   });
 
+  it("creates a platform-owned Miracle draft without assigning the admin as organizer", async () => {
+    const admin = { id: "admin-1", role: "platform_admin", email: "admin@test.com", name: "League Commissioner" };
+    requireAnyRole.mockResolvedValue(admin);
+    createEvent.mockResolvedValue({ id: "event-platform" });
+    const formData = new FormData();
+    formData.set("locale", "id"); formData.set("name", "Miracle Open"); formData.set("slug", "miracle-open");
+    formData.set("gameModeId", "mode-flashpeak-5v5"); formData.set("formatKind", "single_elimination"); formData.set("participantCap", "16");
+    formData.set("ownerKind", "platform");
+
+    await expect(createEventV3Action(formData)).rejects.toThrow("REDIRECT:/id/admin/events/event-platform/overview");
+    expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({
+      organizerUserId: undefined,
+      organizerName: "Miracle",
+      organizerVerified: true,
+    }));
+  });
+  it("assigns an admin-created draft to the selected existing organizer", async () => {
+    const admin = { id: "admin-1", role: "platform_admin", email: "admin@test.com", name: "League Commissioner" };
+    requireAnyRole.mockResolvedValue(admin);
+    getOrganizerUserById.mockResolvedValue({ id: "organizer-2", role: "organizer", name: "Arena Organizer", email: "arena@test.com" });
+    createEvent.mockResolvedValue({ id: "event-assigned" });
+    const formData = new FormData();
+    formData.set("locale", "id"); formData.set("name", "Arena Cup"); formData.set("slug", "arena-cup");
+    formData.set("gameModeId", "mode-flashpeak-5v5"); formData.set("formatKind", "single_elimination"); formData.set("participantCap", "16");
+    formData.set("ownerKind", "existing_organizer"); formData.set("organizerUserId", "organizer-2");
+
+    await expect(createEventV3Action(formData)).rejects.toThrow("REDIRECT:/id/admin/events/event-assigned/overview");
+    expect(getOrganizerUserById).toHaveBeenCalledWith("organizer-2");
+    expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({ organizerUserId: "organizer-2", organizerName: "Arena Organizer" }));
+  });
+
+  it("creates a new organizer, profile, and assigned draft through one repository operation", async () => {
+    const admin = { id: "admin-1", role: "platform_admin", email: "admin@test.com", name: "League Commissioner" };
+    requireAnyRole.mockResolvedValue(admin);
+    createOrganizerAndEventDraft.mockResolvedValue({ event: { id: "event-new-org" }, organizer: { id: "organizer-new" } });
+    const formData = new FormData();
+    formData.set("locale", "id"); formData.set("name", "Community Cup"); formData.set("slug", "community-cup");
+    formData.set("gameModeId", "mode-flashpeak-5v5"); formData.set("formatKind", "single_elimination"); formData.set("participantCap", "16");
+    formData.set("ownerKind", "new_organizer"); formData.set("organizerName", "Rival Community"); formData.set("organizerAccountName", "Rival Admin");
+    formData.set("organizerEmail", "rival@example.com"); formData.set("organizerContactChannel", "WhatsApp"); formData.set("organizerContactValue", "+62 811 1234 5678"); formData.set("temporaryPassword", "Temporary123!");
+
+    await expect(createEventV3Action(formData)).rejects.toThrow("REDIRECT:/id/admin/events/event-new-org/overview");
+    expect(createOrganizerAndEventDraft).toHaveBeenCalledWith(expect.objectContaining({
+      actorId: "admin-1", organizer: expect.objectContaining({ email: "rival@example.com", temporaryPassword: "Temporary123!" }),
+      event: expect.objectContaining({ name: "Community Cup", organizerName: "Rival Community" }),
+    }));
+    expect(createEvent).not.toHaveBeenCalled();
+  });
   it("rejects advanced competition formats while their feature flag is off", async () => {
     isFeatureEnabled.mockReturnValue(false);
     const formData = new FormData();
@@ -109,6 +157,12 @@ describe("event V3 actions", () => {
     expect(publishEvent).toHaveBeenCalledWith("event-1", { id: actor.id, role });
   });
 
+  it("rejects organizer workspace mutations until the first password change is complete", async () => {
+    requireAnyRole.mockResolvedValue({ ...organizer, mustChangePassword: true });
+    await expect(saveEventDraftAction({ eventId: "event-1", expectedRevision: 0, mutationId: "11111111-1111-4111-8111-111111111111", draft: { name: "Blocked Draft" } }))
+      .rejects.toThrow("Password change required");
+    expect(saveEventDraft).not.toHaveBeenCalled();
+  });
   it("requires a UUID mutation ID before autosave", async () => {
     await expect(saveEventDraftAction({ eventId: "event-1", expectedRevision: 0, mutationId: "not-a-uuid", draft: {} }))
       .rejects.toThrow();
@@ -166,9 +220,24 @@ describe("event V3 actions", () => {
     await expect(createEventPreviewAction({ eventId: "event-1", locale: "fr" })).rejects.toThrow();
     expect(createEventPreviewToken).not.toHaveBeenCalled();
   });
+  it("persists the valid group-and-playoff structure selected in the wizard", async () => {
+    createEvent.mockResolvedValue({ id: "event-groups" });
+    const formData = new FormData();
+    formData.set("locale", "id"); formData.set("name", "Group Masters"); formData.set("slug", "group-masters");
+    formData.set("gameModeId", "mode-flashpeak-5v5"); formData.set("formatKind", "group_playoffs"); formData.set("participantCap", "16");
+    formData.set("groupCount", "4"); formData.set("qualifiersPerGroup", "2");
+
+    await expect(createEventV3Action(formData)).rejects.toThrow("REDIRECT:/id/organizer/events/event-groups/overview");
+    expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({
+      formatConfig: expect.objectContaining({ kind: "group_playoffs", groupCount: 4, qualifiersPerGroup: 2 }),
+    }));
+  });
+  it("returns an organizer to the form with a slug error instead of leaking a database exception", async () => {
+    createEvent.mockRejectedValue({ code: "P2002" });
+    const formData = new FormData();
+    formData.set("locale", "id"); formData.set("name", "Existing Cup"); formData.set("slug", "existing-cup");
+    formData.set("gameModeId", "mode-flashpeak-5v5"); formData.set("formatKind", "single_elimination"); formData.set("participantCap", "16");
+
+    await expect(createEventV3Action(formData)).rejects.toThrow("REDIRECT:/id/organizer/events/new?error=slug-taken");
+  });
 });
-
-
-
-
-
