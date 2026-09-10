@@ -5,6 +5,7 @@ import {
   describeTournamentFormat,
   getRegistrationAvailability,
   normalizeOrganizerContact,
+  shouldUseAdaptiveRegistrationRenderer,
 } from "./adaptive-public-event";
 
 describe("adaptive public registration availability", () => {
@@ -96,5 +97,15 @@ describe("format descriptions", () => {
       label: "Group + Playoffs",
       details: expect.arrayContaining(["4 groups", "Top 2 qualify from each group", "Single-elimination playoffs"]),
     });
+  });
+});
+describe("adaptive renderer eligibility", () => {
+  it("uses the new composition only for structured registration phases behind the flag", () => {
+    expect(shouldUseAdaptiveRegistrationRenderer({ enabled: true, status: "Published", availability: "open" })).toBe(true);
+    expect(shouldUseAdaptiveRegistrationRenderer({ enabled: true, status: "Registration Closed", availability: "closed" })).toBe(true);
+    expect(shouldUseAdaptiveRegistrationRenderer({ enabled: false, status: "Published", availability: "open" })).toBe(false);
+    expect(shouldUseAdaptiveRegistrationRenderer({ enabled: true, status: "Published", availability: "legacy" })).toBe(false);
+    expect(shouldUseAdaptiveRegistrationRenderer({ enabled: true, status: "Ongoing", availability: "open" })).toBe(false);
+    expect(shouldUseAdaptiveRegistrationRenderer({ enabled: true, status: "Finished", availability: "open" })).toBe(false);
   });
 });

@@ -73,6 +73,15 @@ export type AdaptivePublicEventViewModel = {
   };
 };
 
+export function shouldUseAdaptiveRegistrationRenderer(input: {
+  enabled: boolean;
+  status: EventStatus;
+  availability: RegistrationAvailability;
+}) {
+  return input.enabled
+    && (input.status === "Published" || input.status === "Registration Closed")
+    && input.availability !== "legacy";
+}
 export function getRegistrationAvailability(input: {
   status: EventStatus;
   opensAt: Date | null;
