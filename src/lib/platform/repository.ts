@@ -1687,8 +1687,9 @@ export async function registerTeam(input: {
     throw new Error("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.");
   }
 
-  const [registeredTeams, existingCaptainTeam, completedMatches] = await Promise.all([
+  const [registeredTeams, pendingReviewRequests, existingCaptainTeam, completedMatches] = await Promise.all([
     prisma.team.count({ where: { eventId: input.eventId } }),
+    prisma.teamRegistrationRequest.count({ where: { eventId: input.eventId, status: "pending_review" } }),
     prisma.team.findFirst({
       where: { eventId: input.eventId, captainId: input.captainId },
       select: { id: true },
@@ -1698,7 +1699,7 @@ export async function registerTeam(input: {
       : Promise.resolve(0),
   ]);
 
-  if (registeredTeams >= event.participantCap) {
+  if (registeredTeams + (pendingReviewRequests ?? 0) >= event.participantCap) {
     throw new Error("Slot pendaftaran event ini sudah penuh.");
   }
   if (existingCaptainTeam) {
@@ -1770,8 +1771,9 @@ export async function createTeamRegistrationRequest(input: {
   }
 
   const { name, tag, draftTeam } = await resolveCaptainRegistrationTeam(input);
-  const [registeredTeams, existingCaptainTeam, existingCaptainRequest, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
+  const [registeredTeams, pendingReviewRequests, existingCaptainTeam, existingCaptainRequest, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
     prisma.team.count({ where: { eventId: input.eventId } }),
+    prisma.teamRegistrationRequest.count({ where: { eventId: input.eventId, status: "pending_review" } }),
     prisma.team.findFirst({ where: { eventId: input.eventId, captainId: input.captainId }, select: { id: true } }),
     prisma.teamRegistrationRequest.findFirst({
       where: { eventId: input.eventId, captainId: input.captainId, status: { in: ACTIVE_REGISTRATION_REQUEST_STATUSES } },
@@ -1788,7 +1790,7 @@ export async function createTeamRegistrationRequest(input: {
     event.format === "Single Elimination" ? prisma.match.count({ where: { eventId: input.eventId, status: "Completed" } }) : Promise.resolve(0),
   ]);
 
-  if (registeredTeams >= event.participantCap) {
+  if (registeredTeams + (pendingReviewRequests ?? 0) >= event.participantCap) {
     throw new Error("Slot pendaftaran event ini sudah penuh.");
   }
   if (existingCaptainTeam || existingCaptainRequest) {
@@ -1883,28 +1885,64 @@ export async function createOrUpdateCaptainDraftTeam(input: {
   return mapTeam(row);
 }
 
-export async function updateTeamRegistrationProof(captainId: string, requestId: string, proofImageUrl: string): Promise<TeamRegistrationRequest> {
-  const request = await prisma.teamRegistrationRequest.findFirst({
-    where: { id: requestId, captainId },
-    include: registrationRequestInclude,
-  });
-  if (!request) throw new Error("Pendaftaran pembayaran tidak ditemukan.");
-  if (!["pending_payment", "rejected"].includes(request.status)) {
-    throw new Error("Bukti pembayaran untuk pendaftaran ini tidak bisa diubah.");
-  }
-  if (request.expiresAt <= new Date()) {
-    await prisma.teamRegistrationRequest.update({ where: { id: request.id }, data: { status: "expired" }, include: registrationRequestInclude });
-    throw new Error("Pendaftaran pembayaran sudah kedaluwarsa.");
-  }
+export async function updateTeamRegistrationProof(
+  captainId: string,
+  requestId: string,
+  proofImageUrl: string,
+): Promise<TeamRegistrationRequest> {
+  return prisma.$transaction(async (tx) => {
+    const initial = await tx.teamRegistrationRequest.findFirst({
+      where: { id: requestId, captainId },
+      include: registrationRequestInclude,
+    });
+    if (!initial) throw new Error("Pendaftaran pembayaran tidak ditemukan.");
 
-  const row = await prisma.teamRegistrationRequest.update({
-    where: { id: request.id },
-    data: { proofImageUrl, rejectReason: null, status: "pending_review" },
-    include: registrationRequestInclude,
-  });
-  return mapTeamRegistrationRequest(row);
+    // Every proof upload for the same event queues behind this transaction.
+    // The count and state transition therefore observe one authoritative slot order.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${initial.eventId}))`;
+
+    const request = await tx.teamRegistrationRequest.findFirst({
+      where: { id: requestId, captainId },
+      include: registrationRequestInclude,
+    });
+    if (!request) throw new Error("Pendaftaran pembayaran tidak ditemukan.");
+    if (!["pending_payment", "rejected"].includes(request.status)) {
+      throw new Error("Bukti pembayaran untuk pendaftaran ini tidak bisa diubah.");
+    }
+
+    const now = new Date();
+    if (request.expiresAt <= now) {
+      await tx.teamRegistrationRequest.update({
+        where: { id: request.id },
+        data: { status: "expired" },
+        include: registrationRequestInclude,
+      });
+      throw new Error("Pendaftaran pembayaran sudah kedaluwarsa.");
+    }
+    if (!["Published", "Registration Closed"].includes(request.event.status)) {
+      throw new Error("Event sudah dimulai sehingga bukti pembayaran tidak bisa diterima.");
+    }
+
+    const [activeTeamCount, pendingReviewCount] = await Promise.all([
+      tx.team.count({ where: { eventId: request.eventId } }),
+      tx.teamRegistrationRequest.count({
+        where: { eventId: request.eventId, status: "pending_review" },
+      }),
+    ]);
+    if (activeTeamCount + pendingReviewCount >= request.event.participantCap) {
+      throw new Error(
+        "Slot pendaftaran event ini sudah penuh. Bukti belum diterima; hubungi organizer untuk bantuan.",
+      );
+    }
+
+    const row = await tx.teamRegistrationRequest.update({
+      where: { id: request.id },
+      data: { proofImageUrl, rejectReason: null, status: "pending_review" },
+      include: registrationRequestInclude,
+    });
+    return mapTeamRegistrationRequest(row);
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
-
 export async function getCaptainRegistrationRequests(captainId: string): Promise<TeamRegistrationRequest[]> {
   if (!captainId) return [];
   await expireStaleRegistrationRequests();
