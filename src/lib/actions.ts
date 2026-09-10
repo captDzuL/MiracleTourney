@@ -385,8 +385,12 @@ export async function loginAction(formData: FormData) {
 /** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
 export async function captainRegisterTeamAction(formData: FormData) {
   const captain = await requireCaptainSession();
+  const rawEventId = String(formData.get("eventId") ?? "").trim();
+  const registrationBase = isSafeEntityId(rawEventId)
+    ? `/captain?tab=registration&eventId=${encodeURIComponent(rawEventId)}`
+    : "/captain?tab=registration";
   const registrationError = async (msg: string) =>
-    redirectToActiveLocale(`/captain?error=${encodeURIComponent(msg)}` as never);
+    redirectToActiveLocale(`${registrationBase}&error=${encodeURIComponent(msg)}` as never);
   const draftTeamId = String(formData.get("draftTeamId") ?? "").trim() || undefined;
   const parsed = z.object({
     eventId: z.string().trim().min(1),
@@ -428,14 +432,14 @@ export async function captainRegisterTeamAction(formData: FormData) {
       }
       revalidateTag("teams");
       revalidatePath("/captain");
-      await redirectToActiveLocale("/captain?tab=registration&success=payment-pending");
+      await redirectToActiveLocale(`${registrationBase}&success=payment-pending` as never);
     }
     return await registrationError(msg);
   }
 
   revalidateTag("teams");
   revalidatePath("/captain");
-  await redirectToActiveLocale("/captain?success=team-created");
+  await redirectToActiveLocale(`${registrationBase}&success=team-created` as never);
 }
 
 export async function captainSaveDraftTeamAction(formData: FormData) {
@@ -476,25 +480,34 @@ export async function captainSaveDraftTeamAction(formData: FormData) {
 
 export async function captainUploadPaymentProofAction(formData: FormData) {
   const captain = await requireCaptainSession();
-  const requestId = z.string().trim().min(1).parse(formData.get("requestId"));
+  const parsed = z.object({
+    requestId: z.string().trim().min(1),
+    eventId: z.string().trim().optional(),
+  }).parse({
+    requestId: formData.get("requestId"),
+    eventId: String(formData.get("eventId") ?? "").trim() || undefined,
+  });
+  const registrationBase = parsed.eventId && isSafeEntityId(parsed.eventId)
+    ? `/captain?tab=registration&eventId=${encodeURIComponent(parsed.eventId)}`
+    : "/captain?tab=registration";
   const proofAsset = await uploadImageAsset({
     file: formData.get("paymentProof"),
     folder: "payment-proofs",
-    entityId: requestId,
+    entityId: parsed.requestId,
     label: "Payment proof",
     maxBytes: MAX_PAYMENT_PROOF_BYTES,
-    errorPath: "/captain?tab=registration",
+    errorPath: registrationBase,
   });
 
   try {
-    await updateTeamRegistrationProof(captain.id, requestId, proofAsset.url);
+    await updateTeamRegistrationProof(captain.id, parsed.requestId, proofAsset.url);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal mengupload bukti pembayaran.";
-    await redirectToActiveLocale(`/captain?tab=registration&error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(`${registrationBase}&error=${encodeURIComponent(message)}` as never);
   }
 
   revalidatePath("/captain");
-  await redirectToActiveLocale("/captain?tab=registration&success=payment-proof-uploaded" as never);
+  await redirectToActiveLocale(`${registrationBase}&success=payment-proof-uploaded` as never);
 }
 
 export async function adminUpdatePaymentSettingsAction(formData: FormData) {

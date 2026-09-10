@@ -39,7 +39,7 @@ const copy = {
   slots: "Slot terisi", summary: "Ringkasan", participants: "Peserta", requirements: "Persyaratan",
   organizer: "Organizer", registrationPeriod: "Periode pendaftaran", opens: "Dibuka", closes: "Ditutup",
   capacity: "Kapasitas", activeTeams: "Tim aktif", pendingReview: "Sedang ditinjau", remaining: "Sisa slot",
-  fee: "Biaya pendaftaran", roster: "Kebutuhan roster", rosterValue: "{min}–{max} pemain",
+  fee: "Biaya pendaftaran", feeFree: "Gratis", feePaid: "Berbayar", roster: "Kebutuhan roster", rosterValue: "{min}–{max} pemain",
   uidIgn: "UID dan IGN wajib; posisi opsional.", howToTitle: "Cara mendaftar",
   steps: ["Masuk sebagai Captain", "Pilih atau buat tim", "Lengkapi roster", "Kirim pendaftaran"],
   description: "Tentang event", format: "Format pertandingan", contact: "Kontak organizer",

@@ -1,6 +1,6 @@
 import { setRequestLocale } from "next-intl/server";
 
-import RegisterPage from "../../register/page";
+import { RegisterPageContent } from "../../register/RegisterPageContent";
 
 export default async function LocalizedRegisterPage({
   params,
@@ -12,5 +12,5 @@ export default async function LocalizedRegisterPage({
   const { locale: rawLocale } = await params;
   const locale = rawLocale === "en" ? "en" : "id";
   setRequestLocale(locale);
-  return <RegisterPage searchParams={searchParams} locale={locale} />;
+  return <RegisterPageContent searchParams={searchParams} locale={locale} />;
 }

@@ -8,9 +8,12 @@ import { signIn, signOut } from "@/lib/auth/session";
 import { prisma } from "@/lib/platform/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 
-export type CaptainEventLoginState =
-  | { status: "idle" }
-  | { status: "error"; code: "invalid" | "wrong_role" | "database" | "rate_limited" };
+import {
+  buildCaptainEventDestination,
+  type CaptainEventLoginState,
+} from "@/lib/actions/captain-event-login-contract";
+
+export type { CaptainEventLoginState } from "@/lib/actions/captain-event-login-contract";
 
 const loginInputSchema = z.object({
   locale: z.enum(["id", "en"]),
@@ -19,9 +22,6 @@ const loginInputSchema = z.object({
   password: z.string().min(1).max(256),
 });
 
-export function buildCaptainEventDestination(locale: "id" | "en", eventId: string) {
-  return `/${locale}/captain?tab=registration&eventId=${encodeURIComponent(eventId)}`;
-}
 
 export async function captainEventLoginAction(
   _previousState: CaptainEventLoginState,

@@ -277,7 +277,7 @@ export async function getAdaptivePublicEventView(
       : prisma.platformProfile.findUnique({ where: { id: "global" } }),
   ]);
   const occupiedSlots = activeTeamCount + pendingReviewCount;
-  const availability = getRegistrationAvailability({
+  const registrationAvailability = getRegistrationAvailability({
     status: row.status as EventStatus,
     opensAt: row.registrationOpensAt,
     closesAt: row.registrationClosesAt,
@@ -285,6 +285,9 @@ export async function getAdaptivePublicEventView(
     participantCap: row.participantCap,
     now,
   });
+  const availability: RegistrationAvailability = row.eventStartsAt
+    ? registrationAvailability
+    : "legacy";
   const game = findGameConfig(row.gameId);
   const mode = findGameModeConfig(row.gameModeId);
   const format = describeTournamentFormat(parseFormat(row.format, row.formatConfig));
@@ -334,7 +337,7 @@ export async function getAdaptivePublicEventView(
       participantCap: row.participantCap,
       feeRequired: row.registrationFeeRequired,
       feeAmount: row.registrationFeeAmount,
-      feeLabel: row.registrationFeeLabel ?? (row.registrationFeeRequired ? "Paid" : "Free"),
+      feeLabel: row.registrationFeeLabel ?? "",
       minimumRoster: 1,
       maximumRoster: mode?.maxRosterSize ?? 1,
     },
@@ -343,4 +346,16 @@ export async function getAdaptivePublicEventView(
       cta: buildRegistrationCta({ state, availability, href }),
     },
   };
+}
+
+export async function getAdaptivePublicEventViewWithRetry(
+  slug: string,
+  viewer: AppUser | null,
+  now: Date = new Date(),
+): Promise<AdaptivePublicEventViewModel | null> {
+  try {
+    return await getAdaptivePublicEventView(slug, viewer, now);
+  } catch {
+    return getAdaptivePublicEventView(slug, viewer, now);
+  }
 }

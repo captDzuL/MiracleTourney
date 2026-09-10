@@ -5,12 +5,14 @@ import { permanentRedirect } from "next/navigation";
 import { AdaptiveRegistrationEventPage } from "@/components/v3/public-event/AdaptiveRegistrationEventPage";
 import type { AdaptiveEventCopy } from "@/components/v3/public-event/PublicEventHero";
 import { getSessionUser } from "@/lib/auth/session";
-import { getAdaptivePublicEventView, shouldUseAdaptiveRegistrationRenderer } from "@/lib/events/adaptive-public-event";
+import { getAdaptivePublicEventViewWithRetry, shouldUseAdaptiveRegistrationRenderer } from "@/lib/events/adaptive-public-event";
 import { isFeatureEnabled } from "@/lib/feature-flags";
+import { serializeJsonLd } from "@/lib/seo/json-ld";
 import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
 import { renderEventDetailPage } from "../../../events/[slug]/event-detail-page";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
+
 
 export async function generateMetadata({
   params,
@@ -23,7 +25,7 @@ export async function generateMetadata({
 
   let ogImage = event.logoUrl ?? event.gameImageUrl;
   if (isFeatureEnabled("adaptive_public_event_v3")) {
-    const adaptive = await getAdaptivePublicEventView(slug, null).catch(() => null);
+    const adaptive = await getAdaptivePublicEventViewWithRetry(slug, null).catch(() => null);
     if (adaptive && shouldUseAdaptiveRegistrationRenderer({
       enabled: true,
       status: event.status,
@@ -90,6 +92,8 @@ async function getAdaptiveCopy(locale: "id" | "en"): Promise<AdaptiveEventCopy> 
     pendingReview: t("pendingReview"),
     remaining: t("remaining"),
     fee: t("fee"),
+    feeFree: t("feeFree"),
+    feePaid: t("feePaid"),
     roster: t("roster"),
     rosterValue: t.raw("rosterValue"),
     uidIgn: t("uidIgn"),
@@ -121,7 +125,7 @@ export default async function LocalizedEventDetailPage({
 
   if (event && isFeatureEnabled("adaptive_public_event_v3") && ["Published", "Registration Closed"].includes(event.status)) {
     const viewer = await getSessionUser();
-    const adaptive = await getAdaptivePublicEventView(slug, viewer).catch(() => null);
+    const adaptive = await getAdaptivePublicEventViewWithRetry(slug, viewer).catch(() => null);
     if (adaptive && shouldUseAdaptiveRegistrationRenderer({
       enabled: true,
       status: event.status,
@@ -140,7 +144,7 @@ export default async function LocalizedEventDetailPage({
         ...(adaptive.event.prize ? { prize: adaptive.event.prize } : {}),
       };
       return <>
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
         <AdaptiveRegistrationEventPage view={adaptive} locale={locale} copy={copy} />
       </>;
     }

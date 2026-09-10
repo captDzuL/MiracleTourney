@@ -16,6 +16,8 @@ export function RegistrationOverview({ view, locale, copy }: {
 }) {
   const percentage = Math.min(100, Math.round((view.registration.occupiedSlots / view.registration.participantCap) * 100));
   const roster = copy.rosterValue.replace("{min}", String(view.registration.minimumRoster)).replace("{max}", String(view.registration.maximumRoster));
+  const feeLabel = view.registration.feeLabel
+    || (view.registration.feeRequired ? copy.feePaid : copy.feeFree);
 
   return <div className="grid gap-6">
     <section id="summary" className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7">
@@ -44,7 +46,7 @@ export function RegistrationOverview({ view, locale, copy }: {
     <section id="requirements" className="grid gap-4 sm:grid-cols-2">
       <div className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">{copy.fee}</h2>
-        <p className="mt-3 text-2xl font-extrabold text-[var(--color-brand-cream)]">{view.registration.feeLabel}</p>
+        <p className="mt-3 text-2xl font-extrabold text-[var(--color-brand-cream)]">{feeLabel}</p>
       </div>
       <div className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">{copy.roster}</h2>

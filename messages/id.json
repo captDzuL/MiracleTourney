@@ -602,6 +602,8 @@
     "pendingReview": "Sedang ditinjau",
     "remaining": "Sisa slot",
     "fee": "Biaya pendaftaran",
+    "feeFree": "Gratis",
+    "feePaid": "Berbayar",
     "roster": "Kebutuhan roster",
     "rosterValue": "{min}–{max} pemain",
     "uidIgn": "UID dan IGN wajib. Posisi pemain opsional.",

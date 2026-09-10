@@ -29,6 +29,8 @@ export type AdaptiveEventCopy = {
   pendingReview: string;
   remaining: string;
   fee: string;
+  feeFree: string;
+  feePaid: string;
   roster: string;
   rosterValue: string;
   uidIgn: string;

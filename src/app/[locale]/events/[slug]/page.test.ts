@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.resolve(__dirname, "page.tsx"), "utf8");
 
 describe("localized adaptive event routing contract", () => {
   it("keeps slug redirects ahead of adaptive renderer selection", () => {
-    expect(source.indexOf("getPublicEventSlugRedirect")).toBeLessThan(source.indexOf("getAdaptivePublicEventView(slug, viewer)"));
+    expect(source.indexOf("getPublicEventSlugRedirect")).toBeLessThan(source.indexOf("getAdaptivePublicEventViewWithRetry(slug, viewer)"));
     expect(source).toContain("permanentRedirect");
   });
 
@@ -19,7 +19,7 @@ describe("localized adaptive event routing contract", () => {
 
   it("keeps personalized view state outside public metadata", () => {
     const metadataSection = source.slice(source.indexOf("export async function generateMetadata"), source.indexOf("async function getAdaptiveCopy"));
-    expect(metadataSection).toContain("getAdaptivePublicEventView(slug, null)");
+    expect(metadataSection).toContain("getAdaptivePublicEventViewWithRetry(slug, null)");
     expect(metadataSection).not.toContain("getSessionUser");
     expect(metadataSection).toContain("adaptive.event.posterUrl ?? adaptive.event.logoUrl");
   });

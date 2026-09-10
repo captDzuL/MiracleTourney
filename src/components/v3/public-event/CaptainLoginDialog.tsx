@@ -105,7 +105,7 @@ export function CaptainLoginDialog({ locale, eventId, eventName, triggerLabel }:
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="captain-login-title" className="my-auto w-full max-w-lg rounded-[var(--radius-panel)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-6 shadow-2xl sm:p-8">
         <div className="flex items-start gap-4">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-[var(--color-brand-violet-soft)]">{copy.kicker}</p>
+            <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-[var(--color-brand-violet)]">{copy.kicker}</p>
             <h2 id="captain-login-title" className="mt-3 text-2xl font-extrabold">{copy.title}</h2>
           </div>
           <button type="button" onClick={close} aria-label={copy.close} className="grid min-h-11 min-w-11 place-items-center rounded-[var(--radius-control)] border border-[var(--color-border)]"><X className="h-5 w-5" aria-hidden /></button>

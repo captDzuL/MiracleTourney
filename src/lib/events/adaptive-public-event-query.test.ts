@@ -19,7 +19,7 @@ vi.mock("@/lib/platform/db", () => ({
   },
 }));
 
-import { getAdaptivePublicEventView } from "./adaptive-public-event";
+import { getAdaptivePublicEventView, getAdaptivePublicEventViewWithRetry } from "./adaptive-public-event";
 
 const baseEvent = {
   id: "event-1",
@@ -116,4 +116,38 @@ describe("getAdaptivePublicEventView", () => {
     expect(view?.registration.availability).toBe("full");
     expect(view?.viewer).toMatchObject({ state: "pending_payment", cta: { kind: "continue" } });
   });
+
+  it("marks events without a structured start date as legacy", async () => {
+    mocks.eventFindFirst.mockResolvedValue({ ...baseEvent, eventStartsAt: null, startsAt: "Segera" });
+    const view = await getAdaptivePublicEventView("miracle-cup", null, new Date("2026-09-12T00:00:00Z"));
+    expect(view?.registration.availability).toBe("legacy");
+  });
+
+  it("leaves an absent fee label for the localized renderer to describe", async () => {
+    mocks.eventFindFirst.mockResolvedValue({
+      ...baseEvent,
+      registrationFeeRequired: false,
+      registrationFeeAmount: null,
+      registrationFeeLabel: null,
+    });
+    const view = await getAdaptivePublicEventView("miracle-cup", null, new Date("2026-09-12T00:00:00Z"));
+    expect(view?.registration.feeLabel).toBe("");
+  });
+
+
+  it("retries one transient database failure before falling back", async () => {
+    mocks.eventFindFirst
+      .mockRejectedValueOnce(new Error("temporary Neon connection failure"))
+      .mockResolvedValueOnce(baseEvent);
+
+    const view = await getAdaptivePublicEventViewWithRetry(
+      "miracle-cup",
+      null,
+      new Date("2026-09-12T00:00:00Z"),
+    );
+
+    expect(view?.event.id).toBe("event-1");
+    expect(mocks.eventFindFirst).toHaveBeenCalledTimes(2);
+  });
+
 });

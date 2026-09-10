@@ -111,10 +111,11 @@ export function RegisterWizard({ errorMsg, eventId, locale }: { errorMsg?: strin
 
         <div>
 
-          <label className={labelCls}>{t("fullName")}</label>
+          <label className={labelCls} htmlFor="captain-full-name">{t("fullName")}</label>
 
           <input
 
+            id="captain-full-name"
             className={inputCls}
 
             type="text"
@@ -137,10 +138,11 @@ export function RegisterWizard({ errorMsg, eventId, locale }: { errorMsg?: strin
 
         <div>
 
-          <label className={labelCls}>{t("email")}</label>
+          <label className={labelCls} htmlFor="captain-email">{t("email")}</label>
 
           <input
 
+            id="captain-email"
             className={inputCls}
 
             type="email"
@@ -163,10 +165,11 @@ export function RegisterWizard({ errorMsg, eventId, locale }: { errorMsg?: strin
 
         <div>
 
-          <label className={labelCls}>{t("password")}</label>
+          <label className={labelCls} htmlFor="captain-password">{t("password")}</label>
 
           <input
 
+            id="captain-password"
             className={inputCls}
 
             type="password"
@@ -189,10 +192,11 @@ export function RegisterWizard({ errorMsg, eventId, locale }: { errorMsg?: strin
 
         <div>
 
-          <label className={labelCls}>{t("confirmPassword")}</label>
+          <label className={labelCls} htmlFor="captain-confirm-password">{t("confirmPassword")}</label>
 
           <input
 
+            id="captain-confirm-password"
             className={inputCls}
 
             type="password"

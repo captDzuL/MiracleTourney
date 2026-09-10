@@ -542,6 +542,7 @@ function PaymentRequestsSection({ paymentSettings, requests, requestedEventId, t
             {request.status === "pending_payment" || request.status === "rejected" ? (
               <form action={captainUploadPaymentProofAction} className="grid gap-3">
                 <input type="hidden" name="requestId" value={request.id} />
+                <input type="hidden" name="eventId" value={request.eventId} />
                 <label className={labelClass}>
                   {t("paymentProof")}
                   <input className={inputClass} name="paymentProof" type="file" accept="image/png,image/jpeg,image/webp" required />

@@ -602,6 +602,8 @@
     "pendingReview": "Under review",
     "remaining": "Slots remaining",
     "fee": "Registration fee",
+    "feeFree": "Free",
+    "feePaid": "Paid",
     "roster": "Roster requirements",
     "rosterValue": "{min}–{max} players",
     "uidIgn": "UID and IGN are required. Player position is optional.",
