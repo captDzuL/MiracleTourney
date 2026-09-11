@@ -29,13 +29,13 @@
 
 **Interfaces:**
 - Consumes: localized labels `{ summary, participants, requirements, organizer }`.
-- Produces: `PublicEventSectionNav({ labels }: { labels: Record<PublicEventSectionId, string> })` and stable `PUBLIC_EVENT_SECTION_IDS`.
+- Produces: `PublicEventSectionNav({ ariaLabel, labels }: { ariaLabel: string; labels: Record<PublicEventSectionId, string> })` and stable `PUBLIC_EVENT_SECTION_IDS`.
 
-- [ ] **Step 1: Write failing component tests**
+- [x] **Step 1: Write failing component tests**
 
 Cover default Summary state, valid initial hash, click updates active state and hash, observer updates active state, `aria-current`, focus-visible styling, and reduced-motion scroll behavior. Stub `IntersectionObserver`, `matchMedia`, `scrollIntoView`, and `history.pushState` only at browser boundaries.
 
-- [ ] **Step 2: Run the focused test and confirm failure**
+- [x] **Step 2: Run the focused test and confirm failure**
 
 Run:
 
@@ -45,7 +45,7 @@ pnpm vitest run src/components/v3/public-event/PublicEventSectionNav.test.tsx
 
 Expected: failure because `PublicEventSectionNav` does not exist.
 
-- [ ] **Step 3: Implement the client component**
+- [x] **Step 3: Implement the client component**
 
 Use a `"use client"` component with this section contract:
 
@@ -64,11 +64,11 @@ On mount, accept a valid `window.location.hash`, otherwise select `summary`. Obs
 
 Render real anchor links in a sticky, horizontally scrollable nav. Give the active anchor cyan text, a violet bottom border, and `aria-current="location"`; give every anchor a visible focus ring and minimum height of 44 px.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run the Task 1 test until all cases pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/components/v3/public-event/PublicEventSectionNav.tsx src/components/v3/public-event/PublicEventSectionNav.test.tsx
@@ -90,11 +90,11 @@ git commit -m "feat(ui): add adaptive event scroll spy"
 - Consumes: `PublicEventSectionNav` and the four stable target IDs.
 - Produces: visible active-state feedback, offset-safe destinations, and browser-tested deep links.
 
-- [ ] **Step 1: Add failing composition tests**
+- [x] **Step 1: Add failing composition tests**
 
 Assert that the adaptive page renders `PublicEventSectionNav`, all four target IDs, shared `scroll-mt-*` offset classes, and no duplicate navigation. Assert the organizer target surrounds the organizer content rather than an empty spacer.
 
-- [ ] **Step 2: Run focused component tests and confirm failure**
+- [x] **Step 2: Run focused component tests and confirm failure**
 
 ```powershell
 pnpm vitest run src/components/v3/public-event/AdaptiveRegistrationEventPage.test.tsx
@@ -102,25 +102,25 @@ pnpm vitest run src/components/v3/public-event/AdaptiveRegistrationEventPage.tes
 
 Expected: failure until the new navigation and target hooks are wired.
 
-- [ ] **Step 3: Wire the component and destination feedback**
+- [x] **Step 3: Wire the component and destination feedback**
 
 Replace the static nav in `AdaptiveRegistrationEventPage` with `PublicEventSectionNav`. Add a shared class to each target:
 
 ```text
-scroll-mt-32 transition-[border-color,box-shadow] data-[section-highlighted=true]:border-[var(--color-brand-cyan)] data-[section-highlighted=true]:shadow-[0_0_0_1px_var(--color-brand-cyan)]
+scroll-mt-[8.5rem] transition-[border-color,box-shadow] data-[section-highlighted=true]:border-[var(--color-brand-cyan)] data-[section-highlighted=true]:shadow-[0_0_0_1px_var(--color-brand-cyan)]
 ```
 
 For `requirements`, apply the target attributes to a containing section while preserving its two-column card layout. For Organizer, apply them to the card section that contains the organizer identity and contact.
 
-- [ ] **Step 4: Extend adaptive browser coverage**
+- [x] **Step 4: Extend adaptive browser coverage**
 
 In the existing unique-fixture spec, click Persyaratan and assert its anchor has `aria-current="location"`, the hash is `#requirements`, and the target receives the highlight marker. Scroll Organizer into view and assert observer-driven `aria-current`. Load a direct `#participants` URL and test browser back/forward. Keep the existing 360 px document-width assertion.
 
-- [ ] **Step 5: Update canonical handoff documentation**
+- [x] **Step 5: Update canonical handoff documentation**
 
 Record scroll-spy behavior and verification in `public/plan.md` and `public/snapshot.md`. Do not mark any other lifecycle composition complete.
 
-- [ ] **Step 6: Run final gates**
+- [x] **Step 6: Run final gates**
 
 ```powershell
 pnpm vitest run src/components/v3/public-event/PublicEventSectionNav.test.tsx src/components/v3/public-event/AdaptiveRegistrationEventPage.test.tsx

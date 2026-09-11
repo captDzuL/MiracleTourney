@@ -448,11 +448,19 @@ Database safety:
 - production database was not accessed or modified.
 
 Latest verification:
-- full Vitest: 705 passed across 73 files;
+- full Vitest: 714 passed across 74 files;
 - TypeScript/lint: passed;
 - production build with .env.test loaded first: passed;
-- adaptive E2E: 5 passed serially, including login/signup intent, CTA states, slot reservation, both locales, and 360 px;
+- adaptive E2E: 6 passed serially, including login/signup intent, CTA states, slot reservation, scroll-spy navigation, both locales, and 360 px;
 - full no-reset Playwright run: 39 passed, 2 skipped, 6 failed, and 4 not run. Four failures came from stale shared seed state while another release server was active; two came from existing organizer-workspace expectations outside this adaptive-page batch;
 - independent review: no remaining blocking findings after fixes for registration windows, Registration Closed approval, expiry persistence, roster limits, Serializable capacity races, and safe JSON-LD serialization.
 
 Next product milestone: complete the separate Registration workspace workstream, then implement the Ongoing adaptive Match Center after format-aware Match Day is available. Finished public composition follows Results, Completion, and Certificate delivery.
+
+Section navigation checkpoint:
+- Ringkasan, Peserta, Persyaratan, and Organizer use one sticky scroll-spy below the 64 px global header;
+- the active item has cyan text, a violet underline, and `aria-current="location"`; keyboard focus remains independent;
+- clicks update the URL hash and briefly highlight the destination; manual scrolling follows the upper reading area;
+- direct hashes and browser Back/Forward restore the selected section and its scroll position;
+- all four targets use an 8.5 rem scroll offset so their headings remain below both sticky bars;
+- focused component verification passed 11 assertions and the full adaptive browser spec passed 6 scenarios through `.env.test` without resetting Delicate.

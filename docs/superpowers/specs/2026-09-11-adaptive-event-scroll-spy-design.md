@@ -1,7 +1,7 @@
 # Adaptive Public Event Scroll-Spy Design
 
 Date: 11 September 2026
-Status: approved direction, awaiting implementation
+Status: implemented and browser-verified
 Scope: Adaptive Public Event V3 registration composition only
 
 ## Problem
