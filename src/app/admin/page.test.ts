@@ -89,10 +89,12 @@ describe("admin action buttons", () => {
   });
 
 
-  test("exposes a payment verification workspace", () => {
+  test("exposes payment verification inside the registration control center", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
 
-    expect(source).toContain('activePhase === "payments"');
+    expect(source).toContain('activePhase === "registration"');
+    expect(source).toContain("RegistrationControlCenterShell");
+    expect(source).toContain("rosterLabel=");
     expect(source).toContain("PaymentWorkspacePhase");
     expect(source).toContain("adminUpdatePaymentSettingsAction");
     expect(source).toContain("adminApprovePaymentAction");
@@ -116,17 +118,22 @@ describe("admin action buttons", () => {
     expect(source).toContain("shrink-0");
   });
 
+  test("keeps match day cards readable in the split layout", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+    expect(source).not.toContain("grid gap-2 sm:grid-cols-2 xl:grid-cols-3");
+    expect(source).toContain("const matchDeskCardGridClass");
+    expect(source).toContain("whitespace-nowrap");
+    expect(source).toContain("shrink-0");
+  });
+
   test("shows organizer assignment on draft creation for platform admins", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
-
     expect(source).toContain("organizerOptions");
     expect(source).toContain('name="organizerUserId"');
     expect(source).toContain('t("createEventOrganizerLabel")');
   });
-
   test("uses registration intake wizard instead of the legacy visible CSV importer", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
-
     expect(source).toContain("adminPreviewRegistrationImportAction");
     expect(source).toContain("adminCommitRegistrationImportAction");
     expect(source).toContain('process.env.REGISTRATION_INTAKE_V2 !== "false"');

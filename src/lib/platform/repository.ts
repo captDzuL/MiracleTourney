@@ -125,7 +125,8 @@ export function mapEvent(row: {
 function mapTeam(row: {
   id: string; eventId: string | null; captainId: string | null;
   name: string; logoText: string; logoUrl?: string | null; tag: string;
-  captainName: string | null; captainContact: string | null; source: string;
+  captainName: string | null; captainContact: string | null; captainIgn: string | null;
+  captainUid: string | null; captainIsPlayer: boolean; source: string;
   captain?: { id: string; name: string } | null;
 }): Team {
   return {
@@ -135,6 +136,9 @@ function mapTeam(row: {
     ...(row.logoUrl ? { logoUrl: row.logoUrl } : {}),
     ...(row.captainName ? { captainName: row.captainName } : {}),
     ...(row.captainContact ? { captainContact: row.captainContact } : {}),
+    ...(row.captainIgn ? { captainIgn: row.captainIgn } : {}),
+    ...(row.captainUid ? { captainUid: row.captainUid } : {}),
+    captainIsPlayer: row.captainIsPlayer,
     ...(row.captain != null ? { captain: row.captain } : {}),
     source: row.source as Team["source"],
   };
@@ -1607,6 +1611,9 @@ type CaptainRegistrationDraft = {
   logoUrl: string | null;
   captainName: string | null;
   captainContact: string | null;
+  captainIgn: string | null;
+  captainUid: string | null;
+  captainIsPlayer: boolean;
   players: Array<{
     displayName: string;
     nickname: string;
@@ -1719,6 +1726,9 @@ export async function registerTeam(input: {
             logoText: draftTeam.logoText || tag.slice(0, 2),
             logoUrl: draftTeam.logoUrl,
             tag,
+            captainIgn: draftTeam.captainIgn,
+            captainUid: draftTeam.captainUid,
+            captainIsPlayer: draftTeam.captainIsPlayer,
             captainName: draftTeam.captainName,
             captainContact: draftTeam.captainContact,
             source: "registration",
@@ -1813,6 +1823,9 @@ export async function createTeamRegistrationRequest(input: {
             logoText: draftTeam.logoText || tag.slice(0, 2),
             logoUrl: draftTeam.logoUrl,
             tag,
+            captainIgn: draftTeam.captainIgn,
+            captainUid: draftTeam.captainUid,
+            captainIsPlayer: draftTeam.captainIsPlayer,
             captainName: draftTeam.captainName,
             captainContact: draftTeam.captainContact,
             source: "registration-intake",
@@ -2147,7 +2160,7 @@ export async function getRegistrationImportBatchesForEvent(user: AppUser, eventI
     where: { eventId },
     orderBy: { createdAt: "desc" },
     take: 8,
-    include: { items: { select: { id: true, status: true } } },
+    include: { items: { select: { id: true, status: true, teamId: true } } },
   });
 }
 
@@ -2182,26 +2195,32 @@ export async function commitRegistrationImportBatch(
     where: { id: batchId },
     include: {
       event: { select: { id: true, slug: true, format: true } },
-      items: {
-        where: {
-          id: { in: selectedItemIds },
-          status: { in: ["new", "changed"] },
-        },
-      },
+      items: true,
     },
   });
 
   if (!batch) throw new Error("Batch import registrasi tidak ditemukan.");
   await assertUserCanManageEvent(user, batch.eventId);
-
   const locked = await isEventBracketLocked(batch.eventId);
   if (locked) {
     throw new Error(`Event "${batch.event.slug}" already has recorded match results, so registration import cannot be committed.`);
   }
 
+  if (batch.status === "committed") return { importedCount: 0, credentials: [] };
+  if (batch.expiresAt <= new Date()) throw new Error("Batch import registrasi sudah kedaluwarsa.");
+  if (batch.items.some((item) => item.status === "error")) {
+    throw new Error("Perbaiki semua baris error sebelum melakukan import.");
+  }
+  const candidateItems = batch.items.filter((item) => item.status === "new" || item.status === "changed");
+  const selectedIds = new Set(selectedItemIds);
+  if (candidateItems.length === 0) throw new Error("Tidak ada baris baru atau berubah untuk diimport.");
+  if (selectedIds.size !== candidateItems.length || candidateItems.some((item) => !selectedIds.has(item.id))) {
+    throw new Error("Import harus menyertakan seluruh baris baru dan berubah dalam satu transaksi.");
+  }
+
   const usedEmails = new Set<string>();
   const prepared = await Promise.all(
-    batch.items.map(async (item) => {
+    candidateItems.map(async (item) => {
       const normalized = item.normalizedData as RegistrationNormalizedTeam | null;
       if (!normalized) throw new Error("Item import tidak memiliki data normalisasi.");
 
@@ -2268,6 +2287,9 @@ export async function commitRegistrationImportBatch(
         tag: row.normalized.teamTag.toUpperCase(),
         captainName: row.normalized.captainName,
         captainContact: row.normalized.captainContact,
+        captainIgn: row.normalized.captainIgn,
+        captainUid: row.normalized.captainUid,
+        captainIsPlayer: row.normalized.captainIsPlayer,
         source: "registration-intake",
       };
 

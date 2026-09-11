@@ -7,7 +7,7 @@ export default async function LocalizedRegisterPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams?: Promise<{ error?: string }>;
+  searchParams?: Promise<{ error?: string; returnTo?: string }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale as "id" | "en");

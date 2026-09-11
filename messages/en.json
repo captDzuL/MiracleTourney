@@ -24,15 +24,15 @@
     "description": "Check brackets, participants, standings, and match stats from a Miracle League demo event.",
     "registerTeam": "Register Your Team",
     "viewDemoEvent": "View Demo Event",
-    "exploreDemo": "Explore Demo",
-    "quickLinks": "Demo quick paths",
+    "exploreDemo": "Explore featured events",
+    "quickLinks": "Featured event quick links",
     "bracketShortcut": "Bracket",
     "participantsShortcut": "Participants",
     "leaderboardShortcut": "Leaderboard",
     "standingsShortcut": "Standings",
     "joinNext": "Want to join the next tournament?",
     "registrationNote": "Participant registration is coordinated by the organizer when an event opens.",
-    "featuredEvent": "Featured demo event",
+    "featuredEvent": "Featured event",
     "allEvents": "All Events",
     "allGames": "All Games",
     "eventCount": "{count, plural, one {# event} other {# events}}",
@@ -445,6 +445,7 @@
     "phaseShort": {
       "prepare": "Prepare",
       "import": "Import",
+      "registration": "Registration",
       "run": "Match day",
       "review": "Review",
       "payments": "Payments"
@@ -455,6 +456,10 @@
         "description": "Create, configure, publish, stream."
       },
       "import": {
+      "registration": {
+        "title": "2. Registration Center",
+        "description": "Native captain flow, imports, and payments."
+      },
         "title": "2. Import Registration",
         "description": "CSV upload, slugs, credentials."
       },
@@ -477,6 +482,10 @@
         "description": "Finish event details, stream metadata, and status before registration import."
       },
       "import": {
+      "registration": {
+        "title": "Complete the next registration task",
+        "description": "Review captains, fix imports, or share the registration link."
+      },
         "title": "Validate registrations",
         "description": "Use the CSV template, verify event_slug values, then export credentials."
       },

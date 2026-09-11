@@ -25,7 +25,7 @@ const fallbackEventsBySlug: Record<string, Event> = {
   "miracle-league": {
     id: "fallback-miracle-league",
     slug: "miracle-league",
-    name: "Miracle Fast Tour",
+    name: "Miracle League",
     description: "New event created from admin panel.",
     logoUrl: "https://lh3.googleusercontent.com/d/1m01dWpxKA6qXRzfFRrEovFzho1nTnV9B",
     gameId: "game-flashpeak",
@@ -287,12 +287,10 @@ export async function renderEventDetailPage(
                 {event.registrationFeeLabel}
               </EventFact>
             ) : null}
-            {!options.readOnly && event.registrationUrl ? (
+            {!options.readOnly && event.status === "Published" ? (
               <a
-                className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-4 py-2 font-semibold text-slate-950 shadow-sm transition hover:bg-cyan-300"
-                href={event.registrationUrl}
-                target="_blank"
-                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-4 py-2 font-semibold text-cyan-950 shadow-sm transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                href={`${locale ? `/${locale}` : ""}/events/${event.slug}/register`}
               >
                 Daftar Event
                 <ArrowRight className="h-4 w-4" />

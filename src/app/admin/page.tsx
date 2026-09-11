@@ -79,12 +79,15 @@ import {
 } from "@/lib/platform/repository";
 import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
 import { EventVisualAssetsPanel } from "@/components/admin/EventVisualAssetsPanel";
+import { RegistrationControlCenterShell } from "@/components/registration/RegistrationControlCenterShell";
+import { RegistrationQueue } from "@/components/registration/RegistrationQueue";
 import { TeamAvatar, TeamIdentity } from "@/components/TeamAvatar";
 import { getGameModeDisplayLabel, getStatKeysForMode } from "@/lib/platform/config";
 import type { EventVisualAsset } from "@/lib/platform/types";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 import { getCaptainDisplayName } from "@/lib/team-display";
 import { getMatchStatRecordings } from "@/lib/platform/stat-recording-repository";
+import { mapRequestStatus, normalizeRegistrationSource, type RegistrationRecord, type RegistrationSource, type RegistrationStatus } from "@/lib/registration/records";
 import type { MatchStatRecording, TeamStatRecordingStatus } from "@/lib/platform/stat-recording";
 
 import { type AdminPhase, adminPhases, buildAdminPhaseHref, resolveAdminPhase } from "./admin-flow";
@@ -104,6 +107,10 @@ type AdminSearchParams = {
   success?: string;
   error?: string;
   count?: string;
+  registrationStatus?: string;
+  registrationSource?: string;
+  registrationQuery?: string;
+  registrationPage?: string;
   phase?: string;
   matchEventId?: string;
   matchId?: string;
@@ -135,8 +142,7 @@ type CaptainUser = { id: string; name: string; email: string };
 
 const phaseIcons = {
   prepare: CalendarPlus,
-  import: FileSpreadsheet,
-  payments: CreditCard,
+  registration: FileSpreadsheet,
   run: Radio,
   review: BadgeCheck,
 } satisfies Record<AdminPhase, React.ComponentType<{ className?: string }>>;
@@ -184,7 +190,7 @@ export default async function AdminPage({
     ?? featuredEvent
     ?? events[0];
 
-  const needsAllTeams = activePhase === "prepare" || activePhase === "import";
+  const needsAllTeams = activePhase === "prepare" || activePhase === "registration";
   const needsActiveTeams = activePhase === "run" || activePhase === "review";
   const teamsForEventIds = needsAllTeams || activePhase === "run" ? eventIds : activeEvent && needsActiveTeams ? [activeEvent.id] : [];
   const allTeamsByEvent = await getTeamsForEvents(teamsForEventIds);
@@ -217,10 +223,10 @@ export default async function AdminPage({
       ];
 
   const [importedTeamsRaw, captainUsers, registrationBatches, registrationBatch] = await Promise.all([
-    activePhase === "import" ? getImportedTeams(user) : Promise.resolve([]),
-    activePhase === "import" || activePhase === "prepare" ? getCaptainUsersForAdmin() : Promise.resolve([] as CaptainUser[]),
-    activePhase === "import" && activeEvent ? getRegistrationImportBatchesForEvent(user, activeEvent.id) : Promise.resolve([] as RegistrationImportBatchSummaryItem[]),
-    activePhase === "import" && resolvedSearchParams?.registrationBatchId
+    activePhase === "registration" ? getImportedTeams(user) : Promise.resolve([]),
+    activePhase === "registration" || activePhase === "prepare" ? getCaptainUsersForAdmin() : Promise.resolve([] as CaptainUser[]),
+    activePhase === "registration" && activeEvent ? getRegistrationImportBatchesForEvent(user, activeEvent.id) : Promise.resolve([] as RegistrationImportBatchSummaryItem[]),
+    activePhase === "registration" && resolvedSearchParams?.registrationBatchId
       ? getRegistrationImportBatchForAdmin(user, resolvedSearchParams.registrationBatchId)
       : Promise.resolve(null),
   ]);
@@ -285,12 +291,47 @@ export default async function AdminPage({
   const paymentStatus = ["pending_payment", "pending_review", "approved", "rejected", "expired"].includes(resolvedSearchParams?.paymentStatus ?? "")
     ? resolvedSearchParams?.paymentStatus as PaymentRequestItem["status"]
     : undefined;
-  const [paymentRequests, paymentSettings] = activePhase === "payments"
+  const [paymentRequests, paymentSettings] = activePhase === "registration"
     ? await Promise.all([
         getPaymentRegistrationRequestsForAdmin(user, { eventId: resolvedSearchParams?.activeEventId, status: paymentStatus }),
         getPaymentSettings(),
       ])
     : [[] as PaymentRequestItem[], { id: "global" } as PaymentSettingsItem];
+
+  const registrationStatuses: RegistrationStatus[] = ["pending_payment", "pending_review", "accepted", "rejected", "draft", "needs_correction"];
+  const importSourceByTeamId = new Map(
+    registrationBatches.flatMap((batch) => batch.items
+      .filter((item): item is typeof item & { teamId: string } => Boolean(item.teamId))
+      .map((item) => [item.teamId, batch.sourceKind] as const)),
+  );
+
+  const registrationSources: RegistrationSource[] = ["captain_registration", "import_xlsx", "import_csv", "unknown_import"];
+  const registrationStatus = registrationStatuses.find((value) => value === resolvedSearchParams?.registrationStatus);
+  const registrationSource = registrationSources.find((value) => value === resolvedSearchParams?.registrationSource);
+  const registrationRecords: RegistrationRecord[] = activeEvent ? [
+    ...(allTeamsByEvent.get(activeEvent.id) ?? []).map((team) => ({
+      id: team.id,
+      eventId: activeEvent.id,
+      teamId: team.id,
+      teamName: team.name,
+      teamTag: team.tag,
+      captainName: team.captainName ?? team.captain?.name ?? "Captain",
+      ...(team.captainContact ? { captainContact: team.captainContact } : {}),
+      ...(team.captainIgn ? { captainIgn: team.captainIgn } : {}),
+      ...(team.captainUid ? { captainUid: team.captainUid } : {}),
+      captainIsPlayer: team.captainIsPlayer ?? true,
+      rosterCount: 0,
+      source: normalizeRegistrationSource(team.source, importSourceByTeamId.get(team.id)),
+      status: "accepted" as const,
+      createdAt: "1970-01-01T00:00:00.000Z",
+      origin: "Team",
+    })),
+    ...paymentRequests.filter((request) => request.status !== "approved").map((request) => ({
+      id: request.id, eventId: request.eventId, ...(request.teamId ? { teamId: request.teamId } : {}), teamName: request.teamName, teamTag: request.teamTag,
+      captainName: request.captain?.name ?? "Captain", captainIsPlayer: true, rosterCount: 0, source: "captain_registration" as const,
+      status: mapRequestStatus(request.status), createdAt: request.createdAt, origin: "TeamRegistrationRequest",
+    })),
+  ] : [];
 
   const currentQuery = {
     activeEventId: activeEvent?.id,
@@ -344,7 +385,28 @@ export default async function AdminPage({
             />
           ) : null}
 
-          {activePhase === "import" ? (
+          {activePhase === "registration" ? (
+            <RegistrationControlCenterShell
+              event={activeEvent}
+              rosterLabel={activeEvent ? `${gameModes.find((mode) => mode.id === activeEvent.gameModeId)?.teamSize ?? "-"} pemain inti` : undefined}
+              registeredTeams={activeEvent ? (allTeamsByEvent.get(activeEvent.id)?.length ?? 0) : 0}
+              pendingReviewCount={paymentRequests.filter((request) => request.status === "pending_review").length}
+              importErrorCount={((registrationBatch?.summary ?? {}) as { error?: number }).error ?? 0}
+              importPanel={null}
+              paymentPanel={null}
+            />
+          ) : null}
+          {activePhase === "registration" && activeEvent ? (
+            <RegistrationQueue
+              eventId={activeEvent.id}
+              records={registrationRecords}
+              status={registrationStatus}
+              source={registrationSource}
+              query={resolvedSearchParams?.registrationQuery}
+              page={Number(resolvedSearchParams?.registrationPage) || 1}
+            />
+          ) : null}
+          {activePhase === "registration" ? (
             <ImportRegistrationPhase
               activeEvent={activeEvent}
               captainUsers={captainUsers}
@@ -358,7 +420,7 @@ export default async function AdminPage({
             />
           ) : null}
 
-          {activePhase === "payments" ? (
+          {activePhase === "registration" ? (
             <PaymentWorkspacePhase
               activeEvent={activeEvent}
               events={events}
@@ -1101,6 +1163,11 @@ function ImportRegistrationPhase({
             <p className="text-sm text-slate-500">{t("noEventsImport")}</p>
           )}
           <div className="mt-4 grid gap-3 text-sm text-slate-600 md:grid-cols-3">
+          <ol className="mt-4 grid overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 sm:grid-cols-5">
+            {["Upload", "Column Mapping", "Validate", "Preview", "Import"].map((step, index) => (
+              <li key={step} className="border-b border-slate-200 px-3 py-2.5 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"><span className="mr-2 text-cyan-700">{index + 1}</span>{step}</li>
+            ))}
+          </ol>
             <div>
               <p className="font-semibold text-slate-900">{t("sourceStep")}</p>
               <p className="mt-1">{t("sourceStepDescription")}</p>
@@ -1145,7 +1212,7 @@ function ImportRegistrationPhase({
                       key={`${item.id}-select`}
                       aria-label={t("selectImportRow")}
                       className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 disabled:opacity-40"
-                      defaultChecked={item.status === "new"}
+                      defaultChecked={canSelect}
                       disabled={!canSelect}
                       name="itemId"
                       type="checkbox"
@@ -1192,7 +1259,7 @@ function ImportRegistrationPhase({
                 <a
                   key={`${batch.id}-open`}
                   className="inline-flex min-w-max items-center gap-1 text-xs font-semibold text-cyan-700 hover:text-cyan-600"
-                  href={`?phase=import&activeEventId=${batch.eventId}&registrationBatchId=${batch.id}`}
+                  href={`?phase=registration&activeEventId=${batch.eventId}&registrationBatchId=${batch.id}`}
                 >
                   <Eye className="h-3.5 w-3.5" />
                   {t("openPreview")}
@@ -1299,7 +1366,7 @@ function PaymentWorkspacePhase({
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(19rem,0.75fr)]">
         <Section title={t("paymentQueueTitle")} description={t("paymentQueueDescription")} className="rounded-xl shadow-none">
           <form action="" className="mb-4 grid gap-3 md:grid-cols-[1fr_14rem_auto] md:items-end">
-            <input type="hidden" name="phase" value="payments" />
+            <input type="hidden" name="phase" value="registration" />
             <label className={labelClass}>
               {t("eventLabel")}
               <select className={inputClass} name="activeEventId" defaultValue={activeEvent?.id ?? ""}>
@@ -1424,6 +1491,7 @@ function MatchupNames({ homeName, awayName, size = "sm" }: { homeName: string; a
     </span>
   );
 }
+
 function RunMatchDayPhase({
   activeEvent,
   completedMatchesWithEvent,

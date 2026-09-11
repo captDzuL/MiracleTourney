@@ -20,6 +20,7 @@
     "test:pressure:smoke": "node scripts/run-smoke-pressure.mjs",
     "test:dashboard:perf": "node scripts/run-dashboard-performance.mjs",
     "test:e2e:headed": "pnpm test:e2e:prepare && playwright test --headed",
+    "db:cleanup:dummy-events": "tsx scripts/cleanup-production-dummy-events.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:test": "tsx prisma/seed.ts --test",
     "postinstall": "prisma generate",

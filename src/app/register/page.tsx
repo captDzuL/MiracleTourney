@@ -12,7 +12,7 @@ export default async function RegisterPage({
 
 }: {
 
-  searchParams?: Promise<{ error?: string }>;
+  searchParams?: Promise<{ error?: string; returnTo?: string }>;
 
 }) {
 
@@ -32,6 +32,6 @@ export default async function RegisterPage({
 
 
 
-  return <RegisterWizard errorMsg={errorMsg} />;
+  return <RegisterWizard errorMsg={errorMsg} returnTo={resolvedParams?.returnTo} />;
 
 }

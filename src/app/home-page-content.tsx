@@ -84,7 +84,8 @@ async function EventCard({
         <div className="mt-auto">
           <Link
             href={ctaHref(event)}
-            className="block w-full rounded-xl bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-blue-700"
+            aria-label={`${ctaLabel}: ${event.name}`}
+            className="block w-full rounded-xl bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2"
           >
             {ctaLabel}
           </Link>
@@ -175,20 +176,21 @@ export async function HomePageContent({
             <p className="mt-4 max-w-xl text-base leading-relaxed text-blue-50">{t("description")}</p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
-                href={featuredEvent ? ctaHref(featuredEvent) : "/events"}
-                className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
+                href={featuredEvent ? `/events/${featuredEvent.slug}` : "/events"}
+                aria-label={featuredEvent ? `${t("viewDemoEvent")}: ${featuredEvent.name}` : t("allEvents")}
+                className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               >
                 {featuredEvent ? t("viewDemoEvent") : t("allEvents")}
               </Link>
               <Link
                 href="/events"
-                className="rounded-full border border-white/25 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+                className="rounded-full border border-white/25 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               >
                 {t("allEvents")}
               </Link>
               <Link
                 href="/organizer"
-                className="rounded-full border border-white/25 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+                className="rounded-full border border-white/25 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               >
                 Buat Turnamen
               </Link>
@@ -262,7 +264,7 @@ export async function HomePageContent({
                 <Link
                   key={item.href}
                   href={item.href as `/events/${string}`}
-                  className="flex min-h-20 items-center gap-3 rounded-2xl bg-white p-4 font-semibold text-slate-800 shadow-sm transition hover:-translate-y-0.5 hover:text-blue-700 hover:shadow-md"
+                  className="flex min-h-20 items-center gap-3 rounded-2xl bg-white p-4 font-semibold text-slate-800 shadow-sm transition hover:-translate-y-0.5 hover:text-blue-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                 >
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                     <Icon className="h-5 w-5" />
@@ -280,7 +282,8 @@ export async function HomePageContent({
           <Link
             key={game.id}
             href={(game.id === "all" ? "/" : `/?game=${game.id}`) as "/"}
-            className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+            aria-current={gameFilter === game.id ? "page" : undefined}
+            className={`rounded-full border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 ${
               gameFilter === game.id
                 ? "border-blue-600 bg-blue-600 text-white"
                 : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-600"

@@ -26,3 +26,10 @@ describe("renderLoginPage", () => {
     expect(html).toContain('href="/forgot-password" data-i18n-link="true"');
   });
 });
+
+  it("preserves a safe event registration return path", async () => {
+    const page = await renderLoginPage(Promise.resolve({ returnTo: "/events/nusantara-cup/register" }));
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain('name="returnTo" value="/events/nusantara-cup/register"');
+  });

@@ -24,7 +24,7 @@ const labelCls = "block text-sm font-medium text-slate-300";
 
 
 
-export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
+export function RegisterWizard({ errorMsg, returnTo }: { errorMsg?: string; returnTo?: string }) {
 
   const t = useTranslations("register");
 
@@ -99,6 +99,8 @@ export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
         className="space-y-4"
 
       >
+        {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
+
 
         <h1 className="text-3xl font-semibold text-white">{t("step1Title")}</h1>
 
@@ -222,7 +224,7 @@ export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
 
           {t("haveAccount")} {" "}
 
-          <Link href="/login" className="text-cyan-400 hover:text-cyan-300">
+          <Link href={(returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : "/login") as never} className="text-cyan-400 hover:text-cyan-300">
 
             {t("loginHere")}
 

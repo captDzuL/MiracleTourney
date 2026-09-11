@@ -219,6 +219,9 @@ model Team {
   logoUrl        String?
   tag            String
   captainName    String?
+  captainIgn     String?
+  captainUid     String?
+  captainIsPlayer Boolean       @default(true)
   captainContact String?
   source         String        @default("demo")
   players        Player[]
@@ -230,6 +233,7 @@ model Team {
 
   @@unique([eventId, tag])
   @@unique([eventId, name])
+  @@index([eventId, captainUid])
 }
 
 

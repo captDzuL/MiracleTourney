@@ -430,19 +430,18 @@ describe("PublicEventDetailV2", () => {
     expect(headings[0]?.textContent).toContain("Dawn Finals");
   });
 
-  it("hides the registration call to action when the event has no registration url", () => {
-    renderDetail();
+  it("shows native registration for a published event without an external url", () => {
+    renderDetail({ event: makeEvent({ ...featuredEvent, status: "Published" }) });
 
-    expect(container.querySelector('[data-testid="pv-detail-register"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pv-detail-register"]')?.getAttribute("href")).toBe("/events/dawn-finals/register");
   });
 
-  it("renders the registration call to action as an external link when a url exists", () => {
-    renderDetail({ event: makeEvent({ ...featuredEvent, registrationUrl: "https://forms.example.test/join" }) });
+  it("keeps the registration call to action on Miracle when an old external url exists", () => {
+    renderDetail({ event: makeEvent({ ...featuredEvent, status: "Published", registrationUrl: "https://forms.example.test/join" }) });
 
     const cta = container.querySelector('[data-testid="pv-detail-register"]');
-    expect(cta?.getAttribute("href")).toBe("https://forms.example.test/join");
-    expect(cta?.getAttribute("target")).toBe("_blank");
-    expect(cta?.getAttribute("rel")).toContain("noreferrer");
+    expect(cta?.getAttribute("href")).toBe("/events/dawn-finals/register");
+    expect(cta?.getAttribute("target")).toBeNull();
     expect(cta?.textContent).toContain("Daftar Event");
   });
 

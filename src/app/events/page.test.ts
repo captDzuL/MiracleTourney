@@ -31,6 +31,45 @@ describe("events page public cards", () => {
     expect(source).not.toContain('href="/register"');
   });
 
+  test("homepage hero event CTA opens the event detail page, not status-specific subpages", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "../home-page-content.tsx"), "utf8");
+
+    expect(source).toContain('href={featuredEvent ? `/events/${featuredEvent.slug}` : "/events"}');
+    expect(source).not.toContain('href={featuredEvent ? ctaHref(featuredEvent) : "/events"}');
+  });
+
+  test("events listing uses an explicit CTA instead of making the whole card a link", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain("<article");
+    expect(source).toContain('aria-label={`Jelajahi event ${event.name}`}');
+    expect(source).toContain('href={`/events/${event.slug}`}');
+    expect(source).not.toContain('<Link\n              key={event.id}\n              href={`/events/${event.slug}`}');
+  });
+
+  test("events listing batches registered team counts instead of fetching teams per event", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(source).toContain("getTeamCountsForEvents");
+    expect(source).toContain("teamCountsByEvent");
+    expect(source).not.toContain("getTeamsForEvent(event.id)");
+  });
+  test("homepage and event fallbacks no longer expose demo-specific public copy", () => {
+    const homeSource = fs.readFileSync(path.resolve(__dirname, "../home-page-content.tsx"), "utf8");
+    const eventsSource = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+    const detailSource = fs.readFileSync(path.resolve(__dirname, "./[slug]/event-detail-page.tsx"), "utf8");
+    const idMessages = fs.readFileSync(path.resolve(process.cwd(), "messages/id.json"), "utf8");
+    const enMessages = fs.readFileSync(path.resolve(process.cwd(), "messages/en.json"), "utf8");
+
+    expect(idMessages).toContain('"featuredEvent": "Event unggulan"');
+    expect(idMessages).toContain('"exploreDemo": "Jelajahi event unggulan"');
+    expect(idMessages).toContain('"quickLinks": "Jalur cepat event unggulan"');
+    expect(enMessages).toContain('"featuredEvent": "Featured event"');
+    expect(enMessages).toContain('"exploreDemo": "Explore featured events"');
+    expect(enMessages).toContain('"quickLinks": "Featured event quick links"');
+    expect(`${homeSource}\n${eventsSource}\n${detailSource}`).not.toContain("Miracle Fast Tour");
+  });
+
   test("homepage keeps demo events visible when public event loading falls back", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "../home-page-content.tsx"), "utf8");
 
@@ -38,6 +77,16 @@ describe("events page public cards", () => {
     expect(source).toContain("getDemoPublicEvents()");
   });
 
+  test("front event controls preserve visible keyboard focus styles", () => {
+    const homeSource = fs.readFileSync(path.resolve(__dirname, "../home-page-content.tsx"), "utf8");
+    const eventsSource = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+    const detailSource = fs.readFileSync(path.resolve(__dirname, "./[slug]/event-detail-page.tsx"), "utf8");
+    const globalSource = fs.readFileSync(path.resolve(__dirname, "../globals.css"), "utf8");
+
+    expect(`${homeSource}\n${eventsSource}\n${detailSource}`).toContain("focus-visible:ring-2");
+    expect(`${homeSource}\n${eventsSource}\n${detailSource}`).toContain("focus-visible:ring-offset-2");
+    expect(globalSource).not.toContain("button,\ninput,\nselect,\ntextarea {\n  outline: none;\n}");
+  });
   test("global link styling does not override Tailwind text color utilities", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "../globals.css"), "utf8");
 
@@ -88,15 +137,15 @@ describe("events page public cards", () => {
     expect(localizedPageSource).toContain("renderEventDetailPage(slug, locale as");
   });
 
-  test("event detail shows an external registration CTA only when a registration URL exists", () => {
+  test("event detail shows an event-specific native registration CTA", () => {
     const detailSource = fs.readFileSync(
       path.resolve(__dirname, "./[slug]/event-detail-page.tsx"),
       "utf8",
     );
 
-    expect(detailSource).toContain("event.registrationUrl");
+    expect(detailSource).toContain("/events/${event.slug}/register");
     expect(detailSource).toContain("Daftar Event");
-    expect(detailSource).toContain('target="_blank"');
+    expect(detailSource).not.toContain('href={event.registrationUrl}');
   });
 
   test("localized events page passes search params through to the shared events page", () => {

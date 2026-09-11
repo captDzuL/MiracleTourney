@@ -1,4 +1,4 @@
-export const adminPhases = ["prepare", "import", "payments", "run", "review"] as const;
+export const adminPhases = ["prepare", "registration", "run", "review"] as const;
 
 export type AdminPhase = (typeof adminPhases)[number];
 
@@ -9,6 +9,7 @@ type AdminPhaseQuery = {
 };
 
 export function resolveAdminPhase(value: string | undefined): AdminPhase {
+  if (value === "import" || value === "payments") return "registration";
   return adminPhases.find((phase) => phase === value) ?? "prepare";
 }
 

@@ -10,9 +10,14 @@ describe("admin phase navigation", () => {
 
   test("accepts only organizer phase values", () => {
     expect(resolveAdminPhase("prepare")).toBe("prepare");
-    expect(resolveAdminPhase("import")).toBe("import");
+    expect(resolveAdminPhase("registration")).toBe("registration");
     expect(resolveAdminPhase("run")).toBe("run");
     expect(resolveAdminPhase("review")).toBe("review");
+  });
+
+  test("keeps legacy import and payment links compatible with the registration workspace", () => {
+    expect(resolveAdminPhase("import")).toBe("registration");
+    expect(resolveAdminPhase("payments")).toBe("registration");
   });
 
   test("keeps match selection when switching into the run phase", () => {
@@ -27,11 +32,11 @@ describe("admin phase navigation", () => {
 
   test("drops match selection outside match day phases", () => {
     expect(
-      buildAdminPhaseHref("import", {
+      buildAdminPhaseHref("registration", {
         activeEventId: "event-kuroko-summer",
         matchEventId: "event-kuroko-summer",
         matchId: "match-final",
       }),
-    ).toBe("?phase=import&activeEventId=event-kuroko-summer");
+    ).toBe("?phase=registration&activeEventId=event-kuroko-summer");
   });
 });
