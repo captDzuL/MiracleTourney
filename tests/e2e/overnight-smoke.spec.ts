@@ -10,17 +10,18 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-const csvHeader = "event_slug,team_name,team_tag,captain_name,captain_contact,Player 1 Nickname";
+const csvHeader = "event_slug,team_name,team_tag,captain_name,captain_contact,captain_ign,captain_uid,Player 1 Nickname,Player 2 Nickname";
 
 function teamImportCsv(slug: string, teamNumbers: number[]) {
+  const teamCsvHeader = `${csvHeader},Player 3 Nickname,Player 4 Nickname`;
   const rows = teamNumbers.map(
-    (number) => `${slug},Team ${number},T${String(number).padStart(2, "0")},Captain ${number},captain${number}@team.test,Player ${number}`,
+    (number) => `${slug},Team ${number},T${String(number).padStart(2, "0")},Captain ${number},captain${number}@team.test,Captain${number},UID-${number},Player ${number},Player ${number}B,Player ${number}C,Player ${number}D`,
   );
-  return Buffer.from([csvHeader, ...rows].join("\n"));
+  return Buffer.from([teamCsvHeader, ...rows].join("\n"));
 }
 
 function lateTeamImportCsv(slug: string) {
-  return Buffer.from(`${csvHeader}\n${slug},Late Team,LTE,Late Captain,late@team.test,Late Player\n`);
+  return Buffer.from(`${csvHeader}\n${slug},Late Team,LTE,Late Captain,late@team.test,LateCaptain,UID-LATE,Late Player,Late Player 2\n`);
 }
 
 async function previewRegistrationCsv(page: import("@playwright/test").Page, file: {
@@ -101,7 +102,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   await previewRegistrationCsv(page, {
     name: "overnight-smoke.csv",
     buffer: Buffer.from(
-      "event_slug,team_name,team_tag,captain_name,captain_contact,Player 1 Nickname\nkuroko-summer-cup,Smoke Test Five,ST5,Smoke Captain,smoke@example.com,Smoke Player\n",
+      "event_slug,team_name,team_tag,captain_name,captain_contact,captain_ign,captain_uid,Player 1 Nickname,Player 2 Nickname\nkuroko-summer-cup,Smoke Test Five,KS1,Smoke Captain,smoke@example.com,SmokeCaptain,UID-SMOKE,Smoke Player,Smoke Player 2\n",
     ),
   });
   await commitPreviewedRegistration(page, 1);

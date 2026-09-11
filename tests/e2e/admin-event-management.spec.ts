@@ -90,7 +90,7 @@ test.describe("admin event management", () => {
       name: "test-import.csv",
       mimeType: "text/csv",
       buffer: Buffer.from(
-        "event_slug,team_name,team_tag,captain_name,captain_contact,Player 1 Nickname\nkuroko-summer-cup,E2E Team Alpha,ETA,E2E Captain,e2ecap@test.com,E2EPlayer\n",
+        "event_slug,team_name,team_tag,captain_name,captain_contact,captain_ign,captain_uid,Player 1 Nickname,Player 2 Nickname\nkuroko-summer-cup,E2E Team Alpha,KS1,E2E Captain,e2ecap@test.com,E2ECaptain,UID-E2E,E2EPlayer,E2EPlayer2\n",
       ),
     });
     await expect(previewForm.locator('input[name="itemId"]:checked')).toHaveCount(1);
