@@ -315,11 +315,35 @@ describe("loginAction", () => {
     );
   });
 
+  it("preserves adaptive event context after invalid credentials", async () => {
+    signIn.mockResolvedValue({ ok: false, error: "Invalid email or password." });
+
+    await expect(loginAction(fd({
+      email: "bad@test.com",
+      password: "wrong",
+      eventId: "event-abc",
+      locale: "id",
+    }))).rejects.toThrow("REDIRECT:/id/login?eventId=event-abc&error=invalid");
+  });
+
   it("redirects to a database error when sign-in cannot reach the database", async () => {
     signIn.mockRejectedValue(new Error("Can't reach database server at `db.example.com:5432`"));
 
     await expect(loginAction(fd({ email: "admin@test.com", password: "secret123" }))).rejects.toThrow(
       "REDIRECT:/login?error=database",
+    );
+  });
+
+  it("preserves native returnTo after a transient database login error", async () => {
+    signIn.mockRejectedValue(new Error("Can't reach database server at `db.example.com:5432`"));
+
+    await expect(loginAction(fd({
+      email: "cap@test.com",
+      password: "secret123",
+      returnTo: "/id/events/nusantara-cup/register",
+      locale: "en",
+    }))).rejects.toThrow(
+      "REDIRECT:/en/login?returnTo=%2Fid%2Fevents%2Fnusantara-cup%2Fregister&error=database",
     );
   });
 

@@ -353,6 +353,13 @@ export async function loginAction(formData: FormData) {
   const returnTo = getSafeReturnTo(formData.get("returnTo"));
   const eventId = String(formData.get("eventId") ?? "").trim();
   const hasSafeEventId = Boolean(eventId && isSafeEntityId(eventId));
+  const loginErrorPath = (error: "database" | "invalid") => {
+    const context = new URLSearchParams();
+    if (returnTo) context.set("returnTo", returnTo);
+    else if (hasSafeEventId) context.set("eventId", eventId);
+    context.set("error", error);
+    return `/login?${context.toString()}`;
+  };
   const email = z.string().email().parse(formData.get("email"));
   const password = z.string().min(1).parse(formData.get("password"));
   let result;
@@ -361,19 +368,19 @@ export async function loginAction(formData: FormData) {
     result = await signIn(email, password);
   } catch (error) {
     if (isDatabaseConnectionError(error)) {
-      return await redirectToRequestedLocale("/login?error=database", requestedLocale);
+      return await redirectToRequestedLocale(loginErrorPath("database"), requestedLocale);
     }
 
     throw error;
   }
 
   if (!result.ok) {
-    return await redirectToRequestedLocale("/login?error=invalid", requestedLocale);
+    return await redirectToRequestedLocale(loginErrorPath("invalid"), requestedLocale);
   }
 
   const user = result.user;
   if (!user) {
-    return await redirectToRequestedLocale("/login?error=invalid", requestedLocale);
+    return await redirectToRequestedLocale(loginErrorPath("invalid"), requestedLocale);
   }
 
   if (user.role === "captain" && returnTo) {
