@@ -20,6 +20,7 @@ const {
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
+  getEventsByIds,
   getOrganizerUserById,
   getPublishedEvents,
   getUserByEmail,
@@ -43,6 +44,7 @@ const {
   signIn,
   signOut,
   headers,
+  checkRateLimit,
   updateCaptainPassword,
   updateEventBrandAssets,
   updatePaymentSettings,
@@ -75,6 +77,7 @@ const {
   createTeamRegistrationRequest: vi.fn(),
   deletePlayer: vi.fn(),
   getImportSnapshot: vi.fn(),
+  getEventsByIds: vi.fn(),
   getOrganizerUserById: vi.fn(),
   getPublishedEvents: vi.fn(),
   getUserByEmail: vi.fn(),
@@ -98,6 +101,7 @@ const {
   signIn: vi.fn(),
   signOut: vi.fn(),
   headers: vi.fn(),
+  checkRateLimit: vi.fn(),
   updateCaptainPassword: vi.fn(),
   updateEventBrandAssets: vi.fn(),
   updatePaymentSettings: vi.fn(),
@@ -119,6 +123,7 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("next/headers", () => ({ headers }));
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
 vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut }));
 vi.mock("@/lib/imports/team-import", () => ({
   parseAndValidateTeamImport: vi.fn(),
@@ -142,6 +147,7 @@ vi.mock("@/lib/platform/repository", () => ({
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
+  getEventsByIds,
   getOrganizerUserById,
   getPublishedEvents,
   getUserByEmail,
@@ -341,17 +347,19 @@ describe("captainSignUpAction", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    checkRateLimit.mockReturnValue(true);
     getUserByEmail.mockResolvedValue(null);
     getPublishedEvents.mockResolvedValue([{ id: "event-abc", registrationFeeRequired: false }]);
+    getEventsByIds.mockResolvedValue([{ id: "event-abc", status: "Published" }]);
     createCaptainAccount.mockResolvedValue({ userId: "captain-new" });
     createCaptainWithTeam.mockResolvedValue({ id: "captain-new" });
     createCaptainWithPendingPayment.mockResolvedValue({ userId: "captain-new", requestId: "request-new" });
     signIn.mockResolvedValue({ ok: true, user: { role: "captain" } });
   });
 
-  it("creates account and redirects to /captain?success=registered on valid input", async () => {
+  it("creates account and returns to the requested event registration on valid input", async () => {
     await expect(captainSignUpAction(fd(validData))).rejects.toThrow(
-      "REDIRECT:/captain?success=registered",
+      "REDIRECT:/captain?tab=registration&eventId=event-abc",
     );
     expect(createCaptainAccount).toHaveBeenCalledWith(
       expect.objectContaining({ email: "budi@test.com", name: "Budi Santoso", passwordHash: expect.any(String) }),
@@ -367,23 +375,36 @@ describe("captainSignUpAction", () => {
 
   it("rejects fullName shorter than 2 characters", async () => {
     await expect(captainSignUpAction(fd({ ...validData, fullName: "A" }))).rejects.toThrow(
-      "REDIRECT:/register?error=",
+      "REDIRECT:/register?eventId=event-abc&error=",
     );
     expect(createCaptainAccount).not.toHaveBeenCalled();
   });
 
   it("rejects invalid email format", async () => {
     await expect(captainSignUpAction(fd({ ...validData, email: "notanemail" }))).rejects.toThrow(
-      "REDIRECT:/register?error=",
+      "REDIRECT:/register?eventId=event-abc&error=",
     );
   });
 
   it("rejects password shorter than 8 characters", async () => {
     await expect(captainSignUpAction(fd({ ...validData, password: "short" }))).rejects.toThrow(
-      "REDIRECT:/register?error=",
+      "REDIRECT:/register?eventId=event-abc&error=",
     );
   });
 
+  it("preserves a valid event and locale through successful sign-up", async () => {
+    await expect(captainSignUpAction(fd({ ...validData, locale: "en" }))).rejects.toThrow(
+      "REDIRECT:/en/captain?tab=registration&eventId=event-abc",
+    );
+    expect(getEventsByIds).toHaveBeenCalledWith(["event-abc"]);
+  });
+
+  it("rejects an invalid event entity ID without creating an account", async () => {
+    await expect(captainSignUpAction(fd({ ...validData, eventId: "https://evil.example" }))).rejects.toThrow(
+      "REDIRECT:/register?error=",
+    );
+    expect(createCaptainAccount).not.toHaveBeenCalled();
+  });
   it("does not require an event during captain sign-up", async () => {
     await expect(captainSignUpAction(fd({ ...validData, eventId: "" }))).rejects.toThrow(
       "REDIRECT:/captain?success=registered",
@@ -393,7 +414,7 @@ describe("captainSignUpAction", () => {
 
   it("does not validate team fields during captain sign-up", async () => {
     await expect(captainSignUpAction(fd({ ...validData, teamTag: "TOOLONG" }))).rejects.toThrow(
-      "REDIRECT:/captain?success=registered",
+      "REDIRECT:/captain?tab=registration&eventId=event-abc",
     );
     expect(createCaptainAccount).toHaveBeenCalled();
   });
@@ -401,7 +422,7 @@ describe("captainSignUpAction", () => {
   it("rejects duplicate email", async () => {
     getUserByEmail.mockResolvedValue({ id: "existing-user" });
 
-    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/register?error=");
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/register?eventId=event-abc&error=");
     expect(createCaptainAccount).not.toHaveBeenCalled();
   });
 
@@ -409,14 +430,14 @@ describe("captainSignUpAction", () => {
     headers.mockResolvedValue(new Headers({ "x-forwarded-for": "10.0.0.98" }));
     getPublishedEvents.mockResolvedValue([{ id: "other-event" }]);
 
-    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/captain?success=registered");
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-abc");
     expect(getPublishedEvents).not.toHaveBeenCalled();
   });
 
   it("redirects with an error when account creation fails", async () => {
     createCaptainAccount.mockRejectedValue(new Error("Unique constraint failed"));
 
-    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/register?error=");
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/register?eventId=event-abc&error=");
   });
 
   it("does not create a pending-payment request during captain sign-up", async () => {
@@ -424,7 +445,7 @@ describe("captainSignUpAction", () => {
     getPublishedEvents.mockResolvedValue([{ id: "event-abc", registrationFeeRequired: true }]);
 
     await expect(captainSignUpAction(fd(validData))).rejects.toThrow(
-      "REDIRECT:/captain?success=registered",
+      "REDIRECT:/captain?tab=registration&eventId=event-abc",
     );
     expect(createCaptainAccount).toHaveBeenCalledWith(
       expect.objectContaining({ email: "budi@test.com", name: "Budi Santoso" }),
@@ -573,7 +594,7 @@ describe("captain actions", () => {
   it("derives the registering captain from the authenticated session", async () => {
     await expect(
       captainRegisterTeamAction(fd({ eventId: "event-flashpeak-open", name: "Session United", tag: "SES" })),
-    ).rejects.toThrow("REDIRECT:/captain?success=team-created");
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-flashpeak-open&success=team-created");
     expect(registerTeam).toHaveBeenCalledWith({
       eventId: "event-flashpeak-open",
       captainId: "captain-1",
@@ -589,7 +610,7 @@ describe("captain actions", () => {
 
     await expect(
       captainRegisterTeamAction(fd({ eventId: "event-paid", name: "Paid United", tag: "PDU" })),
-    ).rejects.toThrow("REDIRECT:/captain?tab=registration&success=payment-pending");
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&success=payment-pending");
 
     expect(createTeamRegistrationRequest).toHaveBeenCalledWith({
       eventId: "event-paid",
@@ -608,8 +629,8 @@ describe("captain actions", () => {
 
     try {
       await expect(
-        captainUploadPaymentProofAction(fd({ requestId: "request-1", paymentProof: validPngFile("proof.png") })),
-      ).rejects.toThrow("REDIRECT:/captain?tab=registration&success=payment-proof-uploaded");
+        captainUploadPaymentProofAction(fd({ requestId: "request-1", eventId: "event-paid", paymentProof: validPngFile("proof.png") })),
+      ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&success=payment-proof-uploaded");
 
       expect(updateTeamRegistrationProof).toHaveBeenCalledWith("captain-1", "request-1", "https://blob.example.com/payment-proofs/request-1.png");
       expect(revalidatePath).toHaveBeenCalledWith("/captain");

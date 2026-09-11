@@ -6,6 +6,7 @@ import { SessionNav } from "@/components/session-nav";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { MobileMenuToggle } from "@/components/mobile-nav";
 import { SiteFooter } from "@/components/v3/SiteFooter";
+import { getConfiguredV3Socials } from "@/components/v3/social-links";
 import { V3ShellRouter } from "@/components/v3/OperatorShell";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 
@@ -15,6 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const v3Shell = useTranslations("v3Shell");
   const visualV2 = isFeatureEnabled("public_visual_v2");
   const visualV3 = isFeatureEnabled("ui_v3_foundation");
+  const socials = getConfiguredV3Socials();
 
   const actions = (
     <>
@@ -40,6 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             copyright={v3Footer("copyright")}
             socialLabel={v3Footer("socialLabel")}
             tagline={v3Footer("tagline")}
+            socials={socials}
           />
         }
         homeHref="/"

@@ -10,7 +10,8 @@ type FeatureFlag =
   | "ui_v3_foundation"
   | "organizer_workspace_v3"
   | "registration_workspace_v3"
-  | "competition_operations_v3";
+  | "competition_operations_v3"
+  | "adaptive_public_event_v3";
 
 const DEFAULTS: Record<FeatureFlag, boolean> = {
   premium_event_promotion: false,
@@ -25,6 +26,7 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   organizer_workspace_v3: false,
   registration_workspace_v3: false,
   competition_operations_v3: false,
+  adaptive_public_event_v3: false,
 };
 
 export function isFeatureEnabled(flag: FeatureFlag): boolean {

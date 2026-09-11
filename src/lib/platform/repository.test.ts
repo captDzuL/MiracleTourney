@@ -23,6 +23,7 @@ const { prisma } = vi.hoisted(() => ({
     },
     teamRegistrationRequest: {
       count: vi.fn(),
+      groupBy: vi.fn(),
       create: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -286,6 +287,8 @@ describe("registration intake commit", () => {
     prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
     prisma.event.findUnique.mockResolvedValue({ id: "event-1", slug: "redclover-cup", format: "Single Elimination" });
     prisma.match.count.mockResolvedValue(0);
+    prisma.team.count.mockResolvedValue(0);
+    prisma.teamRegistrationRequest.count.mockResolvedValue(0);
     prisma.$transaction.mockImplementation(async (callback: unknown) => {
       if (typeof callback === "function") return callback(prisma);
       return callback;
@@ -338,7 +341,11 @@ describe("registration intake commit", () => {
     expect(result.credentials).toHaveLength(1);
     expect(prisma.$transaction).toHaveBeenCalledWith(
       expect.any(Function),
-      { maxWait: 10_000, timeout: 60_000 },
+      {
+        isolationLevel: "Serializable",
+        maxWait: 10_000,
+        timeout: 60_000,
+      },
     );
     expect(result.credentials[0]).toMatchObject({
       teamName: "Gamma",
@@ -408,6 +415,33 @@ describe("registration intake commit", () => {
 
     await expect(commitRegistrationImportBatch(platformAdmin, "batch-1", []))
       .rejects.toThrow("already has recorded match results");
+  });
+
+  it("counts pending-review reservations before importing new teams", async () => {
+    prisma.registrationImportBatch.findFirst.mockResolvedValue({
+      id: "batch-1",
+      eventId: "event-1",
+      event: { id: "event-1", slug: "redclover-cup", format: "Single Elimination", participantCap: 8 },
+      items: [{
+        id: "item-new",
+        status: "new",
+        normalizedData: {
+          teamName: "Gamma",
+          teamTag: "GAM",
+          captainName: "Gina",
+          captainContact: "081",
+          captainEmail: "gina@example.com",
+          players: [],
+        },
+      }],
+    });
+    prisma.user.findUnique.mockResolvedValue({ id: "captain-existing", email: "gina@example.com", role: "captain", name: "Gina" });
+    prisma.team.count.mockResolvedValue(7);
+    prisma.teamRegistrationRequest.count.mockResolvedValue(1);
+
+    await expect(commitRegistrationImportBatch(platformAdmin, "batch-1", ["item-new"]))
+      .rejects.toThrow("Slot pendaftaran event ini tidak cukup");
+    expect(prisma.team.create).not.toHaveBeenCalled();
   });
 });
 
@@ -1055,6 +1089,9 @@ function publishedEventRow(overrides: Partial<{ id: string; slug: string; name: 
 describe("existing captain event registration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prisma.teamRegistrationRequest.groupBy.mockResolvedValue([]);
+    prisma.teamRegistrationRequest.count.mockResolvedValue(0);
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
   });
 
   it("lists only published events the captain has not joined, with capacity and unlocked bracket", async () => {
@@ -1101,6 +1138,51 @@ describe("existing captain event registration", () => {
     });
   });
 
+  it("rejects a new registration before its structured opening time", async () => {
+    prisma.event.findUnique.mockResolvedValue({
+      ...publishedEventRow({ id: "event-upcoming" }),
+      registrationOpensAt: new Date(Date.now() + 60_000),
+      registrationClosesAt: new Date(Date.now() + 120_000),
+    });
+
+    await expect(registerTeam({
+      eventId: "event-upcoming",
+      captainId: "captain-1",
+      name: "Early Team",
+      tag: "EAR",
+    })).rejects.toThrow("Event tidak valid atau sudah tidak membuka pendaftaran.");
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a draft roster above the selected game mode maximum", async () => {
+    prisma.team.findFirst.mockResolvedValue({
+      id: "draft-large",
+      captainId: "captain-1",
+      eventId: null,
+      source: "draft",
+      name: "Large Draft",
+      tag: "BIG",
+      logoText: "BI",
+      logoUrl: null,
+      captainName: "Captain",
+      captainContact: null,
+      players: Array.from({ length: 9 }, (_, index) => ({
+        displayName: `UID-${index}`,
+        nickname: `IGN-${index}`,
+        position: "",
+        jerseyNumber: null,
+      })),
+    });
+    prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-open" }));
+
+    await expect(registerTeam({
+      eventId: "event-open",
+      captainId: "captain-1",
+      draftTeamId: "draft-large",
+    })).rejects.toThrow("Roster tim maksimal");
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
   it("rejects existing captain registration when the event is not published", async () => {
     prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-closed", status: "Registration Closed" }));
 
@@ -1122,6 +1204,18 @@ describe("existing captain event registration", () => {
     expect(prisma.team.create).not.toHaveBeenCalled();
   });
 
+  it("treats pending-review payment requests as occupied for direct registration", async () => {
+    prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-full", participantCap: 2 }));
+    prisma.team.count.mockResolvedValue(1);
+    prisma.teamRegistrationRequest.count.mockResolvedValue(1);
+    prisma.team.findFirst.mockResolvedValue(null);
+    prisma.match.count.mockResolvedValue(0);
+
+    await expect(registerTeam({ eventId: "event-full", captainId: "captain-1", name: "Late Team", tag: "LT" })).rejects.toThrow(
+      "Slot pendaftaran event ini sudah penuh.",
+    );
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
   it("rejects existing captain registration when the event is full", async () => {
     prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-full", participantCap: 2 }));
     prisma.team.count.mockResolvedValue(2);
@@ -1179,6 +1273,130 @@ describe("existing captain event registration", () => {
     });
   });
 
+  it("reserves a slot atomically only when payment proof is accepted", async () => {
+    const request = {
+      id: "request-proof",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      teamId: null,
+      teamName: "Session United",
+      teamTag: "SES",
+      status: "pending_payment",
+      proofImageUrl: null,
+      rejectReason: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      approvedAt: null,
+      approvedById: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      event: { ...publishedEventRow({ id: "event-paid", participantCap: 16 }), registrationFeeRequired: true },
+      captain: { id: "captain-1", name: "Captain" },
+    };
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(request);
+    prisma.team.count.mockResolvedValue(14);
+    prisma.teamRegistrationRequest.count.mockResolvedValue(1);
+    prisma.teamRegistrationRequest.update.mockResolvedValue({ ...request, status: "pending_review", proofImageUrl: "/proof.png" });
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
+
+    await expect(updateTeamRegistrationProof("captain-1", "request-proof", "/proof.png")).resolves.toMatchObject({
+      status: "pending_review",
+      proofImageUrl: "/proof.png",
+    });
+    expect(prisma.teamRegistrationRequest.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "request-proof" },
+      data: { proofImageUrl: "/proof.png", rejectReason: null, status: "pending_review" },
+    }));
+  });
+
+  it("persists the expired status before reporting an expired proof request", async () => {
+    const request = {
+      id: "request-expired",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      teamId: null,
+      teamName: "Expired Team",
+      teamTag: "EXP",
+      status: "pending_payment",
+      proofImageUrl: null,
+      rejectReason: null,
+      expiresAt: new Date(Date.now() - 60_000),
+      approvedAt: null,
+      approvedById: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      event: { ...publishedEventRow({ id: "event-paid" }), registrationFeeRequired: true },
+      captain: { id: "captain-1", name: "Captain" },
+    };
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(request);
+    prisma.teamRegistrationRequest.update.mockResolvedValue({ ...request, status: "expired" });
+
+    await expect(updateTeamRegistrationProof("captain-1", "request-expired", "/proof.png"))
+      .rejects.toThrow("Pendaftaran pembayaran sudah kedaluwarsa.");
+    expect(prisma.teamRegistrationRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-expired" },
+      data: { status: "expired" },
+    });
+  });
+
+  it("keeps pending_payment unchanged when the final slot is already occupied", async () => {
+    const request = {
+      id: "request-full",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      teamId: null,
+      teamName: "Late Team",
+      teamTag: "LATE",
+      status: "pending_payment",
+      proofImageUrl: null,
+      rejectReason: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      approvedAt: null,
+      approvedById: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      event: { ...publishedEventRow({ id: "event-paid", participantCap: 16 }), registrationFeeRequired: true },
+      captain: { id: "captain-1", name: "Captain" },
+    };
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(request);
+    prisma.team.count.mockResolvedValue(15);
+    prisma.teamRegistrationRequest.count.mockResolvedValue(1);
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
+
+    await expect(updateTeamRegistrationProof("captain-1", "request-full", "/proof.png")).rejects.toThrow(
+      "Slot pendaftaran event ini sudah penuh",
+    );
+    expect(prisma.teamRegistrationRequest.update).not.toHaveBeenCalled();
+  });
+
+  it("accepts proof during the request's full 24-hour window after registration closes", async () => {
+    const request = {
+      id: "request-closed",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      teamId: null,
+      teamName: "On Time Team",
+      teamTag: "OTT",
+      status: "pending_payment",
+      proofImageUrl: null,
+      rejectReason: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      approvedAt: null,
+      approvedById: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      event: { ...publishedEventRow({ id: "event-paid", status: "Registration Closed", participantCap: 16 }), registrationFeeRequired: true },
+      captain: { id: "captain-1", name: "Captain" },
+    };
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(request);
+    prisma.team.count.mockResolvedValue(10);
+    prisma.teamRegistrationRequest.count.mockResolvedValue(0);
+    prisma.teamRegistrationRequest.update.mockResolvedValue({ ...request, status: "pending_review", proofImageUrl: "/proof.png" });
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
+
+    await expect(updateTeamRegistrationProof("captain-1", "request-closed", "/proof.png")).resolves.toMatchObject({
+      status: "pending_review",
+    });
+  });
   it("approves a paid registration request by creating the active team", async () => {
     const request = {
       id: "request-1",
@@ -1233,6 +1451,49 @@ describe("existing captain event registration", () => {
       data: expect.objectContaining({ status: "approved", teamId: "team-paid", approvedById: "admin-1" }),
       include: expect.any(Object),
     });
+  });
+
+  it("approves a reserved request after registration has closed", async () => {
+    const request = {
+      id: "request-closed-review",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      teamId: null,
+      teamName: "Reserved Team",
+      teamTag: "RSV",
+      status: "pending_review",
+      proofImageUrl: "/payment-proofs/reserved.png",
+      rejectReason: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      approvedAt: null,
+      approvedById: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      event: {
+        ...publishedEventRow({ id: "event-paid", status: "Registration Closed" }),
+        registrationFeeRequired: true,
+      },
+      captain: { id: "captain-1", name: "Captain" },
+    };
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(request);
+    prisma.team.count.mockResolvedValue(3);
+    prisma.team.findFirst.mockResolvedValue(null);
+    prisma.match.count.mockResolvedValue(0);
+    prisma.team.create.mockResolvedValue({
+      id: "team-reserved",
+      eventId: "event-paid",
+      captainId: "captain-1",
+      name: "Reserved Team",
+      logoText: "RS",
+      logoUrl: null,
+      tag: "RSV",
+      captainName: null,
+      captainContact: null,
+      source: "registration",
+    });
+
+    await expect(approveTeamRegistrationRequest(platformAdmin, "request-closed-review"))
+      .resolves.toEqual(expect.objectContaining({ id: "team-reserved" }));
   });
 
   it("approves a migrated registration request by reusing its already-linked team", async () => {

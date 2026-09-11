@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -132,5 +133,142 @@ export async function prepareCompletedMatchWithPlayers(slug = "admin-stats-e2e")
     homePlayers,
     awayPlayers,
     slug,
+  };
+}
+
+
+export async function prepareAdaptivePublicRegistrationFixtures() {
+  const suffix = randomUUID().slice(0, 8);
+  const password = "Adaptive2026!";
+  const passwordHash = await bcrypt.hash(password, 10);
+  const now = new Date();
+  const day = 24 * 60 * 60 * 1000;
+  const organizer = await prisma.user.create({
+    data: {
+      email: `org-${suffix}@example.test`,
+      name: "Adaptive Organizer",
+      role: "organizer",
+      passwordHash,
+      organizerProfile: {
+        create: {
+          organizationName: "Miracle Community",
+          contactChannel: "WhatsApp",
+          contactValue: "+62 812 3456 7890",
+          verified: true,
+          verifiedAt: now,
+        },
+      },
+    },
+  });
+  const captain = await prisma.user.create({
+    data: {
+      email: `captain-${suffix}@example.test`,
+      name: "Adaptive Captain",
+      role: "captain",
+      passwordHash,
+    },
+  });
+  const paymentCaptain = await prisma.user.create({
+    data: {
+      email: `payment-${suffix}@example.test`,
+      name: "Payment Captain",
+      role: "captain",
+      passwordHash,
+    },
+  });
+
+  const formatConfig = {
+    version: 1,
+    kind: "single_elimination",
+    bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 },
+    thirdPlace: "none",
+  } satisfies Prisma.InputJsonValue;
+
+  async function createEvent(kind: "open" | "upcoming" | "closed" | "full") {
+    const isUpcoming = kind === "upcoming";
+    const isClosed = kind === "closed";
+    return prisma.event.create({
+      data: {
+        slug: `adaptive-${kind}-${suffix}`,
+        name: `Adaptive ${kind} ${suffix}`,
+        description: "Turnamen komunitas dengan alur pendaftaran yang jelas dan terhubung.",
+        logoUrl: "/logo/miracle-symbol-4096.png",
+        gameImageUrl: "/logo/miracle-horizontal-2048.png",
+        gameId: "game-mobile-legends",
+        gameModeId: "mode-mlbb-5v5",
+        format: "Single Elimination",
+        formatConfig,
+        status: isClosed ? "Registration Closed" : "Published",
+        participantCap: 8,
+        registrationWindow: "Structured",
+        registrationOpensAt: new Date(now.getTime() + (isUpcoming ? day : -day)),
+        registrationClosesAt: new Date(now.getTime() + (isClosed ? -day : 2 * day)),
+        eventStartsAt: new Date(now.getTime() + 5 * day),
+        startsAt: new Date(now.getTime() + 5 * day).toISOString(),
+        timezone: "Asia/Jakarta",
+        venue: "Discord Miracle Community",
+        venueAddress: "Discord Miracle Community",
+        organizerUserId: organizer.id,
+        organizerName: "Miracle Community",
+        organizerVerified: true,
+        prizePoolLabel: "Rp5.000.000",
+        registrationFeeRequired: true,
+        registrationFeeAmount: 20000,
+        registrationFeeLabel: "Rp20.000",
+        publishedAt: now,
+      },
+    });
+  }
+
+  const open = await createEvent("open");
+  const upcoming = await createEvent("upcoming");
+  const closed = await createEvent("closed");
+  const full = await createEvent("full");
+  await prisma.team.createMany({
+    data: Array.from({ length: 8 }, (_, index) => ({
+      eventId: full.id,
+      name: `Full Team ${index + 1} ${suffix}`,
+      tag: `F${index + 1}`,
+      logoText: `F${index + 1}`,
+      source: "e2e",
+    })),
+  });
+
+  const paymentRequest = await prisma.teamRegistrationRequest.create({
+    data: {
+      eventId: open.id,
+      captainId: paymentCaptain.id,
+      teamName: `Proof Team ${suffix}`,
+      teamTag: "PRF",
+      status: "pending_payment",
+      expiresAt: new Date(now.getTime() + day),
+    },
+  });
+
+  const signupEmail = `signup-${suffix}@example.test`;
+  const userIds = [organizer.id, captain.id, paymentCaptain.id];
+  const eventIds = [open.id, upcoming.id, closed.id, full.id];
+
+  return {
+    suffix,
+    password,
+    organizer,
+    captain,
+    paymentCaptain,
+    paymentRequest,
+    signupEmail,
+    events: { open, upcoming, closed, full },
+    async cleanup() {
+      await prisma.event.deleteMany({ where: { id: { in: eventIds } } });
+      await prisma.team.deleteMany({ where: { captainId: { in: userIds } } });
+      await prisma.user.deleteMany({
+        where: {
+          OR: [
+            { id: { in: userIds } },
+            { email: signupEmail },
+          ],
+        },
+      });
+    },
   };
 }

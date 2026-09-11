@@ -9,6 +9,7 @@ const OWNED_KEYS = [
   "FEATURE_FLAG_ORGANIZER_WORKSPACE_V3",
   "FEATURE_FLAG_REGISTRATION_WORKSPACE_V3",
   "FEATURE_FLAG_COMPETITION_OPERATIONS_V3",
+  "FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3",
 ] as const;
 
 beforeEach(() => {
@@ -53,6 +54,12 @@ describe("public visual feature flags", () => {
     expect(isFeatureEnabled("competition_operations_v3")).toBe(true);
   });
 
+  it("keeps the adaptive public event disabled until explicitly enabled", () => {
+    expect(isFeatureEnabled("adaptive_public_event_v3")).toBe(false);
+
+    process.env.FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3 = "true";
+    expect(isFeatureEnabled("adaptive_public_event_v3")).toBe(true);
+  });
   it("enables ui_v3_foundation when the environment override is true", () => {
     process.env.FEATURE_FLAG_UI_V3_FOUNDATION = "true";
     expect(isFeatureEnabled("ui_v3_foundation")).toBe(true);

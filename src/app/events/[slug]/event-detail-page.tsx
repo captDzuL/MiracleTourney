@@ -9,6 +9,7 @@ import { ShareButton } from "@/components/ShareButton";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getOrderedStatEntries, getStatKeysForMode } from "@/lib/platform/config";
 import type { Event } from "@/lib/platform/types";
+import { serializeJsonLd } from "@/lib/seo/json-ld";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 import {
   getBracketPreview,
@@ -200,7 +201,7 @@ export async function renderEventDetailPage(
       <>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
         />
         <PublicEventDetailV2
           event={event}
@@ -235,7 +236,7 @@ export async function renderEventDetailPage(
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
     <div className="space-y-6">
       <section

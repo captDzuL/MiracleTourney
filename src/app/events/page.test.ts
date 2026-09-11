@@ -134,7 +134,7 @@ describe("events page public cards", () => {
     expect(detailSource).not.toContain('import { Link } from "@/i18n/navigation"');
     expect(detailSource).toContain('import Link from "next/link"');
     expect(detailSource).toContain("function buildEventHref");
-    expect(localizedPageSource).toContain("renderEventDetailPage(slug, locale as");
+    expect(localizedPageSource).toContain("renderEventDetailPage(slug, locale, event ?? undefined)");
   });
 
   test("event detail shows an event-specific native registration CTA", () => {

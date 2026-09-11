@@ -413,3 +413,54 @@ Verification checkpoint:
 - TypeScript/lint command: passed;
 - production build through the `.env.test` loader: passed;
 - Published Event Revision E2E from a clean Delicate reset: 5 passed serially (private edit/autosave/preview/apply, Registration Closed locks, Ongoing/Finished locks, Platform Admin slug redirect, and 360 px overflow).
+
+
+## Adaptive Public Event V3 handoff - 11 September 2026
+
+Workspace and branch:
+- worktree: .worktrees/adaptive-public-event-v3;
+- branch: feature/ui/adaptive-public-event-v3;
+- base: origin/feature/ui/release/1.0 at 014f45317c7bd257ac85cbddb1019fa19a8a0f7a;
+- rollout flag: adaptive_public_event_v3, default false; dev:e2e forces it true for browser coverage.
+
+Registration-phase public behavior is implemented at the permanent localized event URL. Published and Registration Closed events with structured registration and event-start dates use the adaptive renderer when enabled. Legacy, Draft, Ongoing, and Finished behavior remains unchanged. Private preview remains read-only and never shows registration CTA or the Captain dialog.
+
+The request-scoped view model owns availability, live slot counts, event visual fallbacks, organizer or Miracle identity, contact normalization, format description, viewer state, and CTA selection. It is not response-cached because it includes session-specific Captain state and current capacity. The route retries one transient view-model query once, then safely falls back to the existing renderer.
+
+Captain intent contract:
+- login and signup accept only internal locale and event ID values;
+- destinations are built server-side and never accept an arbitrary redirect URL;
+- a successful login or signup opens /<locale>/captain?tab=registration&eventId=<eventId>;
+- the workspace validates accessibility, prioritizes the requested event, shows its name and a breadcrumb back to the public page, and ignores invalid IDs;
+- registration and proof-upload redirects preserve the same event context.
+
+Slot contract:
+- active Team and pending_review occupy slots;
+- pending_payment, rejected, and expired do not;
+- payment proof may be uploaded during its full 24-hour request window even after registration closes;
+- free registration, proof acceptance, approval, signup, and import use retryable Prisma Serializable transactions and recheck capacity;
+- rejection releases the reservation; approval transforms the reserved request into a Team without double counting.
+
+Database safety:
+- all local and browser verification loads .env.test;
+- preflight confirmed Neon Delicate host ep-delicate-forest-azuodo4q;
+- this work used unique fixtures and cleanup, not a Delicate reset;
+- production database was not accessed or modified.
+
+Latest verification:
+- full Vitest: 714 passed across 74 files;
+- TypeScript/lint: passed;
+- production build with .env.test loaded first: passed;
+- adaptive E2E: 6 passed serially, including login/signup intent, CTA states, slot reservation, scroll-spy navigation, both locales, and 360 px;
+- full no-reset Playwright run: 39 passed, 2 skipped, 6 failed, and 4 not run. Four failures came from stale shared seed state while another release server was active; two came from existing organizer-workspace expectations outside this adaptive-page batch;
+- independent review: no remaining blocking findings after fixes for registration windows, Registration Closed approval, expiry persistence, roster limits, Serializable capacity races, and safe JSON-LD serialization.
+
+Next product milestone: complete the separate Registration workspace workstream, then implement the Ongoing adaptive Match Center after format-aware Match Day is available. Finished public composition follows Results, Completion, and Certificate delivery.
+
+Section navigation checkpoint:
+- Ringkasan, Peserta, Persyaratan, and Organizer use one sticky scroll-spy below the 64 px global header;
+- the active item has cyan text, a violet underline, and `aria-current="location"`; keyboard focus remains independent;
+- clicks update the URL hash and briefly highlight the destination; manual scrolling follows the upper reading area;
+- direct hashes and browser Back/Forward restore the selected section and its scroll position;
+- all four targets use an 8.5 rem scroll offset so their headings remain below both sticky bars;
+- focused component verification passed 11 assertions and the full adaptive browser spec passed 6 scenarios through `.env.test` without resetting Delicate.
