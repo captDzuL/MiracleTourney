@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const KNOWN_NEON_PROD_HOST = "ep-sparkling-night-azr6wxwd";
+const TRUSTED_GITHUB_REPO_ID = "1316699241";
 
 function databaseHost(value) {
   if (!value) return null;
@@ -14,8 +15,17 @@ function databaseHost(value) {
   }
 }
 
+function isProductionCandidate(env) {
+  const isTrustedMainCandidate = env.VERCEL_GIT_COMMIT_REF === "main"
+    && env.VERCEL_GIT_REPO_ID === TRUSTED_GITHUB_REPO_ID
+    && !env.VERCEL_GIT_PULL_REQUEST_ID;
+  return env.VERCEL_ENV === "production"
+    || env.VERCEL_TARGET_ENV === "production"
+    || isTrustedMainCandidate;
+}
+
 export function assertVercelBuildDatabaseSafety(env) {
-  if (env.VERCEL_ENV !== "preview") return;
+  if (isProductionCandidate(env) || env.VERCEL_ENV !== "preview") return;
 
   const productionHost = env.NEON_PROD_HOST?.trim().toLowerCase();
   const hosts = [databaseHost(env.DATABASE_URL), databaseHost(env.DIRECT_URL)];
@@ -35,10 +45,11 @@ function executeCommand(command, args) {
 }
 
 export function runVercelBuild(env, runCommand = executeCommand) {
+  const productionCandidate = isProductionCandidate(env);
   assertVercelBuildDatabaseSafety(env);
   const commands = [];
 
-  if (env.VERCEL_ENV === "production") {
+  if (productionCandidate) {
     commands.push(["pnpm", ["exec", "prisma", "migrate", "deploy"]]);
   }
 

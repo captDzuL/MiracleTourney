@@ -10,6 +10,10 @@ export type BuildCommandRunner = (
 
 export type VercelBuildEnvironment = {
   VERCEL_ENV?: string;
+  VERCEL_GIT_COMMIT_REF?: string;
+  VERCEL_GIT_PULL_REQUEST_ID?: string;
+  VERCEL_GIT_REPO_ID?: string;
+  VERCEL_TARGET_ENV?: string;
   DATABASE_URL?: string;
   DIRECT_URL?: string;
   NEON_PROD_HOST?: string;
