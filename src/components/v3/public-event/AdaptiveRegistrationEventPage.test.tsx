@@ -67,4 +67,18 @@ describe("AdaptiveRegistrationEventPage", () => {
     const html = renderToStaticMarkup(<AdaptiveRegistrationEventPage view={view} locale="id" copy={copy} readOnly />);
     expect(html).not.toContain("Daftarkan tim");
   });
+
+  it("renders one active section navigation with offset-safe content targets", () => {
+    const html = renderToStaticMarkup(<AdaptiveRegistrationEventPage view={view} locale="id" copy={copy} />);
+
+    expect((html.match(/<nav/g) ?? [])).toHaveLength(1);
+    expect(html).toContain('aria-label="Halaman event"');
+    expect(html).toContain('aria-current="location"');
+    expect(html).toContain('href="#summary"');
+    expect(html).toContain('href="#participants"');
+    expect(html).toContain('href="#requirements"');
+    expect(html).toContain('href="#organizer"');
+    expect(html.match(/scroll-mt-\[8\.5rem\]/g) ?? []).toHaveLength(4);
+    expect(html).toMatch(/<section[^>]*id="organizer"[^>]*>[\s\S]*Kontak organizer/);
+  });
 });

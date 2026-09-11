@@ -190,6 +190,35 @@ test.describe.serial("Adaptive Public Event V3 registration phase", () => {
     await expect(page.getByText(new RegExp((initialOccupied + 1) + " dari 8 slot terisi"))).toBeVisible();
   });
 
+  test("section navigation identifies click, deep-link, history, and scroll destinations", async ({ page }) => {
+    const baseUrl = "/id/events/" + fixture.events.open.slug;
+    const nav = page.getByRole("navigation", { name: "Navigasi event" });
+
+    await page.goto(baseUrl + "#participants");
+    await expect(nav.getByRole("link", { name: "Peserta" })).toHaveAttribute("aria-current", "location");
+
+    await nav.getByRole("link", { name: "Persyaratan" }).click();
+    await expect(page).toHaveURL(new RegExp("#requirements$"));
+    await expect(nav.getByRole("link", { name: "Persyaratan" })).toHaveAttribute("aria-current", "location");
+    await expect(page.locator("#requirements")).toHaveAttribute("data-section-highlighted", "true");
+
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp("#participants$"));
+    await expect(nav.getByRole("link", { name: "Peserta" })).toHaveAttribute("aria-current", "location");
+
+    await page.goForward();
+    await expect(page).toHaveURL(new RegExp("#requirements$"));
+    await expect(nav.getByRole("link", { name: "Persyaratan" })).toHaveAttribute("aria-current", "location");
+
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.goto(baseUrl);
+    await page.locator("#organizer").scrollIntoViewIfNeeded();
+    await expect(nav.getByRole("link", { name: "Organizer" })).toHaveAttribute("aria-current", "location");
+
+    await page.goto(baseUrl);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  });
+
   test("upcoming, closed, full, English, and mobile states remain accessible", async ({ page }) => {
     await page.goto("/id/events/" + fixture.events.upcoming.slug);
     await expect(page.getByRole("button", { name: "Pendaftaran belum dibuka" })).toBeDisabled();

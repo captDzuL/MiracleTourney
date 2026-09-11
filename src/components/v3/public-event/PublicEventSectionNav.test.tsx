@@ -38,8 +38,10 @@ describe("PublicEventSectionNav", () => {
   let root: Root;
   let targets: HTMLElement[];
   const scrollIntoView = vi.fn();
+  const horizontalScroll = vi.fn();
 
   beforeEach(() => {
+    vi.clearAllMocks();
     window.history.replaceState({}, "", "/id/events/test-event");
     vi.stubGlobal("IntersectionObserver", IntersectionObserverStub);
     Object.defineProperty(window, "matchMedia", {
@@ -49,6 +51,10 @@ describe("PublicEventSectionNav", () => {
     Object.defineProperty(Element.prototype, "scrollIntoView", {
       configurable: true,
       value: scrollIntoView,
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: horizontalScroll,
     });
     targets = Object.keys(labels).map((id) => {
       const target = document.createElement("section");
@@ -70,12 +76,15 @@ describe("PublicEventSectionNav", () => {
   });
 
   async function renderNav() {
-    await act(async () => root.render(<PublicEventSectionNav labels={labels} />));
+    await act(async () => root.render(<PublicEventSectionNav ariaLabel="Navigasi bagian event" labels={labels} />));
   }
 
   it("marks Ringkasan as the default current section", async () => {
     await renderNav();
 
+    expect(container.querySelector("nav")?.getAttribute("aria-label")).toBe("Navigasi bagian event");
+    expect(container.querySelector("nav")?.innerHTML).toContain("focus-visible:ring-offset-[var(--color-bg)]");
+    expect(scrollIntoView).not.toHaveBeenCalled();
     expect(container.querySelector('a[href="#summary"]')?.getAttribute("aria-current")).toBe("location");
     expect(container.querySelectorAll('[aria-current="location"]')).toHaveLength(1);
   });
@@ -99,17 +108,51 @@ describe("PublicEventSectionNav", () => {
     expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ behavior: "smooth" }));
   });
 
+  it("keeps an explicit click active while the destination scroll settles", async () => {
+    await renderNav();
+    const requirementsLink = container.querySelector<HTMLAnchorElement>('a[href="#requirements"]')!;
+    const summary = document.getElementById("summary")!;
+
+    await act(async () => requirementsLink.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
+    await act(async () => observerCallback([
+      { isIntersecting: true, target: summary, boundingClientRect: { top: 120 } } as unknown as IntersectionObserverEntry,
+    ], {} as IntersectionObserver));
+
+    expect(requirementsLink.getAttribute("aria-current")).toBe("location");
+  });
+
   it("follows the section reported by IntersectionObserver", async () => {
     await renderNav();
     const organizer = document.getElementById("organizer")!;
 
     await act(async () => observerCallback([
-      { isIntersecting: true, target: organizer, boundingClientRect: { top: 120 } } as IntersectionObserverEntry,
+      { isIntersecting: true, target: organizer, boundingClientRect: { top: 120 } } as unknown as IntersectionObserverEntry,
     ], {} as IntersectionObserver));
 
     expect(container.querySelector('a[href="#organizer"]')?.getAttribute("aria-current")).toBe("location");
   });
 
+  it("restores the destination position when browser history changes the hash", async () => {
+    await renderNav();
+    scrollIntoView.mockClear();
+    window.history.pushState({}, "", "#participants");
+
+    await act(async () => window.dispatchEvent(new PopStateEvent("popstate")));
+
+    expect(container.querySelector('a[href="#participants"]')?.getAttribute("aria-current")).toBe("location");
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "auto", block: "start" });
+  });
+  it("keeps the active item visible inside the horizontal navigation", async () => {
+    await renderNav();
+    horizontalScroll.mockClear();
+    const organizer = document.getElementById("organizer")!;
+
+    await act(async () => observerCallback([
+      { isIntersecting: true, target: organizer, boundingClientRect: { top: 120 } } as unknown as IntersectionObserverEntry,
+    ], {} as IntersectionObserver));
+
+    expect(horizontalScroll).toHaveBeenCalledWith(expect.objectContaining({ behavior: "auto", left: expect.any(Number) }));
+  });
   it("uses immediate scrolling when reduced motion is requested", async () => {
     vi.mocked(window.matchMedia).mockReturnValue({
       matches: true,

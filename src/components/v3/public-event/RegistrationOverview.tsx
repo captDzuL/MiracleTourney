@@ -19,8 +19,10 @@ export function RegistrationOverview({ view, locale, copy }: {
   const feeLabel = view.registration.feeLabel
     || (view.registration.feeRequired ? copy.feePaid : copy.feeFree);
 
+  const sectionTargetClass = "scroll-mt-[8.5rem] transition-[border-color,box-shadow] motion-reduce:transition-none data-[section-highlighted=true]:border-[var(--color-brand-cyan)] data-[section-highlighted=true]:shadow-[0_0_0_1px_var(--color-brand-cyan)]";
+
   return <div className="grid gap-6">
-    <section id="summary" className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7">
+    <section id="summary" className={`${sectionTargetClass} rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7`}>
       <h2 className="text-xl font-extrabold">{copy.registrationPeriod}</h2>
       <dl className="mt-5 grid gap-4 sm:grid-cols-2">
         <div><dt className="text-sm text-[var(--color-text-muted)]">{copy.opens}</dt><dd className="mt-1 font-bold">{date(view.registration.opensAt, locale, view.event.timezone)}</dd></div>
@@ -28,7 +30,7 @@ export function RegistrationOverview({ view, locale, copy }: {
       </dl>
     </section>
 
-    <section id="participants" className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7">
+    <section id="participants" className={`${sectionTargetClass} rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7`}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div><h2 className="text-xl font-extrabold">{copy.capacity}</h2><p className="mt-1 text-sm text-[var(--color-text-muted)]">{copy.teamCount.replace("{occupied}", String(view.registration.occupiedSlots)).replace("{cap}", String(view.registration.participantCap))}</p></div>
         <p className="text-2xl font-extrabold text-[var(--color-brand-cyan)]">{view.registration.remainingSlots}</p>
@@ -43,7 +45,7 @@ export function RegistrationOverview({ view, locale, copy }: {
       </dl>
     </section>
 
-    <section id="requirements" className="grid gap-4 sm:grid-cols-2">
+    <section id="requirements" className={`${sectionTargetClass} grid rounded-[var(--radius-panel)] gap-4 sm:grid-cols-2`}>
       <div className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">{copy.fee}</h2>
         <p className="mt-3 text-2xl font-extrabold text-[var(--color-brand-cream)]">{feeLabel}</p>

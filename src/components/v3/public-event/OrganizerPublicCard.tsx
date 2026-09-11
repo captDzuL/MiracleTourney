@@ -27,8 +27,9 @@ function localizeDetail(detail: string, locale: "id" | "en") {
 
 export function OrganizerPublicCard({ view, locale, copy }: { view: AdaptivePublicEventViewModel; locale: "id" | "en"; copy: AdaptiveEventCopy }) {
   const contact = <span className="break-all font-extrabold text-[var(--color-brand-cyan)]">{view.organizer.contactValue || "—"}</span>;
-  return <aside id="organizer" className="grid content-start gap-5">
-    <section className="rounded-[var(--radius-panel)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-5 sm:p-6">
+  const sectionTargetClass = "scroll-mt-[8.5rem] transition-[border-color,box-shadow] motion-reduce:transition-none data-[section-highlighted=true]:border-[var(--color-brand-cyan)] data-[section-highlighted=true]:shadow-[0_0_0_1px_var(--color-brand-cyan)]";
+  return <aside className="grid content-start gap-5">
+    <section id="organizer" className={`${sectionTargetClass} rounded-[var(--radius-panel)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-5 sm:p-6`}>
       <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--color-brand-cream)]">{copy.organizer}</p>
       <h2 className="mt-3 flex items-center gap-2 text-xl font-extrabold">{view.organizer.name}{view.organizer.verified ? <ShieldCheck className="h-5 w-5 text-[var(--color-brand-cyan)]" aria-label={copy.verified} /> : null}</h2>
       <div className="mt-6 rounded-[var(--radius-control)] border border-[var(--color-brand-cyan)] bg-[color-mix(in_srgb,var(--color-brand-cyan)_8%,transparent)] p-4">
