@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+const TRUSTED_GITHUB_REPO_ID = "1316699241";
+
 function executeCommand(command, args) {
   return spawnSync(command, args, {
     shell: process.platform === "win32",
@@ -11,8 +13,14 @@ function executeCommand(command, args) {
 
 export function runVercelBuild(env, runCommand = executeCommand) {
   const commands = [];
+  const isTrustedMainCandidate = env.VERCEL_GIT_COMMIT_REF === "main"
+    && env.VERCEL_GIT_REPO_ID === TRUSTED_GITHUB_REPO_ID
+    && !env.VERCEL_GIT_PULL_REQUEST_ID;
+  const isProductionCandidate = env.VERCEL_ENV === "production"
+    || env.VERCEL_TARGET_ENV === "production"
+    || isTrustedMainCandidate;
 
-  if (env.VERCEL_ENV === "production") {
+  if (isProductionCandidate) {
     commands.push(["pnpm", ["exec", "prisma", "migrate", "deploy"]]);
   }
 
