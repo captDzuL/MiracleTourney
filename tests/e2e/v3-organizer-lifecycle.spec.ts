@@ -31,27 +31,32 @@ test.describe("V3 organizer lifecycle", () => {
     await page.getByRole("button", { name: "Create private draft" }).click();
     await expect(page).toHaveURL(/\/id\/organizer\/events\/[^/]+\/overview$/, { timeout: 30_000 });
 
+    await page.getByRole("link", { name: "Tinjau & Terbitkan" }).click();
     await expect(page.getByRole("heading", { name: "Complete before publishing" })).toBeVisible();
     const description = "A complete browser-tested tournament draft for the Miracle V3 organizer lifecycle.";
-    await page.getByLabel("Description").fill(description);
-    await page.getByLabel("Registration opens").fill("2026-10-01T09:00");
-    await page.getByLabel("Registration closes").fill("2026-10-07T21:00");
-    await page.getByLabel("Event starts").fill("2026-10-10T10:00");
-    await page.getByLabel("Venue", { exact: true }).fill("Miracle Test Arena");
-    await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("link", { name: "Identitas" }).click();
+    await page.getByLabel("Deskripsi singkat").fill(description);
+    await page.getByRole("link", { name: "Format & Jadwal" }).click();
+    await page.getByLabel("Event dimulai").fill("2026-10-10T10:00");
+    await page.getByLabel("Pelaksanaan").fill("Miracle Test Arena");
+    await page.getByRole("link", { name: "Registrasi" }).click();
+    await page.getByLabel("Pendaftaran dibuka").fill("2026-10-01T09:00");
+    await page.getByLabel("Pendaftaran ditutup").fill("2026-10-07T21:00");
+    await expect(page.getByRole("status").filter({ hasText: /Tersimpan|Saved/ })).toBeVisible({ timeout: 20_000 });
 
-    const contact = page.locator("section#section-organizer");
-    await contact.getByLabel("Contact channel").fill("WhatsApp");
-    await contact.getByLabel("Contact value").fill("+62 812 0000 0000");
-    await contact.getByRole("button", { name: "Save contact" }).click();
+    await page.getByRole("link", { name: "Tinjau & Terbitkan" }).click();
     await expect(page.getByRole("heading", { name: "Ready to publish" })).toBeVisible({ timeout: 20_000 });
 
     await page.reload();
-    await expect(page.getByLabel("Description")).toHaveValue(description);
-    await expect(page.getByLabel("Venue", { exact: true })).toHaveValue("Miracle Test Arena");
+    await page.getByRole("link", { name: "Identitas" }).click();
+    await expect(page.getByLabel("Deskripsi singkat")).toHaveValue(description);
+    await page.getByRole("link", { name: "Format & Jadwal" }).click();
+    await expect(page.getByLabel("Pelaksanaan")).toHaveValue("Miracle Test Arena");
+    await page.getByRole("link", { name: "Tinjau & Terbitkan" }).click();
+    const review = page.locator("section#section-review");
 
-    await page.getByRole("button", { name: "Create preview" }).click();
-    const previewLink = page.getByRole("link", { name: "Open preview" });
+    await review.getByRole("button", { name: "Create preview" }).click();
+    const previewLink = review.getByRole("link", { name: "Open preview" });
     await expect(previewLink).toBeVisible({ timeout: 20_000 });
     const previewUrl = await previewLink.getAttribute("href");
     expect(previewUrl).toMatch(/^\/id\/preview\/events\//);
@@ -62,14 +67,14 @@ test.describe("V3 organizer lifecycle", () => {
     await expect(guestPage.getByLabel(/pratinjau privat|private preview/i)).toBeVisible();
     await expect(guestPage.getByText(event.name)).toBeVisible();
 
-    await page.getByRole("button", { name: "Revoke link" }).click();
-    await expect(page.getByRole("button", { name: "Create preview" })).toBeVisible({ timeout: 20_000 });
+    await review.getByRole("button", { name: "Revoke link" }).click();
+    await expect(review.getByRole("button", { name: "Create preview" })).toBeVisible({ timeout: 20_000 });
     await guestPage.goto(previewUrl!);
     await expect(guestPage.getByRole("heading", { name: /not found|halaman tidak ditemukan/i })).toBeVisible();
     await guest.close();
 
-    await page.getByRole("button", { name: "Publish event" }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Published" })).toBeVisible({ timeout: 20_000 });
+    await review.getByRole("button", { name: "Publish event" }).click();
+    await expect(page.getByText("Event sudah diterbitkan")).toBeVisible({ timeout: 20_000 });
     await page.goto(`/id/events/${event.slug}`);
     await expect(page.getByRole("heading", { name: event.name })).toBeVisible({ timeout: 20_000 });
   });
