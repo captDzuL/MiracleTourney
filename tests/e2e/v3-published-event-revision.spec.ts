@@ -51,7 +51,7 @@ test.describe.serial("Published Event Revision V3", () => {
     await page.goto("/id/organizer");
     const card = page.locator("article").filter({ hasText: "Flashpeak Registration Closed" }).last();
     await card.getByRole("link", { name: "Edit event" }).click();
-    await page.getByRole("link", { name: "Registrasi" }).click();
+    await page.getByRole("navigation", { name: "Navigasi event" }).getByRole("link", { name: "Registrasi" }).click();
     await expect(page.getByLabel("Pendaftaran dibuka")).toBeDisabled();
     await expect(page.getByLabel("Pendaftaran ditutup")).toBeDisabled();
     await expect(page.getByLabel("Pendaftaran berbayar")).toBeDisabled();
