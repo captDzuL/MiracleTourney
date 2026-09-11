@@ -455,11 +455,11 @@
         "title": "1. Prepare Event",
         "description": "Create, configure, publish, stream."
       },
-      "import": {
       "registration": {
         "title": "2. Registration Center",
         "description": "Native captain flow, imports, and payments."
       },
+      "import": {
         "title": "2. Import Registration",
         "description": "CSV upload, slugs, credentials."
       },
@@ -481,11 +481,11 @@
         "title": "Confirm event readiness",
         "description": "Finish event details, stream metadata, and status before registration import."
       },
-      "import": {
       "registration": {
         "title": "Complete the next registration task",
         "description": "Review captains, fix imports, or share the registration link."
       },
+      "import": {
         "title": "Validate registrations",
         "description": "Use the CSV template, verify event_slug values, then export credentials."
       },

@@ -932,9 +932,18 @@ describe("adminCreateEventAction", () => {
 // ────────────────────────────────────────────────────────────
 
 describe("adminUpdateEventStatusAction", () => {
+  let previousOrganizerWorkspaceFlag: string | undefined;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    previousOrganizerWorkspaceFlag = process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3;
+    process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = "false";
     requireRole.mockResolvedValue(adminSession());
+  });
+
+  afterEach(() => {
+    if (previousOrganizerWorkspaceFlag === undefined) delete process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3;
+    else process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = previousOrganizerWorkspaceFlag;
   });
 
   it("requires an admin session", async () => {

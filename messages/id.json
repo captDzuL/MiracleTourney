@@ -455,11 +455,11 @@
         "title": "1. Siapkan Event",
         "description": "Buat, atur, publish, stream."
       },
-      "import": {
       "registration": {
         "title": "2. Pusat Registrasi",
         "description": "Captain native, impor, dan pembayaran."
       },
+      "import": {
         "title": "2. Import Registrasi",
         "description": "Upload CSV, slug, kredensial."
       },
@@ -481,11 +481,11 @@
         "title": "Pastikan event siap",
         "description": "Lengkapi detail event, metadata stream, dan status sebelum import registrasi."
       },
-      "import": {
       "registration": {
         "title": "Tuntaskan registrasi berikutnya",
         "description": "Tinjau captain, perbaiki impor, atau bagikan link registrasi."
       },
+      "import": {
         "title": "Validasi registrasi",
         "description": "Gunakan template CSV, cek event_slug, lalu export kredensial."
       },
