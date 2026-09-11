@@ -103,6 +103,10 @@
     "watchSource": "Watch source",
     "externalStream": "External platform stream is linked here."
   },
+  "eventPreview": {
+    "bannerTitle": "Private preview",
+    "bannerDescription": "Only people with this link can view this read-only draft."
+  },
   "bracket": {
     "title": "{name} bracket",
     "description": "Single-elimination events render as a round-by-round bracket connected with tree lines.",
@@ -579,5 +583,7 @@
       "rejected": "Rejected",
       "expired": "Expired"
     }
-  }
+  },
+  "v3Shell": {"skipToContent":"Skip to content","primaryNavigation":"Primary navigation","operatorNavigation":"Operator navigation","eventNavigation":"Event navigation","nextAction":"Next action","nextStep":"Next step","openNavigation":"Open navigation","closeNavigation":"Close navigation","organizerHome":"Organizer home"},
+  "v3Footer": {"copyright":"Copyright © Miracle","tagline":"Multi-game community tournament platform","socialLabel":"Miracle social contacts","mobileMenu":"Open navigation"}
 }

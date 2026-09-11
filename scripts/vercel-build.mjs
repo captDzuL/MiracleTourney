@@ -2,6 +2,31 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+const KNOWN_NEON_PROD_HOST = "ep-sparkling-night-azr6wxwd";
+
+function databaseHost(value) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "postgres:" || url.protocol === "postgresql:") && url.hostname ? url.hostname.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function assertVercelBuildDatabaseSafety(env) {
+  if (env.VERCEL_ENV !== "preview") return;
+
+  const productionHost = env.NEON_PROD_HOST?.trim().toLowerCase();
+  const hosts = [databaseHost(env.DATABASE_URL), databaseHost(env.DIRECT_URL)];
+  if (!productionHost || hosts.some((host) => !host)) {
+    throw new Error("Preview builds require DATABASE_URL, DIRECT_URL, and NEON_PROD_HOST so the production database can be rejected.");
+  }
+  if (hosts.some((host) => host.includes(KNOWN_NEON_PROD_HOST) || host.includes(productionHost))) {
+    throw new Error("Preview build blocked: DATABASE_URL or DIRECT_URL points to the production Neon branch.");
+  }
+}
+
 function executeCommand(command, args) {
   return spawnSync(command, args, {
     shell: process.platform === "win32",
@@ -10,6 +35,7 @@ function executeCommand(command, args) {
 }
 
 export function runVercelBuild(env, runCommand = executeCommand) {
+  assertVercelBuildDatabaseSafety(env);
   const commands = [];
 
   if (env.VERCEL_ENV === "production") {

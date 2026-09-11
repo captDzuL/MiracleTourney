@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import {
   DEFAULT_PANEL_THEME_MODE,
   PANEL_THEME_ATTRIBUTE,
+  PANEL_THEME_CHANGE_EVENT,
   PANEL_THEME_MODES,
   PANEL_THEME_STORAGE_KEY,
   PREFERS_DARK_QUERY,
@@ -22,13 +23,11 @@ const ICONS: Record<PanelThemeMode, typeof Sun> = {
   system: Monitor,
 };
 
-export function PanelThemeToggle() {
+export function PanelThemeToggle({ variant = "legacy" }: { variant?: "legacy" | "v3" }) {
   const t = useTranslations("panelTheme");
-
-  // The first client render must match the server render, so start on the
-  // default and adopt the stored value in an effect.
   const [mode, setMode] = useState<PanelThemeMode>(DEFAULT_PANEL_THEME_MODE);
   const [hydrated, setHydrated] = useState(false);
+  const v3 = variant === "v3";
 
   useEffect(() => {
     let stored: string | null = null;
@@ -41,36 +40,27 @@ export function PanelThemeToggle() {
     setHydrated(true);
   }, []);
 
-  useEffect(() => {
-    if (!hydrated) return;
-
-    const media = window.matchMedia(PREFERS_DARK_QUERY);
-    const apply = () => {
-      document.documentElement.setAttribute(
-        PANEL_THEME_ATTRIBUTE,
-        resolvePanelTheme(mode, media.matches),
-      );
-    };
-
-    apply();
-    if (mode !== "system") return;
-
-    media.addEventListener("change", apply);
-    return () => media.removeEventListener("change", apply);
-  }, [hydrated, mode]);
-
   function choose(next: PanelThemeMode) {
     setMode(next);
+    let persisted = false;
     try {
       window.localStorage.setItem(PANEL_THEME_STORAGE_KEY, next);
+      persisted = true;
     } catch {
       // Preference simply will not persist; the current page still switches.
     }
+    document.documentElement.setAttribute(
+      PANEL_THEME_ATTRIBUTE,
+      resolvePanelTheme(next, window.matchMedia(PREFERS_DARK_QUERY).matches),
+    );
+    if (persisted) window.dispatchEvent(new Event(PANEL_THEME_CHANGE_EVENT));
   }
 
   return (
     <div
-      className="inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5"
+      className={v3
+        ? "inline-flex items-center gap-0.5 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-0.5"
+        : "inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5"}
       role="group"
       aria-label={t("label")}
     >
@@ -86,8 +76,16 @@ export function PanelThemeToggle() {
             aria-pressed={active}
             title={t(option)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
-              active ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-800",
+              v3
+                ? "miracle-focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors"
+                : "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
+              v3
+                ? active
+                  ? "bg-[var(--color-surface-selected)] text-[var(--color-text)]"
+                  : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+                : active
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-500 hover:text-slate-800",
             )}
           >
             <Icon className="h-3.5 w-3.5" aria-hidden="true" />

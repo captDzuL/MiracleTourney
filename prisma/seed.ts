@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { TOURNAMENT_FORMAT_PRESETS } from "../src/lib/tournament/formats/types";
 
 const prisma = new PrismaClient();
 const isTestMode = process.argv.includes("--test");
@@ -13,6 +14,13 @@ function teamTag(name: string) {
     .toUpperCase();
 }
 
+async function seedPlatformProfile() {
+  await prisma.platformProfile.upsert({
+    where: { id: "global" },
+    update: { displayName: "Miracle", contactChannel: "WhatsApp", contactValue: "+62 811 0000 0000" },
+    create: { id: "global", displayName: "Miracle", contactChannel: "WhatsApp", contactValue: "+62 811 0000 0000" },
+  });
+}
 function demoTeamId(eventSlug: string, index: number) {
   return `team-${eventSlug}-${index + 1}`;
 }
@@ -27,6 +35,18 @@ async function seedTest() {
     create: { email: "test-admin@miraclefc.gg", name: "Test Admin", role: "platform_admin", passwordHash: adminPasswordHash },
   });
 
+  const organizerPasswordHash = await bcrypt.hash("TestOrganizer123!", 10);
+  const organizer = await prisma.user.upsert({
+    where: { email: "test-organizer@miraclefc.gg" },
+    update: { name: "Test Organizer", role: "organizer", passwordHash: organizerPasswordHash },
+    create: { email: "test-organizer@miraclefc.gg", name: "Test Organizer", role: "organizer", passwordHash: organizerPasswordHash },
+  });
+  await prisma.organizerProfile.upsert({
+    where: { userId: organizer.id },
+    update: { organizationName: "Test Organizer", contactChannel: "WhatsApp", contactValue: "+62 811 0000 0001" },
+    create: { userId: organizer.id, organizationName: "Test Organizer", contactChannel: "WhatsApp", contactValue: "+62 811 0000 0001" },
+  });
+  await seedPlatformProfile();
   const captain = await prisma.user.upsert({
     where: { email: "test-captain@miraclefc.gg" },
     update: { name: "Test Captain", role: "captain", passwordHash: captainPasswordHash },
@@ -89,6 +109,8 @@ async function main() {
     return;
   }
 
+  await seedPlatformProfile();
+
   const adminPasswordHash = await bcrypt.hash(
     process.env.SEED_ADMIN_PASSWORD ?? "Miracle2026!",
     12,
@@ -143,6 +165,90 @@ async function main() {
       name: "Mobile Legends Organizer",
       role: "organizer",
       passwordHash: organizerPasswordHash,
+    },
+  });
+
+  await prisma.organizerProfile.upsert({
+    where: { userId: organizerA.id },
+    update: { organizationName: "Flashpeak Organizer", contactChannel: "WhatsApp", contactValue: "+62 812 0000 0000" },
+    create: { userId: organizerA.id, organizationName: "Flashpeak Organizer", contactChannel: "WhatsApp", contactValue: "+62 812 0000 0000" },
+  });
+
+  const kurokoSummerEvent = await prisma.event.upsert({
+    where: { slug: "kuroko-summer-cup" },
+    update: {
+      name: "Kuroko Street Rival Summer Cup", description: "Deterministic draft event used by legacy registration and bracket E2E.",
+      gameId: "game-kuroko", gameModeId: "mode-kuroko-3v3", format: "Single Elimination", formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      status: "Draft", participantCap: 8, registrationWindow: "October 1, 2026 - October 7, 2026", startsAt: "October 10, 2026",
+      registrationOpensAt: new Date("2026-10-01T02:00:00.000Z"), registrationClosesAt: new Date("2026-10-07T14:00:00.000Z"), eventStartsAt: new Date("2026-10-10T03:00:00.000Z"),
+      timezone: "Asia/Jakarta", venue: "Miracle Test Arena", registrationFeeRequired: false, registrationFeeAmount: null,
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+    },
+    create: {
+      slug: "kuroko-summer-cup", name: "Kuroko Street Rival Summer Cup", description: "Deterministic draft event used by legacy registration and bracket E2E.",
+      gameId: "game-kuroko", gameModeId: "mode-kuroko-3v3", format: "Single Elimination", formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      status: "Draft", participantCap: 8, registrationWindow: "October 1, 2026 - October 7, 2026", startsAt: "October 10, 2026",
+      registrationOpensAt: new Date("2026-10-01T02:00:00.000Z"), registrationClosesAt: new Date("2026-10-07T14:00:00.000Z"), eventStartsAt: new Date("2026-10-10T03:00:00.000Z"),
+      timezone: "Asia/Jakarta", venue: "Miracle Test Arena", registrationFeeRequired: false,
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+    },
+  });
+  for (const index of Array.from({ length: 8 }, (_, value) => value + 1)) {
+    const tag = `KS${index}`;
+    await prisma.team.upsert({
+      where: { eventId_tag: { eventId: kurokoSummerEvent.id, tag } },
+      update: { name: `Kuroko Seed Team ${index}`, captainId: captain.id, source: "e2e" },
+      create: { eventId: kurokoSummerEvent.id, name: `Kuroko Seed Team ${index}`, tag, logoText: tag, captainId: captain.id, source: "e2e" },
+    });
+  }
+
+  await prisma.event.upsert({
+    where: { slug: "flashpeak-revision-published" },
+    update: {
+      name: "Flashpeak Revision Published", description: "Original public description for revision E2E.",
+      gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", format: "Single Elimination",
+      formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination, status: "Published", participantCap: 16,
+      registrationWindow: "September 10, 2026 - September 20, 2026", startsAt: "September 28, 2026",
+      registrationOpensAt: new Date("2026-09-10T02:00:00.000Z"), registrationClosesAt: new Date("2026-09-20T14:00:00.000Z"),
+      eventStartsAt: new Date("2026-09-28T03:00:00.000Z"), timezone: "Asia/Jakarta", venue: "Revision Arena",
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+      registrationFeeRequired: false, registrationFeeAmount: null, prizePoolLabel: "Original prize",
+    },
+    create: {
+      slug: "flashpeak-revision-published", name: "Flashpeak Revision Published",
+      description: "Original public description for revision E2E.",
+      gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", format: "Single Elimination",
+      formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination, status: "Published", participantCap: 16,
+      registrationWindow: "September 10, 2026 - September 20, 2026", startsAt: "September 28, 2026",
+      registrationOpensAt: new Date("2026-09-10T02:00:00.000Z"), registrationClosesAt: new Date("2026-09-20T14:00:00.000Z"),
+      eventStartsAt: new Date("2026-09-28T03:00:00.000Z"), timezone: "Asia/Jakarta", venue: "Revision Arena",
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+      registrationFeeRequired: false, prizePoolLabel: "Original prize",
+    },
+  });
+
+  await prisma.event.upsert({
+    where: { slug: "flashpeak-revision-closed" },
+    update: {
+      name: "Flashpeak Registration Closed", description: "Closed registration revision fixture.",
+      gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", format: "Single Elimination",
+      formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination, status: "Registration Closed", participantCap: 16,
+      registrationWindow: "September 1, 2026 - September 5, 2026", startsAt: "September 15, 2026",
+      registrationOpensAt: new Date("2026-09-01T02:00:00.000Z"), registrationClosesAt: new Date("2026-09-05T14:00:00.000Z"),
+      eventStartsAt: new Date("2026-09-15T03:00:00.000Z"), timezone: "Asia/Jakarta", venue: "Closed Arena",
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+      registrationFeeRequired: true, registrationFeeAmount: 50000,
+    },
+    create: {
+      slug: "flashpeak-revision-closed", name: "Flashpeak Registration Closed",
+      description: "Closed registration revision fixture.",
+      gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", format: "Single Elimination",
+      formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination, status: "Registration Closed", participantCap: 16,
+      registrationWindow: "September 1, 2026 - September 5, 2026", startsAt: "September 15, 2026",
+      registrationOpensAt: new Date("2026-09-01T02:00:00.000Z"), registrationClosesAt: new Date("2026-09-05T14:00:00.000Z"),
+      eventStartsAt: new Date("2026-09-15T03:00:00.000Z"), timezone: "Asia/Jakarta", venue: "Closed Arena",
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+      registrationFeeRequired: true, registrationFeeAmount: 50000,
     },
   });
 

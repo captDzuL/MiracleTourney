@@ -1,8 +1,19 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { isFeatureEnabled } from "./feature-flags";
 
-const OWNED_KEYS = ["FEATURE_FLAG_PUBLIC_VISUAL_V2", "FEATURE_FLAG_AI_EVENT_ART"] as const;
+const OWNED_KEYS = [
+  "FEATURE_FLAG_PUBLIC_VISUAL_V2",
+  "FEATURE_FLAG_AI_EVENT_ART",
+  "FEATURE_FLAG_UI_V3_FOUNDATION",
+  "FEATURE_FLAG_ORGANIZER_WORKSPACE_V3",
+  "FEATURE_FLAG_REGISTRATION_WORKSPACE_V3",
+  "FEATURE_FLAG_COMPETITION_OPERATIONS_V3",
+] as const;
+
+beforeEach(() => {
+  for (const key of OWNED_KEYS) delete process.env[key];
+});
 
 afterEach(() => {
   for (const key of OWNED_KEYS) delete process.env[key];
@@ -15,6 +26,36 @@ describe("public visual feature flags", () => {
 
   it("defaults ai_event_art to false", () => {
     expect(isFeatureEnabled("ai_event_art")).toBe(false);
+  });
+
+  it("defaults ui_v3_foundation to false", () => {
+    expect(isFeatureEnabled("ui_v3_foundation")).toBe(false);
+  });
+
+  it("keeps the organizer workspace disabled until it is explicitly enabled", () => {
+    expect(isFeatureEnabled("organizer_workspace_v3")).toBe(false);
+
+    process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = "true";
+    expect(isFeatureEnabled("organizer_workspace_v3")).toBe(true);
+  });
+
+  it("keeps the registration workspace disabled until it is explicitly enabled", () => {
+    expect(isFeatureEnabled("registration_workspace_v3")).toBe(false);
+
+    process.env.FEATURE_FLAG_REGISTRATION_WORKSPACE_V3 = "true";
+    expect(isFeatureEnabled("registration_workspace_v3")).toBe(true);
+  });
+
+  it("keeps competition operations disabled until explicitly enabled", () => {
+    expect(isFeatureEnabled("competition_operations_v3")).toBe(false);
+
+    process.env.FEATURE_FLAG_COMPETITION_OPERATIONS_V3 = "true";
+    expect(isFeatureEnabled("competition_operations_v3")).toBe(true);
+  });
+
+  it("enables ui_v3_foundation when the environment override is true", () => {
+    process.env.FEATURE_FLAG_UI_V3_FOUNDATION = "true";
+    expect(isFeatureEnabled("ui_v3_foundation")).toBe(true);
   });
 
   it("enables public_visual_v2 only for the exact string \"true\"", () => {

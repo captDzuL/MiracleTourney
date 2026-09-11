@@ -35,6 +35,7 @@ const {
   revalidateTag,
   requireRole,
   sendEmail,
+  publishEvent,
   setEventStatus,
   setEventVisualFocalPoint,
   setMatchGames,
@@ -89,6 +90,7 @@ const {
   revalidateTag: vi.fn(),
   requireRole: vi.fn(),
   sendEmail: vi.fn(),
+  publishEvent: vi.fn(),
   setEventStatus: vi.fn(),
   setEventVisualFocalPoint: vi.fn(),
   setMatchGames: vi.fn(),
@@ -173,6 +175,7 @@ vi.mock("@/lib/certificate/generate", () => ({
 vi.mock("@/lib/platform/password-reset", () => ({
   createPasswordResetToken,
 }));
+vi.mock("@/lib/events/publish-readiness", () => ({ publishEvent }));
 vi.mock("@/lib/email/send", () => ({
   sendEmail,
 }));
@@ -199,6 +202,8 @@ import {
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
   adminUploadCharacterArtAction,
+  organizerUploadEventLogoAction,
+  organizerUploadEventVisualAction,
   adminUploadEventVisualAction,
   adminUpdateEventStatusAction,
   adminUpdateEventPublicInfoAction,
@@ -263,6 +268,20 @@ describe("loginAction", () => {
     expect(signIn).toHaveBeenCalledWith("admin@test.com", "secret123");
   });
 
+  it("redirects organizer to /organizer on valid credentials", async () => {
+    signIn.mockResolvedValue({ ok: true, user: { role: "organizer" } });
+
+    await expect(loginAction(fd({ email: "organizer@test.com", password: "secret123" }))).rejects.toThrow(
+      "REDIRECT:/organizer",
+    );
+  });
+  it("requires a newly provisioned organizer to change the temporary password first", async () => {
+    signIn.mockResolvedValue({ ok: true, user: { role: "organizer", mustChangePassword: true } });
+
+    await expect(loginAction(fd({ email: "organizer@test.com", password: "Temporary123!" }))).rejects.toThrow(
+      "REDIRECT:/organizer/change-password",
+    );
+  });
   it("redirects captain to /captain on valid credentials", async () => {
     signIn.mockResolvedValue({ ok: true, user: { role: "captain" } });
 
@@ -909,6 +928,32 @@ describe("adminUpdateEventStatusAction", () => {
     await expect(
       adminUpdateEventStatusAction(fd({ eventId: "e-missing", status: "Published" })),
     ).rejects.toThrow("REDIRECT:/admin?error=");
+  });
+  it.each(["conflict", "not_draft"] as const)("does not report legacy publication success for %s", async (status) => {
+    process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = "true";
+    publishEvent.mockResolvedValue(status === "not_draft" ? { status, slug: "miracle-league" } : { status });
+
+    try {
+      await expect(
+        adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Published" })),
+      ).rejects.toThrow("REDIRECT:/admin?error=event-publish-conflict");
+    } finally {
+      delete process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3;
+    }
+  });
+  it("uses the shared readiness guard for legacy publish while organizer V3 is enabled", async () => {
+    process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = "true";
+    publishEvent.mockResolvedValue({ status: "blocked", readiness: { incomplete: [{ code: "description" }] } });
+
+    try {
+      await expect(
+        adminUpdateEventStatusAction(fd({ eventId: "e1", status: "Published" })),
+      ).rejects.toThrow("REDIRECT:/admin?error=event-not-ready");
+      expect(publishEvent).toHaveBeenCalledWith("e1", { id: "admin-1", role: "platform_admin" });
+      expect(setEventStatus).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3;
+    }
   });
 });
 
@@ -1670,6 +1715,33 @@ describe("event visual revision actions", () => {
     );
     expect(revalidateTag).toHaveBeenCalledWith("events");
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("returns a workspace poster upload to the locale-aware visual section", async () => {
+    await expect(
+      organizerUploadEventVisualAction(fd({
+        eventId: "event-safe",
+        locale: "id",
+        rightsAttestation: "confirmed",
+        eventVisual: validPngFile(),
+      })),
+    ).rejects.toThrow("REDIRECT:/id/organizer/events/event-safe/overview?success=event-visual-uploaded#section-visuals");
+
+    expect(createEventVisualAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "organizer" }),
+      expect.objectContaining({ eventId: "event-safe", status: "approved" }),
+    );
+  });
+
+  it("returns a workspace logo upload failure to the same visual section", async () => {
+    await expect(
+      organizerUploadEventLogoAction(fd({
+        eventId: "event-safe",
+        locale: "en",
+      })),
+    ).rejects.toThrow("REDIRECT:/en/organizer/events/event-safe/overview?error=");
+
+    expect(updateEventBrandAssets).not.toHaveBeenCalled();
   });
 
   it("approves an AI revision and activates it through the repository boundary", async () => {

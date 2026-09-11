@@ -1,0 +1,45 @@
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap");
+  .logo-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:24px;font-family:Montserrat,sans-serif}.logo-choice{border:1px solid #dbe2ef;border-radius:17px;overflow:hidden;background:#f9f7f7;cursor:pointer;transition:.18s ease}.logo-choice:hover{transform:translateY(-2px);box-shadow:0 14px 32px rgba(17,45,78,.11)}.logo-choice.selected{outline:3px solid #3f72af;outline-offset:2px}
+  .sample{min-height:330px;background:#112d4e;color:#f9f7f7;position:relative;overflow:hidden}.nav{height:40px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 12px;border-bottom:1px solid rgba(249,247,247,.18);font-size:8px}.nav b:nth-child(2){letter-spacing:.15em}.nav span:last-child{text-align:right}
+  .hero{display:grid;grid-template-columns:1fr 40%;gap:12px;padding:24px 17px 18px;align-items:center}.info{min-width:0}.eyebrow{font-size:8px;letter-spacing:.13em;text-transform:uppercase;opacity:.68}.title{font-size:20px;line-height:1.02;font-weight:850;margin:7px 0}.desc{font-size:9px;line-height:1.5;opacity:.7}.cta{display:inline-block;margin-top:12px;padding:7px 9px;border-radius:7px;background:#3f72af;font-size:8px;font-weight:800}.event-logo{width:48px;height:48px;border-radius:12px;background:#f9f7f7;color:#112d4e;display:grid;place-items:center;text-align:center;font-size:8px;font-weight:900;box-shadow:0 7px 18px rgba(0,0,0,.2)}.logo-line{display:flex;align-items:center;gap:10px;margin-bottom:10px}.logo-line .event-logo{flex:0 0 auto}.identity{font-size:8px;opacity:.68}.identity b{display:block;font-size:9px;color:#f9f7f7;opacity:1;margin-bottom:2px}
+  .poster-shell{position:relative}.poster{aspect-ratio:4/5;border:3px solid #f9f7f7;border-radius:9px;background:#3f72af;color:#f9f7f7;padding:11px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 10px 24px rgba(0,0,0,.24)}.poster small{font-size:6px;letter-spacing:.11em}.poster strong{font-size:17px;line-height:.9;font-weight:900}.poster span{font-size:6px;font-weight:750}.poster-logo{position:absolute;left:-13px;bottom:-13px}.top-logo{margin-bottom:13px}.brand-row{display:flex;align-items:center;gap:8px;margin-bottom:13px;padding-bottom:10px;border-bottom:1px solid rgba(249,247,247,.16)}.brand-row .event-logo{width:42px;height:42px}
+  .meta{display:grid;grid-template-columns:repeat(3,1fr);background:#dbe2ef;gap:1px;color:#112d4e}.meta div{background:#f9f7f7;padding:10px 8px}.meta small{display:block;font-size:6px;text-transform:uppercase;opacity:.55}.meta b{font-size:8px;display:block;margin-top:3px}.copy{padding:15px}.line{height:6px;background:rgba(219,226,239,.25);border-radius:9px;margin:6px 0}.line.short{width:60%}
+  .card-body{padding:14px 15px;border-top:1px solid #dbe2ef}.card-body h3{margin:0 0 5px;color:#112d4e;font-size:15px}.card-body p{margin:0;color:rgba(17,45,78,.65);font-size:11px;line-height:1.5}.tag{display:inline-flex;margin-top:9px;background:#dbe2ef;color:#112d4e;border-radius:999px;padding:4px 8px;font-size:9px;font-weight:750}
+  .asset-note{margin-top:20px;background:#f9f7f7;border:1px solid #dbe2ef;border-radius:13px;padding:15px 17px;color:#112d4e;font-family:Montserrat,sans-serif}.asset-note b{font-size:13px}.asset-note p{margin:5px 0 0;font-size:11px;line-height:1.55;opacity:.68}
+  @media(max-width:900px){.logo-options{grid-template-columns:1fr}.hero{grid-template-columns:1fr 135px}}
+</style>
+
+<h2>Di mana logo event ditempatkan?</h2>
+<p class="subtitle">Poster tetap menjadi visual promosi di kanan. Bandingkan tiga cara menampilkan logo event sebagai identitas.</p>
+
+<div class="logo-options">
+  <div class="logo-choice option" data-choice="logo-by-title" onclick="toggleSelect(this)">
+    <div class="sample">
+      <div class="nav"><b>M</b><b>EVENT</b><span>Masuk</span></div>
+      <div class="hero"><div class="info"><div class="logo-line"><div class="event-logo">MOC<br>S2</div><div class="identity"><b>Miracle Open Cup</b>oleh Miracle Esports</div></div><span class="eyebrow">Turnamen komunitas</span><div class="title">Miracle Open Cup Season 2</div><div class="desc">Kompetisi Mobile Legends untuk tim komunitas.</div><span class="cta">Daftar sekarang</span></div><div class="poster-shell"><div class="poster"><small>MIRACLE LEAGUE · 2026</small><strong>OPEN<br>CUP<br>S2</strong><span>32 TEAMS · JAKARTA</span></div></div></div>
+      <div class="meta"><div><small>Tanggal</small><b>20–24 Sep</b></div><div><small>Lokasi</small><b>Hybrid</b></div><div><small>Hadiah</small><b>Rp10 Juta</b></div></div><div class="copy"><div class="line"></div><div class="line short"></div></div>
+    </div>
+    <div class="card-body"><h3>A · Dekat judul</h3><p>Logo membangun identitas sebelum pengunjung membaca nama dan detail event. Poster tetap utuh.</p><span class="tag">Rekomendasi</span></div>
+  </div>
+
+  <div class="logo-choice option" data-choice="logo-on-poster" onclick="toggleSelect(this)">
+    <div class="sample">
+      <div class="nav"><b>M</b><b>EVENT</b><span>Masuk</span></div>
+      <div class="hero"><div class="info"><span class="eyebrow">Turnamen komunitas</span><div class="title">Miracle Open Cup Season 2</div><div class="desc">Kompetisi Mobile Legends untuk tim komunitas.</div><span class="cta">Daftar sekarang</span></div><div class="poster-shell"><div class="poster"><small>MIRACLE LEAGUE · 2026</small><strong>OPEN<br>CUP<br>S2</strong><span>32 TEAMS · JAKARTA</span></div><div class="event-logo poster-logo">MOC<br>S2</div></div></div>
+      <div class="meta"><div><small>Tanggal</small><b>20–24 Sep</b></div><div><small>Lokasi</small><b>Hybrid</b></div><div><small>Hadiah</small><b>Rp10 Juta</b></div></div><div class="copy"><div class="line"></div><div class="line short"></div></div>
+    </div>
+    <div class="card-body"><h3>B · Menempel pada poster</h3><p>Lebih ekspresif, tetapi logo dapat menutupi ilustrasi dan sulit konsisten pada berbagai poster.</p></div>
+  </div>
+
+  <div class="logo-choice option" data-choice="logo-separate-row" onclick="toggleSelect(this)">
+    <div class="sample">
+      <div class="nav"><b>M</b><b>EVENT</b><span>Masuk</span></div>
+      <div class="hero" style="display:block"><div class="brand-row"><div class="event-logo">MOC<br>S2</div><div class="identity"><b>Miracle Open Cup</b>Diselenggarakan Miracle Esports</div></div><div style="display:grid;grid-template-columns:1fr 38%;gap:13px;align-items:center"><div class="info"><span class="eyebrow">Turnamen komunitas</span><div class="title">Miracle Open Cup Season 2</div><div class="desc">Kompetisi Mobile Legends untuk tim komunitas.</div><span class="cta">Daftar sekarang</span></div><div class="poster-shell"><div class="poster"><small>MIRACLE LEAGUE · 2026</small><strong>OPEN<br>CUP<br>S2</strong><span>32 TEAMS</span></div></div></div></div>
+      <div class="meta"><div><small>Tanggal</small><b>20–24 Sep</b></div><div><small>Lokasi</small><b>Hybrid</b></div><div><small>Hadiah</small><b>Rp10 Juta</b></div></div>
+    </div>
+    <div class="card-body"><h3>C · Baris identitas sendiri</h3><p>Logo dan organizer sangat jelas, tetapi hero menjadi lebih tinggi dan informasinya terasa terpisah.</p></div>
+  </div>
+</div>
+
+<div class="asset-note"><b>Dua input berbeda di wizard</b><p>Logo event: persegi 1:1, diunggah pada langkah Identitas. Poster event: potret 4:5, diunggah pada langkah Halaman Publik. Keduanya memiliki preview, fallback, dan panduan ukuran sendiri.</p></div>

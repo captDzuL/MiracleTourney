@@ -7,6 +7,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { publishEvent } from "@/lib/events/publish-readiness";
 import { prisma } from "@/lib/platform/db";
 import { createPasswordResetToken, consumePasswordResetToken } from "@/lib/platform/password-reset";
 import { routing } from "@/i18n/routing";
@@ -192,7 +194,7 @@ function appendActionError(basePath: string, message: string) {
  * magic bytes, and finally real decodability through `sharp` (which also gives
  * the dimensions we persist on a visual revision).
  */
-async function uploadImageAsset({
+export async function uploadImageAsset({
   file,
   folder,
   entityId,
@@ -325,7 +327,7 @@ export async function captainSignUpAction(formData: FormData) {
   await redirectToActiveLocale("/captain?success=registered" as never);
 }
 
-/** Authenticates a user by email/password and redirects to /admin or /captain based on role. */
+/** Authenticates a user by email/password and redirects to their role-specific workspace. */
 export async function loginAction(formData: FormData) {
   const requestedLocale = String(formData.get("locale") ?? "").trim();
   const email = z.string().email().parse(formData.get("email"));
@@ -352,7 +354,9 @@ export async function loginAction(formData: FormData) {
   }
 
   await redirectToRequestedLocale(
-    user.role === "platform_admin" || user.role === "organizer" || user.role === "admin" ? "/admin" : "/captain",
+    user.role === "organizer" && user.mustChangePassword
+      ? "/organizer/change-password"
+      : user.role === "organizer" ? "/organizer" : user.role === "platform_admin" || user.role === "admin" ? "/admin" : "/captain",
     requestedLocale,
   );
 }
@@ -770,6 +774,28 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
   });
 
   await assertUserCanManageEvent(user, input.eventId);
+
+  if (input.status === "Published" && isFeatureEnabled("organizer_workspace_v3")) {
+    const publication = await publishEvent(input.eventId, {
+      id: user.id,
+      role: z.enum(["organizer", "platform_admin", "admin"]).parse(user.role),
+    });
+    if (publication.status === "not_found") {
+      return redirectToActiveLocale("/admin?error=Event%20not%20found.");
+    }
+    if (publication.status === "blocked") {
+      return redirectToActiveLocale("/admin?error=event-not-ready");
+    }
+
+    if (publication.status !== "published" && publication.status !== "already_published") {
+      return redirectToActiveLocale("/admin?error=event-publish-conflict");
+    }
+
+    revalidateTag("events");
+    revalidatePath("/", "layout");
+    return redirectToActiveLocale(`/admin?success=event-status-updated&event=${publication.slug}`);
+  }
+
   const event = await setEventStatus(input.eventId, input.status);
 
   if (!event) {
@@ -1412,7 +1438,7 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
   await redirectToActiveLocale(`/admin?success=character-art-uploaded`);
 }
 
-export async function adminUploadEventLogoAction(formData: FormData) {
+async function uploadEventLogo(formData: FormData, returnPath: string) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
@@ -1424,16 +1450,27 @@ export async function adminUploadEventLogoAction(formData: FormData) {
       entityId: eventId,
       label: "Event logo",
       maxBytes: MAX_LOGO_IMAGE_BYTES,
+      errorPath: returnPath,
     });
     await updateEventBrandAssets(eventId, { logoUrl: asset.url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+    redirect(appendActionError(returnPath, message) as never);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=event-logo-uploaded`);
+  redirect(`${returnPath}?success=event-logo-uploaded#section-visuals` as never);
+}
+
+export async function adminUploadEventLogoAction(formData: FormData) {
+  return uploadEventLogo(formData, "/admin");
+}
+
+export async function organizerUploadEventLogoAction(formData: FormData) {
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const locale = z.enum(["id", "en"]).parse(formData.get("locale"));
+  return uploadEventLogo(formData, `/${locale}/organizer/events/${eventId}/overview`);
 }
 
 /**
@@ -1449,7 +1486,7 @@ const DUAL_WRITE_LEGACY_EVENT_IMAGE = true;
  * Organizer uploads are trusted after the rights attestation, so the revision
  * is created already approved and then activated through the repository.
  */
-export async function adminUploadEventVisualAction(formData: FormData) {
+async function uploadEventVisual(formData: FormData, returnPath: string) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
 
@@ -1466,6 +1503,7 @@ export async function adminUploadEventVisualAction(formData: FormData) {
       entityId: eventId,
       label: "Event background",
       maxBytes: MAX_BACKGROUND_IMAGE_BYTES,
+      errorPath: returnPath,
     });
 
     const revision = await createEventVisualAsset(user, {
@@ -1484,12 +1522,22 @@ export async function adminUploadEventVisualAction(formData: FormData) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+    redirect(appendActionError(returnPath, message) as never);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=event-visual-uploaded`);
+  redirect(`${returnPath}?success=event-visual-uploaded#section-visuals` as never);
+}
+
+export async function adminUploadEventVisualAction(formData: FormData) {
+  return uploadEventVisual(formData, "/admin");
+}
+
+export async function organizerUploadEventVisualAction(formData: FormData) {
+  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const locale = z.enum(["id", "en"]).parse(formData.get("locale"));
+  return uploadEventVisual(formData, `/${locale}/organizer/events/${eventId}/overview`);
 }
 
 /** Approves a revision that is waiting for review and makes it the active one. */

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
+import { TOURNAMENT_FORMAT_PRESETS } from "../../src/lib/tournament/formats/types";
 
 const prisma = new PrismaClient();
 
@@ -152,6 +153,24 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   const eventId = new URL(page.url()).searchParams.get("activeEventId");
   if (!eventId) throw new Error("Expected the created Flashpeak event to become active.");
 
+  const organizer = await prisma.user.findUniqueOrThrow({ where: { email: "organizer-a@miraclefc.gg" } });
+  await prisma.organizerProfile.upsert({
+    where: { userId: organizer.id },
+    update: { organizationName: organizer.name, contactChannel: "WhatsApp", contactValue: "+62 812 0000 0000" },
+    create: { userId: organizer.id, organizationName: organizer.name, contactChannel: "WhatsApp", contactValue: "+62 812 0000 0000" },
+  });
+  await prisma.event.update({
+    where: { id: eventId },
+    data: {
+      description: "Ready legacy admin event for V3 publish readiness coverage.",
+      formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      registrationOpensAt: new Date("2026-10-01T02:00:00.000Z"),
+      registrationClosesAt: new Date("2026-10-07T14:00:00.000Z"),
+      eventStartsAt: new Date("2026-10-10T03:00:00.000Z"),
+      timezone: "Asia/Jakarta", venue: "Miracle Test Arena", registrationFeeRequired: false,
+      organizerUserId: organizer.id, organizerName: organizer.name,
+    },
+  });
   const eventStatusForm = page.locator("form").filter({
     has: page.getByRole("button", { name: /save event status|simpan status event/i }),
   });

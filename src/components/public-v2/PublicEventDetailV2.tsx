@@ -31,6 +31,7 @@ export type PublicEventDetailV2Props = {
   locale?: "id" | "en";
   labels: PublicEventDetailV2Labels;
   children?: React.ReactNode;
+  readOnly?: boolean;
 };
 
 const SECTIONS = ["participants", "bracket", "standings", "leaderboards"] as const;
@@ -58,6 +59,7 @@ export function PublicEventDetailV2({
   locale,
   labels,
   children,
+  readOnly = false,
 }: PublicEventDetailV2Props) {
   const isLive = Boolean(event.stream?.enabled && event.stream.isLive);
   const sectionLabels: Record<(typeof SECTIONS)[number], string> = {
@@ -91,9 +93,10 @@ export function PublicEventDetailV2({
             ) : null}
           </dl>
 
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <ShareButton />
-            {event.registrationUrl ? (
+          {!readOnly ? (
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <ShareButton />
+              {event.registrationUrl ? (
               <a
                 data-testid="pv-detail-register"
                 className="pv-button"
@@ -104,8 +107,9 @@ export function PublicEventDetailV2({
                 {labels.register}
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </a>
-            ) : null}
-          </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="relative">
@@ -124,7 +128,7 @@ export function PublicEventDetailV2({
         </div>
       </section>
 
-      <section className="grid gap-4">
+      {!readOnly ? <section className="grid gap-4">
         <h2 className="text-xl">{labels.quickLinks}</h2>
         <ul className="grid gap-px border border-[var(--pv-rule)] bg-[var(--pv-rule)] sm:grid-cols-2 lg:grid-cols-4">
           {SECTIONS.map((section) => (
@@ -140,7 +144,7 @@ export function PublicEventDetailV2({
             </li>
           ))}
         </ul>
-      </section>
+      </section> : null}
 
       {children ? <div className="pv-event-detail__extras grid gap-6">{children}</div> : null}
     </div>

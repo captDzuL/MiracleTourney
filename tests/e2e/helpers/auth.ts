@@ -1,5 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
+let loginClientSequence = 0;
+
 export async function loginWithCredentials(
   page: Page,
   {
@@ -14,19 +16,20 @@ export async function loginWithCredentials(
     destination: RegExp;
   },
 ) {
-  await page.goto(`/${locale}/login`);
-  await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
+  // Each browser login represents a separate client. A unique RFC 2544 test-net
+  // address keeps this suite from intentionally triggering the production per-IP
+  // brute-force limit while preserving that middleware protection in every environment.
+  loginClientSequence += 1;
+  await page.setExtraHTTPHeaders({ "x-forwarded-for": `198.18.0.${(loginClientSequence % 250) + 1}` });
+  await page.goto(`/${locale}/login`, { waitUntil: "domcontentloaded", timeout: 10_000 });
+  const emailField = page.getByLabel(/email/i);
+  const passwordField = page.getByLabel(/password/i);
   const submit = page.getByRole("button", { name: /masuk|sign in/i });
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await submit.click();
-    try {
-      await expect(page).toHaveURL(destination, { timeout: 15_000 });
-      return;
-    } catch (error) {
-      if (attempt === 1) throw error;
-    }
-  }
+  await expect(emailField).toBeVisible({ timeout: 6_000 });
+  await emailField.fill(email);
+  await passwordField.fill(password);
+  await submit.click({ timeout: 5_000 });
+  await expect(page).toHaveURL(destination, { timeout: 10_000 });
 }
 
 export async function loginAsAdmin(page: Page, locale: "id" | "en" = "id") {
@@ -44,5 +47,14 @@ export async function loginAsCaptain(page: Page, locale: "id" | "en" = "id") {
     email: "captain@miraclefc.gg",
     password: "Miracle2026!",
     destination: /\/(id|en)\/captain/,
+  });
+}
+
+export async function loginAsOrganizer(page: Page, locale: "id" | "en" = "id") {
+  await loginWithCredentials(page, {
+    locale,
+    email: "organizer-a@miraclefc.gg",
+    password: "Miracle2026!",
+    destination: /\/(id|en)\/organizer/,
   });
 }

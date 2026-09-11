@@ -45,8 +45,11 @@ test("panel route exposes the theme scope and toggle", async ({ page }) => {
   await expect(page.getByRole("group", { name: /tema panel/i })).toBeVisible();
 });
 
-test("choosing dark repaints the panel and survives a reload", async ({ page }) => {
+test("new sessions start dark and choosing dark survives a reload", async ({ page }) => {
   await page.goto(PANEL_ROUTE);
+  await expect(page.locator("html")).toHaveAttribute("data-panel-theme", "dark");
+
+  await page.getByRole("button", { name: "Terang", exact: true }).click();
 
   // Tailwind 4 emits oklch() and Chromium serialises computed styles in the
   // authored colour space, so the colour is resolved by painting it rather
@@ -184,4 +187,17 @@ test("public pages are untouched by the panel theme", async ({ page }) => {
 
   const themedNodes = await page.locator(".app-root:has(.panel-scope)").count();
   expect(themedNodes).toBe(0);
+});
+
+test("system mode stays current from a public page into an operator route", async ({ page }) => {
+  await setStoredMode(page, "system");
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto(PUBLIC_ROUTE);
+  await expect(page.locator("html")).toHaveAttribute("data-panel-theme", "light");
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveAttribute("data-panel-theme", "dark");
+  await page.getByRole("link", { name: "Buat Turnamen", exact: true }).click();
+  await expect(page).toHaveURL(/\/id\/organizer$/);
+  await expect(page.locator("html")).toHaveAttribute("data-panel-theme", "dark");
 });

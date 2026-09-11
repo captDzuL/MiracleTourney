@@ -20,7 +20,9 @@ import {
 } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 
+import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
+import { getActiveEventEditRevisionIds } from "@/lib/events/event-revision";
 import { SubmitButton } from "@/components/submit-button";
 import {
   adminApproveStatAction,
@@ -154,6 +156,9 @@ export default async function AdminPage({
   if (!user) {
     return redirectToActiveLocale("/login");
   }
+  if (user.role === "organizer") {
+    return redirectToActiveLocale("/organizer");
+  }
 
   const [t, resolvedSearchParams] = await Promise.all([getTranslations("admin"), searchParams]);
   const activePhase = resolveAdminPhase(resolvedSearchParams?.phase);
@@ -165,9 +170,11 @@ export default async function AdminPage({
   ]);
   const gameModes = getGameModes();
   const eventIds = events.map((event) => event.id);
-  const [teamCountsByEvent, featuredEventFromSlug] = await Promise.all([
+  const actor = { id: user.id, role: user.role as "platform_admin" | "admin" };
+  const [teamCountsByEvent, featuredEventFromSlug, activeEditRevisions] = await Promise.all([
     getTeamCountsForEvents(eventIds),
     getEventBySlug("kuroko-summer-cup"),
+    getActiveEventEditRevisionIds({ eventIds, actor }),
   ]);
   const featuredEvent =
     (featuredEventFromSlug && events.some((event) => event.id === featuredEventFromSlug.id) ? featuredEventFromSlug : null)
@@ -393,6 +400,7 @@ export default async function AdminPage({
           ) : null}
 
           <OperationsOverview
+            activeEditRevisions={activeEditRevisions}
             activeEvent={activeEvent}
             activeMatches={activeMatches}
             activeLeaderboardCount={activeLeaderboard.length}
@@ -1888,6 +1896,7 @@ function ReviewPublishPhase({
 }
 
 function OperationsOverview({
+  activeEditRevisions,
   activeEvent,
   activeLeaderboardCount,
   activeMatches,
@@ -1896,6 +1905,7 @@ function OperationsOverview({
   teamCountsByEvent,
   t,
 }: {
+  activeEditRevisions: Record<string, { id: string; revision: number }>;
   activeEvent: EventItem | undefined;
   activeLeaderboardCount: number;
   activeMatches: Awaited<ReturnType<typeof getMatchesForEvent>>;
@@ -1916,7 +1926,7 @@ function OperationsOverview({
         />
       </div>
       <DataTable
-        columns={[t("eventLabel"), t("gameLabel"), t("statusLabel"), t("formatLabel"), t("teamsLabel"), t("matchesLabel")]}
+        columns={[t("eventLabel"), t("gameLabel"), t("statusLabel"), t("formatLabel"), t("teamsLabel"), t("matchesLabel"), "Aksi"]}
         rows={events.map((event) => [
           event.name,
           getGameForEvent(event).name,
@@ -1926,6 +1936,12 @@ function OperationsOverview({
           event.format,
           allTeamsByEvent.get(event.id)?.length ?? teamCountsByEvent.get(event.id) ?? 0,
           activeEvent?.id === event.id ? activeMatches.length : 0,
+          <div className="flex flex-wrap gap-2" key={`${event.id}-actions`}>
+            <Link className={quietButton} href={event.status === "Draft" ? `/admin/events/${event.id}/overview` : event.status === "Published" || event.status === "Registration Closed" ? `/admin/events/${event.id}/edit` : `/admin/events/${event.id}/overview`}>
+              {event.status === "Draft" ? "Lanjutkan setup" : event.status === "Published" || event.status === "Registration Closed" ? (activeEditRevisions[event.id] ? "Lanjutkan revisi" : "Edit event") : "Buka workspace"}
+            </Link>
+            {event.status !== "Draft" && <Link className="inline-flex items-center text-xs font-semibold text-cyan-700" href={`/events/${event.slug}`}>Lihat publik</Link>}
+          </div>,
         ])}
       />
     </Section>

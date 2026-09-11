@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { setRequestLocale } from "next-intl/server";
+import { permanentRedirect } from "next/navigation";
 
-import { getPublicEventBySlug } from "@/lib/platform/repository";
+import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
 import { renderEventDetailPage } from "../../../events/[slug]/event-detail-page";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
@@ -53,6 +54,10 @@ export default async function LocalizedEventDetailPage({
 }) {
   const { locale, slug } = await params;
   setRequestLocale(locale as "id" | "en");
-
-  return renderEventDetailPage(slug, locale as "id" | "en");
+  const event = await getPublicEventBySlug(slug);
+  if (!event) {
+    const redirectSlug = await getPublicEventSlugRedirect(slug);
+    if (redirectSlug) permanentRedirect(`/${locale}/events/${redirectSlug}`);
+  }
+  return renderEventDetailPage(slug, locale as "id" | "en", event ?? undefined);
 }

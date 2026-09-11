@@ -67,10 +67,15 @@ function getInitials(name: string) {
     .join("");
 }
 
-export async function renderEventDetailPage(slug: string, locale?: "id" | "en") {
+export async function renderEventDetailPage(
+  slug: string,
+  locale?: "id" | "en",
+  eventOverride?: Event,
+  options: { readOnly?: boolean } = {},
+) {
   const t = await getTranslations("eventDetail");
   const fallbackEvent = fallbackEventsBySlug[slug];
-  const event = await getPublicEventBySlug(slug).catch(() => fallbackEvent ?? null);
+  const event = eventOverride ?? await getPublicEventBySlug(slug).catch(() => fallbackEvent ?? null);
 
   if (!event) notFound();
 
@@ -100,7 +105,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
 
   const isV2 = isFeatureEnabled("public_visual_v2");
 
-  const quickLinksSection = (
+  const quickLinksSection = !options.readOnly ? (
     <Section title={t("quickLinks")} description={t("quickLinksDesc")} className="rounded-xl shadow-none">
       <div className="grid gap-3 text-sm">
         <EventLink href={buildEventHref(event.slug, "participants", locale)}>{t("participants")}</EventLink>
@@ -109,7 +114,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
         <EventLink href={buildEventHref(event.slug, "leaderboards", locale)}>{t("leaderboardLink")}</EventLink>
       </div>
     </Section>
-  );
+  ) : null;
 
   // v2 drops the format snapshot (already shown in the hero meta line) and
   // shows the top performer as a compact callout instead of a full Section —
@@ -204,6 +209,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
           teams={teams}
           bracket={bracket}
           locale={locale}
+          readOnly={options.readOnly}
           labels={{
             liveNow: t("liveNow"),
             organizer: t("organizerLabel"),
@@ -266,7 +272,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
           </div>
 
           <div className="flex flex-wrap gap-2 text-sm text-slate-100 lg:max-w-sm lg:justify-end">
-            <ShareButton />
+            {!options.readOnly ? <ShareButton /> : null}
             <EventFact icon={<CalendarDays className="h-4 w-4 text-cyan-600" />}>
               {event.registrationWindow}
             </EventFact>
@@ -281,7 +287,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
                 {event.registrationFeeLabel}
               </EventFact>
             ) : null}
-            {event.registrationUrl ? (
+            {!options.readOnly && event.registrationUrl ? (
               <a
                 className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-4 py-2 font-semibold text-slate-950 shadow-sm transition hover:bg-cyan-300"
                 href={event.registrationUrl}

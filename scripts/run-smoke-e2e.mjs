@@ -43,7 +43,7 @@ const server = spawn(
   "node",
   ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", port],
   {
-    env: { ...process.env, PLAYWRIGHT_SMOKE_PORT: port },
+    env: { ...process.env, FEATURE_FLAG_UI_V3_FOUNDATION: "true", PLAYWRIGHT_SMOKE_PORT: port },
     stdio: "inherit",
   },
 );
