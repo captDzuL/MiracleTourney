@@ -236,7 +236,11 @@ export function RegisterWizard({ errorMsg, eventId, locale, returnTo }: {
 
           {t("haveAccount")} {" "}
 
-          <Link href={(returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : "/login") as never} className="text-cyan-400 hover:text-cyan-300">
+          <Link href={(returnTo
+            ? `/login?returnTo=${encodeURIComponent(returnTo)}`
+            : eventId
+              ? `/login?eventId=${encodeURIComponent(eventId)}`
+              : "/login") as never} className="text-cyan-400 hover:text-cyan-300">
 
             {t("loginHere")}
 

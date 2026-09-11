@@ -296,6 +296,17 @@ describe("loginAction", () => {
     );
   });
 
+  it("preserves adaptive event context and requested locale for captain login", async () => {
+    signIn.mockResolvedValue({ ok: true, user: { role: "captain" } });
+
+    await expect(loginAction(fd({
+      email: "cap@test.com",
+      password: "secret123",
+      eventId: "event-abc",
+      locale: "en",
+    }))).rejects.toThrow("REDIRECT:/en/captain?tab=registration&eventId=event-abc");
+  });
+
   it("redirects to /login?error=invalid when credentials are wrong", async () => {
     signIn.mockResolvedValue({ ok: false, error: "Invalid email or password." });
 

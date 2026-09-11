@@ -82,6 +82,7 @@ const { prisma } = vi.hoisted(() => ({
       create: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     registrationImportItem: {
       createMany: vi.fn(),
@@ -289,6 +290,7 @@ describe("registration intake commit", () => {
     prisma.match.count.mockResolvedValue(0);
     prisma.team.count.mockResolvedValue(0);
     prisma.teamRegistrationRequest.count.mockResolvedValue(0);
+    prisma.registrationImportBatch.updateMany.mockResolvedValue({ count: 1 });
     prisma.$transaction.mockImplementation(async (callback: unknown) => {
       if (typeof callback === "function") return callback(prisma);
       return callback;
@@ -375,6 +377,35 @@ describe("registration intake commit", () => {
       where: { id: "batch-1" },
       data: expect.objectContaining({ status: "committed" }),
     });
+  });
+
+  it("returns the idempotent result when another transaction already claimed the batch", async () => {
+    prisma.registrationImportBatch.findFirst.mockResolvedValue({
+      id: "batch-1",
+      eventId: "event-1",
+      status: "validated",
+      committedAt: null,
+      event: { id: "event-1", slug: "redclover-cup", format: "Single Elimination", participantCap: 8 },
+      items: [{
+        id: "item-new",
+        status: "new",
+        normalizedData: {
+          teamName: "Gamma",
+          teamTag: "GAM",
+          captainName: "Gina",
+          captainContact: "081",
+          captainEmail: "gina@example.com",
+          players: [],
+        },
+      }],
+    });
+    prisma.user.findUnique.mockResolvedValue({ id: "captain-existing", role: "captain" });
+    prisma.registrationImportBatch.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(commitRegistrationImportBatch(platformAdmin, "batch-1", ["item-new"]))
+      .resolves.toEqual({ importedCount: 0, credentials: [] });
+    expect(prisma.team.create).not.toHaveBeenCalled();
+    expect(prisma.registrationImportBatch.update).not.toHaveBeenCalled();
   });
 
   it("rejects a selected row when the captain email belongs to a non-captain user", async () => {

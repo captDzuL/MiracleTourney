@@ -6,12 +6,12 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { redirectToActiveLocale } from "@/i18n/redirect";
+import { getLocalizedRedirectPath, redirectToActiveLocale } from "@/i18n/redirect";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { publishEvent } from "@/lib/events/publish-readiness";
 import { prisma } from "@/lib/platform/db";
 import { createPasswordResetToken, consumePasswordResetToken } from "@/lib/platform/password-reset";
-import { routing } from "@/i18n/routing";
+
 import { requireRole, signIn } from "@/lib/auth/session";
 import { buildRegistrationPreview, parseRegistrationSource, suggestRegistrationMapping } from "@/lib/imports/registration-intake";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
@@ -102,11 +102,8 @@ async function requireCaptainSession(): Promise<AppUser> {
 }
 
 async function redirectToRequestedLocale(path: string, locale?: string): Promise<never> {
-  if (locale && routing.locales.includes(locale as "id" | "en")) {
-    const [pathname, search = ""] = path.split("?");
-    const query = search ? `?${search}` : "";
-    const target = pathname === "/" ? `/${locale}${query}` : `/${locale}${pathname}${query}`;
-    redirect(target);
+  if (locale === "id" || locale === "en") {
+    redirect(getLocalizedRedirectPath(path, locale));
   }
 
   return redirectToActiveLocale(path);
@@ -354,6 +351,8 @@ export async function captainSignUpAction(formData: FormData) {
 export async function loginAction(formData: FormData) {
   const requestedLocale = String(formData.get("locale") ?? "").trim();
   const returnTo = getSafeReturnTo(formData.get("returnTo"));
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const hasSafeEventId = Boolean(eventId && isSafeEntityId(eventId));
   const email = z.string().email().parse(formData.get("email"));
   const password = z.string().min(1).parse(formData.get("password"));
   let result;
@@ -379,6 +378,12 @@ export async function loginAction(formData: FormData) {
 
   if (user.role === "captain" && returnTo) {
     await redirectToRequestedLocale(returnTo, requestedLocale);
+  }
+  if (user.role === "captain" && hasSafeEventId) {
+    await redirectToRequestedLocale(
+      `/captain?tab=registration&eventId=${encodeURIComponent(eventId)}`,
+      requestedLocale,
+    );
   }
 
   await redirectToRequestedLocale(

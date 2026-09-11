@@ -2386,8 +2386,14 @@ export async function commitRegistrationImportBatch(
     tempPassword: string;
   }> = [];
 
-  await runSerializableRegistrationTransaction(async (tx) => {
+  const committed = await runSerializableRegistrationTransaction(async (tx) => {
     credentials.length = 0;
+    const claim = await tx.registrationImportBatch.updateMany({
+      where: { id: batch.id, status: batch.status, committedAt: null },
+      data: { committedAt: new Date() },
+    });
+    if (claim.count === 0) return false;
+
     const additionalTeams = prepared.filter((row) => row.item.status === "new").length;
     const [activeTeamCount, pendingReviewCount] = await Promise.all([
       tx.team.count({ where: { eventId: batch.eventId } }),
@@ -2480,8 +2486,10 @@ export async function commitRegistrationImportBatch(
         committedAt: new Date(),
       },
     });
+    return true;
   });
 
+  if (!committed) return { importedCount: 0, credentials: [] };
   return { importedCount: prepared.length, credentials };
 }
 

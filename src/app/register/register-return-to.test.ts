@@ -46,6 +46,19 @@ describe("captain signup return flow", () => {
     );
   });
 
+  it("keeps the adaptive event context in the existing-account login link", async () => {
+    const page = await RegisterPageContent({
+      searchParams: Promise.resolve({ eventId: "event-abc" }),
+      locale: "id",
+    });
+
+    await act(async () => root.render(page));
+
+    expect(container.querySelector<HTMLAnchorElement>("a")?.getAttribute("href")).toBe(
+      "/login?eventId=event-abc",
+    );
+  });
+
   it("drops an external return path before rendering the signup form", async () => {
     const page = await RegisterPageContent({
       searchParams: Promise.resolve({ returnTo: "https://attacker.test/events/x/register" }),
