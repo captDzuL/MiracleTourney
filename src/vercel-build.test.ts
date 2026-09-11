@@ -33,4 +33,45 @@ describe("Vercel database safety", () => {
     runVercelBuild({ VERCEL_ENV: "production" }, runCommand);
     expect(runCommand).toHaveBeenNthCalledWith(1, "pnpm", ["exec", "prisma", "migrate", "deploy"]);
   });
+
+  it("migrates trusted main branch candidates before promotion", () => {
+    const runCommand = vi.fn(() => ({ status: 0 }));
+    runVercelBuild({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "main",
+      VERCEL_GIT_REPO_ID: "1316699241",
+    }, runCommand);
+    expect(runCommand).toHaveBeenNthCalledWith(1, "pnpm", ["exec", "prisma", "migrate", "deploy"]);
+  });
+
+  it("does not migrate pull requests whose source branch is named main", () => {
+    const runCommand = vi.fn(() => ({ status: 0 }));
+    runVercelBuild({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "main",
+      VERCEL_GIT_PULL_REQUEST_ID: "42",
+      VERCEL_GIT_REPO_ID: "1316699241",
+      DATABASE_URL: testDatabaseUrl,
+      DIRECT_URL: testDatabaseUrl,
+      NEON_PROD_HOST: productionHost,
+    }, runCommand);
+    expect(runCommand).toHaveBeenCalledTimes(1);
+    expect(runCommand).toHaveBeenCalledWith("pnpm", ["exec", "next", "build"]);
+  });
+
+  it("migrates deployments explicitly targeting production", () => {
+    const runCommand = vi.fn(() => ({ status: 0 }));
+    runVercelBuild({
+      VERCEL_ENV: "preview",
+      VERCEL_TARGET_ENV: "production",
+    }, runCommand);
+    expect(runCommand).toHaveBeenNthCalledWith(1, "pnpm", ["exec", "prisma", "migrate", "deploy"]);
+  });
+
+  it("stops before build when migration fails", () => {
+    const runCommand = vi.fn(() => ({ status: 1 }));
+    const exitCode = runVercelBuild({ VERCEL_ENV: "production" }, runCommand);
+    expect(exitCode).toBe(1);
+    expect(runCommand).toHaveBeenCalledTimes(1);
+  });
 });
