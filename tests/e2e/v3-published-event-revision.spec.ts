@@ -23,8 +23,9 @@ test.describe.serial("Published Event Revision V3", () => {
     const guest = await browser.newContext();
     const publicPage = await guest.newPage();
     await publicPage.goto("/id/events/flashpeak-revision-published");
-    await expect(publicPage.getByText("Original public description for revision E2E.")).toBeVisible();
-    await expect(publicPage.getByText(updatedDescription)).toHaveCount(0);
+    const publicContent = publicPage.getByRole("main");
+    await expect(publicContent.getByText("Original public description for revision E2E.").first()).toBeVisible();
+    await expect(publicContent.getByText(updatedDescription)).toHaveCount(0);
 
     await page.getByRole("link", { name: "Tinjau & Terbitkan" }).click();
     await page.getByRole("button", { name: "Buat preview privat" }).click();
@@ -39,7 +40,7 @@ test.describe.serial("Published Event Revision V3", () => {
     await page.getByRole("button", { name: "Perbarui event publik" }).click();
     await expect(page).toHaveURL(/\/id\/organizer\/events\/[^/]+\/overview/, { timeout: 20_000 });
     await publicPage.reload();
-    await expect(publicPage.getByText(updatedDescription)).toBeVisible({ timeout: 20_000 });
+    await expect(publicContent.getByText(updatedDescription).first()).toBeVisible({ timeout: 20_000 });
     await previewPage.goto(previewUrl!);
     await expect(previewPage.getByRole("heading", { name: /not found|halaman tidak ditemukan/i })).toBeVisible();
     await guest.close();
