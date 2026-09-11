@@ -27,28 +27,37 @@ export interface CertificateRendererDependencies {
   loadPuppeteer?: () => Promise<CertificateBrowserLauncher>;
   loadServerlessChromium?: () => Promise<ServerlessChromium>;
   loadPlaywrightChromium?: () => Promise<CertificateBrowserLauncher>;
+  launchBrowser?: () => Promise<CertificateBrowser>;
 }
 
-const defaultDependencies: Required<CertificateRendererDependencies> = {
-  isVercel: process.env.VERCEL === "1",
-  loadPuppeteer: async () => (await import("puppeteer-core")) as unknown as CertificateBrowserLauncher,
-  loadServerlessChromium: async () => (await import("@sparticuz/chromium")).default,
-  loadPlaywrightChromium: async () => (await import("playwright-core")).chromium as unknown as CertificateBrowserLauncher,
-};
+async function launchSharedBrowser(): Promise<CertificateBrowser> {
+  const { launchCertificateBrowser } = await import("./browser");
+  return await launchCertificateBrowser() as unknown as CertificateBrowser;
+}
 
 /** Renders certificate HTML to a portrait PNG using the browser runtime for the current host. */
 export async function renderCertificatePng(
   html: string,
   dependencies: CertificateRendererDependencies = {},
 ): Promise<Buffer> {
-  const runtime = { ...defaultDependencies, ...dependencies };
-  const browser = runtime.isVercel
-    ? await launchServerlessBrowser(runtime)
-    : await launchLocalBrowser(runtime);
+  const usesPuppeteer =
+    dependencies.isVercel === true
+    && dependencies.loadPuppeteer !== undefined
+    && dependencies.loadServerlessChromium !== undefined;
+  const browser = dependencies.launchBrowser
+    ? await dependencies.launchBrowser()
+    : usesPuppeteer
+      ? await launchServerlessBrowser(
+          dependencies.loadPuppeteer!,
+          dependencies.loadServerlessChromium!,
+        )
+      : dependencies.loadPlaywrightChromium
+        ? await launchLocalBrowser(dependencies.loadPlaywrightChromium)
+        : await launchSharedBrowser();
 
   try {
     const page = await browser.newPage();
-    if (runtime.isVercel) {
+    if (usesPuppeteer) {
       if (!page.setViewport) throw new Error("Puppeteer page does not support setViewport.");
       await page.setViewport({ width: 1080, height: 1920 });
       await page.setContent(html, { waitUntil: "load" });
@@ -67,10 +76,13 @@ export async function renderCertificatePng(
   }
 }
 
-async function launchServerlessBrowser(runtime: Required<CertificateRendererDependencies>): Promise<CertificateBrowser> {
+async function launchServerlessBrowser(
+  loadPuppeteer: NonNullable<CertificateRendererDependencies["loadPuppeteer"]>,
+  loadServerlessChromium: NonNullable<CertificateRendererDependencies["loadServerlessChromium"]>,
+): Promise<CertificateBrowser> {
   const [puppeteer, chromium] = await Promise.all([
-    runtime.loadPuppeteer(),
-    runtime.loadServerlessChromium(),
+    loadPuppeteer(),
+    loadServerlessChromium(),
   ]);
 
   return puppeteer.launch({
@@ -80,7 +92,9 @@ async function launchServerlessBrowser(runtime: Required<CertificateRendererDepe
   });
 }
 
-async function launchLocalBrowser(runtime: Required<CertificateRendererDependencies>): Promise<CertificateBrowser> {
-  const chromium = await runtime.loadPlaywrightChromium();
+async function launchLocalBrowser(
+  loadPlaywrightChromium: NonNullable<CertificateRendererDependencies["loadPlaywrightChromium"]>,
+): Promise<CertificateBrowser> {
+  const chromium = await loadPlaywrightChromium();
   return chromium.launch({ headless: true });
 }

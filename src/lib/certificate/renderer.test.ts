@@ -103,3 +103,25 @@ describe("renderCertificatePng", () => {
     expect(browser.close).toHaveBeenCalledOnce();
   });
 });
+  test("renders through the shared browser launcher without separate browser packages", async () => {
+    const png = Buffer.from("shared-browser-certificate");
+    const page = {
+      setViewportSize: vi.fn().mockResolvedValue(undefined),
+      setContent: vi.fn().mockResolvedValue(undefined),
+      screenshot: vi.fn().mockResolvedValue(png),
+    };
+    const browser = {
+      newPage: vi.fn().mockResolvedValue(page),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      renderCertificatePng(certificateHtml, {
+        launchBrowser: async () => browser,
+      }),
+    ).resolves.toBe(png);
+
+    expect(page.setViewportSize).toHaveBeenCalledWith({ width: 1080, height: 1920 });
+    expect(page.setContent).toHaveBeenCalledWith(certificateHtml, { waitUntil: "networkidle" });
+    expect(browser.close).toHaveBeenCalledOnce();
+  });
