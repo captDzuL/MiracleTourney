@@ -79,6 +79,39 @@ test.describe("V3 organizer lifecycle", () => {
     await expect(page.getByRole("heading", { name: event.name })).toBeVisible({ timeout: 20_000 });
   });
 
+  for (const locale of ["id", "en"] as const) {
+    test(`workspace navigation labels fit without overlap at ${locale} tablet widths`, async ({ page }) => {
+      test.setTimeout(90_000);
+      const event = eventIdentity();
+      await loginAsOrganizer(page, locale);
+      await page.goto(`/${locale}/organizer/events/new`);
+      await page.getByLabel("Event name").fill(event.name);
+      await page.getByLabel("Public URL slug").fill(event.slug);
+      await page.getByRole("button", { name: "Create private draft" }).click();
+      await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+/overview$`), { timeout: 30_000 });
+
+      for (const width of [700, 768, 980]) {
+        await page.setViewportSize({ width, height: 800 });
+        const layout = await page.locator('nav:has(a[aria-current="step"])').evaluate((navigation) => {
+          const viewportWidth = document.documentElement.clientWidth;
+          const labels = Array.from(navigation.querySelectorAll<HTMLElement>("a > span:last-child"))
+            .map((label) => {
+              const rect = label.getBoundingClientRect();
+              return { left: Math.round(rect.left), right: Math.round(rect.right), visible: rect.width > 1 && rect.height > 1 };
+            });
+          return {
+            overflow: Array.from(document.querySelectorAll<HTMLElement>("*")).filter((element) => element.getBoundingClientRect().right > viewportWidth + 1).map((element) => element.tagName),
+            labels,
+            overlaps: labels.flatMap((label, index) => labels.slice(index + 1).filter((other) => label.right > other.left + 1).map(() => index)),
+          };
+        });
+        expect(layout.overflow).toEqual([]);
+        expect(layout.labels).toHaveLength(5);
+        expect(layout.labels.filter((label) => label.visible)).toHaveLength(width < 900 ? 0 : 5);
+        expect(layout.overlaps).toEqual([]);
+      }
+    });
+  }
   test("workspace stays within a 360px viewport", async ({ page }) => {
     const event = eventIdentity();
     await page.setViewportSize({ width: 360, height: 800 });
