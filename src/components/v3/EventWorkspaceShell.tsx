@@ -40,12 +40,12 @@ export function EventWorkspaceShell({ children, eventTitle, navigation, nextActi
       <h2 className="mt-4 text-2xl font-extrabold text-[var(--color-text)]">Wujudkan event pertamamu.</h2>
       <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Isi sedikit demi sedikit. Lihat hasilnya sambil berjalan.</p>
     </header>
-    <nav aria-label={t("eventNavigation")} className="overflow-x-auto rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-      <ol className="grid min-w-[42rem] grid-cols-[repeat(var(--setup-step-count),minmax(0,1fr))] gap-2" style={{ "--setup-step-count": effectiveNavigation.length } as React.CSSProperties}>
+    <nav aria-label={t("eventNavigation")} className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 min-[700px]:p-3">
+      <ol className="grid min-w-0 grid-cols-[repeat(var(--setup-step-count),minmax(0,1fr))] gap-1 min-[700px]:gap-2" style={{ "--setup-step-count": effectiveNavigation.length } as React.CSSProperties}>
         {effectiveNavigation.map((item, index) => <li key={item.href}>
-          <Link aria-current={index === activeIndex ? "step" : undefined} className="group flex min-h-12 items-center gap-3 rounded-[var(--radius-control)] px-3 text-sm font-bold text-[var(--color-text-subtle)] transition hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)] aria-[current=step]:bg-[var(--color-surface-strong)] aria-[current=step]:text-[var(--color-text)]" href={item.href} onClick={(event) => { const hash = item.href.slice(item.href.indexOf("#")); if (hash) { event.preventDefault(); window.history.replaceState(null, "", hash); window.dispatchEvent(new HashChangeEvent("hashchange")); } setActiveIndex(index); }}>
+          <Link aria-current={index === activeIndex ? "step" : undefined} className="group flex min-h-11 min-w-0 items-center justify-center rounded-[var(--radius-control)] px-1 text-sm font-bold text-[var(--color-text-subtle)] transition hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)] aria-[current=step]:bg-[var(--color-surface-strong)] aria-[current=step]:text-[var(--color-text)] min-[700px]:min-h-12 min-[700px]:justify-start min-[700px]:gap-3 min-[700px]:px-3" href={item.href} onClick={(event) => { const hash = item.href.slice(item.href.indexOf("#")); if (hash) { event.preventDefault(); window.history.replaceState(null, "", hash); window.dispatchEvent(new HashChangeEvent("hashchange")); } setActiveIndex(index); }}>
             <span className="grid size-7 shrink-0 place-items-center rounded-full border border-[var(--color-border-strong)] text-xs group-aria-[current=step]:border-[var(--color-brand-cyan)] group-aria-[current=step]:bg-[var(--color-brand-cyan)] group-aria-[current=step]:text-slate-950">{index + 1}</span>
-            <span className="whitespace-nowrap">{item.label}</span>
+            <span className="sr-only min-[700px]:not-sr-only min-[700px]:whitespace-nowrap">{item.label}</span>
           </Link>
         </li>)}
       </ol>
