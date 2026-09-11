@@ -131,7 +131,7 @@ git diff --check
 
 Expected: all focused tests pass, TypeScript passes, five existing adaptive scenarios plus scroll-spy assertions pass serially, and diff check is clean.
 
-- [ ] **Step 7: Commit and push**
+- [x] **Step 7: Commit and push**
 
 ```powershell
 git add src/components/v3/public-event tests/e2e/v3-adaptive-public-registration.spec.ts public/plan.md public/snapshot.md
