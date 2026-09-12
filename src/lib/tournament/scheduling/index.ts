@@ -61,7 +61,21 @@ function graphConstraints(graph: CompetitionGraph) {
   };
   const participants = new Map(graph.matches.map(m => [m.id, new Set([...possible(m.home, new Set()), ...possible(m.away, new Set())])]));
   const shared = (a: string, b: string) => [...participants.get(a) ?? []].some(t => participants.get(b)?.has(t));
-  return { dependencies, shared };
+  // Detect cycles from graph structure: a reserved override must not satisfy
+  // its own prerequisite, directly or through an already assigned cycle.
+  const visiting = new Set<string>();
+  const cycleMemo = new Map<string, boolean>();
+  const reliesOnCycle = (id: string): boolean => {
+    if (visiting.has(id)) return true;
+    if (cycleMemo.has(id)) return cycleMemo.get(id)!;
+    visiting.add(id);
+    const cyclic = [...dependencies.get(id) ?? []].some(reliesOnCycle);
+    visiting.delete(id);
+    cycleMemo.set(id, cyclic);
+    return cyclic;
+  };
+  const cycleAffected = new Set(graph.matches.filter(m => reliesOnCycle(m.id)).map(m => m.id));
+  return { dependencies, shared, cycleAffected };
 }
 
 function invalidInput(input: ScheduleInput): string | null {
@@ -90,13 +104,17 @@ export function planSchedule(input: ScheduleInput): ScheduleDraft {
 
 export function recalculateSchedule(input: ScheduleInput & { changedMatchIds: readonly string[] }): ScheduleDraft {
   const { dependencies } = graphConstraints(input.graph);
+  const playable = new Set(input.graph.matches.filter(m => m.status === "pending").map(m => m.id));
+  if (input.changedMatchIds.some(id => !playable.has(id))) return schedule(input, new Set(input.changedMatchIds));
   const scope = new Set<string>();
   const visited = new Set<string>();
   const visit = (id: string, root = false) => {
+    // A barrier is not a completed traversal: an overlapping changed root must
+    // still be allowed to walk its own descendants later.
+    if (immutable(input, id) && !root) return;
     if (visited.has(id)) return;
     visited.add(id);
-    if (immutable(input, id) && !root) return;
-    if (!immutable(input, id)) scope.add(id);
+    if (playable.has(id) && !immutable(input, id)) scope.add(id);
     for (const [target, sources] of dependencies) if (sources.has(id)) visit(target);
   };
   [...input.changedMatchIds].sort(compare).forEach(id => visit(id, true));
@@ -111,7 +129,7 @@ function schedule(input: ScheduleInput, scope?: Set<string>): ScheduleDraft {
     draft.conflicts.push({ code: "INVALID_INPUT", matchIds: [], message: invalid });
     return draft;
   }
-  const { dependencies, shared } = graphConstraints(input.graph);
+  const { dependencies, shared, cycleAffected } = graphConstraints(input.graph);
   const rest = input.minimumRestMinutes * 60000;
   const preferredRest = (input.preferredRestMinutes ?? input.minimumRestMinutes) * 60000;
   const buffer = input.bufferMinutes * 60000;
@@ -129,6 +147,10 @@ function schedule(input: ScheduleInput, scope?: Set<string>): ScheduleDraft {
   for (const match of games) {
     const old = existing.get(match.id);
     const override = overrides.get(match.id);
+    if (cycleAffected.has(match.id)) {
+      conflict("UNRESOLVED_DEPENDENCY", [match.id], "The match relies on a cyclic prerequisite.");
+      if (!protectedMatch(match.id)) { fixed.add(match.id); continue; }
+    }
     if (protectedMatch(match.id)) {
       fixed.add(match.id);
       if (old) draft.assignments.push({ ...old });

@@ -155,6 +155,36 @@ describe("existing schedules and fixed assignments", () => {
 });
 
 describe("downstream recalculation", () => {
+  it("recalculates a real three-team double-elimination graph without adding bye nodes to scope", () => {
+    const competition = generateCompetitionGraph({ eventId: "cup", config: TOURNAMENT_FORMAT_PRESETS.doubleElimination,
+      teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }, { id: "c", seed: 3 }],
+    });
+    const draft = scheduling.recalculateSchedule({ ...input(), graph: competition, changedMatchIds: ["cup:upper:r1:m2"] });
+    expect(draft.conflicts).toEqual([]);
+    expect(draft.recalculatedMatchIds).toEqual(["cup:grand_final:r1:m1", "cup:lower:r2:m1", "cup:upper:r1:m2", "cup:upper:r2:m1"]);
+    expect(rows(draft)).toEqual([
+      ["cup:grand_final:r1:m1", "A", "2026-09-12T04:00:00.000Z", "2026-09-12T04:30:00.000Z"],
+      ["cup:lower:r2:m1", "A", "2026-09-12T03:20:00.000Z", "2026-09-12T03:50:00.000Z"],
+      ["cup:upper:r1:m2", "A", "2026-09-12T02:00:00.000Z", "2026-09-12T02:30:00.000Z"],
+      ["cup:upper:r2:m1", "A", "2026-09-12T02:40:00.000Z", "2026-09-12T03:10:00.000Z"],
+    ]);
+  });
+
+  it.each(["locked", "live", "completed"] as const)("traverses an overlapping %s changed root even after reaching it as a descendant", state => {
+    const draft = scheduling.recalculateSchedule({ ...withMatches(match("a"), match("b", winner("a")), match("c", winner("b"))),
+      existingAssignments: [assigned("a", "A", "02:00", "02:30"), assigned("b", "A", "02:40", "03:30"), assigned("c", "A", "03:20", "03:50")],
+      changedMatchIds: ["a", "b"], lockedMatchIds: state === "locked" ? ["b"] : [], matchStates: state === "locked" ? {} : { b: state },
+    });
+    expect(draft.recalculatedMatchIds).toEqual(["a", "c"]);
+    expect(draft.conflicts).toEqual([]);
+    expect(draft.affectedMatchIds).toEqual(["c"]);
+    expect(rows(draft)).toEqual([
+      ["a", "A", "2026-09-12T02:00:00.000Z", "2026-09-12T02:30:00.000Z"],
+      ["b", "A", "2026-09-12T02:40:00.000Z", "2026-09-12T03:30:00.000Z"],
+      ["c", "A", "2026-09-12T03:40:00.000Z", "2026-09-12T04:10:00.000Z"],
+    ]);
+  });
+
   it("moves only the changed match and its downstream games, preserving unrelated and upstream slots", () => {
     expect(scheduling.recalculateSchedule).toBeTypeOf("function");
     const request = { ...withMatches(match("a"), match("b", winner("a")), match("c", winner("b")), match("z")),
@@ -197,6 +227,19 @@ describe("downstream recalculation", () => {
 });
 
 describe("input safety", () => {
+  it.each(["participant", "edge"] as const)("rejects an exact override with a self-dependency from a %s and its descendants", kind => {
+    const request = withMatches(match("a", kind === "participant" ? winner("a") : team("x")), match("b", winner("a")));
+    const draft = scheduling.planSchedule({ ...request,
+      graph: { ...request.graph, dependencies: kind === "edge" ? [{ id: "self", sourceMatchId: "a", targetMatchId: "a", outcome: "winner", targetSlot: "home" }] : [] },
+      manualOverrides: [assigned("a", "A", "02:00", "02:30")],
+    });
+    expect(draft.assignments).toEqual([]);
+    expect(draft.feasible).toBe(false);
+    expect(draft.conflicts.map(c => [c.code, c.matchIds])).toEqual([
+      ["UNRESOLVED_DEPENDENCY", ["a"]], ["UNRESOLVED_DEPENDENCY", ["b"]],
+    ]);
+  });
+
   it.each([
     { timezone: "Mars/Olympus" }, { rooms: [] }, { rooms: ["A", "A"] }, { rooms: [""] },
     { matchDurationMinutes: 0 }, { matchDurationMinutes: Number.NaN }, { bufferMinutes: -1 }, { minimumRestMinutes: -1 },

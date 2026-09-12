@@ -30,6 +30,8 @@ an existing assignment and prevent changes. Malformed input returns an
 - Dependencies finish before their dependent games, with minimum rest.
   Participant sources and explicit graph edges are combined. Group-rank sources
   wait for every playable group game and retain TBD participants.
+  Structural cycle checks also reject self-dependencies and all proposals
+  relying on cycles, even when an exact override reserves a slot.
 - Locks, live/completed matches, and matches outside recalculation scope stay
   unchanged. Conflicting manual requests are rejected and reported.
 
@@ -64,7 +66,10 @@ found no slot under the current placements, not that no rearrangement can work.
 `recalculateSchedule({ ...input, changedMatchIds })` includes mutable changed
 matches and follows downstream match/qualification edges. A locked, live, or
 completed descendant stops that path. An immutable changed root can still
-trigger traversal into its children. Upstream and unrelated matches retain
+trigger traversal into its children. Bye/empty descendants may be traversed but never enter
+the playable recalculation scope. Overlapping immutable changed roots retain
+their own traversal privilege even when another root reaches them first.
+Upstream and unrelated matches retain
 their old assignments; unrelated unscheduled matches stay unscheduled. An
 override outside that scope is a conflict. Shared rooms/teams constrain choices
 but do not widen traversal into unrelated games.
