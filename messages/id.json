@@ -633,5 +633,88 @@
     "teamCount": "{occupied} dari {cap} slot terisi",
     "publicTitle": "Navigasi event"
   },  "v3Shell": {"skipToContent":"Lewati ke konten","primaryNavigation":"Navigasi utama","operatorNavigation":"Navigasi operator","eventNavigation":"Navigasi event","nextAction":"Tindakan berikutnya","nextStep":"Langkah berikutnya","openNavigation":"Buka navigasi","closeNavigation":"Tutup navigasi","organizerHome":"Beranda organizer"},
-  "v3Footer": {"copyright":"Copyright © Miracle","tagline":"Platform turnamen komunitas multi-game","socialLabel":"Kontak sosial Miracle","mobileMenu":"Buka navigasi"}
+  "v3Footer": {"copyright":"Copyright © Miracle","tagline":"Platform turnamen komunitas multi-game","socialLabel":"Kontak sosial Miracle","mobileMenu":"Buka navigasi"},
+  "completionWorkspace": {
+    "title": "Penyelesaian Turnamen",
+    "description": "Validasi rekam akhir {event}, tinjau setiap penghargaan, dan kendalikan kapan penyelesaian dapat dicatat.",
+    "status": {
+      "integration_required": "Integrasi Match Day diperlukan",
+      "blocked": "Penyelesaian terblokir",
+      "ready": "Siap diselesaikan",
+      "completed": "Turnamen selesai",
+      "reopened": "Turnamen dibuka kembali"
+    },
+    "tabs": {"label":"Bagian penyelesaian","readiness":"Kesiapan","awards":"Penghargaan","certificates":"E-sertifikat","publication":"Publikasi"},
+    "kpis": {"label":"Ringkasan penyelesaian","blockers":"Pemblokir tersisa","awards":"Penghargaan diputuskan","certificates":"Sertifikat siap","version":"Versi saat ini"},
+    "readiness": {
+      "title": "Kesiapan penyelesaian",
+      "description": "Setiap gerbang kompetisi harus selesai sebelum rekam akhir dikunci.",
+      "integrationTitle": "Hubungkan Match Day sebelum meninjau data penyelesaian.",
+      "integrationBody": "Workspace penyelesaian tersedia, tetapi adapter hasil resminya belum terpasang. Fakta podium, penghargaan, sertifikat, dan publikasi tidak dibuat-buat.",
+      "noDemoData": "Hanya data milik server",
+      "readyTitle": "Semua gerbang wajib sudah bersih",
+      "readyBody": "Versi saat ini dapat diselesaikan dengan keputusan penghargaan yang tercatat."
+    },
+    "blockers": {
+      "repair": "Perbaiki di Match Day",
+      "UNOFFICIAL_REQUIRED_RESULT": {"title":"Hasil wajib belum resmi","detail":"{subject} harus diresmikan sebelum penyelesaian."},
+      "ACTIVE_DISPUTE": {"title":"Sengketa aktif","detail":"Selesaikan sengketa aktif sebelum penyelesaian. {subject}"},
+      "UNRESOLVED_FINAL_TIE": {"title":"Seri klasemen akhir belum terselesaikan","detail":"Terapkan tie-breaker event untuk {subject} sebelum penyelesaian."},
+      "MISSING_VALIDATED_AWARD_STATISTICS": {"title":"Statistik penghargaan tervalidasi belum tersedia","detail":"Terbitkan dan validasi metrik wajib untuk {subject}."},
+      "INSUFFICIENT_PODIUM_STRUCTURE": {"title":"Struktur podium belum lengkap","detail":"Lengkapi sumber tahap atau klasemen wajib: {subject}."}
+    },
+    "awards": {
+      "title":"Tinjauan penghargaan individual",
+      "description":"Tinjau metrik sumber yang sudah terbit, semua pemimpin yang seri, dan alasan keputusan manual yang tercatat.",
+      "names":{"mvp":"MVP Turnamen","top_scorer":"Top Scorer","top_defender":"Top Defender","top_assist":"Top Assist"},
+      "sourceMetric":"Metrik sumber: {metric}",
+      "candidatesLabel":"Kandidat untuk {award}",
+      "selected":"Terpilih",
+      "unavailable":"Menunggu data resmi Match Day",
+      "tieExplanation":"{count} kandidat memiliki nilai tertinggi yang sama",
+      "reasonRequired":"Alasan audit wajib diisi sebelum memilih pemenang.",
+      "auditReason":"Alasan audit: {reason}",
+      "decisionRecorded":"Metrik terbit tertinggi tercatat sebagai keputusan."
+    },
+    "podium": {
+      "title":"Podium final",
+      "locked":"Podium terkunci",
+      "draft":"Podium draf",
+      "unavailable":"Posisi podium tetap kosong sampai sumber hasil resmi terhubung.",
+      "sources":{"official_playoff":"Hasil playoff resmi","locked_standings":"Klasemen akhir terkunci","integration_pending":"Menunggu sumber Match Day"},
+      "ranks":{"1":"Juara","2":"Runner-up","3":"Peringkat ketiga"}
+    },
+    "certificates": {
+      "title":"Kesiapan e-sertifikat",
+      "summary":"{generated} dari {total} sertifikat dibuat dari penerima yang terkunci.",
+      "status":{"not_generated":"Belum dibuat","generating":"Sedang dibuat","ready":"Siap","stale":"Perlu dibuat ulang"},
+      "openStudio":"Buka studio sertifikat"
+    },
+    "publication": {
+      "title":"Kesiapan publikasi",
+      "description":"Tinjau kesiapan output penyelesaian untuk publikasi publik berikutnya. Workspace ini tidak merender rekap publik.",
+      "status":{"draft":"Draf — belum siap terbit","ready":"Siap diterbitkan","published":"Sudah terbit","needs_review":"Perlu ditinjau"},
+      "preview":"Pratinjau event publik"
+    },
+    "audit": {"title":"Ringkasan audit","none":"Belum ada tindakan penyelesaian yang dicatat.","actor":"Tindakan terakhir oleh {actor}"},
+    "actions": {
+      "title":"Kontrol penyelesaian",
+      "description":"Penyelesaian mengunci podium dan penghargaan pada versi saat ini. Pembukaan kembali memerlukan alasan koreksi tercatat.",
+      "complete":"Selesaikan turnamen",
+      "completing":"Menyelesaikan…",
+      "reopen":"Buka kembali turnamen",
+      "reopening":"Membuka kembali…",
+      "reopenReason":"Alasan koreksi"
+    },
+    "feedback": {
+      "completed":"Turnamen berhasil diselesaikan. Muat ulang untuk melihat versi yang tercatat.",
+      "reopened":"Turnamen dibuka kembali untuk koreksi tercatat. Muat ulang untuk melihat versi baru.",
+      "alreadyApplied":"Permintaan ini sudah diterapkan dengan aman.",
+      "integrationRequired":"Integrasi Match Day diperlukan sebelum tindakan ini dapat dijalankan.",
+      "conflict":"Versi berubah di sesi lain. Muat ulang sebelum mencoba lagi.",
+      "reasonRequired":"Masukkan alasan koreksi sebelum membuka kembali.",
+      "blocked":"Tindakan terblokir. Tinjau kesiapan dan perbaiki masalah yang tercantum.",
+      "failed":"Tindakan tidak dapat diselesaikan. Coba lagi."
+    }
+  }
 }

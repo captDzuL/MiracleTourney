@@ -633,5 +633,88 @@
     "teamCount": "{occupied} of {cap} slots occupied",
     "publicTitle": "Event navigation"
   },  "v3Shell": {"skipToContent":"Skip to content","primaryNavigation":"Primary navigation","operatorNavigation":"Operator navigation","eventNavigation":"Event navigation","nextAction":"Next action","nextStep":"Next step","openNavigation":"Open navigation","closeNavigation":"Close navigation","organizerHome":"Organizer home"},
-  "v3Footer": {"copyright":"Copyright © Miracle","tagline":"Multi-game community tournament platform","socialLabel":"Miracle social contacts","mobileMenu":"Open navigation"}
+  "v3Footer": {"copyright":"Copyright © Miracle","tagline":"Multi-game community tournament platform","socialLabel":"Miracle social contacts","mobileMenu":"Open navigation"},
+  "completionWorkspace": {
+    "title": "Tournament Completion",
+    "description": "Validate the final record for {event}, review every award, and control when completion can be committed.",
+    "status": {
+      "integration_required": "Match Day integration required",
+      "blocked": "Completion blocked",
+      "ready": "Ready to complete",
+      "completed": "Tournament completed",
+      "reopened": "Tournament reopened"
+    },
+    "tabs": {"label":"Completion sections","readiness":"Readiness","awards":"Awards","certificates":"E-certificates","publication":"Publication"},
+    "kpis": {"label":"Completion overview","blockers":"Unresolved blockers","awards":"Awards decided","certificates":"Certificates ready","version":"Current version"},
+    "readiness": {
+      "title": "Completion readiness",
+      "description": "Every competition gate must be resolved before the final record is locked.",
+      "integrationTitle": "Connect Match Day before reviewing completion data.",
+      "integrationBody": "The completion workspace is available, but its authoritative results adapter is not installed yet. No podium, award, certificate, or publication fact is inferred.",
+      "noDemoData": "Server-owned data only",
+      "readyTitle": "All required gates are clear",
+      "readyBody": "The current version can be completed with the recorded award decisions."
+    },
+    "blockers": {
+      "repair": "Repair in Match Day",
+      "UNOFFICIAL_REQUIRED_RESULT": {"title":"Required result is not official","detail":"{subject} must be made official before completion."},
+      "ACTIVE_DISPUTE": {"title":"Active dispute","detail":"Resolve the active dispute before completion. {subject}"},
+      "UNRESOLVED_FINAL_TIE": {"title":"Final standing tie is unresolved","detail":"Apply the event tie-breaker to {subject} before completion."},
+      "MISSING_VALIDATED_AWARD_STATISTICS": {"title":"Validated award statistic is missing","detail":"Publish and validate the required metric for {subject}."},
+      "INSUFFICIENT_PODIUM_STRUCTURE": {"title":"Podium structure is incomplete","detail":"Complete the required stage or standing source: {subject}."}
+    },
+    "awards": {
+      "title":"Individual award review",
+      "description":"Review the published source metric, every tied leader, and the reason recorded for a manual decision.",
+      "names":{"mvp":"MVP of Tournament","top_scorer":"Top Scorer","top_defender":"Top Defender","top_assist":"Top Assist"},
+      "sourceMetric":"Source metric: {metric}",
+      "candidatesLabel":"Candidates for {award}",
+      "selected":"Selected",
+      "unavailable":"Waiting for authoritative Match Day data",
+      "tieExplanation":"{count} candidates share the top value",
+      "reasonRequired":"An audit reason is required before selecting a winner.",
+      "auditReason":"Audit reason: {reason}",
+      "decisionRecorded":"The highest published metric is recorded as the decision."
+    },
+    "podium": {
+      "title":"Final podium",
+      "locked":"Locked podium",
+      "draft":"Draft podium",
+      "unavailable":"Podium placements stay empty until the authoritative result source is connected.",
+      "sources":{"official_playoff":"Official playoff results","locked_standings":"Locked final standings","integration_pending":"Waiting for Match Day source"},
+      "ranks":{"1":"Champion","2":"Runner-up","3":"Third place"}
+    },
+    "certificates": {
+      "title":"E-certificate readiness",
+      "summary":"{generated} of {total} certificates are generated from the locked recipients.",
+      "status":{"not_generated":"Not generated","generating":"Generation in progress","ready":"Ready","stale":"Needs regeneration"},
+      "openStudio":"Open certificate studio"
+    },
+    "publication": {
+      "title":"Publication readiness",
+      "description":"Review whether completion outputs are ready for a future public release. This workspace does not render the public recap.",
+      "status":{"draft":"Draft — not ready to publish","ready":"Ready for publication","published":"Published","needs_review":"Needs review"},
+      "preview":"Preview public event"
+    },
+    "audit": {"title":"Audit summary","none":"No completion action has been committed.","actor":"Last action by {actor}"},
+    "actions": {
+      "title":"Completion control",
+      "description":"Completion locks the podium and awards at the current version. Reopening requires a recorded correction reason.",
+      "complete":"Complete tournament",
+      "completing":"Completing…",
+      "reopen":"Reopen tournament",
+      "reopening":"Reopening…",
+      "reopenReason":"Correction reason"
+    },
+    "feedback": {
+      "completed":"Tournament completed successfully. Refresh to view the committed version.",
+      "reopened":"Tournament reopened for a recorded correction. Refresh to view the new version.",
+      "alreadyApplied":"This request was already applied safely.",
+      "integrationRequired":"Match Day integration is required before this action can run.",
+      "conflict":"The version changed in another session. Refresh before trying again.",
+      "reasonRequired":"Enter a correction reason before reopening.",
+      "blocked":"The action is blocked. Review readiness and repair the listed issue.",
+      "failed":"The action could not be completed. Try again."
+    }
+  }
 }
