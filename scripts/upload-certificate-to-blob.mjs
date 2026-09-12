@@ -64,11 +64,14 @@ const result = await put(blobFilename, pngBuffer, { access: "public", contentTyp
 console.log(`✅ Uploaded: ${result.url}`);
 
 // Update DB Certificate row
-const certRow = await prisma.certificate.findUnique({ where: { eventId: event.id } });
+const certRow = await prisma.certificate.findFirst({
+  where: { eventId: event.id, type: "champion", recipientKind: "team" },
+  orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+});
 if (certRow) {
   await prisma.certificate.update({
-    where: { eventId: event.id },
-    data: { imageUrl: result.url },
+    where: { id: certRow.id },
+    data: { imageUrl: result.url, publishedUrl: result.url, publishedAt: new Date() },
   });
   console.log(`✅ DB Certificate diupdate dengan URL baru.`);
 } else {

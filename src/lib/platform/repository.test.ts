@@ -176,6 +176,7 @@ const championCertificateRow = {
 describe("legacy Champion certificate repository compatibility", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
   });
 
   it("returns the latest Champion team certificate for the event-level lookup", async () => {
@@ -241,6 +242,39 @@ describe("legacy Champion certificate repository compatibility", () => {
         imageUrl: "/certificates/champion-v2.png",
         publishedUrl: "/certificates/champion-v2.png",
         status: "ready",
+      }),
+    });
+  });
+
+  it("appends a version and supersedes the published Champion instead of overwriting it", async () => {
+    const publishedChampion = {
+      ...championCertificateRow,
+      id: "certificate-champion-v1",
+      version: 1,
+      publishedUrl: "/certificates/champion-v1.png",
+    };
+    const nextChampion = {
+      ...championCertificateRow,
+      id: "certificate-champion-v2",
+      version: 2,
+    };
+    prisma.certificate.findFirst.mockResolvedValue(publishedChampion);
+    prisma.team.findUnique.mockResolvedValue({ name: "Miracle Champions" });
+    prisma.certificate.update.mockResolvedValue({ ...publishedChampion, supersededByVersion: 2 });
+    prisma.certificate.create.mockResolvedValue(nextChampion);
+
+    await expect(
+      recordCertificateSuccess("event-1", "team-champion", "/certificates/champion-v2.png"),
+    ).resolves.toMatchObject({ id: "certificate-champion-v2", imageUrl: "/certificates/champion-v2.png" });
+    expect(prisma.certificate.update).toHaveBeenCalledWith({
+      where: { id: "certificate-champion-v1" },
+      data: { supersededByVersion: 2 },
+    });
+    expect(prisma.certificate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventId: "event-1",
+        version: 2,
+        imageUrl: "/certificates/champion-v2.png",
       }),
     });
   });

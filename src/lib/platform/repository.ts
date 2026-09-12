@@ -3435,38 +3435,50 @@ export async function recordCertificateSuccess(eventId: string, teamId: string, 
     getCertificateRecipientName(teamId),
   ]);
   const now = new Date();
-  const row = existing
-    ? await prisma.certificate.update({
+  const createData = {
+    eventId,
+    teamId,
+    ...LEGACY_CHAMPION_CERTIFICATE_FILTER,
+    recipientId: teamId,
+    recipientName,
+    imageUrl,
+    publishedUrl: imageUrl,
+    status: "ready",
+    generatedAt: now,
+    publishedAt: now,
+    lastError: null,
+    attemptCount: 1,
+  } as const;
+  const isPublished = Boolean(existing && (existing.publishedAt || existing.publishedUrl || existing.imageUrl));
+  let row;
+  if (isPublished && existing) {
+    row = await prisma.$transaction(async (tx) => {
+      const nextVersion = existing.version + 1;
+      await tx.certificate.update({
         where: { id: existing.id },
-        data: {
-          teamId,
-          recipientId: teamId,
-          recipientName,
-          imageUrl,
-          publishedUrl: imageUrl,
-          status: "ready",
-          generatedAt: now,
-          publishedAt: now,
-          lastError: null,
-          attemptCount: { increment: 1 },
-        },
-      })
-    : await prisma.certificate.create({
-        data: {
-          eventId,
-          teamId,
-          ...LEGACY_CHAMPION_CERTIFICATE_FILTER,
-          recipientId: teamId,
-          recipientName,
-          imageUrl,
-          publishedUrl: imageUrl,
-          status: "ready",
-          generatedAt: now,
-          publishedAt: now,
-          lastError: null,
-          attemptCount: 1,
-        },
+        data: { supersededByVersion: nextVersion },
       });
+      return tx.certificate.create({ data: { ...createData, version: nextVersion } });
+    });
+  } else if (existing) {
+    row = await prisma.certificate.update({
+      where: { id: existing.id },
+      data: {
+        teamId,
+        recipientId: teamId,
+        recipientName,
+        imageUrl,
+        publishedUrl: imageUrl,
+        status: "ready",
+        generatedAt: now,
+        publishedAt: now,
+        lastError: null,
+        attemptCount: { increment: 1 },
+      },
+    });
+  } else {
+    row = await prisma.certificate.create({ data: createData });
+  }
   return toCertificate(row);
 }
 
