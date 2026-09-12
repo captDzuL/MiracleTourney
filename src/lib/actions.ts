@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { headers } from "next/headers";
@@ -175,12 +176,15 @@ const optionalPublicUrlSchema = z.preprocess(
   z.string().refine(isHttpUrl, "Registration URL must use http or https.").nullable(),
 );
 
-type UploadedImageAsset = {
+export type UploadedImageAsset = {
   url: string;
   mimeType: string;
   width: number;
   height: number;
   byteSize: number;
+  storageProvider: "vercel_blob" | "local";
+  storageKey: string;
+  contentSha256: string;
 };
 
 function appendActionError(basePath: string, message: string) {
@@ -225,6 +229,7 @@ export async function uploadImageAsset({
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
+  const contentSha256 = createHash("sha256").update(buffer).digest("hex");
   if (!hasImageSignature(buffer, extension)) {
     redirect(appendActionError(errorPath, `${label} file content does not match its image type.`) as never);
   }
@@ -236,19 +241,20 @@ export async function uploadImageAsset({
   }
 
   const filename = `${entityId}-${Date.now()}.${extension}`;
+  const storageKey = folder + "/" + filename;
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     const { put } = await import("@vercel/blob");
     const result = await put(`${folder}/${filename}`, buffer, {
       access: "public",
       contentType: mimeType,
     });
-    return { url: result.url, mimeType, ...dimensions, byteSize: file.size };
+    return { url: result.url, mimeType, ...dimensions, byteSize: file.size, storageProvider: "vercel_blob", storageKey, contentSha256 };
   }
 
   const dir = path.join(process.cwd(), "public", folder);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, filename), buffer);
-  return { url: `/${folder}/${filename}`, mimeType, ...dimensions, byteSize: file.size };
+  return { url: "/" + storageKey, mimeType, ...dimensions, byteSize: file.size, storageProvider: "local", storageKey, contentSha256 };
 }
 
 /** Returns real pixel dimensions, or null when the bytes are not a decodable image. */

@@ -1,66 +1,66 @@
 import { Prisma } from "@prisma/client";
 import { generateMiracleV3Certificate } from "./generate";
-import { createMiracleV3GenerationAdapter, type CertificateStudioActor, type CertificateStudioDependencies, type CertificateStudioRecord, type CertificateStudioTransaction } from "./service";
-import { MIRACLE_V3_BRANDING, MIRACLE_V3_CERTIFICATE_TYPES, type MiracleV3CertificateData, type MiracleV3CertificateType } from "./templates/miracle-v3";
+import {
+  createMiracleV3GenerationAdapter,
+  type CertificateAssetPlacement,
+  type CertificateStudioActor,
+  type CertificateStudioCompletion,
+  type CertificateStudioDependencies,
+  type CertificateStudioMutation,
+  type CertificateStudioRecord,
+  type CertificateStudioTransaction,
+  type RegenerateCertificateResult,
+  type TrustedCertificateAsset,
+} from "./service";
+import {
+  MIRACLE_V3_BRANDING,
+  MIRACLE_V3_CERTIFICATE_TYPES,
+  type MiracleV3CertificateData,
+  type MiracleV3CertificateType,
+} from "./templates/miracle-v3";
 import { createOnlyCertificateStorage, createPrismaGenerationRepository } from "./generation-repository";
 import { prisma } from "@/lib/platform/db";
 
 type EventIdentity = { readonly id: string; readonly name: string };
+type CertificateAssetPurpose = TrustedCertificateAsset["purpose"];
+type StoredSelectedAsset = { readonly assetId: string; readonly placement: CertificateAssetPlacement; readonly asset: Omit<TrustedCertificateAsset, "storageOwnershipVerified"> };
+const STALE_MUTATION_MS = 5 * 60 * 1000;
+
 const completionVersion = (snapshot: Prisma.JsonValue): number | null => {
   if (!snapshot || Array.isArray(snapshot) || typeof snapshot !== "object") return null;
   const version = (snapshot as Record<string, unknown>).version;
   return Number.isSafeInteger(version) && Number(version) >= 0 ? Number(version) : null;
 };
+
 const mappedStatus = (row: { status: string; publishedAt: Date | null; supersededByVersion: number | null }): CertificateStudioRecord["status"] => {
   if (row.supersededByVersion) return "superseded";
   if (row.publishedAt) return "published";
-  return ["draft", "generating", "failed", "ready"].includes(row.status) ? row.status as CertificateStudioRecord["status"] : "failed";
+  return ["draft", "generating", "failed", "ready"].includes(row.status)
+    ? row.status as CertificateStudioRecord["status"]
+    : "failed";
 };
-const mapRecord = (row: { id: string; eventId: string; type: string; recipientId: string; version: number; status: string; imageUrl: string; publishedUrl: string | null; verificationCode: string; publishedAt: Date | null; supersededByVersion: number | null }) => ({
-  id: row.id, eventId: row.eventId, certificateType: row.type as MiracleV3CertificateType, recipientId: row.recipientId,
-  version: row.version, status: mappedStatus(row), imageUrl: row.imageUrl, publishedUrl: row.publishedUrl,
-  verificationCode: row.verificationCode, publishedAt: row.publishedAt?.toISOString() ?? null, supersededByVersion: row.supersededByVersion,
+
+type CertificateRow = {
+  id: string; eventId: string; type: string; recipientId: string; version: number; status: string;
+  imageUrl: string; publishedUrl: string | null; verificationCode: string; publishedAt: Date | null;
+  supersededByVersion: number | null; completionId: string | null; completionVersion: number | null;
+  templateVersion: string;
+};
+
+const mapRecord = (row: CertificateRow): CertificateStudioRecord => ({
+  id: row.id, eventId: row.eventId, certificateType: row.type as MiracleV3CertificateType,
+  recipientId: row.recipientId, completionId: row.completionId, completionVersion: row.completionVersion,
+  templateVersion: row.templateVersion, version: row.version, status: mappedStatus(row), imageUrl: row.imageUrl,
+  publishedUrl: row.publishedUrl, verificationCode: row.verificationCode,
+  publishedAt: row.publishedAt?.toISOString() ?? null, supersededByVersion: row.supersededByVersion,
 });
 
-export async function loadCertificateStudioState(event: EventIdentity) {
-  const completion = await prisma.tournamentCompletion.findUnique({
-    where: { eventId: event.id },
-    include: {
-      podiumPlacements: true,
-      awards: { include: { decision: true } },
-      event: { include: { certificates: { orderBy: [{ type: "asc" }, { version: "asc" }] }, certificatePublications: { orderBy: { version: "desc" }, take: 1 } } },
-    },
-  });
-  const version = completion ? completionVersion(completion.sourceSnapshot) : null;
-  const pendingRecords = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => ({ certificateType, recipient: null, selectedCertificateId: null, versions: null }));
-  if (!completion || completion.status !== "completed" || version === null) {
-    return { status: "integration_required" as const, event, completionVersion: null, certificateRevision: null, records: pendingRecords, publication: null };
-  }
-  const recipientFor = (type: MiracleV3CertificateType) => {
-    const podiumRank = { champion: 1, runner_up: 2, third_place: 3 }[type as "champion"] as number | undefined;
-    if (podiumRank) {
-      const row = completion.podiumPlacements.find((candidate) => candidate.rank === podiumRank);
-      return row ? { id: row.teamId, name: row.teamName, kind: "team" as const } : null;
-    }
-    const award = completion.awards.find((candidate) => candidate.type === type)?.decision;
-    return award ? { id: award.recipientId, name: award.recipientName, kind: "player" as const } : null;
-  };
-  const records = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => {
-    const versions = completion.event.certificates.filter((row) => row.type === certificateType).map((row) => ({ ...mapRecord(row), lastError: row.lastError }));
-    const selected = [...versions].reverse().find((row) => row.status === "ready" || row.status === "published") ?? versions.at(-1) ?? null;
-    return { certificateType, recipient: recipientFor(certificateType), selectedCertificateId: selected?.id ?? null, versions };
-  });
-  if (records.some((record) => !record.recipient)) {
-    return { status: "integration_required" as const, event, completionVersion: null, certificateRevision: null, records: pendingRecords, publication: null };
-  }
-  const publication = completion.event.certificatePublications[0];
-  return {
-    status: "available" as const, event, completionVersion: version, certificateRevision: completion.certificateRevision, records,
-    publication: publication ? { version: publication.version, publishedAt: publication.publishedAt.toISOString() } : null,
-  };
-}
+const loadCompletionForGeneration = (tx: Prisma.TransactionClient, eventId: string) => tx.tournamentCompletion.findUnique({
+  where: { eventId }, include: { event: true, podiumPlacements: true, awards: { include: { decision: true } } },
+});
+type CompletionRow = Awaited<ReturnType<typeof loadCompletionForGeneration>>;
 
-function recipient(completion: Awaited<ReturnType<typeof loadCompletionForGeneration>>, type: MiracleV3CertificateType) {
+function recipient(completion: CompletionRow, type: MiracleV3CertificateType) {
   if (!completion) return null;
   const rank = type === "champion" ? 1 : type === "runner_up" ? 2 : type === "third_place" ? 3 : null;
   if (rank) {
@@ -70,83 +70,216 @@ function recipient(completion: Awaited<ReturnType<typeof loadCompletionForGenera
   const decision = completion.awards.find((row) => row.type === type)?.decision;
   return decision ? { id: decision.recipientId, name: decision.recipientName, kind: "player" as const, teamId: decision.teamId, teamName: decision.teamName } : null;
 }
-const loadCompletionForGeneration = (tx: Prisma.TransactionClient, eventId: string) => tx.tournamentCompletion.findUnique({
-  where: { eventId },
-  include: { event: true, podiumPlacements: true, awards: { include: { decision: true } } },
-});
 
-function transactionObject(tx: Prisma.TransactionClient, eventId: string, actor: CertificateStudioActor): CertificateStudioTransaction {
+function completionContract(completion: CompletionRow): CertificateStudioCompletion | null {
+  if (!completion) return null;
+  const version = completionVersion(completion.sourceSnapshot);
+  if (version === null) return null;
+  const entries = MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, recipient(completion, type)?.id] as const);
+  if (entries.some(([, recipientId]) => !recipientId)) return null;
+  return { id: completion.id, status: completion.status as CertificateStudioCompletion["status"], version,
+    certificateRevision: completion.certificateRevision,
+    recipients: Object.fromEntries(entries) as Record<MiracleV3CertificateType, string> };
+}
+
+function trustedStorage(asset: { url: string | null; storageProvider: string | null; storageKey: string | null; contentSha256: string | null }) {
+  if (!asset.url || !asset.storageKey || !asset.contentSha256
+    || !/^certificate-assets\/[A-Za-z0-9._/-]+$/.test(asset.storageKey)
+    || !/^[a-f0-9]{64}$/.test(asset.contentSha256)) return false;
+  if (asset.storageProvider === "local") return asset.url === `/${asset.storageKey}`;
+  if (asset.storageProvider !== "vercel_blob") return false;
+  try {
+    const url = new URL(asset.url);
+    return url.protocol === "https:" && url.hostname.endsWith(".public.blob.vercel-storage.com") && url.pathname === `/${asset.storageKey}`;
+  } catch { return false; }
+}
+
+function trustedAsset(row: {
+  url: string | null; mimeType: string | null; width: number | null; height: number | null; byteSize: number | null;
+  storageProvider: string | null; storageKey: string | null; contentSha256: string | null; purpose: string | null;
+}): TrustedCertificateAsset | null {
+  if (!trustedStorage(row) || !row.url || !row.storageKey || !row.contentSha256
+    || (row.storageProvider !== "local" && row.storageProvider !== "vercel_blob")
+    || !row.mimeType || !row.width || !row.height || !row.byteSize
+    || !["certificate_team_logo", "certificate_character_art"].includes(row.purpose ?? "")) return null;
+  return { url: row.url, detectedMimeType: row.mimeType, bytes: row.byteSize, width: row.width, height: row.height,
+    storageOwnershipVerified: true, storageProvider: row.storageProvider, storageKey: row.storageKey,
+    contentSha256: row.contentSha256, purpose: row.purpose as CertificateAssetPurpose };
+}
+
+export async function loadCertificateStudioState(event: EventIdentity) {
+  const [completion, visualAssets] = await Promise.all([
+    prisma.tournamentCompletion.findUnique({
+      where: { eventId: event.id }, include: { podiumPlacements: true, awards: { include: { decision: true } },
+        event: { include: { certificates: { orderBy: [{ type: "asc" }, { version: "asc" }] },
+          certificatePublications: { orderBy: { version: "desc" }, take: 1 } } } },
+    }),
+    prisma.eventVisualAsset.findMany({ where: { eventId: event.id, status: "approved" }, orderBy: { createdAt: "desc" } }),
+  ]);
+  const approvedAssets = visualAssets.flatMap((row) => {
+    const asset = trustedAsset(row);
+    return asset ? [{ id: row.id, label: row.storageKey?.split("/").at(-1) ?? row.id, purpose: asset.purpose }] : [];
+  });
+  const version = completion ? completionVersion(completion.sourceSnapshot) : null;
+  const pendingRecords = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => ({ certificateType, recipient: null, selectedCertificateId: null, versions: null }));
+  if (!completion || completion.status !== "completed" || version === null) {
+    return { status: "integration_required" as const, event, completionVersion: null, certificateRevision: null, records: pendingRecords, publication: null, approvedAssets };
+  }
+  const records = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => {
+    const winner = recipient(completion, certificateType);
+    const versions = completion.event.certificates
+      .filter((row) => row.type === certificateType && row.templateVersion === "miracle-v3"
+        && row.completionId === completion.id && row.completionVersion === version && row.recipientId === winner?.id)
+      .map((row) => ({ ...mapRecord(row), lastError: row.lastError }));
+    const selected = versions.at(-1) ?? null;
+    return { certificateType, recipient: winner ? { id: winner.id, name: winner.name, kind: winner.kind } : null,
+      selectedCertificateId: selected?.id ?? null, versions };
+  });
+  if (records.some((record) => !record.recipient)) {
+    return { status: "integration_required" as const, event, completionVersion: null, certificateRevision: null, records: pendingRecords, publication: null, approvedAssets };
+  }
+  const publication = completion.event.certificatePublications[0];
+  return { status: "available" as const, event, completionVersion: version, certificateRevision: completion.certificateRevision,
+    records, publication: publication ? { version: publication.version, publishedAt: publication.publishedAt.toISOString() } : null,
+    approvedAssets };
+}
+
+type StoredManifest = { assets?: StoredSelectedAsset[] };
+function selectedAssets(value: Prisma.JsonValue): StoredSelectedAsset[] {
+  if (!value || Array.isArray(value) || typeof value !== "object") return [];
+  const assets = (value as StoredManifest).assets;
+  if (!Array.isArray(assets)) return [];
+  return assets;
+}
+
+async function generationPayload(tx: Prisma.TransactionClient, eventId: string, completion: NonNullable<CompletionRow>, certificate: CertificateRow & { assetManifest: Prisma.JsonValue; teamId: string; recipientKind: string; recipientName: string }) {
+  const version = completionVersion(completion.sourceSnapshot);
+  const type = certificate.type as MiracleV3CertificateType;
+  const winner = recipient(completion, type);
+  if (completion.status !== "completed" || version === null || !winner || certificate.completionId !== completion.id
+    || certificate.completionVersion !== version || certificate.templateVersion !== "miracle-v3" || certificate.recipientId !== winner.id) {
+    throw new Error("Certificate is not bound to the authoritative completion snapshot");
+  }
+  const team = await tx.team.findFirst({ where: { id: winner.teamId, eventId } });
+  if (!team) throw new Error("Certificate team is unavailable");
+  const assets = await Promise.all(selectedAssets(certificate.assetManifest).map(async (stored) => {
+    const row = await tx.eventVisualAsset.findFirst({ where: { id: stored.assetId, eventId, status: "approved" } });
+    const current = row ? trustedAsset(row) : null;
+    const fields = ["url", "detectedMimeType", "bytes", "width", "height", "storageProvider", "storageKey", "contentSha256", "purpose"] as const;
+    if (!current || fields.some((field) => current[field] !== stored.asset[field])) {
+      throw new Error("Certificate asset provenance changed");
+    }
+    return { placement: stored.placement, asset: current };
+  }));
+  const character = assets.find((row) => row.placement.assetKind === "character_art")?.asset.url ?? null;
+  const logoKind = winner.kind === "team" ? "team_logo_hero" : "team_logo_badge";
+  const logo = assets.find((row) => row.placement.assetKind === logoKind)?.asset.url ?? null;
+  const origin = (() => { try { const url = new URL(process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun"); return url.protocol === "https:" ? url.origin : "https://miracle-league.fun"; } catch { return "https://miracle-league.fun"; } })();
+  const data: MiracleV3CertificateData = {
+    eventId, eventName: completion.event.name, gameId: completion.event.gameId, gameName: completion.event.gameId,
+    certificateId: certificate.id, certificateType: type, version: certificate.version, templateVersion: "miracle-v3",
+    recipientId: winner.id, recipientName: winner.name, recipientKind: winner.kind, teamId: winner.teamId, teamName: winner.teamName,
+    teamLogoUrl: logo, characterArtUrl: character, issueDate: new Date().toISOString().slice(0, 10),
+    verificationCode: certificate.verificationCode, verificationBaseUrl: origin, branding: { ...MIRACLE_V3_BRANDING },
+    assetPlacements: assets.map((row) => row.placement),
+  };
+  return { record: mapRecord(certificate), data };
+}
+
+function terminalGenerationResult(value: Prisma.JsonValue | null): RegenerateCertificateResult | null {
+  if (!value || Array.isArray(value) || typeof value !== "object") return null;
+  const result = value as unknown as RegenerateCertificateResult;
+  return ["generated", "failed"].includes(result.status) ? result : null;
+}
+function retryablePublicationConflict() {
+  const error = new Error("Certificate publication revision changed") as Error & { code: string };
+  error.code = "P2034";
+  return error;
+}
+
+
+export function createCertificateStudioTransaction(tx: Prisma.TransactionClient, eventId: string, actor: CertificateStudioActor): CertificateStudioTransaction {
   return {
     authorize: async () => {
       const event = await tx.event.findUnique({ where: { id: eventId }, select: { organizerUserId: true } });
       if (!event || (actor.role === "organizer" && event.organizerUserId !== actor.id)) return null;
       return actor;
     },
-    loadCompletion: async () => {
-      const row = await tx.tournamentCompletion.findUnique({ where: { eventId } });
-      if (!row) return null;
-      const version = completionVersion(row.sourceSnapshot);
-      return version === null ? null : { status: row.status as "completed" | "reopened" | "editable", version, certificateRevision: row.certificateRevision };
-    },
-    findMutation: async (key) => {
-      const certificate = await tx.certificate.findFirst({ where: { eventId, generationIdempotencyKey: key } });
-      if (certificate?.generationFingerprint && certificate.generationActorUserId) {
-        const result = certificate.status === "ready" || certificate.status === "published"
-          ? { status: "generated" as const, certificateId: certificate.id, certificateType: certificate.type as MiracleV3CertificateType, version: certificate.version, imageUrl: certificate.imageUrl }
-          : { status: "failed" as const, code: "generation_failed" as const, certificateId: certificate.id, certificateType: certificate.type as MiracleV3CertificateType, version: certificate.version };
-        return { fingerprint: certificate.generationFingerprint, actorId: certificate.generationActorUserId, result };
+    loadCompletion: async () => completionContract(await loadCompletionForGeneration(tx, eventId)),
+    findMutation: async (key): Promise<CertificateStudioMutation | null> => {
+      const mutation = await tx.certificateGenerationMutation.findUnique({ where: { eventId_idempotencyKey: { eventId, idempotencyKey: key } }, include: { certificate: true } });
+      if (mutation) {
+        if (mutation.status === "succeeded" || mutation.status === "failed") {
+          const result = terminalGenerationResult(mutation.result);
+          if (!result) throw new Error("Certificate mutation terminal result is corrupt");
+          return { status: "terminal", fingerprint: mutation.fingerprint, actorId: mutation.actorUserId, result };
+        }
+        return { status: "in_progress", fingerprint: mutation.fingerprint, actorId: mutation.actorUserId,
+          stale: mutation.updatedAt.getTime() <= Date.now() - STALE_MUTATION_MS, certificateId: mutation.certificateId,
+          certificateType: mutation.type as MiracleV3CertificateType, version: mutation.certificate.version };
       }
       const publication = await tx.certificatePublication.findUnique({ where: { eventId_idempotencyKey: { eventId, idempotencyKey: key } } });
-      return publication ? { fingerprint: publication.fingerprint, actorId: publication.actorUserId, result: { status: "published", publicationVersion: publication.version, publishedAt: publication.publishedAt.toISOString() } } : null;
+      return publication ? { status: "terminal", fingerprint: publication.fingerprint, actorId: publication.actorUserId,
+        result: { status: "published", publicationVersion: publication.version, publishedAt: publication.publishedAt.toISOString() } } : null;
     },
     resolveAsset: async (assetId) => {
-      const asset = await tx.eventVisualAsset.findFirst({ where: { id: assetId, eventId, status: "approved" } });
-      if (!asset?.url || !asset.mimeType || !asset.width || !asset.height || !asset.byteSize) return null;
-      return { url: asset.url, detectedMimeType: asset.mimeType, bytes: asset.byteSize, width: asset.width, height: asset.height, storageOwnershipVerified: true };
+      const row = await tx.eventVisualAsset.findFirst({ where: { id: assetId, eventId, status: "approved" } });
+      return row ? trustedAsset(row) : null;
     },
-    appendVersion: async ({ certificateType, idempotencyKey, fingerprint, actorId, placement, asset }) => {
+    appendVersion: async ({ certificateType, idempotencyKey, fingerprint, actorId, assets }) => {
       const completion = await loadCompletionForGeneration(tx, eventId);
+      const contract = completionContract(completion);
       const winner = recipient(completion, certificateType);
-      if (!completion || completion.status !== "completed" || !winner) throw new Error("Completion snapshot recipient is unavailable");
+      if (!completion || !contract || contract.status !== "completed" || !winner) throw new Error("Completion snapshot recipient is unavailable");
       const latest = await tx.certificate.findFirst({ where: { eventId, type: certificateType }, orderBy: { version: "desc" } });
-      const team = await tx.team.findFirst({ where: { id: winner.teamId, eventId } });
-      if (!team) throw new Error("Certificate team is unavailable");
-      const assetManifest = JSON.parse(JSON.stringify(placement && asset ? { placement, asset: { url: asset.url, mimeType: asset.detectedMimeType, width: asset.width, height: asset.height, bytes: asset.bytes } } : {})) as Prisma.InputJsonValue;
-      const created = await tx.certificate.create({ data: {
-        eventId, teamId: winner.teamId, type: certificateType, recipientKind: winner.kind, recipientId: winner.id, recipientName: winner.name,
-        version: (latest?.version ?? 0) + 1, templateVersion: "miracle-v3", assetManifest, imageUrl: "", status: "draft", attemptCount: 0,
-        generationIdempotencyKey: idempotencyKey, generationFingerprint: fingerprint, generationActorUserId: actorId,
-      } });
-      const assetUrl = asset?.url ?? null;
-      const verificationOrigin = (() => { try { const url = new URL(process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun"); return url.protocol === "https:" ? url.origin : "https://miracle-league.fun"; } catch { return "https://miracle-league.fun"; } })();
-      const data: MiracleV3CertificateData = {
-        eventId, eventName: completion.event.name, gameId: completion.event.gameId, gameName: completion.event.gameId,
-        certificateId: created.id, certificateType, version: created.version, templateVersion: "miracle-v3",
-        recipientId: winner.id, recipientName: winner.name, recipientKind: winner.kind, teamId: winner.teamId, teamName: winner.teamName,
-        teamLogoUrl: placement?.assetKind.startsWith("team_logo") ? assetUrl : team.logoUrl,
-        characterArtUrl: placement?.assetKind === "character_art" ? assetUrl : completion.event.characterArtUrl,
-        issueDate: new Date().toISOString().slice(0, 10), verificationCode: created.verificationCode, verificationBaseUrl: verificationOrigin,
-        branding: { ...MIRACLE_V3_BRANDING }, assetPlacement: placement,
-      };
-      return { record: mapRecord(created), data };
+      const assetManifest = JSON.parse(JSON.stringify({ assets: assets.map((row) => ({ assetId: row.assetId, placement: row.placement, asset: { ...row.asset, storageOwnershipVerified: undefined } })) })) as Prisma.InputJsonValue;
+      const created = await tx.certificate.create({ data: { eventId, teamId: winner.teamId, type: certificateType,
+        recipientKind: winner.kind, recipientId: winner.id, recipientName: winner.name, version: (latest?.version ?? 0) + 1,
+        templateVersion: "miracle-v3", completionId: completion.id, completionVersion: contract.version, assetManifest,
+        imageUrl: "", status: "draft", attemptCount: 0, generationIdempotencyKey: idempotencyKey,
+        generationFingerprint: fingerprint, generationActorUserId: actorId } });
+      await tx.certificateGenerationMutation.create({ data: { eventId, type: certificateType, idempotencyKey, fingerprint,
+        actorUserId: actorId, certificateId: created.id, status: "in_progress" } });
+      return generationPayload(tx, eventId, completion, created);
+    },
+    resumeVersion: async (idempotencyKey) => {
+      const mutation = await tx.certificateGenerationMutation.findUnique({ where: { eventId_idempotencyKey: { eventId, idempotencyKey } }, include: { certificate: true } });
+      const completion = await loadCompletionForGeneration(tx, eventId);
+      if (!mutation || mutation.status !== "in_progress" || !completion) throw new Error("Certificate mutation cannot be resumed");
+      return generationPayload(tx, eventId, completion, mutation.certificate);
+    },
+    finalizeMutation: async (idempotencyKey, result) => {
+      const terminalStatus = result.status === "generated" ? "succeeded" : "failed";
+      const updated = await tx.certificateGenerationMutation.updateMany({ where: { eventId, idempotencyKey, status: "in_progress" },
+        data: { status: terminalStatus, result: JSON.parse(JSON.stringify(result)) as Prisma.InputJsonValue } });
+      if (updated.count === 1) return;
+      const existing = await tx.certificateGenerationMutation.findUnique({ where: { eventId_idempotencyKey: { eventId, idempotencyKey } } });
+      if (!existing || JSON.stringify(existing.result) !== JSON.stringify(result)) throw new Error("Certificate mutation terminal result is immutable");
     },
     loadCertificates: async (ids) => (await tx.certificate.findMany({ where: { id: { in: [...ids] }, eventId } })).map(mapRecord),
     commitPublication: async ({ selection, actorId, idempotencyKey, fingerprint, expectedCertificateRevision }) => {
-      const completion = await tx.tournamentCompletion.findUnique({ where: { eventId } });
-      if (!completion || completion.certificateRevision !== expectedCertificateRevision) throw new Error("Certificate publication revision changed");
+      const completion = await loadCompletionForGeneration(tx, eventId);
+      const contract = completionContract(completion);
+      if (!completion || !contract || contract.status !== "completed" || contract.certificateRevision !== expectedCertificateRevision) throw retryablePublicationConflict();
       const chosen = await tx.certificate.findMany({ where: { id: { in: selection.map((row) => row.certificateId) }, eventId } });
+      const valid = chosen.length === MIRACLE_V3_CERTIFICATE_TYPES.length && selection.every((selected) => {
+        const certificate = chosen.find((row) => row.id === selected.certificateId && row.type === selected.certificateType);
+        return certificate?.completionId === contract.id && certificate.completionVersion === contract.version
+          && certificate.templateVersion === "miracle-v3" && certificate.recipientId === contract.recipients[selected.certificateType]
+          && (certificate.status === "ready" || certificate.publishedAt !== null) && Boolean(certificate.imageUrl);
+      });
+      if (!valid) throw new Error("Certificate publication set is no longer authoritative");
+      const optimistic = await tx.tournamentCompletion.updateMany({ where: { id: completion.id, certificateRevision: expectedCertificateRevision }, data: { certificateRevision: { increment: 1 } } });
+      if (optimistic.count !== 1) throw retryablePublicationConflict();
       const now = new Date();
       for (const selected of chosen) {
         await tx.certificate.updateMany({ where: { eventId, type: selected.type, publishedAt: { not: null }, id: { not: selected.id }, supersededByVersion: null }, data: { status: "superseded", supersededByVersion: selected.version } });
-        // Keep the legacy persistence status while publishedAt/publishedUrl are
-        // the source of truth for V3 publication.
         await tx.certificate.update({ where: { id: selected.id }, data: { status: "ready", publishedUrl: selected.publishedUrl ?? selected.imageUrl, publishedAt: selected.publishedAt ?? now } });
       }
-      const updated = await tx.tournamentCompletion.updateMany({ where: { id: completion.id, certificateRevision: expectedCertificateRevision }, data: { certificateRevision: { increment: 1 } } });
-      if (updated.count !== 1) throw new Error("Certificate publication revision changed");
-      const version = expectedCertificateRevision + 1;
-      const publication = await tx.certificatePublication.create({ data: { eventId, completionId: completion.id, version, completionVersion: completionVersion(completion.sourceSnapshot) ?? 0, certificateIds: selection.map((row) => row.certificateId), idempotencyKey, fingerprint, actorUserId: actorId, publishedAt: now } });
-      return { publicationVersion: version, publishedAt: publication.publishedAt.toISOString() };
+      const publication = await tx.certificatePublication.create({ data: { eventId, completionId: completion.id,
+        version: expectedCertificateRevision + 1, completionVersion: contract.version,
+        certificateIds: selection.map((row) => row.certificateId), idempotencyKey, fingerprint, actorUserId: actorId, publishedAt: now } });
+      return { publicationVersion: publication.version, publishedAt: publication.publishedAt.toISOString() };
     },
   };
 }
@@ -154,18 +287,14 @@ function transactionObject(tx: Prisma.TransactionClient, eventId: string, actor:
 export function createPrismaCertificateStudioDependencies(actor: CertificateStudioActor): CertificateStudioDependencies {
   const generationRepository = createPrismaGenerationRepository();
   const storage = createOnlyCertificateStorage();
-  return {
-    transaction: async (eventId, work) => {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          return await prisma.$transaction((tx) => work(transactionObject(tx, eventId, actor)), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-        } catch (error) {
-          const code = typeof error === "object" && error && "code" in error ? (error as { code?: string }).code : undefined;
-          if (!["P2034", "P2002"].includes(code ?? "") || attempt === 2) throw error;
-        }
+  return { transaction: async (eventId, work) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try { return await prisma.$transaction((tx) => work(createCertificateStudioTransaction(tx, eventId, actor)), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); }
+      catch (error) {
+        const code = typeof error === "object" && error && "code" in error ? (error as { code?: string }).code : undefined;
+        if (!["P2034", "P2002"].includes(code ?? "") || attempt === 2) throw error;
       }
-      throw new Error("Certificate Studio transaction exhausted retries");
-    },
-    generate: (data, context) => generateMiracleV3Certificate({ data }, createMiracleV3GenerationAdapter(generationRepository, storage, { idempotencyKey: context.idempotencyKey, now: new Date() })),
-  };
+    }
+    throw new Error("Certificate Studio transaction exhausted retries");
+  }, generate: (data, context) => generateMiracleV3Certificate({ data }, createMiracleV3GenerationAdapter(generationRepository, storage, { idempotencyKey: context.idempotencyKey, now: new Date() })) };
 }

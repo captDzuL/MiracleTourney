@@ -72,6 +72,17 @@ describe("Miracle V3 certificate contract", () => {
     expect(hero.style.width).toBe("500px");
     expect(doc.querySelector("[data-editor-guide]")).toBeNull();
   });
+  it("positions individual hero and team badge independently", async () => {
+    const doc = await documentFor({
+      ...fixture, certificateType: "mvp", recipientKind: "player",
+      assetPlacements: [
+        { assetKind: "character_art", x: 320, y: 700, width: 500, height: 500 },
+        { assetKind: "team_logo_badge", x: 70, y: 1050, width: 150, height: 150 },
+      ],
+    });
+    expect(doc.querySelector<HTMLElement>('[data-role="character-art"]')?.style.left).toBe("16px");
+    expect(doc.querySelector<HTMLElement>('[data-zone="secondaryBadge"] img')?.style.left).toBe("6px");
+  });
   it("rejects out-of-zone or non-finite placement at the render boundary", async () => {
     await expect(buildMiracleV3CertificateHtml({ ...fixture, assetPlacement: { assetKind: "team_logo_hero", x: 0, y: 700, width: 500, height: 500 } })).rejects.toThrow("Invalid certificate asset placement");
     expect(() => getMiracleV3CertificateFingerprint({ ...fixture, assetPlacement: { assetKind: "team_logo_hero", x: Number.NaN, y: 700, width: 500, height: 500 } })).toThrow("Invalid certificate asset placement");

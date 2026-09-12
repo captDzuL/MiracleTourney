@@ -47,9 +47,13 @@ function manifest(data: MiracleV3CertificateData) {
   for (const key of ["cyan", "violet", "cream"] as const) {
     if (data.branding[key].toLowerCase() !== MIRACLE_V3_BRANDING[key]) throw new Error("Unapproved certificate palette");
   }
-  let assetPlacement = null;
-  if (data.assetPlacement) {
-    const placement = data.assetPlacement;
+  const requestedPlacements = data.assetPlacements ?? (data.assetPlacement ? [data.assetPlacement] : []);
+  if (requestedPlacements.length > 2 || new Set(requestedPlacements.map((row) => row.assetKind)).size !== requestedPlacements.length) {
+    throw new Error("Invalid certificate asset placement");
+  }
+  const assetPlacements = [];
+  for (const placement of requestedPlacements) {
+
     const values = [placement.x, placement.y, placement.width, placement.height];
     const expectedKind = teamType(data.certificateType) ? "team_logo_hero" : placement.assetKind;
     const zone = expectedKind === "team_logo_badge" ? MIRACLE_V3_SAFE_ZONES.secondaryBadge : MIRACLE_V3_SAFE_ZONES.hero;
@@ -59,7 +63,7 @@ function manifest(data: MiracleV3CertificateData) {
       || placement.x < zone.x || placement.y < zone.y
       || placement.x + placement.width > zone.x + zone.width
       || placement.y + placement.height > zone.y + zone.height) throw new Error("Invalid certificate asset placement");
-    assetPlacement = { ...placement };
+    assetPlacements.push({ ...placement });
   }
   return {
     eventId: text(data.eventId), eventName: text(data.eventName), gameId: text(data.gameId), gameName: text(data.gameName),
@@ -68,7 +72,7 @@ function manifest(data: MiracleV3CertificateData) {
     teamId: text(data.teamId), teamName: text(data.teamName), teamLogoUrl: assetUrl(data.teamLogoUrl, base.origin),
     characterArtUrl: teamType(data.certificateType) ? null : assetUrl(data.characterArtUrl, base.origin),
     issueDate: text(data.issueDate), verificationCode: data.verificationCode, verificationBaseUrl: base.origin,
-    branding: MIRACLE_V3_BRANDING, assetPlacement,
+    branding: MIRACLE_V3_BRANDING, assetPlacement: assetPlacements[0] ?? null, assetPlacements,
   };
 }
 
@@ -95,7 +99,7 @@ export async function buildMiracleV3CertificateHtml(data: MiracleV3CertificateDa
   const fallback = `<svg data-role="hero-fallback" aria-label="Miracle award emblem" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg"><path d="M300 30 560 180 560 420 300 570 40 420 40 180Z" fill="#151a24" stroke="#aa8bff" stroke-width="3"/><path d="M150 420V180L300 310 450 180V420" fill="none" stroke="#49d1ec" stroke-width="48"/><circle cx="300" cy="300" r="270" fill="none" stroke="#f6dfb1" stroke-dasharray="${12 + parseInt(fingerprint.slice(0, 2), 16) % 24} 28"/></svg>`;
   const hero = teamType(m.certificateType) ? m.teamLogoUrl : m.characterArtUrl;
   const placementStyle = (kind: "team_logo_hero" | "team_logo_badge" | "character_art", zoneName: "hero" | "secondaryBadge") => {
-    const placement = m.assetPlacement;
+    const placement = m.assetPlacements.find((candidate) => candidate.assetKind === kind);
     if (!placement || placement.assetKind !== kind) return "";
     const base = MIRACLE_V3_SAFE_ZONES[zoneName];
     return ` style="position:absolute;left:${placement.x - base.x}px;top:${placement.y - base.y}px;width:${placement.width}px;height:${placement.height}px;object-fit:contain"`;

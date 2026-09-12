@@ -78,6 +78,7 @@ export const eventPublicInclude = { stream: true, activeVisualAsset: true } sati
 type EventVisualAssetRow = {
   id: string; eventId: string; source: string; status: string;
   url?: string | null; mimeType?: string | null; width?: number | null; height?: number | null; byteSize?: number | null;
+  storageProvider?: string | null; storageKey?: string | null; contentSha256?: string | null; purpose?: string | null;
   focalX: number; focalY: number;
   provider?: string | null; model?: string | null; promptVersion?: string | null;
   workflowRunId?: string | null; sourceUrl?: string | null; rightsAttestedAt?: Date | null;
@@ -103,6 +104,10 @@ function mapEventVisualAsset(row: EventVisualAssetRow): EventVisualAsset {
   if (row.width != null) asset.width = row.width;
   if (row.height != null) asset.height = row.height;
   if (row.byteSize != null) asset.byteSize = row.byteSize;
+  if (row.storageProvider === "vercel_blob" || row.storageProvider === "local") asset.storageProvider = row.storageProvider;
+  if (row.storageKey) asset.storageKey = row.storageKey;
+  if (row.contentSha256) asset.contentSha256 = row.contentSha256;
+  if (row.purpose === "certificate_team_logo" || row.purpose === "certificate_character_art") asset.purpose = row.purpose;
   if (row.provider) asset.provider = row.provider;
   if (row.model) asset.model = row.model;
   if (row.promptVersion) asset.promptVersion = row.promptVersion;
@@ -754,6 +759,10 @@ export type CreateEventVisualAssetInput = {
   width?: number | null;
   height?: number | null;
   byteSize?: number | null;
+  storageProvider?: "vercel_blob" | "local" | null;
+  storageKey?: string | null;
+  contentSha256?: string | null;
+  purpose?: "certificate_team_logo" | "certificate_character_art" | null;
   provider?: string | null;
   model?: string | null;
   promptVersion?: string | null;

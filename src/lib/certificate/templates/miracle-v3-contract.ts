@@ -7,6 +7,7 @@ export interface MiracleV3CertificateData {
   issueDate: string; verificationCode: string; verificationBaseUrl: string;
   branding: { cyan: string; violet: string; cream: string };
   assetPlacement?: { assetKind: "team_logo_hero" | "team_logo_badge" | "character_art"; x: number; y: number; width: number; height: number } | null;
+  assetPlacements?: readonly { assetKind: "team_logo_hero" | "team_logo_badge" | "character_art"; x: number; y: number; width: number; height: number }[] | null;
 }
 export const MIRACLE_V3_CERTIFICATE_TYPES = Object.freeze(["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"] as const);
 export const MIRACLE_V3_BRANDING = Object.freeze({ cyan: "#49d1ec", violet: "#aa8bff", cream: "#f6dfb1" });

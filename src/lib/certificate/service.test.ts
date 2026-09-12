@@ -131,7 +131,11 @@ const data = (type: (typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], version = 1):
 });
 
 describe("certificate asset placement validation", () => {
-  const asset = { url: "/uploads/certificates/asset.png", detectedMimeType: "image/png" as const, bytes: 1024, width: 512, height: 512, storageOwnershipVerified: true };
+  const asset = {
+    url: "/certificate-assets/asset.png", detectedMimeType: "image/png" as const, bytes: 1024,
+    width: 512, height: 512, storageOwnershipVerified: true, storageProvider: "local" as const,
+    storageKey: "certificate-assets/asset.png", contentSha256: "a".repeat(64), purpose: "certificate_character_art" as const,
+  };
 
   it("accepts a finite placement fully inside the immutable hero zone", () => {
     expect(validateCertificateAssetPlacement({ assetKind: "character_art", x: 320, y: 700, width: 300, height: 500 }, asset)).toEqual({ success: true });
@@ -181,14 +185,17 @@ describe("durable v3 generation adapter", () => {
 function studioDependencies(overrides: Partial<CertificateStudioDependencies> = {}) {
   const history = MIRACLE_V3_CERTIFICATE_TYPES.map((type) => ({
     id: `cert-${type}-1`, eventId: "event-1", certificateType: type, recipientId: `recipient-${type}`,
+    completionId: "completion-1", completionVersion: 4, templateVersion: "miracle-v3",
     version: 1, status: "ready" as const, imageUrl: `https://blob.example/${type}/v1.png`, publishedUrl: null,
     verificationCode: `verify-${type}-1`, publishedAt: null, supersededByVersion: null,
   }));
   const tx: CertificateStudioTransaction = {
     authorize: vi.fn().mockResolvedValue({ id: "organizer-1", role: "organizer" }),
-    loadCompletion: vi.fn().mockResolvedValue({ status: "completed", version: 4, certificateRevision: 2 }),
+    loadCompletion: vi.fn().mockResolvedValue({ id: "completion-1", status: "completed", version: 4, certificateRevision: 2, recipients: Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, `recipient-${type}`])) }),
     findMutation: vi.fn().mockResolvedValue(null),
     appendVersion: vi.fn().mockImplementation(async ({ certificateType }) => ({ record: { ...history.find((row) => row.certificateType === certificateType)!, id: `cert-${certificateType}-2`, version: 2, status: "generating" }, data: data(certificateType, 2) })),
+    resumeVersion: vi.fn(),
+    finalizeMutation: vi.fn(),
     loadCertificates: vi.fn().mockResolvedValue(history),
     commitPublication: vi.fn().mockResolvedValue({ publicationVersion: 3, publishedAt: "2026-09-12T04:00:00.000Z" }),
   };
@@ -203,7 +210,7 @@ describe("certificate regeneration and atomic publication", () => {
     expect(tx.appendVersion).toHaveBeenCalledWith(expect.objectContaining({ certificateType: "champion" }));
     expect(deps.generate).toHaveBeenCalledWith(expect.objectContaining({ version: 2 }), expect.anything());
 
-    vi.mocked(tx.findMutation).mockResolvedValue({ fingerprint: JSON.stringify({ action: "regenerate", certificateType: "champion", expectedVersion: 4, placement: null, assetId: null }), actorId: "organizer-1", result: { status: "generated", certificateId: "cert-champion-2", certificateType: "champion", version: 2, imageUrl: "https://blob.example/generated.png" } });
+    vi.mocked(tx.findMutation).mockResolvedValue({ status: "terminal", fingerprint: JSON.stringify({ action: "regenerate", certificateType: "champion", expectedVersion: 4, assets: [] }), actorId: "organizer-1", result: { status: "generated", certificateId: "cert-champion-2", certificateType: "champion", version: 2, imageUrl: "https://blob.example/generated.png" } });
     // A stored same-key result is returned by the service and no third version is appended.
     const second = await regenerateCertificate(input, deps);
     expect(second.status).toBe("already_applied");
@@ -216,11 +223,26 @@ describe("certificate regeneration and atomic publication", () => {
   });
   it("rejects an asset role that does not belong to the selected certificate kind", async () => {
     const { tx, deps } = studioDependencies();
-    tx.resolveAsset = vi.fn().mockResolvedValue({ url: "/character-art/hero.png", detectedMimeType: "image/png", bytes: 100, width: 100, height: 100, storageOwnershipVerified: true });
+    tx.resolveAsset = vi.fn().mockResolvedValue({ url: "/certificate-assets/hero.png", detectedMimeType: "image/png", bytes: 100, width: 100, height: 100, storageOwnershipVerified: true, storageProvider: "local", storageKey: "certificate-assets/hero.png", contentSha256: "a".repeat(64), purpose: "certificate_character_art" });
     await expect(regenerateCertificate({ eventId: "event-1", certificateType: "mvp", expectedVersion: 4, idempotencyKey: "11111111-1111-4111-8111-111111111111", assetId: "asset-1", placement: { assetKind: "team_logo_hero", x: 320, y: 700, width: 100, height: 100 } }, deps)).resolves.toEqual({ status: "blocked", code: "invalid_asset" });
     expect(tx.appendVersion).not.toHaveBeenCalled();
   });
 
+  it("accepts independent hero and team-badge assets for an individual certificate", async () => {
+    const { tx, deps } = studioDependencies();
+    const character = { url: "/certificate-assets/hero.png", detectedMimeType: "image/png", bytes: 100, width: 512, height: 512, storageOwnershipVerified: true, storageProvider: "local" as const, storageKey: "certificate-assets/hero.png", contentSha256: "a".repeat(64), purpose: "certificate_character_art" as const };
+    const badge = { ...character, url: "/certificate-assets/badge.png", storageKey: "certificate-assets/badge.png", contentSha256: "b".repeat(64), purpose: "certificate_team_logo" as const };
+    tx.resolveAsset = vi.fn().mockImplementation(async (id) => id === "hero" ? character : badge);
+    const assets = [
+      { assetId: "hero", placement: { assetKind: "character_art" as const, x: 320, y: 700, width: 300, height: 500 } },
+      { assetId: "badge", placement: { assetKind: "team_logo_badge" as const, x: 70, y: 1050, width: 150, height: 150 } },
+    ];
+    await regenerateCertificate({ eventId: "event-1", certificateType: "mvp", expectedVersion: 4, idempotencyKey: "55555555-5555-4555-8555-555555555555", assets }, deps);
+    expect(tx.appendVersion).toHaveBeenCalledWith(expect.objectContaining({ assets: [
+      expect.objectContaining({ placement: expect.objectContaining({ assetKind: "character_art" }), asset: character }),
+      expect.objectContaining({ placement: expect.objectContaining({ assetKind: "team_logo_badge" }), asset: badge }),
+    ] }));
+  });
   it("requires exactly one ready version of all seven types and publishes atomically", async () => {
     const { tx, deps } = studioDependencies();
     const selection = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => ({ certificateType, certificateId: `cert-${certificateType}-1` }));
@@ -234,8 +256,8 @@ describe("certificate regeneration and atomic publication", () => {
   it.each([
     [{ authorize: vi.fn().mockResolvedValue(null) }, { status: "blocked", code: "unauthorized" }],
     [{ loadCompletion: vi.fn().mockResolvedValue(null) }, { status: "integration_required" }],
-    [{ loadCompletion: vi.fn().mockResolvedValue({ status: "completed", version: 5, certificateRevision: 2 }) }, { status: "conflict", code: "stale_version", version: 5 }],
-    [{ loadCompletion: vi.fn().mockResolvedValue({ status: "completed", version: 4, certificateRevision: 3 }) }, { status: "conflict", code: "stale_certificate_revision", version: 3 }],
+    [{ loadCompletion: vi.fn().mockResolvedValue({ id: "completion-1", status: "completed", version: 5, certificateRevision: 2, recipients: {} }) }, { status: "conflict", code: "stale_version", version: 5 }],
+    [{ loadCompletion: vi.fn().mockResolvedValue({ id: "completion-1", status: "completed", version: 4, certificateRevision: 3, recipients: {} }) }, { status: "conflict", code: "stale_certificate_revision", version: 3 }],
   ] as const)("blocks unauthorized, integration-pending, and optimistic conflicts", async (txOverride, expected) => {
     const { tx, deps } = studioDependencies();
     Object.assign(tx, txOverride);
@@ -248,6 +270,36 @@ describe("certificate regeneration and atomic publication", () => {
     const selection = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => ({ certificateType, certificateId: `cert-${certificateType}-1` }));
     await publishCertificateSet({ eventId: "event-1", expectedVersion: 4, expectedCertificateRevision: 2, idempotencyKey: "22222222-2222-4222-8222-222222222222", selection }, deps);
     expect(tx.commitPublication).toHaveBeenCalledWith(expect.objectContaining({ preserveVerificationHistory: true }));
+  });
+
+  it.each([
+    ["legacy template", { templateVersion: "legacy-v1" }],
+    ["another completion snapshot", { completionId: "completion-old" }],
+    ["another completion version", { completionVersion: 3 }],
+    ["another recipient", { recipientId: "recipient-tampered" }],
+  ])("rejects %s even when all seven rows otherwise look ready", async (_label, mutation) => {
+    const { tx, deps } = studioDependencies();
+    const rows = await tx.loadCertificates([]);
+    vi.mocked(tx.loadCertificates).mockResolvedValue(rows.map((row) => row.certificateType === "champion" ? { ...row, ...mutation } : row));
+    const selection = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => ({ certificateType, certificateId: `cert-${certificateType}-1` }));
+    await expect(publishCertificateSet({ eventId: "event-1", expectedVersion: 4, expectedCertificateRevision: 2, idempotencyKey: "44444444-4444-4444-8444-444444444444", selection }, deps)).resolves.toEqual({ status: "blocked", code: "set_not_ready" });
+    expect(tx.commitPublication).not.toHaveBeenCalled();
+  });
+
+  it("resumes the exact stale same-key generation record instead of appending a new version", async () => {
+    const { tx, deps } = studioDependencies();
+    vi.mocked(tx.findMutation).mockResolvedValue({ status: "in_progress", fingerprint: JSON.stringify({ action: "regenerate", certificateType: "champion", expectedVersion: 4, assets: [] }), actorId: "organizer-1", stale: true, certificateId: "cert-champion-2", certificateType: "champion", version: 2 });
+    tx.resumeVersion = vi.fn().mockResolvedValue({ record: { ...(await tx.loadCertificates([]))[0], version: 2 }, data: data("champion", 2) });
+    await expect(regenerateCertificate({ eventId: "event-1", certificateType: "champion", expectedVersion: 4, idempotencyKey: "11111111-1111-4111-8111-111111111111" }, deps)).resolves.toMatchObject({ status: "generated", version: 2 });
+    expect(tx.resumeVersion).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111");
+    expect(tx.appendVersion).not.toHaveBeenCalled();
+  });
+
+  it("reports a live same-key attempt as in progress without false success", async () => {
+    const { tx, deps } = studioDependencies();
+    vi.mocked(tx.findMutation).mockResolvedValue({ status: "in_progress", fingerprint: JSON.stringify({ action: "regenerate", certificateType: "champion", expectedVersion: 4, assets: [] }), actorId: "organizer-1", stale: false, certificateId: "cert-champion-2", certificateType: "champion", version: 2 });
+    await expect(regenerateCertificate({ eventId: "event-1", certificateType: "champion", expectedVersion: 4, idempotencyKey: "11111111-1111-4111-8111-111111111111" }, deps)).resolves.toEqual({ status: "generation_in_progress", certificateId: "cert-champion-2", certificateType: "champion", version: 2 });
+    expect(deps.generate).not.toHaveBeenCalled();
   });
 
   it("rejects malformed IDs, duplicate types, and keys before opening a transaction", async () => {

@@ -21,8 +21,8 @@ const records: Extract<CertificateStudioState, { status: "available" }>["records
   recipient: { id: `recipient-${index}`, name: `Recipient ${index + 1}`, kind: index < 3 ? "team" as const : "player" as const },
   selectedCertificateId: `cert-${certificateType}-2`,
   versions: [
-    { id: `cert-${certificateType}-1`, eventId: "event-1", certificateType, recipientId: `recipient-${index}`, version: 1, status: "superseded" as const, imageUrl: `https://blob.example/${certificateType}/v1.png`, publishedUrl: `https://blob.example/${certificateType}/v1.png`, verificationCode: `verify-${certificateType}-1`, publishedAt: "2026-09-11T04:00:00.000Z", supersededByVersion: 2, lastError: null },
-    { id: `cert-${certificateType}-2`, eventId: "event-1", certificateType, recipientId: `recipient-${index}`, version: 2, status: "ready" as const, imageUrl: `https://blob.example/${certificateType}/v2.png`, publishedUrl: null, verificationCode: `verify-${certificateType}-2`, publishedAt: null, supersededByVersion: null, lastError: null },
+    { id: `cert-${certificateType}-1`, eventId: "event-1", certificateType, recipientId: `recipient-${index}`, completionId: "completion-1", completionVersion: 4, templateVersion: "miracle-v3", version: 1, status: "superseded" as const, imageUrl: `https://blob.example/${certificateType}/v1.png`, publishedUrl: `https://blob.example/${certificateType}/v1.png`, verificationCode: `verify-${certificateType}-1`, publishedAt: "2026-09-11T04:00:00.000Z", supersededByVersion: 2, lastError: null },
+    { id: `cert-${certificateType}-2`, eventId: "event-1", certificateType, recipientId: `recipient-${index}`, completionId: "completion-1", completionVersion: 4, templateVersion: "miracle-v3", version: 2, status: "ready" as const, imageUrl: `https://blob.example/${certificateType}/v2.png`, publishedUrl: null, verificationCode: `verify-${certificateType}-2`, publishedAt: null, supersededByVersion: null, lastError: null },
   ],
 }));
 
@@ -33,6 +33,7 @@ const available: CertificateStudioState = {
   certificateRevision: 2,
   records,
   publication: { version: 1, publishedAt: "2026-09-11T04:00:00.000Z" },
+  approvedAssets: [{ id: "asset-1", label: "Team logo", purpose: "certificate_team_logo" }],
 };
 const integration: CertificateStudioState = {
   status: "integration_required",
@@ -41,6 +42,7 @@ const integration: CertificateStudioState = {
   certificateRevision: null,
   records: MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => ({ certificateType, recipient: null, selectedCertificateId: null, versions: null })),
   publication: null,
+  approvedAssets: [],
 };
 
 function provider(locale: "en" | "id", child: React.ReactNode) {
@@ -87,8 +89,8 @@ describe("CertificateStudio", () => {
   it("keeps editor controls and one live region accessible while guides remain preview-only", async () => {
     await act(async () => root.render(provider("en", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
     expect(container.querySelectorAll("[aria-live=polite]")).toHaveLength(1);
-    expect(container.querySelector("label[for='certificate-asset-id']")).not.toBeNull();
-    expect(container.querySelector("input[name=assetId]")?.getAttribute("aria-describedby")).toBe("certificate-asset-help");
+    expect(container.querySelector("label[for='certificate-placement-error-asset']")).not.toBeNull();
+    expect(container.querySelector("select[name=assetId]")?.getAttribute("aria-describedby")).toBe("certificate-placement-error-help");
     expect(container.querySelector("[data-editor-safe-zone]")).not.toBeNull();
     expect(container.querySelector("[data-generated-artifact] [data-editor-safe-zone]")).toBeNull();
   });
@@ -110,6 +112,42 @@ describe("CertificateStudio", () => {
     await act(async () => container.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")!.click());
     expect(publish).toHaveBeenCalledWith(expect.objectContaining({ expectedCertificateRevision: 2, selection: expect.arrayContaining([expect.objectContaining({ certificateType: "champion", certificateId: "cert-champion-2" })]) }));
     expect(container.querySelector("[role=status]")?.textContent).toContain("published safely");
+  });
+
+  it("refreshes persisted failure and rotates the idempotency key for a deliberate retry", async () => {
+    const regenerate = vi.fn().mockResolvedValue({ status: "failed", code: "generation_failed", certificateId: "cert-champion-3", certificateType: "champion", version: 3 });
+    await act(async () => root.render(provider("en", <CertificateStudio regenerateAction={regenerate} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, `key-${type}-11111111-1111-4111-8111-111111111111`])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
+    const button = container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!;
+    await act(async () => button.click());
+    await act(async () => button.click());
+    expect(regenerate).toHaveBeenCalledTimes(2);
+    expect((regenerate.mock.calls[1][0] as { idempotencyKey: string }).idempotencyKey).not.toBe((regenerate.mock.calls[0][0] as { idempotencyKey: string }).idempotencyKey);
+    expect(navigation.refresh).toHaveBeenCalled();
+    expect(container.querySelector("[role=status]")?.textContent).toContain("Generation failed");
+  });
+
+  it("clears a conflict lock only after authoritative revision props change", async () => {
+    const regenerate = vi.fn().mockResolvedValue({ status: "conflict", code: "stale_version", version: 5 });
+    const props = { regenerateAction: regenerate, generationKeys: Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>, publicationKey: crypto.randomUUID() };
+    await act(async () => root.render(provider("en", <CertificateStudio {...props} state={available} />)));
+    const button = container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!;
+    await act(async () => button.click());
+    expect(button.disabled).toBe(true);
+    await act(async () => root.render(provider("en", <CertificateStudio {...props} state={{ ...available, completionVersion: 5, certificateRevision: 3 }} />)));
+    expect(container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!.disabled).toBe(false);
+  });
+
+  it("localizes asset roles and associates field errors with invalid placement controls", async () => {
+    await act(async () => root.render(provider("id", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
+    expect(Array.from(container.querySelectorAll("option")).map((option) => option.textContent)).toContain("Logo tim utama");
+    const asset = container.querySelector<HTMLSelectElement>("[name=assetId]")!;
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(asset, "asset-1"); asset.dispatchEvent(new Event("change", { bubbles: true })); });
+    const x = container.querySelector<HTMLInputElement>("[name=x]")!;
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(x, "0"); x.dispatchEvent(new Event("input", { bubbles: true })); });
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!.click());
+    expect(x.getAttribute("aria-invalid")).toBe("true");
+    expect(x.getAttribute("aria-describedby")).toBe("certificate-placement-error");
+    expect(container.querySelector("#certificate-placement-error")?.textContent).toContain("zona aman");
   });
 
   it("renders a precise non-actionable integration state in both languages", () => {

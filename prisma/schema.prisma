@@ -102,6 +102,7 @@ model Event {
   certificates               Certificate[]
   completion                 TournamentCompletion?
   certificatePublications    CertificatePublication[]
+  certificateGenerationMutations CertificateGenerationMutation[]
   promotions                 EventPromotion[]
   analyticsSnapshots         EventAnalyticsSnapshot[]
   checkIns                   CheckIn[]
@@ -182,6 +183,10 @@ model EventVisualAsset {
   width            Int?
   height           Int?
   byteSize         Int?
+  storageProvider  String?
+  storageKey       String?
+  contentSha256    String?
+  purpose          String?
   focalX           Float     @default(0.5)
   focalY           Float     @default(0.5)
   provider         String?
@@ -396,14 +401,19 @@ model Certificate {
   generationIdempotencyKey String?
   generationFingerprint String?
   generationActorUserId String?
+  completionId        String?
+  completionVersion   Int?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @default(now()) @updatedAt
   event               Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   team                Team      @relation(fields: [teamId], references: [id])
+  completion          TournamentCompletion? @relation(fields: [completionId], references: [id], onDelete: SetNull)
+  generationMutation  CertificateGenerationMutation?
 
   @@unique([eventId, type, recipientKind, recipientId, version])
   @@unique([eventId, type, generationIdempotencyKey])
   @@index([eventId, type, status])
+  @@index([completionId, completionVersion])
 }
 
 model TournamentCompletion {
@@ -423,8 +433,29 @@ model TournamentCompletion {
   awards            EventAward[]
   auditEntries      CompletionAuditEntry[]
   certificatePublications CertificatePublication[]
+  certificates      Certificate[]
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
+}
+
+model CertificateGenerationMutation {
+  id             String      @id @default(cuid())
+  eventId        String
+  event          Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  type           String
+  idempotencyKey String
+  fingerprint    String
+  actorUserId    String
+  certificateId  String      @unique
+  certificate    Certificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+  status         String      @default("in_progress")
+  result         Json?
+  errorMessage   String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([eventId, idempotencyKey])
+  @@index([eventId, type, status])
 }
 
 model CertificatePublication {

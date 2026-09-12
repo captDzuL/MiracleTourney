@@ -81,6 +81,10 @@ export type EventVisualAsset = {
   width?: number;
   height?: number;
   byteSize?: number;
+  storageProvider?: "vercel_blob" | "local";
+  storageKey?: string;
+  contentSha256?: string;
+  purpose?: "certificate_team_logo" | "certificate_character_art";
   focalX: number;
   focalY: number;
   provider?: string;

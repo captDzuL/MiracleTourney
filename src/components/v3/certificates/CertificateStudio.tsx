@@ -1,24 +1,36 @@
 "use client";
-import { useRef, useState, useTransition, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, useTransition, type KeyboardEvent } from "react";
 import { FileBadge2, RefreshCw, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useFormatter, useTranslations } from "next-intl";
 import { publishCertificateSetAction, regenerateCertificateAction } from "@/lib/actions/certificate-v3-actions";
-import type { CertificateAssetPlacement, CertificateStudioRecord, PublishCertificateSetResult, RegenerateCertificateResult } from "@/lib/certificate/service";
-import { MIRACLE_V3_CERTIFICATE_TYPES, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3-contract";
-import { AssetPlacement } from "./AssetPlacement";
+import type { CertificateAssetKind, CertificateAssetPlacement, CertificateStudioRecord, PublishCertificateSetResult, RegenerateCertificateResult } from "@/lib/certificate/service";
+import { MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3-contract";
+import { AssetPlacement, type ApprovedCertificateAsset } from "./AssetPlacement";
 import { CertificateSetStatus } from "./CertificateSetStatus";
 
 export type CertificateStudioVersion = CertificateStudioRecord & { readonly lastError: string | null };
 export type CertificateStudioTypeState = { readonly certificateType: MiracleV3CertificateType; readonly recipient: { readonly id: string; readonly name: string; readonly kind: "team" | "player" } | null; readonly selectedCertificateId: string | null; readonly versions: readonly CertificateStudioVersion[] | null };
+type StudioBase = { readonly event: { readonly id: string; readonly name: string }; readonly records: readonly CertificateStudioTypeState[]; readonly approvedAssets: readonly ApprovedCertificateAsset[] };
 export type CertificateStudioState =
-  | { readonly status: "integration_required"; readonly event: { readonly id: string; readonly name: string }; readonly completionVersion: null; readonly certificateRevision: null; readonly records: readonly CertificateStudioTypeState[]; readonly publication: null }
-  | { readonly status: "available"; readonly event: { readonly id: string; readonly name: string }; readonly completionVersion: number; readonly certificateRevision: number; readonly records: readonly CertificateStudioTypeState[]; readonly publication: { readonly version: number; readonly publishedAt: string } | null };
+  | StudioBase & { readonly status: "integration_required"; readonly completionVersion: null; readonly certificateRevision: null; readonly publication: null }
+  | StudioBase & { readonly status: "available"; readonly completionVersion: number; readonly certificateRevision: number; readonly publication: { readonly version: number; readonly publishedAt: string } | null };
 type Props = { state: CertificateStudioState; generationKeys: Record<MiracleV3CertificateType, string>; publicationKey: string; regenerateAction?: (input: unknown) => Promise<RegenerateCertificateResult>; publishAction?: (input: unknown) => Promise<PublishCertificateSetResult> };
 
-const placementFor = (type: MiracleV3CertificateType): CertificateAssetPlacement => ["champion", "runner_up", "third_place"].includes(type)
-  ? { assetKind: "team_logo_hero", x: 360, y: 748, width: 560, height: 540 }
-  : { assetKind: "character_art", x: 360, y: 708, width: 560, height: 620 };
+const DEFAULT_PLACEMENTS: Record<CertificateAssetKind, CertificateAssetPlacement> = {
+  team_logo_hero: { assetKind: "team_logo_hero", x: 360, y: 748, width: 560, height: 540 },
+  character_art: { assetKind: "character_art", x: 360, y: 708, width: 560, height: 620 },
+  team_logo_badge: { assetKind: "team_logo_badge", x: 80, y: 1052, width: 160, height: 160 },
+};
+const isTeamType = (type: MiracleV3CertificateType) => ["champion", "runner_up", "third_place"].includes(type);
+const placementInsideZone = (placement: CertificateAssetPlacement) => {
+  const zone = placement.assetKind === "team_logo_badge" ? MIRACLE_V3_SAFE_ZONES.secondaryBadge : MIRACLE_V3_SAFE_ZONES.hero;
+  return [placement.x, placement.y, placement.width, placement.height].every(Number.isFinite)
+    && placement.width > 0 && placement.height > 0
+    && placement.x >= zone.x && placement.y >= zone.y
+    && placement.x + placement.width <= zone.x + zone.width
+    && placement.y + placement.height <= zone.y + zone.height;
+};
 
 export function CertificateStudio({ state, generationKeys, publicationKey, regenerateAction = regenerateCertificateAction, publishAction = publishCertificateSetAction }: Props) {
   const t = useTranslations("certificateStudio");
@@ -26,17 +38,25 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   const router = useRouter();
   const [activeType, setActiveType] = useState<MiracleV3CertificateType>("champion");
   const [selected, setSelected] = useState<Record<string, string | null>>(() => Object.fromEntries(state.records.map((record) => [record.certificateType, record.selectedCertificateId])));
-  const [assetId, setAssetId] = useState("");
-  const [placement, setPlacement] = useState<CertificateAssetPlacement>(() => placementFor("champion"));
+  const [assetIds, setAssetIds] = useState<Record<CertificateAssetKind, string>>({ team_logo_hero: "", character_art: "", team_logo_badge: "" });
+  const [placements, setPlacements] = useState<Record<CertificateAssetKind, CertificateAssetPlacement>>(DEFAULT_PLACEMENTS);
+  const [currentGenerationKeys, setCurrentGenerationKeys] = useState(generationKeys);
   const [message, setMessage] = useState("");
-  const [locked, setLocked] = useState(false);
+  const [placementError, setPlacementError] = useState<string | null>(null);
+  const [lockedRevision, setLockedRevision] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const unavailable = state.status === "integration_required";
+  const authoritativeRevision = unavailable ? "integration-required" : `${state.completionVersion}:${state.certificateRevision}`;
+  const locked = lockedRevision === authoritativeRevision;
+  useEffect(() => {
+    if (lockedRevision && lockedRevision !== authoritativeRevision) setLockedRevision(null);
+  }, [authoritativeRevision, lockedRevision]);
+
   const active = state.records.find((record) => record.certificateType === activeType)!;
   const activeVersion = active.versions?.find((version) => version.id === selected[activeType]) ?? active.versions?.at(-1) ?? null;
-
-  const chooseType = (type: MiracleV3CertificateType) => { setActiveType(type); setPlacement(placementFor(type)); setAssetId(""); };
+  const activeKinds: readonly CertificateAssetKind[] = isTeamType(activeType) ? ["team_logo_hero"] : ["character_art", "team_logo_badge"];
+  const chooseType = (type: MiracleV3CertificateType) => { setActiveType(type); setPlacementError(null); };
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next: number | null = null;
     if (event.key === "ArrowRight") next = (index + 1) % 7;
@@ -48,6 +68,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   };
   const feedback = (result: RegenerateCertificateResult | PublishCertificateSetResult) => {
     if (result.status === "generated") return t("feedback.generated");
+    if (result.status === "generation_in_progress") return t("feedback.generation_in_progress");
     if (result.status === "published") return t("feedback.published");
     if (result.status === "already_applied") return t("feedback.alreadyApplied");
     if (result.status === "integration_required") return t("feedback.integrationRequired");
@@ -57,11 +78,22 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   };
   const regenerate = () => {
     if (unavailable || locked || pending) return;
+    const assets = activeKinds.flatMap((kind) => assetIds[kind] ? [{ assetId: assetIds[kind], placement: placements[kind] }] : []);
+    if (assets.some((asset) => !placementInsideZone(asset.placement))) { setPlacementError(t("assets.invalidPlacement")); return; }
+    setPlacementError(null);
     startTransition(async () => {
-      const result = await regenerateAction({ eventId: state.event.id, certificateType: activeType, expectedVersion: state.completionVersion, idempotencyKey: generationKeys[activeType], ...(assetId.trim() ? { assetId: assetId.trim(), placement } : {}) });
-      setMessage(feedback(result));
-      if (result.status === "conflict" || result.status === "integration_required" || (result.status === "blocked" && result.code === "completion_required")) { setLocked(true); router.refresh(); }
-      else if (result.status === "generated" || result.status === "already_applied") router.refresh();
+      const result = await regenerateAction({ eventId: state.event.id, certificateType: activeType, expectedVersion: state.completionVersion, idempotencyKey: currentGenerationKeys[activeType], ...(assets.length ? { assets } : {}) });
+      const terminal = result.status === "already_applied" ? result.result : result;
+      setMessage(terminal.status === "failed" ? feedback(terminal) : feedback(result));
+      if (terminal.status === "failed") {
+        setCurrentGenerationKeys((current) => ({ ...current, [activeType]: crypto.randomUUID() }));
+        router.refresh();
+        return;
+      }
+      if (result.status === "conflict" || result.status === "integration_required" || (result.status === "blocked" && result.code === "completion_required")) {
+        setLockedRevision(authoritativeRevision); router.refresh(); return;
+      }
+      if (result.status === "generated" || result.status === "already_applied" || result.status === "generation_in_progress") router.refresh();
     });
   };
   const selection = unavailable ? [] : state.records.flatMap((record) => selected[record.certificateType] ? [{ certificateType: record.certificateType, certificateId: selected[record.certificateType]! }] : []);
@@ -72,9 +104,15 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
     startTransition(async () => {
       const result = await publishAction({ eventId: state.event.id, expectedVersion: state.completionVersion, expectedCertificateRevision: state.certificateRevision, idempotencyKey: publicationKey, selection });
       setMessage(feedback(result));
-      if (result.status === "conflict" || result.status === "integration_required" || (result.status === "blocked" && result.code !== "set_not_ready")) setLocked(true);
+      if (result.status === "conflict" || result.status === "integration_required" || (result.status === "blocked" && result.code !== "set_not_ready")) setLockedRevision(authoritativeRevision);
       router.refresh();
     });
+  };
+  const assetLabels = {
+    title: t("assets.title"), assetId: t("assets.assetId"), assetHelp: t("assets.help"), kind: t("assets.kind"),
+    x: t("assets.x"), y: t("assets.y"), width: t("assets.width"), height: t("assets.height"), safeZone: t("assets.safeZone"),
+    none: t("assets.none"), upload: t("assets.upload"), uploadLabel: t("assets.uploadLabel"),
+    roles: { team_logo_hero: t("assets.roles.team_logo_hero"), character_art: t("assets.roles.character_art"), team_logo_badge: t("assets.roles.team_logo_badge") },
   };
 
   return <main className="min-w-0 max-w-full overflow-x-clip text-[var(--color-text)]" data-certificate-studio>
@@ -90,7 +128,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
       </section>
       <aside className="grid min-w-0 content-start gap-4">
         <CertificateSetStatus labels={{ title: t("set.title"), ready: t("set.ready"), incomplete: t("set.incomplete"), published: t("set.published"), notPublished: t("set.notPublished") }} records={state.records.map((record) => ({ ...record, selectedCertificateId: selected[record.certificateType] ?? null }))} />
-        <AssetPlacement assetId={assetId} disabled={unavailable || locked || pending} labels={{ title: t("assets.title"), assetId: t("assets.assetId"), assetHelp: t("assets.help"), kind: t("assets.kind"), x: t("assets.x"), y: t("assets.y"), width: t("assets.width"), height: t("assets.height"), safeZone: t("assets.safeZone") }} onAssetIdChange={setAssetId} onPlacementChange={setPlacement} placement={placement} />
+        {activeKinds.map((kind, index) => <AssetPlacement approvedAssets={state.approvedAssets} allowedKinds={[kind]} assetId={assetIds[kind]} disabled={unavailable || locked || pending} error={placementError} errorId={index === 0 ? "certificate-placement-error" : `certificate-placement-error-${kind}`} eventId={state.event.id} key={kind} labels={assetLabels} onAssetIdChange={(value) => setAssetIds((current) => ({ ...current, [kind]: value }))} onPlacementChange={(value) => setPlacements((current) => ({ ...current, [kind]: value }))} placement={placements[kind]} />)}
         <section className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"><FileBadge2 aria-hidden="true" className="size-5 text-[var(--color-accent-cyan-foreground)]" /><h2 className="mt-3 text-base font-extrabold">{t("actions.title")}</h2><button className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-4 text-sm font-extrabold miracle-focus-ring disabled:cursor-not-allowed disabled:bg-[var(--color-surface-selected)]" data-regenerate-certificate disabled={unavailable || locked || pending} onClick={regenerate} type="button"><RefreshCw aria-hidden="true" className="size-4" />{t("actions.regenerate")}</button><button className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand-violet)] px-4 text-sm font-extrabold text-[var(--color-on-accent)] miracle-focus-ring disabled:cursor-not-allowed disabled:bg-[var(--color-surface-selected)] disabled:text-[var(--color-text-muted)]" data-publish-certificate-set disabled={!canPublish || pending} onClick={publish} type="button"><ShieldCheck aria-hidden="true" className="size-4" />{t("actions.publish")}</button></section>
       </aside>
     </div>
