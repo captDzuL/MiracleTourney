@@ -53,11 +53,12 @@ describe("sanitized ongoing public state", () => {
     const matchId = String(store.rows("match")[0].id);
     const before = { matchId, roomId: "A", start: "2026-09-12T02:00:00Z", end: "2026-09-12T03:00:00Z" };
     const after = { ...before, roomId: "B", start: "2026-09-12T04:00:00Z", end: "2026-09-12T05:00:00Z" };
+    store.seed("scheduleRevision", { eventId: "event", status: "published", version: 2, publishedAt: now, snapshot: { draft: { assignments: [before] } } });
     store.seed("scheduleRevision", { eventId: "event", status: "published", version: 3, publishedAt: now, snapshot: { draft: { assignments: [after], impact: [{ matchId, before, after, delayMinutes: 120 }] } } });
     await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { publishedScheduleVersion: 3 } }); await tx.match.update({ where: { id: matchId }, data: { scheduleStatus: "delayed" } }); });
     const view = await getPublicOngoingEvent("cup", now);
     expect(view?.nextMatches[0]).toMatchObject({ status: "delayed", start: "2026-09-12T04:00:00Z", room: "B" });
-    expect(view?.schedule?.changes).toEqual([{ matchId, before: { start: "2026-09-12T02:00:00Z", room: "A" }, after: { start: "2026-09-12T04:00:00Z", room: "B" } }]);
+    expect(view?.schedule?.changes).toEqual([{ matchId, before: { start: "2026-09-12T02:00:00Z", end: "2026-09-12T03:00:00Z", room: "A" }, after: { start: "2026-09-12T04:00:00Z", end: "2026-09-12T05:00:00Z", room: "B" } }]);
   });
   it("shows only selected published assignments, with authoritative live and corrected official scores", async () => {
     const matchId = String(store.rows("match")[0].id);

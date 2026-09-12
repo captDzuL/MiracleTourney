@@ -20,6 +20,7 @@ export function operationStore() {
       if ("in" in predicate) return (predicate.in as unknown[]).includes(row[key]);
       if ("not" in predicate) return row[key] !== predicate.not;
       if ("gt" in predicate) return Number(row[key]) > Number(predicate.gt);
+      if ("lt" in predicate) return Number(row[key]) < Number(predicate.lt);
       if (!(key in row)) return matches(row, predicate); // compound unique selector
     }
     return row[key] === value;
