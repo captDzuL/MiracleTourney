@@ -9,7 +9,7 @@ type PreflightModule = {
   };
 };
 
-const preflightModulePath = "../../../scripts/e2e-db-preflight.mjs";
+const preflightModulePath = "../../scripts/e2e-db-preflight.mjs";
 const { validateE2eDatabaseConfiguration } = await import(preflightModulePath) as PreflightModule;
 const migrationDatabaseUrl = process.env.MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL;
 const migrationIt = migrationDatabaseUrl ? it : it.skip;
