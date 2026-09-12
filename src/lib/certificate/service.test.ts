@@ -328,20 +328,19 @@ const generationInput = (certificateType: "champion" | "mvp", idempotencyKey: st
     expect(tx.appendVersion).not.toHaveBeenCalled();
   });
 
-  it("accepts independent hero and team-badge assets for an individual certificate", async () => {
+  it("canonicalizes reverse-ordered hero and team-badge assets for payload and fingerprint", async () => {
     const { tx, deps } = studioDependencies();
     const character = { url: "/certificate-assets/hero.png", detectedMimeType: "image/png", bytes: 100, width: 512, height: 512, storageOwnershipVerified: true, storageProvider: "local" as const, storageKey: "certificate-assets/hero.png", contentSha256: "a".repeat(64), purpose: "certificate_character_art" as const };
     const badge = { ...character, url: "/certificate-assets/badge.png", storageKey: "certificate-assets/badge.png", contentSha256: "b".repeat(64), purpose: "certificate_team_logo" as const };
     tx.resolveAsset = vi.fn().mockImplementation(async (id) => id === "hero" ? character : badge);
-    const assets = [
-      { assetId: "hero", placement: { assetKind: "character_art" as const, x: 320, y: 700, width: 300, height: 500 } },
-      { assetId: "badge", placement: { assetKind: "team_logo_badge" as const, x: 70, y: 1050, width: 150, height: 150 } },
-    ];
+    const heroRequest = { assetId: "hero", placement: { assetKind: "character_art" as const, x: 320, y: 700, width: 300, height: 500 } };
+    const badgeRequest = { assetId: "badge", placement: { assetKind: "team_logo_badge" as const, x: 70, y: 1050, width: 150, height: 150 } };
+    const assets = [badgeRequest, heroRequest];
     await regenerateCertificate({ eventId: "event-1", certificateType: "mvp", expectedVersion: 4, idempotencyKey: "55555555-5555-4555-8555-555555555555", assets }, deps);
     expect(tx.appendVersion).toHaveBeenCalledWith(expect.objectContaining({ assets: [
       expect.objectContaining({ placement: expect.objectContaining({ assetKind: "character_art" }), asset: character }),
       expect.objectContaining({ placement: expect.objectContaining({ assetKind: "team_logo_badge" }), asset: badge }),
-    ] }));
+    ], fingerprint: JSON.stringify({ action: "regenerate", certificateType: "mvp", expectedVersion: 4, assets: [heroRequest, badgeRequest] }) }));
   });
   it.each([
     "https://assets.example/certificates/champion.png",

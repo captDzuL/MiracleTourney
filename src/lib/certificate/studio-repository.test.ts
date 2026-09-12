@@ -173,8 +173,24 @@ describe("Certificate Studio Prisma transaction boundary", () => {
       contentSha256: logo.contentSha256,
       purpose: "certificate_team_logo" as const,
     };
-    const placement = { assetKind: "team_logo_hero" as const, x: 360, y: 748, width: 560, height: 540 };
-    let persisted = { ...certificates[0], id: "cert-champion-v3", version: 3, assetManifest: {}, renderManifest: null };
+    const character = {
+      ...logo,
+      id: "asset-character",
+      url: "/certificate-assets/character.png",
+      storageKey: "certificate-assets/character.png",
+      contentSha256: "b".repeat(64),
+      purpose: "certificate_character_art",
+    };
+    const trustedCharacter = {
+      ...trustedLogo,
+      url: character.url,
+      storageKey: character.storageKey,
+      contentSha256: character.contentSha256,
+      purpose: "certificate_character_art" as const,
+    };
+    const badgePlacement = { assetKind: "team_logo_badge" as const, x: 70, y: 1050, width: 150, height: 150 };
+    const characterPlacement = { assetKind: "character_art" as const, x: 320, y: 700, width: 300, height: 500 };
+    let persisted = { ...certificates[3], id: "cert-mvp-v3", version: 3, assetManifest: {}, renderManifest: null };
     const certificateCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
       persisted = { ...persisted, ...data };
       return persisted;
@@ -214,8 +230,8 @@ describe("Certificate Studio Prisma transaction boundary", () => {
         findUnique: vi.fn().mockImplementation(async () => ({ ...mutation, certificate: persisted })),
       },
       certificatePublication: { findUnique: vi.fn(), create: vi.fn() },
-      eventVisualAsset: { findFirst: vi.fn().mockResolvedValue(logo) },
-      team: { findFirst: vi.fn().mockResolvedValue({ id: "recipient-champion" }) },
+      eventVisualAsset: { findFirst: vi.fn().mockImplementation(async ({ where }: { where: { id: string } }) => where.id === logo.id ? logo : character) },
+      team: { findFirst: vi.fn().mockResolvedValue({ id: "team-awards" }) },
     };
     const now = vi.fn()
       .mockReturnValueOnce(new Date("2026-09-12T23:55:00.000Z"))
@@ -225,30 +241,38 @@ describe("Certificate Studio Prisma transaction boundary", () => {
     const repo = createCertificateStudioTransaction(tx as never, "event-1", { id: "organizer-1", role: "organizer" }, { now, materializeAssetUrl });
 
     const appended = await repo.appendVersion({
-      certificateType: "champion",
+      certificateType: "mvp",
       idempotencyKey: "same-key",
       fingerprint: "request-fingerprint",
       actorId: "organizer-1",
       leaseOwnerId: "request-1",
-      assets: [{ assetId: logo.id, placement, asset: trustedLogo }],
+      assets: [
+        { assetId: logo.id, placement: badgePlacement, asset: trustedLogo },
+        { assetId: character.id, placement: characterPlacement, asset: trustedCharacter },
+      ],
     });
     const firstData = structuredClone(appended.data);
     const firstFingerprint = getMiracleV3CertificateFingerprint(firstData);
     expect(certificateUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "cert-champion-v3" },
+      where: { id: "cert-mvp-v3" },
       data: {
         renderManifest: expect.objectContaining({
           schemaVersion: 1,
           data: expect.objectContaining({
             eventName: "Miracle Open",
             issueDate: "2026-09-12",
-            recipientName: "Team 1",
+            recipientName: "Player mvp",
             teamLogoUrl: "https://miracle-league.fun/certificate-assets/logo.png",
+            characterArtUrl: "https://miracle-league.fun/certificate-assets/character.png",
           }),
-          assets: [expect.objectContaining({
-            assetId: "asset-logo",
-            asset: expect.objectContaining({ storageKey: key, contentSha256: "a".repeat(64) }),
-          })],
+          assets: [
+            expect.objectContaining({ assetId: "asset-character", placement: characterPlacement }),
+            expect.objectContaining({
+              assetId: "asset-logo",
+              placement: badgePlacement,
+              asset: expect.objectContaining({ storageKey: key, contentSha256: "a".repeat(64) }),
+            }),
+          ],
         }),
       },
     }));
@@ -263,7 +287,7 @@ describe("Certificate Studio Prisma transaction boundary", () => {
     const resumed = await repo.leaseStaleVersion("same-key", new Date(0).toISOString(), "request-2");
     expect(resumed?.data).toEqual(firstData);
     expect(getMiracleV3CertificateFingerprint(resumed!.data)).toBe(firstFingerprint);
-    expect(materializeAssetUrl).toHaveBeenCalledTimes(2);
+    expect(materializeAssetUrl).toHaveBeenCalledTimes(4);
 
     const validRenderManifest = persisted.renderManifest as unknown as { schemaVersion: number; data: Record<string, unknown>; assets: Array<Record<string, unknown>> };
     const validAssetManifest = persisted.assetManifest;

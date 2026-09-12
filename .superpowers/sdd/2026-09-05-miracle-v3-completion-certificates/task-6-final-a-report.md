@@ -65,3 +65,10 @@ The follow-up review found two Important issues and one Minor in the first cross
 - `pnpm lint` (`tsc --noEmit`): passed.
 - `pnpm build`: passed with the expected placeholder localhost database warning and existing fallback.
 - `git diff --check`: passed apart from informational Windows line-ending notices.
+
+### Final Minor — canonical multi-asset order
+
+- RED: a valid MVP request supplied `[team_logo_badge, character_art]`. The service preserved that order in its mutation fingerprint, while the repository sorted persisted assets but built render placements from the unsorted request; the focused run failed both the fingerprint assertion and the repository's own manifest validation.
+- GREEN: requested assets are canonicalized by role before fingerprinting/resolution, and persisted render placements are derived from the same sorted `storedAssets`. The reverse-order request now creates, renders, resumes, and fingerprints identically to canonical input order.
+- Focused service/repository/template verification: 3 files, 109/109 passed.
+- `pnpm lint` (`tsc --noEmit`) and `git diff --check`: passed.

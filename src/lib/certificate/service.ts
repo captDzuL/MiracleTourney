@@ -389,7 +389,8 @@ export async function regenerateCertificate(input: unknown, dependencies: Certif
   const parsed = regenerateCertificateInputSchema.safeParse(input);
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const value = parsed.data;
-  const requestedAssets = value.assets ?? (value.assetId && value.placement ? [{ assetId: value.assetId, placement: value.placement }] : []);
+  const requestedAssets = [...(value.assets ?? (value.assetId && value.placement ? [{ assetId: value.assetId, placement: value.placement }] : []))]
+    .sort((left, right) => left.placement.assetKind.localeCompare(right.placement.assetKind));
   const fingerprint = mutationFingerprint({ action: "regenerate", certificateType: value.certificateType, expectedVersion: value.expectedVersion, assets: requestedAssets });
   const leaseOwnerId = randomUUID();
   const prepared = await dependencies.transaction(value.eventId, async (tx) => {

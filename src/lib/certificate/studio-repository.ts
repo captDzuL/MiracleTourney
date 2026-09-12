@@ -427,7 +427,7 @@ export function createCertificateStudioTransaction(
         recipientId: winner.id, recipientName: winner.name, recipientKind: winner.kind, teamId: winner.teamId, teamName: winner.teamName,
         teamLogoUrl: logoAsset.url, characterArtUrl: characterAsset?.url ?? null, issueDate: issuedAt.toISOString().slice(0, 10),
         verificationCode: created.verificationCode, verificationBaseUrl: origin, branding: { ...MIRACLE_V3_BRANDING },
-        assetPlacements: assets.map((row) => row.placement),
+        assetPlacements: storedAssets.map((row) => row.placement),
       });
       const storedRender = JSON.parse(JSON.stringify({
         schemaVersion: 1,
