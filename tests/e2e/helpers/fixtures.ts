@@ -4,6 +4,58 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+export async function preparePublishedEventRevisionFixture() {
+  const suffix = randomUUID().slice(0, 8);
+  const organizer = await prisma.user.findUniqueOrThrow({
+    where: { email: "organizer-a@miraclefc.gg" },
+    select: { id: true },
+  });
+  const originalSlug = `flashpeak-revision-${suffix}`;
+  const name = `Flashpeak Revision ${suffix}`;
+  const originalDescription = `Original public description for revision E2E ${suffix}.`;
+  const event = await prisma.event.create({
+    data: {
+      slug: originalSlug,
+      name,
+      description: originalDescription,
+      gameId: "game-flashpeak",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      formatConfig: {
+        version: 1,
+        kind: "single_elimination",
+        bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 },
+        thirdPlace: "none",
+      } satisfies Prisma.InputJsonValue,
+      status: "Published",
+      participantCap: 16,
+      registrationWindow: "September 10, 2026 - September 20, 2026",
+      startsAt: "September 28, 2026",
+      registrationOpensAt: new Date("2026-09-10T02:00:00.000Z"),
+      registrationClosesAt: new Date("2026-09-20T14:00:00.000Z"),
+      eventStartsAt: new Date("2026-09-28T03:00:00.000Z"),
+      timezone: "Asia/Jakarta",
+      venue: "Revision Arena",
+      organizerUserId: organizer.id,
+      organizerName: "Flashpeak Organizer",
+      organizerVerified: true,
+      registrationFeeRequired: false,
+      prizePoolLabel: "Original prize",
+      publishedAt: new Date(),
+    },
+  });
+
+  return {
+    eventId: event.id,
+    name,
+    originalDescription,
+    originalSlug,
+    async cleanup() {
+      await prisma.event.deleteMany({ where: { id: event.id } });
+    },
+  };
+}
+
 export async function prepareAdminMatchEvent() {
   const suffix = randomUUID().slice(0, 8);
   const slug = `admin-match-e2e-${suffix}`;

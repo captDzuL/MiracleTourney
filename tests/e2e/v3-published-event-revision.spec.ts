@@ -1,13 +1,25 @@
 import { expect, test } from "@playwright/test";
 
 import { loginAsAdmin, loginAsOrganizer } from "./helpers/auth";
+import { preparePublishedEventRevisionFixture } from "./helpers/fixtures";
+
+let fixture: Awaited<ReturnType<typeof preparePublishedEventRevisionFixture>>;
 
 test.describe.serial("Published Event Revision V3", () => {
+  test.describe.configure({ timeout: 90_000 });
+
+  test.beforeAll(async () => {
+    fixture = await preparePublishedEventRevisionFixture();
+  });
+
+  test.afterAll(async () => {
+    await fixture.cleanup();
+  });
+
   test("organizer stages, previews, and applies a Published event revision", async ({ browser, page }) => {
-    test.setTimeout(90_000);
     await loginAsOrganizer(page);
     await page.goto("/id/organizer");
-    const card = page.locator("article").filter({ hasText: "Flashpeak Revision Published" }).last();
+    const card = page.locator("article").filter({ hasText: fixture.name }).last();
     const editLink = card.getByRole("link", { name: /Edit event|Lanjutkan revisi/ });
     const editHref = await editLink.getAttribute("href");
     expect(editHref).toMatch(/^\/id\/organizer\/events\/[^/]+\/edit$/);
@@ -22,9 +34,9 @@ test.describe.serial("Published Event Revision V3", () => {
 
     const guest = await browser.newContext();
     const publicPage = await guest.newPage();
-    await publicPage.goto("/id/events/flashpeak-revision-published");
+    await publicPage.goto(`/id/events/${fixture.originalSlug}`);
     const publicContent = publicPage.getByRole("main");
-    await expect(publicContent.getByText("Original public description for revision E2E.").first()).toBeVisible();
+    await expect(publicContent.getByText(fixture.originalDescription).first()).toBeVisible();
     await expect(publicContent.getByText(updatedDescription)).toHaveCount(0);
 
     await page.getByRole("link", { name: "Tinjau & Terbitkan" }).click();
@@ -50,7 +62,7 @@ test.describe.serial("Published Event Revision V3", () => {
     await loginAsOrganizer(page);
     await page.goto("/id/organizer");
     const card = page.locator("article").filter({ hasText: "Flashpeak Registration Closed" }).last();
-    await card.getByRole("link", { name: "Edit event" }).click();
+    await card.getByRole("link", { name: /Edit event|Lanjutkan revisi/ }).click();
     await page.getByRole("navigation", { name: "Navigasi event" }).getByRole("link", { name: "Registrasi" }).click();
     await expect(page.getByLabel("Pendaftaran dibuka")).toBeDisabled();
     await expect(page.getByLabel("Pendaftaran ditutup")).toBeDisabled();
@@ -76,7 +88,7 @@ test.describe.serial("Published Event Revision V3", () => {
   test("Platform Admin changes a slug and the old URL redirects permanently", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto("/id/admin");
-    const row = page.locator("tr").filter({ hasText: "Flashpeak Revision Published" }).last();
+    const row = page.locator("tr").filter({ hasText: fixture.name }).last();
     await row.getByRole("link", { name: /Edit event|Lanjutkan revisi/ }).click();
     const slug = `flashpeak-revision-${Date.now()}`;
     const input = page.getByLabel("URL publik khusus Platform Admin");
@@ -86,7 +98,7 @@ test.describe.serial("Published Event Revision V3", () => {
     );
     await page.getByRole("button", { name: "Ganti URL dan buat redirect" }).click();
     await expect((await mutationResponse).status()).toBeLessThan(400);
-    await page.goto("/id/events/flashpeak-revision-published");
+    await page.goto(`/id/events/${fixture.originalSlug}`);
     await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`), { timeout: 30_000 });
   });
 
