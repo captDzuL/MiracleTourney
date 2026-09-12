@@ -24,7 +24,7 @@ export function AwardReview({ actionBlockerMessage, awards, decisions, onDecisio
       <h3 id="completion-awards-title" className="text-lg font-extrabold text-[var(--color-text)]">{t("awards.title")}</h3>
       <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">{t("awards.description")}</p>
     </div>
-    {actionBlockerMessage ? <p className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-accent-cream-foreground)] bg-[var(--color-surface-subtle)] p-3 text-sm font-bold text-[var(--color-text)]" data-award-action-blocker role="alert">{actionBlockerMessage}</p> : null}
+    {actionBlockerMessage ? <p className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-accent-cream-foreground)] bg-[var(--color-surface-subtle)] p-3 text-sm font-bold text-[var(--color-text)]" data-award-action-blocker>{actionBlockerMessage}</p> : null}
     <div data-award-grid className="mt-5 grid min-w-0 gap-3 min-[700px]:grid-cols-2">
       {awards.map((award) => {
         const decision = decisions[award.award];

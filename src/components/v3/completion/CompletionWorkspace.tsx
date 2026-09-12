@@ -18,6 +18,18 @@ export type { CompletionWorkspaceState } from "@/lib/completion/workspace";
 
 type CompletionTab = "readiness" | "awards" | "certificates" | "publication";
 type AwardActionBlocker = "invalid_decisions" | "tie_reason_required";
+type RefreshRequiredOutcome = AwardActionBlocker
+  | "not_ready"
+  | "source_incomplete"
+  | "competitive_locked"
+  | "not_completed"
+  | "conflict"
+  | "integration_required";
+type RefreshRequiredAction = {
+  readonly action: "complete" | "reopen";
+  readonly message: string;
+  readonly outcome: RefreshRequiredOutcome;
+};
 
 type CompletionWorkspaceProps = {
   state: CompletionWorkspaceState;
@@ -50,6 +62,22 @@ function authoritativeStateKey(state: CompletionWorkspaceState): string {
   return JSON.stringify(state);
 }
 
+function refreshRequiredOutcome(result: CompletionActionResult): RefreshRequiredOutcome | null {
+  if (result.status === "conflict" || result.status === "integration_required") return result.status;
+  if (result.status !== "blocked") return null;
+  switch (result.code) {
+    case "not_ready":
+    case "invalid_decisions":
+    case "tie_reason_required":
+    case "source_incomplete":
+    case "competitive_locked":
+    case "not_completed":
+      return result.code;
+    default:
+      return null;
+  }
+}
+
 export function CompletionWorkspace(props: CompletionWorkspaceProps) {
   return <CompletionWorkspaceForm key={authoritativeStateKey(props.state)} {...props} />;
 }
@@ -70,7 +98,7 @@ function CompletionWorkspaceForm({
   const [reopenReason, setReopenReason] = useState("");
   const [awardDecisions, setAwardDecisions] = useState<AwardDecisions>(() => initialAwardDecisions(state));
   const [authoritativeBlockers, setAuthoritativeBlockers] = useState<readonly CompletionWorkspaceBlocker[]>(() => integrationRequired ? [] : state.blockers);
-  const [awardActionBlocker, setAwardActionBlocker] = useState<AwardActionBlocker | null>(null);
+  const [refreshRequired, setRefreshRequired] = useState<RefreshRequiredAction | null>(null);
   const [isPending, startTransition] = useTransition();
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const actionResultRef = useRef<HTMLParagraphElement>(null);
@@ -98,16 +126,23 @@ function CompletionWorkspaceForm({
   });
   const nonDecisionBlockers = serverBlockers.filter(({ code }) => !DECISION_BLOCKER_CODES.has(code));
   const visibleBlockers = [...nonDecisionBlockers, ...decisionBlockers];
+  const awardActionBlocker = refreshRequired?.action === "complete"
+    && (refreshRequired.outcome === "invalid_decisions" || refreshRequired.outcome === "tie_reason_required")
+    ? refreshRequired.outcome
+    : null;
+  const readinessActionBlockerMessage = refreshRequired?.action === "complete" && !awardActionBlocker
+    ? refreshRequired.message
+    : null;
   const decisionRepairableState = state.status === "blocked"
     && authoritativeBlockers.length > 0
     && authoritativeBlockers.every(({ code }) => DECISION_BLOCKER_CODES.has(code));
   const canComplete = !integrationRequired
     && (state.status === "ready" || state.status === "reopened" || decisionRepairableState)
     && visibleBlockers.length === 0
-    && awardActionBlocker === null
+    && refreshRequired?.action !== "complete"
     && decisions.length === 4;
-  const canReopen = state.status === "completed";
-  const displayedStatus = awardActionBlocker ? "blocked" : canComplete && state.status === "blocked" ? "ready" : state.status;
+  const canReopen = state.status === "completed" && refreshRequired?.action !== "reopen";
+  const displayedStatus = refreshRequired ? "blocked" : canComplete && state.status === "blocked" ? "ready" : state.status;
 
   function updateAwardDecision(award: CompletionAwardStatistic, decision: AwardReviewDecision) {
     setAwardDecisions((current) => ({ ...current, [award]: decision }));
@@ -166,15 +201,21 @@ function CompletionWorkspaceForm({
           expectedVersion: state.version,
           idempotencyKey: completionIdempotencyKey,
         });
+        const message = resultMessage(result, "complete");
         if (result.status === "blocked" && result.code === "not_ready" && result.blockers) {
           setAuthoritativeBlockers(result.blockers.map(blockerFromResult));
           setActiveTab("readiness");
         } else if (result.status === "blocked" && (result.code === "invalid_decisions" || result.code === "tie_reason_required")) {
-          setAwardActionBlocker(result.code);
           setActiveTab("awards");
+        } else if (result.status === "blocked" && (result.code === "source_incomplete" || result.code === "competitive_locked")) {
+          setActiveTab("readiness");
+        }
+        const staleOutcome = refreshRequiredOutcome(result);
+        if (staleOutcome) {
+          setRefreshRequired({ action: "complete", message, outcome: staleOutcome });
           router.refresh();
         }
-        setActionResult(resultMessage(result, "complete"));
+        setActionResult(message);
       } catch {
         setActionResult(t("feedback.failed"));
       } finally {
@@ -199,8 +240,17 @@ function CompletionWorkspaceForm({
           idempotencyKey: reopenIdempotencyKey,
           reason: reopenReason.trim(),
         });
-        if (result.status === "reopened") router.refresh();
-        setActionResult(resultMessage(result, "reopen"));
+        const message = resultMessage(result, "reopen");
+        if (result.status === "reopened") {
+          router.refresh();
+        } else {
+          const staleOutcome = refreshRequiredOutcome(result);
+          if (staleOutcome) {
+            setRefreshRequired({ action: "reopen", message, outcome: staleOutcome });
+            router.refresh();
+          }
+        }
+        setActionResult(message);
       } catch {
         setActionResult(t("feedback.failed"));
       } finally {
@@ -222,10 +272,10 @@ function CompletionWorkspaceForm({
   }
 
   function panel(tab: CompletionTab) {
-    if (tab === "readiness") return <ReadinessChecklist blockers={visibleBlockers} onRepairTarget={(target) => setActiveTab(target)} state={state} />;
+    if (tab === "readiness") return <ReadinessChecklist actionBlockerMessage={readinessActionBlockerMessage} blockers={visibleBlockers} onRepairTarget={(target) => setActiveTab(target)} state={state} />;
     if (integrationRequired) return <IntegrationUnavailablePanel title={t(`${tab}.title`)} waiting={t("integration.waiting")} />;
     if (tab === "awards") return <AwardReview
-      actionBlockerMessage={awardActionBlocker ? resultMessage({ status: "blocked", code: awardActionBlocker }, "complete") : null}
+      actionBlockerMessage={awardActionBlocker ? refreshRequired?.message ?? null : null}
       awards={state.awards}
       decisions={awardDecisions}
       onDecisionChange={updateAwardDecision}
@@ -278,7 +328,7 @@ function CompletionWorkspaceForm({
     </nav>
 
     <section aria-label={t("kpis.label")} data-completion-kpis className="mt-4 grid min-w-0 grid-cols-2 gap-3 min-[700px]:grid-cols-4">
-      <Kpi label={t("kpis.blockers")} value={integrationRequired ? unavailable : String(visibleBlockers.length + (awardActionBlocker ? 1 : 0))} />
+      <Kpi label={t("kpis.blockers")} value={integrationRequired ? unavailable : String(visibleBlockers.length + (refreshRequired ? 1 : 0))} />
       <Kpi label={t("kpis.awards")} value={integrationRequired ? unavailable : `${resolvedAwards} / 4`} />
       <Kpi label={t("kpis.certificates")} value={integrationRequired ? unavailable : `${state.certificates.generated} / ${state.certificates.total}`} />
       <Kpi label={t("kpis.version")} value={integrationRequired ? unavailable : String(state.version)} />

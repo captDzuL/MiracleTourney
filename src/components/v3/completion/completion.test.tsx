@@ -345,14 +345,18 @@ describe("CompletionWorkspace", () => {
       state={state("ready")}
     />)));
 
-    await act(async () => container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!.click());
+    const completeButton = container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!;
+    await act(async () => completeButton.click());
 
     expect(container.querySelector("[data-action-result]")?.textContent).toContain("Completion sources changed. Review the refreshed blockers.");
     expect(container.querySelector('[role="tabpanel"]:not([hidden])')?.id).toBe("completion-panel-readiness");
     const blocker = container.querySelector('[data-blocker="ACTIVE_DISPUTE"]')!;
     expect(blocker.textContent).toContain("Dispute D-9 · Match final-2");
     expect(blocker.querySelector('a[href="/en/organizer/events/event-1/matches?dispute=D-9"]')).not.toBeNull();
-    expect(container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!.disabled).toBe(true);
+    expect(completeButton.disabled).toBe(true);
+    expect(navigation.refresh).toHaveBeenCalledTimes(1);
+    await act(async () => completeButton.click());
+    expect(complete).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -397,6 +401,8 @@ describe("CompletionWorkspace", () => {
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
     expect(completeButton.disabled).toBe(true);
     expect(container.querySelector("[data-award-action-blocker]")?.textContent).toContain("no longer valid");
+    expect(container.querySelector("[data-award-action-blocker]")?.getAttribute("role")).toBeNull();
+    expect(container.querySelectorAll('[aria-live], [role="alert"]')).toHaveLength(1);
     await act(async () => completeButton.click());
     expect(complete).toHaveBeenCalledTimes(1);
 
@@ -419,6 +425,86 @@ describe("CompletionWorkspace", () => {
     expect(container.querySelector<HTMLInputElement>('input[name="award-top_assist"][value="p5"]')?.checked).toBe(true);
     expect(container.querySelector<HTMLTextAreaElement>('textarea[name="awardReason-top_assist"]')?.value).toBe("Authoritative tie review");
     expect(container.querySelector<HTMLButtonElement>("[data-complete-tournament]")?.disabled).toBe(false);
+  });
+
+  it.each([
+    [
+      "conflict",
+      { status: "conflict" as const, version: 5, code: "stale_version" as const },
+      "The version changed in another session. Refresh before trying again.",
+    ],
+    [
+      "source_incomplete",
+      { status: "blocked" as const, code: "source_incomplete" as const },
+      "The podium source is incomplete. Repair team or result data in Match Day.",
+    ],
+    [
+      "competitive_locked",
+      { status: "blocked" as const, code: "competitive_locked" as const },
+      "This tournament is already competitively locked. Refresh the workspace.",
+    ],
+    [
+      "integration_required",
+      { status: "integration_required" as const },
+      "Match Day integration is required before this action can run.",
+    ],
+  ] as const)("locks completion after the %s stale outcome until authoritative state changes", async (_label, result, expected) => {
+    const initialState = state("ready");
+    const complete = vi.fn(async () => result);
+    const workspace = (workspaceState: CompletionWorkspaceState) => provider("en", <CompletionWorkspace
+      completeAction={complete}
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={workspaceState}
+    />);
+    await act(async () => root.render(workspace(initialState)));
+    const button = container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!;
+
+    await act(async () => button.click());
+    expect(container.querySelector("[data-action-result]")?.textContent).toContain(expected);
+    expect(container.querySelector("[data-refresh-action-blocker]")?.textContent).toContain(expected);
+    expect(container.querySelector("[data-refresh-action-blocker]")?.getAttribute("role")).toBeNull();
+    expect(container.querySelector('[role="tabpanel"]:not([hidden])')?.textContent).not.toContain("All required gates are clear");
+    expect(button.disabled).toBe(true);
+    expect(navigation.refresh).toHaveBeenCalledTimes(1);
+    await act(async () => button.click());
+    expect(complete).toHaveBeenCalledTimes(1);
+
+    if (initialState.status !== "ready") throw new Error("Expected a ready fixture");
+    await act(async () => root.render(workspace({ ...initialState, version: 5 })));
+    expect(container.querySelector<HTMLButtonElement>("[data-complete-tournament]")?.disabled).toBe(false);
+  });
+
+  it.each([
+    ["conflict", { status: "conflict" as const, version: 6, code: "stale_version" as const }, "The version changed in another session."],
+    ["not_completed", { status: "blocked" as const, code: "not_completed" as const }, "Only a completed tournament can be reopened."],
+  ] as const)("locks reopen after the %s stale outcome until authoritative state changes", async (_label, result, expected) => {
+    const initialState = state("completed");
+    const reopen = vi.fn(async () => result);
+    const workspace = (workspaceState: CompletionWorkspaceState) => provider("en", <CompletionWorkspace
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenAction={reopen}
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={workspaceState}
+    />);
+    await act(async () => root.render(workspace(initialState)));
+    const reason = container.querySelector<HTMLTextAreaElement>('textarea[name="reopenReason"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(reason, "Refresh stale completion state");
+      reason.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const button = container.querySelector<HTMLButtonElement>("[data-reopen-tournament]")!;
+
+    await act(async () => button.click());
+    expect(container.querySelector("[data-action-result]")?.textContent).toContain(expected);
+    expect(button.disabled).toBe(true);
+    expect(navigation.refresh).toHaveBeenCalledTimes(1);
+    await act(async () => button.click());
+    expect(reopen).toHaveBeenCalledTimes(1);
+
+    if (initialState.status !== "completed") throw new Error("Expected a completed fixture");
+    await act(async () => root.render(workspace({ ...initialState, version: 6 })));
+    expect(container.querySelector<HTMLButtonElement>("[data-reopen-tournament]")?.disabled).toBe(false);
   });
 
   it("preserves active valid award edits across an equivalent RSC rerender", async () => {
