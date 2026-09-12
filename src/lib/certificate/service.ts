@@ -1,4 +1,5 @@
-import { generateCertificate } from "@/lib/certificate/generate";
+import { randomUUID } from "node:crypto";
+import { CertificateArtifactFinalizationError, generateCertificate } from "@/lib/certificate/generate";
 import type { MiracleV3GenerationDependencies, MiracleV3CertificateIdentity } from "@/lib/certificate/generate";
 import { MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateData, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3";
 import { prisma } from "@/lib/platform/db";
@@ -217,29 +218,40 @@ export interface TrustedCertificateAsset {
 
 function isSafeOwnedAssetUrl(value: string): boolean {
   if (typeof value !== "string" || /[\u0000-\u0020\\]/.test(value)) return false;
+  const safeCertificatePath = (pathname: string) => {
+    if (!pathname.startsWith("/certificates/") || /[\\%]/.test(pathname)) return false;
+    let decoded: string;
+    try { decoded = decodeURIComponent(pathname); } catch { return false; }
+    const segments = decoded.split("/");
+    return decoded === pathname && segments[0] === "" && segments[1] === "certificates" && segments.length >= 3
+      && segments.slice(2).every((segment) => Boolean(segment) && segment !== "." && segment !== ".."
+        && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment));
+  };
   if (value.startsWith("/")) {
-    try {
-      const decoded = decodeURIComponent(value);
-      return /^\/(uploads|team-logos|character-art|event-backgrounds|certificates)\//.test(value)
-        && !decoded.includes("..") && !decoded.includes("\\") && !/[\u0000-\u001f]/.test(decoded);
-    } catch { return false; }
+    return !value.startsWith("//") && safeCertificatePath(value);
   }
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password;
+    return url.protocol === "https:" && !url.username && !url.password && !url.port && !url.search && !url.hash
+      && url.hostname.endsWith(".public.blob.vercel-storage.com") && safeCertificatePath(url.pathname);
   } catch { return false; }
 }
 
 
 function hasTrustedStorageProvenance(asset: TrustedCertificateAsset): boolean {
-  if (!/^certificate-assets\/[A-Za-z0-9._/-]+$/.test(asset.storageKey)
-    || !/^[a-f0-9]{64}$/.test(asset.contentSha256)) return false;
+  if (!/^[a-f0-9]{64}$/.test(asset.contentSha256) || /[\\%]/.test(asset.storageKey)) return false;
+  let decodedKey: string;
+  try { decodedKey = decodeURIComponent(asset.storageKey); }
+  catch { return false; }
+  const segments = decodedKey.split("/");
+  if (decodedKey !== asset.storageKey || segments[0] !== "certificate-assets" || segments.length < 2
+    || segments.some((segment) => !segment || segment === "." || segment === ".." || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment))) return false;
   if (asset.storageProvider === "local") return asset.url === "/" + asset.storageKey;
   if (asset.storageProvider !== "vercel_blob") return false;
   try {
     const url = new URL(asset.url);
-    return url.protocol === "https:" && !url.username && !url.password
-      && url.hostname.endsWith(".public.blob.vercel-storage.com") && url.pathname === "/" + asset.storageKey;
+    return url.protocol === "https:" && !url.username && !url.password && !url.port && !url.search && !url.hash
+      && !asset.url.includes("\\") && url.hostname.endsWith(".public.blob.vercel-storage.com") && url.pathname === "/" + asset.storageKey;
   } catch { return false; }
 }
 
@@ -326,7 +338,7 @@ export type RegenerateCertificateResult =
   | { readonly status: "failed"; readonly code: "generation_failed"; readonly certificateId: string; readonly certificateType: MiracleV3CertificateType; readonly version: number }
   | { readonly status: "generation_in_progress"; readonly certificateId: string; readonly certificateType: MiracleV3CertificateType; readonly version: number }
   | { readonly status: "already_applied"; readonly result: RegenerateCertificateResult }
-  | { readonly status: "blocked"; readonly code: "invalid_input" | "unauthorized" | "password_change_required" | "forbidden" | "feature_disabled" | "completion_required" | "invalid_asset" }
+  | { readonly status: "blocked"; readonly code: "invalid_input" | "unauthorized" | "password_change_required" | "forbidden" | "feature_disabled" | "completion_required" | "invalid_asset" | "required_logo_unavailable" }
   | { readonly status: "conflict"; readonly code: "stale_version" | "idempotency_key_reused"; readonly version: number }
   | { readonly status: "integration_required" };
 export type PublishCertificateSetResult =
@@ -337,16 +349,17 @@ export type PublishCertificateSetResult =
   | { readonly status: "integration_required" };
 export type CertificateStudioMutation =
   | { readonly status: "terminal"; readonly fingerprint: string; readonly actorId: string; readonly result: RegenerateCertificateResult | PublishCertificateSetResult }
-  | { readonly status: "in_progress"; readonly fingerprint: string; readonly actorId: string; readonly stale: boolean; readonly certificateId: string; readonly certificateType: MiracleV3CertificateType; readonly version: number };
+  | { readonly status: "in_progress"; readonly fingerprint: string; readonly actorId: string; readonly stale: boolean; readonly updatedAt: string; readonly certificateId: string; readonly certificateType: MiracleV3CertificateType; readonly version: number };
+export type CertificateMutationFinalization = { readonly status: "finalized" } | { readonly status: "lease_lost"; readonly result?: RegenerateCertificateResult };
 
 export interface CertificateStudioTransaction {
   authorize(): Promise<CertificateStudioActor | null>;
   loadCompletion(): Promise<CertificateStudioCompletion | null>;
   findMutation(idempotencyKey: string): Promise<CertificateStudioMutation | null>;
   resolveAsset?(assetId: string): Promise<TrustedCertificateAsset | null>;
-  appendVersion(input: { certificateType: MiracleV3CertificateType; idempotencyKey: string; fingerprint: string; actorId: string; assets: readonly { assetId: string; placement: CertificateAssetPlacement; asset: TrustedCertificateAsset }[] }): Promise<{ record: CertificateStudioRecord; data: MiracleV3CertificateData }>;
-  resumeVersion(idempotencyKey: string): Promise<{ record: CertificateStudioRecord; data: MiracleV3CertificateData }>;
-  finalizeMutation(idempotencyKey: string, result: RegenerateCertificateResult): Promise<void>;
+  appendVersion(input: { certificateType: MiracleV3CertificateType; idempotencyKey: string; fingerprint: string; actorId: string; leaseOwnerId: string; assets: readonly { assetId: string; placement: CertificateAssetPlacement; asset: TrustedCertificateAsset }[] }): Promise<{ record: CertificateStudioRecord; data: MiracleV3CertificateData; leaseToken: string }>;
+  leaseStaleVersion(idempotencyKey: string, expectedUpdatedAt: string, leaseOwnerId: string): Promise<{ record: CertificateStudioRecord; data: MiracleV3CertificateData; leaseToken: string } | null>;
+  finalizeMutation(idempotencyKey: string, leaseToken: string, result: RegenerateCertificateResult): Promise<CertificateMutationFinalization>;
   loadCertificates(ids: readonly string[]): Promise<readonly CertificateStudioRecord[]>;
   commitPublication(input: { selection: readonly { certificateType: MiracleV3CertificateType; certificateId: string }[]; actorId: string; idempotencyKey: string; fingerprint: string; expectedCertificateRevision: number; preserveVerificationHistory: true }): Promise<{ publicationVersion: number; publishedAt: string }>;
 }
@@ -363,6 +376,7 @@ export async function regenerateCertificate(input: unknown, dependencies: Certif
   const value = parsed.data;
   const requestedAssets = value.assets ?? (value.assetId && value.placement ? [{ assetId: value.assetId, placement: value.placement }] : []);
   const fingerprint = mutationFingerprint({ action: "regenerate", certificateType: value.certificateType, expectedVersion: value.expectedVersion, assets: requestedAssets });
+  const leaseOwnerId = randomUUID();
   const prepared = await dependencies.transaction(value.eventId, async (tx) => {
     const actor = await tx.authorize();
     if (!actor) return { terminal: { status: "blocked", code: "unauthorized" } as RegenerateCertificateResult };
@@ -373,14 +387,20 @@ export async function regenerateCertificate(input: unknown, dependencies: Certif
       if (existing.actorId !== actor.id || existing.fingerprint !== fingerprint) return { terminal: { status: "conflict", code: "idempotency_key_reused", version: completion.version } as RegenerateCertificateResult };
       if (existing.status === "terminal") return { terminal: { status: "already_applied", result: existing.result as RegenerateCertificateResult } as RegenerateCertificateResult };
       if (!existing.stale) return { terminal: { status: "generation_in_progress", certificateId: existing.certificateId, certificateType: existing.certificateType, version: existing.version } as RegenerateCertificateResult };
-      return tx.resumeVersion(value.idempotencyKey);
+      const leased = await tx.leaseStaleVersion(value.idempotencyKey, existing.updatedAt, leaseOwnerId);
+      return leased ?? { terminal: { status: "generation_in_progress", certificateId: existing.certificateId,
+        certificateType: existing.certificateType, version: existing.version } as RegenerateCertificateResult };
     }
     if (completion.version !== value.expectedVersion) return { terminal: { status: "conflict", code: "stale_version", version: completion.version } as RegenerateCertificateResult };
     if (completion.status !== "completed") return { terminal: { status: "blocked", code: "completion_required" } as RegenerateCertificateResult };
     const teamCertificate = ["champion", "runner_up", "third_place"].includes(value.certificateType);
     const allowedKinds: readonly CertificateAssetKind[] = teamCertificate ? ["team_logo_hero"] : ["character_art", "team_logo_badge"];
+    const requiredLogoKind: CertificateAssetKind = teamCertificate ? "team_logo_hero" : "team_logo_badge";
     if (requestedAssets.some((row) => !allowedKinds.includes(row.placement.assetKind))) {
       return { terminal: { status: "blocked", code: "invalid_asset" } as RegenerateCertificateResult };
+    }
+    if (!requestedAssets.some((row) => row.placement.assetKind === requiredLogoKind)) {
+      return { terminal: { status: "blocked", code: "required_logo_unavailable" } as RegenerateCertificateResult };
     }
     const assets = await Promise.all(requestedAssets.map(async (requested) => {
       const asset = await tx.resolveAsset?.(requested.assetId);
@@ -389,21 +409,46 @@ export async function regenerateCertificate(input: unknown, dependencies: Certif
         ? { assetId: requested.assetId, placement: requested.placement, asset }
         : null;
     }));
+    if (assets.some((asset, index) => !asset && requestedAssets[index].placement.assetKind === requiredLogoKind)) {
+      return { terminal: { status: "blocked", code: "required_logo_unavailable" } as RegenerateCertificateResult };
+    }
     if (assets.some((asset) => !asset)) return { terminal: { status: "blocked", code: "invalid_asset" } as RegenerateCertificateResult };
-    return tx.appendVersion({ certificateType: value.certificateType, idempotencyKey: value.idempotencyKey, fingerprint, actorId: actor.id,
+    return tx.appendVersion({ certificateType: value.certificateType, idempotencyKey: value.idempotencyKey, fingerprint, actorId: actor.id, leaseOwnerId,
       assets: assets as Array<{ assetId: string; placement: CertificateAssetPlacement; asset: TrustedCertificateAsset }> });
   });
   if ("terminal" in prepared) return prepared.terminal;
-  try {
-    const imageUrl = await dependencies.generate(prepared.data, { idempotencyKey: value.idempotencyKey });
-    const result: RegenerateCertificateResult = { status: "generated", certificateId: prepared.record.id, certificateType: prepared.record.certificateType, version: prepared.record.version, imageUrl };
-    await dependencies.transaction(value.eventId, async (tx) => tx.finalizeMutation(value.idempotencyKey, result));
-    return result;
-  } catch {
+  let imageUrl: string;
+  try { imageUrl = await dependencies.generate(prepared.data, { idempotencyKey: value.idempotencyKey }); }
+  catch (error) {
+    if (error instanceof CertificateArtifactFinalizationError) {
+      return { status: "generation_in_progress", certificateId: prepared.record.id,
+        certificateType: prepared.record.certificateType, version: prepared.record.version };
+    }
     const result: RegenerateCertificateResult = { status: "failed", code: "generation_failed", certificateId: prepared.record.id, certificateType: prepared.record.certificateType, version: prepared.record.version };
-    await dependencies.transaction(value.eventId, async (tx) => tx.finalizeMutation(value.idempotencyKey, result));
-    return result;
+    try {
+      const finalized = await dependencies.transaction(value.eventId, async (tx) => tx.finalizeMutation(value.idempotencyKey, prepared.leaseToken, result));
+      if (finalized.status === "finalized") return result;
+      if (finalized.result) return { status: "already_applied", result: finalized.result };
+      return { status: "generation_in_progress", certificateId: prepared.record.id,
+        certificateType: prepared.record.certificateType, version: prepared.record.version };
+    }
+    catch (persistenceError) {
+      console.error("Certificate failure mutation persistence failed", { certificateId: prepared.record.id, leaseToken: prepared.leaseToken, primaryError: error, persistenceError });
+      return { status: "generation_in_progress", certificateId: prepared.record.id,
+        certificateType: prepared.record.certificateType, version: prepared.record.version };
+    }
   }
+  const result: RegenerateCertificateResult = { status: "generated", certificateId: prepared.record.id,
+    certificateType: prepared.record.certificateType, version: prepared.record.version, imageUrl };
+  try {
+    const finalized = await dependencies.transaction(value.eventId, async (tx) => tx.finalizeMutation(value.idempotencyKey, prepared.leaseToken, result));
+    if (finalized.status === "finalized") return result;
+    if (finalized.result) return { status: "already_applied", result: finalized.result };
+  } catch (persistenceError) {
+    console.error("Certificate success mutation persistence failed", { certificateId: prepared.record.id, leaseToken: prepared.leaseToken, persistenceError });
+  }
+  return { status: "generation_in_progress", certificateId: prepared.record.id,
+    certificateType: prepared.record.certificateType, version: prepared.record.version };
 }
 
 export async function publishCertificateSet(input: unknown, dependencies: CertificateStudioDependencies): Promise<PublishCertificateSetResult> {

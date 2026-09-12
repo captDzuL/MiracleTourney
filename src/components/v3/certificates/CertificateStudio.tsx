@@ -85,8 +85,9 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
       const result = await regenerateAction({ eventId: state.event.id, certificateType: activeType, expectedVersion: state.completionVersion, idempotencyKey: currentGenerationKeys[activeType], ...(assets.length ? { assets } : {}) });
       const terminal = result.status === "already_applied" ? result.result : result;
       setMessage(terminal.status === "failed" ? feedback(terminal) : feedback(result));
-      if (terminal.status === "failed") {
+      if (terminal.status === "generated" || terminal.status === "failed")
         setCurrentGenerationKeys((current) => ({ ...current, [activeType]: crypto.randomUUID() }));
+      if (terminal.status === "failed") {
         router.refresh();
         return;
       }
@@ -111,7 +112,9 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   const assetLabels = {
     title: t("assets.title"), assetId: t("assets.assetId"), assetHelp: t("assets.help"), kind: t("assets.kind"),
     x: t("assets.x"), y: t("assets.y"), width: t("assets.width"), height: t("assets.height"), safeZone: t("assets.safeZone"),
-    none: t("assets.none"), upload: t("assets.upload"), uploadLabel: t("assets.uploadLabel"),
+    none: t("assets.none"), upload: t("assets.upload"), uploadLabel: t("assets.uploadLabel"), uploaded: t("assets.uploaded"),
+    uploadErrors: Object.fromEntries(["invalid_entity_id", "missing_file", "file_too_large", "unsupported_type", "signature_mismatch", "decode_failed", "invalid_dimensions", "upload_failed"]
+      .map((code) => [code, t(`assets.uploadErrors.${code}`)])),
     roles: { team_logo_hero: t("assets.roles.team_logo_hero"), character_art: t("assets.roles.character_art"), team_logo_badge: t("assets.roles.team_logo_badge") },
   };
 
@@ -128,7 +131,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
       </section>
       <aside className="grid min-w-0 content-start gap-4">
         <CertificateSetStatus labels={{ title: t("set.title"), ready: t("set.ready"), incomplete: t("set.incomplete"), published: t("set.published"), notPublished: t("set.notPublished") }} records={state.records.map((record) => ({ ...record, selectedCertificateId: selected[record.certificateType] ?? null }))} />
-        {activeKinds.map((kind, index) => <AssetPlacement approvedAssets={state.approvedAssets} allowedKinds={[kind]} assetId={assetIds[kind]} disabled={unavailable || locked || pending} error={placementError} errorId={index === 0 ? "certificate-placement-error" : `certificate-placement-error-${kind}`} eventId={state.event.id} key={kind} labels={assetLabels} onAssetIdChange={(value) => setAssetIds((current) => ({ ...current, [kind]: value }))} onPlacementChange={(value) => setPlacements((current) => ({ ...current, [kind]: value }))} placement={placements[kind]} />)}
+        {activeKinds.map((kind, index) => <AssetPlacement approvedAssets={state.approvedAssets} allowedKinds={[kind]} assetId={assetIds[kind]} disabled={unavailable || locked || pending} error={placementError} errorId={index === 0 ? "certificate-placement-error" : `certificate-placement-error-${kind}`} eventId={state.event.id} key={kind} labels={assetLabels} onAssetIdChange={(value) => setAssetIds((current) => ({ ...current, [kind]: value }))} onPlacementChange={(value) => setPlacements((current) => ({ ...current, [kind]: value }))} onUploadMessage={setMessage} placement={placements[kind]} />)}
         <section className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"><FileBadge2 aria-hidden="true" className="size-5 text-[var(--color-accent-cyan-foreground)]" /><h2 className="mt-3 text-base font-extrabold">{t("actions.title")}</h2><button className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-4 text-sm font-extrabold miracle-focus-ring disabled:cursor-not-allowed disabled:bg-[var(--color-surface-selected)]" data-regenerate-certificate disabled={unavailable || locked || pending} onClick={regenerate} type="button"><RefreshCw aria-hidden="true" className="size-4" />{t("actions.regenerate")}</button><button className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand-violet)] px-4 text-sm font-extrabold text-[var(--color-on-accent)] miracle-focus-ring disabled:cursor-not-allowed disabled:bg-[var(--color-surface-selected)] disabled:text-[var(--color-text-muted)]" data-publish-certificate-set disabled={!canPublish || pending} onClick={publish} type="button"><ShieldCheck aria-hidden="true" className="size-4" />{t("actions.publish")}</button></section>
       </aside>
     </div>

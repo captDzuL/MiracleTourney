@@ -18,7 +18,7 @@ describe("Certificate Studio additive persistence contract", () => {
     expect(migration).toContain('"certificateIds" JSONB NOT NULL');
   });
   it("binds V3 artifacts to completion snapshots and stores immutable generation outcomes additively", () => {
-    for (const field of ["completionId", "completionVersion", "storageProvider", "storageKey", "contentSha256", "purpose"]) expect(schema).toContain(field);
+    for (const field of ["completionId", "completionVersion", "storageProvider", "storageKey", "contentSha256", "purpose", "leaseToken", "leaseOwnerId", "leaseExpiresAt"]) expect(schema).toContain(field);
     expect(schema).toContain("model CertificateGenerationMutation");
     expect(schema).toContain("@@unique([eventId, idempotencyKey])");
     expect(snapshotMigration).toContain('CREATE TABLE "CertificateGenerationMutation"');

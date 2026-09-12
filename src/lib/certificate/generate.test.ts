@@ -90,13 +90,13 @@ describe("versioned certificate generation", () => {
       render: forbidden, storeArtifact: forbidden, recordSuccess: forbidden, recordFailure: forbidden,
     })).toBe("https://assets.example/original.png");
   });
-  it.each(["render", "store", "persist"])("persists %s failure against the claimed version", async stage => {
+  it.each(["render", "store"])("persists %s failure against the claimed version", async stage => {
     const failures: unknown[] = [];
     await expect(generateMiracleV3Certificate({ data: v3Data }, {
       claimGeneration: async () => ({ status: "claimed", attemptId: "attempt-8" }),
       render: async () => { if (stage === "render") throw new Error("failed stage"); return Buffer.from("png"); },
       storeArtifact: async () => { if (stage === "store") throw new Error("failed stage"); return "https://assets.example/cert.png"; },
-      recordSuccess: async () => { if (stage === "persist") throw new Error("failed stage"); },
+      recordSuccess: async () => {},
       recordFailure: async failure => { failures.push(failure); },
     })).rejects.toThrow("failed stage");
     expect(failures).toEqual([{ identity: { certificateId: "cert-2", eventId: "event-1", certificateType: "champion", recipientId: "team-1", version: 2 }, attemptId: "attempt-8", message: "failed stage" }]);

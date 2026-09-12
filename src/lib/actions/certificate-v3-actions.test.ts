@@ -23,9 +23,9 @@ describe("certificate v3 actions", () => {
     external.manage.mockResolvedValue(undefined); external.deps.mockReturnValue({});
     external.regenerate.mockResolvedValue({ status: "generated", certificateId: "cert-2", certificateType: "champion", version: 2, imageUrl: "/certificates/2.png" });
     external.publish.mockResolvedValue({ status: "published", publicationVersion: 3, publishedAt: "2026-09-12T00:00:00Z" });
-  });
     external.upload.mockResolvedValue({ url: "/certificate-assets/a.png", mimeType: "image/png", width: 512, height: 512, byteSize: 1024, storageProvider: "local", storageKey: "certificate-assets/a.png", contentSha256: "a".repeat(64) });
     external.createAsset.mockResolvedValue({ id: "asset-1" });
+  });
   it("rejects invalid client input before session or database access", async () => {
     await expect(regenerateCertificateAction({ ...regen, eventId: "" })).resolves.toEqual({ status: "blocked", code: "invalid_input" });
     expect(external.session).not.toHaveBeenCalled();
@@ -60,4 +60,15 @@ describe("certificate v3 actions", () => {
     }));
     expect(external.revalidate).toHaveBeenCalledWith("/organizer/events/event-1/certificates");
   });
+  it("returns upload validation errors instead of redirecting or creating an asset row", async () => {
+    external.upload.mockRejectedValue(Object.assign(new Error("invalid dimensions"), { name: "ImageUploadValidationError", code: "invalid_dimensions" }));
+    const form = new FormData();
+    form.set("eventId", "event-1");
+    form.set("purpose", "certificate_team_logo");
+    form.set("asset", new File(["png"], "logo.png", { type: "image/png" }));
+    await expect(uploadCertificateAssetAction(form)).resolves.toEqual({ status: "blocked", code: "invalid_dimensions" });
+    expect(external.createAsset).not.toHaveBeenCalled();
+    expect(external.revalidate).not.toHaveBeenCalled();
+  });
+
 });

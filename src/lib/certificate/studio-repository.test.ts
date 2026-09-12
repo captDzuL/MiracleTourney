@@ -54,11 +54,21 @@ describe("Certificate Studio Prisma transaction boundary", () => {
     await expect(repo.findMutation("11111111-1111-4111-8111-111111111111")).resolves.toMatchObject({ status: "in_progress", stale: true, certificateId: "cert-champion", version: 2 });
   });
   it("creates an in-progress mutation with exact completion, recipient, and template binding", async () => {
-    const createCertificate = vi.fn().mockResolvedValue({ ...certificates[0], imageUrl: "", status: "draft" });
+    const logo = {
+      id: "asset-logo", url: "/certificate-assets/logo.png", mimeType: "image/png", width: 512, height: 512, byteSize: 1024,
+      storageProvider: "local" as const, storageKey: "certificate-assets/logo.png", contentSha256: "a".repeat(64), purpose: "certificate_team_logo" as const,
+    };
+    const placement = { assetKind: "team_logo_hero" as const, x: 360, y: 748, width: 560, height: 540 };
+    const trustedLogo = { url: logo.url, detectedMimeType: logo.mimeType, bytes: logo.byteSize, width: logo.width, height: logo.height,
+      storageOwnershipVerified: true as const, storageProvider: logo.storageProvider, storageKey: logo.storageKey,
+      contentSha256: logo.contentSha256, purpose: logo.purpose };
+    const createCertificate = vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ ...certificates[0], ...data, imageUrl: "", status: "draft" }));
     const createMutation = vi.fn().mockResolvedValue({});
     const { repository: repo } = repository({ certificate: { findFirst: vi.fn().mockResolvedValue(certificates[0]), findMany: vi.fn(), create: createCertificate, updateMany: vi.fn(), update: vi.fn() },
-      certificateGenerationMutation: { findUnique: vi.fn(), create: createMutation, updateMany: vi.fn() } });
-    await repo.appendVersion({ certificateType: "champion", idempotencyKey: "same-key", fingerprint: "fp", actorId: "organizer-1", assets: [] });
+      certificateGenerationMutation: { findUnique: vi.fn(), create: createMutation, updateMany: vi.fn() },
+      eventVisualAsset: { findFirst: vi.fn().mockResolvedValue(logo) } });
+    await repo.appendVersion({ certificateType: "champion", idempotencyKey: "same-key", fingerprint: "fp", actorId: "organizer-1", leaseOwnerId: "request-1",
+      assets: [{ assetId: logo.id, placement, asset: trustedLogo }] });
     expect(createCertificate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
       completionId: "completion-1", completionVersion: 4, templateVersion: "miracle-v3", recipientId: "recipient-champion",
     }) }));
@@ -92,5 +102,54 @@ describe("Certificate Studio Prisma transaction boundary", () => {
     const publishedAt = new Date("2026-09-12T02:00:00Z");
     const { repository: repo } = repository({ certificatePublication: { findUnique: vi.fn().mockResolvedValue({ fingerprint: "fp", actorUserId: "organizer-1", version: 3, publishedAt }), create: vi.fn() } });
     await expect(repo.findMutation("same-key")).resolves.toEqual({ status: "terminal", fingerprint: "fp", actorId: "organizer-1", result: { status: "published", publicationVersion: 3, publishedAt: publishedAt.toISOString() } });
+  });
+
+  it("leases one concurrent stale resume and prevents the losing token from recording failure", async () => {
+    const staleAt = new Date("2026-09-12T00:00:00.000Z");
+    const logo = {
+      id: "asset-logo", url: "/certificate-assets/logo.png", mimeType: "image/png", width: 512, height: 512, byteSize: 1024,
+      storageProvider: "local", storageKey: "certificate-assets/logo.png", contentSha256: "a".repeat(64), purpose: "certificate_team_logo",
+    };
+    const placement = { assetKind: "team_logo_hero", x: 360, y: 748, width: 560, height: 540 };
+    const certificate = { ...certificates[0], assetManifest: { assets: [{ assetId: logo.id, placement, asset: {
+      url: logo.url, detectedMimeType: logo.mimeType, bytes: logo.byteSize, width: logo.width, height: logo.height,
+      storageProvider: logo.storageProvider, storageKey: logo.storageKey, contentSha256: logo.contentSha256, purpose: logo.purpose,
+    } }] } };
+    const mutation: Record<string, unknown> = {
+      id: "mutation-1", eventId: "event-1", status: "in_progress", fingerprint: "fp", actorUserId: "organizer-1", result: null,
+      certificateId: certificate.id, type: "champion", leaseToken: "expired-token", leaseOwnerId: "old-owner",
+      leaseExpiresAt: new Date("2026-09-11T23:59:00.000Z"), updatedAt: staleAt, certificate,
+    };
+    const findUnique = vi.fn(async () => ({ ...mutation }));
+    const updateMany = vi.fn(async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+      const expectedUpdatedAt = where.updatedAt as Date | undefined;
+      const leaseMatches = where.status === "in_progress" && expectedUpdatedAt instanceof Date
+        && (mutation.updatedAt as Date).getTime() === expectedUpdatedAt.getTime()
+        && (mutation.leaseExpiresAt as Date).getTime() <= Date.now();
+      const tokenMatches = where.status === "in_progress" && typeof where.leaseToken === "string" && mutation.leaseToken === where.leaseToken;
+      if (!leaseMatches && !tokenMatches) return { count: 0 };
+      Object.assign(mutation, data);
+      return { count: 1 };
+    });
+    const mutationRepository = { findUnique, create: vi.fn(), updateMany };
+    const { repository: first } = repository({ certificateGenerationMutation: mutationRepository, eventVisualAsset: { findFirst: vi.fn().mockResolvedValue(logo) } });
+    const { repository: second } = repository({ certificateGenerationMutation: mutationRepository, eventVisualAsset: { findFirst: vi.fn().mockResolvedValue(logo) } });
+    const [leaseA, leaseB] = await Promise.all([
+      first.leaseStaleVersion("same-key", staleAt.toISOString(), "request-a"),
+      second.leaseStaleVersion("same-key", staleAt.toISOString(), "request-b"),
+    ]);
+    const leases = [leaseA, leaseB].filter((lease): lease is NonNullable<typeof leaseA> => Boolean(lease));
+    expect(leases).toHaveLength(1);
+    expect(leases[0].leaseToken).not.toBe("expired-token");
+    expect(["request-a", "request-b"]).toContain(mutation.leaseOwnerId);
+
+    const failed = { status: "failed", code: "generation_failed", certificateId: certificate.id, certificateType: "champion", version: 2 } as const;
+    await expect(first.finalizeMutation("same-key", "expired-token", failed)).resolves.toEqual({ status: "lease_lost" });
+    expect(mutation.status).toBe("in_progress");
+
+    const generated = { status: "generated", certificateId: certificate.id, certificateType: "champion", version: 2, imageUrl: "/certificates/champion.png" } as const;
+    await expect(first.finalizeMutation("same-key", leases[0].leaseToken, generated)).resolves.toEqual({ status: "finalized" });
+    await expect(second.finalizeMutation("same-key", "expired-token", failed)).resolves.toEqual({ status: "lease_lost", result: generated });
+    expect(mutation).toMatchObject({ status: "succeeded", result: generated });
   });
 });

@@ -450,6 +450,9 @@ model CertificateGenerationMutation {
   certificate    Certificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
   status         String      @default("in_progress")
   result         Json?
+  leaseToken     String?
+  leaseOwnerId   String?
+  leaseExpiresAt DateTime?
   errorMessage   String?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt

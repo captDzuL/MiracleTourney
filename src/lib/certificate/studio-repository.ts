@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { generateMiracleV3Certificate } from "./generate";
 import {
@@ -83,14 +84,20 @@ function completionContract(completion: CompletionRow): CertificateStudioComplet
 }
 
 function trustedStorage(asset: { url: string | null; storageProvider: string | null; storageKey: string | null; contentSha256: string | null }) {
-  if (!asset.url || !asset.storageKey || !asset.contentSha256
-    || !/^certificate-assets\/[A-Za-z0-9._/-]+$/.test(asset.storageKey)
-    || !/^[a-f0-9]{64}$/.test(asset.contentSha256)) return false;
+  if (!asset.url || !asset.storageKey || !asset.contentSha256 || !/^[a-f0-9]{64}$/.test(asset.contentSha256)
+    || /[\\%]/.test(asset.storageKey)) return false;
+  let decodedKey: string;
+  try { decodedKey = decodeURIComponent(asset.storageKey); }
+  catch { return false; }
+  const segments = decodedKey.split("/");
+  if (decodedKey !== asset.storageKey || segments[0] !== "certificate-assets" || segments.length < 2
+    || segments.some((segment) => !segment || segment === "." || segment === ".." || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment))) return false;
   if (asset.storageProvider === "local") return asset.url === `/${asset.storageKey}`;
   if (asset.storageProvider !== "vercel_blob") return false;
   try {
     const url = new URL(asset.url);
-    return url.protocol === "https:" && url.hostname.endsWith(".public.blob.vercel-storage.com") && url.pathname === `/${asset.storageKey}`;
+    return url.protocol === "https:" && !url.username && !url.password && !url.port && !url.search && !url.hash
+      && !asset.url.includes("\\") && url.hostname.endsWith(".public.blob.vercel-storage.com") && url.pathname === `/${asset.storageKey}`;
   } catch { return false; }
 }
 
@@ -174,6 +181,7 @@ async function generationPayload(tx: Prisma.TransactionClient, eventId: string, 
   const character = assets.find((row) => row.placement.assetKind === "character_art")?.asset.url ?? null;
   const logoKind = winner.kind === "team" ? "team_logo_hero" : "team_logo_badge";
   const logo = assets.find((row) => row.placement.assetKind === logoKind)?.asset.url ?? null;
+  if (!logo) throw new Error("Required team logo asset is unavailable");
   const origin = (() => { try { const url = new URL(process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun"); return url.protocol === "https:" ? url.origin : "https://miracle-league.fun"; } catch { return "https://miracle-league.fun"; } })();
   const data: MiracleV3CertificateData = {
     eventId, eventName: completion.event.name, gameId: completion.event.gameId, gameName: completion.event.gameId,
@@ -215,7 +223,8 @@ export function createCertificateStudioTransaction(tx: Prisma.TransactionClient,
           return { status: "terminal", fingerprint: mutation.fingerprint, actorId: mutation.actorUserId, result };
         }
         return { status: "in_progress", fingerprint: mutation.fingerprint, actorId: mutation.actorUserId,
-          stale: mutation.updatedAt.getTime() <= Date.now() - STALE_MUTATION_MS, certificateId: mutation.certificateId,
+          stale: !mutation.leaseExpiresAt || mutation.leaseExpiresAt.getTime() <= Date.now(), updatedAt: mutation.updatedAt.toISOString(),
+          certificateId: mutation.certificateId,
           certificateType: mutation.type as MiracleV3CertificateType, version: mutation.certificate.version };
       }
       const publication = await tx.certificatePublication.findUnique({ where: { eventId_idempotencyKey: { eventId, idempotencyKey: key } } });
@@ -226,7 +235,7 @@ export function createCertificateStudioTransaction(tx: Prisma.TransactionClient,
       const row = await tx.eventVisualAsset.findFirst({ where: { id: assetId, eventId, status: "approved" } });
       return row ? trustedAsset(row) : null;
     },
-    appendVersion: async ({ certificateType, idempotencyKey, fingerprint, actorId, assets }) => {
+    appendVersion: async ({ certificateType, idempotencyKey, fingerprint, actorId, leaseOwnerId, assets }) => {
       const completion = await loadCompletionForGeneration(tx, eventId);
       const contract = completionContract(completion);
       const winner = recipient(completion, certificateType);
@@ -238,23 +247,40 @@ export function createCertificateStudioTransaction(tx: Prisma.TransactionClient,
         templateVersion: "miracle-v3", completionId: completion.id, completionVersion: contract.version, assetManifest,
         imageUrl: "", status: "draft", attemptCount: 0, generationIdempotencyKey: idempotencyKey,
         generationFingerprint: fingerprint, generationActorUserId: actorId } });
+      const now = new Date();
+      const leaseToken = randomUUID();
       await tx.certificateGenerationMutation.create({ data: { eventId, type: certificateType, idempotencyKey, fingerprint,
-        actorUserId: actorId, certificateId: created.id, status: "in_progress" } });
-      return generationPayload(tx, eventId, completion, created);
+        actorUserId: actorId, certificateId: created.id, status: "in_progress", leaseToken, leaseOwnerId,
+        leaseExpiresAt: new Date(now.getTime() + STALE_MUTATION_MS), updatedAt: now } });
+      return { ...(await generationPayload(tx, eventId, completion, created)), leaseToken };
     },
-    resumeVersion: async (idempotencyKey) => {
+    leaseStaleVersion: async (idempotencyKey, expectedUpdatedAt, leaseOwnerId) => {
+      const expected = new Date(expectedUpdatedAt);
+      if (!Number.isFinite(expected.getTime())) return null;
+      const now = new Date();
+      const leaseToken = randomUUID();
+      const leased = await tx.certificateGenerationMutation.updateMany({
+        where: { eventId, idempotencyKey, status: "in_progress", updatedAt: expected,
+          OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: now } }] },
+        data: { leaseToken, leaseOwnerId, leaseExpiresAt: new Date(now.getTime() + STALE_MUTATION_MS), updatedAt: now },
+      });
+      if (leased.count !== 1) return null;
       const mutation = await tx.certificateGenerationMutation.findUnique({ where: { eventId_idempotencyKey: { eventId, idempotencyKey } }, include: { certificate: true } });
       const completion = await loadCompletionForGeneration(tx, eventId);
-      if (!mutation || mutation.status !== "in_progress" || !completion) throw new Error("Certificate mutation cannot be resumed");
-      return generationPayload(tx, eventId, completion, mutation.certificate);
+      if (!mutation || mutation.status !== "in_progress" || mutation.leaseToken !== leaseToken || !completion) {
+        throw new Error("Certificate mutation lease was lost after acquisition");
+      }
+      return { ...(await generationPayload(tx, eventId, completion, mutation.certificate)), leaseToken };
     },
-    finalizeMutation: async (idempotencyKey, result) => {
+    finalizeMutation: async (idempotencyKey, leaseToken, result) => {
       const terminalStatus = result.status === "generated" ? "succeeded" : "failed";
-      const updated = await tx.certificateGenerationMutation.updateMany({ where: { eventId, idempotencyKey, status: "in_progress" },
-        data: { status: terminalStatus, result: JSON.parse(JSON.stringify(result)) as Prisma.InputJsonValue } });
-      if (updated.count === 1) return;
+      const updated = await tx.certificateGenerationMutation.updateMany({ where: { eventId, idempotencyKey, status: "in_progress", leaseToken },
+        data: { status: terminalStatus, result: JSON.parse(JSON.stringify(result)) as Prisma.InputJsonValue,
+          errorMessage: result.status === "failed" ? result.code : null, leaseToken: null, leaseOwnerId: null, leaseExpiresAt: null } });
+      if (updated.count === 1) return { status: "finalized" } as const;
       const existing = await tx.certificateGenerationMutation.findUnique({ where: { eventId_idempotencyKey: { eventId, idempotencyKey } } });
-      if (!existing || JSON.stringify(existing.result) !== JSON.stringify(result)) throw new Error("Certificate mutation terminal result is immutable");
+      const terminal = existing && ["succeeded", "failed"].includes(existing.status) ? terminalGenerationResult(existing.result) : null;
+      return terminal ? { status: "lease_lost", result: terminal } as const : { status: "lease_lost" } as const;
     },
     loadCertificates: async (ids) => (await tx.certificate.findMany({ where: { id: { in: [...ids] }, eventId } })).map(mapRecord),
     commitPublication: async ({ selection, actorId, idempotencyKey, fingerprint, expectedCertificateRevision }) => {

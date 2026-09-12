@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAnyRole } from "@/lib/auth/session";
 import { uploadImageAsset } from "@/lib/actions";
-import { publishCertificateSet, publishCertificateSetInputSchema, regenerateCertificate, regenerateCertificateInputSchema, type CertificateStudioActor, type PublishCertificateSetResult, type RegenerateCertificateResult } from "@/lib/certificate/service";
+import { CERTIFICATE_ASSET_LIMITS, publishCertificateSet, publishCertificateSetInputSchema, regenerateCertificate, regenerateCertificateInputSchema, type CertificateStudioActor, type PublishCertificateSetResult, type RegenerateCertificateResult } from "@/lib/certificate/service";
 import { createPrismaCertificateStudioDependencies } from "@/lib/certificate/studio-repository";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { assertUserCanManageEvent, createEventVisualAsset } from "@/lib/platform/repository";
@@ -56,14 +56,24 @@ export async function uploadCertificateAssetAction(formData: FormData) {
   if (!parsed.success) return { status: "blocked" as const, code: "invalid_input" as const };
   const access = await gate(parsed.data.eventId);
   if ("status" in access) return access;
-  const asset = await uploadImageAsset({
+  let asset: Awaited<ReturnType<typeof uploadImageAsset>>;
+  try { asset = await uploadImageAsset({
     file: formData.get("asset"),
     folder: "certificate-assets",
     entityId: parsed.data.eventId,
     label: "Certificate asset",
     maxBytes: 5 * 1024 * 1024,
-    errorPath: "/organizer/events/" + parsed.data.eventId + "/certificates",
-  });
+    minDimension: CERTIFICATE_ASSET_LIMITS.minDimension,
+    maxDimension: CERTIFICATE_ASSET_LIMITS.maxDimension,
+    validationMode: "throw",
+  }); }
+  catch (error) {
+    const validationCodes = new Set(["invalid_entity_id", "missing_file", "file_too_large", "unsupported_type", "signature_mismatch", "decode_failed", "invalid_dimensions"]);
+    const code = error instanceof Error && error.name === "ImageUploadValidationError" && "code" in error
+      && typeof error.code === "string" && validationCodes.has(error.code) ? error.code : "upload_failed";
+    if (code === "upload_failed") console.error("Certificate asset upload failed", { eventId: parsed.data.eventId, error });
+    return { status: "blocked" as const, code };
+  }
   const created = await createEventVisualAsset(access.user, {
     eventId: parsed.data.eventId, source: "organizer_upload", status: "approved", purpose: parsed.data.purpose,
     url: asset.url, mimeType: asset.mimeType, width: asset.width, height: asset.height, byteSize: asset.byteSize,

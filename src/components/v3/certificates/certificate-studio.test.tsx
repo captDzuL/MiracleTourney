@@ -10,6 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import enMessages from "../../../../messages/en.json";
 import idMessages from "../../../../messages/id.json";
 import { MIRACLE_V3_CERTIFICATE_TYPES } from "@/lib/certificate/templates/miracle-v3";
+const certificateActions = vi.hoisted(() => ({ upload: vi.fn() }));
+vi.mock("@/lib/actions/certificate-v3-actions", () => ({
+  regenerateCertificateAction: vi.fn(), publishCertificateSetAction: vi.fn(), uploadCertificateAssetAction: certificateActions.upload,
+}));
+
 import { CertificateStudio, type CertificateStudioState } from "./CertificateStudio";
 
 Object.assign(globalThis, { React, IS_REACT_ACT_ENVIRONMENT: true });
@@ -52,7 +57,10 @@ function provider(locale: "en" | "id", child: React.ReactNode) {
 describe("CertificateStudio", () => {
   let container: HTMLDivElement;
   let root: Root;
-  beforeEach(() => { navigation.refresh.mockClear(); container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
+  beforeEach(() => {
+    navigation.refresh.mockClear(); certificateActions.upload.mockReset();
+    container = document.createElement("div"); document.body.append(container); root = createRoot(container);
+  });
   afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); });
 
   it("renders exactly seven keyboard-operable certificate type tabs", async () => {
@@ -124,6 +132,29 @@ describe("CertificateStudio", () => {
     expect((regenerate.mock.calls[1][0] as { idempotencyKey: string }).idempotencyKey).not.toBe((regenerate.mock.calls[0][0] as { idempotencyKey: string }).idempotencyKey);
     expect(navigation.refresh).toHaveBeenCalled();
     expect(container.querySelector("[role=status]")?.textContent).toContain("Generation failed");
+  });
+
+  it("rotates a successful generation key so a second regeneration in the same mount creates a new version", async () => {
+    const regenerate = vi.fn().mockResolvedValue({ status: "generated", certificateId: "cert-champion-3", certificateType: "champion", version: 3, imageUrl: "/certificates/3.png" });
+    await act(async () => root.render(provider("en", <CertificateStudio regenerateAction={regenerate} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, `key-${type}`])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
+    const button = container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!;
+    await act(async () => button.click());
+    await act(async () => button.click());
+    expect(regenerate).toHaveBeenCalledTimes(2);
+    expect((regenerate.mock.calls[1][0] as { idempotencyKey: string }).idempotencyKey).not.toBe((regenerate.mock.calls[0][0] as { idempotencyKey: string }).idempotencyKey);
+  });
+
+  it("returns localized upload validation failures to the file field and Studio live region", async () => {
+    certificateActions.upload.mockResolvedValue({ status: "blocked", code: "invalid_dimensions" });
+    await act(async () => root.render(provider("id", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
+    const file = container.querySelector<HTMLInputElement>("input[type=file]")!;
+    Object.defineProperty(file, "files", { configurable: true, value: [new File(["bad"], "logo.png", { type: "image/png" })] });
+    await act(async () => file.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(certificateActions.upload).toHaveBeenCalledTimes(1);
+    expect(file.getAttribute("aria-invalid")).toBe("true");
+    expect(file.getAttribute("aria-describedby")).toBe("certificate-placement-error-upload-error");
+    expect(container.querySelector("#certificate-placement-error-upload-error")?.textContent).toMatch(/dimensi/i);
+    expect(container.querySelector("[role=status]")?.textContent).toMatch(/dimensi/i);
   });
 
   it("clears a conflict lock only after authoritative revision props change", async () => {

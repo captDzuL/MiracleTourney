@@ -33,6 +33,15 @@ export interface MiracleV3GenerationDependencies {
   recordFailure(result: { identity: MiracleV3CertificateIdentity; attemptId: string; message: string }): Promise<void>;
 }
 
+export class CertificateArtifactFinalizationError extends Error {
+  readonly imageUrl: string;
+  constructor(imageUrl: string, cause: unknown) {
+    super("Certificate artifact was stored but success persistence failed", { cause });
+    this.name = "CertificateArtifactFinalizationError";
+    this.imageUrl = imageUrl;
+  }
+}
+
 /** Render one claimed certificate version; set orchestration and publication live in Task 6. */
 export async function generateMiracleV3Certificate(
   request: MiracleV3CertificateRenderRequest,
@@ -47,15 +56,14 @@ export async function generateMiracleV3Certificate(
   });
   const claim = await dependencies.claimGeneration(identity);
   if (claim.status !== "claimed") return claim.imageUrl;
+  if (!claim.attemptId.trim()) throw new Error("Generation claim requires an attempt ID");
+  let imageUrl: string;
   try {
-    if (!claim.attemptId.trim()) throw new Error("Generation claim requires an attempt ID");
     const html = await buildMiracleV3CertificateHtml(data);
     const png = await (dependencies.render ?? renderCertificatePng)(html);
     const segment = (value: string) => /^\.+$/.test(value) ? value.replace(/\./g, "%2E") : encodeURIComponent(value);
     const filename = `certificates/${segment(data.eventId)}/${data.certificateType}/${segment(data.recipientId)}/v${data.version}/${segment(claim.attemptId)}.png`;
-    const imageUrl = await dependencies.storeArtifact({ filename, png, overwrite: false });
-    await dependencies.recordSuccess({ identity, attemptId: claim.attemptId, imageUrl, fingerprint });
-    return imageUrl;
+    imageUrl = await dependencies.storeArtifact({ filename, png, overwrite: false });
   } catch (error) {
     try {
       await dependencies.recordFailure({ identity, attemptId: claim.attemptId, message: error instanceof Error ? error.message : "Certificate generation failed" });
@@ -64,6 +72,12 @@ export async function generateMiracleV3Certificate(
     }
     throw error;
   }
+  try { await dependencies.recordSuccess({ identity, attemptId: claim.attemptId, imageUrl, fingerprint }); }
+  catch (persistenceError) {
+    console.error("Certificate success persistence failed", { ...identity, attemptId: claim.attemptId, imageUrl, error: persistenceError });
+    throw new CertificateArtifactFinalizationError(imageUrl, persistenceError);
+  }
+  return imageUrl;
 }
 
 /**

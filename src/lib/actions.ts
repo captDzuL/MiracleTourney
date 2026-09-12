@@ -1,6 +1,6 @@
 "use server";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { headers } from "next/headers";
@@ -191,6 +191,24 @@ function appendActionError(basePath: string, message: string) {
   const separator = basePath.includes("?") ? "&" : "?";
   return `${basePath}${separator}error=${encodeURIComponent(message)}`;
 }
+export type ImageUploadValidationCode =
+  | "invalid_entity_id" | "missing_file" | "file_too_large" | "unsupported_type"
+  | "signature_mismatch" | "decode_failed" | "invalid_dimensions";
+
+class ImageUploadValidationError extends Error {
+  readonly code: ImageUploadValidationCode;
+  constructor(code: ImageUploadValidationCode, message: string) {
+    super(message);
+    this.name = "ImageUploadValidationError";
+    this.code = code;
+  }
+}
+
+function rejectImageUpload(code: ImageUploadValidationCode, message: string, validationMode: "redirect" | "throw", errorPath: string): never {
+  if (validationMode === "throw") throw new ImageUploadValidationError(code, message);
+  redirect(appendActionError(errorPath, message) as never);
+}
+
 
 /**
  * Single validation + storage boundary for every admin image upload.
@@ -204,6 +222,9 @@ export async function uploadImageAsset({
   entityId,
   label,
   maxBytes,
+  minDimension,
+  maxDimension,
+  validationMode = "redirect",
   errorPath = "/admin",
 }: {
   file: FormDataEntryValue | null;
@@ -211,49 +232,58 @@ export async function uploadImageAsset({
   entityId: string;
   label: string;
   maxBytes: number;
+  minDimension?: number;
+  maxDimension?: number;
+  validationMode?: "redirect" | "throw";
   errorPath?: string;
 }): Promise<UploadedImageAsset> {
   if (!isSafeEntityId(entityId)) {
-    redirect(appendActionError(errorPath, `Invalid ${label} ID.`) as never);
+    rejectImageUpload("invalid_entity_id", `Invalid ${label} ID.`, validationMode, errorPath);
   }
   if (!(file instanceof File) || file.size === 0) {
-    redirect(appendActionError(errorPath, `No ${label} file uploaded.`) as never);
+    rejectImageUpload("missing_file", `No ${label} file uploaded.`, validationMode, errorPath);
   }
   if (file.size > maxBytes) {
-    redirect(appendActionError(errorPath, `${label} file is too large.`) as never);
+    rejectImageUpload("file_too_large", `${label} file is too large.`, validationMode, errorPath);
   }
 
   const extension = getImageExtension(file.type);
   if (!extension) {
-    redirect(appendActionError(errorPath, `${label} must be a PNG, JPEG, or WebP image.`) as never);
+    rejectImageUpload("unsupported_type", `${label} must be a PNG, JPEG, or WebP image.`, validationMode, errorPath);
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const contentSha256 = createHash("sha256").update(buffer).digest("hex");
   if (!hasImageSignature(buffer, extension)) {
-    redirect(appendActionError(errorPath, `${label} file content does not match its image type.`) as never);
+    rejectImageUpload("signature_mismatch", `${label} file content does not match its image type.`, validationMode, errorPath);
   }
 
   const mimeType = file.type || "image/png";
   const dimensions = await readImageDimensions(buffer);
   if (!dimensions) {
-    redirect(appendActionError(errorPath, `${label} file could not be decoded as an image.`) as never);
+    rejectImageUpload("decode_failed", `${label} file could not be decoded as an image.`, validationMode, errorPath);
+  }
+  if ((minDimension !== undefined && (dimensions.width < minDimension || dimensions.height < minDimension))
+    || (maxDimension !== undefined && (dimensions.width > maxDimension || dimensions.height > maxDimension))) {
+    rejectImageUpload("invalid_dimensions", `${label} dimensions are outside the allowed range.`, validationMode, errorPath);
   }
 
-  const filename = `${entityId}-${Date.now()}.${extension}`;
+  const filename = `${entityId}-${contentSha256}-${randomUUID()}.${extension}`;
   const storageKey = folder + "/" + filename;
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     const { put } = await import("@vercel/blob");
     const result = await put(`${folder}/${filename}`, buffer, {
       access: "public",
       contentType: mimeType,
+      addRandomSuffix: false,
+      allowOverwrite: false,
     });
     return { url: result.url, mimeType, ...dimensions, byteSize: file.size, storageProvider: "vercel_blob", storageKey, contentSha256 };
   }
 
   const dir = path.join(process.cwd(), "public", folder);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, filename), buffer);
+  fs.writeFileSync(path.join(dir, filename), buffer, { flag: "wx" });
   return { url: "/" + storageKey, mimeType, ...dimensions, byteSize: file.size, storageProvider: "local", storageKey, contentSha256 };
 }
 
