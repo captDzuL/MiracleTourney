@@ -14,6 +14,53 @@ import { launchCertificateBrowser } from "./browser";
 import { resolveMvpForCertificate } from "./mvp";
 import { renderCertificatePng } from "./renderer";
 import { buildCertificateHtml } from "./template";
+import { buildMiracleV3CertificateHtml, getMiracleV3CertificateFingerprint, type MiracleV3CertificateData } from "./templates/miracle-v3";
+
+export interface MiracleV3CertificateRenderRequest { readonly data: MiracleV3CertificateData }
+export type MiracleV3CertificateIdentity = Readonly<Pick<MiracleV3CertificateData, "certificateId" | "eventId" | "certificateType" | "recipientId" | "version">>;
+export interface MiracleV3GenerationDependencies {
+  /** Atomically claim the exact draft version, or return its existing immutable asset.
+   * The repository must prevent publication during a claim and allocate a unique attemptId.
+   * Task 6 supplies the durable adapter; there is intentionally no default here. */
+  claimGeneration(identity: MiracleV3CertificateIdentity): Promise<
+    { status: "claimed"; attemptId: string } | { status: "ready" | "published"; imageUrl: string }
+  >;
+  render?: (html: string) => Promise<Buffer>;
+  /** Must enforce create-only storage, including on retry/concurrent execution. */
+  storeArtifact(artifact: { filename: string; png: Buffer; overwrite: false }): Promise<string>;
+  /** Both writes must compare the identity and active attempt; never update a published row. */
+  recordSuccess(result: { identity: MiracleV3CertificateIdentity; attemptId: string; imageUrl: string; fingerprint: string }): Promise<void>;
+  recordFailure(result: { identity: MiracleV3CertificateIdentity; attemptId: string; message: string }): Promise<void>;
+}
+
+/** Render one claimed certificate version; set orchestration and publication live in Task 6. */
+export async function generateMiracleV3Certificate(
+  request: MiracleV3CertificateRenderRequest,
+  dependencies: MiracleV3GenerationDependencies,
+): Promise<string> {
+  // Snapshot caller-owned data before the first asynchronous operation.
+  const data = { ...request.data, branding: { ...request.data.branding } };
+  const fingerprint = getMiracleV3CertificateFingerprint(data);
+  const identity: MiracleV3CertificateIdentity = Object.freeze({
+    certificateId: data.certificateId, eventId: data.eventId, certificateType: data.certificateType,
+    recipientId: data.recipientId, version: data.version,
+  });
+  const claim = await dependencies.claimGeneration(identity);
+  if (claim.status !== "claimed") return claim.imageUrl;
+  try {
+    if (!claim.attemptId.trim()) throw new Error("Generation claim requires an attempt ID");
+    const html = await buildMiracleV3CertificateHtml(data);
+    const png = await (dependencies.render ?? renderCertificatePng)(html);
+    const segment = (value: string) => /^\.+$/.test(value) ? value.replace(/\./g, "%2E") : encodeURIComponent(value);
+    const filename = `certificates/${segment(data.eventId)}/${data.certificateType}/${segment(data.recipientId)}/v${data.version}/${segment(claim.attemptId)}.png`;
+    const imageUrl = await dependencies.storeArtifact({ filename, png, overwrite: false });
+    await dependencies.recordSuccess({ identity, attemptId: claim.attemptId, imageUrl, fingerprint });
+    return imageUrl;
+  } catch (error) {
+    await dependencies.recordFailure({ identity, attemptId: claim.attemptId, message: error instanceof Error ? error.message : "Certificate generation failed" });
+    throw error;
+  }
+}
 
 /**
  * Generates a certificate for the champion team if the match is the Final and has a winner.

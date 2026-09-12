@@ -863,7 +863,7 @@ body::before {
 </style>
 </head>
 <body data-theme="${theme.id}">
-  <div class="poster-shell">
+  <div class="poster-shell" data-certificate-canvas="1080x1920">
     <div class="top-band"></div>
     <svg class="particles" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">${particles}</svg>
 

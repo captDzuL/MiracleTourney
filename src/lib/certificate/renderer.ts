@@ -40,6 +40,10 @@ export async function renderCertificatePng(
   html: string,
   dependencies: CertificateRendererDependencies = {},
 ): Promise<Buffer> {
+  const canvasDeclarations = [...html.matchAll(/\bdata-certificate-canvas\s*=\s*["']([^"']+)["']/g)];
+  if (canvasDeclarations.length !== 1 || canvasDeclarations[0][1] !== "1080x1920") {
+    throw new Error("Certificate HTML must declare exactly one portrait 1080x1920 canvas.");
+  }
   const usesPuppeteer =
     dependencies.isVercel === true
     && dependencies.loadPuppeteer !== undefined
