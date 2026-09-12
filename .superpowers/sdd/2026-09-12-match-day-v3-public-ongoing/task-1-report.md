@@ -170,3 +170,58 @@ The existing E2E database tooling was inspected before attempting any connection
 - a713b7ad2b8f7aedaf3892ab2c0106d1cea6032f — composite relation, winner, and cascade remediation.
 - c8c76f2 — second remediation report.
 - efa8f05 — deferred winner relation and guarded migration integration coverage.
+
+## Review remediation — round 4
+
+### Finding addressed
+
+- The opt-in integration test now queries PostgreSQL's installed constraint metadata through the same Prisma client configured exclusively with the guarded `MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL`. Before creating any fixture, it requires the named MatchResultRevision winner foreign key to be validated, deferrable, initially deferred, NO ACTION on delete, CASCADE on update, and to link exactly `[eventId, winnerTeamId]` to Team `[eventId, id]`. Missing or stale constraints fail the test before writes. This uses the review's explicit installed-constraint validation alternative; it does not reset the database or run migrations against ambient URLs.
+- Existing explicit opt-in, production-host, and malformed-URL guards are retained before Prisma construction. The created User is deleted during cleanup after the Event/revision cleanup, and disconnect still runs if User cleanup fails.
+- Added `src/lib/competition/persistence-migration-harness.test.ts`, which executes the actual integration test body with the database boundary replaced. It checks missing/stale constraint rejection before fixture writes, exact guarded datasource selection, validation ordering, and successful User/Event cleanup. Its local URL is a mock-only input and never opens a connection.
+
+### Red / green evidence
+
+RED, before the implementation change:
+
+```text
+pnpm vitest run src/lib/competition/persistence-migration-harness.test.ts
+1 failed file; 8 failed tests
+Seven missing/stale constraint cases: promise resolved "undefined" instead of rejecting.
+Ordering/cleanup case: expected 'create user' to be 'validate constraint'.
+```
+
+GREEN after implementation:
+
+```text
+pnpm vitest run src/lib/competition/persistence-schema.test.ts src/lib/competition/persistence-migration.integration.test.ts src/lib/competition/persistence-migration-harness.test.ts
+2 passed files, 1 skipped file; 22 passed tests, 1 skipped test.
+
+pnpm prisma validate
+The schema at prisma/schema.prisma is valid.
+
+pnpm prisma generate
+Generated Prisma Client (v6.19.3) successfully.
+
+pnpm lint
+tsc --noEmit; exit 0.
+
+pnpm vitest run src/lib/competition/persistence-schema.test.ts src/lib/competition/persistence-migration.integration.test.ts src/lib/competition/persistence-migration-harness.test.ts src/e2e-db-preflight.test.ts src/e2e-db-safety.test.ts
+4 passed files, 1 skipped file; 34 passed tests, 1 skipped test.
+
+git diff --check
+git diff --cached --check
+Both passed; only Git's existing LF-to-CRLF normalization warning was emitted.
+```
+
+Prisma validation/generation used local placeholder URLs for configuration only. No database connection was made. Shell execution and updates through the patch utility required approved escalation because the Windows sandbox failed to start with an ACL-helper error.
+
+### Commits
+
+- `cd5e6c0d57cdc044903eb8e68ceff4a7d8ccec27` — installed-constraint gate and behavioral regression coverage.
+- This round-4 report is recorded in the following documentation commit.
+
+### Self-review and remaining concerns
+
+The query scopes the constraint to the resolved MatchResultRevision table, checks the resolved Team target and ordered columns, and validates PostgreSQL-specific deferral metadata before fixture creation. The existing schema/migration files and production guards are unchanged. Task 2 was not started.
+
+`MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL` is absent, so the live integration remains skipped. The catalog query and cascade must still be exercised against a deliberately configured, already migrated isolated PostgreSQL database; this round does not claim live migration execution.
