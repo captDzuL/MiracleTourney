@@ -147,6 +147,7 @@ function deriveEliminationPodium(
 
   if (
     kind === "double_elimination"
+    && thirdPlaceSource.winnerTeamId !== titleMatch.winnerTeamId
     && thirdPlaceSource.winnerTeamId !== titleMatch.loserTeamId
   ) {
     blockers.push(incompleteStructure({

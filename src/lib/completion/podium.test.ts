@@ -91,6 +91,28 @@ describe("derivePodium", () => {
     });
   });
 
+  it("accepts the lower-final winner as the eventual grand-final champion", () => {
+    const result = derivePodium({
+      formatKind: "double_elimination",
+      matches: [
+        { id: "grand-final-reset", stage: "grand_final", official: true, winnerTeamId: "team-b", loserTeamId: "team-a", revision: 2 },
+        { id: "lower-final", stage: "lower_final", official: true, winnerTeamId: "team-b", loserTeamId: "team-c", revision: 1 },
+      ],
+      standings: [],
+      activeDisputes: [],
+      validatedAwardStatistics: ["mvp", "top_scorer", "top_defender", "top_assist"],
+    });
+
+    expect(result).toEqual({
+      podium: {
+        championTeamId: "team-b",
+        runnerUpTeamId: "team-a",
+        thirdPlaceTeamId: "team-c",
+      },
+      blockers: [],
+    });
+  });
+
   it("blocks a double-elimination podium when the lower-final winner does not reach the grand final", () => {
     const result = derivePodium({
       formatKind: "double_elimination",

@@ -18,6 +18,12 @@ function assetUrl(value: string | null, origin: string): string | null {
   const source = value.trim();
   if (/[\u0000-\u0020\\]/.test(source)) return null;
   try {
+    if (source.startsWith("data:")) {
+      const embedded = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(source);
+      if (!embedded || embedded[2].length % 4 !== 0
+        || Buffer.from(embedded[2], "base64").toString("base64") !== embedded[2]) return null;
+      return source;
+    }
     if (source.startsWith("/")) {
       if (!/^\/(logo|character-art|uploads|team-logos)\//.test(source)) return null;
       const decoded = decodeURIComponent(source);
@@ -30,7 +36,7 @@ function assetUrl(value: string | null, origin: string): string | null {
 }
 
 /** Ordered normalized values only: no clock, filesystem or network-derived identity. */
-function manifest(data: MiracleV3CertificateData) {
+export function getMiracleV3CertificateManifest(data: MiracleV3CertificateData) {
   // Opaque ASCII URL-safe token: preserve bytes, never trim or normalize identity.
   if (typeof data.verificationCode !== "string" || data.verificationCode.length < 1 || data.verificationCode.length > 128 || /[^A-Za-z0-9_-]/.test(data.verificationCode)) {
     throw new Error("Invalid verification code: use 1-128 ASCII letters, digits, underscores or hyphens");
@@ -77,7 +83,7 @@ function manifest(data: MiracleV3CertificateData) {
 }
 
 export function getMiracleV3CertificateFingerprint(data: MiracleV3CertificateData): string {
-  return createHash("sha256").update(JSON.stringify(manifest(data)), "utf8").digest("hex");
+  return createHash("sha256").update(JSON.stringify(getMiracleV3CertificateManifest(data)), "utf8").digest("hex");
 }
 
 function embeddedAssets() {
@@ -89,7 +95,7 @@ function embeddedAssets() {
 }
 
 export async function buildMiracleV3CertificateHtml(data: MiracleV3CertificateData, options: { editorPreview?: boolean } = {}): Promise<string> {
-  const m = manifest(data);
+  const m = getMiracleV3CertificateManifest(data);
   const fingerprint = getMiracleV3CertificateFingerprint(data);
   const assets = embeddedAssets();
   const verificationUrl = `${m.verificationBaseUrl}/certificates/verify/${encodeURIComponent(m.verificationCode)}`;

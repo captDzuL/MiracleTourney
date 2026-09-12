@@ -21,7 +21,7 @@ export default async function CertificateStudioPage({ params }: Props) {
   if (user.role === "organizer" && user.mustChangePassword) return redirectToActiveLocale("/organizer/change-password");
   const manageable = await getManageableEventDraft(user, eventId);
   if (!manageable) notFound();
-  const state = await loadCertificateStudioState({ id: manageable.id, name: manageable.name });
+  const state = await loadCertificateStudioState({ id: manageable.id, name: manageable.name }, locale);
   const generationKeys = Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, randomUUID()])) as Record<MiracleV3CertificateType, string>;
   return <CertificateStudio generationKeys={generationKeys} publicationKey={randomUUID()} state={state} />;
 }

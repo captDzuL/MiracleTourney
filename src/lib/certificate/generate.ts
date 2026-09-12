@@ -104,6 +104,13 @@ export async function generateCertificateIfFinal(matchId: string, eventId: strin
  * the admin panel can show the reason and offer a retry.
  */
 export async function generateCertificate(eventId: string, winnerTeamId: string): Promise<string> {
+  const v3Completion = await prisma.tournamentCompletion.findFirst({
+    where: { eventId },
+    select: { id: true },
+  });
+  if (v3Completion) {
+    throw new Error("Completion V3 certificates must be generated in Certificate Studio");
+  }
   try {
     return await renderAndStoreCertificate(eventId, winnerTeamId);
   } catch (err) {

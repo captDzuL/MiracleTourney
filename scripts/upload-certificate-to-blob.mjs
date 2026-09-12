@@ -13,6 +13,7 @@ import { put } from "@vercel/blob";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { buildLegacyUploadAppend } from "./certificate-upload-policy.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,6 +41,36 @@ const prisma = new PrismaClient();
 const event = await prisma.event.findFirst({ where: { slug: "mfl-blitz-s1" } });
 if (!event) throw new Error("Event mfl-blitz-s1 tidak ditemukan");
 
+const [v3Completion, v3Champion, certRow] = await Promise.all([
+  prisma.tournamentCompletion.findFirst({
+    where: { eventId: event.id },
+    select: { id: true },
+  }),
+  prisma.certificate.findFirst({
+    where: {
+      eventId: event.id,
+      type: "champion",
+      templateVersion: "miracle-v3",
+    },
+    select: { id: true },
+  }),
+  prisma.certificate.findFirst({
+    where: {
+      eventId: event.id,
+      type: "champion",
+      recipientKind: "team",
+      templateVersion: "legacy-v1",
+      completionId: null,
+    },
+    orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+  }),
+]);
+const v3Ownership = v3Completion ?? v3Champion;
+if (v3Ownership) throw new Error("Completion V3 certificates must be managed in Certificate Studio");
+if (!certRow) throw new Error("Tidak ada certificate legacy yang bisa diunggah");
+// Reject V3 ownership before any Blob or database write.
+buildLegacyUploadAppend(certRow, v3Ownership, "https://policy.public.blob.vercel-storage.com/certificates/preflight.png", new Date(0));
+
 // Find the latest local certificate for this event
 const certDir = path.resolve(__dirname, "../public/certificates");
 const files = fs.readdirSync(certDir)
@@ -57,26 +88,21 @@ const localPath = path.join(certDir, localFile);
 console.log(`📄 File lokal: ${localFile}`);
 
 const pngBuffer = fs.readFileSync(localPath);
-const blobFilename = `certificates/${localFile}`;
+const blobFilename = `certificates/legacy-upload/${event.id}/v${certRow.version + 1}-${Date.now()}-${localFile}`;
 
 console.log(`⏳ Uploading ke Vercel Blob...`);
-const result = await put(blobFilename, pngBuffer, { access: "public", contentType: "image/png" });
+const result = await put(blobFilename, pngBuffer, {
+  access: "public",
+  contentType: "image/png",
+  addRandomSuffix: false,
+  allowOverwrite: false,
+});
 console.log(`✅ Uploaded: ${result.url}`);
 
-// Update DB Certificate row
-const certRow = await prisma.certificate.findFirst({
-  where: { eventId: event.id, type: "champion", recipientKind: "team" },
-  orderBy: [{ version: "desc" }, { createdAt: "desc" }],
-});
-if (certRow) {
-  await prisma.certificate.update({
-    where: { id: certRow.id },
-    data: { imageUrl: result.url, publishedUrl: result.url, publishedAt: new Date() },
-  });
-  console.log(`✅ DB Certificate diupdate dengan URL baru.`);
-} else {
-  console.log(`⚠️  Tidak ada row Certificate di DB — jalankan generate-certificate.ts dulu.`);
-}
+// Append a new legacy version. Never rewrite/supersede published or V3 history.
+const appendData = buildLegacyUploadAppend(certRow, v3Ownership, result.url, new Date());
+await prisma.certificate.create({ data: appendData });
+console.log(`✅ Versi certificate legacy baru ditambahkan tanpa mengubah histori.`);
 
 console.log(`\n🎉 Done! Certificate URL: ${result.url}`);
 await prisma.$disconnect();

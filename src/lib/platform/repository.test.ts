@@ -101,6 +101,9 @@ const { prisma } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       update: vi.fn(),
     },
+    tournamentCompletion: {
+      findFirst: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }));
@@ -185,6 +188,7 @@ describe("legacy Champion certificate repository compatibility", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
+    prisma.tournamentCompletion.findFirst.mockResolvedValue(null);
   });
 
   it("returns the latest Champion team certificate for the event-level lookup", async () => {
@@ -360,6 +364,27 @@ describe("legacy Champion certificate repository compatibility", () => {
         status: "ready",
       }),
     });
+  });
+
+  it.each([
+    ["success", () => recordCertificateSuccess("event-1", "team-champion", "/certificates/legacy-new.png")],
+    ["failure", () => recordCertificateFailure("event-1", "team-champion", "legacy renderer failed")],
+  ])("refuses a legacy %s write once Completion V3 owns the event", async (_label, write) => {
+    prisma.tournamentCompletion.findFirst.mockResolvedValue({ id: "completion-1" });
+    prisma.team.findUnique.mockResolvedValue({ name: "Miracle Champions" });
+    prisma.certificate.findFirst.mockResolvedValue({
+      ...championCertificateRow,
+      templateVersion: "miracle-v3",
+      completionId: "completion-1",
+    });
+
+    await expect(write()).rejects.toThrow("Certificate Studio");
+    expect(prisma.tournamentCompletion.findFirst).toHaveBeenCalledWith({
+      where: { eventId: "event-1" },
+      select: { id: true },
+    });
+    expect(prisma.certificate.update).not.toHaveBeenCalled();
+    expect(prisma.certificate.create).not.toHaveBeenCalled();
   });
 
   it("appends a version and supersedes the published Champion instead of overwriting it", async () => {

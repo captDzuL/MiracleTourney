@@ -49,6 +49,13 @@ const integration: CertificateStudioState = {
   publication: null,
   approvedAssets: [],
 };
+const completionRequired: CertificateStudioState = {
+  ...integration,
+  status: "completion_required",
+  completionVersion: 5,
+  certificateRevision: 2,
+  completionHref: "/en/organizer/events/event-1/completion",
+};
 
 function provider(locale: "en" | "id", child: React.ReactNode) {
   return <NextIntlClientProvider locale={locale} messages={locale === "en" ? enMessages : idMessages} timeZone="Asia/Jakarta">{child}</NextIntlClientProvider>;
@@ -62,6 +69,17 @@ describe("CertificateStudio", () => {
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
   });
   afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); });
+
+  it("renders a known reopened completion as an actionable completion-required state", () => {
+    const html = renderToStaticMarkup(provider("en", <CertificateStudio
+      generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>}
+      publicationKey={crypto.randomUUID()}
+      state={completionRequired}
+    />));
+    expect(html).toContain("Tournament completion required");
+    expect(html).toContain('href="/en/organizer/events/event-1/completion"');
+    expect(html).not.toContain("Match Day integration is required");
+  });
 
   it("renders exactly seven keyboard-operable certificate type tabs", async () => {
     await act(async () => root.render(provider("en", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));

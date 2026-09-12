@@ -67,6 +67,10 @@ describe("completion persistence Prisma contract", () => {
     for (const fieldName of ["publishedUrl", "generatedAt", "publishedAt", "supersededByVersion"]) {
       expect(field("Certificate", fieldName), `missing versioned certificate field ${fieldName}`).toBeDefined();
     }
+    expect(field("Certificate", "renderManifest")).toMatchObject({
+      type: "Json",
+      isRequired: false,
+    });
   });
 });
 
@@ -91,5 +95,21 @@ describe("completion persistence migration", () => {
     expect(migration).toContain('"publishedUrl" = NULLIF("imageUrl", \'\')');
     expect(migration).not.toMatch(/UPDATE\s+"Certificate"[\s\S]*SET\s+"id"\s*=/i);
     expect(migration).not.toMatch(/UPDATE\s+"Certificate"[\s\S]*SET\s+"imageUrl"\s*=/i);
+  });
+});
+
+describe("immutable certificate render manifest migration", () => {
+  const migrationPath = fileURLToPath(
+    new URL(
+      "../../../prisma/migrations/20260912233000_certificate_render_manifest/migration.sql",
+      import.meta.url,
+    ),
+  );
+
+  it("adds a nullable manifest without rewriting legacy certificate history", () => {
+    expect(existsSync(migrationPath), "missing render manifest migration").toBe(true);
+    const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
+    expect(migration).toContain('ADD COLUMN "renderManifest" JSONB');
+    expect(migration).not.toMatch(/UPDATE\s+"Certificate"/i);
   });
 });

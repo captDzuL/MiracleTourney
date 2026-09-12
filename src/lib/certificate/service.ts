@@ -27,6 +27,7 @@ export interface CertificateRecord {
 }
 
 export interface CertificateGenerationDependencies {
+  findV3Completion: (eventId: string) => Promise<boolean>;
   findCompletedFinal: (
     eventId: string,
   ) => Promise<CertificateFinalMatch | null>;
@@ -44,6 +45,10 @@ export interface CertificateGenerationDependencies {
 }
 
 export type CertificateGenerationResult =
+  | {
+      status: "studio-required";
+      studioHref: string;
+    }
   | {
       status: "generated";
       imageUrl: string;
@@ -73,6 +78,10 @@ export type CertificateGenerationResult =
     };
 
 const defaultDependencies: CertificateGenerationDependencies = {
+  findV3Completion: async (eventId) => Boolean(await prisma.tournamentCompletion.findFirst({
+    where: { eventId },
+    select: { id: true },
+  })),
   findCompletedFinal: async (eventId) =>
     prisma.match.findFirst({
       where: {
@@ -106,6 +115,12 @@ export async function generateCertificateForEvent(
   eventId: string,
   dependencies: CertificateGenerationDependencies = defaultDependencies,
 ): Promise<CertificateGenerationResult> {
+  if (await dependencies.findV3Completion(eventId)) {
+    return {
+      status: "studio-required",
+      studioHref: `/organizer/events/${eventId}/certificates`,
+    };
+  }
   const finalMatch = await dependencies.findCompletedFinal(eventId);
 
   if (!finalMatch) {

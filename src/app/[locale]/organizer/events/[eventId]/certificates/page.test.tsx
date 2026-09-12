@@ -27,6 +27,6 @@ describe("Certificate Studio page", () => {
     await Page({ params: Promise.resolve({ locale: "id", eventId: "event-1" }) });
     expect(mocks.session).toHaveBeenCalledWith(["organizer", "platform_admin", "admin"]);
     expect(mocks.event).toHaveBeenCalledWith(expect.objectContaining({ id: "org-1" }), "event-1");
-    expect(mocks.load).toHaveBeenCalledWith({ id: "event-1", name: "Miracle Open" });
+    expect(mocks.load).toHaveBeenCalledWith({ id: "event-1", name: "Miracle Open" }, "id");
   });
 });

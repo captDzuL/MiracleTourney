@@ -638,6 +638,7 @@
     "title": "Certificate Studio",
     "description": "Review each recipient, compare immutable versions, and publish one approved seven-certificate set.",
     "integration": {"title":"Match Day integration is required","body":"Authoritative completion recipients are not available yet. Generation and publication remain locked."},
+    "completion": {"title":"Tournament completion required","body":"This tournament is reopened or editable. Complete it again before generating certificates.","action":"Review tournament completion"},
     "types": {"label":"Certificate types","champion":"Champion","runner_up":"Runner-up","third_place":"Third Place","mvp":"MVP","top_scorer":"Top Scorer","top_defender":"Top Defender","top_assist":"Top Assist"},
     "recipientPending": "Recipient pending",
     "status": {"missing":"Not generated","draft":"Draft","generating":"Generating","failed":"Generation failed","ready":"Ready","published":"Published","superseded":"Superseded"},

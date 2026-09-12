@@ -58,8 +58,12 @@ function initialAwardDecisions(state: CompletionWorkspaceState): AwardDecisions 
   return decisions;
 }
 
-function authoritativeStateKey(state: CompletionWorkspaceState): string {
-  return JSON.stringify(state);
+function authoritativeStateKey(props: CompletionWorkspaceProps): string {
+  return JSON.stringify({
+    state: props.state,
+    completionIdempotencyKey: props.completionIdempotencyKey,
+    reopenIdempotencyKey: props.reopenIdempotencyKey,
+  });
 }
 
 function refreshRequiredOutcome(result: CompletionActionResult): RefreshRequiredOutcome | null {
@@ -79,7 +83,7 @@ function refreshRequiredOutcome(result: CompletionActionResult): RefreshRequired
 }
 
 export function CompletionWorkspace(props: CompletionWorkspaceProps) {
-  return <CompletionWorkspaceForm key={authoritativeStateKey(props.state)} {...props} />;
+  return <CompletionWorkspaceForm key={authoritativeStateKey(props)} {...props} />;
 }
 
 function CompletionWorkspaceForm({
@@ -99,6 +103,7 @@ function CompletionWorkspaceForm({
   const [awardDecisions, setAwardDecisions] = useState<AwardDecisions>(() => initialAwardDecisions(state));
   const [authoritativeBlockers, setAuthoritativeBlockers] = useState<readonly CompletionWorkspaceBlocker[]>(() => integrationRequired ? [] : state.blockers);
   const [refreshRequired, setRefreshRequired] = useState<RefreshRequiredAction | null>(null);
+  const [terminalRefreshPending, setTerminalRefreshPending] = useState<"complete" | "reopen" | null>(null);
   const [isPending, startTransition] = useTransition();
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const actionResultRef = useRef<HTMLParagraphElement>(null);
@@ -140,8 +145,11 @@ function CompletionWorkspaceForm({
     && (state.status === "ready" || state.status === "reopened" || decisionRepairableState)
     && visibleBlockers.length === 0
     && refreshRequired?.action !== "complete"
+    && terminalRefreshPending !== "complete"
     && decisions.length === 4;
-  const canReopen = state.status === "completed" && refreshRequired?.action !== "reopen";
+  const canReopen = state.status === "completed"
+    && refreshRequired?.action !== "reopen"
+    && terminalRefreshPending !== "reopen";
   const displayedStatus = refreshRequired ? "blocked" : canComplete && state.status === "blocked" ? "ready" : state.status;
 
   function updateAwardDecision(award: CompletionAwardStatistic, decision: AwardReviewDecision) {
@@ -214,6 +222,12 @@ function CompletionWorkspaceForm({
         if (staleOutcome) {
           setRefreshRequired({ action: "complete", message, outcome: staleOutcome });
           router.refresh();
+        } else if (
+          result.status === "completed"
+          || (result.status === "already_applied" && result.result.status === "completed")
+        ) {
+          setTerminalRefreshPending("complete");
+          router.refresh();
         }
         setActionResult(message);
       } catch {
@@ -241,7 +255,11 @@ function CompletionWorkspaceForm({
           reason: reopenReason.trim(),
         });
         const message = resultMessage(result, "reopen");
-        if (result.status === "reopened") {
+        if (
+          result.status === "reopened"
+          || (result.status === "already_applied" && result.result.status === "reopened")
+        ) {
+          setTerminalRefreshPending("reopen");
           router.refresh();
         } else {
           const staleOutcome = refreshRequiredOutcome(result);

@@ -10,6 +10,7 @@ const buildCertificateHtml = vi.fn();
 const findFirstMatch = vi.fn();
 const findUniqueEvent = vi.fn();
 const findFirstTeam = vi.fn();
+const findFirstCompletion = vi.fn();
 
 vi.mock("./browser", () => ({ launchCertificateBrowser }));
 vi.mock("./template", () => ({ buildCertificateHtml }));
@@ -28,6 +29,7 @@ vi.mock("@/lib/platform/db", () => ({
     match: { findFirst: findFirstMatch },
     event: { findUnique: findUniqueEvent },
     team: { findFirst: findFirstTeam },
+    tournamentCompletion: { findFirst: findFirstCompletion },
   },
 }));
 
@@ -139,9 +141,23 @@ beforeEach(() => {
     characterArtUrl: null,
   });
   findFirstTeam.mockResolvedValue({ id: "team-1", name: "Quantum Vanguard" });
+  findFirstCompletion.mockResolvedValue(null);
 });
 
 describe("generateCertificate", () => {
+  it("rejects direct legacy generation before rendering or persistence for a completed V3 event", async () => {
+    findFirstCompletion.mockResolvedValue({ id: "completion-1" });
+
+    await expect(generateCertificate("event-1", "team-1")).rejects.toThrow("Certificate Studio");
+    expect(findFirstCompletion).toHaveBeenCalledWith({
+      where: { eventId: "event-1" },
+      select: { id: true },
+    });
+    expect(launchCertificateBrowser).not.toHaveBeenCalled();
+    expect(recordCertificateSuccess).not.toHaveBeenCalled();
+    expect(recordCertificateFailure).not.toHaveBeenCalled();
+  });
+
   it("preserves legacy generation errors when failure recording also fails", async () => {
     const primary = new Error("browser failed first");
     const secondary = new Error("legacy repository unavailable");

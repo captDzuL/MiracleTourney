@@ -18,6 +18,7 @@ function createDependencies(
   overrides: Partial<CertificateGenerationDependencies> = {},
 ): CertificateGenerationDependencies {
   return {
+    findV3Completion: vi.fn().mockResolvedValue(false),
     findCompletedFinal: vi.fn().mockResolvedValue({
       id: "match-final",
       winnerTeamId: "team-winner",
@@ -116,6 +117,18 @@ describe("generateCertificateForEvent", () => {
       winnerTeamId: "team-winner",
     });
     expect(generateCertificate).toHaveBeenCalledWith("event-mfl-s2", "team-winner");
+  });
+
+  it("routes a completed Completion V3 event to Certificate Studio without invoking the legacy generator", async () => {
+    const dependencies = Object.assign(createDependencies(), {
+      findV3Completion: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(generateCertificateForEvent("event-mfl-s2", dependencies)).resolves.toEqual({
+      status: "studio-required",
+      studioHref: "/organizer/events/event-mfl-s2/certificates",
+    });
+    expect(dependencies.generateCertificate).not.toHaveBeenCalled();
   });
 });
 

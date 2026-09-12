@@ -1,8 +1,57 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { createCertificateStudioTransaction } from "./studio-repository";
+import { certificateStudioAvailability, createCertificateStudioTransaction, materializeOwnedCertificateAssetUrl } from "./studio-repository";
 import { MIRACLE_V3_CERTIFICATE_TYPES } from "./templates/miracle-v3-contract";
+import { getMiracleV3CertificateFingerprint } from "./templates/miracle-v3";
 
 const recipients = Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, `recipient-${type}`]));
+
+describe("owned local certificate asset materialization", () => {
+  it("embeds only the verified certificate-assets bytes as a CSP-safe raster data URL", async () => {
+    const bytes = Buffer.from("trusted-png-bytes");
+    const readOwnedAsset = vi.fn().mockResolvedValue(bytes);
+    const url = await materializeOwnedCertificateAssetUrl({
+      url: "/certificate-assets/team.png",
+      detectedMimeType: "image/png",
+      bytes: bytes.length,
+      width: 512,
+      height: 512,
+      storageOwnershipVerified: true,
+      storageProvider: "local",
+      storageKey: "certificate-assets/team.png",
+      contentSha256: createHash("sha256").update(bytes).digest("hex"),
+      purpose: "certificate_team_logo",
+    }, readOwnedAsset);
+
+    expect(url).toBe(`data:image/png;base64,${bytes.toString("base64")}`);
+    expect(readOwnedAsset).toHaveBeenCalledWith(expect.stringMatching(/[\\/]public[\\/]certificate-assets[\\/]team\.png$/));
+  });
+
+  it("rejects changed local bytes instead of rendering unverified content", async () => {
+    const bytes = Buffer.from("changed");
+    await expect(materializeOwnedCertificateAssetUrl({
+      url: "/certificate-assets/team.png",
+      detectedMimeType: "image/png",
+      bytes: 7,
+      width: 512,
+      height: 512,
+      storageOwnershipVerified: true,
+      storageProvider: "local",
+      storageKey: "certificate-assets/team.png",
+      contentSha256: "a".repeat(64),
+      purpose: "certificate_team_logo",
+    }, async () => bytes)).rejects.toThrow("content changed");
+  });
+});
+
+describe("Certificate Studio completion availability", () => {
+  it("distinguishes a known reopened snapshot from a missing authoritative integration", () => {
+    expect(certificateStudioAvailability(null)).toBe("integration_required");
+    expect(certificateStudioAvailability({ status: "reopened", version: 5 })).toBe("completion_required");
+    expect(certificateStudioAvailability({ status: "corrupt", version: 5 })).toBe("integration_required");
+    expect(certificateStudioAvailability({ status: "completed", version: 5 })).toBe("available");
+  });
+});
 const completion = {
   id: "completion-1", eventId: "event-1", status: "completed", format: "single_elimination",
   sourceSnapshot: { version: 4 }, completedByUserId: "organizer-1", completedAt: new Date("2026-09-12T00:00:00Z"),
@@ -34,7 +83,15 @@ function repository(overrides: Record<string, unknown> = {}) {
     eventVisualAsset: { findFirst: vi.fn() }, team: { findFirst: vi.fn().mockResolvedValue({ id: "team-awards" }) },
     ...overrides,
   };
-  return { tx, repository: createCertificateStudioTransaction(tx as never, "event-1", { id: "organizer-1", role: "organizer" }) };
+  return {
+    tx,
+    repository: createCertificateStudioTransaction(
+      tx as never,
+      "event-1",
+      { id: "organizer-1", role: "organizer" },
+      { materializeAssetUrl: async (asset) => asset.url },
+    ),
+  };
 }
 
 describe("Certificate Studio Prisma transaction boundary", () => {
@@ -77,6 +134,121 @@ describe("Certificate Studio Prisma transaction boundary", () => {
     }) }));
 
   });
+  it("persists one canonical render manifest and reuses it after event text and clock changes", async () => {
+    const mutableCompletion = {
+      ...completion,
+      event: { ...completion.event },
+      podiumPlacements: completion.podiumPlacements.map((row) => ({ ...row })),
+      awards: completion.awards.map((row) => ({ ...row, decision: row.decision ? { ...row.decision } : null })),
+    };
+    const key = "certificate-assets/logo.png";
+    const logo = {
+      id: "asset-logo",
+      url: `https://store.public.blob.vercel-storage.com/${key}`,
+      mimeType: "image/png",
+      width: 512,
+      height: 512,
+      byteSize: 1024,
+      storageProvider: "vercel_blob",
+      storageKey: key,
+      contentSha256: "a".repeat(64),
+      purpose: "certificate_team_logo",
+    };
+    const trustedLogo = {
+      url: logo.url,
+      detectedMimeType: logo.mimeType,
+      bytes: logo.byteSize,
+      width: logo.width,
+      height: logo.height,
+      storageOwnershipVerified: true,
+      storageProvider: "vercel_blob" as const,
+      storageKey: logo.storageKey,
+      contentSha256: logo.contentSha256,
+      purpose: "certificate_team_logo" as const,
+    };
+    const placement = { assetKind: "team_logo_hero" as const, x: 360, y: 748, width: 560, height: 540 };
+    let persisted = { ...certificates[0], id: "cert-champion-v3", version: 3, assetManifest: {}, renderManifest: null };
+    const certificateCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      persisted = { ...persisted, ...data };
+      return persisted;
+    });
+    const certificateUpdate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      persisted = { ...persisted, ...data };
+      return persisted;
+    });
+    const mutation = {
+      status: "in_progress",
+      fingerprint: "request-fingerprint",
+      actorUserId: "organizer-1",
+      result: null,
+      certificateId: persisted.id,
+      type: "champion",
+      leaseToken: null,
+      leaseExpiresAt: new Date(0),
+      updatedAt: new Date(0),
+      certificate: persisted,
+    };
+    const tx = {
+      event: { findUnique: vi.fn().mockResolvedValue({ organizerUserId: "organizer-1" }) },
+      tournamentCompletion: { findUnique: vi.fn().mockImplementation(async () => mutableCompletion), updateMany: vi.fn() },
+      certificate: {
+        findFirst: vi.fn().mockResolvedValue(certificates[0]),
+        findMany: vi.fn(),
+        create: certificateCreate,
+        update: certificateUpdate,
+        updateMany: vi.fn(),
+      },
+      certificateGenerationMutation: {
+        create: vi.fn(),
+        updateMany: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+          Object.assign(mutation, data);
+          return { count: 1 };
+        }),
+        findUnique: vi.fn().mockImplementation(async () => ({ ...mutation, certificate: persisted })),
+      },
+      certificatePublication: { findUnique: vi.fn(), create: vi.fn() },
+      eventVisualAsset: { findFirst: vi.fn().mockResolvedValue(logo) },
+      team: { findFirst: vi.fn().mockResolvedValue({ id: "recipient-champion" }) },
+    };
+    const now = vi.fn()
+      .mockReturnValueOnce(new Date("2026-09-12T23:55:00.000Z"))
+      .mockReturnValue(new Date("2026-09-14T01:00:00.000Z"));
+    const repo = createCertificateStudioTransaction(tx as never, "event-1", { id: "organizer-1", role: "organizer" }, { now });
+
+    const appended = await repo.appendVersion({
+      certificateType: "champion",
+      idempotencyKey: "same-key",
+      fingerprint: "request-fingerprint",
+      actorId: "organizer-1",
+      leaseOwnerId: "request-1",
+      assets: [{ assetId: logo.id, placement, asset: trustedLogo }],
+    });
+    const firstData = structuredClone(appended.data);
+    const firstFingerprint = getMiracleV3CertificateFingerprint(firstData);
+    expect(certificateUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "cert-champion-v3" },
+      data: {
+        renderManifest: expect.objectContaining({
+          schemaVersion: 1,
+          data: expect.objectContaining({
+            eventName: "Miracle Open",
+            issueDate: "2026-09-12",
+            recipientName: "Team 1",
+          }),
+          assets: [expect.objectContaining({
+            assetId: "asset-logo",
+            asset: expect.objectContaining({ storageKey: key, contentSha256: "a".repeat(64) }),
+          })],
+        }),
+      },
+    }));
+
+    mutableCompletion.event.name = "Renamed after append";
+    mutableCompletion.event.gameId = "game-changed";
+    const resumed = await repo.leaseStaleVersion("same-key", new Date(0).toISOString(), "request-2");
+    expect(resumed?.data).toEqual(firstData);
+    expect(getMiracleV3CertificateFingerprint(resumed!.data)).toBe(firstFingerprint);
+  });
   it("aborts before supersession writes when optimistic publication revision loses", async () => {
     const updateManyRevision = vi.fn().mockResolvedValue({ count: 0 });
     const { tx, repository: repo } = repository({ tournamentCompletion: { findUnique: vi.fn().mockResolvedValue(completion), updateMany: updateManyRevision } });
@@ -107,14 +279,31 @@ describe("Certificate Studio Prisma transaction boundary", () => {
   it("leases one concurrent stale resume and prevents the losing token from recording failure", async () => {
     const staleAt = new Date("2026-09-12T00:00:00.000Z");
     const logo = {
-      id: "asset-logo", url: "/certificate-assets/logo.png", mimeType: "image/png", width: 512, height: 512, byteSize: 1024,
-      storageProvider: "local", storageKey: "certificate-assets/logo.png", contentSha256: "a".repeat(64), purpose: "certificate_team_logo",
+      id: "asset-logo", url: "https://store.public.blob.vercel-storage.com/certificate-assets/logo.png", mimeType: "image/png", width: 512, height: 512, byteSize: 1024,
+      storageProvider: "vercel_blob", storageKey: "certificate-assets/logo.png", contentSha256: "a".repeat(64), purpose: "certificate_team_logo",
     };
     const placement = { assetKind: "team_logo_hero", x: 360, y: 748, width: 560, height: 540 };
-    const certificate = { ...certificates[0], assetManifest: { assets: [{ assetId: logo.id, placement, asset: {
+    const storedAssets = [{ assetId: logo.id, placement, asset: {
       url: logo.url, detectedMimeType: logo.mimeType, bytes: logo.byteSize, width: logo.width, height: logo.height,
       storageProvider: logo.storageProvider, storageKey: logo.storageKey, contentSha256: logo.contentSha256, purpose: logo.purpose,
-    } }] } };
+    } }];
+    const certificate = {
+      ...certificates[0],
+      assetManifest: { assets: storedAssets },
+      renderManifest: {
+        schemaVersion: 1,
+        data: {
+          eventId: "event-1", eventName: "Miracle Open", gameId: "game-1", gameName: "game-1",
+          certificateId: "cert-champion", certificateType: "champion", version: 2, templateVersion: "miracle-v3",
+          recipientId: "recipient-champion", recipientName: "Team 1", recipientKind: "team",
+          teamId: "recipient-champion", teamName: "Team 1", teamLogoUrl: logo.url, characterArtUrl: null,
+          issueDate: "2026-09-12", verificationCode: "verify-champion", verificationBaseUrl: "https://miracle-league.fun",
+          branding: { cyan: "#49d1ec", violet: "#aa8bff", cream: "#f6dfb1" },
+          assetPlacement: placement, assetPlacements: [placement],
+        },
+        assets: storedAssets,
+      },
+    };
     const mutation: Record<string, unknown> = {
       id: "mutation-1", eventId: "event-1", status: "in_progress", fingerprint: "fp", actorUserId: "organizer-1", result: null,
       certificateId: certificate.id, type: "champion", leaseToken: "expired-token", leaseOwnerId: "old-owner",

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useTransition, type KeyboardEvent } from "react";
 import { FileBadge2, RefreshCw, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useFormatter, useTranslations } from "next-intl";
 import { publishCertificateSetAction, regenerateCertificateAction } from "@/lib/actions/certificate-v3-actions";
@@ -14,6 +15,7 @@ export type CertificateStudioTypeState = { readonly certificateType: MiracleV3Ce
 type StudioBase = { readonly event: { readonly id: string; readonly name: string }; readonly records: readonly CertificateStudioTypeState[]; readonly approvedAssets: readonly ApprovedCertificateAsset[] };
 export type CertificateStudioState =
   | StudioBase & { readonly status: "integration_required"; readonly completionVersion: null; readonly certificateRevision: null; readonly publication: null }
+  | StudioBase & { readonly status: "completion_required"; readonly completionVersion: number; readonly certificateRevision: number; readonly publication: null; readonly completionHref: string }
   | StudioBase & { readonly status: "available"; readonly completionVersion: number; readonly certificateRevision: number; readonly publication: { readonly version: number; readonly publishedAt: string } | null };
 type Props = { state: CertificateStudioState; generationKeys: Record<MiracleV3CertificateType, string>; publicationKey: string; regenerateAction?: (input: unknown) => Promise<RegenerateCertificateResult>; publishAction?: (input: unknown) => Promise<PublishCertificateSetResult> };
 
@@ -46,8 +48,8 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   const [lockedRevision, setLockedRevision] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
-  const unavailable = state.status === "integration_required";
-  const authoritativeRevision = unavailable ? "integration-required" : `${state.completionVersion}:${state.certificateRevision}`;
+  const unavailable = state.status !== "available";
+  const authoritativeRevision = state.status === "integration_required" ? "integration-required" : `${state.status}:${state.completionVersion}:${state.certificateRevision}`;
   const locked = lockedRevision === authoritativeRevision;
   useEffect(() => {
     if (lockedRevision && lockedRevision !== authoritativeRevision) setLockedRevision(null);
@@ -119,7 +121,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   };
 
   return <main className="min-w-0 max-w-full overflow-x-clip text-[var(--color-text)]" data-certificate-studio>
-    <header className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 min-[700px]:p-7"><p className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--color-accent-cream-foreground)]">{state.event.name}</p><h1 className="mt-2 text-2xl font-extrabold min-[700px]:text-3xl">{t("title")}</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-text-muted)]">{unavailable ? t("integration.body") : t("description")}</p>{unavailable ? <p className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-4 text-sm font-bold">{t("integration.title")}</p> : null}</header>
+    <header className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 min-[700px]:p-7"><p className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--color-accent-cream-foreground)]">{state.event.name}</p><h1 className="mt-2 text-2xl font-extrabold min-[700px]:text-3xl">{t("title")}</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-text-muted)]">{state.status === "integration_required" ? t("integration.body") : state.status === "completion_required" ? t("completion.body") : t("description")}</p>{state.status === "integration_required" ? <p className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-4 text-sm font-bold">{t("integration.title")}</p> : state.status === "completion_required" ? <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-4 text-sm"><p className="font-bold">{t("completion.title")}</p><Link className="mt-3 inline-flex min-h-11 items-center rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-4 font-extrabold miracle-focus-ring" href={state.completionHref}>{t("completion.action")}</Link></div> : null}</header>
     <nav aria-label={t("types.label")} className="mt-4 overflow-x-auto rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-1"><div className="flex min-w-max gap-1" role="tablist">{MIRACLE_V3_CERTIFICATE_TYPES.map((type, index) => <button aria-controls="certificate-studio-panel" aria-selected={activeType === type} className="min-h-11 rounded-[var(--radius-control)] px-4 text-sm font-bold miracle-focus-ring aria-[selected=true]:bg-[var(--color-surface-selected)] aria-[selected=true]:text-[var(--color-accent-cyan-foreground)]" data-certificate-type={type} id={`certificate-type-${type}`} key={type} onClick={() => chooseType(type)} onKeyDown={(event) => moveTab(event, index)} ref={(node) => { refs.current[index] = node; }} role="tab" tabIndex={activeType === type ? 0 : -1} type="button">{t(`types.${type}`)}</button>)}</div></nav>
     <div className="mt-4 grid min-w-0 gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_20rem]">
       <section aria-labelledby={`certificate-type-${activeType}`} className="min-w-0 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" id="certificate-studio-panel" role="tabpanel">

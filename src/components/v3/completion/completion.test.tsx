@@ -330,6 +330,34 @@ describe("CompletionWorkspace", () => {
     expect(complete).toHaveBeenCalledTimes(1);
     expect(result.textContent).toContain("Tournament completed successfully");
     expect(document.activeElement).toBe(result);
+    expect(navigation.refresh).toHaveBeenCalledTimes(1);
+    const completeButton = container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!;
+    expect(completeButton.disabled).toBe(true);
+    await act(async () => completeButton.click());
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks a terminal completion replay until authoritative props replace the consumed key", async () => {
+    const terminal = { status: "completed" as const, eventId: "event-1", version: 5, snapshot: {} as never };
+    const complete = vi.fn(async () => ({ status: "already_applied" as const, eventId: "event-1", version: 5, result: terminal }));
+    const workspace = (workspaceState: CompletionWorkspaceState, key: string) => provider("en", <CompletionWorkspace
+      completeAction={complete}
+      completionIdempotencyKey={key}
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={workspaceState}
+    />);
+    await act(async () => root.render(workspace(state("ready"), "11111111-1111-4111-8111-111111111111")));
+    const button = container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!;
+
+    await act(async () => button.click());
+    expect(navigation.refresh).toHaveBeenCalledTimes(1);
+    expect(button.disabled).toBe(true);
+    await act(async () => button.click());
+    expect(complete).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.render(workspace(state("completed"), "33333333-3333-4333-8333-333333333333")));
+    expect(container.querySelector<HTMLButtonElement>("[data-complete-tournament]")?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>("[data-reopen-tournament]")?.disabled).toBe(false);
   });
 
   it("refreshes authoritative readiness blockers returned by the completion action", async () => {
@@ -601,6 +629,37 @@ describe("CompletionWorkspace", () => {
     expect(reopen).toHaveBeenCalledTimes(1);
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-action-result]')?.textContent).toContain("Tournament reopened for a recorded correction");
+    const reopenButton = container.querySelector<HTMLButtonElement>("[data-reopen-tournament]")!;
+    expect(reopenButton.disabled).toBe(true);
+    await act(async () => reopenButton.click());
+    expect(reopen).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks a terminal reopen replay until authoritative reopened props arrive", async () => {
+    const terminal = { status: "reopened" as const, eventId: "event-1", version: 6 };
+    const reopen = vi.fn(async () => ({ status: "already_applied" as const, eventId: "event-1", version: 6, result: terminal }));
+    const workspace = (workspaceState: CompletionWorkspaceState, key: string) => provider("en", <CompletionWorkspace
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenAction={reopen}
+      reopenIdempotencyKey={key}
+      state={workspaceState}
+    />);
+    await act(async () => root.render(workspace(state("completed"), "22222222-2222-4222-8222-222222222222")));
+    const reason = container.querySelector<HTMLTextAreaElement>('textarea[name="reopenReason"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(reason, "Correct a published result");
+      reason.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const button = container.querySelector<HTMLButtonElement>("[data-reopen-tournament]")!;
+
+    await act(async () => button.click());
+    expect(navigation.refresh).toHaveBeenCalledTimes(1);
+    expect(button.disabled).toBe(true);
+    await act(async () => button.click());
+    expect(reopen).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.render(workspace(state("reopened"), "44444444-4444-4444-8444-444444444444")));
+    expect(container.querySelector<HTMLButtonElement>("[data-reopen-tournament]")?.disabled).toBe(true);
   });
 
   it("uses the complete English and Indonesian workspace messages", () => {

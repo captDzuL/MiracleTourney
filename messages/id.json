@@ -638,6 +638,7 @@
     "title": "Studio Sertifikat",
     "description": "Tinjau setiap penerima, bandingkan versi yang tidak dapat diubah, lalu terbitkan satu set berisi tujuh sertifikat.",
     "integration": {"title":"Integrasi Match Day diperlukan","body":"Data penerima resmi dari penyelesaian belum tersedia. Pembuatan dan penerbitan tetap dikunci."},
+    "completion": {"title":"Penyelesaian turnamen diperlukan","body":"Turnamen ini dibuka kembali atau masih dapat diedit. Selesaikan lagi sebelum membuat sertifikat.","action":"Tinjau penyelesaian turnamen"},
     "types": {"label":"Jenis sertifikat","champion":"Juara","runner_up":"Runner-up","third_place":"Peringkat Tiga","mvp":"MVP","top_scorer":"Top Scorer","top_defender":"Top Defender","top_assist":"Top Assist"},
     "recipientPending": "Penerima belum tersedia",
     "status": {"missing":"Belum dibuat","draft":"Draf","generating":"Sedang dibuat","failed":"Pembuatan gagal","ready":"Siap","published":"Terbit","superseded":"Digantikan"},

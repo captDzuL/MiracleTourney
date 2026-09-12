@@ -387,6 +387,7 @@ model Certificate {
   version             Int       @default(1)
   templateVersion     String    @default("legacy-v1")
   assetManifest       Json      @default("{}")
+  renderManifest      Json?
   imageUrl            String    @default("")
   status              String    @default("ready")
   verificationCode    String    @unique @default(cuid())

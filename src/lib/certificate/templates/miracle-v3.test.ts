@@ -103,6 +103,19 @@ describe("Miracle V3 certificate contract", () => {
     const doc = await documentFor({ ...fixture, teamLogoUrl: url });
     expect(doc.querySelector('[data-zone="hero"] img')?.getAttribute("src")).toContain(url);
   });
+  it("accepts only inert raster data URLs produced from verified owned local assets", async () => {
+    const embedded = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    const doc = await documentFor({ ...fixture, teamLogoUrl: embedded });
+    expect(doc.querySelector('[data-role="team-logo"]')?.getAttribute("src")).toBe(embedded);
+
+    for (const unsafe of [
+      "data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+PC9zdmc+",
+      "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+      "data:image/png;base64,not-valid-base64%%",
+    ]) {
+      expect((await documentFor({ ...fixture, teamLogoUrl: unsafe })).querySelector('[data-role="team-logo"]')).toBeNull();
+    }
+  });
   it("escapes names and clamps long text within protected zones", async () => {
     const name = '<script>alert("x")</script> ' + "VeryLongName".repeat(80);
     const doc = await documentFor({ ...fixture, eventName: name, teamName: name, recipientName: name });

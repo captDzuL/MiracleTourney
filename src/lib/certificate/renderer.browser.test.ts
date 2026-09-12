@@ -49,3 +49,35 @@ browserTest.each(["not-found", "decode-failed", "network-failed", "valid"] as co
   expect({ width: metadata.width, height: metadata.height }).toEqual({ width: 1080, height: 1920 });
   expect(browser.isConnected()).toBe(false);
 }, 20_000);
+
+browserTest("renders an embedded owned-local team logo without network fallback", async () => {
+  const browser = await chromium.launch({ channel: process.env.CERTIFICATE_TEST_BROWSER_CHANNEL, headless: true });
+  const page = await browser.newPage();
+  const embedded = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+  const html = await buildMiracleV3CertificateHtml({
+    ...data,
+    certificateType: "champion",
+    recipientKind: "team",
+    recipientId: "team-1",
+    recipientName: "Garuda Nova",
+    teamLogoUrl: embedded,
+    characterArtUrl: null,
+  });
+  const png = await renderCertificatePng(html, { launchBrowser: async () => ({
+    newPage: async () => ({
+      setViewportSize: viewport => page.setViewportSize(viewport),
+      setContent: (content, options) => page.setContent(content, options),
+      evaluate: (callback: () => Promise<void>) => page.evaluate(callback),
+      screenshot: async options => {
+        expect(await page.locator('[data-zone="hero"] [data-role="team-logo"]').count()).toBe(1);
+        expect(await page.locator('[data-zone="hero"] [data-role="hero-fallback"]').count()).toBe(0);
+        expect(await page.locator('[data-role="team-logo"]').getAttribute("src")).toBe(embedded);
+        return page.screenshot(options);
+      },
+    }),
+    close: () => browser.close(),
+  }) });
+  const metadata = await sharp(png).metadata();
+  expect({ width: metadata.width, height: metadata.height }).toEqual({ width: 1080, height: 1920 });
+  expect(browser.isConnected()).toBe(false);
+}, 20_000);

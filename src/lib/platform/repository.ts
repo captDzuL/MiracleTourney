@@ -3449,6 +3449,11 @@ const LEGACY_CHAMPION_CERTIFICATE_FILTER = {
   recipientKind: "team",
 } as const;
 
+const LEGACY_CHAMPION_CERTIFICATE_WRITE_FILTER = {
+  ...LEGACY_CHAMPION_CERTIFICATE_FILTER,
+  templateVersion: "legacy-v1",
+} as const;
+
 const LEGACY_PUBLISHED_CHAMPION_CERTIFICATE_FILTER = {
   ...LEGACY_CHAMPION_CERTIFICATE_FILTER,
   status: "ready",
@@ -3458,6 +3463,19 @@ const LEGACY_PUBLISHED_CHAMPION_CERTIFICATE_FILTER = {
 async function getCertificateRecipientName(teamId: string): Promise<string> {
   const team = await prisma.team.findUnique({ where: { id: teamId }, select: { name: true } });
   return team?.name ?? teamId;
+}
+
+async function assertLegacyCertificateWriteAllowed(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+): Promise<void> {
+  const completion = await tx.tournamentCompletion.findFirst({
+    where: { eventId },
+    select: { id: true },
+  });
+  if (completion) {
+    throw new Error("Completion V3 certificates must be generated in Certificate Studio");
+  }
 }
 
 /** Marks an event's Champion certificate as successfully generated, clearing any previous failure. */
@@ -3479,8 +3497,9 @@ export async function recordCertificateSuccess(eventId: string, teamId: string, 
     attemptCount: 1,
   } as const;
   const row = await runSerializableCertificateTransaction(async (tx) => {
+    await assertLegacyCertificateWriteAllowed(tx, eventId);
     const existing = await tx.certificate.findFirst({
-      where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
+      where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_WRITE_FILTER },
       orderBy: [{ version: "desc" }, { createdAt: "desc" }],
     });
     const isPublished = Boolean(existing && (existing.publishedAt || existing.publishedUrl || existing.imageUrl));
@@ -3523,8 +3542,9 @@ export async function recordCertificateFailure(eventId: string, teamId: string, 
   const lastError = message.slice(0, MAX_CERTIFICATE_ERROR_LENGTH);
   const recipientName = await getCertificateRecipientName(teamId);
   const row = await runSerializableCertificateTransaction(async (tx) => {
+    await assertLegacyCertificateWriteAllowed(tx, eventId);
     const existing = await tx.certificate.findFirst({
-      where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
+      where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_WRITE_FILTER },
       orderBy: [{ version: "desc" }, { createdAt: "desc" }],
     });
     if (existing && (existing.publishedAt || existing.publishedUrl || existing.imageUrl)) return existing;
