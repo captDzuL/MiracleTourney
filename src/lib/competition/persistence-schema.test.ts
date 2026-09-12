@@ -21,6 +21,14 @@ function uniqueConstraint(modelName: string, fields: string[]) {
 }
 
 describe("competition operations persistence Prisma contract", () => {
+  it("persists explicit announcement urgency with an additive info default", () => {
+    expect(field("EventAnnouncement", "urgency")).toMatchObject({ type: "AnnouncementUrgency", default: "info", isRequired: true });
+    expect(enums.get("AnnouncementUrgency")?.values.map(v => v.name)).toEqual(["info", "important", "urgent"]);
+    const sql = readFileSync(fileURLToPath(new URL("../../../prisma/migrations/20260912030000_announcement_urgency/migration.sql", import.meta.url)), "utf8");
+    expect(sql).toContain('CREATE TYPE "AnnouncementUrgency"');
+    expect(sql).toContain('ADD COLUMN "urgency" "AnnouncementUrgency" NOT NULL DEFAULT \'info\'');
+    expect(sql).not.toMatch(/DROP\s+(TABLE|COLUMN|TYPE)/i);
+  });
   it("models the bounded match-day states required by the operations workflow", () => {
     expect(enums.get("CompetitionPhaseStatus")?.values.map(({ name }) => name)).toEqual([
       "draft",

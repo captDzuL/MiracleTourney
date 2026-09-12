@@ -609,6 +609,12 @@ enum CompetitionActionPriority {
   attention_soon
 }
 
+enum AnnouncementUrgency {
+  info
+  important
+  urgent
+}
+
 enum AnnouncementStatus {
   draft
   published
@@ -828,6 +834,7 @@ model EventAnnouncement {
   eventId       String
   event         Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
   status        AnnouncementStatus @default(draft)
+  urgency       AnnouncementUrgency @default(info)
   title         String
   body          String
   startsAt      DateTime?

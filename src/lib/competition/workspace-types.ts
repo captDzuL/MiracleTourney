@@ -19,7 +19,7 @@ export type CompetitionWorkspaceState = {
   schedule: ({ id: string; version: number } & StoredSchedule) | null;
   publishedSchedule: CompetitionWorkspaceState["schedule"];
   incidents: { id: string; matchId: string | null; kind: string; description: string; resolvedAt: string | null }[];
-  announcements: { id: string; title: string; body: string; status: string }[];
+  announcements: { id: string; title: string; body: string; status: string; urgency: "info" | "important" | "urgent" }[];
   audit: { id: string; matchId: string | null; action: string; reason: string | null; actor: string | null; at: string | null }[];
   unavailableSections: string[];
 };

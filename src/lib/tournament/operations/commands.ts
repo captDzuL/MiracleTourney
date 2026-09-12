@@ -162,7 +162,17 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
     }
     case "announcement_save": {
       if (command.startsAt && command.endsAt && Date.parse(command.startsAt) >= Date.parse(command.endsAt)) throw new Error("Announcement end must follow start");
-      const announcement = await tx.eventAnnouncement.create({ data: { eventId, title: command.title, body: command.body, status: "draft", createdById: actorId, startsAt: command.startsAt ? new Date(command.startsAt) : null, endsAt: command.endsAt ? new Date(command.endsAt) : null } });
+      if (command.announcementId) {
+        const existing = await tx.eventAnnouncement.findFirst({ where: { eventId, id: command.announcementId } });
+        if (!existing) throw new Error("Announcement not found");
+        if (existing.status === "published") throw new Error("Unpublish the announcement before editing its draft");
+        const startsAt = command.startsAt ? new Date(command.startsAt) : existing.startsAt;
+        const endsAt = command.endsAt ? new Date(command.endsAt) : existing.endsAt;
+        if (startsAt && endsAt && startsAt >= endsAt) throw new Error("Announcement end must follow start");
+        await tx.eventAnnouncement.update({ where: { id: existing.id }, data: { title: command.title, body: command.body, urgency: command.urgency ?? existing.urgency ?? "info", startsAt, endsAt } });
+        return existing.id;
+      }
+      const announcement = await tx.eventAnnouncement.create({ data: { eventId, title: command.title, body: command.body, urgency: command.urgency ?? "info", status: "draft", createdById: actorId, startsAt: command.startsAt ? new Date(command.startsAt) : null, endsAt: command.endsAt ? new Date(command.endsAt) : null } });
       return announcement.id;
     }
     case "announcement_publish":
@@ -170,7 +180,7 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       const announcement = await tx.eventAnnouncement.findFirst({ where: { eventId, id: command.announcementId } });
       if (!announcement) throw new Error("Announcement not found");
       const publishing = command.kind === "announcement_publish";
-      await tx.eventAnnouncement.update({ where: { id: announcement.id }, data: { status: publishing ? "published" : "draft", publishedAt: publishing ? now : null, publishedById: publishing ? actorId : null } });
+      await tx.eventAnnouncement.update({ where: { id: announcement.id }, data: { status: publishing ? "published" : "draft", publishedAt: publishing ? now : null, publishedById: publishing ? actorId : null, ...(command.kind === "announcement_publish" && command.urgency ? { urgency: command.urgency } : {}) } });
       return announcement.id;
     }
   }

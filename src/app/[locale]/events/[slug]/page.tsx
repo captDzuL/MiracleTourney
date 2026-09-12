@@ -3,6 +3,8 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { permanentRedirect } from "next/navigation";
 
 import { AdaptiveRegistrationEventPage } from "@/components/v3/public-event/AdaptiveRegistrationEventPage";
+import { AdaptiveOngoingEventPage } from "@/components/v3/public-event/AdaptiveOngoingEventPage";
+import { getPublicOngoingEvent, publicOngoingEnabled } from "@/lib/events/public-ongoing";
 import type { AdaptiveEventCopy } from "@/components/v3/public-event/PublicEventHero";
 import { getSessionUser } from "@/lib/auth/session";
 import { getAdaptivePublicEventViewWithRetry, shouldUseAdaptiveRegistrationRenderer } from "@/lib/events/adaptive-public-event";
@@ -121,6 +123,11 @@ export default async function LocalizedEventDetailPage({
   if (!event) {
     const redirectSlug = await getPublicEventSlugRedirect(slug);
     if (redirectSlug) permanentRedirect(`/${locale}/events/${redirectSlug}`);
+  }
+
+  if (event?.status === "Ongoing" && publicOngoingEnabled()) {
+    const ongoing = await getPublicOngoingEvent(slug).catch(() => null);
+    if (ongoing) return <AdaptiveOngoingEventPage view={ongoing} locale={locale} />;
   }
 
   if (event && isFeatureEnabled("adaptive_public_event_v3") && ["Published", "Registration Closed"].includes(event.status)) {

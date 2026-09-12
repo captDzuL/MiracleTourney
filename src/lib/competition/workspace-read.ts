@@ -47,7 +47,7 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
   // Auxiliary transactions recheck ownership and isolate partial failures.
   const [incidents, announcements, audit] = await Promise.allSettled([
     authorized(async tx => (await tx.competitionIncident.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: 100 })).map(i => ({ id: i.id, matchId: i.matchId ?? null, kind: i.kind, description: i.description, resolvedAt: i.resolvedAt?.toISOString() ?? null }))),
-    authorized(async tx => (await tx.eventAnnouncement.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: 100 })).map(a => ({ id: a.id, title: a.title, body: a.body, status: a.status }))),
+    authorized(async tx => (await tx.eventAnnouncement.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: 100 })).map(a => ({ id: a.id, title: a.title, body: a.body, status: a.status, urgency: a.urgency ?? "info" }))),
     authorized(async tx => (await tx.competitionAuditLog.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: 100 })).map(a => ({ id: a.id, matchId: a.matchId ?? null, action: a.action, reason: a.reason ?? null, actor: a.actorUserId ?? null, at: a.createdAt?.toISOString() ?? null }))),
   ]);
   for (const result of [incidents, announcements, audit]) if (result.status === "rejected" && result.reason instanceof Error && result.reason.message === "Not authorized") throw result.reason;

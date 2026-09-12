@@ -1,5 +1,5 @@
 import React from "react";
-import type { AdaptivePublicEventViewModel } from "@/lib/events/adaptive-public-event";
+import type { AdaptiveRegistrationEventViewModel } from "@/lib/events/adaptive-public-event";
 import type { AdaptiveEventCopy } from "./PublicEventHero";
 
 function date(value: string | null, locale: "id" | "en", timezone: string) {
@@ -10,7 +10,7 @@ function date(value: string | null, locale: "id" | "en", timezone: string) {
 }
 
 export function RegistrationOverview({ view, locale, copy }: {
-  view: AdaptivePublicEventViewModel;
+  view: AdaptiveRegistrationEventViewModel;
   locale: "id" | "en";
   copy: AdaptiveEventCopy;
 }) {

@@ -10,6 +10,10 @@ vi.mock("@/lib/platform/db", () => ({ prisma: new Proxy({}, { get: (_, key) => R
 import { readCompetitionWorkspace } from "./workspace-read";
 
 describe("private organizer read state", () => {
+  it("includes explicit announcement urgency in organizer read state", async () => {
+    store.seed("eventAnnouncement", { id: "notice", eventId: "event", title: "Notice", body: "Body", status: "draft", urgency: "important" });
+    expect((await readCompetitionWorkspace("event")).announcements[0]).toMatchObject({ urgency: "important" });
+  });
   let store: ReturnType<typeof operationStore>;
   beforeEach(() => { store = operationStore(); boundary.db = store.db; boundary.user = { id: "owner", role: "organizer", mustChangePassword: false }; boundary.enabled = true; });
   it("returns serializable format context, seeded teams, and official match state", async () => {

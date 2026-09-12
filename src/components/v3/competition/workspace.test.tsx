@@ -119,7 +119,7 @@ describe("organizer Match Day workspace", () => {
   });
   it("reports and resolves incidents, drafts then publishes announcements, and displays audit reasons", async () => {
     state.incidents = [{ id: "incident", matchId: "match", kind: "network", description: "Disconnected", resolvedAt: null }];
-    state.announcements = [{ id: "notice", title: "Update", body: "Schedule update", status: "draft" }];
+    state.announcements = [{ id: "notice", title: "Update", body: "Schedule update", status: "draft", urgency: "info" }];
     state.audit = [{ id: "log", matchId: "match", action: "match_timing", reason: "Network issue", actor: "owner", at: "2026-09-12T02:00:00Z" }];
     act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="match" matchId="match" />));
     set("incidentKind", "network"); set("description", "Disconnected again"); await submit("Report incident");
@@ -127,11 +127,22 @@ describe("organizer Match Day workspace", () => {
     host.querySelector<HTMLInputElement>('form[aria-label="Resolve incident"] [name="reason"]')!.value = "Reconnected";
     await submit("Resolve incident");
     expect(boundary.execute.mock.calls[1][0].command).toEqual({ kind: "incident_resolve", incidentId: "incident", reason: "Reconnected" });
-    set("title", "Welcome"); set("body", "Players ready"); await submit("Create announcement");
-    expect(boundary.execute.mock.calls[2][0].command).toEqual({ kind: "announcement_save", title: "Welcome", body: "Players ready" });
+    set("title", "Welcome"); set("body", "Players ready");
+    host.querySelector<HTMLSelectElement>('form[aria-label="Create announcement"] [name="urgency"]')!.value = "urgent";
+    await submit("Create announcement");
+    expect(boundary.execute.mock.calls[2][0].command).toEqual({ kind: "announcement_save", title: "Welcome", body: "Players ready", urgency: "urgent" });
     await act(async () => button("Publish announcement").click());
     expect(boundary.execute.mock.calls[3][0].command).toEqual({ kind: "announcement_publish", announcementId: "notice" });
     expect(host.textContent).toContain("Network issue");
+  });
+  it("requires saving announcement edits before publishing the reviewed draft", async () => {
+    state.announcements = [{ id: "notice", title: "Update", body: "Message", status: "draft", urgency: "info" }];
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="competition" />));
+    const select = host.querySelector<HTMLSelectElement>('form[aria-label="Edit announcement: Update"] [name="urgency"]')!;
+    act(() => { select.value = "urgent"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(button("Publish announcement").disabled).toBe(true);
+    await submit("Edit announcement: Update");
+    expect(boundary.execute.mock.calls[0][0].command).toEqual({ kind: "announcement_save", announcementId: "notice", title: "Update", body: "Message", urgency: "urgent" });
   });
   it("invalidates a correction preview when scores change and blocks terminal downstream impact", async () => {
     state.matches[0].resultVersion = 1; state.matches[0].status = "Completed";

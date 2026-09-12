@@ -9,9 +9,10 @@ vi.mock("./RegistrationEntryCta", () => ({
 }));
 
 import { AdaptiveRegistrationEventPage } from "./AdaptiveRegistrationEventPage";
-import type { AdaptivePublicEventViewModel } from "@/lib/events/adaptive-public-event";
+import type { AdaptiveRegistrationEventViewModel } from "@/lib/events/adaptive-public-event";
 
-const view: AdaptivePublicEventViewModel = {
+const view: AdaptiveRegistrationEventViewModel = {
+  mode: "registration",
   event: {
     id: "event-1", slug: "miracle-cup", name: "Miracle Community Cup",
     description: "Turnamen komunitas yang tertata.", logoUrl: "/logo-event.png",

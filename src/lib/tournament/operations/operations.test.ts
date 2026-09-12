@@ -22,6 +22,19 @@ function fixture() {
 }
 
 describe("competition operation transactions", () => {
+  it("defaults legacy announcements to info and lets an organizer review urgency before publishing", async () => {
+    const f = fixture();
+    const draft = await f.run({ kind: "announcement_save", title: "Urgent title is just text", body: "Message" });
+    expect(f.rows("eventAnnouncement")[0]).toMatchObject({ urgency: "info", status: "draft" });
+    await f.run({ kind: "announcement_save", announcementId: draft.resourceId!, title: "Notice", body: "Message", urgency: "important" });
+    expect(f.rows("eventAnnouncement")).toHaveLength(1);
+    expect(f.rows("eventAnnouncement")[0]).toMatchObject({ urgency: "important", status: "draft" });
+    await f.run({ kind: "announcement_publish", announcementId: draft.resourceId!, urgency: "urgent" });
+    expect(f.rows("eventAnnouncement")[0]).toMatchObject({ urgency: "urgent", status: "published" });
+    await expect(f.run({ kind: "announcement_save", announcementId: draft.resourceId!, title: "Changed", body: "Message", urgency: "info" })).rejects.toThrow("Unpublish");
+    await expect(f.run({ kind: "announcement_save", announcementId: "foreign", title: "Changed", body: "Message" })).rejects.toThrow("Announcement not found");
+    await expect(f.run({ kind: "announcement_publish", announcementId: draft.resourceId!, urgency: "invented" } as unknown as OperationCommand)).rejects.toThrow();
+  });
   it.each([false, true])("locks the reviewed draft assignment through regeneration and publication (previously published: %s)", async previouslyPublished => {
     const f = fixture(); const matchId = await f.setup();
     const first = await f.run({ kind: "schedule_save", input: scheduling });
