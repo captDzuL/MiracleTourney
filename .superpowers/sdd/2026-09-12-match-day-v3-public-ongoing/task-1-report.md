@@ -94,3 +94,39 @@ Green after the fix:
 ### Remaining concern
 
 The migration still has not been applied against a live PostgreSQL instance in this worktree. Its trigger and composite-FK contracts are validated structurally by focused tests and Prisma validation/generation; deployment should exercise it against the target PostgreSQL version before release.
+
+
+## Review remediation — round 2
+
+### Findings addressed
+
+- MatchResultRevision.winnerTeamId now has an optional Team relation scoped by eventId and winnerTeamId, with a composite database foreign key. A winner therefore cannot reference a team from another event.
+- Prisma relation declarations now match the deployed composite foreign keys. Every event-scoped Match, Team, Phase, and Group relation uses fields [eventId, entityId] and references [eventId, id]. DMMF contract tests verify the generated relation metadata, preventing a future Prisma migration from silently returning to single-column constraints.
+- The append-only result trigger now distinguishes direct history deletion from referential cleanup. Direct revision DELETE runs at normal trigger depth while its Match remains and raises the append-only exception. A foreign-key cascade runs at nested trigger depth, or after the parent Match is gone, and returns OLD so Match/Event cascading deletion can complete. UPDATE remains rejected; INSERT remains advisory-lock serialized and sequential.
+
+### Red / green evidence
+
+Red before implementation:
+
+    pnpm vitest run src/lib/competition/persistence-schema.test.ts -t "event-scoped relation metadata|result-revision cascade durability"
+    3 failed: relations exposed only single-column metadata, winnerTeam was absent, and the trigger lacked cascade handling.
+
+Green after implementation:
+
+    pnpm prisma validate           # passed
+    pnpm prisma generate           # passed
+    pnpm vitest run src/lib/competition/persistence-schema.test.ts  # 13 passed
+    pnpm lint                      # passed (tsc --noEmit)
+    git diff --check               # passed
+
+### Commits
+
+- 38f1ef00a843865ccd1b2c8f023cb76199a9881a — initial persistence foundation.
+- 7469db5 — original verification report.
+- 8f0b126df82e0c0f5394318a0b6f259fd8bae3d1 — first integrity remediation.
+- e463bec — first remediation report.
+- a713b7ad2b8f7aedaf3892ab2c0106d1cea6032f — composite relation, winner, and cascade remediation.
+
+### Remaining concern
+
+The reviewed migration is structurally validated but has not been executed against a live PostgreSQL instance in this credential-less worktree. Deployment should verify trigger-depth cascade behavior against the target PostgreSQL version.
