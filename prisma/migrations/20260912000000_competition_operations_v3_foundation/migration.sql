@@ -46,6 +46,7 @@ CREATE TABLE "CompetitionGroup" (
 
 CREATE TABLE "CompetitionGroupMember" (
   "id" TEXT NOT NULL,
+  "eventId" TEXT NOT NULL,
   "groupId" TEXT NOT NULL,
   "teamId" TEXT NOT NULL,
   "seed" INTEGER,
@@ -89,8 +90,8 @@ CREATE TABLE "MatchResultRevision" (
   "awayScore" INTEGER NOT NULL,
   "winnerTeamId" TEXT,
   "scoreSnapshot" JSONB NOT NULL,
-  "actorUserId" TEXT,
-  "reason" TEXT,
+  "actorUserId" TEXT NOT NULL,
+  "reason" TEXT NOT NULL,
   "idempotencyKey" TEXT NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "MatchResultRevision_pkey" PRIMARY KEY ("id")
@@ -201,31 +202,36 @@ CREATE INDEX "Match_eventId_scheduleStatus_scheduledAt_idx" ON "Match"("eventId"
 CREATE INDEX "Match_phaseId_idx" ON "Match"("phaseId");
 CREATE INDEX "Match_groupId_idx" ON "Match"("groupId");
 
-ALTER TABLE "Match" ADD CONSTRAINT "Match_phaseId_fkey" FOREIGN KEY ("phaseId") REFERENCES "CompetitionPhase"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "Match" ADD CONSTRAINT "Match_groupId_fkey" FOREIGN KEY ("groupId") REFERENCES "CompetitionGroup"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+CREATE UNIQUE INDEX "Team_eventId_id_key" ON "Team"("eventId", "id");
+CREATE UNIQUE INDEX "Match_eventId_id_key" ON "Match"("eventId", "id");
+CREATE UNIQUE INDEX "CompetitionPhase_eventId_id_key" ON "CompetitionPhase"("eventId", "id");
+CREATE UNIQUE INDEX "CompetitionGroup_eventId_id_key" ON "CompetitionGroup"("eventId", "id");
+
+ALTER TABLE "Match" ADD CONSTRAINT "Match_phaseId_fkey" FOREIGN KEY ("eventId", "phaseId") REFERENCES "CompetitionPhase"("eventId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Match" ADD CONSTRAINT "Match_groupId_fkey" FOREIGN KEY ("eventId", "groupId") REFERENCES "CompetitionGroup"("eventId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "CompetitionPhase" ADD CONSTRAINT "CompetitionPhase_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "CompetitionGroup" ADD CONSTRAINT "CompetitionGroup_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "CompetitionGroup" ADD CONSTRAINT "CompetitionGroup_phaseId_fkey" FOREIGN KEY ("phaseId") REFERENCES "CompetitionPhase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "CompetitionGroupMember" ADD CONSTRAINT "CompetitionGroupMember_groupId_fkey" FOREIGN KEY ("groupId") REFERENCES "CompetitionGroup"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "CompetitionGroupMember" ADD CONSTRAINT "CompetitionGroupMember_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "CompetitionGroup" ADD CONSTRAINT "CompetitionGroup_phaseId_fkey" FOREIGN KEY ("eventId", "phaseId") REFERENCES "CompetitionPhase"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "CompetitionGroupMember" ADD CONSTRAINT "CompetitionGroupMember_groupId_fkey" FOREIGN KEY ("eventId", "groupId") REFERENCES "CompetitionGroup"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "CompetitionGroupMember" ADD CONSTRAINT "CompetitionGroupMember_teamId_fkey" FOREIGN KEY ("eventId", "teamId") REFERENCES "Team"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "MatchDependency" ADD CONSTRAINT "MatchDependency_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchDependency" ADD CONSTRAINT "MatchDependency_sourceMatchId_fkey" FOREIGN KEY ("sourceMatchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchDependency" ADD CONSTRAINT "MatchDependency_targetMatchId_fkey" FOREIGN KEY ("targetMatchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "MatchDependency" ADD CONSTRAINT "MatchDependency_sourceMatchId_fkey" FOREIGN KEY ("eventId", "sourceMatchId") REFERENCES "Match"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "MatchDependency" ADD CONSTRAINT "MatchDependency_targetMatchId_fkey" FOREIGN KEY ("eventId", "targetMatchId") REFERENCES "Match"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "MatchReadiness" ADD CONSTRAINT "MatchReadiness_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchReadiness" ADD CONSTRAINT "MatchReadiness_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchReadiness" ADD CONSTRAINT "MatchReadiness_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "MatchReadiness" ADD CONSTRAINT "MatchReadiness_matchId_fkey" FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "MatchReadiness" ADD CONSTRAINT "MatchReadiness_teamId_fkey" FOREIGN KEY ("eventId", "teamId") REFERENCES "Team"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "MatchReadiness" ADD CONSTRAINT "MatchReadiness_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_matchId_fkey" FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "CompetitionActionItem" ADD CONSTRAINT "CompetitionActionItem_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "CompetitionActionItem" ADD CONSTRAINT "CompetitionActionItem_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "CompetitionActionItem" ADD CONSTRAINT "CompetitionActionItem_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "CompetitionActionItem" ADD CONSTRAINT "CompetitionActionItem_matchId_fkey" FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "CompetitionActionItem" ADD CONSTRAINT "CompetitionActionItem_teamId_fkey" FOREIGN KEY ("eventId", "teamId") REFERENCES "Team"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "CompetitionIncident" ADD CONSTRAINT "CompetitionIncident_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "CompetitionIncident" ADD CONSTRAINT "CompetitionIncident_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "CompetitionIncident" ADD CONSTRAINT "CompetitionIncident_matchId_fkey" FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "CompetitionIncident" ADD CONSTRAINT "CompetitionIncident_reportedById_fkey" FOREIGN KEY ("reportedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "CompetitionAuditLog" ADD CONSTRAINT "CompetitionAuditLog_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "CompetitionAuditLog" ADD CONSTRAINT "CompetitionAuditLog_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "CompetitionAuditLog" ADD CONSTRAINT "CompetitionAuditLog_matchId_fkey" FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "CompetitionAuditLog" ADD CONSTRAINT "CompetitionAuditLog_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "ScheduleRevision" ADD CONSTRAINT "ScheduleRevision_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "ScheduleRevision" ADD CONSTRAINT "ScheduleRevision_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -233,3 +239,30 @@ ALTER TABLE "ScheduleRevision" ADD CONSTRAINT "ScheduleRevision_publishedById_fk
 ALTER TABLE "EventAnnouncement" ADD CONSTRAINT "EventAnnouncement_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "EventAnnouncement" ADD CONSTRAINT "EventAnnouncement_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "EventAnnouncement" ADD CONSTRAINT "EventAnnouncement_publishedById_fkey" FOREIGN KEY ("publishedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+
+CREATE FUNCTION "enforce_match_result_revision"() RETURNS TRIGGER AS $$
+DECLARE
+  expected_version INTEGER;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    RAISE EXCEPTION 'Match result revisions are append-only';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtext(NEW."matchId"));
+  SELECT COALESCE(MAX("version"), 0) + 1
+    INTO expected_version
+    FROM "MatchResultRevision"
+   WHERE "matchId" = NEW."matchId";
+
+  IF NEW."version" <> expected_version THEN
+    RAISE EXCEPTION 'Match result revision version must be sequential';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "MatchResultRevision_append_only"
+BEFORE INSERT OR UPDATE OR DELETE ON "MatchResultRevision"
+FOR EACH ROW EXECUTE FUNCTION "enforce_match_result_revision"();

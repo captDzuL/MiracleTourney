@@ -126,3 +126,91 @@ describe("competition operations persistence migration", () => {
     expect(migration).not.toMatch(/DROP\s+(TABLE|COLUMN|TYPE)/i);
   });
 });
+
+
+describe("result-revision persistence hardening", () => {
+  const migrationPath = fileURLToPath(
+    new URL("../../../prisma/migrations/20260912000000_competition_operations_v3_foundation/migration.sql", import.meta.url),
+  );
+
+  it("requires an attributable reason and protects sequential history from update or delete", () => {
+    expect(field("MatchResultRevision", "actorUserId")).toMatchObject({ isRequired: true });
+    expect(field("MatchResultRevision", "reason")).toMatchObject({ isRequired: true });
+
+    const migration = readFileSync(migrationPath, "utf8");
+    expect(migration).toContain('CREATE FUNCTION "enforce_match_result_revision"()');
+    expect(migration).toContain('pg_advisory_xact_lock(hashtext(NEW."matchId"))');
+    expect(migration).toContain('NEW."version" <> expected_version');
+    expect(migration).toContain('BEFORE INSERT OR UPDATE OR DELETE ON "MatchResultRevision"');
+    expect(migration).toContain("Match result revisions are append-only");
+    expect(migration).toContain('ON DELETE RESTRICT ON UPDATE CASCADE');
+  });
+});
+
+describe("competition ownership integrity", () => {
+  const migrationPath = fileURLToPath(
+    new URL("../../../prisma/migrations/20260912000000_competition_operations_v3_foundation/migration.sql", import.meta.url),
+  );
+
+  it("constrains representative match, team, and phase references to the same event", () => {
+    const migration = readFileSync(migrationPath, "utf8");
+
+    for (const constraint of [
+      'FOREIGN KEY ("eventId", "sourceMatchId") REFERENCES "Match"("eventId", "id")',
+      'FOREIGN KEY ("eventId", "targetMatchId") REFERENCES "Match"("eventId", "id")',
+      'FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id")',
+      'FOREIGN KEY ("eventId", "teamId") REFERENCES "Team"("eventId", "id")',
+      'FOREIGN KEY ("eventId", "phaseId") REFERENCES "CompetitionPhase"("eventId", "id")',
+    ]) {
+      expect(migration).toContain(constraint);
+    }
+  });
+
+  it("does not null a required event key when a composite reference is removed", () => {
+    const migration = readFileSync(migrationPath, "utf8");
+    expect(migration).toContain('"Match_phaseId_fkey" FOREIGN KEY ("eventId", "phaseId") REFERENCES "CompetitionPhase"("eventId", "id") ON DELETE RESTRICT');
+    expect(migration).toContain('"Match_groupId_fkey" FOREIGN KEY ("eventId", "groupId") REFERENCES "CompetitionGroup"("eventId", "id") ON DELETE RESTRICT');
+    expect(migration).toContain('"CompetitionIncident_matchId_fkey" FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id") ON DELETE RESTRICT');
+    expect(migration).toContain('"CompetitionAuditLog_matchId_fkey" FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id") ON DELETE RESTRICT');
+  });
+
+  it("creates composite keys before composite foreign keys", () => {
+    const migration = readFileSync(migrationPath, "utf8");
+    expect(migration.indexOf('CREATE UNIQUE INDEX "Match_eventId_id_key"')).toBeLessThan(
+      migration.indexOf('ALTER TABLE "Match" ADD CONSTRAINT "Match_phaseId_fkey"'),
+    );
+    expect(migration.indexOf('CREATE UNIQUE INDEX "Team_eventId_id_key"')).toBeLessThan(
+      migration.indexOf('ALTER TABLE "MatchReadiness" ADD CONSTRAINT "MatchReadiness_teamId_fkey"'),
+    );
+  });
+
+  it("retains both idempotency indexes and legacy match identity/query constraints", () => {
+    const migration = readFileSync(migrationPath, "utf8");
+    expect(migration).toContain('CREATE UNIQUE INDEX "MatchResultRevision_matchId_idempotencyKey_key"');
+    expect(migration).toContain('CREATE UNIQUE INDEX "ScheduleRevision_eventId_idempotencyKey_key"');
+
+    uniqueConstraint("Match", ["eventId", "round", "slot"]);
+    expect(field("Match", "status")).toMatchObject({ type: "String", default: "Scheduled" });
+
+    const legacyMatchMigration = readFileSync(
+      fileURLToPath(new URL("../../../prisma/migrations/20260817100000_add_match_event_round_slot_unique/migration.sql", import.meta.url)),
+      "utf8",
+    );
+    expect(legacyMatchMigration).toContain('ALTER TABLE "Match" ADD CONSTRAINT "Match_eventId_round_slot_key" UNIQUE');
+    expect(migration).not.toMatch(/DROP\s+(?:INDEX|CONSTRAINT)\s+"Match_/i);
+  });
+});
+
+
+describe("legacy relation compatibility", () => {
+  it("retains legacy optional-relation delete policies", () => {
+    for (const [modelName, fieldName] of [
+      ["Event", "organizer"],
+      ["Event", "activeVisualAsset"],
+      ["EventPreviewToken", "createdByUser"],
+      ["EventEditRevision", "createdByUser"],
+    ]) {
+      expect(field(modelName, fieldName)).toMatchObject({ relationOnDelete: "SetNull" });
+    }
+  });
+});
