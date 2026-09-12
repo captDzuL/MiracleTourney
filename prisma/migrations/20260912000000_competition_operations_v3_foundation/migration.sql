@@ -224,6 +224,7 @@ ALTER TABLE "MatchReadiness" ADD CONSTRAINT "MatchReadiness_actorUserId_fkey" FO
 ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_matchId_fkey" FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_eventId_winnerTeamId_fkey" FOREIGN KEY ("eventId", "winnerTeamId") REFERENCES "Team"("eventId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "CompetitionActionItem" ADD CONSTRAINT "CompetitionActionItem_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "CompetitionActionItem" ADD CONSTRAINT "CompetitionActionItem_matchId_fkey" FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "CompetitionActionItem" ADD CONSTRAINT "CompetitionActionItem_teamId_fkey" FOREIGN KEY ("eventId", "teamId") REFERENCES "Team"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -245,7 +246,16 @@ CREATE FUNCTION "enforce_match_result_revision"() RETURNS TRIGGER AS $$
 DECLARE
   expected_version INTEGER;
 BEGIN
-  IF TG_OP <> 'INSERT' THEN
+  IF TG_OP = 'DELETE' THEN
+    IF pg_trigger_depth() > 1
+       OR NOT EXISTS (SELECT 1 FROM "Match" WHERE "id" = OLD."matchId") THEN
+      RETURN OLD;
+    END IF;
+
+    RAISE EXCEPTION 'Match result revisions are append-only';
+  END IF;
+
+  IF TG_OP = 'UPDATE' THEN
     RAISE EXCEPTION 'Match result revisions are append-only';
   END IF;
 

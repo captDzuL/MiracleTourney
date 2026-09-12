@@ -250,6 +250,7 @@ model Team {
   competitionGroupMemberships CompetitionGroupMember[]
   matchReadiness              MatchReadiness[]
   competitionActionItems      CompetitionActionItem[]
+  winningResultRevisions      MatchResultRevision[]    @relation("MatchResultRevisionWinner")
   createdAt                   DateTime                 @default(now())
 
   @@unique([eventId, tag])
@@ -324,9 +325,9 @@ model Match {
   winnerTeamId           String?
   scheduledLabel         String?
   phaseId                String?
-  phase                  CompetitionPhase?       @relation(fields: [phaseId], references: [id], onDelete: Restrict)
+  phase                  CompetitionPhase?       @relation(fields: [eventId, phaseId], references: [eventId, id], onDelete: Restrict)
   groupId                String?
-  group                  CompetitionGroup?       @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  group                  CompetitionGroup?       @relation(fields: [eventId, groupId], references: [eventId, id], onDelete: Restrict)
   scheduledAt            DateTime?
   scheduledEndsAt        DateTime?
   scheduleRoom           String?
@@ -649,7 +650,7 @@ model CompetitionGroup {
   eventId   String
   event     Event                    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   phaseId   String
-  phase     CompetitionPhase         @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  phase     CompetitionPhase         @relation(fields: [eventId, phaseId], references: [eventId, id], onDelete: Cascade)
   label     String
   sequence  Int
   members   CompetitionGroupMember[]
@@ -666,9 +667,9 @@ model CompetitionGroupMember {
   id        String           @id @default(cuid())
   eventId   String
   groupId   String
-  group     CompetitionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group     CompetitionGroup @relation(fields: [eventId, groupId], references: [eventId, id], onDelete: Cascade)
   teamId    String
-  team      Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team      Team             @relation(fields: [eventId, teamId], references: [eventId, id], onDelete: Cascade)
   seed      Int?
   createdAt DateTime         @default(now())
 
@@ -681,9 +682,9 @@ model MatchDependency {
   eventId       String
   event         Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
   sourceMatchId String
-  sourceMatch   Match                  @relation("SourceMatchDependencies", fields: [sourceMatchId], references: [id], onDelete: Cascade)
+  sourceMatch   Match                  @relation("SourceMatchDependencies", fields: [eventId, sourceMatchId], references: [eventId, id], onDelete: Cascade)
   targetMatchId String
-  targetMatch   Match                  @relation("TargetMatchDependencies", fields: [targetMatchId], references: [id], onDelete: Cascade)
+  targetMatch   Match                  @relation("TargetMatchDependencies", fields: [eventId, targetMatchId], references: [eventId, id], onDelete: Cascade)
   outcome       MatchDependencyOutcome
   targetSlot    MatchDependencySlot
   createdAt     DateTime               @default(now())
@@ -698,9 +699,9 @@ model MatchReadiness {
   eventId     String
   event       Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
   matchId     String
-  match       Match                @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  match       Match                @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Cascade)
   teamId      String
-  team        Team                 @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team        Team                 @relation(fields: [eventId, teamId], references: [eventId, id], onDelete: Cascade)
   status      MatchReadinessStatus @default(pending)
   actor       ReadinessActor       @default(organizer)
   actorUserId String?
@@ -721,11 +722,12 @@ model MatchResultRevision {
   eventId        String
   event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   matchId        String
-  match          Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  match          Match    @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Cascade)
   version        Int
   homeScore      Int
   awayScore      Int
   winnerTeamId   String?
+  winnerTeam     Team?    @relation("MatchResultRevisionWinner", fields: [eventId, winnerTeamId], references: [eventId, id], onDelete: Restrict)
   scoreSnapshot  Json
   actorUserId    String
   actorUser      User     @relation("MatchResultRevisionActor", fields: [actorUserId], references: [id], onDelete: Restrict)
@@ -743,9 +745,9 @@ model CompetitionActionItem {
   eventId      String
   event        Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   matchId      String?
-  match        Match?                    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  match        Match?                    @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Cascade)
   teamId       String?
-  team         Team?                     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team         Team?                     @relation(fields: [eventId, teamId], references: [eventId, id], onDelete: Cascade)
   conditionKey String
   priority     CompetitionActionPriority
   title        String
@@ -765,7 +767,7 @@ model CompetitionIncident {
   eventId      String
   event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   matchId      String?
-  match        Match?    @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  match        Match?    @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Restrict)
   reportedById String?
   reportedBy   User?     @relation("CompetitionIncidentReporter", fields: [reportedById], references: [id], onDelete: SetNull)
   kind         String
@@ -784,7 +786,7 @@ model CompetitionAuditLog {
   eventId        String
   event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   matchId        String?
-  match          Match?   @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  match          Match?   @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Restrict)
   actorUserId    String?
   actorUser      User?    @relation("CompetitionAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
   action         String

@@ -214,3 +214,62 @@ describe("legacy relation compatibility", () => {
     }
   });
 });
+
+
+function relation(modelName: string, fieldName: string) {
+  const relationField = field(modelName, fieldName);
+  expect(relationField.kind, modelName + "." + fieldName + " must be a relation").toBe("object");
+  return relationField;
+}
+
+describe("event-scoped relation metadata", () => {
+  it("models every competition entity relation with its event ownership key", () => {
+    for (const [modelName, fieldName, target, foreignKey] of [
+      ["Match", "phase", "CompetitionPhase", "phaseId"],
+      ["Match", "group", "CompetitionGroup", "groupId"],
+      ["CompetitionGroup", "phase", "CompetitionPhase", "phaseId"],
+      ["CompetitionGroupMember", "group", "CompetitionGroup", "groupId"],
+      ["CompetitionGroupMember", "team", "Team", "teamId"],
+      ["MatchDependency", "sourceMatch", "Match", "sourceMatchId"],
+      ["MatchDependency", "targetMatch", "Match", "targetMatchId"],
+      ["MatchReadiness", "match", "Match", "matchId"],
+      ["MatchReadiness", "team", "Team", "teamId"],
+      ["MatchResultRevision", "match", "Match", "matchId"],
+      ["CompetitionActionItem", "match", "Match", "matchId"],
+      ["CompetitionActionItem", "team", "Team", "teamId"],
+      ["CompetitionIncident", "match", "Match", "matchId"],
+      ["CompetitionAuditLog", "match", "Match", "matchId"],
+    ]) {
+      expect(relation(modelName, fieldName)).toMatchObject({
+        type: target,
+        relationFromFields: ["eventId", foreignKey],
+        relationToFields: ["eventId", "id"],
+      });
+    }
+  });
+
+  it("ties an optional winner to a team from the same event", () => {
+    expect(field("MatchResultRevision", "winnerTeamId")).toMatchObject({ isRequired: false, type: "String" });
+    expect(relation("MatchResultRevision", "winnerTeam")).toMatchObject({
+      type: "Team",
+      isRequired: false,
+      relationFromFields: ["eventId", "winnerTeamId"],
+      relationToFields: ["eventId", "id"],
+    });
+  });
+});
+
+describe("result-revision cascade durability", () => {
+  const migrationPath = fileURLToPath(
+    new URL("../../../prisma/migrations/20260912000000_competition_operations_v3_foundation/migration.sql", import.meta.url),
+  );
+
+  it("rejects direct history deletion while allowing foreign-key cascade deletion", () => {
+    const migration = readFileSync(migrationPath, "utf8");
+    expect(migration).toContain("IF TG_OP = 'DELETE' THEN");
+    expect(migration).toContain('pg_trigger_depth() > 1');
+    expect(migration).toContain('NOT EXISTS (SELECT 1 FROM "Match" WHERE "id" = OLD."matchId")');
+    expect(migration).toContain("RETURN OLD;");
+    expect(migration).toContain("Match result revisions are append-only");
+  });
+});
