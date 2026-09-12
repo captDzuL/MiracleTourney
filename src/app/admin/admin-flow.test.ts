@@ -12,6 +12,11 @@ describe("admin registration messages", () => {
   });
 });
 describe("admin workspace access", () => {
+  test("permits organizer legacy competition scope but keeps the admin workspace private", () => {
+    expect(adminFlow.canUseAdminWorkspace("organizer", "organizer_competition" as never)).toBe(true);
+    expect(adminFlow.canUseAdminWorkspace("captain", "organizer_competition" as never)).toBe(false);
+    expect(adminFlow.canUseAdminWorkspace("organizer", "admin")).toBe(false);
+  });
   test("lets an organizer enter only the explicitly scoped registration workspace", () => {
     const canUseAdminWorkspace = (adminFlow as typeof adminFlow & {
       canUseAdminWorkspace?: (role: string, scope: string) => boolean;

@@ -111,6 +111,7 @@ export async function applyResult(tx: Prisma.TransactionClient, eventId: string,
     homeScore: score.homeScore, awayScore: score.awayScore, winnerTeamId: score.winnerTeamId,
     status: "Completed", scheduleStatus: "completed", resultVersion: revision.version,
     resultSnapshot: json(score), resultConfirmedAt: now,
+    ...(command.kind === "result_submit" ? { actualEndedAt: match.actualEndedAt ?? now } : {}),
   } });
   const matches = await tx.match.findMany({ where: { eventId } });
   const projection = competitionProjection(graph, matches);

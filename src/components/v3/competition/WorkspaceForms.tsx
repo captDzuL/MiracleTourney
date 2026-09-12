@@ -5,6 +5,16 @@ import { previewCompetitionResultCorrectionAction } from "@/lib/actions/competit
 import type { CompetitionWorkspaceState, WorkspaceMatch } from "@/lib/competition/workspace-types";
 export { ScheduleControls } from "./ScheduleControls";
 import { Field, panel, type Run, type Translate } from "./CompetitionWorkspace";
+import { eventLocalInputToIso } from "@/lib/events/event-datetime";
+
+export function DelayControls({ state, match, t, busy, run, locale }: { state: CompetitionWorkspaceState; match: WorkspaceMatch; t: Translate; busy: boolean; run: Run; locale: "en" | "id" }) {
+  const [error, setError] = useState(false);
+  const label = t("Mark delayed and preview impact", "Tandai terlambat dan tinjau dampak");
+  return <section className={panel}><h2 className="mb-3 text-lg font-bold">{t("Delay and schedule impact", "Keterlambatan dan dampak jadwal")}</h2><p className="mb-3 text-sm">{t("The revised estimate creates a draft. Review and publish it from Schedule.", "Perkiraan baru menghasilkan draf. Tinjau dan terbitkan melalui Jadwal.")}</p><form aria-label={label} className="grid gap-3" onSubmit={e => {
+    e.preventDefault(); setError(false); const data = new FormData(e.currentTarget);
+    try { const estimatedEnd = eventLocalInputToIso(String(data.get("estimatedEnd")), state.event.timezone); if (!estimatedEnd) throw new Error("Invalid time"); void run({ kind: "delay_preview", matchId: match.id, estimatedEnd, reason: String(data.get("reason")) }); } catch { setError(true); }
+  }}><Field name="estimatedEnd" type="datetime-local" required label={t("Revised estimated end", "Perkiraan selesai terbaru")} /><Field name="reason" required maxLength={4000} label={t("Delay reason", "Alasan keterlambatan")} /><Button type="submit" disabled={busy || !match.end || ["Live", "Completed", "Bye"].includes(match.status) || match.scheduleStatus === "locked"}>{label}</Button>{error && <p role="alert">{t("Enter a valid event-local time.", "Masukkan waktu yang valid sesuai zona event.")}</p>}</form><a className="miracle-focus-ring mt-3 inline-flex min-h-11 items-center text-[var(--color-brand-cyan)]" href={`/${locale}/organizer/events/${encodeURIComponent(state.event.id)}/schedule`}>{t("Review schedule impact", "Tinjau dampak jadwal")}</a></section>;
+}
 
 
 export function ResultControls({ state, match, t, busy, run }: { state: CompetitionWorkspaceState; match: WorkspaceMatch; t: Translate; busy: boolean; run: Run }) {

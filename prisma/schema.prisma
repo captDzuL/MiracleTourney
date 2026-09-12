@@ -332,6 +332,8 @@ model Match {
   group                  CompetitionGroup?       @relation(fields: [eventId, groupId], references: [eventId, id], onDelete: Restrict)
   scheduledAt            DateTime?
   scheduledEndsAt        DateTime?
+  actualStartedAt        DateTime?
+  actualEndedAt          DateTime?
   scheduleRoom           String?
   scheduleStatus         MatchScheduleStatus     @default(estimated)
   scheduleVersion        Int?

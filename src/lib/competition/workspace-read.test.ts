@@ -10,6 +10,12 @@ vi.mock("@/lib/platform/db", () => ({ prisma: new Proxy({}, { get: (_, key) => R
 import { readCompetitionWorkspace } from "./workspace-read";
 
 describe("private organizer read state", () => {
+  it("exposes a safe compatibility diagnostic for result-bearing legacy data", async () => {
+    await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { format: "League" } }); });
+    store.seed("match", { id: "old", eventId: "event", homeTeamId: "a", awayTeamId: "b", homeScore: 2, awayScore: 1, status: "Completed", resultVersion: 0 });
+    expect((await readCompetitionWorkspace("event")).compatibility).toMatchObject({ status: "blocked", reason: "existing_results" });
+    expect(store.rows("competitionPhase")).toEqual([]);
+  });
   it("includes explicit announcement urgency in organizer read state", async () => {
     store.seed("eventAnnouncement", { id: "notice", eventId: "event", title: "Notice", body: "Body", status: "draft", urgency: "important" });
     expect((await readCompetitionWorkspace("event")).announcements[0]).toMatchObject({ urgency: "important" });

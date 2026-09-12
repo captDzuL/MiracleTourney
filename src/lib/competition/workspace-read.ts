@@ -7,6 +7,7 @@ import { tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 import { competitionProjection } from "@/lib/tournament/operations/result-projection";
 import type { StoredSchedule } from "@/lib/tournament/operations/state";
 import type { CompetitionWorkspaceState } from "./workspace-types";
+import { diagnoseLegacyCompetition } from "@/lib/tournament/operations/legacy-compatibility";
 
 export async function readCompetitionWorkspace(eventId: string): Promise<CompetitionWorkspaceState> {
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
@@ -31,9 +32,11 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
     const graph = (phases.find(p => p.sequence === 1)?.configuration as unknown as { graph?: CompetitionGraph } | null)?.graph ?? null;
     if (graph && graph.eventId !== eventId) throw new Error("Invalid competition state");
     const config = tournamentFormatConfigSchema.safeParse(event.formatConfig);
+    const legacy = !graph && (matches.length > 0 || !config.success) ? diagnoseLegacyCompetition(event, teams.map((t, i) => ({ id: t.id, seed: i + 1 })), matches) : null;
     const revision = revisions.sort((a, b) => b.version - a.version)[0];
     const priority: Record<string, number> = { critical: 0, high: 1, normal: 2 };
     return {
+      compatibility: legacy ? { status: legacy.status, reason: legacy.reason } : null,
       event: { id: event.id, name: event.name ?? "", version: event.competitionVersion, timezone: event.timezone ?? "Asia/Jakarta", startsAt: event.eventStartsAt?.toISOString() ?? null, publishedScheduleVersion: event.publishedScheduleVersion, config: config.success ? config.data : null },
       graph, teams: teams.map(t => ({ id: t.id, name: t.name ?? t.id })),
       matches: matches.map(m => ({ id: m.id, homeTeamId: m.homeTeamId, awayTeamId: m.awayTeamId, homeScore: m.homeScore ?? 0, awayScore: m.awayScore ?? 0, status: m.status, scheduleStatus: m.scheduleStatus, resultVersion: m.resultVersion, bestOf: graph?.matches.find(n => n.id === m.id)?.bestOf ?? 1, roundLabel: m.roundLabel, phaseId: m.phaseId ?? null, groupId: m.groupId ?? null, start: m.scheduledAt?.toISOString() ?? null, end: m.scheduledEndsAt?.toISOString() ?? null, room: m.scheduleRoom ?? null, games: (m.resultSnapshot as unknown as { games?: CompetitionWorkspaceState["matches"][number]["games"] } | null)?.games ?? [] })),

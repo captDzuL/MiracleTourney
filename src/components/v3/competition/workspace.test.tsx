@@ -16,6 +16,22 @@ export function fixture(): CompetitionWorkspaceState {
   return { event: { id: "event", name: "Miracle Open", version: 4, timezone: "Asia/Jakarta", startsAt: "2026-09-12T02:00:00.000Z", publishedScheduleVersion: 3, config: TOURNAMENT_FORMAT_PRESETS.singleElimination }, graph: null, teams: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }], matches: [{ id: "match", homeTeamId: "a", awayTeamId: "b", homeScore: 0, awayScore: 0, status: "Scheduled", scheduleStatus: "confirmed", resultVersion: 0, bestOf: 1, roundLabel: "single 1", phaseId: null, groupId: null, start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T02:30:00.000Z", room: "Room A", games: [] }], standings: [], readiness: [], actions: [{ id: "action", matchId: "match", priority: "critical", title: "Missing readiness", detail: null }], schedule: null, publishedSchedule: null, incidents: [], announcements: [], audit: [], unavailableSections: [] };
 }
 describe("organizer Match Day workspace", () => {
+  it.each(["en", "id"] as const)("shows a localized blocked legacy diagnostic without mutation forms: %s", locale => {
+    state.compatibility = { status: "blocked", reason: "existing_results" };
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale={locale} view="match" matchId="match" />));
+    expect(host.textContent).toContain(locale === "id" ? "hasil tercatat" : "recorded results");
+    expect(host.querySelector("form")).toBeNull();
+    expect(host.querySelector(`a[href='/${locale}/organizer/events/event/legacy-match-day']`)).not.toBeNull();
+  });
+  it("submits a delay estimate for review without publishing", async () => {
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="match" matchId="match" />));
+    await set("estimatedEnd", "2026-09-12T10:30");
+    const form = host.querySelector('form[aria-label="Mark delayed and preview impact"]')!;
+    await set("reason", "Room outage", form);
+    await submit("Mark delayed and preview impact");
+    expect(boundary.execute).toHaveBeenCalledWith(expect.objectContaining({ command: { kind: "delay_preview", matchId: "match", estimatedEnd: "2026-09-12T03:30:00.000Z", reason: "Room outage" } }));
+    expect(boundary.execute).toHaveBeenCalledTimes(1);
+  });
   let root: Root, host: HTMLDivElement, state: CompetitionWorkspaceState;
   const button = (label: string) => Array.from(host.querySelectorAll("button")).find(b => b.textContent?.trim() === label)!;
   const submit = async (name: string) => act(async () => { host.querySelector(`form[aria-label="${name}"]`)!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });

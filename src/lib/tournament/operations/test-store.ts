@@ -10,7 +10,7 @@ export function operationStore() {
     team: [{ id: "a", eventId: "event" }, { id: "b", eventId: "event" }],
     competitionPhase: [], competitionGroup: [], competitionGroupMember: [], match: [], matchDependency: [],
     matchReadiness: [], matchResultRevision: [], competitionAuditLog: [], competitionActionItem: [],
-    competitionIncident: [], scheduleRevision: [], eventAnnouncement: [],
+    competitionIncident: [], scheduleRevision: [], eventAnnouncement: [], matchGame: [],
   };
   let failTable: string | undefined;
   let reverseReadOrder = false;
@@ -37,6 +37,7 @@ export function operationStore() {
     const find = ({ where }: Query = {}) => tables[table].filter(row => matches(row, where));
     return [table, {
       findUnique: async (q: Query) => structuredClone(find(q)[0] ?? null),
+      findUniqueOrThrow: async (q: Query) => { const row = find(q)[0]; if (!row) throw new Error("missing row"); return structuredClone(row); },
       findFirst: async (q: Query = {}) => structuredClone(find(q)[0] ?? null),
       findMany: async (q: Query = {}) => structuredClone(reverseReadOrder ? find(q).reverse() : find(q)),
       count: async (q: Query = {}) => find(q).length,
