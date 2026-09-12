@@ -6,6 +6,7 @@ import { planSchedule } from "../scheduling";
 import type { ParsedCommand } from "./schema";
 import { json, isTerminal, matchSnapshot, eventMatch, readGraph, type StoredSchedule } from "./state";
 import { applyResult } from "./results";
+import { reconcileReadinessActions } from "./readiness";
 
 function requireReason(value: string | undefined) { if (!value?.trim()) throw new Error("An override or resolution reason is required"); }
 
@@ -106,16 +107,7 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       const match = await eventMatch(tx, eventId, command.matchId);
       // Published match start is the v1 readiness deadline. This command never
       // changes match/result state and never awards a walkover.
-      if (isTerminal(match) || match.scheduleStatus === "postponed" || !match.scheduledAt || match.scheduledAt > now) return match.id;
-      const readiness = await tx.matchReadiness.findMany({ where: { eventId, matchId: match.id } });
-      for (const teamId of new Set([match.homeTeamId, match.awayTeamId].filter(Boolean))) {
-        if (readiness.some(r => r.teamId === teamId && r.status === "ready")) continue;
-        const conditionKey = `readiness:${match.id}:${teamId}`;
-        await tx.competitionActionItem.upsert({ where: { eventId_conditionKey: { eventId, conditionKey } },
-          create: { eventId, matchId: match.id, teamId, conditionKey, priority: "critical", title: "Team readiness deadline missed", detail: "Organizer review required", resolvedAt: null },
-          update: { priority: "critical", resolvedAt: null },
-        });
-      }
+      await reconcileReadinessActions(tx, eventId, match, now);
       return match.id;
     }
     case "match_start": {

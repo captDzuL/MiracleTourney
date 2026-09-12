@@ -5,9 +5,19 @@ import { recalculateSchedule } from "../scheduling";
 import { competitionProjection, dependentMatchIds } from "./result-projection";
 import type { ParsedCommand } from "./schema";
 import { eventMatch, isTerminal, json, matchSnapshot, readGraph, type StoredSchedule } from "./state";
+import { reconcileReadinessActions } from "./readiness";
 
 export type ResultGame = { gameNumber: number; homeScore: number; awayScore: number };
 type ResultCommand = Extract<ParsedCommand, { kind: "result_submit" | "result_correct" }>;
+
+// Preview collections carry explicit identity/order fields (matchId, rank,
+// gameNumber). Canonicalize their content, including nested collections and
+// object keys, so database/presentation order cannot invalidate a review.
+function canonicalPreview(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalPreview).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, nested]) => [key, canonicalPreview(nested)]));
+  return value;
+}
 
 function scoreResult(match: Match, graphMatch: CompetitionMatch | undefined, input: ResultGame[]) {
   if (!graphMatch || graphMatch.status !== "pending" || !match.homeTeamId || !match.awayTeamId || match.homeTeamId === match.awayTeamId) throw new Error("Match participants are unresolved or this is a bye");
@@ -75,10 +85,10 @@ export async function correctionPreview(tx: Prisma.TransactionClient, eventId: s
   const schedule = await resultSchedule(tx, eventId, graph, next, matchId);
   const impact = { eventId, matchId, competitionVersion: version, resultVersion: match.resultVersion, score,
     affectedMatchIds, blockedMatchIds,
-    participants: next.filter(m => affectedMatchIds.includes(m.id)).map(m => ({ matchId: m.id, homeTeamId: m.homeTeamId, awayTeamId: m.awayTeamId })),
+    participants: next.filter(m => affectedMatchIds.includes(m.id)).map(m => ({ matchId: m.id, homeTeamId: m.homeTeamId, awayTeamId: m.awayTeamId })).sort((a, b) => a.matchId.localeCompare(b.matchId)),
     standings: projection.standings, placements: projection.placements, schedule: schedule?.draft ?? null,
   };
-  return { ...impact, token: createHash("sha256").update(JSON.stringify(impact)).digest("hex") };
+  return { ...impact, token: createHash("sha256").update(JSON.stringify(canonicalPreview(impact))).digest("hex") };
 }
 
 /** Internal command handler: the caller owns authorization, CAS, audit and commit. */
@@ -113,6 +123,7 @@ export async function applyResult(tx: Prisma.TransactionClient, eventId: string,
       // teams removed by a correction. Old readiness must never start new slots.
       await tx.matchReadiness.updateMany({ where: { eventId, matchId: row.id }, data: { status: "pending", readyAt: null, checkedInAt: null } });
       row.homeTeamId = homeTeamId; row.awayTeamId = awayTeamId;
+      await reconcileReadinessActions(tx, eventId, row, now);
     }
   }
   for (const phase of await tx.competitionPhase.findMany({ where: { eventId } })) {

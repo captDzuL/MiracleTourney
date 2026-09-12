@@ -13,6 +13,7 @@ export function operationStore() {
     competitionIncident: [], scheduleRevision: [], eventAnnouncement: [],
   };
   let failTable: string | undefined;
+  let reverseReadOrder = false;
   const matches = (row: Row, where: Row = {}): boolean => Object.entries(where).every(([key, value]) => {
     if (value && typeof value === "object" && !(value instanceof Date)) {
       const predicate = value as Row;
@@ -36,7 +37,7 @@ export function operationStore() {
     return [table, {
       findUnique: async (q: Query) => structuredClone(find(q)[0] ?? null),
       findFirst: async (q: Query = {}) => structuredClone(find(q)[0] ?? null),
-      findMany: async (q: Query = {}) => structuredClone(find(q)),
+      findMany: async (q: Query = {}) => structuredClone(reverseReadOrder ? find(q).reverse() : find(q)),
       count: async (q: Query = {}) => find(q).length,
       create: async ({ data }: Query) => {
         write(); const row = { id: `${table}-${tables[table].length + 1}`, ...structuredClone(data) };
@@ -72,5 +73,6 @@ export function operationStore() {
     rows: (table: string) => structuredClone(state[table]),
     seed: (table: string, row: Row) => state[table].push(structuredClone(row)),
     failWrites: (table: string) => { failTable = table; },
+    reverseReadOrder: (reverse: boolean) => { reverseReadOrder = reverse; },
   };
 }

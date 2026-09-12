@@ -97,6 +97,41 @@ describe("official result transaction", () => {
 });
 
 describe("guarded official correction", () => {
+  it("reconciles downstream readiness deadline actions when a semifinal correction replaces a finalist", async () => {
+    const f = await fixture(); const semifinal = f.graph.matches[0];
+    const saved = await f.run({ kind: "schedule_save", input: scheduling });
+    await f.run({ kind: "schedule_publish", revisionId: saved.resourceId! });
+    await f.submit(semifinal); await f.submit(f.graph.matches[1]);
+    const finalId = "event:single:r2:m1";
+    await f.run({ kind: "readiness_update", matchId: finalId, teamId: "b", status: "ready" });
+    await f.run({ kind: "readiness_deadline", matchId: finalId });
+    const oldCondition = `readiness:${finalId}:a`;
+    expect(f.rows("competitionActionItem").find(a => a.conditionKey === oldCondition)).toMatchObject({ resolvedAt: null });
+    f.seed("competitionActionItem", { id: "incident", eventId: "event", matchId: finalId, conditionKey: "incident:room", resolvedAt: null });
+    const corrected = games(semifinal.bestOf, true);
+    const preview = await f.service.previewResultCorrection({ eventId: "event", actor, matchId: semifinal.id, games: corrected });
+    await f.run({ kind: "result_correct", matchId: semifinal.id, games: corrected, reason: "Scores transposed", previewToken: preview.token });
+    expect(f.rows("competitionActionItem").find(a => a.conditionKey === oldCondition)?.resolvedAt).toBeInstanceOf(Date);
+    const active = f.rows("competitionActionItem").filter(a => a.matchId === finalId && a.resolvedAt === null && String(a.conditionKey).startsWith("readiness:"));
+    expect(active.map(a => a.teamId).sort()).toEqual(["b", "t4"]);
+    expect(f.rows("competitionActionItem").find(a => a.id === "incident")?.resolvedAt).toBeNull();
+    await f.run({ kind: "readiness_update", matchId: finalId, teamId: "t4", status: "ready" });
+    expect(f.rows("competitionActionItem").find(a => a.conditionKey === `readiness:${finalId}:t4`)?.resolvedAt).toBeInstanceOf(Date);
+  });
+
+  it("accepts a preview when identical database rows arrive in reversed order", async () => {
+    const f = await fixture("singleElimination", 8); const m = f.graph.matches[0];
+    const saved = await f.run({ kind: "schedule_save", input: scheduling });
+    await f.run({ kind: "schedule_publish", revisionId: saved.resourceId! });
+    await f.submit(m);
+    const request = { eventId: "event", actor, matchId: m.id, games: games(m.bestOf, true) };
+    const preview = await f.service.previewResultCorrection(request);
+    f.reverseReadOrder(true);
+    expect((await f.service.previewResultCorrection(request)).token).toBe(preview.token);
+    await f.run({ kind: "result_correct", matchId: m.id, games: request.games, reason: "Scores transposed", previewToken: preview.token });
+    expect(f.rows("match").find(row => row.id === m.id)?.resultVersion).toBe(2);
+  });
+
   it("rejects a stale or changed-score preview even with a current write version", async () => {
     const f = await fixture(); const m = f.graph.matches[0]; await f.submit(m);
     const preview = await f.service.previewResultCorrection({ eventId: "event", actor, matchId: m.id, games: games(m.bestOf, true) });
