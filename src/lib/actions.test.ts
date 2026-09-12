@@ -1026,6 +1026,37 @@ describe("adminUpdateEventStatusAction", () => {
 // adminUpdateMatchResultAction
 // ────────────────────────────────────────────────────────────
 
+describe("organizer legacy match roundtrip", () => {
+  beforeEach(() => { vi.clearAllMocks(); requireRole.mockResolvedValue(organizerSession()); });
+  it("returns result success to the scoped organizer route and ignores supplied return URLs", async () => {
+    setMatchResult.mockResolvedValue({ id: "m1", roundLabel: "Round 1" });
+    await expect(adminUpdateMatchResultAction(fd({ eventId: "e1", matchEventId: "other", matchId: "m1", homeScore: "2", awayScore: "0", returnTo: "https://evil.example" }))).rejects.toThrow("REDIRECT:/organizer/events/e1/legacy-match-day?matchId=m1&success=match-result-updated");
+    expect(setMatchResult).toHaveBeenCalledWith({ eventId: "e1", matchId: "m1", homeScore: 2, awayScore: 0 });
+  });
+  it("returns failed results to the same scoped match", async () => {
+    setMatchResult.mockRejectedValueOnce(new Error("Score rejected"));
+    await expect(adminUpdateMatchResultAction(fd({ eventId: "e1", matchEventId: "e1", matchId: "m1", homeScore: "2", awayScore: "0" }))).rejects.toThrow("REDIRECT:/organizer/events/e1/legacy-match-day?matchId=m1&error=Score%20rejected");
+  });
+  it("returns series configuration success to organizer operations", async () => {
+    await expect(adminSetRoundConfigAction(fd({ eventId: "e1", roundLabel: "Round 1", bestOf: "3" }))).rejects.toThrow("REDIRECT:/organizer/events/e1/legacy-match-day?success=round-config-saved");
+  });
+  it("returns a rejected series configuration to organizer operations", async () => {
+    upsertRoundConfig.mockRejectedValueOnce(new Error("Configuration locked"));
+    await expect(adminSetRoundConfigAction(fd({ eventId: "e1", roundLabel: "Round 1", bestOf: "3" }))).rejects.toThrow("REDIRECT:/organizer/events/e1/legacy-match-day?error=Configuration%20locked");
+  });
+  it("returns series results and validation errors to organizer operations", async () => {
+    await expect(adminSetMatchGamesAction(fd({ matchEventId: "e1", matchId: "m1", bestOf: "3", game1_home: "2", game1_away: "0", game2_home: "2", game2_away: "0" }))).rejects.toThrow("REDIRECT:/organizer/events/e1/legacy-match-day?matchId=m1&success=match-games-saved");
+    await expect(adminSetMatchGamesAction(fd({ matchEventId: "e1", matchId: "m1", bestOf: "3" }))).rejects.toThrow("REDIRECT:/organizer/events/e1/legacy-match-day?matchId=m1&error=Masukkan+skor+minimal+1+game.");
+  });
+  it("rejects cross-event writes before reaching repository mutations", async () => {
+    assertUserCanManageEvent.mockRejectedValue(new Error("Forbidden event"));
+    for (const action of [adminUpdateMatchResultAction, adminSetRoundConfigAction, adminSetMatchGamesAction]) {
+      await expect(action(fd({ eventId: "other", matchEventId: "other", matchId: "m1", roundLabel: "Round 1", bestOf: "3", homeScore: "2", awayScore: "0" }))).rejects.toThrow("Forbidden event");
+    }
+    expect(setMatchResult).not.toHaveBeenCalled(); expect(upsertRoundConfig).not.toHaveBeenCalled(); expect(setMatchGames).not.toHaveBeenCalled();
+  });
+});
+
 describe("adminUpdateMatchResultAction", () => {
   function resultFormData() {
     const formData = new FormData();

@@ -985,6 +985,14 @@ export async function adminArchiveEventAction(formData: FormData) {
  * Records a BO1 match result (direct home/away score). Also auto-transitions the event
  * status from Published/Registration Closed to Ongoing if it hasn't been set yet.
  */
+// Destination is selected by the authenticated role, never a client return URL.
+// Callers authorize the mutation event before using this fixed route family.
+function legacyMatchReturn(user: AppUser, eventId: string, matchId: string | undefined, feedback: string, success = false) {
+  return user.role === "organizer"
+    ? `/organizer/events/${encodeURIComponent(eventId)}/legacy-match-day?${matchId ? `matchId=${encodeURIComponent(matchId)}&` : ""}${feedback}`
+    : `/admin?${success ? "phase=run&" : ""}matchEventId=${encodeURIComponent(eventId)}&${feedback}`;
+}
+
 export async function adminUpdateMatchResultAction(formData: FormData) {
   const user = await requireAdminSession();
 
@@ -1004,15 +1012,16 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   await assertUserCanManageEvent(user, input.eventId);
 
   let match;
+  const returnEventId = user.role === "organizer" ? input.eventId : matchEventId;
 
   try {
     match = await setMatchResult(input);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save match result.";
-    await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(legacyMatchReturn(user, returnEventId, input.matchId, `error=${encodeURIComponent(message)}`));
   }
 
-  if (!match) await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=Match%20not%20found.` as never);
+  if (!match) await redirectToActiveLocale(legacyMatchReturn(user, returnEventId, input.matchId, "error=Match%20not%20found."));
   await autoTransitionEventToOngoing(input.eventId);
   if (match?.roundLabel === "Final" && match.winnerTeamId) {
     try {
@@ -1024,7 +1033,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   revalidateTag("teams");
   revalidateTag("events");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-result-updated` as never);
+  await redirectToActiveLocale(legacyMatchReturn(user, returnEventId, input.matchId, "success=match-result-updated", true));
 }
 
 /**
@@ -1419,10 +1428,15 @@ export async function adminSetRoundConfigAction(formData: FormData) {
   });
 
   await assertUserCanManageEvent(user, input.eventId);
-  await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
+  try {
+    await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to save round configuration.";
+    await redirectToActiveLocale(legacyMatchReturn(user, input.eventId, undefined, `error=${encodeURIComponent(message)}`));
+  }
   revalidateTag("teams");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?phase=run&matchEventId=${input.eventId}&success=round-config-saved` as never);
+  await redirectToActiveLocale(legacyMatchReturn(user, input.eventId, undefined, "success=round-config-saved", true));
 }
 
 /**
@@ -1449,7 +1463,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
   }
 
   if (games.length === 0) {
-    await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=Masukkan+skor+minimal+1+game.` as never);
+    await redirectToActiveLocale(legacyMatchReturn(user, matchEventId, matchId, "error=Masukkan+skor+minimal+1+game."));
     return;
   }
 
@@ -1457,7 +1471,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
     await setMatchGames(matchId, matchEventId, games, bestOf);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save match games.";
-    await redirectToActiveLocale(`/admin?matchEventId=${matchEventId}&error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(legacyMatchReturn(user, matchEventId, matchId, `error=${encodeURIComponent(message)}`));
   }
 
   await autoTransitionEventToOngoing(matchEventId);
@@ -1469,7 +1483,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
   revalidateTag("teams");
   revalidateTag("events");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?phase=run&matchEventId=${matchEventId}&success=match-games-saved` as never);
+  await redirectToActiveLocale(legacyMatchReturn(user, matchEventId, matchId, "success=match-games-saved", true));
 }
 
 /** Uploads a character art PNG for an event's certificate to Vercel Blob and stores the URL. */
