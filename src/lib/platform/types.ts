@@ -80,6 +80,7 @@ export type EventVisualAsset = {
   mimeType?: string;
   width?: number;
   height?: number;
+  byteSize?: number;
   focalX: number;
   focalY: number;
   provider?: string;

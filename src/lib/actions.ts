@@ -180,6 +180,7 @@ type UploadedImageAsset = {
   mimeType: string;
   width: number;
   height: number;
+  byteSize: number;
 };
 
 function appendActionError(basePath: string, message: string) {
@@ -241,13 +242,13 @@ export async function uploadImageAsset({
       access: "public",
       contentType: mimeType,
     });
-    return { url: result.url, mimeType, ...dimensions };
+    return { url: result.url, mimeType, ...dimensions, byteSize: file.size };
   }
 
   const dir = path.join(process.cwd(), "public", folder);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, filename), buffer);
-  return { url: `/${folder}/${filename}`, mimeType, ...dimensions };
+  return { url: `/${folder}/${filename}`, mimeType, ...dimensions, byteSize: file.size };
 }
 
 /** Returns real pixel dimensions, or null when the bytes are not a decodable image. */
@@ -1571,6 +1572,7 @@ async function uploadEventVisual(formData: FormData, returnPath: string) {
       mimeType: asset.mimeType,
       width: asset.width,
       height: asset.height,
+      byteSize: asset.byteSize,
       rightsAttestedAt: new Date(),
     });
 

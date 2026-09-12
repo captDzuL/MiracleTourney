@@ -2,27 +2,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
-
-export interface MiracleV3CertificateData {
-  eventId: string; eventName: string; gameId: string; gameName: string;
-  certificateId: string; certificateType: MiracleV3CertificateType; version: number; templateVersion: string;
-  recipientId: string; recipientName: string; recipientKind: "team" | "player";
-  teamId: string; teamName: string; teamLogoUrl: string | null; characterArtUrl: string | null;
-  issueDate: string; verificationCode: string; verificationBaseUrl: string;
-  branding: { cyan: string; violet: string; cream: string };
-}
-export type MiracleV3CertificateType = "champion" | "runner_up" | "third_place" | "mvp" | "top_scorer" | "top_defender" | "top_assist";
-export const MIRACLE_V3_CERTIFICATE_TYPES = Object.freeze([
-  "champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist",
-] as const);
-export const MIRACLE_V3_BRANDING = Object.freeze({ cyan: "#49d1ec", violet: "#aa8bff", cream: "#f6dfb1" });
-const rect = (x: number, y: number, width: number, height: number) => Object.freeze({ x, y, width, height });
-export const MIRACLE_V3_SAFE_ZONES = Object.freeze({
-  identity: rect(64, 56, 952, 248), award: rect(64, 380, 952, 260),
-  hero: rect(304, 688, 712, 660), secondaryBadge: rect(64, 1040, 208, 264),
-  recipient: rect(64, 1412, 952, 208), issueDate: rect(64, 1680, 608, 72),
-  certificateId: rect(64, 1780, 608, 84), qrVerification: rect(768, 1660, 248, 232),
-});
+import { MIRACLE_V3_BRANDING, MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateData, type MiracleV3CertificateType } from "./miracle-v3-contract";
+export { MIRACLE_V3_BRANDING, MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateData, type MiracleV3CertificateType } from "./miracle-v3-contract";
 const labels: Record<MiracleV3CertificateType, string> = {
   champion: "Champion", runner_up: "Runner-up", third_place: "Third Place", mvp: "MVP of Tournament",
   top_scorer: "Top Scorer", top_defender: "Top Defender", top_assist: "Top Assist",
@@ -66,6 +47,20 @@ function manifest(data: MiracleV3CertificateData) {
   for (const key of ["cyan", "violet", "cream"] as const) {
     if (data.branding[key].toLowerCase() !== MIRACLE_V3_BRANDING[key]) throw new Error("Unapproved certificate palette");
   }
+  let assetPlacement = null;
+  if (data.assetPlacement) {
+    const placement = data.assetPlacement;
+    const values = [placement.x, placement.y, placement.width, placement.height];
+    const expectedKind = teamType(data.certificateType) ? "team_logo_hero" : placement.assetKind;
+    const zone = expectedKind === "team_logo_badge" ? MIRACLE_V3_SAFE_ZONES.secondaryBadge : MIRACLE_V3_SAFE_ZONES.hero;
+    if (!values.every(Number.isFinite) || placement.width <= 0 || placement.height <= 0
+      || (teamType(data.certificateType) && placement.assetKind !== "team_logo_hero")
+      || (!teamType(data.certificateType) && !["character_art", "team_logo_badge"].includes(placement.assetKind))
+      || placement.x < zone.x || placement.y < zone.y
+      || placement.x + placement.width > zone.x + zone.width
+      || placement.y + placement.height > zone.y + zone.height) throw new Error("Invalid certificate asset placement");
+    assetPlacement = { ...placement };
+  }
   return {
     eventId: text(data.eventId), eventName: text(data.eventName), gameId: text(data.gameId), gameName: text(data.gameName),
     certificateId: text(data.certificateId), certificateType: data.certificateType, version: data.version, templateVersion: data.templateVersion,
@@ -73,7 +68,7 @@ function manifest(data: MiracleV3CertificateData) {
     teamId: text(data.teamId), teamName: text(data.teamName), teamLogoUrl: assetUrl(data.teamLogoUrl, base.origin),
     characterArtUrl: teamType(data.certificateType) ? null : assetUrl(data.characterArtUrl, base.origin),
     issueDate: text(data.issueDate), verificationCode: data.verificationCode, verificationBaseUrl: base.origin,
-    branding: MIRACLE_V3_BRANDING,
+    branding: MIRACLE_V3_BRANDING, assetPlacement,
   };
 }
 
@@ -83,7 +78,9 @@ export function getMiracleV3CertificateFingerprint(data: MiracleV3CertificateDat
 
 function embeddedAssets() {
   const logo = readFileSync(path.join(process.cwd(), "public/logo/miracle-horizontal.svg"));
-  const font = readFileSync(require.resolve("@fontsource/montserrat/files/montserrat-latin-800-normal.woff2"));
+  // Resolve through the installed package link at runtime so Next.js does not
+  // try to parse the binary font as a JavaScript module during server bundling.
+  const font = readFileSync(path.join(process.cwd(), "node_modules", "@fontsource", "montserrat", "files", "montserrat-latin-800-normal.woff2"));
   return { logo: `data:image/svg+xml;base64,${logo.toString("base64")}`, font: font.toString("base64") };
 }
 
@@ -97,7 +94,14 @@ export async function buildMiracleV3CertificateHtml(data: MiracleV3CertificateDa
   const zone = (name: keyof typeof MIRACLE_V3_SAFE_ZONES, body: string) => `<section data-zone="${name}" style="${zoneStyle(MIRACLE_V3_SAFE_ZONES[name])}">${body}</section>`;
   const fallback = `<svg data-role="hero-fallback" aria-label="Miracle award emblem" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg"><path d="M300 30 560 180 560 420 300 570 40 420 40 180Z" fill="#151a24" stroke="#aa8bff" stroke-width="3"/><path d="M150 420V180L300 310 450 180V420" fill="none" stroke="#49d1ec" stroke-width="48"/><circle cx="300" cy="300" r="270" fill="none" stroke="#f6dfb1" stroke-dasharray="${12 + parseInt(fingerprint.slice(0, 2), 16) % 24} 28"/></svg>`;
   const hero = teamType(m.certificateType) ? m.teamLogoUrl : m.characterArtUrl;
-  const heroImage = hero ? `<img data-role="${teamType(m.certificateType) ? "team-logo" : "character-art"}" src="${escape(hero)}" alt="${escape(teamType(m.certificateType) ? m.teamName : m.recipientName)}"/>` : fallback;
+  const placementStyle = (kind: "team_logo_hero" | "team_logo_badge" | "character_art", zoneName: "hero" | "secondaryBadge") => {
+    const placement = m.assetPlacement;
+    if (!placement || placement.assetKind !== kind) return "";
+    const base = MIRACLE_V3_SAFE_ZONES[zoneName];
+    return ` style="position:absolute;left:${placement.x - base.x}px;top:${placement.y - base.y}px;width:${placement.width}px;height:${placement.height}px;object-fit:contain"`;
+  };
+  const heroKind = teamType(m.certificateType) ? "team_logo_hero" : "character_art";
+  const heroImage = hero ? `<img data-role="${teamType(m.certificateType) ? "team-logo" : "character-art"}" src="${escape(hero)}" alt="${escape(teamType(m.certificateType) ? m.teamName : m.recipientName)}"${placementStyle(heroKind, "hero")}/>` : fallback;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escape(labels[m.certificateType])} · ${escape(m.recipientName)}</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
 <style>
@@ -118,7 +122,7 @@ section{z-index:1;overflow-wrap:anywhere}h1,h2,p{margin:0}h1{font-size:82px;line
 ${zone("identity", `<img src="${assets.logo}" alt="Miracle"/><div><p class="event clamp">${escape(m.eventName)}</p><p class="game clamp">${escape(m.gameName)}</p></div>`)}
 ${zone("award", `<p class="eyebrow">Miracle Championship Series</p><h1 class="clamp">${escape(labels[m.certificateType])}</h1>`)}
 ${zone("hero", heroImage + (hero ? `<template data-hero-fallback>${fallback}</template>` : ""))}
-${zone("secondaryBadge", teamType(m.certificateType) ? "" : `${m.teamLogoUrl ? `<img src="${escape(m.teamLogoUrl)}" alt="${escape(m.teamName)} team logo"/>` : `<span class="label">Miracle Team</span>`}<p class="team clamp">${escape(m.teamName)}</p>`)}
+${zone("secondaryBadge", teamType(m.certificateType) ? "" : `${m.teamLogoUrl ? `<img src="${escape(m.teamLogoUrl)}" alt="${escape(m.teamName)} team logo"${placementStyle("team_logo_badge", "secondaryBadge")}/>` : `<span class="label">Miracle Team</span>`}<p class="team clamp">${escape(m.teamName)}</p>`)}
 ${zone("recipient", `<p class="label">Presented to · ${m.recipientKind === "team" ? "Team" : "Individual award"}</p><h2 class="recipient clamp">${escape(m.recipientName)}</h2>`)}
 ${zone("issueDate", `<p class="label">Issued by Miracle</p><p class="meta clamp">${escape(m.issueDate)}</p>`)}
 ${zone("certificateId", `<p class="label">Certificate ID · Version ${m.version}</p><p class="meta clamp">${escape(m.certificateId)}</p>`)}

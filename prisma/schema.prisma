@@ -101,6 +101,7 @@ model Event {
   roundConfigs               EventRoundConfig[]
   certificates               Certificate[]
   completion                 TournamentCompletion?
+  certificatePublications    CertificatePublication[]
   promotions                 EventPromotion[]
   analyticsSnapshots         EventAnalyticsSnapshot[]
   checkIns                   CheckIn[]
@@ -180,6 +181,7 @@ model EventVisualAsset {
   mimeType         String?
   width            Int?
   height           Int?
+  byteSize         Int?
   focalX           Float     @default(0.5)
   focalY           Float     @default(0.5)
   provider         String?
@@ -389,12 +391,18 @@ model Certificate {
   supersededByVersion Int?
   lastError           String?
   attemptCount        Int       @default(1)
+  generationAttemptId String?
+  generationClaimedAt DateTime?
+  generationIdempotencyKey String?
+  generationFingerprint String?
+  generationActorUserId String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @default(now()) @updatedAt
   event               Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   team                Team      @relation(fields: [teamId], references: [id])
 
   @@unique([eventId, type, recipientKind, recipientId, version])
+  @@unique([eventId, type, generationIdempotencyKey])
   @@index([eventId, type, status])
 }
 
@@ -410,11 +418,33 @@ model TournamentCompletion {
   reopenedByUserId  String?
   reopenedAt        DateTime?
   reopenReason      String?
+  certificateRevision Int                    @default(0)
   podiumPlacements  PodiumPlacement[]
   awards            EventAward[]
   auditEntries      CompletionAuditEntry[]
+  certificatePublications CertificatePublication[]
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
+}
+
+model CertificatePublication {
+  id                String               @id @default(cuid())
+  eventId           String
+  event             Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  completionId      String
+  completion        TournamentCompletion @relation(fields: [completionId], references: [id], onDelete: Cascade)
+  version           Int
+  completionVersion Int
+  certificateIds    Json
+  idempotencyKey    String
+  fingerprint       String
+  actorUserId       String
+  publishedAt       DateTime             @default(now())
+  createdAt         DateTime             @default(now())
+
+  @@unique([eventId, version])
+  @@unique([eventId, idempotencyKey])
+  @@index([completionId, publishedAt])
 }
 
 model PodiumPlacement {

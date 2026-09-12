@@ -77,7 +77,7 @@ export const eventPublicInclude = { stream: true, activeVisualAsset: true } sati
 
 type EventVisualAssetRow = {
   id: string; eventId: string; source: string; status: string;
-  url?: string | null; mimeType?: string | null; width?: number | null; height?: number | null;
+  url?: string | null; mimeType?: string | null; width?: number | null; height?: number | null; byteSize?: number | null;
   focalX: number; focalY: number;
   provider?: string | null; model?: string | null; promptVersion?: string | null;
   workflowRunId?: string | null; sourceUrl?: string | null; rightsAttestedAt?: Date | null;
@@ -102,6 +102,7 @@ function mapEventVisualAsset(row: EventVisualAssetRow): EventVisualAsset {
   if (row.mimeType) asset.mimeType = row.mimeType;
   if (row.width != null) asset.width = row.width;
   if (row.height != null) asset.height = row.height;
+  if (row.byteSize != null) asset.byteSize = row.byteSize;
   if (row.provider) asset.provider = row.provider;
   if (row.model) asset.model = row.model;
   if (row.promptVersion) asset.promptVersion = row.promptVersion;
@@ -752,6 +753,7 @@ export type CreateEventVisualAssetInput = {
   mimeType?: string | null;
   width?: number | null;
   height?: number | null;
+  byteSize?: number | null;
   provider?: string | null;
   model?: string | null;
   promptVersion?: string | null;
@@ -3425,7 +3427,7 @@ function toCertificate(row: CertificateRow): Certificate {
     eventId: row.eventId,
     teamId: row.teamId,
     imageUrl: row.imageUrl,
-    status: row.status === "ready" ? "ready" : "failed",
+    status: row.status === "ready" || row.status === "published" ? "ready" : "failed",
     lastError: row.lastError,
     attemptCount: row.attemptCount,
     createdAt: row.createdAt,

@@ -634,6 +634,24 @@
     "publicTitle": "Navigasi event"
   },  "v3Shell": {"skipToContent":"Lewati ke konten","primaryNavigation":"Navigasi utama","operatorNavigation":"Navigasi operator","eventNavigation":"Navigasi event","nextAction":"Tindakan berikutnya","nextStep":"Langkah berikutnya","openNavigation":"Buka navigasi","closeNavigation":"Tutup navigasi","organizerHome":"Beranda organizer"},
   "v3Footer": {"copyright":"Copyright © Miracle","tagline":"Platform turnamen komunitas multi-game","socialLabel":"Kontak sosial Miracle","mobileMenu":"Buka navigasi"},
+  "certificateStudio": {
+    "title": "Studio Sertifikat",
+    "description": "Tinjau setiap penerima, bandingkan versi yang tidak dapat diubah, lalu terbitkan satu set berisi tujuh sertifikat.",
+    "integration": {"title":"Integrasi Match Day diperlukan","body":"Data penerima resmi dari penyelesaian belum tersedia. Pembuatan dan penerbitan tetap dikunci."},
+    "types": {"label":"Jenis sertifikat","champion":"Juara","runner_up":"Runner-up","third_place":"Peringkat Tiga","mvp":"MVP","top_scorer":"Top Scorer","top_defender":"Top Defender","top_assist":"Top Assist"},
+    "recipientPending": "Penerima belum tersedia",
+    "status": {"missing":"Belum dibuat","draft":"Draf","generating":"Sedang dibuat","failed":"Pembuatan gagal","ready":"Siap","published":"Terbit","superseded":"Digantikan"},
+    "versions": {"label":"Versi sertifikat","version":"Versi {version}"},
+    "previewAlt": "Pratinjau sertifikat {type} untuk {recipient}",
+    "previewMissing": "Pratinjau belum tersedia untuk versi ini.",
+    "lastError": "Kesalahan pembuatan terakhir",
+    "publishedAt": "Terbit {date}",
+    "supersededBy": "Digantikan oleh versi {version}",
+    "set": {"title":"Set sertifikat terpilih","ready":"siap","incomplete":"Pilih satu versi siap untuk setiap jenis.","published":"Seluruh set terpilih sudah diterbitkan.","notPublished":"Set terpilih belum diterbitkan seluruhnya."},
+    "assets": {"title":"Penempatan aset yang disetujui","assetId":"ID aset yang disetujui","help":"Opsional. Server memuat ulang ID ini sebagai PNG, JPEG, atau WebP milik event dan memvalidasi metadata sebenarnya.","kind":"Peran penempatan","x":"Posisi X","y":"Posisi Y","width":"Lebar","height":"Tinggi","safeZone":"Zona aman editor"},
+    "actions": {"title":"Kontrol sertifikat","regenerate":"Buat versi baru","publish":"Terbitkan set terpilih"},
+    "feedback": {"generated":"Versi sertifikat baru berhasil dibuat.","published":"Set tujuh sertifikat diterbitkan dengan aman.","alreadyApplied":"Permintaan ini sudah diterapkan dengan aman.","integrationRequired":"Integrasi Match Day diperlukan sebelum aksi ini dapat dijalankan.","failed":"Pembuatan gagal. Versi siap dan terbit tetap dipertahankan.","conflict":"Status sertifikat berubah di sesi lain. Muat ulang sebelum mencoba lagi.","invalid_input":"Permintaan berisi nilai yang tidak valid.","unauthorized":"Sesi Anda berakhir. Silakan masuk lagi.","password_change_required":"Ubah kata sandi sebelum mengelola sertifikat.","forbidden":"Anda tidak memiliki izin mengelola event ini.","feature_disabled":"Studio Sertifikat belum diaktifkan.","completion_required":"Selesaikan turnamen sebelum membuat sertifikat.","invalid_asset":"Aset atau penempatan yang dipilih tidak disetujui.","set_not_ready":"Pilih satu artefak siap untuk setiap jenis sertifikat."}
+  },
   "completionWorkspace": {
     "title": "Penyelesaian Turnamen",
     "description": "Validasi rekam akhir {event}, tinjau setiap penghargaan, dan kendalikan kapan penyelesaian dapat dicatat.",

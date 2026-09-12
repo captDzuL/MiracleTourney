@@ -64,6 +64,18 @@ describe("Miracle V3 certificate contract", () => {
       expect(a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y).toBe(false);
     }
   });
+  it("applies approved asset coordinates relative to the fixed zone and excludes editor guides from output", async () => {
+    const doc = await documentFor({ ...fixture, assetPlacement: { assetKind: "team_logo_hero", x: 320, y: 700, width: 500, height: 500 } });
+    const hero = doc.querySelector<HTMLElement>('[data-role="team-logo"]')!;
+    expect(hero.style.left).toBe("16px");
+    expect(hero.style.top).toBe("12px");
+    expect(hero.style.width).toBe("500px");
+    expect(doc.querySelector("[data-editor-guide]")).toBeNull();
+  });
+  it("rejects out-of-zone or non-finite placement at the render boundary", async () => {
+    await expect(buildMiracleV3CertificateHtml({ ...fixture, assetPlacement: { assetKind: "team_logo_hero", x: 0, y: 700, width: 500, height: 500 } })).rejects.toThrow("Invalid certificate asset placement");
+    expect(() => getMiracleV3CertificateFingerprint({ ...fixture, assetPlacement: { assetKind: "team_logo_hero", x: Number.NaN, y: 700, width: 500, height: 500 } })).toThrow("Invalid certificate asset placement");
+  });
   it("embeds the QR for the immutable verification code", async () => {
     const doc = await documentFor();
     const target = "https://miracle-league.fun/certificates/verify/verify-123";
