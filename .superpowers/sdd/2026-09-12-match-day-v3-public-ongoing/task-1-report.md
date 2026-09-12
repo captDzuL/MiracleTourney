@@ -130,3 +130,43 @@ Green after implementation:
 ### Remaining concern
 
 The reviewed migration is structurally validated but has not been executed against a live PostgreSQL instance in this credential-less worktree. Deployment should verify trigger-depth cascade behavior against the target PostgreSQL version.
+
+
+## Review remediation — round 3
+
+### Finding addressed
+
+- The event-scoped MatchResultRevision winner foreign key now uses Prisma onDelete: NoAction and PostgreSQL ON DELETE NO ACTION ON UPDATE CASCADE DEFERRABLE INITIALLY DEFERRED.
+- PostgreSQL defers the winner-team check to transaction commit. A direct Team deletion still fails while its result revision survives; a transaction deleting the Event can cascade Event to Team, Match, and result revisions and commit once all dependent rows are gone. The append-only trigger continues to reject direct result-revision deletes while allowing referential cascade cleanup.
+- The Prisma DMMF contract asserts relationOnDelete: NoAction, and the migration contract asserts the full deferred-constraint clause.
+- Added an opt-in migration integration test. It accepts only MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL, passes that value through the repository's production-Neon/valid-PostgreSQL preflight, and then verifies direct Team deletion is rejected while Event deletion removes the revision.
+
+### Red / green evidence
+
+Red before the policy change:
+
+    pnpm vitest run src/lib/competition/persistence-schema.test.ts -t "ties an optional winner|defers same-event winner"
+    2 failed: generated DMMF reported relationOnDelete Restrict; migration had ON DELETE RESTRICT rather than deferred NO ACTION.
+
+Green after implementation:
+
+    pnpm prisma validate           # passed (local placeholder URLs only; no connection)
+    pnpm prisma generate           # passed
+    pnpm vitest run src/lib/competition/persistence-schema.test.ts src/lib/competition/persistence-migration.integration.test.ts
+                                      # 14 passed; 1 skipped because MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL is unset
+    pnpm lint                      # passed (tsc --noEmit)
+    git diff --check               # passed
+
+### Safe integration availability
+
+The existing E2E database tooling was inspected before attempting any connection. It rejects the known production Neon host, validates PostgreSQL URLs before constructing Prisma, and requires a separate reset sentinel for destructive E2E setup. This worktree has no configured .env and no explicit MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL; therefore no database connection, migration application, reset, or live integration execution was attempted. The new focused test remains opt-in and guarded for a future isolated test database.
+
+### Commits
+
+- 38f1ef00a843865ccd1b2c8f023cb76199a9881a — initial persistence foundation.
+- 7469db5 — original verification report.
+- 8f0b126df82e0c0f5394318a0b6f259fd8bae3d1 — first integrity remediation.
+- e463bec — first remediation report.
+- a713b7ad2b8f7aedaf3892ab2c0106d1cea6032f — composite relation, winner, and cascade remediation.
+- c8c76f2 — second remediation report.
+- efa8f05 — deferred winner relation and guarded migration integration coverage.
