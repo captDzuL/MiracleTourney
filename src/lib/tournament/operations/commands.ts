@@ -10,6 +10,7 @@ import { reconcileReadinessActions } from "./readiness";
 import { scheduleBaseline } from "./schedule-source";
 import { diagnoseLegacyCompetition } from "./legacy-compatibility";
 import { applyDelay } from "./delay";
+import { outstandingDelayEstimates } from "./delay-estimates";
 
 function requireReason(value: string | undefined) { if (!value?.trim()) throw new Error("An override or resolution reason is required"); }
 
@@ -80,15 +81,25 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       const matches = await tx.match.findMany({ where: { eventId } });
       const playable = matches.filter(m => graph.matches.some(g => g.id === m.id && g.status === "pending"));
       const existingAssignments = await scheduleBaseline(tx, eventId, version, command.input, playable);
+      const source = command.input.sourceRevision ? await tx.scheduleRevision.findFirst({ where: { eventId, id: command.input.sourceRevision.id } }) : null;
+      const stored = source?.snapshot as unknown as StoredSchedule | undefined;
+      const delayEstimates = await outstandingDelayEstimates(tx, eventId);
+      const overrides = new Map((command.input.manualOverrides ?? []).map(a => [a.matchId, a]));
+      for (const [id, end] of Object.entries(delayEstimates)) {
+        const match = playable.find(m => m.id === id);
+        const assignment = stored?.draft.assignments.find(a => a.matchId === id);
+        if (match && assignment && !isTerminal(match) && match.scheduleStatus !== "locked" && !overrides.has(id)) {
+          overrides.set(id, { ...assignment, end: Date.parse(assignment.end) >= Date.parse(end) ? assignment.end : end });
+        }
+      }
+      const input = { ...command.input, manualOverrides: [...overrides.values()] };
       const draft = planSchedule({
-        ...command.input, graph,
+        ...input, graph,
         existingAssignments,
         lockedMatchIds: [...new Set([...command.input.lockedMatchIds ?? [], ...playable.filter(m => m.scheduleStatus === "locked").map(m => m.id)])],
         matchStates: Object.fromEntries(playable.map(m => [m.id, isTerminal(m) ? (m.scheduleStatus === "live" || m.status === "Live" ? "live" : "completed") : "scheduled"])),
       });
-      const source = command.input.sourceRevision ? await tx.scheduleRevision.findFirst({ where: { eventId, id: command.input.sourceRevision.id } }) : null;
-      const delayEstimates = (source?.snapshot as unknown as StoredSchedule | undefined)?.delayEstimates;
-      const revision = await tx.scheduleRevision.create({ data: { eventId, version, status: "draft", snapshot: json({ draft, input: command.input, baseMatches: matchSnapshot(matches), ...(delayEstimates ? { delayEstimates } : {}) }), idempotencyKey, createdById: actorId } });
+      const revision = await tx.scheduleRevision.create({ data: { eventId, version, status: "draft", snapshot: json({ draft, input, baseMatches: matchSnapshot(matches), ...(Object.keys(delayEstimates).length ? { delayEstimates } : {}) }), idempotencyKey, createdById: actorId } });
       return revision.id;
     }
     case "schedule_publish": {
@@ -102,6 +113,10 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       if (!draft.feasible || draft.conflicts.length) throw new Error("Schedule has unresolved conflicts");
       const matches = await tx.match.findMany({ where: { eventId } });
       if (!isDeepStrictEqual(baseMatches, matchSnapshot(matches))) throw new Error("Schedule review is stale: save a new draft");
+      const requiredEstimates = await outstandingDelayEstimates(tx, eventId);
+      for (const [id, end] of Object.entries(requiredEstimates)) {
+        if (!draft.assignments.some(a => a.matchId === id && Date.parse(a.end) >= Date.parse(end))) throw new Error("An active delay estimate is missing or shortened: preserve it or explicitly resolve the delay before publishing");
+      }
       for (const assignment of draft.assignments) {
         const match = matches.find(m => m.id === assignment.matchId);
         if (!match) throw new Error("Match not found");

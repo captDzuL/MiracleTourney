@@ -260,6 +260,16 @@ describe("organizer Match Day workspace", () => {
     await submit("Schedule generation");
     expect(boundary.execute.mock.calls[0][0].command.input.manualOverrides).toEqual([{ matchId: "match", roomId: "Room B", start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T03:00:00.000Z" }]);
   });
+  it("preserves an unchanged delayed override end despite a shorter global duration", async () => {
+    state.schedule = scheduleRevision("delayed", 4, 30);
+    state.schedule.draft.assignments[0].end = "2026-09-12T03:30:00.000Z";
+    state.schedule.input!.manualOverrides = [{ ...state.schedule.draft.assignments[0] }];
+    state.matches[0].scheduleStatus = "delayed";
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="schedule" />));
+    await set("duration", "20"); await set("reason", "Other match duration adjusted");
+    await submit("Schedule generation");
+    expect(boundary.execute.mock.calls[0][0].command.input.manualOverrides).toEqual([{ matchId: "match", roomId: "Room A", start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T03:30:00.000Z" }]);
+  });
   it.each([false, true])("handles an incoming official correction from 1 to 0 (dirty inputs: %s)", async dirty => {
     state.matches[0] = { ...state.matches[0], resultVersion: 1, status: "Completed", homeScore: 1, games: [{ gameNumber: 1, homeScore: 1, awayScore: 0 }] };
     act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="match" matchId="match" />));

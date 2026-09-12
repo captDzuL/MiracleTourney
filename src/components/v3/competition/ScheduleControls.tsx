@@ -85,6 +85,7 @@ export function ScheduleControls({ state, busy, run, t }: { state: CompetitionWo
           const baseline = form.assignments[match.id];
           if (time) {
             const start = eventLocalInputToIso(time, state.event.timezone)!;
+            if (baseline && time === local(baseline.start)) return [{ ...baseline, roomId }];
             return [{ matchId: match.id, roomId, start, end: new Date(Date.parse(start) + duration * 60000).toISOString() }];
           }
           if (roomId === (baseline?.roomId ?? "")) return [];

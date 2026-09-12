@@ -18,6 +18,42 @@ async function fixture(count = 4, double = false) {
   return { ...store, service, execute, source, delay, graph };
 }
 describe("reviewed delay revisions", () => {
+  it("retains a scheduled semifinal delay across regeneration and resolves it only on represented publication", async () => {
+    const f = await fixture(); const root = f.graph.matches[0];
+    await f.delay(root.id, "2026-01-01T03:30:00Z");
+    const saved = await f.execute({ kind: "schedule_save", input: { ...scheduling, sourceRevision: f.source() } });
+    expect(f.rows("match")[0].scheduleStatus).toBe("delayed");
+    const draft = await f.service.readScheduleDraft("event", saved.resourceId!, actor);
+    expect(draft?.draft.assignments.find(a => a.matchId === root.id)?.end).toBe("2026-01-01T03:30:00.000Z");
+    expect(f.rows("competitionActionItem")[0].resolvedAt).toBeNull();
+    await f.execute({ kind: "schedule_publish", revisionId: saved.resourceId! });
+    expect((await f.service.readPublishedSchedule("event"))?.assignments.find(a => a.matchId === root.id)?.end).toBe("2026-01-01T03:30:00.000Z");
+    expect(f.rows("competitionActionItem")[0].resolvedAt).toBeInstanceOf(Date);
+  });
+  it("rejects publication that truncates an active delay until organizer explicitly resolves it", async () => {
+    const f = await fixture(); const root = f.graph.matches[0];
+    await f.delay(root.id, "2026-01-01T03:30:00Z");
+    const saved = await f.execute({ kind: "schedule_save", reason: "Attempt shorter estimate", input: { ...scheduling, sourceRevision: f.source(), manualOverrides: [{ matchId: root.id, roomId: "A", start: "2026-01-01T02:00:00Z", end: "2026-01-01T02:30:00Z" }] } });
+    const before = await f.service.readPublishedSchedule("event");
+    await expect(f.execute({ kind: "schedule_publish", revisionId: saved.resourceId! })).rejects.toThrow(/delay.*estimate/i);
+    expect(await f.service.readPublishedSchedule("event")).toEqual(before);
+    expect(f.rows("competitionActionItem")[0].resolvedAt).toBeNull();
+    await f.execute({ kind: "action_resolve", actionId: String(f.rows("competitionActionItem")[0].id), reason: "Organizer verified delay cleared" });
+    await expect(f.execute({ kind: "schedule_publish", revisionId: saved.resourceId! })).resolves.toBeDefined();
+  });
+  it("rejects an older malformed snapshot that silently drops source delay metadata", async () => {
+    const f = await fixture(); const root = f.graph.matches[0];
+    await f.delay(root.id, "2026-01-01T03:30:00Z");
+    const saved = await f.execute({ kind: "schedule_save", input: { ...scheduling, sourceRevision: f.source() } });
+    await f.db.$transaction(async tx => {
+      const revision = await tx.scheduleRevision.findUniqueOrThrow({ where: { id: saved.resourceId! } });
+      const snapshot = revision.snapshot as unknown as import("./state").StoredSchedule;
+      delete snapshot.delayEstimates;
+      snapshot.draft.assignments.find(a => a.matchId === root.id)!.end = "2026-01-01T02:30:00.000Z";
+      await tx.scheduleRevision.update({ where: { id: revision.id }, data: { snapshot: JSON.parse(JSON.stringify(snapshot)) } });
+    });
+    await expect(f.execute({ kind: "schedule_publish", revisionId: saved.resourceId! })).rejects.toThrow(/delay.*estimate/i);
+  });
   it("aggregates two unpublished delays and only resolves represented action items", async () => {
     const f = await fixture(); const [a, b] = f.graph.matches;
     await f.delay(a.id, "2026-01-01T03:00:00Z");
