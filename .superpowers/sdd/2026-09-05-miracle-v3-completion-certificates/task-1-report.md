@@ -167,3 +167,138 @@ The final re-review reported no Critical or Important findings. It confirmed ser
 
 - The migration was statically validated and contract-tested but was not applied to a live or shadow PostgreSQL database because no task-scoped database connection was provided.
 - The Prisma formatter produced substantial whitespace/alignment churn in `schema.prisma`; the semantic diff was reviewed, but this increases visual diff size.
+
+## Fix Round 1 — Published Legacy Reads and Retry Coverage
+
+### Commit
+
+- `caf8cc7c0cd9adb7c15235467ed60f51b526e695` — `fix(certificates): prefer published legacy versions`
+- `10b4768fe67f425cca53af43e95583fbeead298f` — `fix(certificates): retain legacy failure visibility`
+
+### Findings addressed
+
+1. Legacy single-event and batch lookups now select Champion/team certificates with `status = ready` and a non-null `publishedUrl` first, ordered by descending version. A newer generated/unpublished row can no longer hide the latest usable published certificate. When an event has no published certificate, both APIs fall back to its latest Champion row so persisted failure state remains visible for admin retry. The legacy mapper now maps only the literal persistence status `ready` to API status `ready`; every non-ready persistence state is conservatively exposed as `failed` rather than as a usable empty certificate.
+2. Repository behavior tests now exercise `P2034` and `P2002` retry conflicts, successful completion on the third attempt, the three-attempt ceiling, and rethrowing the terminal database error.
+
+### Tests and the production breaks they catch
+
+- `keeps a newer unpublished Champion from hiding the latest published event certificate`
+  - Catches removal of the published-ready predicate from the single-event lookup, which otherwise returns the newer empty row.
+- `keeps newer unpublished Champions from hiding published certificates in batch reads`
+  - Catches removal of the published-ready predicate from the batch lookup, which otherwise stores the newer empty row as the event result.
+- `does not label an unpublished Champion as ready if persistence returns one`
+  - Catches loss of the single-event failure fallback and permissive status mapping that treats `generated`, `pending`, or unknown persistence states as legacy `ready`.
+- `falls back per event to the latest non-published Champion when batch reads have no published version`
+  - Catches batch logic that leaves an event at `null` and hides its persisted failure state when another event in the same request has a published certificate.
+- `retries P2034 and P2002 write conflicts before publishing the certificate`
+  - Catches removal of either retryable Prisma error code or an attempt limit below three.
+- `stops after three certificate write conflicts and rethrows the terminal database error`
+  - Catches an unbounded/incorrect retry limit or swallowing/replacing the final database error.
+
+### RED evidence
+
+Initial lookup and selection run:
+
+```text
+pnpm test src/lib/platform/repository.test.ts
+Test Files  1 failed (1)
+Tests       4 failed | 79 passed (83)
+```
+
+The failures showed both query paths lacked `status: ready` / `publishedUrl: { not: null }`; both observable results selected `certificate-champion-v3` with an empty URL instead of published `certificate-champion-v2`.
+
+Status mapping run:
+
+```text
+pnpm test src/lib/platform/repository.test.ts -t "does not label an unpublished Champion"
+Test Files  1 failed (1)
+Tests       1 failed | 83 skipped (84)
+```
+
+Observed mismatch: expected `failed`, received `ready` for a `generated` row with no published URL.
+
+The retry implementation already existed but lacked tests, so its new tests were mutation-verified against the exact requested production breaks: `P2002` handling was temporarily removed and the bound temporarily changed from three attempts to two.
+
+```text
+pnpm test src/lib/platform/repository.test.ts -t "retries P2034 and P2002|stops after three"
+Test Files  1 failed (1)
+Tests       2 failed | 81 skipped (83)
+```
+
+The first test rejected on `P2002` instead of succeeding; the exhaustion test observed two attempts instead of three. The controlled mutation was then reverted before the production lookup fix.
+
+Independent review then found that an exclusively published-only query returned `null` when an event had only a persisted failed/generated certificate. The single and mixed-batch fallback tests were made query-sensitive and run before the fallback implementation:
+
+```text
+pnpm test src/lib/platform/repository.test.ts -t "does not label an unpublished Champion|falls back per event"
+Test Files  1 failed (1)
+Tests       2 failed | 83 skipped (85)
+```
+
+Observed results were `null` instead of the latest failed Champion in both single and batch APIs.
+
+### GREEN and verification evidence
+
+Repository GREEN immediately after the minimal fix:
+
+```text
+pnpm test src/lib/platform/repository.test.ts
+Test Files  1 passed (1)
+Tests       85 passed (85)
+```
+
+Amended focused Task 1 suite:
+
+```text
+pnpm test src/lib/feature-flags.test.ts src/lib/completion/schema-contract.test.ts src/lib/platform/repository.test.ts src/lib/certificate/service.test.ts src/lib/certificate/generate.test.ts
+Test Files  5 passed (5)
+Tests       112 passed (112)
+```
+
+Security smoke:
+
+```text
+pnpm test src/security-smoke.test.ts
+Test Files  1 passed (1)
+Tests       6 passed (6)
+```
+
+Type/lint verification:
+
+```text
+pnpm lint
+$ tsc --noEmit
+```
+
+Exit code: `0`.
+
+Full regression suite:
+
+```text
+pnpm test
+Test Files  92 passed (92)
+Tests       831 passed (831)
+```
+
+The full suite again emitted only the existing expected stderr fixture for the password-reset email rejection test and exited `0`.
+
+Diff verification:
+
+```text
+git diff --check
+```
+
+Exit code: `0`; only Git's Windows line-ending notices were printed.
+
+### Fix-round self-review
+
+- Confirmed single and batch query paths share one published-ready Champion filter and preserve descending version selection.
+- Confirmed the single path falls back to the latest Champion state when no published version exists, and the batch path performs the same fallback only for event IDs still missing after the published query.
+- Confirmed the batch exception fallback calls the corrected single-event path.
+- Confirmed an unexpected non-ready row cannot be exposed as legacy `ready`.
+- Confirmed retry tests produce both supported Prisma conflict codes, prove third-attempt success, prove the three-attempt ceiling, and preserve the terminal error object.
+- Confirmed the controlled mutation was fully reverted; only the intended lookup, mapper, and test changes are present in the fix commit.
+
+### Fix-round independent review
+
+The first fix-round review identified one Important compatibility regression: published-only reads hid a persisted failed/generated state when no published version existed. Commit `10b4768fe67f425cca53af43e95583fbeead298f` added the single and per-event batch fallback under strict RED/GREEN coverage. The follow-up review of that commit reported no remaining Critical or Important findings.
