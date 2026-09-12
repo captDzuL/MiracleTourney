@@ -13,13 +13,13 @@ const boundary = vi.hoisted(() => ({ execute: vi.fn(), preview: vi.fn(), refresh
 vi.mock("@/lib/actions/competition-v3-actions", () => ({ mutateCompetitionWorkspaceAction: async (input: unknown) => ({ status: "saved", receipt: await boundary.execute(input) }), previewCompetitionResultCorrectionAction: boundary.preview }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: boundary.refresh }), useParams: () => ({ locale: "id" }) }));
 export function fixture(): CompetitionWorkspaceState {
-  return { event: { id: "event", name: "Miracle Open", version: 4, timezone: "Asia/Jakarta", startsAt: "2026-09-12T02:00:00.000Z", publishedScheduleVersion: 3, config: TOURNAMENT_FORMAT_PRESETS.singleElimination }, graph: null, teams: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }], matches: [{ id: "match", homeTeamId: "a", awayTeamId: "b", homeScore: 0, awayScore: 0, status: "Scheduled", scheduleStatus: "confirmed", resultVersion: 0, bestOf: 1, roundLabel: "single 1", phaseId: null, groupId: null, start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T02:30:00.000Z", room: "Room A", games: [] }], standings: [], readiness: [], actions: [{ id: "action", matchId: "match", priority: "critical", title: "Missing readiness", detail: null }], schedule: null, incidents: [], announcements: [], audit: [], unavailableSections: [] };
+  return { event: { id: "event", name: "Miracle Open", version: 4, timezone: "Asia/Jakarta", startsAt: "2026-09-12T02:00:00.000Z", publishedScheduleVersion: 3, config: TOURNAMENT_FORMAT_PRESETS.singleElimination }, graph: null, teams: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }], matches: [{ id: "match", homeTeamId: "a", awayTeamId: "b", homeScore: 0, awayScore: 0, status: "Scheduled", scheduleStatus: "confirmed", resultVersion: 0, bestOf: 1, roundLabel: "single 1", phaseId: null, groupId: null, start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T02:30:00.000Z", room: "Room A", games: [] }], standings: [], readiness: [], actions: [{ id: "action", matchId: "match", priority: "critical", title: "Missing readiness", detail: null }], schedule: null, publishedSchedule: null, incidents: [], announcements: [], audit: [], unavailableSections: [] };
 }
 describe("organizer Match Day workspace", () => {
   let root: Root, host: HTMLDivElement, state: CompetitionWorkspaceState;
   const button = (label: string) => Array.from(host.querySelectorAll("button")).find(b => b.textContent?.trim() === label)!;
   const submit = async (name: string) => act(async () => { host.querySelector(`form[aria-label="${name}"]`)!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
-  const set = (name: string, value: string) => act(() => { const field = host.querySelector<HTMLInputElement>(`[name="${name}"]`)!; Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value")!.set!.call(field, value); field.dispatchEvent(new Event("input", { bubbles: true })); field.dispatchEvent(new Event("change", { bubbles: true })); });
+  const set = (name: string, value: string, scope: ParentNode = host) => act(() => { const field = scope.querySelector<HTMLInputElement>(`[name="${name}"]`)!; Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value")!.set!.call(field, value); field.dispatchEvent(new Event("input", { bubbles: true })); field.dispatchEvent(new Event("change", { bubbles: true })); });
   beforeEach(() => { vi.useFakeTimers(); vi.clearAllMocks(); state = fixture(); host = document.createElement("div"); document.body.append(host); root = createRoot(host); boundary.execute.mockResolvedValue({ version: 5 }); vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => ({ ok: true, json: async () => state }))); Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" }); });
   afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
   it.each([["en", "Action queue", "Next matches"], ["id", "Antrean tindakan", "Pertandingan berikutnya"]] as const)("renders %s action-first cards and localized match links", (locale, queue, next) => {
@@ -73,7 +73,7 @@ describe("organizer Match Day workspace", () => {
   it("saves schedule preview with event-local overrides and locks before explicit publication", async () => {
     act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="schedule" />));
     set("windowEnd", "2026-09-12T18:00"); set("override-match", "2026-09-12T10:00");
-    host.querySelector<HTMLInputElement>('form[aria-label="Schedule generation"] [name="reason"]')!.value = "Room availability";
+    set("reason", "Room availability", host.querySelector('form[aria-label="Schedule generation"]')!);
     act(() => host.querySelector<HTMLInputElement>('[name="lock-match"]')!.click());
     await submit("Schedule generation");
     expect(boundary.execute).toHaveBeenCalledWith(expect.objectContaining({ command: expect.objectContaining({ kind: "schedule_save", reason: "Room availability", input: expect.objectContaining({ lockedMatchIds: ["match"], manualOverrides: [{ matchId: "match", roomId: "Room A", start: "2026-09-12T03:00:00.000Z", end: "2026-09-12T03:30:00.000Z" }] }) }) }));
@@ -167,5 +167,77 @@ describe("organizer Match Day workspace", () => {
     state = { ...state, event: { ...state.event, id: "new-event", version: 1 }, teams: [{ id: "a", name: "New Alpha" }, { id: "b", name: "New Beta" }] };
     act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="competition" />));
     expect(host.textContent).toContain("New Alpha"); expect(host.textContent).toContain("Revision 1");
+  });
+  function scheduleRevision(id: string, version: number, duration: number): NonNullable<CompetitionWorkspaceState["schedule"]> {
+    return { id, version, baseMatches: [], input: { timezone: "Asia/Jakarta", eventWindow: { start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T12:00:00.000Z" }, matchDurationMinutes: duration, bufferMinutes: 7, minimumRestMinutes: 20, rooms: ["Room A", "Room B"] }, draft: { kind: "draft", timezone: "Asia/Jakarta", feasible: true, conflicts: [], warnings: [], assignments: [{ matchId: "match", roomId: "Room A", start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T03:00:00.000Z" }], affectedMatchIds: [], recalculatedMatchIds: [], impact: [] } };
+  }
+  it("opens published constraints when no actionable draft remains", () => {
+    state.publishedSchedule = scheduleRevision("published", 3, 60);
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="schedule" />));
+    expect(host.querySelector<HTMLInputElement>('[name="duration"]')!.value).toBe("60");
+    expect(host.querySelector<HTMLInputElement>('[name="buffer"]')!.value).toBe("7");
+    expect(button("Publish schedule")).toBeUndefined();
+  });
+  it("preserves 45 minute local edits when a 90 minute draft arrives and requires explicit reload", async () => {
+    state.schedule = scheduleRevision("draft-a", 4, 30);
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="schedule" />));
+    set("duration", "45");
+    state = { ...state, event: { ...state.event, version: 5 }, schedule: scheduleRevision("draft-b", 5, 90) };
+    await act(async () => button("Refresh").click());
+    expect(host.querySelector<HTMLInputElement>('[name="duration"]')!.value).toBe("45");
+    expect(button("Publish schedule").disabled).toBe(true);
+    expect(host.textContent).toContain("New schedule revision");
+    await act(async () => button("Reload schedule").click());
+    expect(host.querySelector<HTMLInputElement>('[name="duration"]')!.value).toBe("90");
+    expect(button("Publish schedule").disabled).toBe(false);
+    await act(async () => button("Publish schedule").click());
+    expect(boundary.execute.mock.calls[0][0].command).toEqual({ kind: "schedule_publish", revisionId: "draft-b" });
+  });
+  it("refreshes pristine schedule values when a newer draft arrives", async () => {
+    state.schedule = scheduleRevision("draft-a", 4, 30);
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="schedule" />));
+    state = { ...state, event: { ...state.event, version: 5 }, schedule: scheduleRevision("draft-b", 5, 90) };
+    await act(async () => button("Refresh").click());
+    expect(host.querySelector<HTMLInputElement>('[name="duration"]')!.value).toBe("90");
+    expect(button("Publish schedule").disabled).toBe(false);
+  });
+  it("preserves baseline start and end for a room-only override", async () => {
+    state.publishedSchedule = scheduleRevision("published", 3, 60);
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="schedule" />));
+    set("room-match", "Room B");
+    await submit("Schedule generation");
+    expect(boundary.execute.mock.calls[0][0].command.input.manualOverrides).toEqual([{ matchId: "match", roomId: "Room B", start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T03:00:00.000Z" }]);
+  });
+  it.each([false, true])("handles an incoming official correction from 1 to 0 (dirty inputs: %s)", async dirty => {
+    state.matches[0] = { ...state.matches[0], resultVersion: 1, status: "Completed", homeScore: 1, games: [{ gameNumber: 1, homeScore: 1, awayScore: 0 }] };
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="match" matchId="match" />));
+    if (dirty) set("home-1", "3");
+    state = { ...state, event: { ...state.event, version: 5 }, matches: [{ ...state.matches[0], resultVersion: 2, homeScore: 0, awayScore: 1, games: [{ gameNumber: 1, homeScore: 0, awayScore: 1 }] }] };
+    await act(async () => button("Refresh").click());
+    if (dirty) {
+      expect(host.querySelector<HTMLInputElement>('[name="home-1"]')!.value).toBe("3");
+      expect(host.textContent).toContain("Official result changed");
+      expect(button("Preview correction").disabled).toBe(true);
+      expect(button("Confirm correction").disabled).toBe(true);
+      await submit("Official result"); expect(boundary.execute).not.toHaveBeenCalled();
+      await act(async () => button("Reload official result").click());
+    }
+    expect(host.querySelector<HTMLInputElement>('[name="home-1"]')!.value).toBe("0");
+    expect(host.querySelector<HTMLInputElement>('[name="away-1"]')!.value).toBe("1");
+    expect(button("Preview correction").disabled).toBe(false);
+    await act(async () => button("Preview correction").click());
+    expect(boundary.preview).toHaveBeenCalledWith({ eventId: "event", matchId: "match", games: [{ gameNumber: 1, homeScore: 0, awayScore: 1 }] });
+  });
+  it("discards a late correction preview after the edited scores change", async () => {
+    state.matches[0] = { ...state.matches[0], resultVersion: 1, status: "Completed" };
+    let finish!: (value: unknown) => void;
+    boundary.preview.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="match" matchId="match" />));
+    set("home-1", "1"); set("correctionReason", "Evidence");
+    await act(async () => button("Preview correction").click());
+    set("home-1", "2");
+    await act(async () => finish({ token: "old", competitionVersion: 4, blockedMatchIds: [], affectedMatchIds: [], participants: [], standings: [], placements: [], schedule: null }));
+    expect(button("Confirm correction").disabled).toBe(true);
+    expect(host.textContent).not.toContain("Correction impact");
   });
 });

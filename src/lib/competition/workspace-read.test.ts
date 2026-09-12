@@ -41,4 +41,24 @@ describe("private organizer read state", () => {
     expect(state.unavailableSections).toEqual(["incidents"]);
     expect(state.matches).toEqual([]);
   });
+  it.each([false, true])("reopens published constraints without resurrecting superseded drafts (earlier draft: %s)", async earlierDraft => {
+    const operations = createCompetitionOperations(store.db);
+    let version = 0;
+    const execute = async (command: Parameters<typeof operations.execute>[0]["command"]) => {
+      const receipt = await operations.execute({ eventId: "event", actor: boundary.user!, expectedVersion: version, idempotencyKey: `read-${version}`, command });
+      version = receipt.version; return receipt;
+    };
+    await execute({ kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] });
+    const input = { timezone: "Asia/Jakarta", eventWindow: { start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T12:00:00.000Z" }, matchDurationMinutes: 60, bufferMinutes: 7, minimumRestMinutes: 20, rooms: ["Arena A", "Arena B"] };
+    if (earlierDraft) await execute({ kind: "schedule_save", input: { ...input, matchDurationMinutes: 30 } });
+    const selected = await execute({ kind: "schedule_save", input });
+    await execute({ kind: "schedule_publish", revisionId: selected.resourceId! });
+    const reopened = await readCompetitionWorkspace("event");
+    expect(reopened.schedule).toBeNull();
+    expect(reopened.publishedSchedule).toMatchObject({ id: selected.resourceId, version: selected.version, input });
+    const next = await execute({ kind: "schedule_save", input: { ...input, matchDurationMinutes: 90 } });
+    const withDraft = await readCompetitionWorkspace("event");
+    expect(withDraft.schedule).toMatchObject({ id: next.resourceId, input: { matchDurationMinutes: 90 } });
+    expect(withDraft.publishedSchedule).toMatchObject({ id: selected.resourceId, input: { matchDurationMinutes: 60 } });
+  });
 });

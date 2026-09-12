@@ -19,13 +19,14 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
     return read(tx, event);
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   const core = await authorized(async (tx, event) => {
-    const [matches, phases, teams, readiness, actions, revisions] = await Promise.all([
+    const [matches, phases, teams, readiness, actions, revisions, published] = await Promise.all([
       tx.match.findMany({ where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }] }),
       tx.competitionPhase.findMany({ where: { eventId }, orderBy: { sequence: "asc" } }),
       tx.team.findMany({ where: { eventId }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
       tx.matchReadiness.findMany({ where: { eventId } }),
       tx.competitionActionItem.findMany({ where: { eventId, resolvedAt: null }, orderBy: { createdAt: "asc" } }),
-      tx.scheduleRevision.findMany({ where: { eventId, status: "draft" }, orderBy: { version: "desc" }, take: 1 }),
+      tx.scheduleRevision.findMany({ where: { eventId, status: "draft", version: { gt: event.publishedScheduleVersion ?? -1 } }, orderBy: { version: "desc" }, take: 1 }),
+      event.publishedScheduleVersion == null ? Promise.resolve(null) : tx.scheduleRevision.findFirst({ where: { eventId, version: event.publishedScheduleVersion, status: "published" } }),
     ]);
     const graph = (phases.find(p => p.sequence === 1)?.configuration as unknown as { graph?: CompetitionGraph } | null)?.graph ?? null;
     if (graph && graph.eventId !== eventId) throw new Error("Invalid competition state");
@@ -40,6 +41,7 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
       readiness: readiness.map(r => ({ matchId: r.matchId, teamId: r.teamId, status: r.status, note: r.note ?? null })),
       actions: actions.map(a => ({ id: a.id, matchId: a.matchId ?? null, priority: a.priority, title: a.title, detail: a.detail ?? null })).sort((a, b) => (priority[a.priority] ?? 3) - (priority[b.priority] ?? 3)),
       schedule: revision ? { id: revision.id, version: revision.version, ...revision.snapshot as unknown as StoredSchedule } : null,
+      publishedSchedule: published ? { id: published.id, version: published.version, ...published.snapshot as unknown as StoredSchedule } : null,
     };
   });
   // Auxiliary transactions recheck ownership and isolate partial failures.
