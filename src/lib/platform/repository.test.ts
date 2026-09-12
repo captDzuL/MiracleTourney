@@ -148,6 +148,7 @@ import {
   setEventVisualFocalPoint,
   registerTeam,
   recordCertificateSuccess,
+  recordCertificateFailure,
   rejectTeamRegistrationRequest,
   updateTeamRegistrationProof,
   updateEventPublicInfo,
@@ -266,6 +267,9 @@ describe("legacy Champion certificate repository compatibility", () => {
     await expect(
       recordCertificateSuccess("event-1", "team-champion", "/certificates/champion-v2.png"),
     ).resolves.toMatchObject({ id: "certificate-champion-v2", imageUrl: "/certificates/champion-v2.png" });
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
     expect(prisma.certificate.update).toHaveBeenCalledWith({
       where: { id: "certificate-champion-v1" },
       data: { supersededByVersion: 2 },
@@ -277,6 +281,25 @@ describe("legacy Champion certificate repository compatibility", () => {
         imageUrl: "/certificates/champion-v2.png",
       }),
     });
+  });
+
+  it("does not downgrade a published Champion when a concurrent generation reports failure", async () => {
+    const publishedChampion = {
+      ...championCertificateRow,
+      version: 1,
+      publishedUrl: "/certificates/champion-v1.png",
+    };
+    prisma.certificate.findFirst.mockResolvedValue(publishedChampion);
+    prisma.team.findUnique.mockResolvedValue({ name: "Miracle Champions" });
+
+    await expect(
+      recordCertificateFailure("event-1", "team-champion", "late renderer failure"),
+    ).resolves.toMatchObject({ id: "certificate-champion-v2", status: "ready" });
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
+    expect(prisma.certificate.update).not.toHaveBeenCalled();
+    expect(prisma.certificate.create).not.toHaveBeenCalled();
   });
 });
 

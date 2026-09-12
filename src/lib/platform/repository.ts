@@ -3389,6 +3389,24 @@ export async function updateEventBrandAssets(
 /** Longest error message we persist on a failed certificate row. */
 const MAX_CERTIFICATE_ERROR_LENGTH = 500;
 
+async function runSerializableCertificateTransaction<T>(
+  operation: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await prisma.$transaction(operation, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (error) {
+      const code = typeof error === "object" && error !== null && "code" in error
+        ? (error as { code?: string }).code
+        : undefined;
+      if ((code !== "P2034" && code !== "P2002") || attempt === 2) throw error;
+    }
+  }
+  throw new Error("Certificate version changed concurrently. Please retry.");
+}
+
 type CertificateRow = {
   id: string;
   eventId: string;
@@ -3427,13 +3445,7 @@ async function getCertificateRecipientName(teamId: string): Promise<string> {
 
 /** Marks an event's Champion certificate as successfully generated, clearing any previous failure. */
 export async function recordCertificateSuccess(eventId: string, teamId: string, imageUrl: string): Promise<Certificate> {
-  const [existing, recipientName] = await Promise.all([
-    prisma.certificate.findFirst({
-      where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
-      orderBy: [{ version: "desc" }, { createdAt: "desc" }],
-    }),
-    getCertificateRecipientName(teamId),
-  ]);
+  const recipientName = await getCertificateRecipientName(teamId);
   const now = new Date();
   const createData = {
     eventId,
@@ -3449,36 +3461,40 @@ export async function recordCertificateSuccess(eventId: string, teamId: string, 
     lastError: null,
     attemptCount: 1,
   } as const;
-  const isPublished = Boolean(existing && (existing.publishedAt || existing.publishedUrl || existing.imageUrl));
-  let row;
-  if (isPublished && existing) {
-    row = await prisma.$transaction(async (tx) => {
+  const row = await runSerializableCertificateTransaction(async (tx) => {
+    const existing = await tx.certificate.findFirst({
+      where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
+      orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+    });
+    const isPublished = Boolean(existing && (existing.publishedAt || existing.publishedUrl || existing.imageUrl));
+
+    if (isPublished && existing) {
       const nextVersion = existing.version + 1;
       await tx.certificate.update({
         where: { id: existing.id },
         data: { supersededByVersion: nextVersion },
       });
       return tx.certificate.create({ data: { ...createData, version: nextVersion } });
-    });
-  } else if (existing) {
-    row = await prisma.certificate.update({
-      where: { id: existing.id },
-      data: {
-        teamId,
-        recipientId: teamId,
-        recipientName,
-        imageUrl,
-        publishedUrl: imageUrl,
-        status: "ready",
-        generatedAt: now,
-        publishedAt: now,
-        lastError: null,
-        attemptCount: { increment: 1 },
-      },
-    });
-  } else {
-    row = await prisma.certificate.create({ data: createData });
-  }
+    }
+    if (existing) {
+      return tx.certificate.update({
+        where: { id: existing.id },
+        data: {
+          teamId,
+          recipientId: teamId,
+          recipientName,
+          imageUrl,
+          publishedUrl: imageUrl,
+          status: "ready",
+          generatedAt: now,
+          publishedAt: now,
+          lastError: null,
+          attemptCount: { increment: 1 },
+        },
+      });
+    }
+    return tx.certificate.create({ data: createData });
+  });
   return toCertificate(row);
 }
 
@@ -3488,15 +3504,15 @@ export async function recordCertificateSuccess(eventId: string, teamId: string, 
  */
 export async function recordCertificateFailure(eventId: string, teamId: string, message: string): Promise<Certificate> {
   const lastError = message.slice(0, MAX_CERTIFICATE_ERROR_LENGTH);
-  const [existing, recipientName] = await Promise.all([
-    prisma.certificate.findFirst({
+  const recipientName = await getCertificateRecipientName(teamId);
+  const row = await runSerializableCertificateTransaction(async (tx) => {
+    const existing = await tx.certificate.findFirst({
       where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
       orderBy: [{ version: "desc" }, { createdAt: "desc" }],
-    }),
-    getCertificateRecipientName(teamId),
-  ]);
-  const row = existing
-    ? await prisma.certificate.update({
+    });
+    if (existing && (existing.publishedAt || existing.publishedUrl || existing.imageUrl)) return existing;
+    if (existing) {
+      return tx.certificate.update({
         where: { id: existing.id },
         data: {
           teamId,
@@ -3506,20 +3522,22 @@ export async function recordCertificateFailure(eventId: string, teamId: string, 
           lastError,
           attemptCount: { increment: 1 },
         },
-      })
-    : await prisma.certificate.create({
-        data: {
-          eventId,
-          teamId,
-          ...LEGACY_CHAMPION_CERTIFICATE_FILTER,
-          recipientId: teamId,
-          recipientName,
-          imageUrl: "",
-          status: "failed",
-          lastError,
-          attemptCount: 1,
-        },
       });
+    }
+    return tx.certificate.create({
+      data: {
+        eventId,
+        teamId,
+        ...LEGACY_CHAMPION_CERTIFICATE_FILTER,
+        recipientId: teamId,
+        recipientName,
+        imageUrl: "",
+        status: "failed",
+        lastError,
+        attemptCount: 1,
+      },
+    });
+  });
   return toCertificate(row);
 }
 

@@ -6,7 +6,7 @@
 
 import path from "path";
 import fs from "fs";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { chromium } from "playwright-core";
 
 const prisma = new PrismaClient();
@@ -84,11 +84,6 @@ async function main() {
     const eventName = match.event.name;
     console.log(`📋 Event: ${eventName}`);
 
-    const previous = await prisma.certificate.findFirst({
-      where: { eventId: match.eventId, type: "champion", recipientKind: "team" },
-      orderBy: [{ version: "desc" }, { createdAt: "desc" }],
-    });
-
     console.log(`  Rendering premium certificate for winner team: ${match.winnerTeamId}...`);
     try {
       const url = await renderCertificate(match.eventId, match.winnerTeamId!);
@@ -96,9 +91,13 @@ async function main() {
         where: { id: match.winnerTeamId! },
         select: { name: true },
       });
-      const nextVersion = (previous?.version ?? 0) + 1;
       const generatedAt = new Date();
       await prisma.$transaction(async (tx) => {
+        const previous = await tx.certificate.findFirst({
+          where: { eventId: match.eventId, type: "champion", recipientKind: "team" },
+          orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+        });
+        const nextVersion = (previous?.version ?? 0) + 1;
         if (previous) {
           await tx.certificate.update({
             where: { id: previous.id },
@@ -120,7 +119,7 @@ async function main() {
             publishedAt: generatedAt,
           },
         });
-      });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
       console.log(`  ✅ Certificate saved: ${url}\n`);
     } catch (err) {
       console.error(`  ❌ Failed:`, err);
