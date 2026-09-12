@@ -232,7 +232,7 @@ describe("legacy Champion certificate repository compatibility", () => {
   });
 
   it("does not label an unpublished Champion as ready if persistence returns one", async () => {
-    prisma.certificate.findFirst.mockResolvedValue({
+    const unpublishedChampion = {
       ...championCertificateRow,
       id: "certificate-champion-v3",
       version: 3,
@@ -240,7 +240,10 @@ describe("legacy Champion certificate repository compatibility", () => {
       publishedUrl: null,
       publishedAt: null,
       status: "generated",
-    });
+    };
+    prisma.certificate.findFirst.mockImplementation(async (query: { where: Record<string, unknown> }) => (
+      query.where.status === "ready" ? null : unpublishedChampion
+    ));
 
     await expect(getCertificateByEvent("event-1")).resolves.toMatchObject({
       id: "certificate-champion-v3",
@@ -300,6 +303,35 @@ describe("legacy Champion certificate repository compatibility", () => {
       id: "certificate-champion-v2",
       imageUrl: "/certificates/champion-v2.png",
       status: "ready",
+    });
+  });
+
+  it("falls back per event to the latest non-published Champion when batch reads have no published version", async () => {
+    const failedChampion = {
+      ...championCertificateRow,
+      id: "certificate-champion-event-2-v1",
+      eventId: "event-2",
+      teamId: "team-runner-up",
+      recipientId: "team-runner-up",
+      recipientName: "Runner Up",
+      version: 1,
+      imageUrl: "",
+      publishedUrl: null,
+      publishedAt: null,
+      status: "failed",
+      lastError: "renderer unavailable",
+    };
+    prisma.certificate.findMany.mockImplementation(async (query: { where: Record<string, unknown> }) => (
+      query.where.status === "ready" ? [championCertificateRow] : [failedChampion]
+    ));
+
+    const certificates = await getCertificatesForEvents(["event-1", "event-2"]);
+
+    expect(certificates.get("event-1")).toMatchObject({ id: "certificate-champion-v2", status: "ready" });
+    expect(certificates.get("event-2")).toMatchObject({
+      id: "certificate-champion-event-2-v1",
+      status: "failed",
+      lastError: "renderer unavailable",
     });
   });
 

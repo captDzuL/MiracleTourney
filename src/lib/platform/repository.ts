@@ -3549,8 +3549,14 @@ export async function recordCertificateFailure(eventId: string, teamId: string, 
 
 /** Returns the latest Champion team certificate for an event, preserving the legacy API. */
 export async function getCertificateByEvent(eventId: string): Promise<Certificate | null> {
-  const row = await prisma.certificate.findFirst({
+  const publishedRow = await prisma.certificate.findFirst({
     where: { eventId, ...LEGACY_PUBLISHED_CHAMPION_CERTIFICATE_FILTER },
+    orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+  });
+  if (publishedRow) return toCertificate(publishedRow);
+
+  const row = await prisma.certificate.findFirst({
+    where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
     orderBy: [{ version: "desc" }, { createdAt: "desc" }],
   });
   if (!row) return null;
@@ -3569,6 +3575,19 @@ export async function getCertificatesForEvents(eventIds: string[]): Promise<Map<
     });
     for (const row of rows) {
       if (!certificates.get(row.eventId)) certificates.set(row.eventId, toCertificate(row));
+    }
+    const eventIdsWithoutPublishedCertificate = eventIds.filter((eventId) => !certificates.get(eventId));
+    if (eventIdsWithoutPublishedCertificate.length) {
+      const fallbackRows = await prisma.certificate.findMany({
+        where: {
+          eventId: { in: eventIdsWithoutPublishedCertificate },
+          ...LEGACY_CHAMPION_CERTIFICATE_FILTER,
+        },
+        orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+      });
+      for (const row of fallbackRows) {
+        if (!certificates.get(row.eventId)) certificates.set(row.eventId, toCertificate(row));
+      }
     }
   } catch {
     await Promise.all(
