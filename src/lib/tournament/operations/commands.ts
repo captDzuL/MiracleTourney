@@ -137,6 +137,22 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       const match = await eventMatch(tx, eventId, command.matchId);
       if (isTerminal(match)) throw new Error("Match is already live or completed");
       if (!match.homeTeamId || !match.awayTeamId || match.homeTeamId === match.awayTeamId || match.status === "Bye") throw new Error("Match participants are unresolved");
+      const event = await tx.event.findUnique({ where: { id: eventId } });
+      const revision = event?.publishedScheduleVersion == null ? null : await tx.scheduleRevision.findFirst({
+        where: { eventId, version: event.publishedScheduleVersion, status: "published" },
+      });
+      const schedule = revision?.snapshot as unknown as StoredSchedule | undefined;
+      const assignment = schedule?.draft?.assignments.find(a => a.matchId === match.id);
+      // A readiness override cannot create a live match without the immutable
+      // assignment future schedule recalculations need to preserve.
+      if (!revision || !assignment || match.scheduleVersion !== revision.version ||
+          !match.scheduleRoom?.trim() || !match.scheduledAt || !match.scheduledEndsAt ||
+          !(match.scheduledEndsAt.getTime() > match.scheduledAt.getTime()) ||
+          assignment.roomId !== match.scheduleRoom ||
+          Date.parse(assignment.start) !== match.scheduledAt.getTime() ||
+          Date.parse(assignment.end) !== match.scheduledEndsAt.getTime()) {
+        throw new Error("Match requires a complete published schedule assignment from the selected revision");
+      }
       const readiness = await tx.matchReadiness.findMany({ where: { eventId, matchId: match.id } });
       if (![match.homeTeamId, match.awayTeamId].every(teamId => readiness.some(r => r.teamId === teamId && r.status === "ready"))) {
         if (!command.reason) throw new Error("Both participants must be ready or supply an override reason");

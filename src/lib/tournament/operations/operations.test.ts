@@ -22,6 +22,69 @@ function fixture() {
 }
 
 describe("competition operation transactions", () => {
+  it.each([false, true])("rejects start before a published assignment even with readiness override=%s", async override => {
+    const f = fixture(); const matchId = await f.setup();
+    if (!override) for (const teamId of ["a", "b"]) await f.run({ kind: "readiness_update", matchId, teamId, status: "ready" });
+    const command: OperationCommand = { kind: "match_start", matchId, ...(override ? { reason: "Ready at desk" } : {}) };
+    await expect(f.run(command)).rejects.toThrow("published schedule assignment");
+    await f.run({ kind: "schedule_save", input: scheduling });
+    await expect(f.run(command)).rejects.toThrow("published schedule assignment");
+    expect(f.rows("match")[0]).toMatchObject({ status: "Scheduled", scheduleStatus: "estimated" });
+    expect(f.rows("competitionAuditLog").some(row => row.action === "match_start")).toBe(false);
+  });
+
+  it.each([false, true])("publishes, starts, and republishes around a live match with override=%s", async override => {
+    const f = fixture(); const matchId = await f.setup();
+    const draft = await f.run({ kind: "schedule_save", input: scheduling });
+    await f.run({ kind: "schedule_publish", revisionId: draft.resourceId! });
+    if (!override) for (const teamId of ["a", "b"]) await f.run({ kind: "readiness_update", matchId, teamId, status: "ready" });
+    await f.run({ kind: "match_start", matchId, ...(override ? { reason: "Ready at desk" } : {}) });
+    const next = await f.run({ kind: "schedule_save", input: scheduling });
+    expect((await f.service.readScheduleDraft("event", next.resourceId!, owner))?.draft).toMatchObject({ feasible: true, conflicts: [] });
+    await f.run({ kind: "schedule_publish", revisionId: next.resourceId! });
+    expect(f.rows("match")[0]).toMatchObject({ status: "Live", scheduleStatus: "live", scheduleRoom: "room", scheduledAt: new Date("2026-09-12T09:00:00Z"), scheduledEndsAt: new Date("2026-09-12T09:30:00Z") });
+  });
+
+  it.each(["unselected", "draft", "missing_revision", "missing_assignment", "missing_room", "missing_start", "missing_end", "zero_duration", "wrong_room", "wrong_version"])("rejects start when the selected published assignment is %s", async invalid => {
+    const f = fixture(); const matchId = await f.setup();
+    const saved = await f.run({ kind: "schedule_save", input: scheduling });
+    await f.run({ kind: "schedule_publish", revisionId: saved.resourceId! });
+    await f.db.$transaction(async tx => {
+      if (invalid === "unselected" || invalid === "missing_revision") await tx.event.update({ where: { id: "event" }, data: { publishedScheduleVersion: invalid === "unselected" ? null : 999 } });
+      if (invalid === "draft") await tx.scheduleRevision.update({ where: { id: saved.resourceId! }, data: { status: "draft" } });
+      if (invalid === "missing_assignment") await tx.scheduleRevision.update({ where: { id: saved.resourceId! }, data: { snapshot: { draft: { assignments: [] } } } });
+      if (invalid === "missing_room") await tx.match.update({ where: { id: matchId }, data: { scheduleRoom: null } });
+      if (invalid === "missing_start") await tx.match.update({ where: { id: matchId }, data: { scheduledAt: null } });
+      if (invalid === "missing_end") await tx.match.update({ where: { id: matchId }, data: { scheduledEndsAt: null } });
+      if (invalid === "zero_duration") await tx.match.update({ where: { id: matchId }, data: { scheduledEndsAt: new Date("2026-09-12T09:00:00Z") } });
+      if (invalid === "wrong_room") await tx.match.update({ where: { id: matchId }, data: { scheduleRoom: "elsewhere" } });
+      if (invalid === "wrong_version") await tx.match.update({ where: { id: matchId }, data: { scheduleVersion: 999 } });
+    });
+    await expect(f.run({ kind: "match_start", matchId, reason: "Ready at desk" })).rejects.toThrow("published schedule assignment");
+    expect(f.rows("match")[0].status).toBe("Scheduled");
+  });
+
+  it.each([
+    ["singleElimination", 15, 1, 0, 0],
+    ["doubleElimination", 30, 1, 0, 0],
+    ["roundRobin", 120, 1, 0, 0],
+    ["groupPlayoffs", 31, 2, 4, 16],
+  ] as const)("persists %s phases, fixtures and group membership", async (format, matches, phases, groups, members) => {
+    const f = fixture();
+    const teams = ["a", "b", ...Array.from({ length: 14 }, (_, i) => `team-${i + 3}`)];
+    teams.slice(2).forEach(id => f.seed("team", { id, eventId: "event" }));
+    await f.run({ kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS[format], teams: teams.map((id, i) => ({ id, seed: i + 1 })) });
+    expect(f.rows("match")).toHaveLength(matches);
+    expect(f.rows("competitionPhase")).toHaveLength(phases);
+    expect(f.rows("competitionGroup")).toHaveLength(groups);
+    expect(f.rows("competitionGroupMember")).toHaveLength(members);
+    expect(new Set(f.rows("match").map(row => `${row.round}:${row.slot}`)).size).toBe(matches);
+    for (const dependency of f.rows("matchDependency")) {
+      expect(f.rows("match").some(row => row.id === dependency.sourceMatchId)).toBe(true);
+      expect(f.rows("match").some(row => row.id === dependency.targetMatchId)).toBe(true);
+    }
+  });
+
   it("returns saved review details only to the event owner or an administrator", async () => {
     const f = fixture(); await f.setup();
     const saved = await f.run({ kind: "schedule_save", input: scheduling });
@@ -166,6 +229,8 @@ describe("competition operation transactions", () => {
 
   it("requires two ready participants to start, or an explicit audited override", async () => {
     const f = fixture(); const matchId = await f.setup();
+    const draft = await f.run({ kind: "schedule_save", input: scheduling });
+    await f.run({ kind: "schedule_publish", revisionId: draft.resourceId! });
     await expect(f.run({ kind: "match_start", matchId })).rejects.toThrow("ready");
     await expect(f.run({ kind: "readiness_update", matchId, teamId: "foreign", status: "ready" })).rejects.toThrow("participant");
     await f.run({ kind: "match_start", matchId, reason: "Both captains confirmed verbally" });
@@ -180,6 +245,8 @@ describe("competition operation transactions", () => {
     await f.run({ kind: "match_timing", matchId, status: "delayed", reason: "Room unavailable" });
     await f.run({ kind: "match_timing", matchId, status: "postponed", reason: "Move to tomorrow" });
     expect(f.rows("match")[0].scheduleStatus).toBe("postponed");
+    const draft = await f.run({ kind: "schedule_save", input: scheduling });
+    await f.run({ kind: "schedule_publish", revisionId: draft.resourceId! });
     for (const teamId of ["a", "b"]) await f.run({ kind: "readiness_update", matchId, teamId, status: "ready" });
     await f.run({ kind: "match_start", matchId });
     expect(f.rows("match")[0].status).toBe("Live");

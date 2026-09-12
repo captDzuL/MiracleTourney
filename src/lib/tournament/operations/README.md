@@ -33,6 +33,9 @@ Supported commands:
   published match start. A breach never writes an official result or walkover.
   Both participants must be ready, or the organizer must supply an audited start
   override reason. Unresolved participants cannot be overridden.
+  Starting also requires a complete assignment from the currently selected
+  published revision, matching the match's room, start, end and schedule version.
+  A readiness override never bypasses schedule publication.
 - `incident_report`, `incident_resolve`, `action_resolve`: scoped incident/action
   management; resolutions require reasons.
 - `announcement_save`, `announcement_publish`, `announcement_unpublish`: saved
