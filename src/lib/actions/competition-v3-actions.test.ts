@@ -11,7 +11,7 @@ vi.mock("@/lib/auth/session", () => ({ requireAnyRole: async () => boundary.sess
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => boundary.enabled }));
 vi.mock("@/lib/platform/db", () => ({ prisma: { $transaction: (...args: unknown[]) => Reflect.apply(boundary.db!.$transaction, boundary.db, args) } }));
 vi.mock("next/cache", () => ({ revalidateTag: () => {}, revalidatePath: () => {} }));
-import { executeCompetitionOperationAction, previewCompetitionResultCorrectionAction } from "./competition-v3-actions";
+import { executeCompetitionOperationAction, previewCompetitionResultCorrectionAction, mutateCompetitionWorkspaceAction } from "./competition-v3-actions";
 
 describe("authenticated competition actions", () => {
   let store: ReturnType<typeof operationStore>;
@@ -39,6 +39,12 @@ describe("authenticated competition actions", () => {
     expect(await executeCompetitionOperationAction(request)).toMatchObject({ version: 1 });
     expect(store.rows("competitionAuditLog")[0]).toMatchObject({ actorUserId: "owner", action: "announcement_save" });
     expect(store.rows("eventAnnouncement")[0]).toMatchObject({ title: "Hello", status: "draft" });
+  });
+  it("returns serializable conflict and authorization outcomes for production client rendering", async () => {
+    expect(await mutateCompetitionWorkspaceAction(request)).toMatchObject({ status: "saved", receipt: { version: 1 } });
+    expect(await mutateCompetitionWorkspaceAction({ ...request, idempotencyKey: "stale" })).toEqual({ status: "conflict" });
+    boundary.session.user = null;
+    expect(await mutateCompetitionWorkspaceAction(request)).toEqual({ status: "unauthorized" });
   });
   it("blocks absent sessions, password-change sessions and nonowners", async () => {
     boundary.session.user = null;

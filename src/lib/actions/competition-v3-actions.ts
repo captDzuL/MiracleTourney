@@ -27,3 +27,15 @@ export async function previewCompetitionResultCorrectionAction(input: unknown) {
   const request = correctionPreviewSchema.parse(input);
   return createCompetitionOperations(prisma).previewResultCorrection({ ...request, actor: { id: user.id, role: user.role } });
 }
+
+/** Expected failures must cross the production Server Action boundary as data;
+ * Next.js intentionally masks thrown server exception messages in production. */
+export async function mutateCompetitionWorkspaceAction(input: unknown) {
+  try { return { status: "saved" as const, receipt: await executeCompetitionOperationAction(input) }; }
+  catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (/conflict|stale/i.test(message)) return { status: "conflict" as const };
+    if (/authorized|password|unavailable/i.test(message)) return { status: "unauthorized" as const };
+    return { status: "failed" as const };
+  }
+}

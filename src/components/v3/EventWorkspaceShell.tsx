@@ -13,10 +13,11 @@ type EventWorkspaceShellProps = {
   navigation: ShellNavigationItem[];
   nextAction?: ReactNode;
   organizerLabel: string;
+  operations?: { eventId: string; locale: "en" | "id" };
 };
 
 /** Shared draft workspace shell. Setup stays visible as numbered, horizontal progress. */
-export function EventWorkspaceShell({ children, eventTitle, navigation, nextAction, organizerLabel }: EventWorkspaceShellProps) {
+export function EventWorkspaceShell({ children, eventTitle, navigation, nextAction, organizerLabel, operations }: EventWorkspaceShellProps) {
   const t = useTranslations("v3Shell");
   const pathname = usePathname();
   const effectiveNavigation = useMemo(() => pathname.endsWith("/edit")
@@ -33,12 +34,23 @@ export function EventWorkspaceShell({ children, eventTitle, navigation, nextActi
     window.addEventListener("hashchange", syncActiveStep);
     return () => window.removeEventListener("hashchange", syncActiveStep);
   }, [effectiveNavigation]);
+  const operationsRoute = operations && /\/(competition|schedule|match-control|matches\/[^/]+)$/.test(pathname);
+  if (operationsRoute) {
+    const base = `/organizer/events/${operations.eventId}`;
+    const labels = operations.locale === "id" ? ["Kompetisi", "Jadwal", "Kontrol pertandingan"] : ["Competition", "Schedule", "Match control"];
+    return <section className="grid min-w-0 gap-5">
+      <header className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"><p className="text-xs text-[var(--color-text-subtle)]">{organizerLabel}</p><h1 className="mt-2 break-words font-bold text-[var(--color-text)]">{eventTitle}</h1><h2 className="mt-2 text-3xl font-extrabold text-[var(--color-text)]">Match Day</h2><Link className="miracle-focus-ring mt-2 inline-flex min-h-11 items-center text-sm text-[var(--color-brand-cyan)]" href={`${base}/overview`}>{operations.locale === "id" ? "Pengaturan event" : "Event setup"}</Link></header>
+      <nav aria-label={t("eventNavigation")} className="grid min-w-0 grid-cols-3 gap-2">{["competition", "schedule", "match-control"].map((path, index) => <Link key={path} href={`${base}/${path}`} aria-current={pathname.endsWith(`/${path}`) || path === "match-control" && pathname.includes("/matches/") ? "page" : undefined} className="miracle-focus-ring flex min-h-11 min-w-0 items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-3 text-center text-sm font-bold text-[var(--color-text)] aria-[current=page]:border-[var(--color-brand-cyan)] aria-[current=page]:text-[var(--color-brand-cyan)]">{labels[index]}</Link>)}</nav>
+      <div className="min-w-0">{children}</div>
+    </section>;
+  }
   return <section className="grid min-w-0 gap-6">
     <header className="min-w-0 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 min-[700px]:p-7">
       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-subtle)]">{organizerLabel}</p>
       <h1 className="mt-2 break-words text-sm font-semibold text-[var(--color-text)]">{eventTitle}</h1>
       <h2 className="mt-4 text-2xl font-extrabold text-[var(--color-text)]">Wujudkan event pertamamu.</h2>
       <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Isi sedikit demi sedikit. Lihat hasilnya sambil berjalan.</p>
+      {operations && <Link className="miracle-focus-ring mt-3 inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-brand-cyan)]" href={`/organizer/events/${operations.eventId}/competition`}>Match Day</Link>}
     </header>
     <nav aria-label={t("eventNavigation")} className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 min-[700px]:p-3">
       <ol className="grid min-w-0 grid-cols-[repeat(var(--setup-step-count),minmax(0,1fr))] gap-1 min-[700px]:gap-2" style={{ "--setup-step-count": effectiveNavigation.length } as React.CSSProperties}>

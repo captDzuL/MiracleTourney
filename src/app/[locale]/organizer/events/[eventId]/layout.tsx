@@ -20,5 +20,5 @@ export default async function EventLayout({ children, params }: EventLayoutProps
   const overview = `/${user.role === "organizer" ? "organizer" : "admin"}/events/${event.id}/overview`;
   const labels = locale === "id" ? ["Identitas", "Format & Jadwal", "Registrasi", "Halaman Publik", "Tinjau & Terbitkan"] : ["Identity", "Format & schedule", "Registration", "Public page", "Review & publish"];
   const sections = ["identity", "format", "registration", "public", "review"];
-  return <EventWorkspaceShell eventTitle={event.name} navigation={sections.map((section, index) => ({ href: `${overview}#section-${section}`, label: labels[index] }))} organizerLabel={user.name}>{children}</EventWorkspaceShell>;
+  return <EventWorkspaceShell eventTitle={event.name} navigation={sections.map((section, index) => ({ href: `${overview}#section-${section}`, label: labels[index] }))} organizerLabel={user.name} operations={isFeatureEnabled("competition_operations_v3") ? { eventId: event.id, locale } : undefined}>{children}</EventWorkspaceShell>;
 }

@@ -65,6 +65,15 @@ afterEach(() => {
 });
 
 describe("V3 shell integration", () => {
+  it.each(["en", "id"])("uses operations navigation on %s match routes without setup interception", async locale => {
+    route.locale = locale; route.pathname = `/${locale}/organizer/events/event/matches/match`;
+    await render(<EventWorkspaceShell eventTitle="Cup" organizerLabel="Owner" navigation={[]} operations={{ eventId: "event", locale: locale as "en" | "id" }}><p>Match content</p></EventWorkspaceShell>);
+    expect(container.querySelector("h2")?.textContent).toBe("Match Day");
+    expect(links()).toContain(`/${locale}/organizer/events/event/schedule`);
+    const active = container.querySelector('a[aria-current="page"]');
+    expect(active?.getAttribute("href")).toBe(`/${locale}/organizer/events/event/match-control`);
+    expect(active?.className).toContain("miracle-focus-ring");
+  });
   it("keeps an actual operator panel on legacy classes when the V3 flag is disabled", async () => {
     vi.stubEnv("FEATURE_FLAG_UI_V3_FOUNDATION", "false");
     await render(<AppShell><PanelShell><h1>Legacy operator</h1></PanelShell></AppShell>);
