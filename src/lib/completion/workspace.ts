@@ -13,12 +13,15 @@ export type CompletionWorkspaceBlockerCode =
   | "ACTIVE_DISPUTE"
   | "UNRESOLVED_FINAL_TIE"
   | "MISSING_VALIDATED_AWARD_STATISTICS"
-  | "INSUFFICIENT_PODIUM_STRUCTURE";
+  | "INSUFFICIENT_PODIUM_STRUCTURE"
+  | "MISSING_AWARD_DECISION"
+  | "TIE_REASON_REQUIRED";
 
 export interface CompletionWorkspaceBlocker {
   readonly code: CompletionWorkspaceBlockerCode;
   readonly subject: string;
   readonly repairHref?: string;
+  readonly repairTarget?: "awards";
 }
 
 export interface CompletionAwardCandidateSummary {
@@ -37,16 +40,20 @@ export interface CompletionAwardSummary {
   readonly tied: boolean;
 }
 
-export interface CompletionWorkspaceBase {
+interface CompletionWorkspaceIdentity {
   readonly event: {
     readonly id: string;
     readonly name: string;
     readonly formatLabel: string;
+    readonly matchDayHref: string;
   };
+}
+
+export interface CompletionWorkspaceAvailableBase extends CompletionWorkspaceIdentity {
   readonly version: number;
   readonly blockers: readonly CompletionWorkspaceBlocker[];
   readonly podium: {
-    readonly sourceKind: "official_playoff" | "locked_standings" | "integration_pending";
+    readonly sourceKind: "official_playoff" | "locked_standings";
     readonly sourceLabel: string;
     readonly locked: boolean;
     readonly placements: readonly {
@@ -74,12 +81,48 @@ export interface CompletionWorkspaceBase {
   };
 }
 
+export interface CompletionWorkspaceIntegrationState extends CompletionWorkspaceIdentity {
+  readonly status: "integration_required";
+  readonly version: null;
+  readonly blockers: null;
+  readonly podium: {
+    readonly sourceKind: "integration_pending";
+    readonly sourceLabel: null;
+    readonly locked: null;
+    readonly placements: null;
+  };
+  readonly awards: readonly {
+    readonly award: CompletionAwardStatistic;
+    readonly metricLabel: null;
+    readonly candidates: null;
+    readonly selectedPlayerId: null;
+    readonly decisionReason: null;
+    readonly tied: null;
+  }[];
+  readonly certificates: {
+    readonly generated: null;
+    readonly total: null;
+    readonly status: "integration_pending";
+    readonly studioHref: null;
+  };
+  readonly publication: {
+    readonly status: "integration_pending";
+    readonly previewHref: null;
+  };
+  readonly audit: {
+    readonly lastAction: null;
+    readonly actorLabel: null;
+    readonly at: null;
+    readonly summary: null;
+  };
+}
+
 export type CompletionWorkspaceState =
-  | (CompletionWorkspaceBase & { readonly status: "integration_required" })
-  | (CompletionWorkspaceBase & { readonly status: "blocked" })
-  | (CompletionWorkspaceBase & { readonly status: "ready" })
-  | (CompletionWorkspaceBase & { readonly status: "completed" })
-  | (CompletionWorkspaceBase & { readonly status: "reopened" });
+  | CompletionWorkspaceIntegrationState
+  | (CompletionWorkspaceAvailableBase & { readonly status: "blocked" })
+  | (CompletionWorkspaceAvailableBase & { readonly status: "ready" })
+  | (CompletionWorkspaceAvailableBase & { readonly status: "completed" })
+  | (CompletionWorkspaceAvailableBase & { readonly status: "reopened" });
 
 type CompletionWorkspaceEvent = {
   readonly id: string;
@@ -126,38 +169,39 @@ export async function loadCompletionWorkspace(
       id: event.id,
       name: event.name,
       formatLabel: formatLabel(event.formatConfig?.kind, locale),
+      matchDayHref: `/${locale}/organizer/events/${event.id}/matches`,
     },
-    version: 0,
-    blockers: [],
+    version: null,
+    blockers: null,
     podium: {
       sourceKind: "integration_pending",
-      sourceLabel: "",
-      locked: false,
-      placements: [],
+      sourceLabel: null,
+      locked: null,
+      placements: null,
     },
     awards: AWARDS.map((award) => ({
       award,
-      metricLabel: "",
-      candidates: [],
+      metricLabel: null,
+      candidates: null,
       selectedPlayerId: null,
       decisionReason: null,
-      tied: false,
+      tied: null,
     })),
     certificates: {
-      generated: 0,
-      total: 7,
-      status: "not_generated",
-      studioHref: `/${locale}/organizer/events/${event.id}/certificates`,
+      generated: null,
+      total: null,
+      status: "integration_pending",
+      studioHref: null,
     },
     publication: {
-      status: "draft",
-      previewHref: `/${locale}/events/${event.slug}`,
+      status: "integration_pending",
+      previewHref: null,
     },
     audit: {
-      lastAction: "none",
+      lastAction: null,
       actorLabel: null,
       at: null,
-      summary: "",
+      summary: null,
     },
   };
 }

@@ -637,6 +637,7 @@
   "completionWorkspace": {
     "title": "Tournament Completion",
     "description": "Validate the final record for {event}, review every award, and control when completion can be committed.",
+    "integration": {"waiting":"Waiting for Match Day integration"},
     "status": {
       "integration_required": "Match Day integration required",
       "blocked": "Completion blocked",
@@ -657,11 +658,15 @@
     },
     "blockers": {
       "repair": "Repair in Match Day",
+      "repairAwards": "Review awards",
+      "unknownSubject": "the final result source",
       "UNOFFICIAL_REQUIRED_RESULT": {"title":"Required result is not official","detail":"{subject} must be made official before completion."},
       "ACTIVE_DISPUTE": {"title":"Active dispute","detail":"Resolve the active dispute before completion. {subject}"},
       "UNRESOLVED_FINAL_TIE": {"title":"Final standing tie is unresolved","detail":"Apply the event tie-breaker to {subject} before completion."},
       "MISSING_VALIDATED_AWARD_STATISTICS": {"title":"Validated award statistic is missing","detail":"Publish and validate the required metric for {subject}."},
-      "INSUFFICIENT_PODIUM_STRUCTURE": {"title":"Podium structure is incomplete","detail":"Complete the required stage or standing source: {subject}."}
+      "INSUFFICIENT_PODIUM_STRUCTURE": {"title":"Podium structure is incomplete","detail":"Complete the required stage or standing source: {subject}."},
+      "MISSING_AWARD_DECISION": {"title":"Award winner is missing","detail":"Choose a winner for {subject}."},
+      "TIE_REASON_REQUIRED": {"title":"Tie decision reason is required","detail":"Record a nonblank audit reason for {subject}."}
     },
     "awards": {
       "title":"Individual award review",
@@ -673,6 +678,7 @@
       "unavailable":"Waiting for authoritative Match Day data",
       "tieExplanation":"{count} candidates share the top value",
       "reasonRequired":"An audit reason is required before selecting a winner.",
+      "reasonLabel":"Audit decision reason",
       "auditReason":"Audit reason: {reason}",
       "decisionRecorded":"The highest published metric is recorded as the decision."
     },
@@ -713,6 +719,17 @@
       "integrationRequired":"Match Day integration is required before this action can run.",
       "conflict":"The version changed in another session. Refresh before trying again.",
       "reasonRequired":"Enter a correction reason before reopening.",
+      "notReady":"Completion sources changed. Review the refreshed blockers.",
+      "invalidDecisions":"One or more award winners are no longer valid. Review the published candidates.",
+      "tieReasonRequired":"A tied award still needs a nonblank audit reason.",
+      "sourceIncomplete":"The podium source is incomplete. Repair team or result data in Match Day.",
+      "featureDisabled":"Completion is not enabled for this workspace.",
+      "unauthorized":"Your session expired. Sign in again before retrying.",
+      "passwordChangeRequired":"Change your password before managing tournament completion.",
+      "forbidden":"You do not have permission to manage this event.",
+      "invalidInput":"The completion request is invalid. Review the award decisions and retry.",
+      "competitiveLocked":"This tournament is already competitively locked. Refresh the workspace.",
+      "notCompleted":"Only a completed tournament can be reopened. Refresh the workspace.",
       "blocked":"The action is blocked. Review readiness and repair the listed issue.",
       "failed":"The action could not be completed. Try again."
     }

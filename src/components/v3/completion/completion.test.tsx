@@ -9,11 +9,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import enMessages from "../../../../messages/en.json";
 import idMessages from "../../../../messages/id.json";
+import type { CompletionAwardSummary } from "@/lib/completion/workspace";
 import { CompletionWorkspace, type CompletionWorkspaceState } from "./CompletionWorkspace";
 
 Object.assign(globalThis, { React, IS_REACT_ACT_ENVIRONMENT: true });
 
-const awards: CompletionWorkspaceState["awards"] = [
+const awards: readonly CompletionAwardSummary[] = [
   {
     award: "mvp",
     metricLabel: "Rating",
@@ -52,7 +53,7 @@ const awards: CompletionWorkspaceState["awards"] = [
 ];
 
 const baseState = {
-  event: { id: "event-1", name: "Miracle Open", formatLabel: "Group + Playoffs" },
+  event: { id: "event-1", name: "Miracle Open", formatLabel: "Group + Playoffs", matchDayHref: "/en/organizer/events/event-1/matches" },
   version: 4,
   blockers: [{
     code: "ACTIVE_DISPUTE" as const,
@@ -90,7 +91,17 @@ const baseState = {
 
 function state(status: CompletionWorkspaceState["status"]): CompletionWorkspaceState {
   if (status === "integration_required") {
-    return { ...baseState, status, blockers: [], podium: { ...baseState.podium, sourceKind: "integration_pending", placements: [] }, awards: awards.map((award) => ({ ...award, candidates: [], selectedPlayerId: null, tied: false })) };
+    return {
+      status,
+      event: baseState.event,
+      version: null,
+      blockers: null,
+      podium: { sourceKind: "integration_pending", sourceLabel: null, locked: null, placements: null },
+      awards: awards.map(({ award }) => ({ award, metricLabel: null, candidates: null, selectedPlayerId: null, decisionReason: null, tied: null })),
+      certificates: { generated: null, total: null, status: "integration_pending", studioHref: null },
+      publication: { status: "integration_pending", previewHref: null },
+      audit: { lastAction: null, actorLabel: null, at: null, summary: null },
+    };
   }
   if (status === "blocked") return { ...baseState, status };
   if (status === "ready") return { ...baseState, status, blockers: [], awards: awards.map((award) => award.award === "top_assist" ? { ...award, selectedPlayerId: "p4", decisionReason: "Higher contribution in wins" } : award) };
@@ -204,6 +215,7 @@ describe("CompletionWorkspace", () => {
     expect(award.textContent).toContain("Dimas Arc");
     expect(award.textContent).toContain("2 candidates share the top value");
     expect(award.textContent).toContain("An audit reason is required before selecting a winner.");
+    expect(award.querySelector('[role="radiogroup"]')?.getAttribute("aria-label")).toContain("Top Assist");
   });
 
   it("labels podium source and lock state in text instead of color alone", () => {
@@ -228,6 +240,62 @@ describe("CompletionWorkspace", () => {
     expect(controlState("ready").reopen.disabled).toBe(true);
     expect(controlState("completed").complete.disabled).toBe(true);
     expect(controlState("completed").reopen.disabled).toBe(false);
+  });
+
+  it("repairs a missing tied award decision through an organizer selection and nonblank audit reason", async () => {
+    const readyState = state("ready");
+    if (readyState.status !== "ready") throw new Error("Expected an available ready fixture");
+    const decisionState = {
+      ...readyState,
+      status: "blocked",
+      blockers: [{ code: "MISSING_AWARD_DECISION", subject: "Top Assist", repairTarget: "awards" }],
+      awards: awards.map((award) => award.award === "top_assist"
+        ? { ...award, selectedPlayerId: null, decisionReason: null }
+        : award),
+    } satisfies CompletionWorkspaceState;
+    const complete = vi.fn(async (input: unknown) => {
+      expect(input).toMatchObject({
+        decisions: expect.arrayContaining([
+          { award: "top_assist", playerId: "p5", reason: "Won the event tie-break review" },
+        ]),
+      });
+      return { status: "integration_required" as const };
+    });
+    await act(async () => root.render(provider("en", <CompletionWorkspace
+      completeAction={complete}
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={decisionState}
+    />)));
+    const completeButton = container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!;
+
+    expect(completeButton.disabled).toBe(true);
+    const blocker = container.querySelector('[data-blocker="MISSING_AWARD_DECISION"]')!;
+    expect(blocker.textContent).toContain("Choose a winner for Top Assist.");
+    const repair = blocker.querySelector<HTMLButtonElement>('[data-repair-target="awards"]')!;
+    expect(repair.textContent).toContain("Review awards");
+
+    await act(async () => repair.click());
+    expect(container.querySelector('[role="tabpanel"]:not([hidden])')?.id).toBe("completion-panel-awards");
+    const candidate = container.querySelector<HTMLInputElement>('input[name="award-top_assist"][value="p5"]')!;
+    expect(candidate).not.toBeNull();
+    await act(async () => candidate.click());
+    expect(completeButton.disabled).toBe(true);
+
+    const reason = container.querySelector<HTMLTextAreaElement>('textarea[name="awardReason-top_assist"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(reason, "   ");
+      reason.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(completeButton.disabled).toBe(true);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(reason, "Won the event tie-break review");
+      reason.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(completeButton.disabled).toBe(false);
+
+    await act(async () => completeButton.click());
+    expect(complete).toHaveBeenCalledTimes(1);
   });
 
   it("submits the current version and server key, then focuses the inline completion result", async () => {
@@ -258,6 +326,52 @@ describe("CompletionWorkspace", () => {
     expect(complete).toHaveBeenCalledTimes(1);
     expect(result.textContent).toContain("Tournament completed successfully");
     expect(document.activeElement).toBe(result);
+  });
+
+  it("refreshes authoritative readiness blockers returned by the completion action", async () => {
+    const complete = vi.fn(async () => ({
+      status: "blocked" as const,
+      code: "not_ready" as const,
+      blockers: [{ code: "ACTIVE_DISPUTE" as const, disputeId: "D-9", matchId: "final-2" }],
+    }));
+    await act(async () => root.render(provider("en", <CompletionWorkspace
+      completeAction={complete}
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={state("ready")}
+    />)));
+
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!.click());
+
+    expect(container.querySelector("[data-action-result]")?.textContent).toContain("Completion sources changed. Review the refreshed blockers.");
+    expect(container.querySelector('[role="tabpanel"]:not([hidden])')?.id).toBe("completion-panel-readiness");
+    const blocker = container.querySelector('[data-blocker="ACTIVE_DISPUTE"]')!;
+    expect(blocker.textContent).toContain("Dispute D-9 · Match final-2");
+    expect(blocker.querySelector('a[href="/en/organizer/events/event-1/matches?dispute=D-9"]')).not.toBeNull();
+    expect(container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!.disabled).toBe(true);
+  });
+
+  it.each([
+    ["invalid_decisions", "One or more award winners are no longer valid. Review the published candidates."],
+    ["tie_reason_required", "A tied award still needs a nonblank audit reason."],
+    ["source_incomplete", "The podium source is incomplete. Repair team or result data in Match Day."],
+    ["feature_disabled", "Completion is not enabled for this workspace."],
+    ["unauthorized", "Your session expired. Sign in again before retrying."],
+    ["password_change_required", "Change your password before managing tournament completion."],
+    ["forbidden", "You do not have permission to manage this event."],
+    ["invalid_input", "The completion request is invalid. Review the award decisions and retry."],
+    ["competitive_locked", "This tournament is already competitively locked. Refresh the workspace."],
+  ] as const)("renders actionable feedback for the %s result code", async (code, expected) => {
+    const complete = vi.fn(async () => ({ status: "blocked" as const, code }));
+    await act(async () => root.render(provider("en", <CompletionWorkspace
+      completeAction={complete}
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={state("ready")}
+    />)));
+
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!.click());
+    expect(container.querySelector("[data-action-result]")?.textContent).toContain(expected);
   });
 
   it("shows pending feedback and prevents duplicate completion submissions", async () => {
@@ -316,6 +430,38 @@ describe("CompletionWorkspace", () => {
     expect(staticWorkspace("integration_required", "id")).toContain("Publikasi");
   });
 
+  it("renders integration-owned fields as unavailable without zero counts, draft claims, or preview links", () => {
+    const integrationState = {
+      status: "integration_required",
+      event: { id: "event-1", name: "Miracle Open", formatLabel: "Group + Playoffs", matchDayHref: "/en/organizer/events/event-1/matches" },
+      version: null,
+      blockers: null,
+      podium: { sourceKind: "integration_pending", sourceLabel: null, locked: null, placements: null },
+      awards: awards.map(({ award }) => ({ award, metricLabel: null, candidates: null, selectedPlayerId: null, decisionReason: null, tied: null })),
+      certificates: { generated: null, total: null, status: "integration_pending", studioHref: null },
+      publication: { status: "integration_pending", previewHref: null },
+      audit: { lastAction: null, actorLabel: null, at: null, summary: null },
+    } satisfies CompletionWorkspaceState;
+    const markup = renderToStaticMarkup(provider("en", <CompletionWorkspace
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={integrationState}
+    />));
+
+    expect(markup).toContain("Waiting for Match Day integration");
+    expect(markup).not.toContain("0 / 7");
+    const host = document.createElement("div");
+    host.innerHTML = markup;
+    const versionKpi = Array.from(host.querySelectorAll("[data-completion-kpis] article"))
+      .find((item) => item.textContent?.includes("Current version"));
+    expect(versionKpi?.textContent).toContain("Waiting for Match Day integration");
+    expect(versionKpi?.textContent).not.toContain("Current version0");
+    expect(markup).not.toContain("Draft — not ready to publish");
+    expect(markup).not.toContain("No completion action has been committed");
+    expect(markup).not.toContain('href="/en/events/miracle-open"');
+    expect(markup).not.toContain("Open certificate studio");
+  });
+
   it("contains wide layouts at 1100px and stacks KPI, podium, award, and actions below 700px", () => {
     const host = document.createElement("div");
     host.innerHTML = staticWorkspace("ready");
@@ -325,5 +471,22 @@ describe("CompletionWorkspace", () => {
     expect(host.querySelector("[data-podium-grid]")?.className).toContain("min-[700px]:grid-cols-3");
     expect(host.querySelector("[data-award-grid]")?.className).toContain("min-[700px]:grid-cols-2");
     expect(host.querySelector("[data-completion-actions]")?.className).toContain("min-[700px]:grid-cols-2");
+  });
+
+  it("uses semantic AA foregrounds and strong control boundaries instead of raw accent text", () => {
+    const host = document.createElement("div");
+    host.innerHTML = staticWorkspace("ready");
+    const complete = host.querySelector<HTMLButtonElement>("[data-complete-tournament]")!;
+    const classNames = Array.from(host.querySelectorAll<HTMLElement>("[class]"), (element) => element.className).join(" ");
+
+    expect(complete.className).toContain("text-[var(--color-on-accent)]");
+    expect(complete.className).not.toContain("text-white");
+    expect(classNames).not.toContain("disabled:opacity-");
+    expect(classNames).toContain("text-[var(--color-text-muted)]");
+    expect(classNames).not.toContain("text-[var(--color-text-subtle)]");
+    expect(classNames).not.toContain("text-[var(--color-brand-cyan)]");
+    expect(classNames).not.toContain("text-[var(--color-brand-violet)]");
+    expect(classNames).not.toContain("text-[var(--color-brand-cream)]");
+    expect(host.querySelector<HTMLTextAreaElement>('textarea[name="reopenReason"]')?.className).toContain("border-[var(--color-border-strong)]");
   });
 });

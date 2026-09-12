@@ -34,16 +34,16 @@ describe("completion workspace read model", () => {
     expect(state).toMatchObject({
       status: "integration_required",
       event: { id: "event-1", name: "Miracle Open", formatLabel },
-      version: 0,
-      podium: { sourceKind: "integration_pending", locked: false, placements: [] },
-      certificates: { generated: 0, total: 7, status: "not_generated" },
-      publication: { status: "draft" },
-      audit: { lastAction: "none", actorLabel: null, at: null },
+      version: null,
+      blockers: null,
+      podium: { sourceKind: "integration_pending", sourceLabel: null, locked: null, placements: null },
+      certificates: { generated: null, total: null, status: "integration_pending", studioHref: null },
+      publication: { status: "integration_pending", previewHref: null },
+      audit: { lastAction: null, actorLabel: null, at: null, summary: null },
     });
     expect(state.awards.map(({ award }) => award)).toEqual([
       "mvp", "top_scorer", "top_defender", "top_assist",
     ]);
-    expect(state.awards.every(({ candidates, selectedPlayerId }) => candidates.length === 0 && selectedPlayerId === null)).toBe(true);
-    expect(state.blockers).toEqual([]);
+    expect(state.awards.every(({ candidates, metricLabel, selectedPlayerId, tied }) => candidates === null && metricLabel === null && selectedPlayerId === null && tied === null)).toBe(true);
   });
 });

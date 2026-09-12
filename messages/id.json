@@ -637,6 +637,7 @@
   "completionWorkspace": {
     "title": "Penyelesaian Turnamen",
     "description": "Validasi rekam akhir {event}, tinjau setiap penghargaan, dan kendalikan kapan penyelesaian dapat dicatat.",
+    "integration": {"waiting":"Menunggu integrasi Match Day"},
     "status": {
       "integration_required": "Integrasi Match Day diperlukan",
       "blocked": "Penyelesaian terblokir",
@@ -657,11 +658,15 @@
     },
     "blockers": {
       "repair": "Perbaiki di Match Day",
+      "repairAwards": "Tinjau penghargaan",
+      "unknownSubject": "sumber hasil final",
       "UNOFFICIAL_REQUIRED_RESULT": {"title":"Hasil wajib belum resmi","detail":"{subject} harus diresmikan sebelum penyelesaian."},
       "ACTIVE_DISPUTE": {"title":"Sengketa aktif","detail":"Selesaikan sengketa aktif sebelum penyelesaian. {subject}"},
       "UNRESOLVED_FINAL_TIE": {"title":"Seri klasemen akhir belum terselesaikan","detail":"Terapkan tie-breaker event untuk {subject} sebelum penyelesaian."},
       "MISSING_VALIDATED_AWARD_STATISTICS": {"title":"Statistik penghargaan tervalidasi belum tersedia","detail":"Terbitkan dan validasi metrik wajib untuk {subject}."},
-      "INSUFFICIENT_PODIUM_STRUCTURE": {"title":"Struktur podium belum lengkap","detail":"Lengkapi sumber tahap atau klasemen wajib: {subject}."}
+      "INSUFFICIENT_PODIUM_STRUCTURE": {"title":"Struktur podium belum lengkap","detail":"Lengkapi sumber tahap atau klasemen wajib: {subject}."},
+      "MISSING_AWARD_DECISION": {"title":"Pemenang penghargaan belum dipilih","detail":"Pilih pemenang untuk {subject}."},
+      "TIE_REASON_REQUIRED": {"title":"Alasan keputusan seri wajib diisi","detail":"Catat alasan audit yang tidak kosong untuk {subject}."}
     },
     "awards": {
       "title":"Tinjauan penghargaan individual",
@@ -673,6 +678,7 @@
       "unavailable":"Menunggu data resmi Match Day",
       "tieExplanation":"{count} kandidat memiliki nilai tertinggi yang sama",
       "reasonRequired":"Alasan audit wajib diisi sebelum memilih pemenang.",
+      "reasonLabel":"Alasan keputusan audit",
       "auditReason":"Alasan audit: {reason}",
       "decisionRecorded":"Metrik terbit tertinggi tercatat sebagai keputusan."
     },
@@ -713,6 +719,17 @@
       "integrationRequired":"Integrasi Match Day diperlukan sebelum tindakan ini dapat dijalankan.",
       "conflict":"Versi berubah di sesi lain. Muat ulang sebelum mencoba lagi.",
       "reasonRequired":"Masukkan alasan koreksi sebelum membuka kembali.",
+      "notReady":"Sumber penyelesaian berubah. Tinjau pemblokir terbaru.",
+      "invalidDecisions":"Satu atau beberapa pemenang penghargaan tidak lagi valid. Tinjau kandidat yang diterbitkan.",
+      "tieReasonRequired":"Penghargaan dengan hasil seri masih memerlukan alasan audit yang tidak kosong.",
+      "sourceIncomplete":"Sumber podium belum lengkap. Perbaiki data tim atau hasil di Match Day.",
+      "featureDisabled":"Penyelesaian belum diaktifkan untuk workspace ini.",
+      "unauthorized":"Sesi Anda berakhir. Masuk kembali sebelum mencoba lagi.",
+      "passwordChangeRequired":"Ubah kata sandi sebelum mengelola penyelesaian turnamen.",
+      "forbidden":"Anda tidak memiliki izin untuk mengelola event ini.",
+      "invalidInput":"Permintaan penyelesaian tidak valid. Tinjau keputusan penghargaan dan coba lagi.",
+      "competitiveLocked":"Turnamen ini sudah terkunci secara kompetitif. Muat ulang workspace.",
+      "notCompleted":"Hanya turnamen yang sudah selesai yang dapat dibuka kembali. Muat ulang workspace.",
       "blocked":"Tindakan terblokir. Tinjau kesiapan dan perbaiki masalah yang tercantum.",
       "failed":"Tindakan tidak dapat diselesaikan. Coba lagi."
     }
