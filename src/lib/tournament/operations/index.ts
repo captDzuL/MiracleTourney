@@ -1,9 +1,10 @@
 import { isDeepStrictEqual } from "node:util";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { ScheduleDraft } from "../scheduling";
-import { operationRequestSchema } from "./schema";
+import { correctionPreviewSchema, operationRequestSchema } from "./schema";
 import type { ParsedCommand } from "./schema";
 import { applyCommand } from "./commands";
+import { correctionPreview, type ResultGame } from "./results";
 
 export type OperationCommand = ParsedCommand;
 export type OperationInput = { eventId: string; actor: { id: string; role: string }; expectedVersion: number; idempotencyKey: string; command: OperationCommand };
@@ -74,5 +75,15 @@ export function createCompetitionOperations(db: PrismaClient, clock: () => Date 
       return { competitionVersion: event.competitionVersion, revisionId: revision.id, draft };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
-  return { execute, readPublishedSchedule, readScheduleDraft };
+  async function previewResultCorrection(input: { eventId: string; matchId: string; games: ResultGame[]; actor: OperationInput["actor"] }) {
+    const { actor } = input;
+    const request = correctionPreviewSchema.parse({ eventId: input.eventId, matchId: input.matchId, games: input.games });
+    if (!actor?.id || !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new Error("Not authorized");
+    return db.$transaction(async tx => {
+      const event = await tx.event.findUnique({ where: { id: request.eventId } });
+      if (!event || actor.role === "organizer" && event.organizerUserId !== actor.id) throw new Error("Not authorized");
+      return correctionPreview(tx, request.eventId, request.matchId, request.games, event.competitionVersion);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+  return { execute, readPublishedSchedule, readScheduleDraft, previewResultCorrection };
 }

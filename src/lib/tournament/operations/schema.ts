@@ -5,6 +5,8 @@ const id = z.string().trim().min(1).max(300);
 const reason = z.string().trim().max(4000).optional();
 const instant = z.iso.datetime({ offset: true });
 const assignment = z.object({ matchId: id, roomId: id, start: instant, end: instant }).strict();
+export const resultGamesSchema = z.array(z.object({ gameNumber: z.number().int().positive(), homeScore: z.number().int().nonnegative().max(2147483647), awayScore: z.number().int().nonnegative().max(2147483647) }).strict()).max(999);
+export const correctionPreviewSchema = z.object({ eventId: id, matchId: id, games: resultGamesSchema }).strict();
 const scheduling = z.object({
   timezone: id, eventWindow: z.object({ start: instant, end: instant }).strict(),
   matchDurationMinutes: z.number(), bufferMinutes: z.number(), minimumRestMinutes: z.number(),
@@ -19,6 +21,8 @@ export const operationCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("readiness_update"), matchId: id, teamId: id, status: z.enum(["pending", "checked_in", "ready", "not_ready"]), note: z.string().trim().max(4000).optional() }).strict(),
   z.object({ kind: z.literal("readiness_deadline"), matchId: id }).strict(),
   z.object({ kind: z.literal("match_start"), matchId: id, reason }).strict(),
+  z.object({ kind: z.literal("result_submit"), matchId: id, games: resultGamesSchema }).strict(),
+  z.object({ kind: z.literal("result_correct"), matchId: id, games: resultGamesSchema, reason: z.string().trim().min(1).max(4000), previewToken: id }).strict(),
   z.object({ kind: z.literal("incident_report"), matchId: id.optional(), incidentKind: id, description: z.string().trim().min(1).max(8000) }).strict(),
   z.object({ kind: z.literal("incident_resolve"), incidentId: id, reason }).strict(),
   z.object({ kind: z.literal("action_resolve"), actionId: id, reason }).strict(),

@@ -40,6 +40,44 @@ Supported commands:
   management; resolutions require reasons.
 - `announcement_save`, `announcement_publish`, `announcement_unpublish`: saved
   announcements start as drafts and require explicit publication.
+- `result_submit`: submits `matchId` and consecutive `games` containing
+  `gameNumber`, `homeScore`, `awayScore`. Best-of comes only from the persisted
+  graph. BO1 retains the game score and permits draws only for round robin/group
+  fixtures; longer series must end exactly when one side reaches the required
+  wins, and project series wins into match scores. The resource ID identifies the
+  immutable result revision. No player-statistics or legacy MatchGame rows are
+  written: official game detail lives in the revision and result snapshot.
+- `result_correct`: requires the same score input, a nonblank `reason`, and the
+  `previewToken` returned by `previewCompetitionResultCorrectionAction` (or the
+  authorized service `previewResultCorrection`). Preview is read-only and includes
+  version, proposed score, transitive participant impact, blocked descendants,
+  standings, placements and schedule impact. Its checksum binds these contents
+  and the current competition/result versions; it is a review consistency token,
+  not an authorization credential. Any intervening operation requires a new
+  preview. Live/completed descendants, including qualification paths, block all
+  corrections. Accepted changes append revisions and invalidate changed-slot
+  readiness. Identical idempotent retries return the original receipt.
+
+Result commands recompute authoritative standings/qualification and placements
+under each phase's `configuration.projection` while retaining `configuration.graph`.
+Standings apply configured points and ordered tiebreakers; head-to-head compares
+mini-table points among tied teams. Unresolved rank ties retain a shared rank,
+raise an organizer action, and never qualify using a display-order fallback.
+Qualification is released only when its group's fixtures all have official results.
+An explicit tiebreak fixture/resolution workflow is a subsequent capability.
+
+When a schedule exists, results append a newly recalculated draft with retained
+planner input and fresh match review baseline. Published schedule selections and
+assignments remain immutable until explicit publication. Pre-upgrade snapshots
+without planner constraints yield a visible infeasible review draft requiring a
+new schedule save. Result/readiness conditions are resolved; unrelated incident
+actions stay open. Score snapshots whitelist result data and never include stats.
+
+Both legacy result repository functions now serialize on the event row and
+increment its competition version inside their transaction before checking for
+V3 phases. Initialized V3 events are rejected even when the rollout flag is off;
+legacy events retain their score/game behavior. The event version also invalidates
+an initializer racing a legacy result, so the legacy path cannot bypass V3 CAS.
 
 `readScheduleDraft(eventId, revisionId, actor)` returns the owner/admin review
 details and current competition version. `readPublishedSchedule(eventId)` returns

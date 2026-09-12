@@ -1150,12 +1150,26 @@ export async function getBracketManageableMatches(eventId: string): Promise<Matc
  * If the match row doesn't exist yet, it is created from the projected bracket.
  * Returns null if the event or match is not found.
  */
+async function legacyResultTransaction<T>(eventId: string, work: (tx: Prisma.TransactionClient) => Promise<T>) {
+  return prisma.$transaction(async tx => {
+    // Serialize with V3's event CAS and invalidate a concurrent initializer's
+    // snapshot. Rejection rolls the version increment back with the write.
+    await tx.event.updateMany({ where: { id: eventId }, data: { competitionVersion: { increment: 1 } } });
+    if (await tx.competitionPhase.count({ where: { eventId } })) throw new Error("Use the versioned competition operation to submit or correct this result.");
+    return work(tx);
+  });
+}
+
 export async function setMatchResult(input: {
   eventId: string;
   matchId: string;
   homeScore: number;
   awayScore: number;
 }): Promise<Match | null> {
+  return legacyResultTransaction(input.eventId, tx => setLegacyMatchResult(tx, input));
+}
+
+async function setLegacyMatchResult(prisma: Prisma.TransactionClient, input: { eventId: string; matchId: string; homeScore: number; awayScore: number }): Promise<Match | null> {
   const event = await prisma.event.findUnique({ where: { id: input.eventId }, select: { format: true } });
   if (!event) return null;
 
@@ -1166,6 +1180,9 @@ export async function setMatchResult(input: {
   const existingRow = await prisma.match.findFirst({
     where: { id: input.matchId, eventId: input.eventId },
   });
+  if (existingRow?.phaseId || (existingRow?.resultVersion ?? 0) > 0) {
+    throw new Error("Use the versioned competition operation to submit or correct this result.");
+  }
 
   let homeTeamId: string;
   let awayTeamId: string;
@@ -3301,6 +3318,16 @@ export async function setMatchGames(
   games: { gameNumber: number; homeScore: number; awayScore: number }[],
   bestOf: number,
 ): Promise<void> {
+  return legacyResultTransaction(eventId, tx => setLegacyMatchGames(tx, matchId, eventId, games, bestOf));
+}
+
+async function setLegacyMatchGames(
+  prisma: Prisma.TransactionClient,
+  matchId: string,
+  eventId: string,
+  games: { gameNumber: number; homeScore: number; awayScore: number }[],
+  bestOf: number,
+): Promise<void> {
   let homeTeamId: string;
   let awayTeamId: string;
   let roundLabel: string;
@@ -3308,6 +3335,9 @@ export async function setMatchGames(
   let slot: number | null = null;
 
   const existingRow = await prisma.match.findFirst({ where: { id: matchId, eventId } });
+  if (existingRow?.phaseId || (existingRow?.resultVersion ?? 0) > 0) {
+    throw new Error("Use the versioned competition operation to submit or correct this result.");
+  }
   if (existingRow) {
     homeTeamId = existingRow.homeTeamId;
     awayTeamId = existingRow.awayTeamId;
@@ -3342,8 +3372,7 @@ export async function setMatchGames(
   const winnerTeamId =
     homeWins >= winsNeeded ? homeTeamId : awayWins >= winsNeeded ? awayTeamId : null;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.match.upsert({
+    await prisma.match.upsert({
       where: { id: matchId },
       update: {
         homeScore: homeWins,
@@ -3358,11 +3387,10 @@ export async function setMatchGames(
         round, slot, winnerTeamId,
       },
     });
-    await tx.matchGame.deleteMany({ where: { matchId } });
-    await tx.matchGame.createMany({
+    await prisma.matchGame.deleteMany({ where: { matchId } });
+    await prisma.matchGame.createMany({
       data: playedGames.map((g) => ({ matchId, gameNumber: g.gameNumber, homeScore: g.homeScore, awayScore: g.awayScore })),
     });
-  });
 }
 
 // ── Certificates ──────────────────────────────────────────────────────────────

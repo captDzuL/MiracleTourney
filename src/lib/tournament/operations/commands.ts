@@ -1,35 +1,20 @@
 import { isDeepStrictEqual } from "node:util";
-import type { Prisma, Match } from "@prisma/client";
-import { generateCompetitionGraph, type CompetitionGraph } from "../competition";
+import type { Prisma } from "@prisma/client";
+import { generateCompetitionGraph } from "../competition";
 import { getLegacyTournamentFormat } from "../formats/types";
-import { planSchedule, type ScheduleDraft } from "../scheduling";
+import { planSchedule } from "../scheduling";
 import type { ParsedCommand } from "./schema";
+import { json, isTerminal, matchSnapshot, eventMatch, readGraph, type StoredSchedule } from "./state";
+import { applyResult } from "./results";
 
-const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
 function requireReason(value: string | undefined) { if (!value?.trim()) throw new Error("An override or resolution reason is required"); }
-function isTerminal(match: Match) { return ["Live", "Completed"].includes(match.status) || ["live", "completed"].includes(match.scheduleStatus) || match.resultVersion > 0; }
-function matchSnapshot(matches: Match[]) {
-  return matches.map(m => ({ id: m.id, homeTeamId: m.homeTeamId, awayTeamId: m.awayTeamId, status: m.status,
-    scheduleStatus: m.scheduleStatus, resultVersion: m.resultVersion,
-    start: m.scheduledAt?.toISOString() ?? null, end: m.scheduledEndsAt?.toISOString() ?? null, room: m.scheduleRoom ?? null,
-  })).sort((a, b) => a.id.localeCompare(b.id));
-}
-type StoredSchedule = { draft: ScheduleDraft; baseMatches: ReturnType<typeof matchSnapshot> };
-async function eventMatch(tx: Prisma.TransactionClient, eventId: string, matchId: string) {
-  const match = await tx.match.findFirst({ where: { eventId, id: matchId } });
-  if (!match) throw new Error("Match not found");
-  return match;
-}
-async function readGraph(tx: Prisma.TransactionClient, eventId: string) {
-  const phase = await tx.competitionPhase.findFirst({ where: { eventId, sequence: 1 } });
-  const configuration = phase?.configuration as unknown as { graph?: CompetitionGraph } | null;
-  if (!configuration?.graph || configuration.graph.eventId !== eventId) throw new Error("Competition not initialized");
-  return configuration.graph;
-}
 
 /** Internal: must run only after authorization and event CAS in execute(). */
 export async function applyCommand(tx: Prisma.TransactionClient, eventId: string, actorId: string, command: ParsedCommand, version: number, idempotencyKey: string, now: Date): Promise<string | undefined> {
   switch (command.kind) {
+    case "result_submit":
+    case "result_correct":
+      return applyResult(tx, eventId, actorId, command, version, idempotencyKey, now);
     case "initialize": {
       if (await tx.matchResultRevision.count({ where: { eventId } }) || await tx.match.count({ where: { eventId, resultVersion: { gt: 0 } } })) throw new Error("Competition has official results");
       if (await tx.match.count({ where: { eventId } }) || await tx.competitionPhase.count({ where: { eventId } })) throw new Error("Competition already initialized");
@@ -74,7 +59,7 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
         lockedMatchIds: [...new Set([...command.input.lockedMatchIds ?? [], ...playable.filter(m => m.scheduleStatus === "locked").map(m => m.id)])],
         matchStates: Object.fromEntries(playable.map(m => [m.id, isTerminal(m) ? (m.scheduleStatus === "live" || m.status === "Live" ? "live" : "completed") : "scheduled"])),
       });
-      const revision = await tx.scheduleRevision.create({ data: { eventId, version, status: "draft", snapshot: json({ draft, baseMatches: matchSnapshot(matches) }), idempotencyKey, createdById: actorId } });
+      const revision = await tx.scheduleRevision.create({ data: { eventId, version, status: "draft", snapshot: json({ draft, input: command.input, baseMatches: matchSnapshot(matches) }), idempotencyKey, createdById: actorId } });
       return revision.id;
     }
     case "schedule_publish": {
