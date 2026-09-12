@@ -18,6 +18,7 @@ const { prisma } = vi.hoisted(() => ({
       create: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
+      findUnique: vi.fn(),
       groupBy: vi.fn(),
       update: vi.fn(),
     },
@@ -93,7 +94,12 @@ const { prisma } = vi.hoisted(() => ({
       findMany: vi.fn(),
     },
     certificate: {
+      count: vi.fn(),
+      create: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
     },
     $transaction: vi.fn(),
   },
@@ -119,6 +125,8 @@ import {
   approveTeamRegistrationRequest,
   createTeamRegistrationRequest,
   getCaptainRegistrationRequests,
+  getCertificateByEvent,
+  getCertificatesForEvents,
   getPaymentSettings,
   getLeaderboardForEvent,
   getManageableEventsForUser,
@@ -139,6 +147,7 @@ import {
   setEventStatus,
   setEventVisualFocalPoint,
   registerTeam,
+  recordCertificateSuccess,
   rejectTeamRegistrationRequest,
   updateTeamRegistrationProof,
   updateEventPublicInfo,
@@ -151,6 +160,91 @@ import {
 
 const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
 const organizer = { id: "org-1", role: "organizer" as const, email: "org@test.com", name: "Organizer" };
+
+const championCertificateRow = {
+  id: "certificate-champion-v2",
+  eventId: "event-1",
+  teamId: "team-champion",
+  imageUrl: "/certificates/champion-v2.png",
+  status: "ready",
+  lastError: null,
+  attemptCount: 1,
+  createdAt: new Date("2026-09-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-09-12T00:00:00.000Z"),
+};
+
+describe("legacy Champion certificate repository compatibility", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the latest Champion team certificate for the event-level lookup", async () => {
+    prisma.certificate.findFirst.mockResolvedValue(championCertificateRow);
+
+    await expect(getCertificateByEvent("event-1")).resolves.toMatchObject({
+      id: "certificate-champion-v2",
+      imageUrl: "/certificates/champion-v2.png",
+      status: "ready",
+    });
+    expect(prisma.certificate.findFirst).toHaveBeenCalledWith({
+      where: { eventId: "event-1", type: "champion", recipientKind: "team" },
+      orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+    });
+  });
+
+  it("keeps one latest Champion per event in the batch API", async () => {
+    prisma.certificate.findMany.mockResolvedValue([
+      championCertificateRow,
+      {
+        ...championCertificateRow,
+        id: "certificate-champion-v1",
+        imageUrl: "/certificates/champion-v1.png",
+      },
+    ]);
+
+    const certificates = await getCertificatesForEvents(["event-1"]);
+
+    expect(certificates.get("event-1")).toMatchObject({
+      id: "certificate-champion-v2",
+      imageUrl: "/certificates/champion-v2.png",
+    });
+    expect(prisma.certificate.findMany).toHaveBeenCalledWith({
+      where: {
+        eventId: { in: ["event-1"] },
+        type: "champion",
+        recipientKind: "team",
+      },
+      orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+    });
+  });
+
+  it("persists legacy generation as a published Champion team certificate", async () => {
+    prisma.certificate.findFirst.mockResolvedValue(null);
+    prisma.team.findUnique.mockResolvedValue({ name: "Miracle Champions" });
+    prisma.certificate.create.mockResolvedValue(championCertificateRow);
+
+    await expect(
+      recordCertificateSuccess("event-1", "team-champion", "/certificates/champion-v2.png"),
+    ).resolves.toMatchObject({
+      eventId: "event-1",
+      teamId: "team-champion",
+      imageUrl: "/certificates/champion-v2.png",
+    });
+    expect(prisma.certificate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventId: "event-1",
+        teamId: "team-champion",
+        type: "champion",
+        recipientKind: "team",
+        recipientId: "team-champion",
+        recipientName: "Miracle Champions",
+        imageUrl: "/certificates/champion-v2.png",
+        publishedUrl: "/certificates/champion-v2.png",
+        status: "ready",
+      }),
+    });
+  });
+});
 
 describe("event lifecycle status", () => {
   beforeEach(() => {

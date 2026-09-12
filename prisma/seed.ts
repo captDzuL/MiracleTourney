@@ -631,17 +631,59 @@ async function main() {
 
   if (flashpeakChampion) {
     await prisma.certificate.upsert({
-      where: { eventId: flashpeakFinishedEvent.id },
-      update: { teamId: flashpeakChampion.id, imageUrl: "/certificates/demo-flashpeak-champions-32.png" },
-      create: { eventId: flashpeakFinishedEvent.id, teamId: flashpeakChampion.id, imageUrl: "/certificates/demo-flashpeak-champions-32.png" },
+      where: {
+        eventId_type_recipientKind_recipientId_version: {
+          eventId: flashpeakFinishedEvent.id,
+          type: "champion",
+          recipientKind: "team",
+          recipientId: flashpeakChampion.id,
+          version: 1,
+        },
+      },
+      update: {
+        teamId: flashpeakChampion.id,
+        recipientName: flashpeakChampion.name,
+        imageUrl: "/certificates/demo-flashpeak-champions-32.png",
+      },
+      create: {
+        eventId: flashpeakFinishedEvent.id,
+        teamId: flashpeakChampion.id,
+        type: "champion",
+        recipientKind: "team",
+        recipientId: flashpeakChampion.id,
+        recipientName: flashpeakChampion.name,
+        version: 1,
+        imageUrl: "/certificates/demo-flashpeak-champions-32.png",
+      },
     });
   }
 
   if (mlbbChampion) {
     await prisma.certificate.upsert({
-      where: { eventId: mlbbFinishedEvent.id },
-      update: { teamId: mlbbChampion.id, imageUrl: "/certificates/demo-mlbb-dawn-finals-16.png" },
-      create: { eventId: mlbbFinishedEvent.id, teamId: mlbbChampion.id, imageUrl: "/certificates/demo-mlbb-dawn-finals-16.png" },
+      where: {
+        eventId_type_recipientKind_recipientId_version: {
+          eventId: mlbbFinishedEvent.id,
+          type: "champion",
+          recipientKind: "team",
+          recipientId: mlbbChampion.id,
+          version: 1,
+        },
+      },
+      update: {
+        teamId: mlbbChampion.id,
+        recipientName: mlbbChampion.name,
+        imageUrl: "/certificates/demo-mlbb-dawn-finals-16.png",
+      },
+      create: {
+        eventId: mlbbFinishedEvent.id,
+        teamId: mlbbChampion.id,
+        type: "champion",
+        recipientKind: "team",
+        recipientId: mlbbChampion.id,
+        recipientName: mlbbChampion.name,
+        version: 1,
+        imageUrl: "/certificates/demo-mlbb-dawn-finals-16.png",
+      },
     });
   }
 

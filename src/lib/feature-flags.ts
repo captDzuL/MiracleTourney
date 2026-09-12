@@ -11,6 +11,7 @@ type FeatureFlag =
   | "organizer_workspace_v3"
   | "registration_workspace_v3"
   | "competition_operations_v3"
+  | "completion_workspace_v3"
   | "adaptive_public_event_v3";
 
 const DEFAULTS: Record<FeatureFlag, boolean> = {
@@ -26,6 +27,7 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   organizer_workspace_v3: false,
   registration_workspace_v3: false,
   competition_operations_v3: false,
+  completion_workspace_v3: false,
   adaptive_public_event_v3: false,
 };
 

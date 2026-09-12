@@ -9,6 +9,7 @@ const OWNED_KEYS = [
   "FEATURE_FLAG_ORGANIZER_WORKSPACE_V3",
   "FEATURE_FLAG_REGISTRATION_WORKSPACE_V3",
   "FEATURE_FLAG_COMPETITION_OPERATIONS_V3",
+  "FEATURE_FLAG_COMPLETION_WORKSPACE_V3",
   "FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3",
 ] as const;
 
@@ -52,6 +53,13 @@ describe("public visual feature flags", () => {
 
     process.env.FEATURE_FLAG_COMPETITION_OPERATIONS_V3 = "true";
     expect(isFeatureEnabled("competition_operations_v3")).toBe(true);
+  });
+
+  it("keeps the completion workspace disabled until explicitly enabled", () => {
+    expect(isFeatureEnabled("completion_workspace_v3")).toBe(false);
+
+    process.env.FEATURE_FLAG_COMPLETION_WORKSPACE_V3 = "true";
+    expect(isFeatureEnabled("completion_workspace_v3")).toBe(true);
   });
 
   it("keeps the adaptive public event disabled until explicitly enabled", () => {

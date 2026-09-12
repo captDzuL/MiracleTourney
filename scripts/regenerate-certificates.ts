@@ -83,7 +83,9 @@ async function main() {
     console.log(`📋 Event: ${eventName}`);
 
     // Delete existing certificate
-    const deleted = await prisma.certificate.deleteMany({ where: { eventId: match.eventId } });
+    const deleted = await prisma.certificate.deleteMany({
+      where: { eventId: match.eventId, type: "champion", recipientKind: "team" },
+    });
     if (deleted.count > 0) {
       console.log(`  Deleted ${deleted.count} existing certificate(s).`);
     }
@@ -91,8 +93,23 @@ async function main() {
     console.log(`  Rendering premium certificate for winner team: ${match.winnerTeamId}...`);
     try {
       const url = await renderCertificate(match.eventId, match.winnerTeamId!);
+      const winnerTeam = await prisma.team.findUnique({
+        where: { id: match.winnerTeamId! },
+        select: { name: true },
+      });
       await prisma.certificate.create({
-        data: { eventId: match.eventId, teamId: match.winnerTeamId!, imageUrl: url },
+        data: {
+          eventId: match.eventId,
+          teamId: match.winnerTeamId!,
+          type: "champion",
+          recipientKind: "team",
+          recipientId: match.winnerTeamId!,
+          recipientName: winnerTeam?.name ?? match.winnerTeamId!,
+          imageUrl: url,
+          publishedUrl: url,
+          generatedAt: new Date(),
+          publishedAt: new Date(),
+        },
       });
       console.log(`  ✅ Certificate saved: ${url}\n`);
     } catch (err) {

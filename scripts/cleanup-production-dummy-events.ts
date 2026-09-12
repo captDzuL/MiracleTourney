@@ -32,7 +32,7 @@ function printTargets(events: Awaited<ReturnType<typeof listDummyEventTargets>>)
         `teams=${event._count.teams}`,
         `matches=${event._count.matches}`,
         `submissions=${event._count.statSubmissions}`,
-        `certificate=${event.certificate ? 1 : 0}`,
+        `certificate=${event.certificates.length > 0 ? 1 : 0}`,
       ].join(" | "),
     );
   }

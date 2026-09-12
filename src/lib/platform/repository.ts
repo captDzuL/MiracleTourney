@@ -3415,34 +3415,108 @@ function toCertificate(row: CertificateRow): Certificate {
   };
 }
 
-/** Marks an event's certificate as successfully generated, clearing any previous failure. */
+const LEGACY_CHAMPION_CERTIFICATE_FILTER = {
+  type: "champion",
+  recipientKind: "team",
+} as const;
+
+async function getCertificateRecipientName(teamId: string): Promise<string> {
+  const team = await prisma.team.findUnique({ where: { id: teamId }, select: { name: true } });
+  return team?.name ?? teamId;
+}
+
+/** Marks an event's Champion certificate as successfully generated, clearing any previous failure. */
 export async function recordCertificateSuccess(eventId: string, teamId: string, imageUrl: string): Promise<Certificate> {
-  const row = await prisma.certificate.upsert({
-    where: { eventId },
-    update: { teamId, imageUrl, status: "ready", lastError: null, attemptCount: { increment: 1 } },
-    create: { eventId, teamId, imageUrl, status: "ready", lastError: null, attemptCount: 1 },
-  });
+  const [existing, recipientName] = await Promise.all([
+    prisma.certificate.findFirst({
+      where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
+      orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+    }),
+    getCertificateRecipientName(teamId),
+  ]);
+  const now = new Date();
+  const row = existing
+    ? await prisma.certificate.update({
+        where: { id: existing.id },
+        data: {
+          teamId,
+          recipientId: teamId,
+          recipientName,
+          imageUrl,
+          publishedUrl: imageUrl,
+          status: "ready",
+          generatedAt: now,
+          publishedAt: now,
+          lastError: null,
+          attemptCount: { increment: 1 },
+        },
+      })
+    : await prisma.certificate.create({
+        data: {
+          eventId,
+          teamId,
+          ...LEGACY_CHAMPION_CERTIFICATE_FILTER,
+          recipientId: teamId,
+          recipientName,
+          imageUrl,
+          publishedUrl: imageUrl,
+          status: "ready",
+          generatedAt: now,
+          publishedAt: now,
+          lastError: null,
+          attemptCount: 1,
+        },
+      });
   return toCertificate(row);
 }
 
 /**
  * Records a failed generation attempt so the admin panel can surface the reason and offer a retry.
- * Keeps the row (and its unique eventId slot) so the failure is visible instead of looking like
- * "no certificate yet".
+ * Keeps the Champion row so the failure is visible instead of looking like "no certificate yet".
  */
 export async function recordCertificateFailure(eventId: string, teamId: string, message: string): Promise<Certificate> {
   const lastError = message.slice(0, MAX_CERTIFICATE_ERROR_LENGTH);
-  const row = await prisma.certificate.upsert({
-    where: { eventId },
-    update: { teamId, status: "failed", lastError, attemptCount: { increment: 1 } },
-    create: { eventId, teamId, imageUrl: "", status: "failed", lastError, attemptCount: 1 },
-  });
+  const [existing, recipientName] = await Promise.all([
+    prisma.certificate.findFirst({
+      where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
+      orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+    }),
+    getCertificateRecipientName(teamId),
+  ]);
+  const row = existing
+    ? await prisma.certificate.update({
+        where: { id: existing.id },
+        data: {
+          teamId,
+          recipientId: teamId,
+          recipientName,
+          status: "failed",
+          lastError,
+          attemptCount: { increment: 1 },
+        },
+      })
+    : await prisma.certificate.create({
+        data: {
+          eventId,
+          teamId,
+          ...LEGACY_CHAMPION_CERTIFICATE_FILTER,
+          recipientId: teamId,
+          recipientName,
+          imageUrl: "",
+          status: "failed",
+          lastError,
+          attemptCount: 1,
+        },
+      });
   return toCertificate(row);
 }
 
-/** Returns the certificate for an event, or null if none has been generated. */
+/** Returns the latest Champion team certificate for an event, preserving the legacy API. */
 export async function getCertificateByEvent(eventId: string): Promise<Certificate | null> {
-  const row = await prisma.certificate.findUnique({ where: { eventId } });
+  const row = await prisma.certificate.findFirst({
+    where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
+    orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+  });
   if (!row) return null;
   return toCertificate(row);
 }
@@ -3453,9 +3527,12 @@ export async function getCertificatesForEvents(eventIds: string[]): Promise<Map<
   if (!eventIds.length) return certificates;
 
   try {
-    const rows = await prisma.certificate.findMany({ where: { eventId: { in: eventIds } } });
+    const rows = await prisma.certificate.findMany({
+      where: { eventId: { in: eventIds }, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
+      orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+    });
     for (const row of rows) {
-      certificates.set(row.eventId, toCertificate(row));
+      if (!certificates.get(row.eventId)) certificates.set(row.eventId, toCertificate(row));
     }
   } catch {
     await Promise.all(
@@ -3473,5 +3550,7 @@ export async function getCertificatesForEvents(eventIds: string[]): Promise<Map<
  * to generate sequential IDs. Failed attempts are excluded so the sequence has no gaps.
  */
 export async function countCertificatesForGame(gameId: string): Promise<number> {
-  return prisma.certificate.count({ where: { status: "ready", event: { gameId } } });
+  return prisma.certificate.count({
+    where: { status: "ready", ...LEGACY_CHAMPION_CERTIFICATE_FILTER, event: { gameId } },
+  });
 }

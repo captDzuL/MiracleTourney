@@ -76,8 +76,10 @@ export async function listDummyEventTargets(prisma: PrismaClient) {
       name: true,
       status: true,
       createdAt: true,
-      certificate: {
+      certificates: {
+        where: { type: "champion", recipientKind: "team" },
         select: { id: true },
+        take: 1,
       },
       _count: {
         select: {
