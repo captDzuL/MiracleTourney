@@ -17,7 +17,7 @@ const scheduling = z.object({
 }).strict();
 export const operationCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("legacy_upgrade") }).strict(),
-  z.object({ kind: z.literal("delay_preview"), matchId: id, estimatedEnd: instant, reason: z.string().trim().min(1).max(4000) }).strict(),
+  z.object({ kind: z.literal("delay_preview"), matchId: id, estimatedEnd: instant, sourceRevision: z.object({ id, version: z.number().int().positive(), status: z.enum(["draft", "published"]) }).strict().optional(), reason: z.string().trim().min(1).max(4000) }).strict(),
   z.object({ kind: z.literal("initialize"), config: tournamentFormatConfigSchema, teams: z.array(z.object({ id, seed: z.number().int() }).strict()), slotCount: z.number().int().optional() }).strict(),
   z.object({ kind: z.literal("schedule_save"), input: scheduling, reason }).strict(),
   z.object({ kind: z.literal("schedule_publish"), revisionId: id }).strict(),

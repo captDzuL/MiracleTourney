@@ -10,7 +10,7 @@ export function matchSnapshot(matches: Match[]) {
     start: m.scheduledAt?.toISOString() ?? null, end: m.scheduledEndsAt?.toISOString() ?? null, room: m.scheduleRoom ?? null,
   })).sort((a, b) => a.id.localeCompare(b.id));
 }
-export type StoredSchedule = { draft: ScheduleDraft; baseMatches: ReturnType<typeof matchSnapshot>; input?: Omit<ScheduleInput, "graph"> };
+export type StoredSchedule = { draft: ScheduleDraft; baseMatches: ReturnType<typeof matchSnapshot>; input?: Omit<ScheduleInput, "graph">; delayEstimates?: Record<string, string> };
 export async function eventMatch(tx: Prisma.TransactionClient, eventId: string, matchId: string) {
   const match = await tx.match.findFirst({ where: { eventId, id: matchId } });
   if (!match) throw new Error("Match not found");

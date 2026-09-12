@@ -2,13 +2,14 @@ import { isDeepStrictEqual } from "node:util";
 import type { Prisma } from "@prisma/client";
 import { generateCompetitionGraph } from "../competition";
 import { getLegacyTournamentFormat } from "../formats/types";
-import { planSchedule, recalculateSchedule } from "../scheduling";
+import { planSchedule } from "../scheduling";
 import type { ParsedCommand } from "./schema";
 import { json, isTerminal, matchSnapshot, eventMatch, readGraph, type StoredSchedule } from "./state";
 import { applyResult } from "./results";
 import { reconcileReadinessActions } from "./readiness";
 import { scheduleBaseline } from "./schedule-source";
 import { diagnoseLegacyCompetition } from "./legacy-compatibility";
+import { applyDelay } from "./delay";
 
 function requireReason(value: string | undefined) { if (!value?.trim()) throw new Error("An override or resolution reason is required"); }
 
@@ -19,26 +20,7 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
     if (!("matchId" in command) || !graph.matches.some(m => m.id === command.matchId)) throw new Error("Match not found in competition");
   }
   switch (command.kind) {
-    case "delay_preview": {
-      const graph = await readGraph(tx, eventId);
-      const match = await eventMatch(tx, eventId, command.matchId);
-      if (isTerminal(match) || match.scheduleStatus === "locked") throw new Error("Cannot move a live, completed or locked match");
-      const event = await tx.event.findUniqueOrThrow({ where: { id: eventId } });
-      const revision = event.publishedScheduleVersion == null ? null : await tx.scheduleRevision.findFirst({ where: { eventId, version: event.publishedScheduleVersion, status: "published" } });
-      const stored = revision?.snapshot as unknown as StoredSchedule | undefined;
-      const original = stored?.draft.assignments.find(a => a.matchId === match.id);
-      if (!stored?.input || !original) throw new Error("Publish an initial schedule before reviewing a delay");
-      if (Date.parse(command.estimatedEnd) <= Date.parse(original.end)) throw new Error("The revised estimate must be later than the published end");
-      const matches = await tx.match.findMany({ where: { eventId } });
-      const revised = { ...original, end: command.estimatedEnd };
-      const input = { ...stored.input, manualOverrides: [revised] };
-      const draft = recalculateSchedule({ ...input, graph, existingAssignments: stored.draft.assignments, changedMatchIds: [match.id], lockedMatchIds: [...new Set([...stored.input.lockedMatchIds ?? [], ...matches.filter(m => m.scheduleStatus === "locked").map(m => m.id)])], matchStates: Object.fromEntries(matches.map(m => [m.id, isTerminal(m) ? m.status === "Live" ? "live" : "completed" : "scheduled"])) });
-      await tx.match.update({ where: { id: match.id }, data: { scheduleStatus: "delayed" } });
-      const currentMatches = matches.map(m => m.id === match.id ? { ...m, scheduleStatus: "delayed" as const } : m);
-      const saved = await tx.scheduleRevision.create({ data: { eventId, version, status: "draft", snapshot: json({ draft, input, baseMatches: matchSnapshot(currentMatches) }), idempotencyKey, createdById: actorId } });
-      await tx.competitionActionItem.upsert({ where: { eventId_conditionKey: { eventId, conditionKey: `delay:${match.id}` } }, create: { eventId, matchId: match.id, conditionKey: `delay:${match.id}`, priority: "urgent", title: "Review delayed match schedule", detail: command.reason }, update: { detail: command.reason, resolvedAt: null } });
-      return saved.id;
-    }
+    case "delay_preview": return applyDelay(tx, eventId, actorId, command, version, idempotencyKey);
     case "legacy_upgrade": {
       if (await tx.competitionPhase.count({ where: { eventId } })) throw new Error("Competition already initialized");
       const event = await tx.event.findUniqueOrThrow({ where: { id: eventId } });
@@ -104,13 +86,19 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
         lockedMatchIds: [...new Set([...command.input.lockedMatchIds ?? [], ...playable.filter(m => m.scheduleStatus === "locked").map(m => m.id)])],
         matchStates: Object.fromEntries(playable.map(m => [m.id, isTerminal(m) ? (m.scheduleStatus === "live" || m.status === "Live" ? "live" : "completed") : "scheduled"])),
       });
-      const revision = await tx.scheduleRevision.create({ data: { eventId, version, status: "draft", snapshot: json({ draft, input: command.input, baseMatches: matchSnapshot(matches) }), idempotencyKey, createdById: actorId } });
+      const source = command.input.sourceRevision ? await tx.scheduleRevision.findFirst({ where: { eventId, id: command.input.sourceRevision.id } }) : null;
+      const delayEstimates = (source?.snapshot as unknown as StoredSchedule | undefined)?.delayEstimates;
+      const revision = await tx.scheduleRevision.create({ data: { eventId, version, status: "draft", snapshot: json({ draft, input: command.input, baseMatches: matchSnapshot(matches), ...(delayEstimates ? { delayEstimates } : {}) }), idempotencyKey, createdById: actorId } });
       return revision.id;
     }
     case "schedule_publish": {
       const revision = await tx.scheduleRevision.findFirst({ where: { id: command.revisionId, eventId, status: "draft" } });
       if (!revision) throw new Error("Schedule draft not found");
-      const { draft, baseMatches } = revision.snapshot as unknown as StoredSchedule;
+      const latest = (await tx.scheduleRevision.findMany({ where: { eventId, status: "draft" } })).sort((a, b) => b.version - a.version)[0];
+      const selectedEvent = await tx.event.findUniqueOrThrow({ where: { id: eventId } });
+      const hasPendingDelay = !!(latest?.snapshot as unknown as StoredSchedule | undefined)?.delayEstimates || !!(revision.snapshot as unknown as StoredSchedule).delayEstimates;
+      if (hasPendingDelay && latest?.id !== revision.id || revision.version <= (selectedEvent.publishedScheduleVersion ?? -1)) throw new Error("Schedule draft is superseded or stale: review the latest revision");
+      const { draft, baseMatches, delayEstimates } = revision.snapshot as unknown as StoredSchedule;
       if (!draft.feasible || draft.conflicts.length) throw new Error("Schedule has unresolved conflicts");
       const matches = await tx.match.findMany({ where: { eventId } });
       if (!isDeepStrictEqual(baseMatches, matchSnapshot(matches))) throw new Error("Schedule review is stale: save a new draft");
@@ -125,7 +113,8 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       }
       await tx.scheduleRevision.update({ where: { id: revision.id }, data: { status: "published", publishedAt: now, publishedById: actorId } });
       await tx.event.update({ where: { id: eventId }, data: { publishedScheduleVersion: revision.version } });
-      await tx.competitionActionItem.updateMany({ where: { eventId, conditionKey: { in: draft.assignments.map(a => `delay:${a.matchId}`) }, resolvedAt: null }, data: { resolvedAt: now } });
+      const representedDelays = Object.entries(delayEstimates ?? {}).filter(([id, end]) => draft.assignments.some(a => a.matchId === id && Date.parse(a.end) >= Date.parse(end))).map(([id]) => `delay:${id}`);
+      await tx.competitionActionItem.updateMany({ where: { eventId, conditionKey: { in: representedDelays }, resolvedAt: null }, data: { resolvedAt: now } });
       return revision.id;
     }
     case "match_timing": {

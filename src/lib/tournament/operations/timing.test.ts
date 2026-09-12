@@ -8,7 +8,11 @@ async function fixture() {
   const store = operationStore(); ["c", "d"].forEach(id => store.seed("team", { id, eventId: "event" }));
   let time = new Date("2026-01-01T02:00:00Z"); let key = 0;
   const service = createCompetitionOperations(store.db, () => time);
-  const run = (command: OperationCommand) => service.execute({ eventId: "event", actor, expectedVersion: Number(store.rows("event")[0].competitionVersion), idempotencyKey: `t-${++key}`, command });
+  const run = (command: OperationCommand) => {
+    const latest = store.rows("scheduleRevision").sort((a, b) => Number(b.version) - Number(a.version))[0];
+    if (command.kind === "delay_preview" && !command.sourceRevision && latest) command = { ...command, sourceRevision: { id: String(latest.id), version: Number(latest.version), status: latest.status as "draft" | "published" } };
+    return service.execute({ eventId: "event", actor, expectedVersion: Number(store.rows("event")[0].competitionVersion), idempotencyKey: `t-${++key}`, command });
+  };
   await run({ kind: "initialize", config: { version: 1, kind: "single_elimination", thirdPlace: "none", bestOf: { earlyRounds: 1, semifinals: 1, final: 1, thirdPlace: 1 } }, teams: ["a", "b", "c", "d"].map((id, i) => ({ id, seed: i + 1 })) });
   const draft = await run({ kind: "schedule_save", input }); await run({ kind: "schedule_publish", revisionId: draft.resourceId! });
   return { ...store, run, service, setTime: (value: string) => { time = new Date(value); } };
@@ -23,7 +27,7 @@ describe("actual timing and delay review", () => {
     await f.run({ kind: "result_correct", matchId: id, games, reason: "Historical score review", previewToken: preview.token });
     expect(f.rows("match")[0].actualEndedAt).toBeNull();
   });
-  it.each(["Live", "Completed", "locked"])("rejects a delay of an immutable %s match without partial writes", async status => {
+  it.each(["Completed", "locked"])("rejects a delay of an immutable %s match without partial writes", async status => {
     const f = await fixture(); const id = String(f.rows("match")[0].id);
     await f.db.$transaction(async tx => { await tx.match.update({ where: { id }, data: status === "locked" ? { scheduleStatus: "locked" } : { status } }); });
     const before = f.rows("event")[0].competitionVersion;

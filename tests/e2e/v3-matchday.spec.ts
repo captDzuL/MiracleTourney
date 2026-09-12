@@ -58,6 +58,25 @@ test("marks a delay, reviews downstream impact and publishes a schedule revision
   expect(JSON.stringify(await publicState(page))).toContain("2026-01-01T03:30:00.000Z");
 });
 
+test("reviews a live overrun without moving the live match or exposing its estimate before publish", async ({ page }) => {
+  fixture = await prepareMatchdayFixture(); const id = (await fixture.graph()).matches[0].id;
+  await fixture.run({ kind: "match_start", matchId: id, reason: "Both teams at desk" });
+  const original = await matchdayDb.match.findUniqueOrThrow({ where: { id } });
+  await loginAsOrganizer(page, "en"); await openMatch(page, id);
+  const before = (await publicState(page)).liveMatches.find((m: { id: string }) => m.id === id);
+  const form = page.getByRole("form", { name: "Mark delayed and preview impact" });
+  await form.getByLabel("Revised estimated end").fill("2026-01-01T10:30");
+  await form.getByLabel("Delay reason").fill("Live series technical pause");
+  await form.getByRole("button", { name: "Mark delayed and preview impact" }).click();
+  await expect.poll(async () => (await state(page)).matches.find(m => m.id === id)?.scheduleStatus).toBe("delayed");
+  expect((await publicState(page)).liveMatches.find((m: { id: string }) => m.id === id)).toMatchObject({ status: "live", end: before.end });
+  await page.getByRole("link", { name: "Review schedule impact" }).click();
+  await expect(page.getByRole("heading", { name: /Impact preview/ })).toBeVisible();
+  await page.getByRole("button", { name: "Publish schedule", exact: true }).click();
+  await expect.poll(async () => (await publicState(page)).liveMatches.find((m: { id: string }) => m.id === id)?.end).toBe("2026-01-01T03:30:00.000Z");
+  expect(await matchdayDb.match.findUniqueOrThrow({ where: { id } })).toMatchObject({ status: "Live", scheduledAt: original.scheduledAt, scheduleRoom: original.scheduleRoom, actualStartedAt: original.actualStartedAt });
+});
+
 test("readiness deadline raises an action without walkover, organizer can override start", async ({ page }) => {
   fixture = await prepareMatchdayFixture(); const graph = await fixture.graph(); const id = graph.matches[0].id;
   await loginAsOrganizer(page, "en"); await openMatch(page, id);

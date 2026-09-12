@@ -78,6 +78,21 @@ describe("sanitized ongoing public state", () => {
     expect(corrected?.stateVersion).not.toBe(live?.stateVersion);
     expect(JSON.stringify(corrected)).not.toContain("secretPlayerStats");
   });
+  it("keeps a live overrun estimate private until explicit schedule publication", async () => {
+    const service = createCompetitionOperations(store.db, () => now); let sequence = 0;
+    const execute = (command: import("../tournament/operations").OperationCommand) => service.execute({ eventId: "event", actor: { id: "owner", role: "organizer" }, expectedVersion: Number(store.rows("event")[0].competitionVersion), idempotencyKey: `overrun-${++sequence}`, command });
+    const first = await execute({ kind: "schedule_save", input: { timezone: "Asia/Jakarta", eventWindow: { start: "2026-09-12T02:00:00Z", end: "2026-09-12T12:00:00Z" }, matchDurationMinutes: 30, bufferMinutes: 0, minimumRestMinutes: 0, rooms: ["A"] } });
+    await execute({ kind: "schedule_publish", revisionId: first.resourceId! });
+    const matchId = String(store.rows("match")[0].id);
+    await execute({ kind: "match_start", matchId, reason: "Desk ready" });
+    const before = await getPublicOngoingEvent("cup", now);
+    const delayed = await execute({ kind: "delay_preview", matchId, estimatedEnd: "2026-09-12T04:00:00Z", reason: "Private desk reason", sourceRevision: { id: first.resourceId!, version: first.version, status: "published" } });
+    const pending = await getPublicOngoingEvent("cup", now);
+    expect(pending?.liveMatches[0]).toMatchObject({ id: matchId, status: "live", end: before?.liveMatches[0].end });
+    expect(JSON.stringify(pending)).not.toContain("Private desk reason");
+    await execute({ kind: "schedule_publish", revisionId: delayed.resourceId! });
+    expect((await getPublicOngoingEvent("cup", now))?.liveMatches[0]).toMatchObject({ id: matchId, status: "live", end: "2026-09-12T04:00:00.000Z", start: before?.liveMatches[0].start, room: "A" });
+  });
   it("filters announcement status and time windows and changes version when one expires", async () => {
     for (const [id, status, endsAt] of [["active", "published", new Date("2026-09-12T04:00:00Z")], ["expired", "published", now], ["draft", "draft", null]] as const) store.seed("eventAnnouncement", { id, eventId: "event", status, title: id, body: "Body", publishedAt: new Date("2026-09-12T02:00:00Z"), startsAt: null, endsAt });
     const before = await getPublicOngoingEvent("cup", now);

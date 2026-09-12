@@ -24,13 +24,24 @@ describe("organizer Match Day workspace", () => {
     expect(host.querySelector(`a[href='/${locale}/organizer/events/event/legacy-match-day']`)).not.toBeNull();
   });
   it("submits a delay estimate for review without publishing", async () => {
+    state.publishedSchedule = scheduleRevision("published", 3, 30);
     act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="match" matchId="match" />));
     await set("estimatedEnd", "2026-09-12T10:30");
     const form = host.querySelector('form[aria-label="Mark delayed and preview impact"]')!;
     await set("reason", "Room outage", form);
     await submit("Mark delayed and preview impact");
-    expect(boundary.execute).toHaveBeenCalledWith(expect.objectContaining({ command: { kind: "delay_preview", matchId: "match", estimatedEnd: "2026-09-12T03:30:00.000Z", reason: "Room outage" } }));
+    expect(boundary.execute).toHaveBeenCalledWith(expect.objectContaining({ command: { kind: "delay_preview", matchId: "match", estimatedEnd: "2026-09-12T03:30:00.000Z", sourceRevision: { id: "published", version: 3, status: "published" }, reason: "Room outage" } }));
     expect(boundary.execute).toHaveBeenCalledTimes(1);
+  });
+  it("allows a live overrun review bound to the latest draft without start or room controls", async () => {
+    state.schedule = scheduleRevision("latest", 4, 30); state.matches[0].status = "Live";
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="match" matchId="match" />));
+    expect(button("Mark delayed and preview impact").disabled).toBe(false);
+    const form = host.querySelector('form[aria-label="Mark delayed and preview impact"]')!;
+    expect(form.querySelector('[name="room"]')).toBeNull();
+    await set("estimatedEnd", "2026-09-12T10:30", form); await set("reason", "Overtime", form);
+    await submit("Mark delayed and preview impact");
+    expect(boundary.execute).toHaveBeenCalledWith(expect.objectContaining({ command: expect.objectContaining({ sourceRevision: { id: "latest", version: 4, status: "draft" } }) }));
   });
   let root: Root, host: HTMLDivElement, state: CompetitionWorkspaceState;
   const button = (label: string) => Array.from(host.querySelectorAll("button")).find(b => b.textContent?.trim() === label)!;

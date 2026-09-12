@@ -62,14 +62,14 @@ async function resultSchedule(tx: Prisma.TransactionClient, eventId: string, gra
   if (!stored.input) return { draft: { ...stored.draft, feasible: false, conflicts: [{ code: "MISSING_SCHEDULE_INPUT", matchIds: [changedMatchId], message: "Save a new schedule draft with scheduling constraints." }] }, baseMatches: matchSnapshot(matches) };
   const playable = matches.filter(m => graph.matches.some(g => g.id === m.id && g.status === "pending"));
   const assignments = new Map(stored.draft.assignments.map(a => [a.matchId, a]));
-  for (const m of playable.filter(isTerminal)) if (m.scheduledAt && m.scheduledEndsAt && m.scheduleRoom) assignments.set(m.id, { matchId: m.id, roomId: m.scheduleRoom, start: m.scheduledAt.toISOString(), end: m.scheduledEndsAt.toISOString() });
+  for (const m of playable.filter(isTerminal)) if (m.scheduledAt && m.scheduledEndsAt && m.scheduleRoom) assignments.set(m.id, { matchId: m.id, roomId: m.scheduleRoom, start: m.scheduledAt.toISOString(), end: (m.status === "Live" || m.scheduleStatus === "live" ? stored.delayEstimates?.[m.id] : undefined) ?? m.scheduledEndsAt.toISOString() });
   const draft = recalculateSchedule({ ...stored.input, graph,
     existingAssignments: [...assignments.values()],
     lockedMatchIds: [...new Set([...stored.input.lockedMatchIds ?? [], ...playable.filter(m => m.scheduleStatus === "locked").map(m => m.id)])],
     matchStates: Object.fromEntries(playable.map(m => [m.id, isTerminal(m) ? m.status === "Live" || m.scheduleStatus === "live" ? "live" : "completed" : "scheduled"])),
     changedMatchIds: [changedMatchId],
   });
-  return { draft, input: stored.input, baseMatches: matchSnapshot(matches) };
+  return { draft, input: stored.input, baseMatches: matchSnapshot(matches), ...(stored.delayEstimates ? { delayEstimates: stored.delayEstimates } : {}) };
 }
 
 /** Called under the service's authorized repeatable-read or write transaction. */

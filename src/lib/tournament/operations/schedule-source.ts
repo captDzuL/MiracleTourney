@@ -10,6 +10,9 @@ export async function scheduleBaseline(tx: Prisma.TransactionClient, eventId: st
   const source = input.sourceRevision;
   if (!source) {
     if (input.lockedMatchIds?.length) throw new Error("Schedule source revision is required for assignment locks");
+    const event = await tx.event.findUniqueOrThrow({ where: { id: eventId } });
+    const pending = await tx.scheduleRevision.findMany({ where: { eventId, status: "draft" } });
+    if (pending.some(r => r.version > (event.publishedScheduleVersion ?? -1) && (r.snapshot as unknown as StoredSchedule).delayEstimates)) throw new Error("Schedule source revision is required for pending delay review");
     return [...baseline.values()];
   }
   const [event, revision, drafts] = await Promise.all([
@@ -23,7 +26,13 @@ export async function scheduleBaseline(tx: Prisma.TransactionClient, eventId: st
     : event?.publishedScheduleVersion !== source.version || !!latestDraft)) {
     throw new Error("Schedule source revision is stale: reload the current preview");
   }
-  const reviewed = (revision.snapshot as unknown as StoredSchedule).draft.assignments;
+  const stored = revision.snapshot as unknown as StoredSchedule;
+  const reviewed = stored.draft.assignments;
+  for (const match of matches) {
+    const assignment = baseline.get(match.id);
+    const estimate = stored.delayEstimates?.[match.id];
+    if (assignment && estimate && (match.status === "Live" || match.scheduleStatus === "live")) baseline.set(match.id, { ...assignment, end: estimate });
+  }
   for (const matchId of input.lockedMatchIds ?? []) {
     const match = matches.find(m => m.id === matchId);
     const assignment = reviewed.find(a => a.matchId === matchId);
