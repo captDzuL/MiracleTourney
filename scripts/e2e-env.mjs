@@ -1,5 +1,5 @@
 import { config } from "dotenv";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 export const E2E_DATABASE_ENVIRONMENT_KEYS = [
   "DATABASE_URL",
@@ -16,7 +16,8 @@ export function loadE2eEnvironment({
     delete env[key];
   }
 
-  const path = resolve(cwd, ".env.test");
+  const path = resolve(cwd, env.E2E_ENV_FILE || ".env.test");
+  if (basename(path) !== ".env.test") throw new Error("E2E environment must use a file named .env.test.");
   const result = config({
     path,
     processEnv: env,

@@ -28,6 +28,10 @@ export function startE2eDevServer({
   for (const flag of E2E_V3_FEATURE_FLAGS) {
     serverEnvironment[flag] = "true";
   }
+  if (serverEnvironment.E2E_COMPETITION_FLAGS_OFF === "true") {
+    serverEnvironment.FEATURE_FLAG_COMPETITION_OPERATIONS_V3 = "false";
+    serverEnvironment.FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3 = "false";
+  }
 
   return spawnImpl(
     process.execPath,

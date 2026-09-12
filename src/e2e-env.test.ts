@@ -22,6 +22,13 @@ afterEach(async () => {
 });
 
 describe("E2E environment loader", () => {
+  it("loads an explicitly selected worktree test file without inheriting database settings", async () => {
+    const directory = await writeTestEnvironment("DATABASE_URL=postgresql://test:test@isolated.example.test/testdb");
+    const env = loadE2eEnvironment({ cwd: tmpdir(), env: { E2E_ENV_FILE: join(directory, ".env.test"), DIRECT_URL: "postgresql://prod:prod@production.example.test/db" } });
+    expect(env.DATABASE_URL).toContain("isolated.example.test");
+    expect(env.DIRECT_URL).toBe("");
+    expect(() => loadE2eEnvironment({ env: { E2E_ENV_FILE: join(directory, ".env.local") } })).toThrow(/named .env.test/);
+  });
   it("uses .env.test to override inherited database settings", async () => {
     const directory = await writeTestEnvironment([
       "DATABASE_URL=postgresql://test-user:test-password@ep-test.example.test/testdb",
