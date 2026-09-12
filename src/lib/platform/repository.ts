@@ -3425,7 +3425,7 @@ function toCertificate(row: CertificateRow): Certificate {
     eventId: row.eventId,
     teamId: row.teamId,
     imageUrl: row.imageUrl,
-    status: row.status === "failed" ? "failed" : "ready",
+    status: row.status === "ready" ? "ready" : "failed",
     lastError: row.lastError,
     attemptCount: row.attemptCount,
     createdAt: row.createdAt,
@@ -3436,6 +3436,12 @@ function toCertificate(row: CertificateRow): Certificate {
 const LEGACY_CHAMPION_CERTIFICATE_FILTER = {
   type: "champion",
   recipientKind: "team",
+} as const;
+
+const LEGACY_PUBLISHED_CHAMPION_CERTIFICATE_FILTER = {
+  ...LEGACY_CHAMPION_CERTIFICATE_FILTER,
+  status: "ready",
+  publishedUrl: { not: null },
 } as const;
 
 async function getCertificateRecipientName(teamId: string): Promise<string> {
@@ -3544,7 +3550,7 @@ export async function recordCertificateFailure(eventId: string, teamId: string, 
 /** Returns the latest Champion team certificate for an event, preserving the legacy API. */
 export async function getCertificateByEvent(eventId: string): Promise<Certificate | null> {
   const row = await prisma.certificate.findFirst({
-    where: { eventId, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
+    where: { eventId, ...LEGACY_PUBLISHED_CHAMPION_CERTIFICATE_FILTER },
     orderBy: [{ version: "desc" }, { createdAt: "desc" }],
   });
   if (!row) return null;
@@ -3558,7 +3564,7 @@ export async function getCertificatesForEvents(eventIds: string[]): Promise<Map<
 
   try {
     const rows = await prisma.certificate.findMany({
-      where: { eventId: { in: eventIds }, ...LEGACY_CHAMPION_CERTIFICATE_FILTER },
+      where: { eventId: { in: eventIds }, ...LEGACY_PUBLISHED_CHAMPION_CERTIFICATE_FILTER },
       orderBy: [{ version: "desc" }, { createdAt: "desc" }],
     });
     for (const row of rows) {

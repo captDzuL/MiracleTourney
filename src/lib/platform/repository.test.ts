@@ -166,7 +166,14 @@ const championCertificateRow = {
   id: "certificate-champion-v2",
   eventId: "event-1",
   teamId: "team-champion",
+  type: "champion",
+  recipientKind: "team",
+  recipientId: "team-champion",
+  recipientName: "Miracle Champions",
+  version: 2,
   imageUrl: "/certificates/champion-v2.png",
+  publishedUrl: "/certificates/champion-v2.png",
+  publishedAt: new Date("2026-09-12T00:00:00.000Z"),
   status: "ready",
   lastError: null,
   attemptCount: 1,
@@ -189,8 +196,56 @@ describe("legacy Champion certificate repository compatibility", () => {
       status: "ready",
     });
     expect(prisma.certificate.findFirst).toHaveBeenCalledWith({
-      where: { eventId: "event-1", type: "champion", recipientKind: "team" },
+      where: {
+        eventId: "event-1",
+        type: "champion",
+        recipientKind: "team",
+        status: "ready",
+        publishedUrl: { not: null },
+      },
       orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+    });
+  });
+
+  it("keeps a newer unpublished Champion from hiding the latest published event certificate", async () => {
+    const unpublishedChampion = {
+      ...championCertificateRow,
+      id: "certificate-champion-v3",
+      version: 3,
+      imageUrl: "",
+      publishedUrl: null,
+      publishedAt: null,
+      status: "generated",
+    };
+    prisma.certificate.findFirst.mockImplementation(async (query: { where: Record<string, unknown> }) => {
+      const publishedUrl = query.where.publishedUrl as { not?: unknown } | undefined;
+      return query.where.status === "ready" && publishedUrl?.not === null
+        ? championCertificateRow
+        : unpublishedChampion;
+    });
+
+    await expect(getCertificateByEvent("event-1")).resolves.toMatchObject({
+      id: "certificate-champion-v2",
+      imageUrl: "/certificates/champion-v2.png",
+      status: "ready",
+    });
+  });
+
+  it("does not label an unpublished Champion as ready if persistence returns one", async () => {
+    prisma.certificate.findFirst.mockResolvedValue({
+      ...championCertificateRow,
+      id: "certificate-champion-v3",
+      version: 3,
+      imageUrl: "",
+      publishedUrl: null,
+      publishedAt: null,
+      status: "generated",
+    });
+
+    await expect(getCertificateByEvent("event-1")).resolves.toMatchObject({
+      id: "certificate-champion-v3",
+      imageUrl: "",
+      status: "failed",
     });
   });
 
@@ -215,8 +270,36 @@ describe("legacy Champion certificate repository compatibility", () => {
         eventId: { in: ["event-1"] },
         type: "champion",
         recipientKind: "team",
+        status: "ready",
+        publishedUrl: { not: null },
       },
       orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+    });
+  });
+
+  it("keeps newer unpublished Champions from hiding published certificates in batch reads", async () => {
+    const unpublishedChampion = {
+      ...championCertificateRow,
+      id: "certificate-champion-v3",
+      version: 3,
+      imageUrl: "",
+      publishedUrl: null,
+      publishedAt: null,
+      status: "generated",
+    };
+    prisma.certificate.findMany.mockImplementation(async (query: { where: Record<string, unknown> }) => {
+      const publishedUrl = query.where.publishedUrl as { not?: unknown } | undefined;
+      return query.where.status === "ready" && publishedUrl?.not === null
+        ? [championCertificateRow]
+        : [unpublishedChampion, championCertificateRow];
+    });
+
+    const certificates = await getCertificatesForEvents(["event-1"]);
+
+    expect(certificates.get("event-1")).toMatchObject({
+      id: "certificate-champion-v2",
+      imageUrl: "/certificates/champion-v2.png",
+      status: "ready",
     });
   });
 
@@ -300,6 +383,39 @@ describe("legacy Champion certificate repository compatibility", () => {
     });
     expect(prisma.certificate.update).not.toHaveBeenCalled();
     expect(prisma.certificate.create).not.toHaveBeenCalled();
+  });
+
+  it("retries P2034 and P2002 write conflicts before publishing the certificate", async () => {
+    let attempts = 0;
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => {
+      attempts += 1;
+      if (attempts === 1) throw Object.assign(new Error("serialization conflict"), { code: "P2034" });
+      if (attempts === 2) throw Object.assign(new Error("version conflict"), { code: "P2002" });
+      return callback(prisma);
+    });
+    prisma.certificate.findFirst.mockResolvedValue(null);
+    prisma.team.findUnique.mockResolvedValue({ name: "Miracle Champions" });
+    prisma.certificate.create.mockResolvedValue(championCertificateRow);
+
+    await expect(
+      recordCertificateSuccess("event-1", "team-champion", "/certificates/champion-v2.png"),
+    ).resolves.toMatchObject({ id: "certificate-champion-v2", status: "ready" });
+    expect(attempts).toBe(3);
+  });
+
+  it("stops after three certificate write conflicts and rethrows the terminal database error", async () => {
+    let attempts = 0;
+    const terminalConflict = Object.assign(new Error("serialization conflict"), { code: "P2034" });
+    prisma.$transaction.mockImplementation(async () => {
+      attempts += 1;
+      throw terminalConflict;
+    });
+    prisma.team.findUnique.mockResolvedValue({ name: "Miracle Champions" });
+
+    await expect(
+      recordCertificateSuccess("event-1", "team-champion", "/certificates/champion-v2.png"),
+    ).rejects.toBe(terminalConflict);
+    expect(attempts).toBe(3);
   });
 });
 
