@@ -2,10 +2,12 @@ import { ExternalLink, Radio } from "lucide-react";
 
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
+import { getTikTokLiveHandle } from "@/lib/streams";
+import { TikTokLiveCard } from "@/components/TikTokLiveCard";
 
 export const buttonStyles = {
   primary:
-    "inline-flex items-center justify-center rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-300",
+    "inline-flex items-center justify-center rounded-full bg-cyan-400 px-4 py-3 text-sm font-semibold text-cyan-950 transition-colors hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2",
   secondary:
     "inline-flex items-center justify-center rounded-full border border-slate-300 bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2",
 };
@@ -114,6 +116,11 @@ export function LiveStreamCard({
   embedUrl: string | null;
   shouldEmbed: boolean;
 }) {
+  const tikTokHandle = getTikTokLiveHandle(watchUrl);
+  if (tikTokHandle) {
+    return <TikTokLiveCard label={label} watchUrl={watchUrl} handle={tikTokHandle} />;
+  }
+
   return (
     <div className="pv-livestream-card overflow-hidden rounded-2xl border border-red-200 bg-white">
       <div className="pv-livestream-card__header flex items-center justify-between border-b border-slate-200 px-4 py-3">
@@ -125,7 +132,7 @@ export function LiveStreamCard({
           href={watchUrl}
           target="_blank"
           rel="noreferrer"
-          className="pv-livestream-card__link inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
+          className="pv-livestream-card__link inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2"
         >
           Watch source
           <ExternalLink className="h-3.5 w-3.5" />

@@ -6,18 +6,19 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { redirectToActiveLocale } from "@/i18n/redirect";
+import { getLocalizedRedirectPath, redirectToActiveLocale } from "@/i18n/redirect";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { publishEvent } from "@/lib/events/publish-readiness";
 import { prisma } from "@/lib/platform/db";
 import { createPasswordResetToken, consumePasswordResetToken } from "@/lib/platform/password-reset";
-import { routing } from "@/i18n/routing";
+
 import { requireRole, signIn } from "@/lib/auth/session";
 import { buildRegistrationPreview, parseRegistrationSource, suggestRegistrationMapping } from "@/lib/imports/registration-intake";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendEmail } from "@/lib/email/send";
 import { isDisposableEmail } from "@/lib/validation/email";
+import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 import { validateTeamData } from "@/lib/validation/team-data";
 import { getGameModeConfig } from "@/lib/platform/config";
 import type { AppUser } from "@/lib/platform/types";
@@ -36,6 +37,7 @@ import {
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
+  getEventsByIds,
   getOrganizerUserById,
   getUserByEmail,
   getUserPasswordHashById,
@@ -100,11 +102,8 @@ async function requireCaptainSession(): Promise<AppUser> {
 }
 
 async function redirectToRequestedLocale(path: string, locale?: string): Promise<never> {
-  if (locale && routing.locales.includes(locale as "id" | "en")) {
-    const [pathname, search = ""] = path.split("?");
-    const query = search ? `?${search}` : "";
-    const target = pathname === "/" ? `/${locale}${query}` : `/${locale}${pathname}${query}`;
-    redirect(target);
+  if (locale === "id" || locale === "en") {
+    redirect(getLocalizedRedirectPath(path, locale));
   }
 
   return redirectToActiveLocale(path);
@@ -289,8 +288,17 @@ function isSafeStatToken(value: string) {
  * Team draft and event registration happen later from the captain dashboard.
  */
 export async function captainSignUpAction(formData: FormData) {
-  const signUpError = async (msg: string) =>
-    redirectToActiveLocale(`/register?error=${encodeURIComponent(msg)}` as never);
+  const returnTo = getSafeReturnTo(formData.get("returnTo"));
+  const requestedLocale = String(formData.get("locale") ?? "").trim();
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const hasSafeEventId = Boolean(eventId && isSafeEntityId(eventId));
+  const signUpError = async (msg: string) => {
+    const context = new URLSearchParams();
+    if (hasSafeEventId) context.set("eventId", eventId);
+    if (returnTo) context.set("returnTo", returnTo);
+    context.set("error", msg);
+    return redirectToRequestedLocale(`/register?${context.toString()}`, requestedLocale);
+  };
 
   const fullName = String(formData.get("fullName") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -299,6 +307,14 @@ export async function captainSignUpAction(formData: FormData) {
   if (!fullName || fullName.length < 2) await signUpError("Nama lengkap minimal 2 karakter.");
   if (!z.string().email().safeParse(email).success) await signUpError("Format email tidak valid.");
   if (password.length < 8) await signUpError("Password minimal 8 karakter.");
+
+  if (eventId) {
+    if (!hasSafeEventId) await signUpError("Event tidak valid.");
+    const [event] = await getEventsByIds([eventId]);
+    if (!event || !["Published", "Registration Closed"].includes(event.status)) {
+      await signUpError("Event tidak tersedia.");
+    }
+  }
 
   const ip = (await headers()).get("x-forwarded-for") ?? "unknown";
   if (!checkRateLimit(`register:${ip}`, 5, 15 * 60 * 1000)) {
@@ -324,12 +340,26 @@ export async function captainSignUpAction(formData: FormData) {
   const result = await signIn(email, password);
   if (!result.ok) await signUpError("Akun berhasil dibuat, tapi login gagal. Silakan login manual.");
 
-  await redirectToActiveLocale("/captain?success=registered" as never);
+  await redirectToRequestedLocale(
+    eventId
+      ? `/captain?tab=registration&eventId=${encodeURIComponent(eventId)}`
+      : returnTo ?? "/captain?success=registered",
+    requestedLocale,
+  );
 }
-
 /** Authenticates a user by email/password and redirects to their role-specific workspace. */
 export async function loginAction(formData: FormData) {
   const requestedLocale = String(formData.get("locale") ?? "").trim();
+  const returnTo = getSafeReturnTo(formData.get("returnTo"));
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const hasSafeEventId = Boolean(eventId && isSafeEntityId(eventId));
+  const loginErrorPath = (error: "database" | "invalid") => {
+    const context = new URLSearchParams();
+    if (returnTo) context.set("returnTo", returnTo);
+    else if (hasSafeEventId) context.set("eventId", eventId);
+    context.set("error", error);
+    return `/login?${context.toString()}`;
+  };
   const email = z.string().email().parse(formData.get("email"));
   const password = z.string().min(1).parse(formData.get("password"));
   let result;
@@ -338,19 +368,29 @@ export async function loginAction(formData: FormData) {
     result = await signIn(email, password);
   } catch (error) {
     if (isDatabaseConnectionError(error)) {
-      return await redirectToRequestedLocale("/login?error=database", requestedLocale);
+      return await redirectToRequestedLocale(loginErrorPath("database"), requestedLocale);
     }
 
     throw error;
   }
 
   if (!result.ok) {
-    return await redirectToRequestedLocale("/login?error=invalid", requestedLocale);
+    return await redirectToRequestedLocale(loginErrorPath("invalid"), requestedLocale);
   }
 
   const user = result.user;
   if (!user) {
-    return await redirectToRequestedLocale("/login?error=invalid", requestedLocale);
+    return await redirectToRequestedLocale(loginErrorPath("invalid"), requestedLocale);
+  }
+
+  if (user.role === "captain" && returnTo) {
+    await redirectToRequestedLocale(returnTo, requestedLocale);
+  }
+  if (user.role === "captain" && hasSafeEventId) {
+    await redirectToRequestedLocale(
+      `/captain?tab=registration&eventId=${encodeURIComponent(eventId)}`,
+      requestedLocale,
+    );
   }
 
   await redirectToRequestedLocale(
@@ -364,8 +404,12 @@ export async function loginAction(formData: FormData) {
 /** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
 export async function captainRegisterTeamAction(formData: FormData) {
   const captain = await requireCaptainSession();
+  const rawEventId = String(formData.get("eventId") ?? "").trim();
+  const registrationBase = isSafeEntityId(rawEventId)
+    ? `/captain?tab=registration&eventId=${encodeURIComponent(rawEventId)}`
+    : "/captain?tab=registration";
   const registrationError = async (msg: string) =>
-    redirectToActiveLocale(`/captain?error=${encodeURIComponent(msg)}` as never);
+    redirectToActiveLocale(`${registrationBase}&error=${encodeURIComponent(msg)}` as never);
   const draftTeamId = String(formData.get("draftTeamId") ?? "").trim() || undefined;
   const parsed = z.object({
     eventId: z.string().trim().min(1),
@@ -407,14 +451,14 @@ export async function captainRegisterTeamAction(formData: FormData) {
       }
       revalidateTag("teams");
       revalidatePath("/captain");
-      await redirectToActiveLocale("/captain?tab=registration&success=payment-pending");
+      await redirectToActiveLocale(`${registrationBase}&success=payment-pending` as never);
     }
     return await registrationError(msg);
   }
 
   revalidateTag("teams");
   revalidatePath("/captain");
-  await redirectToActiveLocale("/captain?success=team-created");
+  await redirectToActiveLocale(`${registrationBase}&success=team-created` as never);
 }
 
 export async function captainSaveDraftTeamAction(formData: FormData) {
@@ -455,25 +499,36 @@ export async function captainSaveDraftTeamAction(formData: FormData) {
 
 export async function captainUploadPaymentProofAction(formData: FormData) {
   const captain = await requireCaptainSession();
-  const requestId = z.string().trim().min(1).parse(formData.get("requestId"));
+  const returnTo = getSafeReturnTo(formData.get("returnTo"));
+  const parsed = z.object({
+    requestId: z.string().trim().min(1),
+    eventId: z.string().trim().optional(),
+  }).parse({
+    requestId: formData.get("requestId"),
+    eventId: String(formData.get("eventId") ?? "").trim() || undefined,
+  });
+  const registrationBase = returnTo ?? (parsed.eventId && isSafeEntityId(parsed.eventId)
+    ? `/captain?tab=registration&eventId=${encodeURIComponent(parsed.eventId)}`
+    : "/captain?tab=registration");
   const proofAsset = await uploadImageAsset({
     file: formData.get("paymentProof"),
     folder: "payment-proofs",
-    entityId: requestId,
+    entityId: parsed.requestId,
     label: "Payment proof",
     maxBytes: MAX_PAYMENT_PROOF_BYTES,
-    errorPath: "/captain?tab=registration",
+    errorPath: registrationBase,
   });
 
   try {
-    await updateTeamRegistrationProof(captain.id, requestId, proofAsset.url);
+    await updateTeamRegistrationProof(captain.id, parsed.requestId, proofAsset.url);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal mengupload bukti pembayaran.";
-    await redirectToActiveLocale(`/captain?tab=registration&error=${encodeURIComponent(message)}` as never);
+    await redirectToActiveLocale(appendActionError(registrationBase, message) as never);
   }
 
   revalidatePath("/captain");
-  await redirectToActiveLocale("/captain?tab=registration&success=payment-proof-uploaded" as never);
+  const separator = registrationBase.includes("?") ? "&" : "?";
+  await redirectToActiveLocale(`${registrationBase}${separator}success=payment-proof-uploaded` as never);
 }
 
 export async function adminUpdatePaymentSettingsAction(formData: FormData) {
@@ -1074,11 +1129,12 @@ export async function adminPreviewRegistrationImportAction(formData: FormData) {
   const mapping = suggestRegistrationMapping(headers, { maxRosterSize: mode.maxRosterSize });
   const missingRequired = [
     ["teamName", "nama tim"],
-    ["captainName", "nama kapten"],
+    ["captainIgn", "captain IGN"],
+    ["captainUid", "captain UID"],
   ].filter(([key]) => mapping.columns[key as keyof typeof mapping.columns] == null);
   if (missingRequired.length > 0) {
     return redirectToActiveLocale(
-      `/admin?phase=import&activeEventId=${eventId}&error=${encodeURIComponent(`Mapping wajib belum ditemukan: ${missingRequired.map(([, label]) => label).join(", ")}.`)}` as never,
+      `/admin?phase=registration&activeEventId=${eventId}&error=${encodeURIComponent(`Mapping wajib belum ditemukan: ${missingRequired.map(([, label]) => label).join(", ")}.`)}` as never,
     );
   }
 
@@ -1108,6 +1164,7 @@ export async function adminPreviewRegistrationImportAction(formData: FormData) {
       participantCap: event.participantCap,
       bracketLocked: await import("@/lib/platform/repository").then((repo) => repo.isEventBracketLocked(event.id)),
       maxRosterSize: mode.maxRosterSize,
+      minRosterSize: mode.teamSize,
     },
     existingTeams: event.teams.map((team) => ({
       id: team.id,
@@ -1136,7 +1193,7 @@ export async function adminPreviewRegistrationImportAction(formData: FormData) {
 
   revalidatePath("/", "layout");
   return redirectToActiveLocale(
-    `/admin?phase=import&activeEventId=${eventId}&registrationBatchId=${batch.id}&success=registration-preview-ready` as never,
+    `/admin?phase=registration&activeEventId=${eventId}&registrationBatchId=${batch.id}&success=registration-preview-ready` as never,
   );
 }
 
@@ -1148,7 +1205,7 @@ export async function adminCommitRegistrationImportAction(formData: FormData) {
 
   if (selectedItemIds.length === 0) {
     return redirectToActiveLocale(
-      `/admin?phase=import&activeEventId=${eventId}&registrationBatchId=${batchId}&error=${encodeURIComponent("Pilih minimal satu baris Baru atau Berubah untuk diimport.")}` as never,
+      `/admin?phase=registration&activeEventId=${eventId}&registrationBatchId=${batchId}&error=${encodeURIComponent("Pilih minimal satu baris Baru atau Berubah untuk diimport.")}` as never,
     );
   }
 
@@ -1157,12 +1214,12 @@ export async function adminCommitRegistrationImportAction(formData: FormData) {
     revalidateTag("teams");
     revalidatePath("/", "layout");
     return redirectToActiveLocale(
-      `/admin?phase=import&activeEventId=${eventId}&success=registration-imported&count=${result.importedCount}` as never,
+      `/admin?phase=registration&activeEventId=${eventId}&success=registration-imported&count=${result.importedCount}` as never,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Import registrasi gagal.";
     return redirectToActiveLocale(
-      `/admin?phase=import&activeEventId=${eventId}&registrationBatchId=${batchId}&error=${encodeURIComponent(message)}` as never,
+      `/admin?phase=registration&activeEventId=${eventId}&registrationBatchId=${batchId}&error=${encodeURIComponent(message)}` as never,
     );
   }
 }

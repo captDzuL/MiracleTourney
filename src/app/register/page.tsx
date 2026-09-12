@@ -1,37 +1,9 @@
-import { redirectToActiveLocale } from "@/i18n/redirect";
+import { RegisterPageContent } from "./RegisterPageContent";
 
-import { getSessionUser } from "@/lib/auth/session";
-
-import { RegisterWizard } from "./RegisterWizard";
-
-
-
-export default async function RegisterPage({
-
+export default function RegisterPage({
   searchParams,
-
 }: {
-
-  searchParams?: Promise<{ error?: string }>;
-
+  searchParams?: Promise<{ error?: string; eventId?: string; returnTo?: string }>;
 }) {
-
-  const user = await getSessionUser();
-
-  if (user) {
-
-    return redirectToActiveLocale("/captain");
-
-  }
-
-
-
-  const resolvedParams = await searchParams;
-
-  const errorMsg = resolvedParams?.error ? decodeURIComponent(resolvedParams.error) : undefined;
-
-
-
-  return <RegisterWizard errorMsg={errorMsg} />;
-
+  return <RegisterPageContent searchParams={searchParams} />;
 }

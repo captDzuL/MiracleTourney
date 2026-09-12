@@ -3,6 +3,14 @@ import { redirect } from "next/navigation";
 
 import { routing } from "./routing";
 
+export function getLocalizedRedirectPath(path: string, locale: "id" | "en") {
+  const [rawPathname, search = ""] = path.split("?");
+  const localePattern = new RegExp(`^/(?:${routing.locales.join("|")})(?=/|$)`);
+  const pathname = rawPathname.replace(localePattern, "") || "/";
+  const query = search ? `?${search}` : "";
+  return pathname === "/" ? `/${locale}${query}` : `/${locale}${pathname}${query}`;
+}
+
 export async function redirectToActiveLocale(path: string): Promise<never> {
   let locale = routing.defaultLocale;
 
@@ -16,9 +24,5 @@ export async function redirectToActiveLocale(path: string): Promise<never> {
     redirect(path as never);
   }
 
-  const [pathname, search = ""] = path.split("?");
-  const query = search ? `?${search}` : "";
-  const target = pathname === "/" ? `/${locale}${query}` : `/${locale}${pathname}${query}`;
-
-  redirect(target as never);
+  redirect(getLocalizedRedirectPath(path, locale) as never);
 }

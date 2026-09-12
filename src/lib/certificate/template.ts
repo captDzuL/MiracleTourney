@@ -11,6 +11,9 @@ export interface CertificateData {
   date: string;
   eventSlug: string;
   baseUrl: string;
+  mvpArtUrl?: string | null;
+  mvpName?: string | null;
+  mvpRoleLabel?: string | null;
 }
 
 type CertificateTheme = {
@@ -624,6 +627,54 @@ body::before {
   height: 820px;
   filter: drop-shadow(0 36px 60px rgba(2, 6, 23, 0.5));
 }
+.mvp-portrait-img {
+  position: absolute;
+  right: 10px;
+  bottom: 0;
+  width: 680px;
+  height: 820px;
+  object-fit: contain;
+  object-position: bottom;
+  filter: drop-shadow(0 36px 60px rgba(2, 6, 23, 0.5));
+}
+.mvp-badge {
+  position: absolute;
+  right: 96px;
+  top: 96px;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.mvp-badge .mvp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px 9px;
+  background: #0f172a;
+  border: 1px solid ${withAlpha(data.accentColor, 0.5)};
+  color: ${theme.accentSoft};
+  text-transform: uppercase;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 5px;
+}
+.mvp-badge .mvp-name {
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 56px;
+  line-height: 0.9;
+  color: #f8fafc;
+  text-shadow: 0 0 20px ${withAlpha(data.accentColor, 0.35)};
+  text-align: right;
+}
+.mvp-badge .mvp-role {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.72);
+}
 .center-emblem {
   position: absolute;
   left: 50%;
@@ -840,10 +891,19 @@ body::before {
     <div class="hero-zone">
       <div class="hero-halo"></div>
       <div class="hero-grid"></div>
-      ${theme.heroSvg}
+      ${data.mvpArtUrl ? `<img class="mvp-portrait-img" src="${escapeHtml(data.mvpArtUrl)}" alt="${escapeHtml(data.mvpName ?? "Match MVP")}"/>` : theme.heroSvg}
+      ${
+        data.mvpArtUrl && data.mvpName
+          ? `<div class="mvp-badge">
+              <span class="mvp-tag">Match Ace</span>
+              <span class="mvp-name">${escapeHtml(data.mvpName)}</span>
+              ${data.mvpRoleLabel ? `<span class="mvp-role">${escapeHtml(data.mvpRoleLabel)}</span>` : ""}
+            </div>`
+          : ""
+      }
     </div>
 
-    <div class="center-emblem">${theme.emblemSvg}</div>
+    ${data.mvpArtUrl ? "" : `<div class="center-emblem">${theme.emblemSvg}</div>`}
 
     <div class="theme-copy">
       <span class="heading">${escapeHtml(theme.leftMotto)}</span>
@@ -851,11 +911,15 @@ body::before {
       <span class="accent">Miracle Edge</span>
     </div>
 
-    <div class="theme-copy right">
+    ${
+      data.mvpArtUrl
+        ? ""
+        : `<div class="theme-copy right">
       <span class="heading">${escapeHtml(theme.rightMotto)}</span>
       <span class="divider"></span>
       <span class="accent">${escapeHtml(theme.slogan)}</span>
-    </div>
+    </div>`
+    }
 
     <div class="bottom-card">
       <div class="meta-block">

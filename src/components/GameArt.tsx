@@ -1,4 +1,3 @@
-import { ImagePlus } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { getGameArtTheme } from "@/lib/platform/config";
 
@@ -23,6 +22,7 @@ export function GameArt({
   gameId,
   logoUrl,
   entityName,
+  priority = false,
 }: {
   gameId: string;
   logoUrl?: string;
@@ -45,17 +45,17 @@ export function GameArt({
           <img
             src={logoUrl}
             alt={entityName}
+            loading={priority ? "eager" : "lazy"}
+            decoding="async"
             className="h-14 w-14 rounded-xl border-2 border-white object-cover shadow-md"
           />
         ) : (
           <div
-            className="group relative flex h-14 w-14 items-center justify-center rounded-xl border-2 border-white shadow-md"
+            className="relative flex h-14 w-14 items-center justify-center rounded-xl border-2 border-white shadow-md"
             style={{ background: art.bg }}
+            aria-hidden="true"
           >
             <span className="text-sm font-bold text-white">{initials}</span>
-            <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-              <ImagePlus className="h-4 w-4 text-white" />
-            </div>
           </div>
         )}
       </div>

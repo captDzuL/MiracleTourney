@@ -33,7 +33,7 @@ function EventCard({ event, teamCount, hasActiveRevision }: { event: Event; team
       <EventStatusPill status={event.status} />
     </div>
     <div className="grid grid-cols-2 gap-3 text-sm"><p className="rounded-[var(--radius-control)] bg-[var(--color-surface-subtle)] px-3 py-2 text-[var(--color-text-subtle)]"><b className="text-[var(--color-text)]">{teamCount}/{event.participantCap}</b> tim</p><p className="rounded-[var(--radius-control)] bg-[var(--color-surface-subtle)] px-3 py-2 text-[var(--color-text-subtle)]">{isDraft ? "Privat sampai diterbitkan" : hasActiveRevision ? "Revisi privat aktif" : "Terlihat publik"}</p></div>
-    <div className="flex flex-wrap gap-3"><Link className="inline-flex min-h-11 items-center border border-[var(--color-border)] px-4 text-sm font-extrabold text-[var(--color-text)]" href={actionHref}>{actionLabel}</Link>{!isDraft && <Link className="inline-flex min-h-11 items-center px-2 text-sm font-bold text-[var(--color-brand-cyan)]" href={`/events/${event.slug}`}>Lihat halaman publik</Link>}</div>
+    <div className="flex flex-wrap gap-3"><Link className="inline-flex min-h-11 items-center border border-[var(--color-border)] px-4 text-sm font-extrabold text-[var(--color-text)]" href={actionHref}>{actionLabel}</Link><Link className="inline-flex min-h-11 items-center bg-[var(--color-brand-cyan)] px-4 text-sm font-extrabold text-slate-950" href={`/organizer/events/${event.id}/registration`}>Kelola registrasi</Link>{!isDraft && <Link className="inline-flex min-h-11 items-center px-2 text-sm font-bold text-[var(--color-brand-cyan)]" href={`/events/${event.slug}`}>Lihat halaman publik</Link>}</div>
   </article>;
 }
 

@@ -55,6 +55,9 @@ describe("organizer command center", () => {
     expect(markup).toContain('href="/organizer/events/new"');
     expect(markup).toContain("Edit event");
     expect(markup).toContain('href="/organizer/events/live-1/edit"');
+    expect(markup).toContain("Kelola registrasi");
+    expect(markup).toContain('href="/organizer/events/draft-1/registration"');
+    expect(markup).toContain('href="/organizer/events/live-1/registration"');
     expect(markup).toContain("Miracle Esports");
   });
 

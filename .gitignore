@@ -38,3 +38,7 @@ test-results/
 
 .worktrees/
 .superpowers/
+
+.vercel
+.env*
+!.env.example

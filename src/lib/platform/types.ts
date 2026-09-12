@@ -150,6 +150,9 @@ export type Team = {
   tag: string;
   captainName?: string;
   captainContact?: string;
+  captainIgn?: string;
+  captainUid?: string;
+  captainIsPlayer?: boolean;
   captain?: { id: string; name: string } | null;
   source?: "demo" | "csv-import" | "registration" | "registration-intake" | "draft";
 };

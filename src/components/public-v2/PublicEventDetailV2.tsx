@@ -96,13 +96,11 @@ export function PublicEventDetailV2({
           {!readOnly ? (
             <div className="flex flex-wrap items-center gap-3 pt-1">
               <ShareButton />
-              {event.registrationUrl ? (
+              {event.status === "Published" ? (
               <a
                 data-testid="pv-detail-register"
                 className="pv-button"
-                href={event.registrationUrl}
-                target="_blank"
-                rel="noreferrer"
+                href={`${locale ? `/${locale}` : ""}/events/${event.slug}/register`}
               >
                 {labels.register}
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />

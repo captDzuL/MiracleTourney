@@ -2,14 +2,19 @@ import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { loginAction } from "@/lib/actions";
+import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 import { SubmitButton } from "@/components/submit-button";
 
 export async function renderLoginPage(
-  searchParams?: Promise<{ error?: string }>,
+  searchParams?: Promise<{ error?: string; eventId?: string; returnTo?: string }>,
   locale?: "id" | "en",
 ) {
   const t = await getTranslations("login");
   const resolvedSearchParams = await searchParams;
+  const returnTo = getSafeReturnTo(resolvedSearchParams?.returnTo);
+  const eventId = resolvedSearchParams?.eventId && /^[A-Za-z0-9_-]+$/.test(resolvedSearchParams.eventId)
+    ? resolvedSearchParams.eventId
+    : undefined;
   const errorMessage =
     resolvedSearchParams?.error === "database" ? t("databaseError") : t("error");
 
@@ -25,6 +30,8 @@ export async function renderLoginPage(
       ) : null}
 
       <form action={loginAction} className="mt-6 space-y-4">
+        {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
+        {eventId ? <input type="hidden" name="eventId" value={eventId} /> : null}
         {locale ? <input type="hidden" name="locale" value={locale} /> : null}
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-slate-300">
@@ -67,7 +74,11 @@ export async function renderLoginPage(
 
       <p className="mt-6 text-center text-sm text-slate-400">
         {t("noAccount")}{" "}
-        <Link href="/register" className="text-cyan-400 hover:text-cyan-300">
+        <Link href={(returnTo
+          ? "/register?returnTo=" + encodeURIComponent(returnTo)
+          : eventId
+            ? "/register?eventId=" + encodeURIComponent(eventId)
+            : "/register") as never} className="text-cyan-400 hover:text-cyan-300">
           {t("registerHere")}
         </Link>
       </p>

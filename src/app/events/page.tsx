@@ -1,33 +1,15 @@
 import { unstable_cache } from "next/cache";
 import Link from "next/link";
-import { CalendarDays, Trophy, Users } from "lucide-react";
+import { ArrowRight, CalendarDays, Trophy, Users } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 
 import { PublicEventsV2 } from "@/components/public-v2/PublicEventsV2";
 import { Pill, Section } from "@/components/ui";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import type { Event } from "@/lib/platform/types";
-import { getAllGames, getGameForEvent, getModeForEvent, getPublicEvents, getTeamsForEvent } from "@/lib/platform/repository";
+import { getAllGames, getGameForEvent, getModeForEvent, getPublicEvents, getTeamCountsForEvents, getTeamsForEvents } from "@/lib/platform/repository";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 
 const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });
-const fallbackEvents: Event[] = [
-  {
-    id: "fallback-miracle-league",
-    slug: "miracle-league",
-    name: "Miracle Fast Tour",
-    description: "New event created from admin panel.",
-    logoUrl: "https://lh3.googleusercontent.com/d/1m01dWpxKA6qXRzfFRrEovFzho1nTnV9B",
-    gameId: "game-flashpeak",
-    gameModeId: "mode-flashpeak-5v5",
-    format: "Single Elimination",
-    status: "Ongoing",
-    participantCap: 32,
-    registrationWindow: "TBD",
-    startsAt: "TBD",
-    venue: "Online",
-  },
-];
 
 function getInitials(name: string) {
   return name
@@ -49,7 +31,7 @@ export default async function EventsPage({
   const gameFilter = params?.game ?? "all";
   const statusFilter = params?.status ?? "all";
   const [eventsRaw, games] = await Promise.all([
-    getCachedPublicEvents().catch(() => fallbackEvents),
+    getCachedPublicEvents().catch(() => []),
     Promise.resolve(getAllGames()),
   ]);
   const events = eventsRaw.filter((event) => {
@@ -57,9 +39,6 @@ export default async function EventsPage({
     const statusMatches = statusFilter === "all" || event.status.toLowerCase().replaceAll(" ", "-") === statusFilter;
     return gameMatches && statusMatches;
   });
-  const teamsByEvent = new Map(
-    await Promise.all(events.map(async (event) => [event.id, await getTeamsForEvent(event.id).catch(() => [])] as const)),
-  );
   const statuses = [
     { id: "all", label: "Semua" },
     { id: "published", label: "Buka Pendaftaran" },
@@ -79,6 +58,8 @@ export default async function EventsPage({
   }
 
   if (isFeatureEnabled("public_visual_v2")) {
+    const teamsByEvent = await getTeamsForEvents(events.map((event) => event.id));
+
     return (
       <PublicEventsV2
         events={events}
@@ -102,6 +83,8 @@ export default async function EventsPage({
     );
   }
 
+  const teamCountsByEvent = await getTeamCountsForEvents(events.map((event) => event.id));
+
   return (
     <Section title={t("title")} description={t("description")}>
       <div className="mb-5 grid gap-3">
@@ -110,7 +93,8 @@ export default async function EventsPage({
             <Link
               key={status.id}
               href={href({ status: status.id })}
-              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+              aria-current={statusFilter === status.id ? "page" : undefined}
+              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 ${
                 statusFilter === status.id
                   ? "border-cyan-400 bg-cyan-400 text-cyan-950"
                   : "border-slate-200 bg-white text-slate-600 hover:border-cyan-300 hover:text-cyan-700"
@@ -125,7 +109,8 @@ export default async function EventsPage({
             <Link
               key={game.id}
               href={href({ game: game.id })}
-              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+              aria-current={gameFilter === game.id ? "page" : undefined}
+              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 ${
                 gameFilter === game.id
                   ? "border-slate-900 bg-slate-900 text-white"
                   : "border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900"
@@ -141,17 +126,16 @@ export default async function EventsPage({
         {events.map((event) => {
           const game = getGameForEvent(event);
           const mode = getModeForEvent(event);
-          const teams = teamsByEvent.get(event.id) ?? [];
+          const teamCount = teamCountsByEvent.get(event.id) ?? 0;
           const backgroundUrl = getEventBackgroundUrl(event);
           return (
-            <Link
+            <article
               key={event.id}
-              href={`/events/${event.slug}`}
-              className="group relative grid gap-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 p-5 text-white shadow-sm transition hover:border-cyan-300 hover:shadow-[0_24px_70px_rgba(15,23,42,0.18)] md:grid-cols-[minmax(0,1fr)_220px]"
+              className="group relative grid gap-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 p-5 text-white shadow-sm transition hover:border-cyan-300 focus-within:border-cyan-300 hover:shadow-[0_24px_70px_rgba(15,23,42,0.18)] md:grid-cols-[minmax(0,1fr)_220px]"
               style={backgroundUrl ? { backgroundImage: `url(${backgroundUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-slate-950/88 via-slate-950/62 to-slate-950/20 transition group-hover:from-slate-950/82" />
-              <div className="absolute inset-0 bg-slate-950/20" />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-slate-950/88 via-slate-950/62 to-slate-950/20 transition group-hover:from-slate-950/82" />
+              <div className="pointer-events-none absolute inset-0 bg-slate-950/20" />
               <div className="relative">
                 <div className="grid gap-4 md:grid-cols-[120px_minmax(0,1fr)]">
                   <div className="grid gap-3">
@@ -160,6 +144,8 @@ export default async function EventsPage({
                         <img
                           src={event.logoUrl}
                           alt={`${event.name} logo`}
+                          loading="lazy"
+                          decoding="async"
                           className="h-full w-full object-contain"
                         />
                       ) : (
@@ -199,7 +185,7 @@ export default async function EventsPage({
                   </span>
                   <span className="inline-flex items-center gap-2">
                     <Users className="h-4 w-4 text-cyan-500" />
-                    {teams.length}/{event.participantCap} tim
+                    {teamCount}/{event.participantCap} tim
                   </span>
                   <span className="inline-flex items-center gap-2">
                     <Trophy className="h-4 w-4 text-cyan-500" />
@@ -211,8 +197,16 @@ export default async function EventsPage({
                     </span>
                   ) : null}
                 </div>
+                <Link
+                  href={`/events/${event.slug}`}
+                  aria-label={`Jelajahi event ${event.name}`}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-cyan-400 px-4 py-2.5 text-sm font-bold text-cyan-950 shadow-sm transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 md:w-full"
+                >
+                  Jelajahi event
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
-            </Link>
+            </article>
           );
         })}
         {events.length === 0 ? (

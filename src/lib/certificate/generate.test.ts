@@ -4,6 +4,7 @@ const launchCertificateBrowser = vi.fn();
 const recordCertificateSuccess = vi.fn();
 const recordCertificateFailure = vi.fn();
 const getCertificateByEvent = vi.fn();
+const getLeaderboardForEvent = vi.fn();
 const countCertificatesForGame = vi.fn();
 const buildCertificateHtml = vi.fn();
 const findFirstMatch = vi.fn();
@@ -19,6 +20,7 @@ vi.mock("@/lib/platform/repository", () => ({
   recordCertificateSuccess,
   recordCertificateFailure,
   getCertificateByEvent,
+  getLeaderboardForEvent,
   countCertificatesForGame,
 }));
 vi.mock("@/lib/platform/db", () => ({
@@ -45,6 +47,7 @@ const readyCertificate = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getLeaderboardForEvent.mockResolvedValue([]);
   countCertificatesForGame.mockResolvedValue(0);
   buildCertificateHtml.mockResolvedValue("<html></html>");
   findUniqueEvent.mockResolvedValue({

@@ -375,8 +375,8 @@ The approved mockups remain the product reference. This register separates an ap
 | --- | --- | --- | --- | --- | --- |
 | Homepage | `miracle-homepage-mockup.html` | Yes | Brand tokens, logo, Montserrat, dark shell, footer foundation | Homepage information architecture and public journey are not rebuilt | Public experience rollout |
 | Public tournament | `miracle-public-tournament-mockup.html` | Yes | Existing public event route remains available | Full information-first tournament composition is not at mockup parity | Adaptive public event |
-| Adaptive public event | `miracle-public-v3-adaptive-event-page-mockup.html` | Yes | Lifecycle decision and data foundation only | Registration, ongoing, and completed responsive public compositions are not implemented | Adaptive public event rollout |
-| Captain direct registration | `miracle-captain-v3-direct-registration-mockup.html` | Yes | Existing registration/payment workflow remains | V3 contextual registration UI is not implemented | Registration workspace |
+| Adaptive public event | miracle-public-v3-adaptive-event-page-mockup.html | Yes | Registration-phase composition, contextual CTA, scroll-spy section navigation, Captain login/signup intent, organizer contact, capacity, responsive layout, SEO, and legacy fallback are implemented behind adaptive_public_event_v3 | Ongoing and Finished still use the existing renderer until Match Day, Results, Completion, and Certificate data are ready | Ongoing Match Center composition |
+| Captain direct registration | miracle-captain-v3-direct-registration-mockup.html | Yes | Public CTA, modal login, signup return intent, event-focused workspace entry, persistent request status, and proof-upload capacity reservation are connected | Full Captain workspace visual parity remains in the registration workstream | Registration workspace parity |
 | Captain match day | approved captain Match Day mockup | Yes | Existing schedule/status remains | Check-in, call-up, and captain-ready workflow are not implemented | Competition operations |
 | Organizer contextual workspace | approved contextual workspace mockup | Yes | V3 Draft workspace, revision-safe autosave, readiness, preview/revoke/publish are working behind flags | Contextual polish and all operation panels remain incomplete | Registration and Match Day panels |
 | Multiformat create event | `miracle-organizer-v3-multiformat-create-event-mockup.html` | Yes | V3 creation surface shows full game + mode labels, format choices, ownership choices, and live structure preview | It creates the Draft then enters the workspace; five-step content parity and per-step persistence are still incomplete | Create wizard parity |
@@ -451,3 +451,32 @@ Persistence and concurrency contract:
 - Revision poster uploads remain inactive until apply. Private preview tokens are hash-only, expiring, replaceable, revocable, and invalid after apply, discard, or event start.
 
 This closes the implementation gap for editing Published and Registration Closed event information. Registration operations, Match Day, Results & Stats, Completion, Certificates, and full Adaptive Public Event compositions remain separate milestones in the V3 Delivery Register.
+
+## Adaptive Public Event V3 - Registration phase implemented (11 September 2026)
+
+The permanent route /<locale>/events/<slug> now selects the approved adaptive Registration composition only when adaptive_public_event_v3 is enabled, the event is Published or Registration Closed, and structured registration plus event dates are available. The feature flag remains default-off. Legacy events and Ongoing or Finished events continue through the existing renderer.
+
+Implemented public contract:
+- dark Montserrat composition using Miracle cyan, violet, and cream tokens;
+- separate poster and event-logo placements, with approved active visual, game image, and initials fallback rules;
+- one event heading, game plus mode, format detail, event start in WIB, venue, prize, fee, roster rules, capacity progress, and a standout verified organizer contact;
+- request-scoped slot counts: active Team rows plus pending_review; pending_payment, rejected, and expired requests do not occupy a slot;
+- contextual CTA for guest, wrong role, no team, ready draft, incomplete draft, payment, review, rejection, expiry, approval, upcoming, closed, and full states;
+- accessible Captain login dialog with inline errors, focus trap, Escape/backdrop close, focus return, server-built destination, per-IP rate limit, and role enforcement;
+- Captain signup and login return to /<locale>/captain?tab=registration&eventId=<eventId>;
+- locale-aware metadata, canonical and alternate URLs, JSON-LD, poster-first Open Graph image, and permanent old-slug redirects;
+- configurable footer social links with unconfigured links omitted and copyright by Miracle retained.
+
+Capacity safety is shared across registration entry points. Free registration, payment-proof acceptance, approval, signup, and import run through retryable Prisma Serializable transactions. Each capacity-consuming transaction recounts active teams plus pending-review reservations before changing state, without raw SQL escape hatches. Payment proof also rechecks the full 24-hour request window; an expired request is committed as expired before the error is returned. Captain actions retain the event context after registration and proof upload.
+
+Browser coverage uses unique fixtures and cleanup on Neon Delicate without resetting the database. It covers guest content, invalid and valid modal login, Captain signup return, CTA state precedence, proof upload and slot occupancy, upcoming/closed/full states, Indonesian and English routes, and 360 px document width. Feature-flag-off, legacy, Ongoing, Finished, and private-preview renderer selection remain covered at the route/component boundary; the browser server for this suite intentionally forces the adaptive flag on.
+
+Final branch gates: all 714 Vitest tests passed across 74 files; TypeScript/lint and the production build passed with .env.test; the 6 adaptive browser scenarios passed serially. A no-reset full Playwright run reported 39 passed, 2 skipped, 6 failed, and 4 not run. Four failures were stale shared seed assumptions because another local release server was active and Delicate was deliberately not reset; two were pre-existing organizer-workspace E2E expectations outside this public-page batch. Independent review found no remaining blocking issues after the registration-window, closed-approval, expiry persistence, roster-limit, concurrency, and JSON-LD fixes.
+
+### Adaptive public section navigation - implemented (11 September 2026)
+
+The contextual menu **Ringkasan, Peserta, Persyaratan, Organizer** is now a sticky scroll-spy below the global header. Exactly one item shows the current location with cyan text, a violet underline, and `aria-current="location"`. Clicking an item updates the URL hash, places its content below both sticky bars, and briefly outlines the destination card in cyan.
+
+Manual scrolling updates the active item through `IntersectionObserver`. Direct hashes and browser Back/Forward restore both the selected item and the destination position. On narrow screens the navigation remains horizontally scrollable, keeps the active item visible, retains 44 px touch targets, and respects reduced-motion preferences.
+
+Verification for this increment: 11 focused component assertions passed and all 6 Adaptive Public browser scenarios passed serially through `.env.test` on Neon Delicate without a database reset. Coverage includes click selection, deep links, Back/Forward, observer-driven Organizer selection, and the existing 360 px overflow check.

@@ -5,11 +5,14 @@ import { getGameConfig } from "@/lib/platform/config";
 import {
   countCertificatesForGame,
   getCertificateByEvent,
+  getLeaderboardForEvent,
   recordCertificateFailure,
   recordCertificateSuccess,
 } from "@/lib/platform/repository";
 import { prisma } from "@/lib/platform/db";
 import { launchCertificateBrowser } from "./browser";
+import { resolveMvpForCertificate } from "./mvp";
+import { renderCertificatePng } from "./renderer";
 import { buildCertificateHtml } from "./template";
 
 /**
@@ -62,6 +65,13 @@ async function renderAndStoreCertificate(eventId: string, winnerTeamId: string):
   const date = new Intl.DateTimeFormat("id-ID", { year: "numeric", month: "long", day: "numeric" }).format(new Date());
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
 
+  // Manually uploaded character art (admin panel) always wins over the auto-picked MVP portrait.
+  let mvp = null;
+  if (!event.characterArtUrl) {
+    const leaderboard = await getLeaderboardForEvent(eventId, event.gameId);
+    mvp = resolveMvpForCertificate(event.gameId, leaderboard, winnerTeamId);
+  }
+
   const html = await buildCertificateHtml({
     eventName: event.name,
     gameId: event.gameId,
@@ -73,37 +83,49 @@ async function renderAndStoreCertificate(eventId: string, winnerTeamId: string):
     date,
     eventSlug: event.slug,
     baseUrl,
+    mvpArtUrl: mvp?.url ?? null,
+    mvpName: mvp?.name ?? null,
+    mvpRoleLabel: mvp?.roleLabel ?? null,
   });
 
-  const browser = await launchCertificateBrowser();
-  try {
-    const page = await browser.newPage();
-    await page.setViewportSize({ width: 1080, height: 1920 });
-    // The template pulls webfonts from Google Fonts, so "networkidle" is what guarantees the
-    // poster is fully styled before the screenshot. Bound it explicitly: the default 30s would
-    // eat the whole function budget on a slow font CDN, and failing fast lets the admin retry
-    // instead of the request being killed with nothing recorded.
-    await page.setContent(html, { waitUntil: "networkidle", timeout: 20_000 });
-    const pngBuffer = await page.screenshot({ type: "png", fullPage: false });
+  // Reuse the renderer's PNG conversion and cleanup with the origin launch policy.
+  // The launcher returns Playwright on every host, including Vercel/Lambda.
+  const pngBuffer = await renderCertificatePng(html, {
+    isVercel: false,
+    loadPlaywrightChromium: async () => ({
+      launch: async () => {
+        const browser = await launchCertificateBrowser();
+        return {
+          newPage: async () => {
+            const page = await browser.newPage();
+            return {
+              setViewportSize: (viewport) => page.setViewportSize(viewport),
+              // Bound font loading so a slow CDN leaves time to persist a retryable failure.
+              setContent: (content, options) => page.setContent(content, { ...options, timeout: 20_000 }),
+              screenshot: (options) => page.screenshot(options),
+            };
+          },
+          close: () => browser.close(),
+        };
+      },
+    }),
+  });
 
-    let url: string;
-    if (process.env.BLOB_READ_WRITE_TOKEN) {
-      const filename = `certificates/${eventId}-${winnerTeamId}-${Date.now()}.png`;
-      const { put } = await import("@vercel/blob");
-      const result = await put(filename, pngBuffer, { access: "public", contentType: "image/png" });
-      url = result.url;
-    } else {
-      // Local dev fallback: write to public/certificates/
-      const dir = path.join(process.cwd(), "public", "certificates");
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      const filename = `${eventId}-${winnerTeamId}-${Date.now()}.png`;
-      fs.writeFileSync(path.join(dir, filename), pngBuffer);
-      url = `/certificates/${filename}`;
-    }
-
-    await recordCertificateSuccess(eventId, winnerTeamId, url);
-    return url;
-  } finally {
-    await browser.close();
+  let url: string;
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const filename = `certificates/${eventId}-${winnerTeamId}-${Date.now()}.png`;
+    const { put } = await import("@vercel/blob");
+    const result = await put(filename, pngBuffer, { access: "public", contentType: "image/png" });
+    url = result.url;
+  } else {
+    // Local dev fallback: write to public/certificates/
+    const dir = path.join(process.cwd(), "public", "certificates");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const filename = `${eventId}-${winnerTeamId}-${Date.now()}.png`;
+    fs.writeFileSync(path.join(dir, filename), pngBuffer);
+    url = `/certificates/${filename}`;
   }
+
+  await recordCertificateSuccess(eventId, winnerTeamId, url);
+  return url;
 }

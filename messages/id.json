@@ -24,15 +24,15 @@
     "description": "Cek bracket, peserta, klasemen, dan statistik match dari event demo Miracle League.",
     "registerTeam": "Daftarkan Tim",
     "viewDemoEvent": "Lihat Demo Event",
-    "exploreDemo": "Jelajahi Demo",
-    "quickLinks": "Jalur cepat demo",
+    "exploreDemo": "Jelajahi event unggulan",
+    "quickLinks": "Jalur cepat event unggulan",
     "bracketShortcut": "Bracket",
     "participantsShortcut": "Peserta",
     "leaderboardShortcut": "Leaderboard",
     "standingsShortcut": "Klasemen",
     "joinNext": "Mau ikut turnamen berikutnya?",
     "registrationNote": "Pendaftaran peserta diarahkan lewat organizer saat event dibuka.",
-    "featuredEvent": "Event demo unggulan",
+    "featuredEvent": "Event unggulan",
     "allEvents": "Semua Event",
     "allGames": "Semua Game",
     "eventCount": "{count, plural, one {# event} other {# event}}",
@@ -63,6 +63,13 @@
     "prizePool": "Prize Pool",
     "entryFee": "Biaya Pendaftaran",
     "noEvents": "Belum ada event yang dipublikasi. Event draft hanya terlihat di panel admin."
+  },
+  "tiktokStream": {
+    "subtitle": "Ikuti siaran dari penyelenggara",
+    "description": "Ikuti siaran pertandingan dan ikut meramaikan chat langsung di TikTok.",
+    "watch": "Tonton di TikTok",
+    "newTab": "Membuka TikTok di tab baru",
+    "availability": "Video diputar di TikTok. Cek ketersediaan siaran di sana."
   },
   "eventDetail": {
     "liveNow": "Sedang Live",
@@ -438,6 +445,7 @@
     "phaseShort": {
       "prepare": "Setup",
       "import": "Import",
+      "registration": "Registrasi",
       "run": "Hari match",
       "review": "Review",
       "payments": "Pembayaran"
@@ -446,6 +454,10 @@
       "prepare": {
         "title": "1. Siapkan Event",
         "description": "Buat, atur, publish, stream."
+      },
+      "registration": {
+        "title": "2. Pusat Registrasi",
+        "description": "Captain native, impor, dan pembayaran."
       },
       "import": {
         "title": "2. Import Registrasi",
@@ -468,6 +480,10 @@
       "prepare": {
         "title": "Pastikan event siap",
         "description": "Lengkapi detail event, metadata stream, dan status sebelum import registrasi."
+      },
+      "registration": {
+        "title": "Tuntaskan registrasi berikutnya",
+        "description": "Tinjau captain, perbaiki impor, atau bagikan link registrasi."
       },
       "import": {
         "title": "Validasi registrasi",
@@ -577,6 +593,45 @@
       "expired": "Kedaluwarsa"
     }
   },
-  "v3Shell": {"skipToContent":"Lewati ke konten","primaryNavigation":"Navigasi utama","operatorNavigation":"Navigasi operator","eventNavigation":"Navigasi event","nextAction":"Tindakan berikutnya","nextStep":"Langkah berikutnya","openNavigation":"Buka navigasi","closeNavigation":"Tutup navigasi","organizerHome":"Beranda organizer"},
+  "adaptiveEvent": {
+    "registrationOpen": "Pendaftaran dibuka",
+    "registrationUpcoming": "Pendaftaran segera dibuka",
+    "registrationFull": "Slot pendaftaran penuh",
+    "registrationClosed": "Pendaftaran ditutup",
+    "organizedBy": "Diselenggarakan oleh",
+    "verified": "Organizer terverifikasi",
+    "share": "Bagikan",
+    "startsAt": "Mulai turnamen",
+    "timezone": "Zona waktu",
+    "venue": "Lokasi",
+    "prize": "Hadiah",
+    "slots": "Slot terisi",
+    "summary": "Ringkasan",
+    "participants": "Peserta",
+    "requirements": "Persyaratan",
+    "organizer": "Organizer",
+    "registrationPeriod": "Periode pendaftaran",
+    "opens": "Pendaftaran dibuka",
+    "closes": "Pendaftaran ditutup",
+    "capacity": "Kapasitas peserta",
+    "activeTeams": "Tim aktif",
+    "pendingReview": "Sedang ditinjau",
+    "remaining": "Sisa slot",
+    "fee": "Biaya pendaftaran",
+    "feeFree": "Gratis",
+    "feePaid": "Berbayar",
+    "roster": "Kebutuhan roster",
+    "rosterValue": "{min}–{max} pemain",
+    "uidIgn": "UID dan IGN wajib. Posisi pemain opsional.",
+    "howToTitle": "Empat langkah untuk bergabung",
+    "steps": ["Masuk sebagai Captain", "Pilih atau buat tim", "Lengkapi roster", "Kirim pendaftaran"],
+    "description": "Tentang event",
+    "format": "Format pertandingan",
+    "contact": "Kontak organizer",
+    "contactHint": "Hubungi organizer bila membutuhkan bantuan pendaftaran.",
+    "importantInfo": "Informasi pertandingan",
+    "teamCount": "{occupied} dari {cap} slot terisi",
+    "publicTitle": "Navigasi event"
+  },  "v3Shell": {"skipToContent":"Lewati ke konten","primaryNavigation":"Navigasi utama","operatorNavigation":"Navigasi operator","eventNavigation":"Navigasi event","nextAction":"Tindakan berikutnya","nextStep":"Langkah berikutnya","openNavigation":"Buka navigasi","closeNavigation":"Tutup navigasi","organizerHome":"Beranda organizer"},
   "v3Footer": {"copyright":"Copyright © Miracle","tagline":"Platform turnamen komunitas multi-game","socialLabel":"Kontak sosial Miracle","mobileMenu":"Buka navigasi"}
 }
