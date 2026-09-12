@@ -43,6 +43,21 @@ const v3Data = {
 };
 
 describe("versioned certificate generation", () => {
+  it("preserves the primary render error and logs a rejected failure write", async () => {
+    const primary = new Error("render failed first");
+    const secondary = new Error("failure repository unavailable");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(generateMiracleV3Certificate({ data: v3Data }, {
+        claimGeneration: async () => ({ status: "claimed", attemptId: "attempt-9" }),
+        render: async () => { throw primary; },
+        storeArtifact: async () => { throw new Error("Must not store"); },
+        recordSuccess: async () => { throw new Error("Must not succeed"); },
+        recordFailure: async () => { throw secondary; },
+      })).rejects.toBe(primary);
+      expect(log).toHaveBeenCalledWith("Certificate failure persistence failed", expect.objectContaining({ certificateId: "cert-2", attemptId: "attempt-9", error: secondary }));
+    } finally { log.mockRestore(); }
+  });
   it("encodes dot-only identity segments so artifacts cannot escape their event directory", async () => {
     let filename = "";
     await generateMiracleV3Certificate({ data: { ...v3Data, eventId: "..", recipientId: "." } }, {
@@ -127,6 +142,17 @@ beforeEach(() => {
 });
 
 describe("generateCertificate", () => {
+  it("preserves legacy generation errors when failure recording also fails", async () => {
+    const primary = new Error("browser failed first");
+    const secondary = new Error("legacy repository unavailable");
+    launchCertificateBrowser.mockRejectedValue(primary);
+    recordCertificateFailure.mockRejectedValueOnce(secondary);
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(generateCertificate("event-1", "team-1")).rejects.toBe(primary);
+      expect(log).toHaveBeenCalledWith("Certificate failure persistence failed", expect.objectContaining({ eventId: "event-1", error: secondary }));
+    } finally { log.mockRestore(); }
+  });
   it("records the failure and rethrows when the browser cannot be launched", async () => {
     // This is the production failure mode: playwright-core ships no binary, so on Vercel the
     // launch throws unless a Lambda chromium pack is supplied.

@@ -5,6 +5,14 @@ import { renderCertificatePng } from "./renderer";
 const certificateHtml = '<main data-certificate-canvas="1080x1920">Champion</main>';
 
 describe("renderCertificatePng", () => {
+  test("refuses to capture V3 artwork without browser evaluation support", async () => {
+    const screenshot = vi.fn().mockResolvedValue(Buffer.from("empty hero"));
+    const close = vi.fn();
+    await expect(renderCertificatePng('<main data-certificate-canvas="1080x1920" data-template-version="miracle-v3"></main>', {
+      launchBrowser: async () => ({ newPage: async () => ({ setViewportSize: async () => {}, setContent: async () => {}, screenshot }), close }),
+    })).rejects.toThrow("V3 asset readiness");
+    expect(screenshot).not.toHaveBeenCalled(); expect(close).toHaveBeenCalledOnce();
+  });
   test.each(['<main>missing</main>', '<main data-certificate-canvas="1920x1080">Landscape</main>', '<main data-certificate-canvas="800x1200">Small</main>'])("rejects an invalid portrait contract before launch: %s", async (html) => {
     const launchBrowser = vi.fn().mockRejectedValue(new Error("Should not launch"));
     await expect(renderCertificatePng(html, { launchBrowser })).rejects.toThrow("1080x1920");

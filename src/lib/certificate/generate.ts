@@ -57,7 +57,11 @@ export async function generateMiracleV3Certificate(
     await dependencies.recordSuccess({ identity, attemptId: claim.attemptId, imageUrl, fingerprint });
     return imageUrl;
   } catch (error) {
-    await dependencies.recordFailure({ identity, attemptId: claim.attemptId, message: error instanceof Error ? error.message : "Certificate generation failed" });
+    try {
+      await dependencies.recordFailure({ identity, attemptId: claim.attemptId, message: error instanceof Error ? error.message : "Certificate generation failed" });
+    } catch (persistenceError) {
+      console.error("Certificate failure persistence failed", { ...identity, attemptId: claim.attemptId, error: persistenceError });
+    }
     throw error;
   }
 }
@@ -90,7 +94,11 @@ export async function generateCertificate(eventId: string, winnerTeamId: string)
     return await renderAndStoreCertificate(eventId, winnerTeamId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Certificate generation failed";
-    await recordCertificateFailure(eventId, winnerTeamId, message);
+    try {
+      await recordCertificateFailure(eventId, winnerTeamId, message);
+    } catch (persistenceError) {
+      console.error("Certificate failure persistence failed", { eventId, winnerTeamId, error: persistenceError });
+    }
     throw err;
   }
 }

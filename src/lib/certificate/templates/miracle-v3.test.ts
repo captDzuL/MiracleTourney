@@ -19,6 +19,18 @@ export const fixture: MiracleV3CertificateData = {
 const documentFor = async (data = fixture, editorPreview = false) => new DOMParser().parseFromString(await buildMiracleV3CertificateHtml(data, { editorPreview }), "text/html");
 
 describe("Miracle V3 certificate contract", () => {
+  it.each([".", "..", "../verify-1", "a/b", "a\\b", "%2e%2e", "a?b", "a#b", " verify-1", "verify-1 ", "", "a".repeat(129)])("rejects path-special or malformed verification code %s", async verificationCode => {
+    await expect(buildMiracleV3CertificateHtml({ ...fixture, verificationCode })).rejects.toThrow("Invalid verification code");
+    expect(() => getMiracleV3CertificateFingerprint({ ...fixture, verificationCode })).toThrow("Invalid verification code");
+  });
+  it.each(["verify-123", "a_B-9", "-Ab_", "Z".repeat(128)])("preserves opaque verification code %s as one route segment", async verificationCode => {
+    const doc = await documentFor({ ...fixture, verificationCode });
+    const href = doc.querySelector('[data-zone="qrVerification"] a')!.getAttribute("href")!;
+    const resolved = new URL(href);
+    expect(resolved.origin).toBe("https://miracle-league.fun");
+    expect(resolved.pathname).toBe(`/certificates/verify/${verificationCode}`);
+    expect(resolved.search).toBe(""); expect(resolved.hash).toBe("");
+  });
   it.each([
     ["champion", "Champion", "team"], ["runner_up", "Runner-up", "team"], ["third_place", "Third Place", "team"],
     ["mvp", "MVP of Tournament", "player"], ["top_scorer", "Top Scorer", "player"],

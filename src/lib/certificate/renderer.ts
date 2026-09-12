@@ -5,6 +5,7 @@ interface CertificatePage {
   setViewport?(viewport: { width: number; height: number }): Promise<void>;
   setContent(html: string, options: { waitUntil: "networkidle" | "load" }): Promise<void>;
   waitForNetworkIdle?(): Promise<void>;
+  evaluate?(callback: () => Promise<void>): Promise<void>;
   screenshot(options: { type: "png"; fullPage: boolean }): Promise<Screenshot>;
 }
 
@@ -71,6 +72,24 @@ export async function renderCertificatePng(
       if (!page.setViewportSize) throw new Error("Playwright page does not support setViewportSize.");
       await page.setViewportSize({ width: 1080, height: 1920 });
       await page.setContent(html, { waitUntil: "networkidle" });
+    }
+    if (/\bdata-template-version\s*=\s*["']miracle-v3["']/.test(html)) {
+      if (!page.evaluate) throw new Error("V3 asset readiness requires browser evaluation support.");
+      await page.evaluate(async () => {
+        const hero = document.querySelector<HTMLElement>('main[data-template-version="miracle-v3"] [data-zone="hero"]');
+        if (!hero) throw new Error("V3 hero zone is missing");
+        const image = hero.querySelector("img");
+        if (!image) {
+          if (!hero.querySelector('[data-role="hero-fallback"]')) throw new Error("V3 hero is empty");
+          return;
+        }
+        const decoded = await image.decode().then(() => image.naturalWidth > 0 && image.naturalHeight > 0, () => false);
+        if (decoded) return;
+        const fallback = hero.querySelector<HTMLTemplateElement>("template[data-hero-fallback]");
+        if (!fallback?.content.querySelector('[data-role="hero-fallback"]')) throw new Error("V3 hero fallback is missing");
+        // The trusted template carries the same input-derived motif for every load outcome.
+        image.replaceWith(fallback.content.cloneNode(true));
+      });
     }
     const screenshot = await page.screenshot({ type: "png", fullPage: false });
 

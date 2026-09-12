@@ -50,6 +50,10 @@ function assetUrl(value: string | null, origin: string): string | null {
 
 /** Ordered normalized values only: no clock, filesystem or network-derived identity. */
 function manifest(data: MiracleV3CertificateData) {
+  // Opaque ASCII URL-safe token: preserve bytes, never trim or normalize identity.
+  if (typeof data.verificationCode !== "string" || data.verificationCode.length < 1 || data.verificationCode.length > 128 || /[^A-Za-z0-9_-]/.test(data.verificationCode)) {
+    throw new Error("Invalid verification code: use 1-128 ASCII letters, digits, underscores or hyphens");
+  }
   if (!MIRACLE_V3_CERTIFICATE_TYPES.includes(data.certificateType)) throw new Error("Invalid certificate type");
   if (!Number.isSafeInteger(data.version) || data.version < 1) throw new Error("Invalid certificate version");
   if (data.templateVersion !== "miracle-v3") throw new Error("Unsupported template version");
@@ -68,7 +72,7 @@ function manifest(data: MiracleV3CertificateData) {
     recipientId: text(data.recipientId), recipientName: text(data.recipientName), recipientKind: data.recipientKind,
     teamId: text(data.teamId), teamName: text(data.teamName), teamLogoUrl: assetUrl(data.teamLogoUrl, base.origin),
     characterArtUrl: teamType(data.certificateType) ? null : assetUrl(data.characterArtUrl, base.origin),
-    issueDate: text(data.issueDate), verificationCode: text(data.verificationCode), verificationBaseUrl: base.origin,
+    issueDate: text(data.issueDate), verificationCode: data.verificationCode, verificationBaseUrl: base.origin,
     branding: MIRACLE_V3_BRANDING,
   };
 }
@@ -113,7 +117,7 @@ section{z-index:1;overflow-wrap:anywhere}h1,h2,p{margin:0}h1{font-size:82px;line
 </style></head><body><main data-certificate-canvas="1080x1920" data-template-version="miracle-v3" data-fingerprint="${fingerprint}" style="width:1080px;height:1920px">
 ${zone("identity", `<img src="${assets.logo}" alt="Miracle"/><div><p class="event clamp">${escape(m.eventName)}</p><p class="game clamp">${escape(m.gameName)}</p></div>`)}
 ${zone("award", `<p class="eyebrow">Miracle Championship Series</p><h1 class="clamp">${escape(labels[m.certificateType])}</h1>`)}
-${zone("hero", heroImage)}
+${zone("hero", heroImage + (hero ? `<template data-hero-fallback>${fallback}</template>` : ""))}
 ${zone("secondaryBadge", teamType(m.certificateType) ? "" : `${m.teamLogoUrl ? `<img src="${escape(m.teamLogoUrl)}" alt="${escape(m.teamName)} team logo"/>` : `<span class="label">Miracle Team</span>`}<p class="team clamp">${escape(m.teamName)}</p>`)}
 ${zone("recipient", `<p class="label">Presented to · ${m.recipientKind === "team" ? "Team" : "Individual award"}</p><h2 class="recipient clamp">${escape(m.recipientName)}</h2>`)}
 ${zone("issueDate", `<p class="label">Issued by Miracle</p><p class="meta clamp">${escape(m.issueDate)}</p>`)}
