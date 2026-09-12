@@ -8,7 +8,7 @@ import { readCompetitionWorkspace } from "./workspace-read";
 
 export type WorkspacePageProps = { params: Promise<{ locale: string; eventId: string; matchId?: string }> };
 export async function workspacePage({ params }: WorkspacePageProps, view: WorkspaceView) {
-  const { locale, eventId, matchId } = await params;
+  const { locale, eventId, matchId: requestedMatchId } = await params;
   if ((locale !== "en" && locale !== "id") || !isFeatureEnabled("competition_operations_v3") || !isFeatureEnabled("organizer_workspace_v3")) notFound();
   let state;
   try { state = await readCompetitionWorkspace(eventId); }
@@ -19,6 +19,12 @@ export async function workspacePage({ params }: WorkspacePageProps, view: Worksp
       if (error.message === "Not authorized" || error.message.includes("unavailable")) notFound();
     }
     throw error;
+  }
+  let matchId = requestedMatchId;
+  // Locale middleware can retain one escaped path layer. Prefer a literal owned
+  // ID, otherwise decode once; never use the URL value without the scoped lookup.
+  if (matchId && !state.matches.some(m => m.id === matchId)) {
+    try { matchId = decodeURIComponent(matchId); } catch { notFound(); }
   }
   if (view === "match" && !state.matches.some(m => m.id === matchId)) notFound();
   return <CompetitionWorkspace key={`${eventId}:${view}:${matchId || ""}`} initialState={state} locale={locale} view={view} matchId={matchId} />;

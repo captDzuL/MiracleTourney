@@ -26,6 +26,15 @@ describe("organizer server routes", () => {
     boundary.enabled = true;
     await expect(MatchPage({ params: Promise.resolve({ locale: "en", eventId: "event", matchId: "foreign" }) })).rejects.toThrow("NOT_FOUND");
   });
+  it("resolves the encoded dynamic match segment produced by locale middleware", async () => {
+    boundary.read.mockResolvedValue({ event: { id: "event" }, matches: [{ id: "event:single:r1:m1" }] });
+    const element = await MatchPage({ params: Promise.resolve({ locale: "en", eventId: "event", matchId: "event%3Asingle%3Ar1%3Am1" }) });
+    expect(element.props.matchId).toBe("event:single:r1:m1");
+  });
+  it("does not double-decode, accept malformed escapes, or select an unowned decoded match", async () => {
+    boundary.read.mockResolvedValue({ event: { id: "event" }, matches: [{ id: "event:single:r1:m1" }] });
+    for (const matchId of ["event%253Asingle%253Ar1%253Am1", "%invalid", "other%3Asingle%3Ar1%3Am1"]) await expect(MatchPage({ params: Promise.resolve({ locale: "en", eventId: "event", matchId }) })).rejects.toThrow("NOT_FOUND");
+  });
   it.each([["Unauthorized", "/login"], ["Password change required", "/organizer/change-password"]])("redirects %s sessions", async (error, path) => {
     boundary.read.mockRejectedValue(new Error(error));
     await expect(CompetitionPage({ params: Promise.resolve({ locale: "en", eventId: "event" }) })).rejects.toThrow(`REDIRECT:${path}`);

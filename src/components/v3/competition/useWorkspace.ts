@@ -6,6 +6,8 @@ import type { OperationCommand } from "@/lib/tournament/operations";
 import type { CompetitionWorkspaceState } from "@/lib/competition/workspace-types";
 
 export function useWorkspace(initialState: CompetitionWorkspaceState) {
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
   const [state, setState] = useState(initialState);
   const current = useRef(initialState);
   const [connectionError, setConnectionError] = useState(false);
@@ -70,5 +72,5 @@ export function useWorkspace(initialState: CompetitionWorkspaceState) {
     } finally { mutating.current = false; setBusy(false); }
   }
   const run = (command: OperationCommand) => execute({ eventId: current.current.event.id, expectedVersion: current.current.event.version, idempotencyKey: crypto.randomUUID(), command });
-  return { state, busy, saved, connectionError, actionError, refresh, run, canRetry: !!retryRequest.current, retry: () => retryRequest.current && execute(retryRequest.current) };
+  return { state, busy: busy || !hydrated, saved, connectionError, actionError, refresh, run, canRetry: !!retryRequest.current, retry: () => retryRequest.current && execute(retryRequest.current) };
 }

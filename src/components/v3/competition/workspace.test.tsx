@@ -2,11 +2,12 @@
 import * as React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TOURNAMENT_FORMAT_PRESETS } from "@/lib/tournament/formats/types";
 import { generateCompetitionGraph } from "@/lib/tournament/competition";
 import type { CompetitionWorkspaceState } from "@/lib/competition/workspace-types";
-import { CompetitionWorkspace } from "./CompetitionWorkspace";
+import { CompetitionWorkspace, Field } from "./CompetitionWorkspace";
 import { WorkspaceLoading, WorkspaceError } from "./WorkspaceFeedback";
 Object.assign(globalThis, { React, IS_REACT_ACT_ENVIRONMENT: true });
 const boundary = vi.hoisted(() => ({ execute: vi.fn(), preview: vi.fn(), refresh: vi.fn() }));
@@ -16,6 +17,21 @@ export function fixture(): CompetitionWorkspaceState {
   return { event: { id: "event", name: "Miracle Open", version: 4, timezone: "Asia/Jakarta", startsAt: "2026-09-12T02:00:00.000Z", publishedScheduleVersion: 3, config: TOURNAMENT_FORMAT_PRESETS.singleElimination }, graph: null, teams: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }], matches: [{ id: "match", homeTeamId: "a", awayTeamId: "b", homeScore: 0, awayScore: 0, status: "Scheduled", scheduleStatus: "confirmed", resultVersion: 0, bestOf: 1, roundLabel: "single 1", phaseId: null, groupId: null, start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T02:30:00.000Z", room: "Room A", games: [] }], standings: [], readiness: [], actions: [{ id: "action", matchId: "match", priority: "critical", title: "Missing readiness", detail: null }], schedule: null, publishedSchedule: null, incidents: [], announcements: [], audit: [], unavailableSections: [] };
 }
 describe("organizer Match Day workspace", () => {
+  it("keeps server-rendered fields disabled until their input handlers hydrate", () => {
+    const server = document.createElement("div");
+    server.innerHTML = renderToString(<Field label="Window end" type="datetime-local" name="windowEnd" value="" onChange={() => {}} />);
+    expect(server.querySelector("input")!.disabled).toBe(true);
+    act(() => root.render(<Field label="Window end" type="datetime-local" name="windowEnd" value="" onChange={() => {}} />));
+    expect(host.querySelector("input")!.disabled).toBe(false);
+  });
+  it("keeps publish actions disabled until their click handlers hydrate", () => {
+    state.schedule = scheduleRevision("reviewed", 4, 30);
+    const server = document.createElement("div");
+    server.innerHTML = renderToString(<CompetitionWorkspace initialState={state} locale="en" view="schedule" />);
+    expect(Array.from(server.querySelectorAll("button")).find(b => b.textContent === "Publish schedule")!.disabled).toBe(true);
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="schedule" />));
+    expect(button("Publish schedule").disabled).toBe(false);
+  });
   it.each(["en", "id"] as const)("shows a localized blocked legacy diagnostic without mutation forms: %s", locale => {
     state.compatibility = { status: "blocked", reason: "existing_results" };
     act(() => root.render(<CompetitionWorkspace initialState={state} locale={locale} view="match" matchId="match" />));

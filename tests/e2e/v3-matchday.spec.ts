@@ -27,13 +27,14 @@ test("generates competition, reviews the initial schedule and publishes explicit
   await loginAsOrganizer(page, "en"); await page.goto(`/en/organizer/events/${fixture.id}/competition`);
   await page.getByRole("button", { name: "Generate competition", exact: true }).click();
   await expect.poll(async () => (await state(page)).matches.length).toBe(3);
-  await page.goto(`/en/organizer/events/${fixture.id}/schedule`);
+  await page.getByRole("link", { name: "Schedule", exact: true }).click();
   await page.getByLabel("Window end", { exact: true }).fill("2026-01-02T09:00");
   await page.getByLabel("Rooms (comma separated)", { exact: true }).fill("Arena A, Arena B");
   await page.getByRole("button", { name: "Generate schedule preview", exact: true }).click();
   await expect(page.getByRole("heading", { name: /Impact preview/ })).toBeVisible();
-  expect((await state(page)).publishedSchedule).toBeNull();
-  expect(JSON.stringify(await publicState(page))).not.toContain("Arena A");
+  const [organizerPreview, unpublishedPublic] = await Promise.all([state(page), publicState(page)]);
+  expect(organizerPreview.publishedSchedule).toBeNull();
+  expect(JSON.stringify(unpublishedPublic)).not.toContain("Arena A");
   await page.getByRole("button", { name: "Reload schedule", exact: true }).click();
   await page.getByRole("button", { name: "Publish schedule", exact: true }).click();
   await expect.poll(async () => (await state(page)).publishedSchedule?.draft.assignments.length).toBe(3);
@@ -123,6 +124,7 @@ for (const kind of ["single_elimination", "double_elimination", "round_robin", "
 test("allows a reviewed correction, then rejects correction once its downstream match is live", async ({ page }) => {
   fixture = await prepareMatchdayFixture(); const graph = await fixture.graph(); const first = graph.matches[0];
   await loginAsOrganizer(page, "en"); await openMatch(page, first.id); await result(page);
+  await page.getByRole("button", { name: "Reload official result", exact: true }).click();
   const form = page.getByRole("form", { name: "Official result", exact: true });
   await form.locator('input[name="home-1"]').fill("0"); await form.locator('input[name="away-1"]').fill("2");
   await form.getByLabel("Correction reason").fill("Confirmed official score sheet");

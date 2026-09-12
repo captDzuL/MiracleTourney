@@ -13,7 +13,12 @@ export const panel = "min-w-0 rounded-[var(--radius-panel)] border border-[var(-
 export const inputClass = "min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] px-3 py-2 text-[var(--color-text)] miracle-focus-ring";
 export type Translate = (en: string, id: string) => string;
 export type Run = (command: OperationCommand) => Promise<void>;
-export function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) { return <label className="grid min-w-0 gap-2 text-sm">{label}<input className={inputClass} {...props} /></label>; }
+export function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
+  const [hydrated, setHydrated] = React.useState(false);
+  React.useEffect(() => setHydrated(true), []);
+  // Controlled fields must not accept edits before React attaches their handlers.
+  return <label className="grid min-w-0 gap-2 text-sm">{label}<input className={inputClass} {...props} disabled={!hydrated || props.disabled} /></label>;
+}
 export function CompetitionWorkspace({ initialState, locale, view, matchId }: { initialState: CompetitionWorkspaceState; locale: "en" | "id"; view: WorkspaceView; matchId?: string }) {
   const { state, busy, saved, connectionError, actionError, refresh, run, canRetry, retry } = useWorkspace(initialState);
   const t: Translate = (en, id) => locale === "id" ? id : en;
