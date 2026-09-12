@@ -1,6 +1,6 @@
 /**
  * Upload certificate PNG yang sudah ada di public/certificates/ ke Vercel Blob,
- * lalu update row Certificate di DB dengan URL baru.
+ * lalu append versi legacy Certificate di DB dengan URL baru.
  *
  * Usage:
  *   BLOB_READ_WRITE_TOKEN=xxx node scripts/upload-certificate-to-blob.mjs
@@ -13,7 +13,7 @@ import { put } from "@vercel/blob";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { buildLegacyUploadAppend } from "./certificate-upload-policy.mjs";
+import { appendLegacyUploadInSerializableTransaction, buildLegacyUploadAppend } from "./certificate-upload-policy.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -100,8 +100,7 @@ const result = await put(blobFilename, pngBuffer, {
 console.log(`✅ Uploaded: ${result.url}`);
 
 // Append a new legacy version. Never rewrite/supersede published or V3 history.
-const appendData = buildLegacyUploadAppend(certRow, v3Ownership, result.url, new Date());
-await prisma.certificate.create({ data: appendData });
+await appendLegacyUploadInSerializableTransaction(prisma, event.id, result.url, new Date());
 console.log(`✅ Versi certificate legacy baru ditambahkan tanpa mengubah histori.`);
 
 console.log(`\n🎉 Done! Certificate URL: ${result.url}`);

@@ -6,6 +6,13 @@ import { getMiracleV3CertificateFingerprint } from "./templates/miracle-v3";
 
 const recipients = Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, `recipient-${type}`]));
 
+function reverseJsonObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reverseJsonObjectKeys);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).reverse()
+    .map(([key, nested]) => [key, reverseJsonObjectKeys(nested)]));
+}
+
 describe("owned local certificate asset materialization", () => {
   it("embeds only the verified certificate-assets bytes as a CSP-safe raster data URL", async () => {
     const bytes = Buffer.from("trusted-png-bytes");
@@ -144,12 +151,12 @@ describe("Certificate Studio Prisma transaction boundary", () => {
     const key = "certificate-assets/logo.png";
     const logo = {
       id: "asset-logo",
-      url: `https://store.public.blob.vercel-storage.com/${key}`,
+      url: `/${key}`,
       mimeType: "image/png",
       width: 512,
       height: 512,
       byteSize: 1024,
-      storageProvider: "vercel_blob",
+      storageProvider: "local",
       storageKey: key,
       contentSha256: "a".repeat(64),
       purpose: "certificate_team_logo",
@@ -161,7 +168,7 @@ describe("Certificate Studio Prisma transaction boundary", () => {
       width: logo.width,
       height: logo.height,
       storageOwnershipVerified: true,
-      storageProvider: "vercel_blob" as const,
+      storageProvider: "local" as const,
       storageKey: logo.storageKey,
       contentSha256: logo.contentSha256,
       purpose: "certificate_team_logo" as const,
@@ -213,7 +220,9 @@ describe("Certificate Studio Prisma transaction boundary", () => {
     const now = vi.fn()
       .mockReturnValueOnce(new Date("2026-09-12T23:55:00.000Z"))
       .mockReturnValue(new Date("2026-09-14T01:00:00.000Z"));
-    const repo = createCertificateStudioTransaction(tx as never, "event-1", { id: "organizer-1", role: "organizer" }, { now });
+    const embeddedLogo = `data:image/png;base64,${"A".repeat(2_000_000)}`;
+    const materializeAssetUrl = vi.fn().mockResolvedValue(embeddedLogo);
+    const repo = createCertificateStudioTransaction(tx as never, "event-1", { id: "organizer-1", role: "organizer" }, { now, materializeAssetUrl });
 
     const appended = await repo.appendVersion({
       certificateType: "champion",
@@ -234,6 +243,7 @@ describe("Certificate Studio Prisma transaction boundary", () => {
             eventName: "Miracle Open",
             issueDate: "2026-09-12",
             recipientName: "Team 1",
+            teamLogoUrl: "https://miracle-league.fun/certificate-assets/logo.png",
           }),
           assets: [expect.objectContaining({
             assetId: "asset-logo",
@@ -242,12 +252,34 @@ describe("Certificate Studio Prisma transaction boundary", () => {
         }),
       },
     }));
+    expect(JSON.stringify(certificateUpdate.mock.calls[0][0].data.renderManifest).length).toBeLessThan(10_000);
 
+    persisted = {
+      ...persisted,
+      renderManifest: reverseJsonObjectKeys(JSON.parse(JSON.stringify(persisted.renderManifest))) as never,
+    };
     mutableCompletion.event.name = "Renamed after append";
     mutableCompletion.event.gameId = "game-changed";
     const resumed = await repo.leaseStaleVersion("same-key", new Date(0).toISOString(), "request-2");
     expect(resumed?.data).toEqual(firstData);
     expect(getMiracleV3CertificateFingerprint(resumed!.data)).toBe(firstFingerprint);
+    expect(materializeAssetUrl).toHaveBeenCalledTimes(2);
+
+    const validRenderManifest = persisted.renderManifest as unknown as { schemaVersion: number; data: Record<string, unknown>; assets: Array<Record<string, unknown>> };
+    const validAssetManifest = persisted.assetManifest;
+    const assetsWithExtraField = validRenderManifest.assets.map((asset, index) => index === 0 ? { ...asset, unexpected: true } : asset);
+    persisted = {
+      ...persisted,
+      assetManifest: { assets: assetsWithExtraField },
+      renderManifest: { ...validRenderManifest, assets: assetsWithExtraField } as never,
+    };
+    await expect(repo.leaseStaleVersion("same-key", new Date(0).toISOString(), "request-invalid-schema"))
+      .rejects.toThrow("canonical");
+    persisted = { ...persisted, assetManifest: validAssetManifest, renderManifest: validRenderManifest as never };
+
+    materializeAssetUrl.mockRejectedValueOnce(new Error("Certificate local asset content changed"));
+    await expect(repo.leaseStaleVersion("same-key", new Date(0).toISOString(), "request-3"))
+      .rejects.toThrow("content changed");
   });
   it("aborts before supersession writes when optimistic publication revision loses", async () => {
     const updateManyRevision = vi.fn().mockResolvedValue({ count: 0 });

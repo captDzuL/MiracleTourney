@@ -25,7 +25,7 @@ function assetUrl(value: string | null, origin: string): string | null {
       return source;
     }
     if (source.startsWith("/")) {
-      if (!/^\/(logo|character-art|uploads|team-logos)\//.test(source)) return null;
+      if (!/^\/(logo|character-art|uploads|team-logos|certificate-assets)\//.test(source)) return null;
       const decoded = decodeURIComponent(source);
       if (decoded.includes("..") || decoded.includes("\\") || /[\u0000-\u001f]/.test(decoded)) return null;
     } else if (!source.startsWith("https://")) return null;
@@ -69,7 +69,13 @@ export function getMiracleV3CertificateManifest(data: MiracleV3CertificateData) 
       || placement.x < zone.x || placement.y < zone.y
       || placement.x + placement.width > zone.x + zone.width
       || placement.y + placement.height > zone.y + zone.height) throw new Error("Invalid certificate asset placement");
-    assetPlacements.push({ ...placement });
+    assetPlacements.push({
+      assetKind: placement.assetKind,
+      x: placement.x,
+      y: placement.y,
+      width: placement.width,
+      height: placement.height,
+    });
   }
   return {
     eventId: text(data.eventId), eventName: text(data.eventName), gameId: text(data.gameId), gameName: text(data.gameName),

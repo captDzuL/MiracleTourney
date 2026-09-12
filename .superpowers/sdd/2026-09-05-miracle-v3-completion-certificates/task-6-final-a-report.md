@@ -43,3 +43,25 @@ This is a Task 6 remediation only. Task 7 and the Match Day integration gate rem
 - Match Day remains deliberately unmerged; Completion is not production-ready until its remaining tasks are complete, its worktree is clean, and the authoritative adapter integration is merged and verified.
 - Task 7, PostgreSQL/Blob multi-writer E2E, and the public QR verification flow remain pending behind that integration gate.
 - Public Finished recap remains out of scope and belongs to `feature/ui/adaptive-public-finished-v3`.
+
+## Final re-review remediation
+
+The follow-up review found two Important issues and one Minor in the first cross-task hardening commit. All three are addressed without changing the integration gates above.
+
+### RED → GREEN
+
+- A stale-retry regression deep-reversed every object key after a real JSON serialize/parse roundtrip. It first failed with `Certificate render manifest is not canonical`, then exposed a second fingerprint mismatch caused by nested placement insertion order. Deep semantic comparison plus explicit nested normalization now accepts reordered JSONB while preserving the exact render payload and fingerprint.
+- A compact-manifest regression supplied a two-megabyte local data URI. It failed because the URI was persisted in `renderManifest`. The stored manifest is now below 10 KB and contains only canonical owned references, placement, digest, and provenance; bytes are materialized only for rendering.
+- The same stale-retry regression proves local assets are resolved again on retry and a changed/missing asset aborts generation rather than silently changing the PNG. It also proved extra asset fields were initially accepted when both JSON columns were tampered; explicit schema/purpose/provenance/safe-zone normalization now rejects them as non-canonical.
+- Two upload-policy tests initially failed because the serializable append helper did not exist. The helper now re-reads Completion ownership, any miracle-v3 Champion, and the latest legacy Champion inside the same serializable transaction, then appends there. A Completion created after external preflight prevents `certificate.create`; the legacy-only path still appends the latest version.
+
+### Final verification
+
+- Focused certificate/completion/security suite: 10 files, 288/288 passed.
+- Real Chrome renderer: 5/5 passed, including embedded owned-local logo with no fallback.
+- Full unit suite with Chrome enabled: 110 files, 1,116/1,116 passed.
+- Prisma validate and client generation: passed.
+- Upload script syntax checks: passed.
+- `pnpm lint` (`tsc --noEmit`): passed.
+- `pnpm build`: passed with the expected placeholder localhost database warning and existing fallback.
+- `git diff --check`: passed apart from informational Windows line-ending notices.
