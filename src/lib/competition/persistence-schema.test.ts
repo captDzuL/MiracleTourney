@@ -255,7 +255,21 @@ describe("event-scoped relation metadata", () => {
       isRequired: false,
       relationFromFields: ["eventId", "winnerTeamId"],
       relationToFields: ["eventId", "id"],
+      relationOnDelete: "NoAction",
     });
+  });
+});
+
+describe("winner relation cascade durability", () => {
+  const migrationPath = fileURLToPath(
+    new URL("../../../prisma/migrations/20260912000000_competition_operations_v3_foundation/migration.sql", import.meta.url),
+  );
+
+  it("defers same-event winner checks until an event cascade completes", () => {
+    const migration = readFileSync(migrationPath, "utf8");
+    expect(migration).toContain(
+      "MatchResultRevision_eventId_winnerTeamId_fkey\" FOREIGN KEY (\"eventId\", \"winnerTeamId\") REFERENCES \"Team\"(\"eventId\", \"id\") ON DELETE NO ACTION ON UPDATE CASCADE DEFERRABLE INITIALLY DEFERRED",
+    );
   });
 });
 

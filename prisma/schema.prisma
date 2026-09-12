@@ -727,7 +727,7 @@ model MatchResultRevision {
   homeScore      Int
   awayScore      Int
   winnerTeamId   String?
-  winnerTeam     Team?    @relation("MatchResultRevisionWinner", fields: [eventId, winnerTeamId], references: [eventId, id], onDelete: Restrict)
+  winnerTeam     Team?    @relation("MatchResultRevisionWinner", fields: [eventId, winnerTeamId], references: [eventId, id], onDelete: NoAction)
   scoreSnapshot  Json
   actorUserId    String
   actorUser      User     @relation("MatchResultRevisionActor", fields: [actorUserId], references: [id], onDelete: Restrict)

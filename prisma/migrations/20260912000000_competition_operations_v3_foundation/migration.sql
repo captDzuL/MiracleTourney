@@ -224,7 +224,7 @@ ALTER TABLE "MatchReadiness" ADD CONSTRAINT "MatchReadiness_actorUserId_fkey" FO
 ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_matchId_fkey" FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_eventId_winnerTeamId_fkey" FOREIGN KEY ("eventId", "winnerTeamId") REFERENCES "Team"("eventId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_eventId_winnerTeamId_fkey" FOREIGN KEY ("eventId", "winnerTeamId") REFERENCES "Team"("eventId", "id") ON DELETE NO ACTION ON UPDATE CASCADE DEFERRABLE INITIALLY DEFERRED;
 ALTER TABLE "CompetitionActionItem" ADD CONSTRAINT "CompetitionActionItem_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "CompetitionActionItem" ADD CONSTRAINT "CompetitionActionItem_matchId_fkey" FOREIGN KEY ("eventId", "matchId") REFERENCES "Match"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "CompetitionActionItem" ADD CONSTRAINT "CompetitionActionItem_teamId_fkey" FOREIGN KEY ("eventId", "teamId") REFERENCES "Team"("eventId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
