@@ -33,7 +33,8 @@ function scheduleForm(state: CompetitionWorkspaceState) {
     values[`room-${match.id}`] = override?.roomId ?? assignments[match.id]?.roomId ?? "";
   }
   return {
-    revision: state.schedule ? `draft:${source!.id}` : `published:${source?.id ?? "none"}`,
+    revision: `${state.schedule ? "draft" : "published"}:${source?.id ?? "none"}:${source?.version ?? 0}`,
+    sourceRevision: source ? { id: source.id, version: source.version, status: state.schedule ? "draft" as const : "published" as const } : undefined,
     values,
     assignments,
     locks: [...new Set([...(saved?.lockedMatchIds ?? []), ...state.matches.filter(m => ["live", "completed", "locked"].includes(m.scheduleStatus)).map(m => m.id)])],
@@ -98,6 +99,7 @@ export function ScheduleControls({ state, busy, run, t }: { state: CompetitionWo
             matchDurationMinutes: duration, bufferMinutes: Number(values.buffer), minimumRestMinutes: Number(values.rest),
             rooms: values.rooms.split(",").map(room => room.trim()).filter(Boolean),
             manualOverrides, lockedMatchIds: form.locks,
+            sourceRevision: form.sourceRevision,
           },
         });
       } catch { setError(true); }
@@ -119,7 +121,7 @@ export function ScheduleControls({ state, busy, run, t }: { state: CompetitionWo
             <Field label={t("Override time", "Ubah waktu")} type="datetime-local" disabled={immutable} {...field(`override-${match.id}`)} />
             <Field label={t("Room", "Ruangan")} disabled={immutable} {...field(`room-${match.id}`)} />
             <label className="flex min-h-11 items-center gap-3 text-sm">
-              <input className="size-5 miracle-focus-ring" type="checkbox" name={`lock-${match.id}`} disabled={immutable || !form.assignments[match.id]} checked={immutable || form.locks.includes(match.id)} onChange={event => {
+              <input className="size-5 miracle-focus-ring" type="checkbox" name={`lock-${match.id}`} disabled={immutable || !form.sourceRevision || !form.assignments[match.id]} checked={immutable || form.locks.includes(match.id)} onChange={event => {
                 const checked = event.target.checked;
                 setForm(current => ({ ...current, dirty: true, locks: checked ? [...current.locks, match.id] : current.locks.filter(id => id !== match.id) }));
               }} />

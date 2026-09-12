@@ -7,6 +7,7 @@ import type { ParsedCommand } from "./schema";
 import { json, isTerminal, matchSnapshot, eventMatch, readGraph, type StoredSchedule } from "./state";
 import { applyResult } from "./results";
 import { reconcileReadinessActions } from "./readiness";
+import { scheduleBaseline } from "./schedule-source";
 
 function requireReason(value: string | undefined) { if (!value?.trim()) throw new Error("An override or resolution reason is required"); }
 
@@ -54,9 +55,10 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       const graph = await readGraph(tx, eventId);
       const matches = await tx.match.findMany({ where: { eventId } });
       const playable = matches.filter(m => graph.matches.some(g => g.id === m.id && g.status === "pending"));
+      const existingAssignments = await scheduleBaseline(tx, eventId, version, command.input, playable);
       const draft = planSchedule({
         ...command.input, graph,
-        existingAssignments: playable.flatMap(m => m.scheduledAt && m.scheduledEndsAt && m.scheduleRoom ? [{ matchId: m.id, roomId: m.scheduleRoom, start: m.scheduledAt.toISOString(), end: m.scheduledEndsAt.toISOString() }] : []),
+        existingAssignments,
         lockedMatchIds: [...new Set([...command.input.lockedMatchIds ?? [], ...playable.filter(m => m.scheduleStatus === "locked").map(m => m.id)])],
         matchStates: Object.fromEntries(playable.map(m => [m.id, isTerminal(m) ? (m.scheduleStatus === "live" || m.status === "Live" ? "live" : "completed") : "scheduled"])),
       });

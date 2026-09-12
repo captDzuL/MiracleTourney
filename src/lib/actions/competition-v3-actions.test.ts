@@ -40,6 +40,17 @@ describe("authenticated competition actions", () => {
     expect(store.rows("competitionAuditLog")[0]).toMatchObject({ actorUserId: "owner", action: "announcement_save" });
     expect(store.rows("eventAnnouncement")[0]).toMatchObject({ title: "Hello", status: "draft" });
   });
+  it("passes reviewed draft locks to generation and exposes stale source conflicts", async () => {
+    const call = (version: number, command: unknown) => executeCompetitionOperationAction({ eventId: "event", expectedVersion: version, idempotencyKey: `lock-${version}`, command });
+    await call(0, { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.singleElimination, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] });
+    const input = { timezone: "Asia/Jakarta", eventWindow: { start: "2026-09-12T09:00:00Z", end: "2026-09-12T12:00:00Z" }, matchDurationMinutes: 30, bufferMinutes: 0, minimumRestMinutes: 0, rooms: ["room"] };
+    const first = await call(1, { kind: "schedule_save", input });
+    const command = { kind: "schedule_save", input: { ...input, sourceRevision: { id: first.resourceId, version: first.version, status: "draft" }, lockedMatchIds: [store.rows("match")[0].id] } };
+    expect(await mutateCompetitionWorkspaceAction({ eventId: "event", expectedVersion: 2, idempotencyKey: "locked", command })).toMatchObject({ status: "saved", receipt: { version: 3 } });
+    expect(store.rows("scheduleRevision")[1].snapshot).toMatchObject({ draft: { feasible: true }, input: command.input });
+    expect(await mutateCompetitionWorkspaceAction({ eventId: "event", expectedVersion: 3, idempotencyKey: "stale-source", command })).toEqual({ status: "conflict" });
+    expect(store.rows("event")[0].competitionVersion).toBe(3);
+  });
   it("returns serializable conflict and authorization outcomes for production client rendering", async () => {
     expect(await mutateCompetitionWorkspaceAction(request)).toMatchObject({ status: "saved", receipt: { version: 1 } });
     expect(await mutateCompetitionWorkspaceAction({ ...request, idempotencyKey: "stale" })).toEqual({ status: "conflict" });

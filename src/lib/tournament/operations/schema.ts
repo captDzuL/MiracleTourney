@@ -12,6 +12,7 @@ const scheduling = z.object({
   matchDurationMinutes: z.number(), bufferMinutes: z.number(), minimumRestMinutes: z.number(),
   preferredRestMinutes: z.number().optional(), rooms: z.array(id), manualOverrides: z.array(assignment).optional(),
   lockedMatchIds: z.array(id).optional(),
+  sourceRevision: z.object({ id, version: z.number().int().positive(), status: z.enum(["draft", "published"]) }).strict().optional(),
 }).strict();
 export const operationCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("initialize"), config: tournamentFormatConfigSchema, teams: z.array(z.object({ id, seed: z.number().int() }).strict()), slotCount: z.number().int().optional() }).strict(),

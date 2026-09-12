@@ -22,6 +22,67 @@ function fixture() {
 }
 
 describe("competition operation transactions", () => {
+  it.each([false, true])("locks the reviewed draft assignment through regeneration and publication (previously published: %s)", async previouslyPublished => {
+    const f = fixture(); const matchId = await f.setup();
+    const first = await f.run({ kind: "schedule_save", input: scheduling });
+    if (previouslyPublished) await f.run({ kind: "schedule_publish", revisionId: first.resourceId! });
+    const reviewed = previouslyPublished ? await f.run({ kind: "schedule_save", input: { ...scheduling, eventWindow: { ...scheduling.eventWindow, start: "2026-09-12T11:00:00Z" } } }) : first;
+    const assignment = { matchId, roomId: "room", start: previouslyPublished ? "2026-09-12T11:00:00.000Z" : "2026-09-12T09:00:00.000Z", end: previouslyPublished ? "2026-09-12T11:30:00.000Z" : "2026-09-12T09:30:00.000Z" };
+    const next = await f.run({ kind: "schedule_save", input: { ...scheduling, sourceRevision: { id: reviewed.resourceId!, version: reviewed.version, status: "draft" }, lockedMatchIds: [matchId] } });
+    expect((await f.service.readScheduleDraft("event", next.resourceId!, owner))?.draft).toMatchObject({ feasible: true, conflicts: [], assignments: [assignment] });
+    await f.run({ kind: "schedule_publish", revisionId: next.resourceId! });
+    expect((await f.service.readPublishedSchedule("event"))?.assignments).toEqual([assignment]);
+  });
+
+  it.each(["missing", "foreign", "version", "status", "superseded", "old_published", "published_with_draft", "missing_assignment", "foreign_match"])("rejects %s lock sources without writing a draft or consuming a version", async invalid => {
+    const f = fixture(); const matchId = await f.setup();
+    const first = await f.run({ kind: "schedule_save", input: scheduling });
+    let source = { id: first.resourceId!, version: first.version, status: "draft" as "draft" | "published" };
+    if (invalid === "foreign") {
+      f.seed("scheduleRevision", { id: "foreign", eventId: "other-event", version: first.version, status: "draft", snapshot: f.rows("scheduleRevision")[0].snapshot });
+      source = { ...source, id: "foreign" };
+    }
+    if (invalid === "version") source = { ...source, version: 999 };
+    if (invalid === "status") source = { ...source, status: "published" };
+    if (invalid === "superseded") await f.run({ kind: "schedule_save", input: scheduling });
+    if (invalid === "old_published" || invalid === "published_with_draft") {
+      await f.run({ kind: "schedule_publish", revisionId: first.resourceId! });
+      source = { ...source, status: "published" };
+      const second = await f.run({ kind: "schedule_save", input: scheduling });
+      if (invalid === "old_published") await f.run({ kind: "schedule_publish", revisionId: second.resourceId! });
+    }
+    if (invalid === "missing_assignment") await f.db.$transaction(async tx => { await tx.scheduleRevision.update({ where: { id: first.resourceId! }, data: { snapshot: { draft: { assignments: [] } } } }); });
+    const before = f.rows("event")[0].competitionVersion;
+    const drafts = f.rows("scheduleRevision").length;
+    await expect(f.run({ kind: "schedule_save", input: { ...scheduling, ...(invalid === "missing" ? {} : { sourceRevision: source }), lockedMatchIds: [invalid === "foreign_match" ? "other-event-match" : matchId] } })).rejects.toThrow(/source revision/i);
+    expect(f.rows("event")[0].competitionVersion).toBe(before);
+    expect(f.rows("scheduleRevision")).toHaveLength(drafts);
+  });
+
+  it("uses the selected published source and keeps live assignments immutable", async () => {
+    const f = fixture(); const matchId = await f.setup();
+    const first = await f.run({ kind: "schedule_save", input: scheduling });
+    await f.run({ kind: "schedule_publish", revisionId: first.resourceId! });
+    await f.run({ kind: "match_start", matchId, reason: "Ready at desk" });
+    const next = await f.run({ kind: "schedule_save", input: { ...scheduling, sourceRevision: { id: first.resourceId!, version: first.version, status: "published" }, lockedMatchIds: [matchId], manualOverrides: [{ matchId, roomId: "room", start: "2026-09-12T11:00:00Z", end: "2026-09-12T11:30:00Z" }] }, reason: "Attempted change" });
+    const review = await f.service.readScheduleDraft("event", next.resourceId!, owner);
+    expect(review?.draft.feasible).toBe(false);
+    expect(review?.draft.conflicts.some(c => c.code === "IMMUTABLE_OVERRIDE")).toBe(true);
+    expect(f.rows("match")[0].scheduledAt).toEqual(new Date("2026-09-12T09:00:00Z"));
+  });
+  it.each(["live", "completed", "locked"] as const)("prefers persisted %s protection over an earlier reviewed preview", async status => {
+    const f = fixture(); const matchId = await f.setup();
+    const first = await f.run({ kind: "schedule_save", input: scheduling });
+    await f.run({ kind: "schedule_publish", revisionId: first.resourceId! });
+    const preview = await f.run({ kind: "schedule_save", input: { ...scheduling, eventWindow: { ...scheduling.eventWindow, start: "2026-09-12T11:00:00Z" } } });
+    if (status === "live") await f.run({ kind: "match_start", matchId, reason: "Ready at desk" });
+    else await f.db.$transaction(async tx => { await tx.match.update({ where: { id: matchId }, data: { scheduleStatus: status, ...(status === "completed" ? { status: "Completed", resultVersion: 1 } : {}) } }); });
+    const next = await f.run({ kind: "schedule_save", input: { ...scheduling, sourceRevision: { id: preview.resourceId!, version: preview.version, status: "draft" }, lockedMatchIds: [matchId] } });
+    const review = await f.service.readScheduleDraft("event", next.resourceId!, owner);
+    expect(review?.draft).toMatchObject({ feasible: true, conflicts: [], assignments: [{ matchId, roomId: "room", start: "2026-09-12T09:00:00.000Z", end: "2026-09-12T09:30:00.000Z" }] });
+    await f.run({ kind: "schedule_publish", revisionId: next.resourceId! });
+    expect(f.rows("match")[0]).toMatchObject({ scheduleStatus: status, scheduledAt: new Date("2026-09-12T09:00:00Z") });
+  });
   it.each([false, true])("rejects start before a published assignment even with readiness override=%s", async override => {
     const f = fixture(); const matchId = await f.setup();
     if (!override) for (const teamId of ["a", "b"]) await f.run({ kind: "readiness_update", matchId, teamId, status: "ready" });

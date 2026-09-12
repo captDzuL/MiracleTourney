@@ -71,6 +71,7 @@ describe("organizer Match Day workspace", () => {
     expect(boundary.execute.mock.calls[1][0]).toEqual(boundary.execute.mock.calls[0][0]);
   });
   it("saves schedule preview with event-local overrides and locks before explicit publication", async () => {
+    state.schedule = scheduleRevision("reviewed", 4, 30);
     act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="schedule" />));
     set("windowEnd", "2026-09-12T18:00"); set("override-match", "2026-09-12T10:00");
     set("reason", "Room availability", host.querySelector('form[aria-label="Schedule generation"]')!);
@@ -177,6 +178,19 @@ describe("organizer Match Day workspace", () => {
     expect(host.querySelector<HTMLInputElement>('[name="duration"]')!.value).toBe("60");
     expect(host.querySelector<HTMLInputElement>('[name="buffer"]')!.value).toBe("7");
     expect(button("Publish schedule")).toBeUndefined();
+  });
+  it.each(["draft", "published"] as const)("binds assignment locks to the reviewed %s identity", async status => {
+    const source = scheduleRevision("reviewed", status === "draft" ? 4 : 3, 30);
+    if (status === "draft") {
+      state.schedule = source;
+      state.matches[0] = { ...state.matches[0], start: null, end: null, room: null };
+    } else state.publishedSchedule = source;
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="schedule" />));
+    const lock = host.querySelector<HTMLInputElement>('[name="lock-match"]')!;
+    expect(lock.disabled).toBe(false);
+    act(() => lock.click());
+    await submit("Schedule generation");
+    expect(boundary.execute).toHaveBeenCalledWith(expect.objectContaining({ expectedVersion: 4, command: expect.objectContaining({ input: expect.objectContaining({ sourceRevision: { id: source.id, version: source.version, status }, lockedMatchIds: ["match"] }) }) }));
   });
   it("preserves 45 minute local edits when a 90 minute draft arrives and requires explicit reload", async () => {
     state.schedule = scheduleRevision("draft-a", 4, 30);
