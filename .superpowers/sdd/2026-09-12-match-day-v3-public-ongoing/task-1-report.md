@@ -225,3 +225,56 @@ Prisma validation/generation used local placeholder URLs for configuration only.
 The query scopes the constraint to the resolved MatchResultRevision table, checks the resolved Team target and ordered columns, and validates PostgreSQL-specific deferral metadata before fixture creation. The existing schema/migration files and production guards are unchanged. Task 2 was not started.
 
 `MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL` is absent, so the live integration remains skipped. The catalog query and cascade must still be exercised against a deliberately configured, already migrated isolated PostgreSQL database; this round does not claim live migration execution.
+
+## Review remediation — round 5
+
+### Finding addressed and files changed
+
+- Reproduced the full-suite regression in `src/security-smoke.test.ts`: its unchanged application source scan found legitimate test-only Prisma `$queryRaw` calls in both migration test files under `src/lib/competition`.
+- Relocated `persistence-migration-harness.test.ts` and `persistence-migration.integration.test.ts` to `tests/competition/`. The harness is an exact rename; the integration test only changes its relative preflight import to `../../scripts/e2e-db-preflight.mjs`.
+- Extended `vitest.config.ts` discovery with `tests/competition/**/*.test.ts`, retaining both existing source test globs. The migration tests remain discoverable in focused runs and the full unit suite.
+- The security scan, installed-constraint gate, explicit database opt-in, production-host and URL guards, fixture cleanup, Prisma schema/migration, and Task 2 graph implementation are unchanged.
+
+### Red / green evidence
+
+RED before relocation, on starting head `8914520`:
+
+```text
+pnpm vitest run src/security-smoke.test.ts
+1 failed file; 1 failed test, 5 passed tests.
+application code does not use raw SQL escape hatches:
+expected combined application source not to match /\$queryRaw|\$executeRaw|queryRawUnsafe|executeRawUnsafe/
+```
+
+The source search found exactly the two migration test files identified above.
+
+GREEN after relocation:
+
+```text
+pnpm vitest run src/lib/competition/persistence-schema.test.ts tests/competition/persistence-migration.integration.test.ts tests/competition/persistence-migration-harness.test.ts src/security-smoke.test.ts
+3 passed files, 1 skipped file; 28 passed tests, 1 skipped test.
+
+pnpm test:unit
+99 passed files, 1 skipped file; 888 passed tests, 1 skipped test.
+Full unit suite executed once after the fix; exit 0.
+
+pnpm lint
+tsc --noEmit; exit 0.
+
+git diff --check
+git diff --cached --check
+Both passed. Git emitted only LF-to-CRLF normalization warnings.
+```
+
+The full suite emitted the existing expected stderr from the password-reset test that simulates an unreachable email provider; that test passed. Shell and patch execution again required approved escalation because the Windows sandbox ACL helper could not start.
+
+### Commit
+
+- `5787237f6157c409667f99d246057ea1e5c939b5` — migration-only test relocation and discovery adjustment.
+- This round-5 evidence is recorded in the following documentation commit.
+
+### Self-review and remaining concerns
+
+The staged implementation diff contains two renames and only two changed lines: the preflight import and Vitest discovery. No security exemption was added. The full suite discovers the moved harness (8 passing tests) and guarded integration (1 skipped test).
+
+`MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL` remains unset. No live database connection, migration execution, reset, or cascade verification was attempted; the prior requirement to exercise the guarded integration on an explicitly configured isolated database remains.
