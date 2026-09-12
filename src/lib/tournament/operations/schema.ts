@@ -1,0 +1,30 @@
+import { z } from "zod";
+import { tournamentFormatConfigSchema } from "../formats/types";
+
+const id = z.string().trim().min(1).max(300);
+const reason = z.string().trim().max(4000).optional();
+const instant = z.iso.datetime({ offset: true });
+const assignment = z.object({ matchId: id, roomId: id, start: instant, end: instant }).strict();
+const scheduling = z.object({
+  timezone: id, eventWindow: z.object({ start: instant, end: instant }).strict(),
+  matchDurationMinutes: z.number(), bufferMinutes: z.number(), minimumRestMinutes: z.number(),
+  preferredRestMinutes: z.number().optional(), rooms: z.array(id), manualOverrides: z.array(assignment).optional(),
+  lockedMatchIds: z.array(id).optional(),
+}).strict();
+export const operationCommandSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("initialize"), config: tournamentFormatConfigSchema, teams: z.array(z.object({ id, seed: z.number().int() }).strict()), slotCount: z.number().int().optional() }).strict(),
+  z.object({ kind: z.literal("schedule_save"), input: scheduling, reason }).strict(),
+  z.object({ kind: z.literal("schedule_publish"), revisionId: id }).strict(),
+  z.object({ kind: z.literal("match_timing"), matchId: id, status: z.enum(["delayed", "postponed"]), reason }).strict(),
+  z.object({ kind: z.literal("readiness_update"), matchId: id, teamId: id, status: z.enum(["pending", "checked_in", "ready", "not_ready"]), note: z.string().trim().max(4000).optional() }).strict(),
+  z.object({ kind: z.literal("readiness_deadline"), matchId: id }).strict(),
+  z.object({ kind: z.literal("match_start"), matchId: id, reason }).strict(),
+  z.object({ kind: z.literal("incident_report"), matchId: id.optional(), incidentKind: id, description: z.string().trim().min(1).max(8000) }).strict(),
+  z.object({ kind: z.literal("incident_resolve"), incidentId: id, reason }).strict(),
+  z.object({ kind: z.literal("action_resolve"), actionId: id, reason }).strict(),
+  z.object({ kind: z.literal("announcement_save"), title: z.string().trim().min(1).max(200), body: z.string().trim().min(1).max(8000), startsAt: instant.optional(), endsAt: instant.optional() }).strict(),
+  z.object({ kind: z.literal("announcement_publish"), announcementId: id }).strict(),
+  z.object({ kind: z.literal("announcement_unpublish"), announcementId: id }).strict(),
+]);
+export const operationRequestSchema = z.object({ eventId: id, expectedVersion: z.number().int().nonnegative(), idempotencyKey: id, command: operationCommandSchema }).strict();
+export type ParsedCommand = z.infer<typeof operationCommandSchema>;

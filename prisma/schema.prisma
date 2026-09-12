@@ -89,6 +89,8 @@ model Event {
   publishedAt                DateTime?
   previewRevision            Int                         @default(0)
   publishedRevision          Int                         @default(0)
+  competitionVersion         Int                         @default(0)
+  publishedScheduleVersion   Int?
   venue                      String
   organizerUserId            String?
   organizer                  User?                       @relation("EventOrganizer", fields: [organizerUserId], references: [id], onDelete: SetNull)
