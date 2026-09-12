@@ -14,6 +14,9 @@ import { CompletionWorkspace, type CompletionWorkspaceState } from "./Completion
 
 Object.assign(globalThis, { React, IS_REACT_ACT_ENVIRONMENT: true });
 
+const navigation = vi.hoisted(() => ({ refresh: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: navigation.refresh }) }));
+
 const awards: readonly CompletionAwardSummary[] = [
   {
     award: "mvp",
@@ -126,6 +129,7 @@ describe("CompletionWorkspace", () => {
   let root: Root;
 
   beforeEach(() => {
+    navigation.refresh.mockClear();
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -374,6 +378,95 @@ describe("CompletionWorkspace", () => {
     expect(container.querySelector("[data-action-result]")?.textContent).toContain(expected);
   });
 
+  it("blocks an immediately rejected award resubmission until fresh authoritative props reconcile", async () => {
+    const initialState = state("ready");
+    const complete = vi.fn()
+      .mockResolvedValueOnce({ status: "blocked" as const, code: "invalid_decisions" as const })
+      .mockResolvedValueOnce({ status: "completed" as const, eventId: "event-1", version: 6, snapshot: {} as never });
+    const workspace = (workspaceState: CompletionWorkspaceState) => provider("en", <CompletionWorkspace
+      completeAction={complete}
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={workspaceState}
+    />);
+    await act(async () => root.render(workspace(initialState)));
+
+    const completeButton = container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!;
+    await act(async () => completeButton.click());
+
+    expect(navigation.refresh).toHaveBeenCalledTimes(1);
+    expect(completeButton.disabled).toBe(true);
+    expect(container.querySelector("[data-award-action-blocker]")?.textContent).toContain("no longer valid");
+    await act(async () => completeButton.click());
+    expect(complete).toHaveBeenCalledTimes(1);
+
+    if (initialState.status !== "ready") throw new Error("Expected a ready fixture");
+    const refreshedState = {
+      ...initialState,
+      version: 5,
+      awards: initialState.awards.map((award) => award.award === "top_assist"
+        ? {
+            ...award,
+            candidates: [award.candidates[1]],
+            selectedPlayerId: "p5",
+            decisionReason: "Authoritative tie review",
+          }
+        : award),
+    } satisfies CompletionWorkspaceState;
+    await act(async () => root.render(workspace(refreshedState)));
+
+    expect(container.querySelector("[data-award-action-blocker]")).toBeNull();
+    expect(container.querySelector<HTMLInputElement>('input[name="award-top_assist"][value="p5"]')?.checked).toBe(true);
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[name="awardReason-top_assist"]')?.value).toBe("Authoritative tie review");
+    expect(container.querySelector<HTMLButtonElement>("[data-complete-tournament]")?.disabled).toBe(false);
+  });
+
+  it("preserves active valid award edits across an equivalent RSC rerender", async () => {
+    const readyState = state("ready");
+    await act(async () => root.render(provider("en", <CompletionWorkspace
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={readyState}
+    />)));
+    await act(async () => container.querySelector<HTMLButtonElement>("#completion-tab-awards")!.click());
+    const candidate = container.querySelector<HTMLInputElement>('input[name="award-top_assist"][value="p5"]')!;
+    const reason = container.querySelector<HTMLTextAreaElement>('textarea[name="awardReason-top_assist"]')!;
+    await act(async () => candidate.click());
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(reason, "Active organizer edit");
+      reason.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const equivalentState = structuredClone(readyState);
+    await act(async () => root.render(provider("en", <CompletionWorkspace
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={equivalentState}
+    />)));
+
+    expect(container.querySelector<HTMLInputElement>('input[name="award-top_assist"][value="p5"]')?.checked).toBe(true);
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[name="awardReason-top_assist"]')?.value).toBe("Active organizer edit");
+  });
+
+  it("renders completed awards as read-only until authoritative reopened props arrive", async () => {
+    const workspace = (workspaceState: CompletionWorkspaceState) => provider("en", <CompletionWorkspace
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={workspaceState}
+    />);
+    await act(async () => root.render(workspace(state("completed"))));
+    await act(async () => container.querySelector<HTMLButtonElement>("#completion-tab-awards")!.click());
+
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('input[name^="award-"]')).every((input) => input.disabled)).toBe(true);
+    const completedReason = container.querySelector<HTMLTextAreaElement>('textarea[name="awardReason-top_assist"]')!;
+    expect(completedReason.readOnly).toBe(true);
+    expect(completedReason.getAttribute("aria-readonly")).toBe("true");
+
+    await act(async () => root.render(workspace(state("reopened"))));
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('input[name^="award-"]')).every((input) => !input.disabled)).toBe(true);
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[name="awardReason-top_assist"]')?.readOnly).toBe(false);
+  });
+
   it("shows pending feedback and prevents duplicate completion submissions", async () => {
     let resolve!: (value: { status: "integration_required" }) => void;
     const complete = vi.fn(() => new Promise<{ status: "integration_required" }>((done) => { resolve = done; }));
@@ -420,6 +513,7 @@ describe("CompletionWorkspace", () => {
     await act(async () => container.querySelector<HTMLButtonElement>("[data-reopen-tournament]")!.click());
 
     expect(reopen).toHaveBeenCalledTimes(1);
+    expect(navigation.refresh).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-action-result]')?.textContent).toContain("Tournament reopened for a recorded correction");
   });
 
@@ -488,5 +582,7 @@ describe("CompletionWorkspace", () => {
     expect(classNames).not.toContain("text-[var(--color-brand-violet)]");
     expect(classNames).not.toContain("text-[var(--color-brand-cream)]");
     expect(host.querySelector<HTMLTextAreaElement>('textarea[name="reopenReason"]')?.className).toContain("border-[var(--color-border-strong)]");
+    expect(classNames).toContain("aria-[selected=true]:bg-[var(--color-surface-selected)]");
+    expect(classNames).not.toContain("color-surface-strong");
   });
 });

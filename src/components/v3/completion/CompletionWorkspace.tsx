@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition, type KeyboardEvent } from "react";
 import { ClipboardCheck, FileBadge2, Globe2, RotateCcw, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 
 import { completeTournamentAction, reopenTournamentAction, type CompletionActionResult } from "@/lib/actions/completion-v3-actions";
@@ -16,6 +17,7 @@ import { ReadinessChecklist } from "./ReadinessChecklist";
 export type { CompletionWorkspaceState } from "@/lib/completion/workspace";
 
 type CompletionTab = "readiness" | "awards" | "certificates" | "publication";
+type AwardActionBlocker = "invalid_decisions" | "tie_reason_required";
 
 type CompletionWorkspaceProps = {
   state: CompletionWorkspaceState;
@@ -44,7 +46,15 @@ function initialAwardDecisions(state: CompletionWorkspaceState): AwardDecisions 
   return decisions;
 }
 
-export function CompletionWorkspace({
+function authoritativeStateKey(state: CompletionWorkspaceState): string {
+  return JSON.stringify(state);
+}
+
+export function CompletionWorkspace(props: CompletionWorkspaceProps) {
+  return <CompletionWorkspaceForm key={authoritativeStateKey(props.state)} {...props} />;
+}
+
+function CompletionWorkspaceForm({
   state,
   completionIdempotencyKey,
   reopenIdempotencyKey,
@@ -52,6 +62,7 @@ export function CompletionWorkspace({
   reopenAction = reopenTournamentAction,
 }: CompletionWorkspaceProps) {
   const t = useTranslations("completionWorkspace");
+  const router = useRouter();
   const integrationRequired = state.status === "integration_required";
   const [activeTab, setActiveTab] = useState<CompletionTab>("readiness");
   const [actionResult, setActionResult] = useState<string | null>(null);
@@ -59,6 +70,7 @@ export function CompletionWorkspace({
   const [reopenReason, setReopenReason] = useState("");
   const [awardDecisions, setAwardDecisions] = useState<AwardDecisions>(() => initialAwardDecisions(state));
   const [authoritativeBlockers, setAuthoritativeBlockers] = useState<readonly CompletionWorkspaceBlocker[]>(() => integrationRequired ? [] : state.blockers);
+  const [awardActionBlocker, setAwardActionBlocker] = useState<AwardActionBlocker | null>(null);
   const [isPending, startTransition] = useTransition();
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const actionResultRef = useRef<HTMLParagraphElement>(null);
@@ -92,9 +104,10 @@ export function CompletionWorkspace({
   const canComplete = !integrationRequired
     && (state.status === "ready" || state.status === "reopened" || decisionRepairableState)
     && visibleBlockers.length === 0
+    && awardActionBlocker === null
     && decisions.length === 4;
   const canReopen = state.status === "completed";
-  const displayedStatus = canComplete && state.status === "blocked" ? "ready" : state.status;
+  const displayedStatus = awardActionBlocker ? "blocked" : canComplete && state.status === "blocked" ? "ready" : state.status;
 
   function updateAwardDecision(award: CompletionAwardStatistic, decision: AwardReviewDecision) {
     setAwardDecisions((current) => ({ ...current, [award]: decision }));
@@ -157,7 +170,9 @@ export function CompletionWorkspace({
           setAuthoritativeBlockers(result.blockers.map(blockerFromResult));
           setActiveTab("readiness");
         } else if (result.status === "blocked" && (result.code === "invalid_decisions" || result.code === "tie_reason_required")) {
+          setAwardActionBlocker(result.code);
           setActiveTab("awards");
+          router.refresh();
         }
         setActionResult(resultMessage(result, "complete"));
       } catch {
@@ -184,6 +199,7 @@ export function CompletionWorkspace({
           idempotencyKey: reopenIdempotencyKey,
           reason: reopenReason.trim(),
         });
+        if (result.status === "reopened") router.refresh();
         setActionResult(resultMessage(result, "reopen"));
       } catch {
         setActionResult(t("feedback.failed"));
@@ -208,7 +224,13 @@ export function CompletionWorkspace({
   function panel(tab: CompletionTab) {
     if (tab === "readiness") return <ReadinessChecklist blockers={visibleBlockers} onRepairTarget={(target) => setActiveTab(target)} state={state} />;
     if (integrationRequired) return <IntegrationUnavailablePanel title={t(`${tab}.title`)} waiting={t("integration.waiting")} />;
-    if (tab === "awards") return <AwardReview awards={state.awards} decisions={awardDecisions} onDecisionChange={updateAwardDecision} />;
+    if (tab === "awards") return <AwardReview
+      actionBlockerMessage={awardActionBlocker ? resultMessage({ status: "blocked", code: awardActionBlocker }, "complete") : null}
+      awards={state.awards}
+      decisions={awardDecisions}
+      onDecisionChange={updateAwardDecision}
+      readOnly={state.status === "completed" || awardActionBlocker !== null}
+    />;
     if (tab === "certificates") return <section className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 min-[700px]:p-6">
       <FileBadge2 aria-hidden="true" className="size-7 text-[var(--color-accent-violet-foreground)]" />
       <h3 className="mt-4 text-lg font-extrabold">{t("certificates.title")}</h3>
@@ -242,7 +264,7 @@ export function CompletionWorkspace({
         {TABS.map((tab, index) => <button
           aria-controls={`completion-panel-${tab}`}
           aria-selected={activeTab === tab}
-          className="min-h-11 rounded-[var(--radius-control)] px-3 text-sm font-bold text-[var(--color-text-muted)] transition-colors miracle-focus-ring hover:text-[var(--color-text)] aria-[selected=true]:bg-[var(--color-surface-strong)] aria-[selected=true]:text-[var(--color-text)]"
+          className="min-h-11 rounded-[var(--radius-control)] px-3 text-sm font-bold text-[var(--color-text-muted)] transition-colors miracle-focus-ring hover:text-[var(--color-text)] aria-[selected=true]:bg-[var(--color-surface-selected)] aria-[selected=true]:text-[var(--color-text)]"
           id={`completion-tab-${tab}`}
           key={tab}
           onClick={() => setActiveTab(tab)}
@@ -256,7 +278,7 @@ export function CompletionWorkspace({
     </nav>
 
     <section aria-label={t("kpis.label")} data-completion-kpis className="mt-4 grid min-w-0 grid-cols-2 gap-3 min-[700px]:grid-cols-4">
-      <Kpi label={t("kpis.blockers")} value={integrationRequired ? unavailable : String(visibleBlockers.length)} />
+      <Kpi label={t("kpis.blockers")} value={integrationRequired ? unavailable : String(visibleBlockers.length + (awardActionBlocker ? 1 : 0))} />
       <Kpi label={t("kpis.awards")} value={integrationRequired ? unavailable : `${resolvedAwards} / 4`} />
       <Kpi label={t("kpis.certificates")} value={integrationRequired ? unavailable : `${state.certificates.generated} / ${state.certificates.total}`} />
       <Kpi label={t("kpis.version")} value={integrationRequired ? unavailable : String(state.version)} />
