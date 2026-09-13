@@ -11,8 +11,9 @@ import { createCertificateStudioTransaction } from "../../../src/lib/certificate
 import { completeTournament } from "../../../src/lib/completion/complete";
 import { createPrismaCompletionDependencies } from "../../../src/lib/completion/prisma-adapter";
 import { MIRACLE_V3_CERTIFICATE_TYPES } from "../../../src/lib/certificate/templates/miracle-v3-contract";
-import type { CompetitionGraph } from "../../../src/lib/tournament/competition";
+import { generateCompetitionGraph, type CompetitionGraph } from "../../../src/lib/tournament/competition";
 import type { TournamentFormatConfig } from "../../../src/lib/tournament/formats/types";
+import { competitionProjection } from "../../../src/lib/tournament/operations/result-projection";
 
 export const completionDb = new PrismaClient();
 export type CompletionFixtureKind = "single_elimination" | "double_elimination" | "round_robin" | "group_playoffs";
@@ -60,6 +61,8 @@ const configs: Record<CompletionFixtureKind, TournamentFormatConfig> = {
 
 type FixtureMatch = {
   id: string;
+  phaseId: string;
+  groupId: string | null;
   roundLabel: string;
   round: number;
   slot: number;
@@ -71,12 +74,58 @@ type FixtureMatch = {
   winnerTeamId: string | null;
 };
 
-function fixtureGraph(
+export function fixtureGraph(
   eventId: string,
   phaseId: string,
   kind: CompletionFixtureKind,
   teamIds: readonly string[],
 ): { graph: CompetitionGraph; matches: FixtureMatch[] } {
+  if (kind === "group_playoffs") {
+    const config = configs.group_playoffs as Extract<TournamentFormatConfig, { kind: "group_playoffs" }>;
+    const graph = generateCompetitionGraph({
+      eventId,
+      config,
+      teams: teamIds.map((id, index) => ({ id, seed: index + 1 })),
+    });
+    const projectedMatches: FixtureMatch[] = [];
+    const rounds = new Map<string, number>();
+    for (const [index, match] of graph.matches.entries()) {
+      const projection = competitionProjection(graph, projectedMatches.map((row) => ({
+        ...row,
+        eventId,
+        status: "Completed",
+        scheduleStatus: "completed",
+        resultVersion: 1,
+      })) as never);
+      const homeTeamId = projection.resolve(match.home);
+      const awayTeamId = projection.resolve(match.away);
+      if (!homeTeamId || !awayTeamId) throw new Error(`Unable to resolve generated fixture match ${match.id}`);
+      const roundKey = `${match.phaseId}:${match.bracket}:${match.round}:${match.leg}`;
+      if (!rounds.has(roundKey)) rounds.set(roundKey, rounds.size + 1);
+      projectedMatches.push({
+        id: match.id,
+        phaseId: match.phaseId,
+        groupId: match.groupId,
+        roundLabel: match.bracket === "round_robin"
+          ? `Group ${graph.groups.find(({ id }) => id === match.groupId)?.label ?? ""} Round ${match.round}`
+          : match.bracket === "third_place"
+            ? "Third Place"
+            : graph.placements.some(({ rank, source }) => rank === 1 && source.kind === "match" && source.matchId === match.id)
+              ? "Final"
+              : "Semifinal",
+        round: rounds.get(roundKey)!,
+        slot: index + 1,
+        bracket: match.bracket,
+        homeTeamId,
+        awayTeamId,
+        homeScore: 2,
+        awayScore: 0,
+        winnerTeamId: homeTeamId,
+      });
+    }
+    return { graph, matches: projectedMatches };
+  }
+
   if (kind === "round_robin") {
     const config = configs.round_robin as Extract<TournamentFormatConfig, { kind: "round_robin" }>;
     const fixtures = [
@@ -89,6 +138,8 @@ function fixtureGraph(
     ] as const;
     const matches = fixtures.map(([homeTeamId, awayTeamId, homeScore, awayScore], index) => ({
       id: `${eventId}-league-${index + 1}`,
+      phaseId,
+      groupId: null,
       roundLabel: `Round ${index + 1}`,
       round: index + 1,
       slot: 1,
@@ -139,6 +190,8 @@ function fixtureGraph(
   const matches: FixtureMatch[] = [
     {
       id: titleId,
+      phaseId,
+      groupId: null,
       roundLabel: double ? "Grand Final" : "Final",
       round: 1,
       slot: 1,
@@ -151,6 +204,8 @@ function fixtureGraph(
     },
     {
       id: thirdId,
+      phaseId,
+      groupId: null,
       roundLabel: double ? "Lower Final" : "Third Place",
       round: 2,
       slot: 1,
@@ -252,22 +307,36 @@ export async function prepareCompletionFixture(
       },
     });
     await completionDb.team.createMany({ data: teams });
-    await completionDb.competitionPhase.create({
-      data: {
-        id: phaseId,
-        eventId: id,
-        label: "Completion phase",
-        sequence: 1,
-        status: "completed",
-        configuration: { graph } as unknown as Prisma.InputJsonValue,
-      },
-    });
+    for (const phase of graph.phases) {
+      await completionDb.competitionPhase.create({
+        data: {
+          id: phase.id,
+          eventId: id,
+          label: phase.kind,
+          sequence: phase.sequence,
+          status: "completed",
+          configuration: {
+            ...phase,
+            ...(phase.sequence === 1 ? { graph } : {}),
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+    }
+    for (const group of graph.groups) {
+      await completionDb.competitionGroup.create({
+        data: { id: group.id, eventId: id, phaseId: group.phaseId, label: group.label, sequence: group.sequence },
+      });
+      await completionDb.competitionGroupMember.createMany({
+        data: group.teams.map((team) => ({ eventId: id, groupId: group.id, teamId: team.id, seed: team.seed })),
+      });
+    }
     for (const match of matches) {
       await completionDb.match.create({
         data: {
           id: match.id,
           eventId: id,
-          phaseId,
+          phaseId: match.phaseId,
+          groupId: match.groupId,
           roundLabel: match.roundLabel,
           round: match.round,
           slot: match.slot,
@@ -318,10 +387,13 @@ export async function prepareCompletionFixture(
       },
     ];
     await completionDb.player.createMany({ data: players });
+    const firstPlayerMatch = matches.find((match) => [match.homeTeamId, match.awayTeamId].includes(players[0].teamId));
+    const secondPlayerMatch = matches.find((match) => [match.homeTeamId, match.awayTeamId].includes(players[1].teamId));
+    if (!firstPlayerMatch || !secondPlayerMatch) throw new Error("Unable to assign Completion player statistics");
     await completionDb.playerStat.createMany({
       data: [
         {
-          matchId: matches[0].id,
+          matchId: firstPlayerMatch.id,
           playerId: players[0].id,
           playerName: "Forged display should be ignored",
           teamId: players[0].teamId,
@@ -332,7 +404,7 @@ export async function prepareCompletionFixture(
           lastUpdatedBy: actor.id,
         },
         {
-          matchId: matches[0].id,
+          matchId: secondPlayerMatch.id,
           playerId: players[1].id,
           playerName: players[1].displayName,
           teamId: players[1].teamId,
@@ -353,6 +425,7 @@ export async function prepareCompletionFixture(
       teams,
       players,
       actor,
+      graph,
       cleanup: async () => {
         await completionDb.event.deleteMany({ where: { id, slug: id } });
       },

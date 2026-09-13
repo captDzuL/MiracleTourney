@@ -37,10 +37,16 @@ for (const kind of ["single_elimination", "double_elimination", "round_robin", "
     const expectedSource = kind === "round_robin" ? "locked_standings" : "official_playoff";
     const titleMatchId = kind === "round_robin"
       ? null
-      : `${fixture.id}-${kind === "double_elimination" ? "grand-final" : "final"}`;
+      : (() => {
+          const source = fixture.graph.placements.find(({ rank }) => rank === 1)?.source;
+          return source?.kind === "match" ? source.matchId : null;
+        })();
     const thirdMatchId = kind === "round_robin"
       ? null
-      : `${fixture.id}-${kind === "double_elimination" ? "lower-final" : "third-place"}`;
+      : (() => {
+          const source = fixture.graph.placements.find(({ rank }) => rank === 3)?.source;
+          return source?.kind === "match" ? source.matchId : null;
+        })();
     expect(persisted.podiumPlacements.sort((left, right) => left.rank - right.rank).map((row) => ({
       rank: row.rank,
       teamId: row.teamId,
