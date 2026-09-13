@@ -7,6 +7,9 @@ const { prisma } = vi.hoisted(() => ({
       findFirst: vi.fn(),
       findMany: vi.fn(),
     },
+    competitionPhase: {
+      count: vi.fn(),
+    },
     eventRoundConfig: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -99,6 +102,7 @@ const { prisma } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       upsert: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     certificate: {
       count: vi.fn(),
@@ -172,11 +176,19 @@ import {
   updatePlayer,
   adminWriteMatchPlayerStats,
   approveStatSubmission,
+  rejectStatSubmission,
   upsertStatSubmission,
 } from "./repository";
 
 const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
 const organizer = { id: "org-1", role: "organizer" as const, email: "org@test.com", name: "Organizer" };
+
+beforeEach(() => {
+  prisma.event.updateMany.mockResolvedValue({ count: 1 });
+  prisma.competitionPhase.count.mockResolvedValue(0);
+  prisma.match.count.mockResolvedValue(0);
+  prisma.statSubmission.updateMany.mockResolvedValue({ count: 1 });
+});
 
 const championCertificateRow = {
   id: "certificate-champion-v2",
@@ -2161,6 +2173,7 @@ describe("authoritative player-stat write boundary", () => {
     prisma.team.findFirst.mockResolvedValue({ id: "team-1" });
     prisma.player.findMany.mockResolvedValue([{ id: "player-1", nickname: "Nyx", position: "Forward" }]);
     prisma.eventRoundConfig.findUnique.mockResolvedValue({ bestOf: 1 });
+    prisma.statSubmission.updateMany.mockResolvedValue({ count: 1 });
   }
 
   beforeEach(() => {
@@ -2186,6 +2199,7 @@ describe("authoritative player-stat write boundary", () => {
       teamId: "team-1",
       eventId: "event-1",
       submittedBy: "captain-1",
+      status: "pending",
       stats: { "foreign-player": canonicalStats["player-1"] },
     });
     await expect(approveStatSubmission("submission-1", "admin-1")).rejects.toThrow("does not belong");
@@ -2224,10 +2238,41 @@ describe("authoritative player-stat write boundary", () => {
       teamId: "team-1",
       eventId: "event-1",
       submittedBy: "captain-1",
+      status: "pending",
       stats: canonicalStats,
     });
     await expect(approveStatSubmission("submission-1", "admin-1")).rejects.toThrow("score array length");
     expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
+  });
+
+  it.each(["approved", "rejected"])("rejects stale approval when the submission is already %s", async (status) => {
+    prisma.statSubmission.findUnique.mockResolvedValue({
+      id: "submission-1", matchId: "match-1", teamId: "team-1", eventId: "event-1",
+      submittedBy: "captain-1", status, stats: canonicalStats,
+    });
+    await expect(approveStatSubmission("submission-1", "admin-1")).rejects.toThrow("no longer pending");
+    expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
+  });
+
+  it.each(["approved", "rejected"])("rejects stale rejection when the submission is already %s", async (status) => {
+    prisma.statSubmission.findUnique.mockResolvedValue({
+      id: "submission-1", matchId: "match-1", teamId: "team-1", eventId: "event-1",
+      submittedBy: "captain-1", status, stats: canonicalStats,
+    });
+    await expect(rejectStatSubmission("submission-1", "admin-1", "Stale tab")).rejects.toThrow("no longer pending");
+    expect(prisma.statSubmission.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("fails the approval when a competing reviewer wins the pending transition", async () => {
+    prisma.statSubmission.findUnique.mockResolvedValue({
+      id: "submission-1", matchId: "match-1", teamId: "team-1", eventId: "event-1",
+      submittedBy: "captain-1", status: "pending", stats: canonicalStats,
+    });
+    prisma.statSubmission.updateMany.mockResolvedValue({ count: 0 });
+    await expect(approveStatSubmission("submission-1", "admin-1")).rejects.toThrow("no longer pending");
+    expect(prisma.statSubmission.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "submission-1", status: "pending" },
+    }));
   });
 });
 
@@ -2295,7 +2340,7 @@ describe("captain roster edits respect the event lifecycle", () => {
 
     await expect(
       addPlayer({ teamId: "team-1", eventId: "event-1", displayName: "New Player", nickname: "NP", position: "Top" }),
-    ).rejects.toThrow("Roster tim sudah terkunci karena turnamen sudah berjalan atau selesai.");
+    ).rejects.toThrow("Roster tim sudah terkunci");
     expect(prisma.player.create).not.toHaveBeenCalled();
   });
 
@@ -2326,14 +2371,29 @@ describe("captain roster edits respect the event lifecycle", () => {
     prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-1", status }));
 
     await expect(updatePlayer("player-1", "captain-1", { displayName: "Updated" })).rejects.toThrow(
-      "Roster tim sudah terkunci karena turnamen sudah berjalan atau selesai.",
+      "Roster tim sudah terkunci",
     );
     await expect(deletePlayer("player-1", "captain-1")).rejects.toThrow(
-      "Roster tim sudah terkunci karena turnamen sudah berjalan atau selesai.",
+      "Roster tim sudah terkunci",
     );
     expect(prisma.player.update).not.toHaveBeenCalled();
     expect(prisma.player.delete).not.toHaveBeenCalled();
   });
+
+  it.each(["single_elimination", "double_elimination", "round_robin", "group_playoffs"])(
+    "locks player roster edits after a %s drawing is published",
+    async () => {
+      prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
+      prisma.team.findFirst.mockResolvedValue({ eventId: "event-1" });
+      prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-1", status: "Registration Closed" }));
+      prisma.competitionPhase.count.mockResolvedValue(1);
+
+      await expect(addPlayer({
+        teamId: "team-1", eventId: "event-1", displayName: "Late Player", nickname: "Late",
+      })).rejects.toThrow("Roster tim sudah terkunci");
+      expect(prisma.player.create).not.toHaveBeenCalled();
+    },
+  );
 
   it("still enforces ownership before checking the event status", async () => {
     prisma.player.findUnique.mockResolvedValue({

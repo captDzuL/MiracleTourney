@@ -48,7 +48,8 @@ describe("adaptive drawing/finished pages", () => {
       ...shared,
       statusExplanation: "Hasil akhir resmi.",
       cta: { label: "Leaderboard akhir", href: "/id/events/miracle-cup/leaderboards" },
-      podium: [{ rank: 1, teamId: "team", teamName: "Garuda Nova" }],
+      certificates: { status: "published", publishedCount: 7, expectedCount: 7 },
+      podium: [{ rank: 1, teamId: "team", teamName: "Garuda Nova", certificate: { publishedUrl: "/certificates/champion.png", verificationCode: "VERIFY-CHAMPION" } }],
       awards,
       matches: [],
       standings: [],
@@ -58,5 +59,24 @@ describe("adaptive drawing/finished pages", () => {
     expect(html).toContain("Nyx");
     expect(html).toContain('href="/certificates/mvp.png"');
     expect(html).toContain("/id/certificates/verify/VERIFY-MVP");
+    expect(html).toContain('href="/certificates/champion.png"');
+    expect(html).toContain("Tujuh certificate resmi telah diterbitkan.");
+  });
+
+  it("shows an explicit preparation state and no certificate links until the complete current set is published", () => {
+    const view: PublicFinishedEventViewModel = {
+      mode: "finished",
+      ...shared,
+      statusExplanation: "Hasil akhir resmi.",
+      cta: { label: "Leaderboard akhir", href: "/id/events/miracle-cup/leaderboards" },
+      certificates: { status: "preparing", publishedCount: 0, expectedCount: 7 },
+      podium: [{ rank: 1, teamId: "team", teamName: "Garuda Nova", certificate: null }],
+      awards: [],
+      matches: [],
+      standings: [],
+    };
+    const html = renderToStaticMarkup(<AdaptivePhaseEventPage view={view} locale="id" />);
+    expect(html).toContain("Certificate sedang disiapkan organizer");
+    expect(html).not.toContain("Lihat certificate tim");
   });
 });

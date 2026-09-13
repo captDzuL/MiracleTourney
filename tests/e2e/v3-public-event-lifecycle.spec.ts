@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { validateE2eDatabaseConfiguration } from "../../scripts/e2e-db-configuration.mjs";
 import { createCompetitionOperations, type OperationCommand } from "../../src/lib/tournament/operations";
+import type { CompetitionGraph } from "../../src/lib/tournament/competition";
 import type { TournamentFormatConfig } from "../../src/lib/tournament/formats/types";
 import { loginAsAdmin } from "./helpers/auth";
 
@@ -11,7 +12,7 @@ const prisma = new PrismaClient();
 const config: TournamentFormatConfig = {
   version: 1,
   kind: "single_elimination",
-  thirdPlace: "none",
+  thirdPlace: "required",
   bestOf: { earlyRounds: 1, semifinals: 1, thirdPlace: 1, final: 1 },
 };
 
@@ -25,6 +26,8 @@ test.describe.serial("Adaptive public event lifecycle", () => {
   const teams = [
     { id: `${eventId}-alpha`, name: `Alpha ${namespace}`, tag: "ALP", logoText: "A" },
     { id: `${eventId}-beta`, name: `Beta ${namespace}`, tag: "BET", logoText: "B" },
+    { id: `${eventId}-gamma`, name: `Gamma ${namespace}`, tag: "GAM", logoText: "G" },
+    { id: `${eventId}-delta`, name: `Delta ${namespace}`, tag: "DEL", logoText: "D" },
   ];
 
   test.beforeAll(async () => {
@@ -59,7 +62,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
         status: "Published",
         format: "Single Elimination",
         formatConfig: config as Prisma.InputJsonValue,
-        participantCap: 2,
+        participantCap: 4,
         timezone: "Asia/Jakarta",
         eventStartsAt: new Date("2026-10-01T02:00:00.000Z"),
         startsAt: "2026-10-01T02:00:00.000Z",
@@ -120,7 +123,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
     await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));
     await expect(page.getByRole("heading", { level: 1, name: `Public Lifecycle ${namespace}` })).toBeVisible();
     const template = page.getByRole("region", { name: "Template bracket" });
-    await expect(template.getByText("TBD", { exact: true })).toHaveCount(2);
+    await expect(template.getByText("TBD", { exact: true })).toHaveCount(4);
     await expect(template.getByText(teams[0].name, { exact: true })).toHaveCount(0);
 
     await loginAsAdmin(page, "en");
@@ -130,6 +133,13 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       config,
       teams: teams.map((team, index) => ({ id: team.id, seed: index + 1 })),
     });
+
+    await page.goto(url);
+    await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));
+    const privateDrawing = page.getByRole("region", { name: "Template bracket" });
+    await expect(privateDrawing.getByText("TBD", { exact: true })).toHaveCount(4);
+    await expect(privateDrawing.getByText(teams[0].name, { exact: true })).toHaveCount(0);
+
     await run({ kind: "drawing_publish" });
 
     await page.goto(url);
@@ -157,22 +167,39 @@ test.describe.serial("Adaptive public event lifecycle", () => {
     await expect(page.getByText("Event berlangsung", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Pertandingan berikutnya" })).toBeVisible();
 
-    const match = await prisma.match.findFirstOrThrow({ where: { eventId }, orderBy: { slot: "asc" } });
-    for (const teamId of [match.homeTeamId, match.awayTeamId]) {
-      await run({ kind: "readiness_update", matchId: match.id, teamId, status: "ready" });
+    for (let wave = 0; wave < 4; wave += 1) {
+      const playable = await prisma.match.findMany({
+        where: { eventId, resultVersion: 0, homeTeamId: { not: "" }, awayTeamId: { not: "" } },
+        orderBy: [{ round: "asc" }, { slot: "asc" }],
+      });
+      if (!playable.length) break;
+      for (const match of playable) {
+        for (const teamId of [match.homeTeamId, match.awayTeamId]) {
+          await run({ kind: "readiness_update", matchId: match.id, teamId, status: "ready" });
+        }
+        await run({ kind: "match_start", matchId: match.id });
+        await run({ kind: "result_submit", matchId: match.id, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
+      }
     }
-    await run({ kind: "match_start", matchId: match.id });
-    await run({ kind: "result_submit", matchId: match.id, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
-    const completedMatch = await prisma.match.findUniqueOrThrow({ where: { id: match.id } });
+    expect(await prisma.match.count({ where: { eventId, resultVersion: 0 } })).toBe(0);
+    const phase = await prisma.competitionPhase.findFirstOrThrow({ where: { eventId, sequence: 1 } });
+    const graph = (phase.configuration as unknown as { graph: CompetitionGraph }).graph;
+    const firstPlace = graph.placements.find((placement) => placement.rank === 1)!;
+    const thirdPlace = graph.placements.find((placement) => placement.rank === 3)!;
+    if (firstPlace.source.kind !== "match" || thirdPlace.source.kind !== "match") throw new Error("Expected match-derived podium");
+    const finalMatch = await prisma.match.findUniqueOrThrow({ where: { id: firstPlace.source.matchId } });
+    const thirdPlaceMatch = await prisma.match.findUniqueOrThrow({ where: { id: thirdPlace.source.matchId } });
     const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
-    const winnerId = completedMatch.winnerTeamId ?? completedMatch.homeTeamId;
-    const runnerUpId = winnerId === completedMatch.homeTeamId ? completedMatch.awayTeamId : completedMatch.homeTeamId;
+    const winnerId = finalMatch.winnerTeamId ?? finalMatch.homeTeamId;
+    const runnerUpId = winnerId === finalMatch.homeTeamId ? finalMatch.awayTeamId : finalMatch.homeTeamId;
+    const thirdId = thirdPlaceMatch.winnerTeamId ?? thirdPlaceMatch.homeTeamId;
     const winner = teams.find((team) => team.id === winnerId)!;
     const runnerUp = teams.find((team) => team.id === runnerUpId)!;
+    const third = teams.find((team) => team.id === thirdId)!;
 
-    await prisma.$transaction([
-      prisma.competitionPhase.updateMany({ where: { eventId }, data: { status: "completed" } }),
-      prisma.tournamentCompletion.create({
+    const completion = await prisma.$transaction(async (tx) => {
+      await tx.competitionPhase.updateMany({ where: { eventId }, data: { status: "completed" } });
+      return tx.tournamentCompletion.create({
         data: {
           eventId,
           status: "completed",
@@ -181,13 +208,29 @@ test.describe.serial("Adaptive public event lifecycle", () => {
           completedByUserId: organizerId,
           podiumPlacements: {
             create: [
-              { rank: 1, teamId: winner.id, teamName: winner.name, source: "official_playoff", sourceMatchId: match.id, sourceSnapshot: { matchId: match.id } },
-              { rank: 2, teamId: runnerUp.id, teamName: runnerUp.name, source: "official_playoff", sourceMatchId: match.id, sourceSnapshot: { matchId: match.id } },
+              { rank: 1, teamId: winner.id, teamName: winner.name, source: "official_playoff", sourceMatchId: finalMatch.id, sourceSnapshot: { matchId: finalMatch.id } },
+              { rank: 2, teamId: runnerUp.id, teamName: runnerUp.name, source: "official_playoff", sourceMatchId: finalMatch.id, sourceSnapshot: { matchId: finalMatch.id } },
+              { rank: 3, teamId: third.id, teamName: third.name, source: "official_playoff", sourceMatchId: thirdPlaceMatch.id, sourceSnapshot: { matchId: thirdPlaceMatch.id } },
             ],
           },
+          awards: {
+            create: (["mvp", "top_scorer", "top_defender", "top_assist"] as const).map((type, index) => ({
+              type,
+              status: "approved",
+              candidateSnapshot: {},
+              decision: { create: {
+                recipientId: `${eventId}-award-player-${index + 1}`,
+                recipientName: `Award Player ${index + 1}`,
+                teamId: winner.id,
+                teamName: winner.name,
+                reason: "Organizer lifecycle decision",
+                decidedByUserId: organizerId,
+              } },
+            })),
+          },
         },
-      }),
-    ]);
+      });
+    });
     await updateStatus("Finished");
 
     await page.goto(url);
@@ -195,6 +238,52 @@ test.describe.serial("Adaptive public event lifecycle", () => {
     await expect(page.getByText("Hasil akhir resmi", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Podium akhir" })).toBeVisible();
     await expect(page.getByText(winner.name, { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("2 - 0", { exact: true })).toBeVisible();
+    await expect(page.getByText("2 - 0", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/Certificate sedang disiapkan organizer/)).toBeVisible();
+
+    const certificateTypes = ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"] as const;
+    const certificateIds = certificateTypes.map((type) => `${eventId}-certificate-${type}`);
+    const podiumTeams = { champion: winner, runner_up: runnerUp, third_place: third };
+    await prisma.certificate.createMany({
+      data: certificateTypes.map((type, index) => {
+        const team = type in podiumTeams ? podiumTeams[type as keyof typeof podiumTeams] : winner;
+        return {
+          id: certificateIds[index],
+          eventId,
+          teamId: team.id,
+          type,
+          recipientKind: type in podiumTeams ? "team" : "player",
+          recipientId: type in podiumTeams ? team.id : `${eventId}-award-player-${index - 2}`,
+          recipientName: type in podiumTeams ? team.name : `Award Player ${index - 2}`,
+          version: 1,
+          templateVersion: "miracle-v3",
+          assetManifest: {},
+          imageUrl: `/certificates/${type}.png`,
+          status: "published",
+          verificationCode: `${namespace}-${type}`,
+          publishedUrl: `/certificates/${type}.png`,
+          generatedAt: new Date(),
+          publishedAt: new Date(),
+          completionId: completion.id,
+          completionVersion: event.competitionVersion,
+        };
+      }),
+    });
+    await prisma.certificatePublication.create({
+      data: {
+        eventId,
+        completionId: completion.id,
+        version: 1,
+        completionVersion: event.competitionVersion,
+        certificateIds,
+        idempotencyKey: `${eventId}-certificate-publication`,
+        fingerprint: `${eventId}-certificate-fingerprint`,
+        actorUserId: organizerId,
+      },
+    });
+
+    await page.goto(url);
+    await expect(page.getByText("Tujuh certificate resmi telah diterbitkan.")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Lihat certificate/ })).toHaveCount(7);
   });
 });

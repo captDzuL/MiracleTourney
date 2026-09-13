@@ -64,10 +64,12 @@ export type PublicDrawingEventViewModel = AdaptivePhaseShared & {
 };
 
 export type IndividualAwardType = "mvp" | "top_scorer" | "top_defender" | "top_assist";
+export type AdaptivePublishedCertificate = { publishedUrl: string; verificationCode: string };
 
 export type PublicFinishedEventViewModel = AdaptivePhaseShared & {
   mode: "finished";
-  podium: { rank: number; teamId: string; teamName: string }[];
+  certificates: { status: "preparing" | "published"; publishedCount: number; expectedCount: 7 };
+  podium: { rank: number; teamId: string; teamName: string; certificate: AdaptivePublishedCertificate | null }[];
   awards: {
     type: IndividualAwardType;
     recipientId: string;
@@ -75,7 +77,7 @@ export type PublicFinishedEventViewModel = AdaptivePhaseShared & {
     teamId: string;
     teamName: string;
     reason: string | null;
-    certificate: { publishedUrl: string; verificationCode: string } | null;
+    certificate: AdaptivePublishedCertificate | null;
   }[];
   matches: AdaptivePhaseMatch[];
   standings: AdaptivePhaseStanding[];
@@ -255,6 +257,7 @@ export async function getPublicDrawingEvent(slug: string): Promise<PublicDrawing
 
 const AWARD_ORDER: IndividualAwardType[] = ["mvp", "top_scorer", "top_defender", "top_assist"];
 const COMPLETE_CERTIFICATE_COUNT = 7;
+const COMPLETE_CERTIFICATE_TYPES = new Set(["champion", "runner_up", "third_place", ...AWARD_ORDER]);
 
 function completionSnapshotVersion(value: unknown): number | null {
   if (!value || Array.isArray(value) || typeof value !== "object") return null;
@@ -306,6 +309,8 @@ export async function getPublicFinishedEvent(slug: string): Promise<PublicFinish
     : [];
   const completePublication = publicationIsCurrent
     && certificates.length === COMPLETE_CERTIFICATE_COUNT
+    && new Set(certificates.map((certificate) => certificate.type)).size === COMPLETE_CERTIFICATE_COUNT
+    && certificates.every((certificate) => COMPLETE_CERTIFICATE_TYPES.has(certificate.type as IndividualAwardType | "champion" | "runner_up" | "third_place"))
     && certificates.every((certificate) =>
       certificate.completionId === completion.id
       && certificate.completionVersion === completionVersion);
@@ -315,11 +320,17 @@ export async function getPublicFinishedEvent(slug: string): Promise<PublicFinish
       .filter((certificate) => publishedCertificateIds.has(certificate.id))
       .map((certificate) => [certificate.type, certificate]),
   );
+  const publicCertificate = (type: string): AdaptivePublishedCertificate | null => {
+    const certificate = certificateByType.get(type);
+    return certificate?.publishedUrl ? {
+      publishedUrl: certificate.publishedUrl,
+      verificationCode: certificate.verificationCode,
+    } : null;
+  };
   const awards = AWARD_ORDER.flatMap((type) => {
     const award = completion.awards.find((candidate) =>
       candidate.type === type && candidate.status === "approved" && candidate.decision);
     if (!award?.decision) return [];
-    const certificate = certificateByType.get(type);
     return [{
       type,
       recipientId: award.decision.recipientId,
@@ -327,19 +338,22 @@ export async function getPublicFinishedEvent(slug: string): Promise<PublicFinish
       teamId: award.decision.teamId,
       teamName: award.decision.teamName,
       reason: award.decision.reason ?? null,
-      certificate: certificate?.publishedUrl ? {
-        publishedUrl: certificate.publishedUrl,
-        verificationCode: certificate.verificationCode,
-      } : null,
+      certificate: publicCertificate(type),
     }];
   });
   return {
     mode: "finished",
     ...shared(event, parsed.graph, teams.length, "finished"),
+    certificates: {
+      status: completePublication ? "published" : "preparing",
+      publishedCount: completePublication ? COMPLETE_CERTIFICATE_COUNT : 0,
+      expectedCount: COMPLETE_CERTIFICATE_COUNT,
+    },
     podium: completion.podiumPlacements.map((placement) => ({
       rank: placement.rank,
       teamId: placement.teamId,
       teamName: placement.teamName,
+      certificate: publicCertificate(placement.rank === 1 ? "champion" : placement.rank === 2 ? "runner_up" : "third_place"),
     })),
     awards,
     ...projectPublicContext(parsed.graph, matches, teams),

@@ -60,6 +60,12 @@ function delegates() {
       update: async () => {
         boundary.submissionWrites += 1;
       },
+      updateMany: async ({ where, data }: { where: { status?: string }; data: { status: string } }) => {
+        if (where.status && boundary.submission.status !== where.status) return { count: 0 };
+        boundary.submissionWrites += 1;
+        boundary.submission.status = data.status;
+        return { count: 1 };
+      },
     },
     player: {
       findUnique: async () => ({ displayName: "Player One", nickname: "P1", position: "Guard" }),

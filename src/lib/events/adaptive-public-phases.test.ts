@@ -152,6 +152,15 @@ describe("adaptive public finished event", () => {
       certificate: { publishedUrl: "/certificates/mvp.png", verificationCode: "VERIFY-mvp" },
     });
     expect(view?.awards[2].certificate).toMatchObject({ publishedUrl: "/certificates/top_defender.png" });
+    expect(view?.certificates).toEqual({ status: "published", publishedCount: 7, expectedCount: 7 });
+    expect(view?.podium[0]?.certificate).toEqual({
+      publishedUrl: "/certificates/champion.png",
+      verificationCode: "VERIFY-champion",
+    });
+    expect(view?.podium[1]?.certificate).toEqual({
+      publishedUrl: "/certificates/runner_up.png",
+      verificationCode: "VERIFY-runner_up",
+    });
     expect(mocks.certificateFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: { in: certificates.map(({ id }) => id) }, status: { in: ["ready", "published"] }, publishedUrl: { not: null } },
     }));
@@ -177,6 +186,7 @@ describe("adaptive public finished event", () => {
     const view = await getPublicFinishedEvent("miracle-cup");
 
     expect(view?.awards[0]?.certificate).toBeNull();
+    expect(view?.certificates).toEqual({ status: "preparing", publishedCount: 0, expectedCount: 7 });
     expect(mocks.certificateFindMany).not.toHaveBeenCalled();
   });
 });

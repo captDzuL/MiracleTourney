@@ -552,7 +552,7 @@ export async function assertUserCanReviewStatSubmission(user: AppUser, submissio
   if (user.role !== "organizer") throw new Error("Not authorized");
 
   const row = await prisma.statSubmission.findFirst({
-    where: { id: submissionId, event: { organizerUserId: user.id } },
+    where: { id: submissionId, status: "pending", event: { organizerUserId: user.id } },
     select: { id: true },
   });
   if (!row) throw new Error("Not authorized");
@@ -1069,16 +1069,38 @@ export const getMatchesForEvent = cache(
   ),
 );
 
+const ROSTER_LOCKED_MESSAGE = "Roster tim sudah terkunci setelah drawing dipublikasikan atau turnamen berjalan.";
+
+type RosterLockReader = Pick<Prisma.TransactionClient, "event" | "competitionPhase" | "match">;
+
+async function readEventRosterLocked(db: RosterLockReader, eventId: string): Promise<boolean> {
+  const [event, publishedPhases, startedMatches] = await Promise.all([
+    db.event.findUnique({ where: { id: eventId }, select: { status: true } }),
+    db.competitionPhase.count({ where: { eventId, status: { in: ["active", "completed"] } } }),
+    db.match.count({ where: { eventId, status: { in: ["Live", "Completed"] } } }),
+  ]);
+  if (!event) return false;
+  return event.status === "Ongoing" || event.status === "Finished" || publishedPhases > 0 || startedMatches > 0;
+}
+
 /**
- * Returns true if a single-elimination bracket has at least one completed match.
- * A locked bracket prevents new team imports and registrations.
- * Always returns false for league-format events.
+ * Serializes every event-roster mutation against competition operations through
+ * Event.competitionVersion. If a drawing is published first this transaction
+ * rolls back; if the roster wins the race, a stale drawing publish fails CAS and
+ * must be rebuilt from the new authoritative roster.
  */
+async function assertEventRosterMutable(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
+  const claimed = await tx.event.updateMany({
+    where: { id: eventId },
+    data: { competitionVersion: { increment: 1 } },
+  });
+  if (claimed.count !== 1) throw new Error("Event tidak ditemukan.");
+  if (await readEventRosterLocked(tx, eventId)) throw new Error(ROSTER_LOCKED_MESSAGE);
+}
+
+/** Returns true for every format once the public drawing or tournament is authoritative. */
 export async function isEventBracketLocked(eventId: string): Promise<boolean> {
-  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { format: true } });
-  if (!event || event.format !== "Single Elimination") return false;
-  const completed = await prisma.match.count({ where: { eventId, status: "Completed" } });
-  return completed > 0;
+  return readEventRosterLocked(prisma, eventId);
 }
 
 // ── Bracket helpers (copied from demo-store, now async) ───────────────────────
@@ -1788,6 +1810,7 @@ export async function registerTeam(input: {
 
   try {
     return await runSerializableRegistrationTransaction(async (tx) => {
+      await assertEventRosterMutable(tx, input.eventId);
       const event = await tx.event.findUnique({
         where: { id: input.eventId },
         select: {
@@ -2119,6 +2142,7 @@ export async function approveTeamRegistrationRequest(user: AppUser, requestId: s
     if (!["Published", "Registration Closed"].includes(request.event.status)) {
       throw new Error("Event sudah dimulai sehingga pendaftaran tidak bisa disetujui.");
     }
+    await assertEventRosterMutable(tx, request.eventId);
 
     const [registeredTeams, existingCaptainTeam, completedMatches] = await Promise.all([
       tx.team.count({ where: { eventId: request.eventId } }),
@@ -2208,19 +2232,9 @@ export async function importTeams(input: Array<{
   captainEmail?: string;
 }>): Promise<Team[]> {
   const eventIds = [...new Set(input.map((row) => row.eventId))];
-  await Promise.all(
-    eventIds.map(async (eventId) => {
-      const locked = await isEventBracketLocked(eventId);
-      if (locked) {
-        const event = await prisma.event.findUnique({ where: { id: eventId }, select: { slug: true } });
-        throw new Error(
-          `Event "${event?.slug}" already has recorded match results, so additional teams cannot be imported.`,
-        );
-      }
-    }),
-  );
 
-  // Phase 1: pre-generate credentials outside the transaction (bcrypt is slow)
+  // Hashing remains outside the transaction; every database write is committed
+  // atomically only after each target event wins the roster-version lock.
   const usedEmails = new Set<string>();
   const preparedRows = await Promise.all(
     input.map(async (row) => {
@@ -2231,30 +2245,25 @@ export async function importTeams(input: Array<{
     }),
   );
 
-  // Phase 2: upsert Users then create Teams — sequential non-transactional calls
-  // avoid interactive $transaction which requires a persistent connection (breaks on Neon PgBouncer)
-  const captainIds: Array<{ id: string; prep: (typeof preparedRows)[number] }> = [];
-  for (const prep of preparedRows) {
-    const captain = await prisma.user.upsert({
-      where: { email: prep.email },
-      update: { name: prep.captainName, passwordHash: prep.passwordHash, tempPassword: prep.tempPassword },
-      create: {
-        email: prep.email,
-        name: prep.captainName,
-        role: "captain",
-        passwordHash: prep.passwordHash,
-        tempPassword: prep.tempPassword,
-      },
-    });
-    captainIds.push({ id: captain.id, prep });
-  }
-
-  const rows = await prisma.$transaction(
-    captainIds.map(({ id, prep }) =>
-      prisma.team.create({
+  const rows = await runSerializableRegistrationTransaction(async (tx) => {
+    for (const eventId of eventIds) await assertEventRosterMutable(tx, eventId);
+    const created = [];
+    for (const prep of preparedRows) {
+      const captain = await tx.user.upsert({
+        where: { email: prep.email },
+        update: { name: prep.captainName, passwordHash: prep.passwordHash, tempPassword: prep.tempPassword },
+        create: {
+          email: prep.email,
+          name: prep.captainName,
+          role: "captain",
+          passwordHash: prep.passwordHash,
+          tempPassword: prep.tempPassword,
+        },
+      });
+      created.push(await tx.team.create({
         data: {
           eventId: prep.eventId,
-          captainId: id,
+          captainId: captain.id,
           name: prep.teamName,
           logoText: prep.teamTag.slice(0, 2).toUpperCase(),
           tag: prep.teamTag.toUpperCase(),
@@ -2262,9 +2271,10 @@ export async function importTeams(input: Array<{
           captainContact: prep.captainContact,
           source: "csv-import",
         },
-      }),
-    ),
-  );
+      }));
+    }
+    return created;
+  });
 
   return rows.map(mapTeam);
 }
@@ -2429,6 +2439,7 @@ export async function commitRegistrationImportBatch(
       data: { committedAt: new Date() },
     });
     if (claim.count === 0) return false;
+    await assertEventRosterMutable(tx, batch.eventId);
 
     const additionalTeams = prepared.filter((row) => row.item.status === "new").length;
     const [activeTeamCount, pendingReviewCount] = await Promise.all([
@@ -2529,20 +2540,6 @@ export async function commitRegistrationImportBatch(
   return { importedCount: prepared.length, credentials };
 }
 
-/** Throws if the event's roster is locked (event is Ongoing or Finished). */
-async function assertRosterEditable(eventId: string): Promise<void> {
-  const event = await prisma.event.findUnique({
-    where: { id: eventId },
-    select: { status: true },
-  });
-  if (!event) {
-    throw new Error("Event tidak ditemukan.");
-  }
-  if (event.status === "Ongoing" || event.status === "Finished") {
-    throw new Error("Roster tim sudah terkunci karena turnamen sudah berjalan atau selesai.");
-  }
-}
-
 /** Adds a new player to a team. UID and IGN are required; position and jersey number remain optional. */
 export async function addPlayer(input: {
   teamId: string;
@@ -2553,33 +2550,28 @@ export async function addPlayer(input: {
   position?: string;
   jerseyNumber?: number;
 }): Promise<Player> {
-  const team = await prisma.team.findFirst({
-    where: { id: input.teamId, ...(input.captainId ? { captainId: input.captainId } : {}) },
-    select: { eventId: true },
-  });
-  if (!team) {
-    throw new Error("Tim tidak ditemukan untuk akun ini.");
-  }
-  if (input.eventId && team.eventId && input.eventId !== team.eventId) {
-    throw new Error("Data event pemain tidak cocok dengan tim.");
-  }
-
-  const eventId = input.eventId ?? team.eventId ?? undefined;
-  if (eventId) {
-    await assertRosterEditable(eventId);
-  }
-  const data = {
-    teamId: input.teamId,
-    ...(eventId ? { eventId } : {}),
-    displayName: input.displayName.trim(),
-    nickname: input.nickname.trim(),
-    position: input.position?.trim() ?? "",
-    ...(input.jerseyNumber != null ? { jerseyNumber: input.jerseyNumber } : {}),
-  };
-
   try {
-    const row = await prisma.player.create({ data });
-    return mapPlayer(row);
+    return await runSerializableRegistrationTransaction(async (tx) => {
+      const team = await tx.team.findFirst({
+        where: { id: input.teamId, ...(input.captainId ? { captainId: input.captainId } : {}) },
+        select: { eventId: true },
+      });
+      if (!team) throw new Error("Tim tidak ditemukan untuk akun ini.");
+      if (input.eventId && team.eventId && input.eventId !== team.eventId) {
+        throw new Error("Data event pemain tidak cocok dengan tim.");
+      }
+      const eventId = input.eventId ?? team.eventId ?? undefined;
+      if (eventId) await assertEventRosterMutable(tx, eventId);
+      const row = await tx.player.create({ data: {
+        teamId: input.teamId,
+        ...(eventId ? { eventId } : {}),
+        displayName: input.displayName.trim(),
+        nickname: input.nickname.trim(),
+        position: input.position?.trim() ?? "",
+        ...(input.jerseyNumber != null ? { jerseyNumber: input.jerseyNumber } : {}),
+      } });
+      return mapPlayer(row);
+    });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       throw new Error("Pemain dengan IGN ini sudah ada di tim.");
@@ -2598,18 +2590,17 @@ export async function updatePlayer(
   captainUserId: string,
   data: { displayName?: string; nickname?: string; position?: string; jerseyNumber?: number | null },
 ): Promise<Player> {
-  const player = await prisma.player.findUnique({
-    where: { id },
-    include: { team: { select: { captainId: true, eventId: true } } },
+  return runSerializableRegistrationTransaction(async (tx) => {
+    const player = await tx.player.findUnique({
+      where: { id },
+      include: { team: { select: { captainId: true, eventId: true } } },
+    });
+    if (!player || player.team.captainId !== captainUserId) {
+      throw new Error("Not authorized to edit this player.");
+    }
+    if (player.team.eventId) await assertEventRosterMutable(tx, player.team.eventId);
+    return mapPlayer(await tx.player.update({ where: { id }, data }));
   });
-  if (!player || player.team.captainId !== captainUserId) {
-    throw new Error("Not authorized to edit this player.");
-  }
-  if (player.team.eventId) {
-    await assertRosterEditable(player.team.eventId);
-  }
-  const row = await prisma.player.update({ where: { id }, data });
-  return mapPlayer(row);
 }
 
 /**
@@ -2618,17 +2609,17 @@ export async function updatePlayer(
  * (event Ongoing/Finished).
  */
 export async function deletePlayer(id: string, captainUserId: string): Promise<void> {
-  const player = await prisma.player.findUnique({
-    where: { id },
-    include: { team: { select: { captainId: true, eventId: true } } },
+  await runSerializableRegistrationTransaction(async (tx) => {
+    const player = await tx.player.findUnique({
+      where: { id },
+      include: { team: { select: { captainId: true, eventId: true } } },
+    });
+    if (!player || player.team.captainId !== captainUserId) {
+      throw new Error("Not authorized to delete this player.");
+    }
+    if (player.team.eventId) await assertEventRosterMutable(tx, player.team.eventId);
+    await tx.player.delete({ where: { id } });
   });
-  if (!player || player.team.captainId !== captainUserId) {
-    throw new Error("Not authorized to delete this player.");
-  }
-  if (player.team.eventId) {
-    await assertRosterEditable(player.team.eventId);
-  }
-  await prisma.player.delete({ where: { id } });
 }
 
 export async function setTeamCaptainDisplay(teamId: string, captainUserId: string, playerId: string): Promise<void> {
@@ -3012,6 +3003,7 @@ async function statSubmissionAwardSourceTransaction<T>(
   return prisma.$transaction(async (tx) => {
     const submission = await tx.statSubmission.findUnique({ where: { id: submissionId } });
     if (!submission) throw new Error("Submission not found");
+    if (submission.status !== "pending") throw new Error("Submission is no longer pending.");
     await assertAwardSourceWriteAllowed(tx, submission.eventId);
     return work(tx, submission);
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -3261,10 +3253,11 @@ export async function approveStatSubmission(submissionId: string, adminId: strin
     });
 
     await writePlayerStatsToDb(tx, submission.matchId, submission.teamId, gameSlug, statsMap, roster, { source: "captain", lastUpdatedBy: submission.submittedBy });
-    await tx.statSubmission.update({
-      where: { id: submissionId },
+    const transitioned = await tx.statSubmission.updateMany({
+      where: { id: submissionId, status: "pending" },
       data: { status: "approved", reviewedAt: new Date(), reviewedBy: adminId },
     });
+    if (transitioned.count !== 1) throw new Error("Submission is no longer pending.");
   });
 }
 
@@ -3333,8 +3326,8 @@ export async function rejectStatSubmission(
   note: string,
 ): Promise<void> {
   await statSubmissionAwardSourceTransaction(submissionId, async (tx) => {
-    await tx.statSubmission.update({
-      where: { id: submissionId },
+    const transitioned = await tx.statSubmission.updateMany({
+      where: { id: submissionId, status: "pending" },
       data: {
         status: "rejected",
         rejectionNote: note,
@@ -3342,6 +3335,7 @@ export async function rejectStatSubmission(
         reviewedBy: adminId,
       },
     });
+    if (transitioned.count !== 1) throw new Error("Submission is no longer pending.");
   });
 }
 
@@ -3397,6 +3391,7 @@ export async function createCaptainWithTeam(input: {
 }): Promise<{ userId: string; teamId: string }> {
   const tag = input.teamTag.toUpperCase();
   return runSerializableRegistrationTransaction(async (tx) => {
+    await assertEventRosterMutable(tx, input.eventId);
     const event = await tx.event.findUnique({
       where: { id: input.eventId },
       select: {
