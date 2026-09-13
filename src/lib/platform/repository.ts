@@ -2381,7 +2381,7 @@ export async function commitRegistrationImportBatch(
   await assertUserCanManageEvent(user, batch.eventId);
   const locked = await isEventBracketLocked(batch.eventId);
   if (locked) {
-    throw new Error(`Event "${batch.event.slug}" already has recorded match results, so registration import cannot be committed.`);
+    throw new Error(ROSTER_LOCKED_MESSAGE);
   }
 
   if (batch.status === "committed") return { importedCount: 0, credentials: [] };

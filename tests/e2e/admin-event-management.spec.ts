@@ -133,7 +133,7 @@ test.describe("admin event management", () => {
     await page.getByRole("button", { name: /check and preview|cek dan preview/i }).click();
 
     await expect(page).toHaveURL(/registrationBatchId=/, { timeout: 30_000 });
-    await expect(page.getByText(/sudah memiliki hasil pertandingan|already has recorded match results/i)).toBeVisible();
+    await expect(page.getByText(/drawing.*dipublikasikan|roster.*terkunci|turnamen.*berjalan/i)).toBeVisible();
   });
 
   test("admin can update live stream URL", async ({ page }) => {

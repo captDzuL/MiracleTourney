@@ -1243,7 +1243,10 @@ function ImportRegistrationPhase({
               />
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-slate-500">{t("changedRowsNeedApproval")}</p>
-                <SubmitButton className={primaryButton}>
+                <SubmitButton
+                  className={primaryButton}
+                  disabled={(batchSummary.new ?? 0) + (batchSummary.changed ?? 0) === 0}
+                >
                   <Check className="h-4 w-4" />
                   {t("commitRegistrationImport")}
                 </SubmitButton>

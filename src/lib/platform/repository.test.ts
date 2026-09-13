@@ -784,7 +784,7 @@ describe("registration intake commit", () => {
     expect(prisma.team.create).not.toHaveBeenCalled();
   });
 
-  it("blocks commits after the event has recorded match results", async () => {
+  it("blocks commits after the drawing or tournament becomes authoritative", async () => {
     prisma.registrationImportBatch.findFirst.mockResolvedValue({
       id: "batch-1",
       eventId: "event-1",
@@ -794,7 +794,7 @@ describe("registration intake commit", () => {
     prisma.match.count.mockResolvedValue(1);
 
     await expect(commitRegistrationImportBatch(platformAdmin, "batch-1", []))
-      .rejects.toThrow("already has recorded match results");
+      .rejects.toThrow("Roster tim sudah terkunci");
   });
 
   it("counts pending-review reservations before importing new teams", async () => {

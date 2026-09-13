@@ -134,7 +134,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   await expect(page.getByRole("main")).toBeVisible();
 });
 
-test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff", async ({ page }) => {
+test("registration order stays private and imports stop after drawing publication", async ({ page }) => {
   test.setTimeout(240_000);
   const suffix = randomUUID().slice(0, 8);
   const eventName = `Flashpeak 24 ${suffix}`;
@@ -208,32 +208,40 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   await commitPreviewedRegistration(page, 2);
 
   await page.goto(`/id/events/${slug}/bracket`);
+  await expect(page.getByText("TBD", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Team 23", { exact: true })).not.toBeVisible();
+  await expect(page.getByText("Team 24", { exact: true })).not.toBeVisible();
+
+  await prisma.event.update({
+    where: { id: eventId },
+    data: { status: "Registration Closed" },
+  });
+  await page.goto(`/en/organizer/events/${eventId}/competition`);
+  await page.getByRole("button", { name: "Save drawing draft", exact: true }).click();
+  await expect.poll(
+    async () => (await prisma.competitionPhase.findFirst({ where: { eventId, sequence: 1 } }))?.status,
+    { timeout: 60_000 },
+  ).toBe("draft");
+  await page.getByRole("button", { name: "Publish drawing", exact: true }).click();
+  await expect.poll(
+    async () => (await prisma.competitionPhase.findFirst({ where: { eventId, sequence: 1 } }))?.status,
+    { timeout: 60_000 },
+  ).toBe("active");
+
+  await page.goto(`/id/events/${slug}/bracket`);
   await expect(page.getByText("Team 23", { exact: true })).toBeVisible();
   await expect(page.getByText("Team 24", { exact: true })).toBeVisible();
 
-  // Enter a match result to lock the bracket
-  await page.goto(`/id/admin?phase=run&activeEventId=${eventId}&matchEventId=${eventId}`);
-  const firstMatch = page.locator("a[href*='matchId=']").first();
-  await expect(firstMatch).toBeVisible();
-  await firstMatch.click();
-  await expect(page).toHaveURL(new RegExp(`matchEventId=${eventId}.*matchId=`));
-
-  const resultForm = page.locator("form").filter({
-    has: page.locator('input[name="homeScore"]'),
-  });
-  await expect(resultForm).toBeVisible();
-  const saveResultButton = resultForm.getByRole("button", { name: /save match result|simpan hasil match/i });
-  await expect(saveResultButton).toBeEnabled();
-  await resultForm.locator('input[name="homeScore"]').fill("21");
-  await resultForm.locator('input[name="awayScore"]').fill("18");
-  await saveResultButton.click();
-  await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 30_000 });
-
-  // Late import should fail — event already has recorded results
+  // Late import must fail once the authoritative drawing locks the roster.
   await page.goto(`/en/admin?phase=import&activeEventId=${eventId}`);
   await previewRegistrationCsv(page, {
     name: "late-import-after-lock.csv",
     buffer: lateTeamImportCsv(slug),
   });
-  await expect(page.getByText(/sudah memiliki hasil pertandingan|already has recorded match results/i)).toBeVisible();
+  const lockedPreview = page.locator("form").filter({
+    has: page.locator('input[name="batchId"]'),
+  });
+  await expect(lockedPreview.locator('input[name="itemId"]:checked')).toHaveCount(0);
+  await expect(lockedPreview.getByRole("button", { name: /import selected rows|import baris terpilih/i })).toBeDisabled();
+  await expect(page.getByText(/drawing|roster|hasil pertandingan/i).first()).toBeVisible();
 });

@@ -370,7 +370,7 @@ export function buildRegistrationPreview(input: {
 
   const items = input.rows.map<RegistrationPreviewItem>((row) => {
     const errors: string[] = [];
-    if (input.event.bracketLocked) errors.push("Event sudah memiliki hasil pertandingan.");
+    if (input.event.bracketLocked) errors.push("Roster event terkunci karena drawing telah dipublikasikan atau turnamen berjalan.");
     if (hasMappedFormula(row, input.mapping)) {
       errors.push("Kolom yang dipetakan tidak boleh berisi formula spreadsheet.");
     }

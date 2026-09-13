@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
 import { prepareAdminMatchEvent } from "./helpers/fixtures";
+import { prepareMatchdayFixture } from "./helpers/matchday";
 
 let currentEvent: Awaited<ReturnType<typeof prepareAdminMatchEvent>>;
 
@@ -46,7 +47,7 @@ test.describe("admin match result entry", () => {
     await expect(page).toHaveURL(/error=/, { timeout: 15_000 });
   });
 
-  test("admin can save a BO1 match result and see bracket update", async ({ page }) => {
+  test("admin can save a BO1 match result and see the authoritative admin state", async ({ page }) => {
     test.setTimeout(60_000);
     await setRoundBestOf(page, "1");
     await page.goto(`/id/admin?phase=run&matchEventId=${currentEvent.eventId}`);
@@ -63,8 +64,7 @@ test.describe("admin match result entry", () => {
     await saveButton.click();
 
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
-    await page.goto(`/id/events/${currentEvent.slug}/bracket`);
-    await expect(page.getByText(/21\s*-\s*18/).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/21\s*[\u2013-]\s*18/).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("event auto-transitions to Ongoing after first match result", async ({ page }) => {
@@ -101,28 +101,26 @@ test.describe("public bracket page", () => {
     await expect(page.getByRole("main")).toBeVisible();
   });
 
-  test("bracket shows completed match score", async ({ page }) => {
-    test.setTimeout(60_000);
-    const { eventId, slug } = await prepareAdminMatchEvent();
-    await loginAsAdmin(page, "id");
-    await page.goto(`/id/admin?phase=run&matchEventId=${eventId}`);
-    await setRoundBestOf(page, "1");
-    await page.goto(`/id/admin?phase=run&matchEventId=${eventId}`);
-    await selectFirstMatch(page);
-    const resultForm = page.locator("form").filter({
-      has: page.locator('input[name="homeScore"]'),
-    });
-    await expect(resultForm).toBeVisible();
-    const saveButton = resultForm.getByRole("button", { name: /save match result|simpan hasil match/i });
-    await expect(saveButton).toBeEnabled();
-    await resultForm.locator('input[name="homeScore"]').fill("19");
-    await resultForm.locator('input[name="awayScore"]').fill("17");
-    await saveButton.click();
-    await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
+  test("bracket shows an official V3 completed match score", async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = await prepareMatchdayFixture("single_elimination", "published");
+    try {
+      const graph = await fixture.graph();
+      const firstMatch = graph.matches.find((match) => match.home.kind === "team" && match.away.kind === "team");
+      if (!firstMatch) throw new Error("Expected a playable official match.");
+      await fixture.run({ kind: "match_start", matchId: firstMatch.id, reason: "Public bracket score E2E" });
+      await fixture.run({
+        kind: "result_submit",
+        matchId: firstMatch.id,
+        games: [{ gameNumber: 1, homeScore: 19, awayScore: 17 }],
+      });
 
-    await page.goto(`/id/events/${slug}/bracket`);
-    await expect(page.getByRole("main")).toBeVisible();
-    await expect(page.getByText(/19\s*-\s*17/).first()).toBeVisible({ timeout: 15_000 });
+      await page.goto(`/id/events/${fixture.slug}/bracket`);
+      await expect(page.getByRole("main")).toBeVisible();
+      await expect(page.getByText(/19\s*[\u2013-]\s*17/).first()).toBeVisible({ timeout: 15_000 });
+    } finally {
+      await fixture.cleanup();
+    }
   });
 
   test("events list page is publicly accessible", async ({ page }) => {

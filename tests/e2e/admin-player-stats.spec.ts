@@ -210,7 +210,10 @@ test.describe("admin player stats entry", () => {
     // Includes login, multiple dashboard loads, and the approval write against Neon.
     test.setTimeout(90_000);
     const card = page.locator(`a[href*="matchId=${fixture.matchId}"]`).filter({ hasText: "Stats Home" });
-    const stats = Object.fromEntries(fixture.homePlayers.map((player) => [player.id, { goal: 0, assist: 0, passing: 0, defense: 0 }]));
+    const stats = Object.fromEntries(fixture.homePlayers.map((player) => [
+      player.id,
+      { scores: [8.0], goal: 0, assist: 0, passing: 0, defense: 0 },
+    ]));
     const submission = await prisma.statSubmission.create({ data: {
       eventId: fixture.eventId, matchId: fixture.matchId, teamId: fixture.homeTeamId,
       submittedBy: "captain-recording-e2e", status: "pending", stats,

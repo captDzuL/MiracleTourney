@@ -199,7 +199,7 @@ export function parseAndValidateTeamImport(csvText: string, snapshot: ImportSnap
 
     // bracketLocked is a file-level safety check: abort the entire import
     if (event.bracketLocked) {
-      return fail(`Event "${eventSlug}" sudah memiliki hasil pertandingan yang tercatat, sehingga tim tambahan tidak dapat diimpor.`);
+      return fail(`Event "${eventSlug}" memiliki drawing yang telah dipublikasikan atau turnamen yang sudah berjalan, sehingga roster tidak dapat diubah.`);
     }
 
     const teamTag = teamTagRaw.toUpperCase();
