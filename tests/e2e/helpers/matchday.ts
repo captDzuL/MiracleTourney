@@ -137,7 +137,11 @@ export async function prepareMatchdayFixture(
           gameModeId: "mode-flashpeak-5v5",
           organizerUserId: actor.id,
           organizerName: "Match Day Organizer",
-          status: "Ongoing",
+          // Every fixture starts at the authoritative drawing boundary. Stages
+          // with a published drawing transition to Ongoing below; the empty
+          // stage intentionally remains Registration Closed so the UI can save
+          // and publish its first drawing through the real lifecycle contract.
+          status: "Registration Closed",
           format: kind.includes("elimination") ? "Single Elimination" : "League",
           formatConfig: config as Prisma.InputJsonValue,
           participantCap: stage === "showcase" ? 8 : 4,
@@ -192,7 +196,6 @@ export async function prepareMatchdayFixture(
     };
 
     if (stage !== "empty") {
-      await withRetry(() => matchdayDb.event.update({ where: { id }, data: { status: "Registration Closed" } }));
       await run({ kind: "drawing_save", config, teams: teams.map((t, i) => ({ id: t.id, seed: i + 1 })) });
       await run({ kind: "drawing_publish" });
       await withRetry(() => matchdayDb.event.update({ where: { id }, data: { status: "Ongoing" } }));

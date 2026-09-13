@@ -87,6 +87,10 @@ test("generates competition, reviews the initial schedule and publishes explicit
   await page.getByRole("button", { name: "Publish drawing", exact: true }).click();
   await expect.poll(async () => (await state(page)).drawing?.status, { timeout: POLL_TIMEOUT_MS }).toBe("published");
   await expect.poll(async () => (await state(page)).matches.length, { timeout: POLL_TIMEOUT_MS }).toBe(3);
+  await matchdayDb.event.update({
+    where: { id: fixture.id },
+    data: { status: "Ongoing" },
+  });
   await page.getByRole("link", { name: "Schedule", exact: true }).click();
   await page.getByLabel("Window end", { exact: true }).fill("2026-01-02T09:00");
   await page.getByLabel("Rooms (comma separated)", { exact: true }).fill("Arena A, Arena B");
