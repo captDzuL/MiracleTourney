@@ -25,6 +25,8 @@ export default defineConfig({
   use: {
     baseURL,
     headless: true,
+    actionTimeout: 120_000,
+    navigationTimeout: 120_000,
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     ...(channel ? { channel } : {}),
