@@ -22,7 +22,7 @@ jobs:
       - name: Typecheck
         run: pnpm lint
       - name: ESLint
-        run: pnpm exec next lint --quiet || true
+        run: pnpm exec eslint . --quiet
 
   unit-tests:
     name: Unit Tests

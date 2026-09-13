@@ -1,5 +1,6 @@
 import { resetPasswordAction } from "@/lib/actions";
 import { SubmitButton } from "@/components/submit-button";
+import Link from "next/link";
 
 export async function renderResetPasswordPage(
   searchParams?: Promise<{ token?: string; error?: string }>,
@@ -13,9 +14,9 @@ export async function renderResetPasswordPage(
       <div className="mx-auto w-full max-w-sm rounded-2xl border border-white/10 bg-white/5 p-8 shadow-xl">
         <p className="text-sm text-slate-300">
           Link tidak valid.{" "}
-          <a href="/forgot-password" className="text-cyan-400 hover:text-cyan-300">
+          <Link href="/forgot-password" className="text-cyan-400 hover:text-cyan-300">
             Minta link baru
-          </a>
+          </Link>
         </p>
       </div>
     );

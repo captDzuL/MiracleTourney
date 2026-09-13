@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFile } from "node:fs/promises";
 
 type CiModule = {
   runCommand(
@@ -17,6 +18,13 @@ type CiModule = {
 const ciModulePath = "../scripts/e2e-ci.mjs";
 
 describe("CI E2E release sequence", () => {
+  it("runs a real fail-closed ESLint gate on the pinned CI runtime", async () => {
+    const workflow = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+    expect(workflow).toContain('node-version: "24"');
+    expect(workflow).toContain("version: 10");
+    expect(workflow).toContain("run: pnpm exec eslint . --quiet");
+    expect(workflow).not.toMatch(/eslint[^\n]*\|\|\s*true/i);
+  });
   it("guards the shared database, then runs Match Day, default, and flags-off profiles serially", async () => {
     const { runE2eCi } = await import(ciModulePath) as CiModule;
     const calls: string[] = [];

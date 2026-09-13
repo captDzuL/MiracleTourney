@@ -1,6 +1,8 @@
 // Last-resort 404 for locale-less paths that bypass the middleware redirect
 // (e.g. static export edge cases). Root layout is a passthrough with no
 // <html>/<body>, so this boundary must supply its own.
+import Link from "next/link";
+
 export default function NotFound() {
   return (
     <html lang="id">
@@ -11,12 +13,12 @@ export default function NotFound() {
           <p className="text-sm text-slate-400">
             Halaman yang kamu cari tidak tersedia atau sudah dipindahkan.
           </p>
-          <a
+          <Link
             href="/"
             className="mt-2 rounded-full bg-cyan-400 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
           >
             Kembali ke Beranda
-          </a>
+          </Link>
         </div>
       </body>
     </html>
