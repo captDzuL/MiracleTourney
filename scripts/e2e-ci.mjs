@@ -36,7 +36,8 @@ const RELEASE_STEPS = [
   ["pnpm", ["test:e2e:preflight"]],
   ["pnpm", ["test:e2e:prepare"]],
   ["pnpm", ["exec", "playwright", "test", "tests/e2e/v3-matchday.spec.ts", "--fail-on-flaky-tests"]],
-  ["pnpm", ["exec", "playwright", "test", "--fail-on-flaky-tests"]],
+  ["pnpm", ["exec", "playwright", "test", "--shard=1/2", "--fail-on-flaky-tests"]],
+  ["pnpm", ["exec", "playwright", "test", "--shard=2/2", "--fail-on-flaky-tests"]],
   ["pnpm", ["exec", "playwright", "test", "--config", "playwright.legacy.config.ts", "--fail-on-flaky-tests"]],
 ];
 

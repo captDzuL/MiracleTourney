@@ -25,7 +25,7 @@ describe("CI E2E release sequence", () => {
     expect(workflow).toContain("run: pnpm exec eslint . --quiet");
     expect(workflow).not.toMatch(/eslint[^\n]*\|\|\s*true/i);
   });
-  it("guards the shared database, then runs Match Day, default, and flags-off profiles serially", async () => {
+  it("guards the shared database, then runs Match Day, two fresh-server shards, and flags-off profiles serially", async () => {
     const { runE2eCi } = await import(ciModulePath) as CiModule;
     const calls: string[] = [];
     const runCommand = vi.fn(async (command: string, args: string[]) => {
@@ -38,7 +38,8 @@ describe("CI E2E release sequence", () => {
       "pnpm test:e2e:preflight",
       "pnpm test:e2e:prepare",
       "pnpm exec playwright test tests/e2e/v3-matchday.spec.ts --fail-on-flaky-tests",
-      "pnpm exec playwright test --fail-on-flaky-tests",
+      "pnpm exec playwright test --shard=1/2 --fail-on-flaky-tests",
+      "pnpm exec playwright test --shard=2/2 --fail-on-flaky-tests",
       "pnpm exec playwright test --config playwright.legacy.config.ts --fail-on-flaky-tests",
     ]);
   });

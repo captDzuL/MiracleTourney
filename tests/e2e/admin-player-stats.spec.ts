@@ -13,8 +13,8 @@ const RUN_ID = Date.now();
 
 let fixture: Awaited<ReturnType<typeof prepareCompletedMatchWithPlayers>>;
 
-function firstGoalInput(form: import("@playwright/test").Locator) {
-  return form.locator('input[name$="_goal"]').first();
+function goalInput(form: import("@playwright/test").Locator, playerId: string) {
+  return form.locator(`input[name="stat_${playerId}_goal"]`);
 }
 
 test.describe("admin player stats entry", () => {
@@ -88,7 +88,7 @@ test.describe("admin player stats entry", () => {
     });
     await expect(homeForm).toBeVisible();
 
-    await firstGoalInput(homeForm).fill("3");
+    await goalInput(homeForm, fixture.homePlayers[0].id).fill("3");
     await homeForm.getByRole("button", { name: /simpan statistik/i }).click();
 
     await expect(page).toHaveURL(/success=player-stats-saved/, { timeout: 15_000 });
@@ -101,7 +101,7 @@ test.describe("admin player stats entry", () => {
     const homeForm = page.locator("form").filter({
       has: page.locator(`input[name="teamId"][value="${fixture.homeTeamId}"]`),
     });
-    await firstGoalInput(homeForm).fill("7");
+    await goalInput(homeForm, fixture.homePlayers[0].id).fill("7");
     await homeForm.getByRole("button", { name: /simpan statistik/i }).click();
     await expect(page).toHaveURL(/success=player-stats-saved/, { timeout: 15_000 });
 
@@ -111,7 +111,7 @@ test.describe("admin player stats entry", () => {
     const homeFormAgain = page.locator("form").filter({
       has: page.locator(`input[name="teamId"][value="${fixture.homeTeamId}"]`),
     });
-    await expect(firstGoalInput(homeFormAgain)).toHaveValue("7");
+    await expect(goalInput(homeFormAgain, fixture.homePlayers[0].id)).toHaveValue("7");
   });
 
   test("editing stats replaces, not accumulates (upsert safety)", async ({ page }) => {
@@ -140,7 +140,7 @@ test.describe("admin player stats entry", () => {
       }, { timeout: 15_000 }).toBe(goal);
     };
 
-    await firstGoalInput(getHomeForm()).fill("4");
+    await goalInput(getHomeForm(), fixture.homePlayers[0].id).fill("4");
     await Promise.all([
       page.waitForURL(/success=player-stats-saved/, { waitUntil: "load", timeout: 15_000 }),
       getHomeForm().getByRole("button", { name: /simpan statistik/i }).click(),
@@ -149,9 +149,9 @@ test.describe("admin player stats entry", () => {
 
     await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
     await expect(page.getByText("Statistik Pemain", { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(firstGoalInput(getHomeForm())).toHaveValue("4");
+    await expect(goalInput(getHomeForm(), fixture.homePlayers[0].id)).toHaveValue("4");
 
-    await firstGoalInput(getHomeForm()).fill("3");
+    await goalInput(getHomeForm(), fixture.homePlayers[0].id).fill("3");
     await Promise.all([
       page.waitForURL(/success=player-stats-saved/, { waitUntil: "load", timeout: 15_000 }),
       getHomeForm().getByRole("button", { name: /simpan statistik/i }).click(),
@@ -160,7 +160,7 @@ test.describe("admin player stats entry", () => {
 
     await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
     await expect(page.getByText("Statistik Pemain", { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(firstGoalInput(getHomeForm())).toHaveValue("3");
+    await expect(goalInput(getHomeForm(), fixture.homePlayers[0].id)).toHaveValue("3");
   });
 
   test("recording status follows both saved teams, reload, edits, and locale", async ({ page }) => {
@@ -182,13 +182,13 @@ test.describe("admin player stats entry", () => {
     await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
     const saveHomeStats = teamForm(fixture.homeTeamId).getByRole("button", { name: /simpan statistik/i });
     await expect(saveHomeStats).toBeEnabled();
-    await firstGoalInput(teamForm(fixture.homeTeamId)).fill("5");
+    await goalInput(teamForm(fixture.homeTeamId), fixture.homePlayers[0].id).fill("5");
     await Promise.all([
       page.waitForURL(/success=player-stats-saved/, { waitUntil: "load" }),
       saveHomeStats.click(),
     ]);
     await page.reload();
-    await expect(firstGoalInput(teamForm(fixture.homeTeamId))).toHaveValue("5");
+    await expect(goalInput(teamForm(fixture.homeTeamId), fixture.homePlayers[0].id)).toHaveValue("5");
     await expect(card.getByText("Tercatat", { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(card.getByText("Tercatat", { exact: true })).toBeVisible();

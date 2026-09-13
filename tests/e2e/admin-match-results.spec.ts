@@ -1,9 +1,11 @@
+import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
 import { prepareAdminMatchEvent } from "./helpers/fixtures";
 import { prepareMatchdayFixture } from "./helpers/matchday";
 
 let currentEvent: Awaited<ReturnType<typeof prepareAdminMatchEvent>>;
+const prisma = new PrismaClient();
 
 async function selectFirstMatch(page: import("@playwright/test").Page) {
   // Match cards are <a> links with href containing matchId=
@@ -11,7 +13,14 @@ async function selectFirstMatch(page: import("@playwright/test").Page) {
   await expect(firstMatchCard).toBeVisible();
   await firstMatchCard.click();
   await expect(page).toHaveURL(/matchId=/);
+  const matchId = new URL(page.url()).searchParams.get("matchId");
+  if (!matchId) throw new Error("Expected the selected match ID in the URL.");
+  return matchId;
 }
+
+test.afterAll(async () => {
+  await prisma.$disconnect();
+});
 
 async function setRoundBestOf(page: import("@playwright/test").Page, bestOf: "1" | "3" | "5") {
   const roundConfigForm = page.locator("form").filter({ has: page.locator('select[name="bestOf"]') }).first();
@@ -51,7 +60,7 @@ test.describe("admin match result entry", () => {
     test.setTimeout(60_000);
     await setRoundBestOf(page, "1");
     await page.goto(`/id/admin?phase=run&matchEventId=${currentEvent.eventId}`);
-    await selectFirstMatch(page);
+    const selectedMatchId = await selectFirstMatch(page);
     const resultForm = page.locator("form").filter({
       has: page.locator('input[name="homeScore"]'),
     });
@@ -64,7 +73,10 @@ test.describe("admin match result entry", () => {
     await saveButton.click();
 
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
-    await expect(page.getByText(/21\s*[\u2013-]\s*18/).first()).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => prisma.match.findFirst({
+      where: { id: selectedMatchId, eventId: currentEvent.eventId },
+      select: { homeScore: true, awayScore: true, status: true },
+    }), { timeout: 15_000 }).toEqual({ homeScore: 21, awayScore: 18, status: "Completed" });
   });
 
   test("event auto-transitions to Ongoing after first match result", async ({ page }) => {
