@@ -53,9 +53,10 @@ test("flags off keep organizer BO1 result feedback on the English legacy route",
 
 test("flags off keep organizer round configuration feedback on the English legacy route", async ({ page, legacy }) => {
   const route = await openLegacyMatch(page, legacy, 2);
-  const config = page.locator("form").filter({ has: page.getByLabel("Round 2", { exact: true }) });
-  await config.getByLabel("Round 2", { exact: true }).selectOption("3");
-  await config.getByRole("button", { name: "Save", exact: true }).click();
+  const roundConfig = page.getByRole("combobox", { name: "Round 2", exact: true });
+  await expect(roundConfig).toBeVisible();
+  await roundConfig.selectOption("3");
+  await roundConfig.locator("xpath=ancestor::form[1]").getByRole("button", { name: "Save", exact: true }).click();
   await expect(page).toHaveURL(`${route}?success=round-config-saved`);
   expect(await matchdayDb.eventRoundConfig.findFirstOrThrow({ where: { eventId: legacy.id, roundLabel: "Round 2" } })).toMatchObject({ bestOf: 3 });
 });
