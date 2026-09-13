@@ -995,6 +995,7 @@ function legacyMatchReturn(user: AppUser, eventId: string, matchId: string | und
 
 export async function adminUpdateMatchResultAction(formData: FormData) {
   const user = await requireAdminSession();
+  const locale = formData.get("locale")?.toString();
 
   const matchEventId = z.string().min(1).parse(formData.get("matchEventId"));
   const input = z.object({
@@ -1018,10 +1019,10 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
     match = await setMatchResult(input);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save match result.";
-    await redirectToActiveLocale(legacyMatchReturn(user, returnEventId, input.matchId, `error=${encodeURIComponent(message)}`));
+    await redirectToRequestedLocale(legacyMatchReturn(user, returnEventId, input.matchId, `error=${encodeURIComponent(message)}`), locale);
   }
 
-  if (!match) await redirectToActiveLocale(legacyMatchReturn(user, returnEventId, input.matchId, "error=Match%20not%20found."));
+  if (!match) await redirectToRequestedLocale(legacyMatchReturn(user, returnEventId, input.matchId, "error=Match%20not%20found."), locale);
   await autoTransitionEventToOngoing(input.eventId);
   if (match?.roundLabel === "Final" && match.winnerTeamId) {
     try {
@@ -1033,7 +1034,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   revalidateTag("teams");
   revalidateTag("events");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(legacyMatchReturn(user, returnEventId, input.matchId, "success=match-result-updated", true));
+  await redirectToRequestedLocale(legacyMatchReturn(user, returnEventId, input.matchId, "success=match-result-updated", true), locale);
 }
 
 /**
@@ -1416,6 +1417,7 @@ export async function adminSaveMatchPlayerStatsAction(formData: FormData) {
 /** Sets the Best-of-N configuration for a specific round label in an event. Valid bestOf values are 1, 3, or 5. */
 export async function adminSetRoundConfigAction(formData: FormData) {
   const user = await requireAdminSession();
+  const locale = formData.get("locale")?.toString();
 
   const input = z.object({
     eventId: z.string().min(1),
@@ -1432,11 +1434,11 @@ export async function adminSetRoundConfigAction(formData: FormData) {
     await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save round configuration.";
-    await redirectToActiveLocale(legacyMatchReturn(user, input.eventId, undefined, `error=${encodeURIComponent(message)}`));
+    await redirectToRequestedLocale(legacyMatchReturn(user, input.eventId, undefined, `error=${encodeURIComponent(message)}`), locale);
   }
   revalidateTag("teams");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(legacyMatchReturn(user, input.eventId, undefined, "success=round-config-saved", true));
+  await redirectToRequestedLocale(legacyMatchReturn(user, input.eventId, undefined, "success=round-config-saved", true), locale);
 }
 
 /**
@@ -1446,6 +1448,7 @@ export async function adminSetRoundConfigAction(formData: FormData) {
  */
 export async function adminSetMatchGamesAction(formData: FormData) {
   const user = await requireAdminSession();
+  const locale = formData.get("locale")?.toString();
 
   const matchId = z.string().min(1).parse(formData.get("matchId"));
   const matchEventId = z.string().min(1).parse(formData.get("matchEventId"));
@@ -1463,7 +1466,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
   }
 
   if (games.length === 0) {
-    await redirectToActiveLocale(legacyMatchReturn(user, matchEventId, matchId, "error=Masukkan+skor+minimal+1+game."));
+    await redirectToRequestedLocale(legacyMatchReturn(user, matchEventId, matchId, "error=Masukkan+skor+minimal+1+game."), locale);
     return;
   }
 
@@ -1471,7 +1474,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
     await setMatchGames(matchId, matchEventId, games, bestOf);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save match games.";
-    await redirectToActiveLocale(legacyMatchReturn(user, matchEventId, matchId, `error=${encodeURIComponent(message)}`));
+    await redirectToRequestedLocale(legacyMatchReturn(user, matchEventId, matchId, `error=${encodeURIComponent(message)}`), locale);
   }
 
   await autoTransitionEventToOngoing(matchEventId);
@@ -1483,7 +1486,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
   revalidateTag("teams");
   revalidateTag("events");
   revalidatePath("/", "layout");
-  await redirectToActiveLocale(legacyMatchReturn(user, matchEventId, matchId, "success=match-games-saved", true));
+  await redirectToRequestedLocale(legacyMatchReturn(user, matchEventId, matchId, "success=match-games-saved", true), locale);
 }
 
 /** Uploads a character art PNG for an event's certificate to Vercel Blob and stores the URL. */

@@ -20,8 +20,8 @@ const test = base.extend<{ legacy: LegacyFixture }>({
 });
 
 async function expectV3Unavailable(page: Page, fixture: LegacyFixture) {
-  expect((await page.request.get(`/api/events/${fixture.slug}/ongoing`)).status()).toBe(404);
-  expect((await page.request.get(`/api/organizer/events/${fixture.id}/competition`)).status()).toBe(404);
+  expect(await page.evaluate(async (url) => (await fetch(url)).status, `/api/events/${fixture.slug}/ongoing`)).toBe(404);
+  expect(await page.evaluate(async (url) => (await fetch(url)).status, `/api/organizer/events/${fixture.id}/competition`)).toBe(404);
 }
 
 async function openLegacyMatch(page: Page, fixture: LegacyFixture, round: number) {

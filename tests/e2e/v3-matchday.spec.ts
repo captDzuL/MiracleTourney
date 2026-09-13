@@ -7,18 +7,28 @@ type Fixture = Awaited<ReturnType<typeof prepareMatchdayFixture>>;
 let fixture: Fixture;
 test.afterEach(async () => { if (fixture) await fixture.cleanup(); });
 async function state(page: Page) {
-  const response = await page.request.get(`/api/organizer/events/${fixture.id}/competition`);
-  expect(response.ok()).toBeTruthy(); return response.json() as Promise<CompetitionWorkspaceState>;
+  const response = await page.evaluate(async (url) => {
+    const result = await fetch(url);
+    return { ok: result.ok, body: await result.json() };
+  }, `/api/organizer/events/${fixture.id}/competition`);
+  expect(response.ok).toBeTruthy();
+  return response.body as CompetitionWorkspaceState;
 }
 async function publicState(page: Page) {
-  const response = await page.request.get(`/api/events/${fixture.slug}/ongoing`);
-  expect(response.ok()).toBeTruthy(); return response.json();
+  const response = await page.evaluate(async (url) => {
+    const result = await fetch(url);
+    return { ok: result.ok, body: await result.json() };
+  }, `/api/events/${fixture.slug}/ongoing`);
+  expect(response.ok).toBeTruthy();
+  return response.body;
 }
 async function openMatch(page: Page, id: string) { await page.goto(`/en/organizer/events/${fixture.id}/matches/${id}`); await expect(page.getByRole("heading", { name: "Official result", exact: true })).toBeVisible(); }
 async function result(page: Page, home = "2", away = "0") {
   const form = page.getByRole("form", { name: "Official result", exact: true });
+  const submit = form.getByRole("button", { name: "Submit official result", exact: true });
+  await expect(submit).toBeEnabled();
   await form.locator('input[name="home-1"]').fill(home); await form.locator('input[name="away-1"]').fill(away);
-  await form.getByRole("button", { name: "Submit official result", exact: true }).click();
+  await submit.click();
   await expect(form.getByRole("button", { name: "Preview correction", exact: true })).toBeVisible();
 }
 
@@ -88,8 +98,10 @@ test("readiness deadline raises an action without walkover, organizer can overri
   await page.getByRole("button", { name: "Team 1: checked in", exact: true }).click();
   await expect.poll(async () => (await state(page)).readiness[0]?.status).toBe("checked_in");
   const start = page.getByRole("form", { name: "Start match", exact: true });
+  const startButton = start.getByRole("button", { name: "Start match", exact: true });
+  await expect(startButton).toBeEnabled();
   await start.getByLabel("Override reason (if needed)").fill("Confirmed both captains at desk");
-  await start.getByRole("button", { name: "Start match", exact: true }).click();
+  await startButton.click();
   await expect.poll(async () => (await state(page)).matches.find(m => m.id === id)?.status).toBe("Live");
   expect((await matchdayDb.match.findUniqueOrThrow({ where: { id } })).actualStartedAt).not.toBeNull();
   await page.goto(`/en/events/${fixture.slug}`);

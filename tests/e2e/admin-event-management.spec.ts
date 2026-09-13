@@ -13,13 +13,15 @@ async function uploadRegistrationFile(page: import("@playwright/test").Page, fil
   mimeType: string;
   buffer: Buffer;
 }) {
+  const previewButton = page.getByRole("button", { name: /check and preview|cek dan preview/i });
+  await expect(previewButton).toBeEnabled();
   await page.locator('input[name="registrationFile"]').setInputFiles(file);
   await Promise.all([
     page.waitForURL(
       (url) => url.searchParams.has("registrationBatchId") || url.searchParams.has("error"),
       { timeout: 30_000 },
     ),
-    page.getByRole("button", { name: /check and preview|cek dan preview/i }).click(),
+    previewButton.click(),
   ]);
 
   const previewUrl = new URL(page.url());
@@ -126,6 +128,7 @@ test.describe("admin event management", () => {
 
     await page.goto(`/en/admin?phase=import&activeEventId=${lockedEventId}`);
     const lateImportFile = "tests/fixtures/late-import-after-lock.csv";
+    await expect(page.getByRole("button", { name: /check and preview|cek dan preview/i })).toBeEnabled();
     await page.locator('input[name="registrationFile"]').setInputFiles(lateImportFile);
     await page.getByRole("button", { name: /check and preview|cek dan preview/i }).click();
 

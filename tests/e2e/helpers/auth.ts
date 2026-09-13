@@ -26,6 +26,7 @@ export async function loginWithCredentials(
   const passwordField = page.getByLabel(/password/i);
   const submit = page.getByRole("button", { name: /masuk|sign in/i });
   await expect(emailField).toBeVisible({ timeout: 6_000 });
+  await expect(submit).toBeEnabled();
   await emailField.fill(email);
   await passwordField.fill(password);
   await submit.click({ timeout: 5_000 });

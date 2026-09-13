@@ -28,6 +28,8 @@ async function previewRegistrationCsv(page: import("@playwright/test").Page, fil
   name: string;
   buffer: Buffer;
 }) {
+  const previewButton = page.getByRole("button", { name: /check and preview|cek dan preview/i });
+  await expect(previewButton).toBeEnabled();
   await page.locator('input[name="registrationFile"]').setInputFiles({
     name: file.name,
     mimeType: "text/csv",
@@ -38,7 +40,7 @@ async function previewRegistrationCsv(page: import("@playwright/test").Page, fil
       (url) => url.searchParams.has("registrationBatchId") || url.searchParams.has("error"),
       { timeout: 30_000 },
     ),
-    page.getByRole("button", { name: /check and preview|cek dan preview/i }).click(),
+    previewButton.click(),
   ]);
 
   const previewUrl = new URL(page.url());
@@ -56,6 +58,7 @@ async function commitPreviewedRegistration(page: import("@playwright/test").Page
   const previewForm = page.locator("form").filter({
     has: page.locator('input[name="batchId"]'),
   });
+  await expect(previewForm.getByRole("button", { name: /import selected rows|import baris terpilih/i })).toBeEnabled();
   await expect(previewForm.locator('input[name="itemId"]:checked')).toHaveCount(count);
 
   await Promise.all([
@@ -93,6 +96,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   const eventStatusForm = page.locator("form").filter({
     has: page.getByRole("button", { name: /save event status|simpan status event/i }),
   });
+  await expect(eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i })).toBeEnabled();
   await eventStatusForm.getByLabel("Event").selectOption({ label: "Kuroko Street Rival Summer Cup" });
   await eventStatusForm.getByLabel("Status").selectOption("Published");
   await eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i }).click();
@@ -117,9 +121,11 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
     has: page.locator('input[name="homeScore"]'),
   });
   await expect(resultForm).toBeVisible();
+  const saveResultButton = resultForm.getByRole("button", { name: /save match result|simpan hasil match/i });
+  await expect(saveResultButton).toBeEnabled();
   await resultForm.locator('input[name="homeScore"]').fill("21");
   await resultForm.locator('input[name="awayScore"]').fill("18");
-  await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
+  await saveResultButton.click();
   await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 30_000 });
 
   // Bracket page loads publicly regardless of match state
@@ -140,6 +146,7 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   const createEventForm = page.locator("form").filter({
     has: page.getByRole("button", { name: /create draft event|buat draft event/i }),
   });
+  await expect(createEventForm.getByRole("button", { name: /create draft event|buat draft event/i })).toBeEnabled();
   await createEventForm.getByLabel("Event name").fill(eventName);
   await createEventForm.getByLabel("Slug").fill(slug);
   await createEventForm.getByLabel("Game and mode").selectOption("mode-flashpeak-5v5");
@@ -149,7 +156,7 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   await expect(page).toHaveURL(/\/admin\?success=event-created/);
 
   await page.getByLabel(/active event|event aktif/i).selectOption({ label: eventName });
-  await page.getByRole("complementary").getByRole("button", { name: /change event|switch event|ganti event/i }).click();
+  await page.getByRole("complementary").getByRole("button", { name: /switch event|ganti event/i }).click();
   await expect(page).toHaveURL(/activeEventId=/);
   const eventId = new URL(page.url()).searchParams.get("activeEventId");
   if (!eventId) throw new Error("Expected the created Flashpeak event to become active.");
@@ -175,6 +182,7 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   const eventStatusForm = page.locator("form").filter({
     has: page.getByRole("button", { name: /save event status|simpan status event/i }),
   });
+  await expect(eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i })).toBeEnabled();
   await eventStatusForm.getByLabel("Event").selectOption({ label: eventName });
   await eventStatusForm.getByLabel("Status").selectOption("Published");
   await eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i }).click();
@@ -214,9 +222,11 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
     has: page.locator('input[name="homeScore"]'),
   });
   await expect(resultForm).toBeVisible();
+  const saveResultButton = resultForm.getByRole("button", { name: /save match result|simpan hasil match/i });
+  await expect(saveResultButton).toBeEnabled();
   await resultForm.locator('input[name="homeScore"]').fill("21");
   await resultForm.locator('input[name="awayScore"]').fill("18");
-  await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
+  await saveResultButton.click();
   await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 30_000 });
 
   // Late import should fail — event already has recorded results

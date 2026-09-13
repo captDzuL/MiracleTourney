@@ -6,4 +6,5 @@ import LegacyMatchDay from "./page";
 it("keeps localized feedback and selects the event from the owned route, not query input", async () => {
   await LegacyMatchDay({ params: Promise.resolve({ locale: "id", eventId: "owned" }), searchParams: Promise.resolve({ matchId: "m1", success: "round-config-saved", error: "Rejected", matchEventId: "other", returnTo: "https://evil.example" }) });
   expect(await workspace.mock.calls[0][0].searchParams).toEqual({ phase: "run", activeEventId: "owned", matchEventId: "owned", matchId: "m1", success: "round-config-saved", error: "Rejected" });
+  expect(workspace.mock.calls[0][0].locale).toBe("id");
 });

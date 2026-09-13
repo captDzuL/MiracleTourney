@@ -9,5 +9,5 @@ export default async function LegacyMatchDay({ params, searchParams }: {
   const { locale, eventId } = await params;
   const query = await searchParams;
   setRequestLocale(locale as "en" | "id");
-  return AdminWorkspace({ workspaceScope: "organizer_competition", searchParams: Promise.resolve({ phase: "run", activeEventId: eventId, matchEventId: eventId, matchId: query?.matchId, success: query?.success, error: query?.error }) });
+  return AdminWorkspace({ workspaceScope: "organizer_competition", locale: locale as "en" | "id", searchParams: Promise.resolve({ phase: "run", activeEventId: eventId, matchEventId: eventId, matchId: query?.matchId, success: query?.success, error: query?.error }) });
 }
