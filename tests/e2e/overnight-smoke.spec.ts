@@ -149,7 +149,7 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   await expect(page).toHaveURL(/\/admin\?success=event-created/);
 
   await page.getByLabel(/active event|event aktif/i).selectOption({ label: eventName });
-  await page.getByRole("complementary").getByRole("button", { name: /change event|ganti event/i }).click();
+  await page.getByRole("complementary").getByRole("button", { name: /change event|switch event|ganti event/i }).click();
   await expect(page).toHaveURL(/activeEventId=/);
   const eventId = new URL(page.url()).searchParams.get("activeEventId");
   if (!eventId) throw new Error("Expected the created Flashpeak event to become active.");

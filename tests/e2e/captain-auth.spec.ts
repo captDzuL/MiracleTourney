@@ -28,7 +28,9 @@ test.describe("captain authentication", () => {
   test("captain can log out and is redirected to home", async ({ page }) => {
     await loginAsCaptain(page, "id");
 
-    await page.getByRole("button", { name: /keluar|logout/i }).click();
-    await expect(page).toHaveURL(/\/(id|en)$/);
+    await Promise.all([
+      page.waitForURL(/\/(id|en)$/, { timeout: 15_000 }),
+      page.getByRole("button", { name: /keluar|logout/i }).click(),
+    ]);
   });
 });
