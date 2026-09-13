@@ -2787,6 +2787,52 @@ export async function assertCaptainCanSubmitStats(input: {
   }
 }
 
+async function assertAwardSourceWriteAllowed(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+): Promise<void> {
+  // Updating the shared version serializes this write with Completion's CAS.
+  // Any rejection below rolls the increment back with the award-source write.
+  const locked = await tx.event.updateMany({
+    where: { id: eventId },
+    data: { competitionVersion: { increment: 1 } },
+  });
+  if (locked.count !== 1) throw new Error("Event not found");
+
+  const completion = await tx.tournamentCompletion.findUnique({
+    where: { eventId },
+    select: { status: true },
+  });
+  if (completion?.status === "completed") {
+    throw new Error("Tournament completion locks award-source writes");
+  }
+}
+
+async function awardSourceTransaction<T>(
+  eventId: string,
+  work: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    await assertAwardSourceWriteAllowed(tx, eventId);
+    return work(tx);
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+async function statSubmissionAwardSourceTransaction<T>(
+  submissionId: string,
+  work: (
+    tx: Prisma.TransactionClient,
+    submission: NonNullable<Awaited<ReturnType<Prisma.TransactionClient["statSubmission"]["findUnique"]>>>,
+  ) => Promise<T>,
+): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    const submission = await tx.statSubmission.findUnique({ where: { id: submissionId } });
+    if (!submission) throw new Error("Submission not found");
+    await assertAwardSourceWriteAllowed(tx, submission.eventId);
+    return work(tx, submission);
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
 /**
  * Creates or replaces a captain's stat submission for a match.
  * Re-submission resets status to "pending" and clears any prior rejection note.
@@ -2798,23 +2844,25 @@ export async function upsertStatSubmission(input: {
   submittedBy: string;
   stats: Record<string, Record<string, number>>;
 }): Promise<void> {
-  await prisma.statSubmission.upsert({
-    where: { matchId_teamId: { matchId: input.matchId, teamId: input.teamId } },
-    update: {
-      status: "pending",
-      rejectionNote: null,
-      stats: input.stats,
-      submittedBy: input.submittedBy,
-      submittedAt: new Date(),
-    },
-    create: {
-      matchId: input.matchId,
-      teamId: input.teamId,
-      eventId: input.eventId,
-      submittedBy: input.submittedBy,
-      status: "pending",
-      stats: input.stats,
-    },
+  await awardSourceTransaction(input.eventId, async (tx) => {
+    await tx.statSubmission.upsert({
+      where: { matchId_teamId: { matchId: input.matchId, teamId: input.teamId } },
+      update: {
+        status: "pending",
+        rejectionNote: null,
+        stats: input.stats,
+        submittedBy: input.submittedBy,
+        submittedAt: new Date(),
+      },
+      create: {
+        matchId: input.matchId,
+        teamId: input.teamId,
+        eventId: input.eventId,
+        submittedBy: input.submittedBy,
+        status: "pending",
+        stats: input.stats,
+      },
+    });
   });
 }
 
@@ -2942,19 +2990,15 @@ async function writePlayerStatsToDb(
  * submission as "approved" in a single transaction. Skips players not found in the DB.
  */
 export async function approveStatSubmission(submissionId: string, adminId: string): Promise<void> {
-  const submission = await prisma.statSubmission.findUnique({ where: { id: submissionId } });
-  if (!submission) throw new Error("Submission not found");
+  await statSubmissionAwardSourceTransaction(submissionId, async (tx, submission) => {
+    const event = await tx.event.findUnique({
+      where: { id: submission.eventId },
+      select: { gameId: true },
+    });
+    const game = event?.gameId ? getGameConfig(event.gameId) : null;
+    const gameSlug = game?.slug ?? "unknown";
+    const statsMap = submission.stats as Record<string, Record<string, number>>;
 
-  const event = await prisma.event.findUnique({
-    where: { id: submission.eventId },
-    select: { gameId: true },
-  });
-  const game = event?.gameId ? getGameConfig(event.gameId) : null;
-  const gameSlug = game?.slug ?? "unknown";
-
-  const statsMap = submission.stats as Record<string, Record<string, number>>;
-
-  await prisma.$transaction(async (tx) => {
     await writePlayerStatsToDb(tx, submission.matchId, submission.teamId, gameSlug, statsMap, { source: "captain", lastUpdatedBy: submission.submittedBy });
     await tx.statSubmission.update({
       where: { id: submissionId },
@@ -3008,39 +3052,19 @@ export async function adminWriteMatchPlayerStats(input: {
   adminId: string;
   stats: Record<string, Record<string, number>>;
 }): Promise<void> {
-  const event = await prisma.event.findUnique({
-    where: { id: input.eventId },
-    select: { gameId: true },
+  await awardSourceTransaction(input.eventId, async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: input.eventId },
+      select: { gameId: true },
+    });
+    const game = event?.gameId ? getGameConfig(event.gameId) : null;
+    const gameSlug = game?.slug ?? "unknown";
+
+    await writePlayerStatsToDb(tx, input.matchId, input.teamId, gameSlug, input.stats, {
+      source: "admin",
+      lastUpdatedBy: input.adminId,
+    });
   });
-  const game = event?.gameId ? getGameConfig(event.gameId) : null;
-  const gameSlug = game?.slug ?? "unknown";
-
-  // Upserts run without an interactive transaction — each row-level upsert is
-  // independently atomic and Neon/PgBouncer doesn't support long-lived interactive
-  // transactions (P2028: "Transaction not found / old closed transaction").
-  for (const [playerId, playerStats] of Object.entries(input.stats)) {
-    const player = await prisma.player.findUnique({
-      where: { id: playerId },
-      select: { displayName: true, nickname: true, position: true },
-    });
-    if (!player) continue;
-
-    await prisma.playerStat.upsert({
-      where: { matchId_playerId: { matchId: input.matchId, playerId } },
-      update: { stats: playerStats as object, source: "admin", lastUpdatedBy: input.adminId },
-      create: {
-        matchId: input.matchId,
-        playerId,
-        playerName: player.nickname,
-        teamId: input.teamId,
-        position: player.position,
-        gameSlug,
-        stats: playerStats as object,
-        source: "admin",
-        lastUpdatedBy: input.adminId,
-      },
-    });
-  }
 }
 
 /** Rejects a stat submission with a note shown to the captain. Does not delete PlayerStat rows. */
@@ -3049,14 +3073,16 @@ export async function rejectStatSubmission(
   adminId: string,
   note: string,
 ): Promise<void> {
-  await prisma.statSubmission.update({
-    where: { id: submissionId },
-    data: {
-      status: "rejected",
-      rejectionNote: note,
-      reviewedAt: new Date(),
-      reviewedBy: adminId,
-    },
+  await statSubmissionAwardSourceTransaction(submissionId, async (tx) => {
+    await tx.statSubmission.update({
+      where: { id: submissionId },
+      data: {
+        status: "rejected",
+        rejectionNote: note,
+        reviewedAt: new Date(),
+        reviewedBy: adminId,
+      },
+    });
   });
 }
 
