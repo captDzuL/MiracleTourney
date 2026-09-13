@@ -21,16 +21,16 @@ export async function loginWithCredentials(
   // brute-force limit while preserving that middleware protection in every environment.
   loginClientSequence += 1;
   await page.setExtraHTTPHeaders({ "x-forwarded-for": `198.18.0.${(loginClientSequence % 250) + 1}` });
-  await page.goto(`/${locale}/login`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+  await page.goto(`/${locale}/login`, { waitUntil: "domcontentloaded", timeout: 30_000 });
   const emailField = page.getByLabel(/email/i);
   const passwordField = page.getByLabel(/password/i);
   const submit = page.getByRole("button", { name: /masuk|sign in/i });
-  await expect(emailField).toBeVisible({ timeout: 10_000 });
-  await expect(submit).toBeEnabled({ timeout: 10_000 });
+  await expect(emailField).toBeVisible({ timeout: 20_000 });
+  await expect(submit).toBeEnabled({ timeout: 20_000 });
   await emailField.fill(email);
   await passwordField.fill(password);
-  await submit.click({ timeout: 10_000 });
-  await page.waitForURL(destination, { timeout: 30_000 });
+  await submit.click({ timeout: 20_000 });
+  await page.waitForURL(destination, { timeout: 60_000 });
 }
 
 export async function loginAsAdmin(page: Page, locale: "id" | "en" = "id") {

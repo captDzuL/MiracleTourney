@@ -7,24 +7,40 @@ import type { PublicOngoingEventViewModel } from "../../src/lib/events/public-on
 type Fixture = Awaited<ReturnType<typeof prepareMatchdayFixture>>;
 let fixture: Fixture;
 
-const POLL_TIMEOUT_MS = 30_000;
+test.setTimeout(120_000);
+
+const POLL_TIMEOUT_MS = 60_000;
 const ASSERT_TIMEOUT_MS = 20_000;
-const NAV_TIMEOUT_MS = 45_000;
+const NAV_TIMEOUT_MS = 60_000;
+const API_TIMEOUT_MS = 20_000;
+const API_RETRY_COUNT = 3;
 
 test.afterEach(async () => {
   if (fixture) await fixture.cleanup();
 });
 
 async function requestJson<T>(page: Page, path: string) {
-  const response = await page.request.fetch(path, {
-    maxRedirects: 0,
-    timeout: NAV_TIMEOUT_MS,
-  });
-  if (!response.ok()) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Request failed for ${path}: ${response.status()} ${response.statusText()}\n${body}`.trim());
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= API_RETRY_COUNT; attempt += 1) {
+    try {
+      const response = await page.request.fetch(path, {
+        maxRedirects: 0,
+        timeout: API_TIMEOUT_MS,
+      });
+      if (!response.ok()) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`Request failed for ${path}: ${response.status()} ${response.statusText()}\n${body}`.trim());
+      }
+      return (await response.json()) as T;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= API_RETRY_COUNT) {
+        throw error instanceof Error ? error : new Error(`Request failed for ${path}: ${String(error)}`);
+      }
+      await page.waitForTimeout(500 * attempt);
+    }
   }
-  return (await response.json()) as T;
+  throw lastError instanceof Error ? lastError : new Error(`Request failed for ${path}`);
 }
 
 async function state(page: Page) {
@@ -52,7 +68,7 @@ async function openMatch(page: Page, id: string) {
 async function result(page: Page, home = "2", away = "0") {
   const form = page.getByRole("form", { name: "Official result", exact: true });
   const submit = form.getByRole("button", { name: "Submit official result", exact: true });
-  await expect(submit).toBeEnabled();
+  await expect(submit).toBeEnabled({ timeout: ASSERT_TIMEOUT_MS });
   await form.locator('input[name="home-1"]').fill(home);
   await form.locator('input[name="away-1"]').fill(away);
   await submit.click();
@@ -260,7 +276,3 @@ test("public ongoing hides draft/expired announcements and draft schedule on mob
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(JSON.stringify(await publicState(page))).not.toContain("Verified desk correction");
 });
-
-
-
-

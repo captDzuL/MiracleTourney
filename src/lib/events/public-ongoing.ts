@@ -37,7 +37,9 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
       tx.team.findMany({ where: { eventId: event.id }, select: { id: true, name: true } }),
       tx.eventAnnouncement.findMany({ where: { eventId: event.id, status: "published" }, orderBy: [{ publishedAt: "desc" }, { id: "asc" }] }),
       event.publishedScheduleVersion == null ? Promise.resolve(null) : tx.scheduleRevision.findFirst({ where: { eventId: event.id, version: event.publishedScheduleVersion, status: "published" } }),
-      event.publishedScheduleVersion == null ? Promise.resolve([]) : tx.scheduleRevision.findMany({ where: { eventId: event.id, version: { lt: event.publishedScheduleVersion }, status: "published" }, orderBy: { version: "desc" }, take: 1, select: { version: true, snapshot: true } }),
+      event.publishedScheduleVersion == null
+        ? Promise.resolve([])
+        : tx.scheduleRevision.findMany({ where: { eventId: event.id, version: { lt: event.publishedScheduleVersion }, status: "published" }, orderBy: { version: "desc" }, take: 1, select: { version: true, snapshot: true } }),
     ]);
     const graph = (phase?.configuration as unknown as { graph?: CompetitionGraph } | null)?.graph;
     if (!graph || graph.eventId !== event.id) return null;
@@ -58,7 +60,7 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
         confirmedAt: official ? m.resultConfirmedAt?.toISOString() ?? null : null };
     }).sort((a, b) => (a.start ?? "~").localeCompare(b.start ?? "~") || a.round - b.round || a.id.localeCompare(b.id));
     const activeAnnouncements = announcements.filter(a => a.publishedAt && a.publishedAt <= now && (!a.startsAt || a.startsAt <= now) && (!a.endsAt || a.endsAt > now))
-      .map(a => ({ id: a.id, title: a.title, body: a.body, urgency: a.urgency ?? "info", publishedAt: a.publishedAt!.toISOString(), endsAt: a.endsAt?.toISOString() ?? null }))
+      .map(a => ({ id: a.id, title: a.title, body: a.body, urgency: a.urgency ?? "info", publishedAt: a.publishedAt!.toISOString(), endsAt: a.endsAt?.toISOString() ?? null }) )
       .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id));
     const stream = event.stream?.enabled && /^https?:\/\//i.test(event.stream.url) ? { url: event.stream.url, label: event.stream.label, platform: event.stream.platform, isLive: event.stream.isLive } : null;
     const updatedTimes = [event.updatedAt, revision?.publishedAt, ...matches.map(m => m.updatedAt), ...announcements.map(a => a.updatedAt)].filter((d): d is Date => d instanceof Date);
