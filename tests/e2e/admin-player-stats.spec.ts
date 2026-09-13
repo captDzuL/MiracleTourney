@@ -153,10 +153,12 @@ test.describe("admin player stats entry", () => {
     await page.reload();
     await expect(card.getByText("Lihat / edit statistik", { exact: true })).toBeVisible();
     await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
+    const saveHomeStats = teamForm(fixture.homeTeamId).getByRole("button", { name: /simpan statistik/i });
+    await expect(saveHomeStats).toBeEnabled();
     await teamForm(fixture.homeTeamId).locator('input[type="number"]').first().fill("5");
     await Promise.all([
       page.waitForURL(/success=player-stats-saved/, { waitUntil: "load" }),
-      teamForm(fixture.homeTeamId).getByRole("button", { name: /simpan statistik/i }).click(),
+      saveHomeStats.click(),
     ]);
     await page.reload();
     await expect(teamForm(fixture.homeTeamId).locator('input[type="number"]').first()).toHaveValue("5");

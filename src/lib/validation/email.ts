@@ -1,4 +1,3 @@
-// @ts-ignore — package ships no types
 import disposableDomains from "disposable-email-domains";
 
 const DISPOSABLE = new Set<string>(disposableDomains as string[]);

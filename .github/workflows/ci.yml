@@ -22,7 +22,7 @@ jobs:
       - name: Typecheck
         run: pnpm lint
       - name: ESLint
-        run: pnpm exec next lint --quiet || true
+        run: pnpm exec eslint . --quiet
 
   unit-tests:
     name: Unit Tests
@@ -56,6 +56,10 @@ jobs:
       group: e2e-neon-test-db
       cancel-in-progress: false
     if: ${{ vars.E2E_ENABLED == 'true' }}
+    env:
+      CI: true
+      E2E_ENV_FILE: ${{ github.workspace }}/.env.test
+      PLAYWRIGHT_PORT: "3100"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -75,6 +79,11 @@ jobs:
           PRODUCTION_NEON_HOST: ${{ secrets.NEON_PROD_HOST }}
         run: |
           umask 077
+          for value in "$TEST_DATABASE_URL" "$TEST_DIRECT_URL" "$PRODUCTION_NEON_HOST"; do
+            if [ -n "$value" ]; then
+              echo "::add-mask::$value"
+            fi
+          done
           {
             printf 'DATABASE_URL=%s\n' "$TEST_DATABASE_URL"
             printf 'DIRECT_URL=%s\n' "$TEST_DIRECT_URL"
@@ -91,25 +100,25 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.playwright-version.outputs.version }}-chromium
       - name: Install Playwright browsers
+        run: pnpm exec playwright install-deps chromium
+      - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install chromium --with-deps
+        run: pnpm exec playwright install chromium
       - name: Generate JWT secret
         shell: bash
         run: |
           JWT_SECRET="$(openssl rand -base64 32)"
           echo "::add-mask::$JWT_SECRET"
           echo "JWT_SECRET=$JWT_SECRET" >> "$GITHUB_ENV"
-      - name: Reset and seed isolated test database
-        run: pnpm test:e2e:prepare
-      - name: Run E2E tests
-        run: pnpm test:e2e
-        env:
-          CI: true
-          PLAYWRIGHT_PORT: "3100"
+      - name: Run guarded Match Day, default, and flags-off E2E profiles
+        run: pnpm test:e2e:ci
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
           retention-days: 7

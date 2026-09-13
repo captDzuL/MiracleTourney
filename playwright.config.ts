@@ -14,6 +14,9 @@ export default defineConfig({
   globalSetup: "./tests/e2e/global-setup.ts",
   workers: 1, // serial execution to avoid shared-DB conflicts between test files
   retries: process.env.CI ? 2 : 0, // E2E login helpers use distinct test clients, so local failures stay visible
+  reporter: process.env.CI
+    ? [["line"], ["html", { open: "never", outputFolder: "playwright-report" }]]
+    : "list",
   webServer: {
     command: `node scripts/e2e-dev.mjs --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
@@ -22,6 +25,8 @@ export default defineConfig({
   use: {
     baseURL,
     headless: true,
+    screenshot: "only-on-failure",
+    trace: "retain-on-failure",
     ...(channel ? { channel } : {}),
   },
 });

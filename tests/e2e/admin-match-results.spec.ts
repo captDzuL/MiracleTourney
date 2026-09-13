@@ -15,8 +15,10 @@ async function selectFirstMatch(page: import("@playwright/test").Page) {
 async function setRoundBestOf(page: import("@playwright/test").Page, bestOf: "1" | "3" | "5") {
   const roundConfigForm = page.locator("form").filter({ has: page.locator('select[name="bestOf"]') }).first();
   await expect(roundConfigForm).toBeVisible();
+  const saveButton = roundConfigForm.getByRole("button");
+  await expect(saveButton).toBeEnabled();
   await roundConfigForm.locator('select[name="bestOf"]').selectOption(bestOf);
-  await roundConfigForm.getByRole("button").click();
+  await saveButton.click();
   await expect(page).toHaveURL(/success=round-config-saved/, { timeout: 15_000 });
 }
 
@@ -34,10 +36,12 @@ test.describe("admin match result entry", () => {
       has: page.locator('input[name="homeScore"]'),
     });
     await expect(resultForm).toBeVisible();
+    const saveButton = resultForm.getByRole("button", { name: /simpan hasil match/i });
+    await expect(saveButton).toBeEnabled();
 
     await resultForm.locator('input[name="homeScore"]').fill("10");
     await resultForm.locator('input[name="awayScore"]').fill("10");
-    await resultForm.getByRole("button", { name: /simpan hasil match/i }).click();
+    await saveButton.click();
 
     await expect(page).toHaveURL(/error=/, { timeout: 15_000 });
   });
@@ -51,10 +55,12 @@ test.describe("admin match result entry", () => {
       has: page.locator('input[name="homeScore"]'),
     });
     await expect(resultForm).toBeVisible();
+    const saveButton = resultForm.getByRole("button", { name: /save match result|simpan hasil match/i });
+    await expect(saveButton).toBeEnabled();
 
     await resultForm.locator('input[name="homeScore"]').fill("21");
     await resultForm.locator('input[name="awayScore"]').fill("18");
-    await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
+    await saveButton.click();
 
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
     await page.goto(`/id/events/${currentEvent.slug}/bracket`);
@@ -70,10 +76,12 @@ test.describe("admin match result entry", () => {
       has: page.locator('input[name="homeScore"]'),
     });
     await expect(resultForm).toBeVisible();
+    const saveButton = resultForm.getByRole("button", { name: /save match result|simpan hasil match/i });
+    await expect(saveButton).toBeEnabled();
 
     await resultForm.locator('input[name="homeScore"]').fill("15");
     await resultForm.locator('input[name="awayScore"]').fill("21");
-    await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
+    await saveButton.click();
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
 
     await page.goto(`/id/events/${currentEvent.slug}`);
@@ -105,9 +113,11 @@ test.describe("public bracket page", () => {
       has: page.locator('input[name="homeScore"]'),
     });
     await expect(resultForm).toBeVisible();
+    const saveButton = resultForm.getByRole("button", { name: /save match result|simpan hasil match/i });
+    await expect(saveButton).toBeEnabled();
     await resultForm.locator('input[name="homeScore"]').fill("19");
     await resultForm.locator('input[name="awayScore"]').fill("17");
-    await resultForm.getByRole("button", { name: /save match result|simpan hasil match/i }).click();
+    await saveButton.click();
     await expect(page).toHaveURL(/success=match-result-updated/, { timeout: 15_000 });
 
     await page.goto(`/id/events/${slug}/bracket`);

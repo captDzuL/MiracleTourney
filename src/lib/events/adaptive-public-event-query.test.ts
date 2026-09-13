@@ -76,6 +76,7 @@ describe("getAdaptivePublicEventView", () => {
     const view = await getAdaptivePublicEventView("miracle-cup", null, new Date("2026-09-12T00:00:00Z"));
 
     expect(view).toMatchObject({
+      mode: "registration",
       event: { posterUrl: "/approved-poster.png", logoUrl: "/logo.png", gameName: "Mobile Legends", modeName: "5v5" },
       organizer: { name: "Miracle Community", verified: true, contactHref: "https://wa.me/628123456789" },
       registration: { activeTeamCount: 10, pendingReviewCount: 2, occupiedSlots: 12, remainingSlots: 4 },

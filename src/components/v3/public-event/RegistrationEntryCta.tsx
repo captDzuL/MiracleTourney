@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-import type { AdaptivePublicEventViewModel } from "@/lib/events/adaptive-public-event";
+import type { AdaptiveRegistrationEventViewModel } from "@/lib/events/adaptive-public-event";
 import { CaptainLoginDialog } from "./CaptainLoginDialog";
 
 const LABELS = {
@@ -43,7 +43,7 @@ const LABELS = {
 } as const;
 
 export function RegistrationEntryCta({ view, locale }: {
-  view: AdaptivePublicEventViewModel;
+  view: AdaptiveRegistrationEventViewModel;
   locale: "id" | "en";
 }) {
   const cta = view.viewer.cta;

@@ -2,10 +2,10 @@ export const adminPhases = ["prepare", "registration", "run", "review"] as const
 
 export type AdminPhase = (typeof adminPhases)[number];
 
-export type AdminWorkspaceScope = "admin" | "organizer_registration";
+export type AdminWorkspaceScope = "admin" | "organizer_registration" | "organizer_competition";
 
 export function canUseAdminWorkspace(role: string, scope: AdminWorkspaceScope = "admin") {
-  return role === "platform_admin" || role === "admin" || (role === "organizer" && scope === "organizer_registration");
+  return role === "platform_admin" || role === "admin" || (role === "organizer" && (scope === "organizer_registration" || scope === "organizer_competition"));
 }
 
 type AdminPhaseQuery = {

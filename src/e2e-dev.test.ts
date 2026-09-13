@@ -26,6 +26,12 @@ afterEach(async () => {
 });
 
 describe("E2E development server", () => {
+  it("can verify competition flags-off without disabling the organizer shell", async () => {
+    const cwd = await createEnvironment("DATABASE_URL=postgresql://test:test@isolated.example.test/testdb");
+    const spawnImpl = spawnMock();
+    startE2eDevServer({ cwd, env: { E2E_COMPETITION_FLAGS_OFF: "true" }, spawnImpl });
+    expect(spawnImpl.mock.calls[0][2].env).toMatchObject({ FEATURE_FLAG_COMPETITION_OPERATIONS_V3: "false", FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3: "false", FEATURE_FLAG_ORGANIZER_WORKSPACE_V3: "true" });
+  });
   it("starts Next locally with .env.test database settings and all V3 flags", async () => {
     const cwd = await createEnvironment([
       "DATABASE_URL=postgresql://test-user:test-password@test.example.test/testdb",

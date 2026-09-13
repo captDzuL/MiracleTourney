@@ -30,6 +30,14 @@ model User {
   registrationImportProfiles       RegistrationImportProfile[]
   registrationImportBatches        RegistrationImportBatch[]
   createdVisualAssets              EventVisualAsset[]
+  readinessUpdates                 MatchReadiness[]            @relation("MatchReadinessActor")
+  resultRevisions                  MatchResultRevision[]       @relation("MatchResultRevisionActor")
+  reportedIncidents                CompetitionIncident[]       @relation("CompetitionIncidentReporter")
+  competitionAuditLogs             CompetitionAuditLog[]       @relation("CompetitionAuditActor")
+  createdScheduleRevisions         ScheduleRevision[]          @relation("ScheduleRevisionCreator")
+  publishedScheduleRevisions       ScheduleRevision[]          @relation("ScheduleRevisionPublisher")
+  createdAnnouncements             EventAnnouncement[]         @relation("EventAnnouncementCreator")
+  publishedAnnouncements           EventAnnouncement[]         @relation("EventAnnouncementPublisher")
   createdAt                        DateTime                    @default(now())
   updatedAt                        DateTime                    @updatedAt
 }
@@ -57,66 +65,78 @@ model PlatformProfile {
 }
 
 model Event {
-  id                         String                      @id @default(cuid())
-  slug                       String                      @unique
-  name                       String
-  description                String
-  logoUrl                    String?
-  gameImageUrl               String?
-  gameId                     String
-  gameModeId                 String
-  format                     String
-  formatConfig               Json?
-  status                     String
-  participantCap             Int
-  registrationWindow         String
-  startsAt                   String
-  registrationOpensAt        DateTime?
-  registrationClosesAt       DateTime?
-  eventStartsAt              DateTime?
-  timezone                   String                      @default("Asia/Jakarta")
-  venueAddress               String?
-  draftRevision              Int                         @default(0)
-  lastDraftMutationId        String?
-  publishedAt                DateTime?
-  previewRevision            Int                         @default(0)
-  publishedRevision          Int                         @default(0)
-  venue                      String
-  organizerUserId            String?
-  organizer                  User?                       @relation("EventOrganizer", fields: [organizerUserId], references: [id], onDelete: SetNull)
-  organizerName              String?
-  organizerVerified          Boolean                     @default(false)
-  prizePoolLabel             String?
-  registrationFeeRequired    Boolean                     @default(false)
-  registrationFeeAmount      Int?
-  registrationFeeLabel       String?
-  registrationUrl            String?
-  characterArtUrl            String?
-  accentColor                String?
-  stream                     EventStream?
-  teams                      Team[]
-  matches                    Match[]
-  players                    Player[]
-  statSubmissions            StatSubmission[]
-  roundConfigs               EventRoundConfig[]
-  certificates               Certificate[]
-  completion                 TournamentCompletion?
-  certificatePublications    CertificatePublication[]
+  id                             String                          @id @default(cuid())
+  slug                           String                          @unique
+  name                           String
+  description                    String
+  logoUrl                        String?
+  gameImageUrl                   String?
+  gameId                         String
+  gameModeId                     String
+  format                         String
+  formatConfig                   Json?
+  status                         String
+  participantCap                 Int
+  registrationWindow             String
+  startsAt                       String
+  registrationOpensAt            DateTime?
+  registrationClosesAt           DateTime?
+  eventStartsAt                  DateTime?
+  timezone                       String                          @default("Asia/Jakarta")
+  venueAddress                   String?
+  draftRevision                  Int                             @default(0)
+  lastDraftMutationId            String?
+  publishedAt                    DateTime?
+  previewRevision                Int                             @default(0)
+  publishedRevision              Int                             @default(0)
+  competitionVersion             Int                             @default(0)
+  publishedScheduleVersion       Int?
+  venue                          String
+  organizerUserId                String?
+  organizer                      User?                           @relation("EventOrganizer", fields: [organizerUserId], references: [id], onDelete: SetNull)
+  organizerName                  String?
+  organizerVerified              Boolean                         @default(false)
+  prizePoolLabel                 String?
+  registrationFeeRequired        Boolean                         @default(false)
+  registrationFeeAmount          Int?
+  registrationFeeLabel           String?
+  registrationUrl                String?
+  characterArtUrl                String?
+  accentColor                    String?
+  stream                         EventStream?
+  teams                          Team[]
+  matches                        Match[]
+  players                        Player[]
+  statSubmissions                StatSubmission[]
+  roundConfigs                   EventRoundConfig[]
+  certificates                   Certificate[]
+  completion                     TournamentCompletion?
+  certificatePublications        CertificatePublication[]
   certificateGenerationMutations CertificateGenerationMutation[]
-  promotions                 EventPromotion[]
-  analyticsSnapshots         EventAnalyticsSnapshot[]
-  checkIns                   CheckIn[]
-  registrationImportProfiles RegistrationImportProfile[]
-  registrationImportBatches  RegistrationImportBatch[]
-  visualAssets               EventVisualAsset[]          @relation("EventVisualAssets")
-  activeVisualAssetId        String?                     @unique
-  activeVisualAsset          EventVisualAsset?           @relation("ActiveEventVisualAsset", fields: [activeVisualAssetId], references: [id], onDelete: SetNull)
-  teamRegistrationRequests   TeamRegistrationRequest[]
-  previewTokens              EventPreviewToken[]
-  editRevisions              EventEditRevision[]
-  slugRedirects              EventSlugRedirect[]
-  createdAt                  DateTime                    @default(now())
-  updatedAt                  DateTime                    @updatedAt
+  promotions                     EventPromotion[]
+  analyticsSnapshots             EventAnalyticsSnapshot[]
+  checkIns                       CheckIn[]
+  registrationImportProfiles     RegistrationImportProfile[]
+  registrationImportBatches      RegistrationImportBatch[]
+  visualAssets                   EventVisualAsset[]              @relation("EventVisualAssets")
+  activeVisualAssetId            String?                         @unique
+  activeVisualAsset              EventVisualAsset?               @relation("ActiveEventVisualAsset", fields: [activeVisualAssetId], references: [id], onDelete: SetNull)
+  teamRegistrationRequests       TeamRegistrationRequest[]
+  previewTokens                  EventPreviewToken[]
+  editRevisions                  EventEditRevision[]
+  slugRedirects                  EventSlugRedirect[]
+  competitionPhases              CompetitionPhase[]
+  competitionGroups              CompetitionGroup[]
+  matchDependencies              MatchDependency[]
+  matchReadiness                 MatchReadiness[]
+  resultRevisions                MatchResultRevision[]
+  competitionActionItems         CompetitionActionItem[]
+  competitionIncidents           CompetitionIncident[]
+  competitionAuditLogs           CompetitionAuditLog[]
+  scheduleRevisions              ScheduleRevision[]
+  announcements                  EventAnnouncement[]
+  createdAt                      DateTime                        @default(now())
+  updatedAt                      DateTime                        @updatedAt
 
   @@index([status])
 }
@@ -217,30 +237,35 @@ model EventStream {
 }
 
 model Team {
-  id                      String                   @id @default(cuid())
-  eventId                 String?
-  event                   Event?                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  captainId               String?
-  captain                 User?                    @relation("TeamCaptain", fields: [captainId], references: [id], onDelete: SetNull)
-  name                    String
-  logoText                String
-  logoUrl                 String?
-  tag                     String
-  captainName             String?
-  captainIgn              String?
-  captainUid              String?
-  captainIsPlayer         Boolean                  @default(true)
-  captainContact          String?
-  source                  String                   @default("demo")
-  players                 Player[]
-  certificates            Certificate[]
-  checkIns                CheckIn[]
-  registrationImportItems RegistrationImportItem[]
-  registrationRequest     TeamRegistrationRequest?
-  createdAt               DateTime                 @default(now())
+  id                          String                   @id @default(cuid())
+  eventId                     String?
+  event                       Event?                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  captainId                   String?
+  captain                     User?                    @relation("TeamCaptain", fields: [captainId], references: [id], onDelete: SetNull)
+  name                        String
+  logoText                    String
+  logoUrl                     String?
+  tag                         String
+  captainName                 String?
+  captainIgn                  String?
+  captainUid                  String?
+  captainIsPlayer             Boolean                  @default(true)
+  captainContact              String?
+  source                      String                   @default("demo")
+  players                     Player[]
+  certificates                Certificate[]
+  checkIns                    CheckIn[]
+  registrationImportItems     RegistrationImportItem[]
+  registrationRequest         TeamRegistrationRequest?
+  competitionGroupMemberships CompetitionGroupMember[]
+  matchReadiness              MatchReadiness[]
+  competitionActionItems      CompetitionActionItem[]
+  winningResultRevisions      MatchResultRevision[]    @relation("MatchResultRevisionWinner")
+  createdAt                   DateTime                 @default(now())
 
   @@unique([eventId, tag])
   @@unique([eventId, name])
+  @@unique([eventId, id])
   @@index([eventId, captainUid])
 }
 
@@ -296,27 +321,53 @@ model Player {
 }
 
 model Match {
-  id              String           @id @default(cuid())
-  eventId         String
-  event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  roundLabel      String
-  homeTeamId      String
-  awayTeamId      String
-  homeScore       Int              @default(0)
-  awayScore       Int              @default(0)
-  status          String           @default("Scheduled")
-  slot            Int?
-  round           Int?
-  winnerTeamId    String?
-  scheduledLabel  String?
-  playerStats     PlayerStat[]
-  statSubmissions StatSubmission[]
-  games           MatchGame[]
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                     String                  @id @default(cuid())
+  eventId                String
+  event                  Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  roundLabel             String
+  homeTeamId             String
+  awayTeamId             String
+  homeScore              Int                     @default(0)
+  awayScore              Int                     @default(0)
+  status                 String                  @default("Scheduled")
+  slot                   Int?
+  round                  Int?
+  winnerTeamId           String?
+  scheduledLabel         String?
+  phaseId                String?
+  phase                  CompetitionPhase?       @relation(fields: [eventId, phaseId], references: [eventId, id], onDelete: Restrict)
+  groupId                String?
+  group                  CompetitionGroup?       @relation(fields: [eventId, groupId], references: [eventId, id], onDelete: Restrict)
+  scheduledAt            DateTime?
+  scheduledEndsAt        DateTime?
+  actualStartedAt        DateTime?
+  actualEndedAt          DateTime?
+  scheduleRoom           String?
+  scheduleStatus         MatchScheduleStatus     @default(estimated)
+  scheduleVersion        Int?
+  scheduleMetadata       Json?
+  resultVersion          Int                     @default(0)
+  resultSnapshot         Json?
+  resultConfirmedAt      DateTime?
+  playerStats            PlayerStat[]
+  statSubmissions        StatSubmission[]
+  games                  MatchGame[]
+  sourceDependencies     MatchDependency[]       @relation("SourceMatchDependencies")
+  targetDependencies     MatchDependency[]       @relation("TargetMatchDependencies")
+  readiness              MatchReadiness[]
+  resultRevisions        MatchResultRevision[]
+  competitionActionItems CompetitionActionItem[]
+  competitionIncidents   CompetitionIncident[]
+  competitionAuditLogs   CompetitionAuditLog[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@unique([eventId, round, slot])
+  @@unique([eventId, id])
   @@index([eventId, status])
+  @@index([eventId, scheduleStatus, scheduledAt])
+  @@index([phaseId])
+  @@index([groupId])
 }
 
 model EventRoundConfig {
@@ -377,39 +428,39 @@ model StatSubmission {
 }
 
 model Certificate {
-  id                  String    @id @default(cuid())
-  eventId             String
-  teamId              String
-  type                String    @default("champion")
-  recipientKind       String    @default("team")
-  recipientId         String
-  recipientName       String
-  version             Int       @default(1)
-  templateVersion     String    @default("legacy-v1")
-  assetManifest       Json      @default("{}")
-  renderManifest      Json?
-  imageUrl            String    @default("")
-  status              String    @default("ready")
-  verificationCode    String    @unique @default(cuid())
-  publishedUrl        String?
-  generatedAt         DateTime?
-  publishedAt         DateTime?
-  supersededByVersion Int?
-  lastError           String?
-  attemptCount        Int       @default(1)
-  generationAttemptId String?
-  generationClaimedAt DateTime?
+  id                       String                         @id @default(cuid())
+  eventId                  String
+  teamId                   String
+  type                     String                         @default("champion")
+  recipientKind            String                         @default("team")
+  recipientId              String
+  recipientName            String
+  version                  Int                            @default(1)
+  templateVersion          String                         @default("legacy-v1")
+  assetManifest            Json                           @default("{}")
+  renderManifest           Json?
+  imageUrl                 String                         @default("")
+  status                   String                         @default("ready")
+  verificationCode         String                         @unique @default(cuid())
+  publishedUrl             String?
+  generatedAt              DateTime?
+  publishedAt              DateTime?
+  supersededByVersion      Int?
+  lastError                String?
+  attemptCount             Int                            @default(1)
+  generationAttemptId      String?
+  generationClaimedAt      DateTime?
   generationIdempotencyKey String?
-  generationFingerprint String?
-  generationActorUserId String?
-  completionId        String?
-  completionVersion   Int?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @default(now()) @updatedAt
-  event               Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  team                Team      @relation(fields: [teamId], references: [id])
-  completion          TournamentCompletion? @relation(fields: [completionId], references: [id], onDelete: SetNull)
-  generationMutation  CertificateGenerationMutation?
+  generationFingerprint    String?
+  generationActorUserId    String?
+  completionId             String?
+  completionVersion        Int?
+  createdAt                DateTime                       @default(now())
+  updatedAt                DateTime                       @default(now()) @updatedAt
+  event                    Event                          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  team                     Team                           @relation(fields: [teamId], references: [id])
+  completion               TournamentCompletion?          @relation(fields: [completionId], references: [id], onDelete: SetNull)
+  generationMutation       CertificateGenerationMutation?
 
   @@unique([eventId, type, recipientKind, recipientId, version])
   @@unique([eventId, type, generationIdempotencyKey])
@@ -418,25 +469,25 @@ model Certificate {
 }
 
 model TournamentCompletion {
-  id                String                 @id @default(cuid())
-  eventId           String                 @unique
-  event             Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  status            String                 @default("completed")
-  format            String
-  sourceSnapshot    Json
-  completedByUserId String
-  completedAt       DateTime               @default(now())
-  reopenedByUserId  String?
-  reopenedAt        DateTime?
-  reopenReason      String?
-  certificateRevision Int                    @default(0)
-  podiumPlacements  PodiumPlacement[]
-  awards            EventAward[]
-  auditEntries      CompletionAuditEntry[]
+  id                      String                   @id @default(cuid())
+  eventId                 String                   @unique
+  event                   Event                    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status                  String                   @default("completed")
+  format                  String
+  sourceSnapshot          Json
+  completedByUserId       String
+  completedAt             DateTime                 @default(now())
+  reopenedByUserId        String?
+  reopenedAt              DateTime?
+  reopenReason            String?
+  certificateRevision     Int                      @default(0)
+  podiumPlacements        PodiumPlacement[]
+  awards                  EventAward[]
+  auditEntries            CompletionAuditEntry[]
   certificatePublications CertificatePublication[]
-  certificates      Certificate[]
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
+  certificates            Certificate[]
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
 }
 
 model CertificateGenerationMutation {
@@ -681,4 +732,279 @@ model RegistrationImportItem {
   updatedAt        DateTime                @updatedAt
 
   @@index([batchId, status])
+}
+
+enum CompetitionPhaseStatus {
+  draft
+  active
+  completed
+}
+
+enum MatchScheduleStatus {
+  estimated
+  confirmed
+  locked
+  delayed
+  live
+  completed
+  postponed
+}
+
+enum MatchReadinessStatus {
+  pending
+  checked_in
+  ready
+  not_ready
+}
+
+enum ReadinessActor {
+  organizer
+  captain
+}
+
+enum CompetitionActionPriority {
+  critical
+  urgent
+  attention_soon
+}
+
+enum AnnouncementUrgency {
+  info
+  important
+  urgent
+}
+
+enum AnnouncementStatus {
+  draft
+  published
+}
+
+enum ScheduleRevisionStatus {
+  draft
+  published
+}
+
+enum MatchDependencyOutcome {
+  winner
+  loser
+}
+
+enum MatchDependencySlot {
+  home
+  away
+}
+
+model CompetitionPhase {
+  id            String                 @id @default(cuid())
+  eventId       String
+  event         Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  label         String
+  sequence      Int
+  status        CompetitionPhaseStatus @default(draft)
+  configuration Json?
+  groups        CompetitionGroup[]
+  matches       Match[]
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@unique([eventId, sequence])
+  @@unique([eventId, id])
+  @@index([eventId, status])
+}
+
+model CompetitionGroup {
+  id        String                   @id @default(cuid())
+  eventId   String
+  event     Event                    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  phaseId   String
+  phase     CompetitionPhase         @relation(fields: [eventId, phaseId], references: [eventId, id], onDelete: Cascade)
+  label     String
+  sequence  Int
+  members   CompetitionGroupMember[]
+  matches   Match[]
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+
+  @@unique([phaseId, sequence])
+  @@unique([eventId, id])
+  @@index([eventId, sequence])
+}
+
+model CompetitionGroupMember {
+  id        String           @id @default(cuid())
+  eventId   String
+  groupId   String
+  group     CompetitionGroup @relation(fields: [eventId, groupId], references: [eventId, id], onDelete: Cascade)
+  teamId    String
+  team      Team             @relation(fields: [eventId, teamId], references: [eventId, id], onDelete: Cascade)
+  seed      Int?
+  createdAt DateTime         @default(now())
+
+  @@unique([groupId, teamId])
+  @@index([teamId])
+}
+
+model MatchDependency {
+  id            String                 @id @default(cuid())
+  eventId       String
+  event         Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sourceMatchId String
+  sourceMatch   Match                  @relation("SourceMatchDependencies", fields: [eventId, sourceMatchId], references: [eventId, id], onDelete: Cascade)
+  targetMatchId String
+  targetMatch   Match                  @relation("TargetMatchDependencies", fields: [eventId, targetMatchId], references: [eventId, id], onDelete: Cascade)
+  outcome       MatchDependencyOutcome
+  targetSlot    MatchDependencySlot
+  createdAt     DateTime               @default(now())
+
+  @@unique([targetMatchId, targetSlot])
+  @@index([eventId])
+  @@index([sourceMatchId])
+}
+
+model MatchReadiness {
+  id          String               @id @default(cuid())
+  eventId     String
+  event       Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matchId     String
+  match       Match                @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Cascade)
+  teamId      String
+  team        Team                 @relation(fields: [eventId, teamId], references: [eventId, id], onDelete: Cascade)
+  status      MatchReadinessStatus @default(pending)
+  actor       ReadinessActor       @default(organizer)
+  actorUserId String?
+  actorUser   User?                @relation("MatchReadinessActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  checkedInAt DateTime?
+  readyAt     DateTime?
+  note        String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@unique([matchId, teamId])
+  @@index([eventId, status])
+  @@index([teamId])
+}
+
+model MatchResultRevision {
+  id             String   @id @default(cuid())
+  eventId        String
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matchId        String
+  match          Match    @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Cascade)
+  version        Int
+  homeScore      Int
+  awayScore      Int
+  winnerTeamId   String?
+  winnerTeam     Team?    @relation("MatchResultRevisionWinner", fields: [eventId, winnerTeamId], references: [eventId, id], onDelete: NoAction)
+  scoreSnapshot  Json
+  actorUserId    String
+  actorUser      User     @relation("MatchResultRevisionActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  reason         String
+  idempotencyKey String
+  createdAt      DateTime @default(now())
+
+  @@unique([matchId, version])
+  @@unique([matchId, idempotencyKey])
+  @@index([eventId, createdAt])
+}
+
+model CompetitionActionItem {
+  id           String                    @id @default(cuid())
+  eventId      String
+  event        Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matchId      String?
+  match        Match?                    @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Cascade)
+  teamId       String?
+  team         Team?                     @relation(fields: [eventId, teamId], references: [eventId, id], onDelete: Cascade)
+  conditionKey String
+  priority     CompetitionActionPriority
+  title        String
+  detail       String?
+  resolvedAt   DateTime?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  @@unique([eventId, conditionKey])
+  @@index([eventId, priority, resolvedAt])
+  @@index([matchId])
+  @@index([teamId])
+}
+
+model CompetitionIncident {
+  id           String    @id @default(cuid())
+  eventId      String
+  event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matchId      String?
+  match        Match?    @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Restrict)
+  reportedById String?
+  reportedBy   User?     @relation("CompetitionIncidentReporter", fields: [reportedById], references: [id], onDelete: SetNull)
+  kind         String
+  description  String
+  details      Json?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([eventId, resolvedAt])
+  @@index([matchId])
+}
+
+model CompetitionAuditLog {
+  id             String   @id @default(cuid())
+  eventId        String
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matchId        String?
+  match          Match?   @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Restrict)
+  actorUserId    String?
+  actorUser      User?    @relation("CompetitionAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  action         String
+  reason         String?
+  payload        Json?
+  idempotencyKey String?
+  createdAt      DateTime @default(now())
+
+  @@index([eventId, createdAt])
+  @@index([matchId, createdAt])
+  @@index([eventId, idempotencyKey])
+}
+
+model ScheduleRevision {
+  id             String                 @id @default(cuid())
+  eventId        String
+  event          Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  version        Int
+  status         ScheduleRevisionStatus @default(draft)
+  snapshot       Json
+  idempotencyKey String
+  createdById    String?
+  createdBy      User?                  @relation("ScheduleRevisionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  publishedById  String?
+  publishedBy    User?                  @relation("ScheduleRevisionPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  publishedAt    DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@unique([eventId, version])
+  @@unique([eventId, idempotencyKey])
+  @@index([eventId, status, createdAt])
+}
+
+model EventAnnouncement {
+  id            String              @id @default(cuid())
+  eventId       String
+  event         Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status        AnnouncementStatus  @default(draft)
+  urgency       AnnouncementUrgency @default(info)
+  title         String
+  body          String
+  startsAt      DateTime?
+  endsAt        DateTime?
+  createdById   String?
+  createdBy     User?               @relation("EventAnnouncementCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  publishedById String?
+  publishedBy   User?               @relation("EventAnnouncementPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  publishedAt   DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([eventId, status, publishedAt])
 }

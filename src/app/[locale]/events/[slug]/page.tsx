@@ -3,12 +3,14 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { permanentRedirect } from "next/navigation";
 
 import { AdaptiveRegistrationEventPage } from "@/components/v3/public-event/AdaptiveRegistrationEventPage";
+import { AdaptiveOngoingEventPage } from "@/components/v3/public-event/AdaptiveOngoingEventPage";
+import { getPublicOngoingEvent, publicOngoingEnabled } from "@/lib/events/public-ongoing";
 import type { AdaptiveEventCopy } from "@/components/v3/public-event/PublicEventHero";
 import { getSessionUser } from "@/lib/auth/session";
 import { getAdaptivePublicEventViewWithRetry, shouldUseAdaptiveRegistrationRenderer } from "@/lib/events/adaptive-public-event";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { serializeJsonLd } from "@/lib/seo/json-ld";
-import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
+import { getGameForEvent, getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
 import { renderEventDetailPage } from "../../../events/[slug]/event-detail-page";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
@@ -121,6 +123,27 @@ export default async function LocalizedEventDetailPage({
   if (!event) {
     const redirectSlug = await getPublicEventSlugRedirect(slug);
     if (redirectSlug) permanentRedirect(`/${locale}/events/${redirectSlug}`);
+  }
+
+  if (event?.status === "Ongoing" && publicOngoingEnabled()) {
+    const ongoing = await getPublicOngoingEvent(slug).catch(() => null);
+    if (ongoing) {
+      const jsonLd = {
+        "@context": "https://schema.org",
+        "@type": "SportsEvent",
+        name: event.name,
+        description: event.description,
+        location: { "@type": "Place", name: event.venue },
+        organizer: { "@type": "Organization", name: event.organizerName ?? "Miracle League" },
+        sport: getGameForEvent(event).name,
+        ...(event.startsAt && event.startsAt !== "TBD" ? { startDate: event.startsAt } : {}),
+        ...(event.prizePoolLabel ? { prize: event.prizePoolLabel } : {}),
+      };
+      return <>
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
+        <AdaptiveOngoingEventPage view={ongoing} locale={locale} />
+      </>;
+    }
   }
 
   if (event && isFeatureEnabled("adaptive_public_event_v3") && ["Published", "Registration Closed"].includes(event.status)) {

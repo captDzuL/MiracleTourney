@@ -1,7 +1,7 @@
 import React from "react";
 import { ExternalLink, ShieldCheck } from "lucide-react";
 
-import type { AdaptivePublicEventViewModel } from "@/lib/events/adaptive-public-event";
+import type { AdaptiveRegistrationEventViewModel } from "@/lib/events/adaptive-public-event";
 import type { AdaptiveEventCopy } from "./PublicEventHero";
 
 function localizeDetail(detail: string, locale: "id" | "en") {
@@ -25,7 +25,7 @@ function localizeDetail(detail: string, locale: "id" | "en") {
     .replace(/ points$/, " poin");
 }
 
-export function OrganizerPublicCard({ view, locale, copy }: { view: AdaptivePublicEventViewModel; locale: "id" | "en"; copy: AdaptiveEventCopy }) {
+export function OrganizerPublicCard({ view, locale, copy }: { view: AdaptiveRegistrationEventViewModel; locale: "id" | "en"; copy: AdaptiveEventCopy }) {
   const contact = <span className="break-all font-extrabold text-[var(--color-brand-cyan)]">{view.organizer.contactValue || "—"}</span>;
   const sectionTargetClass = "scroll-mt-[8.5rem] transition-[border-color,box-shadow] motion-reduce:transition-none data-[section-highlighted=true]:border-[var(--color-brand-cyan)] data-[section-highlighted=true]:shadow-[0_0_0_1px_var(--color-brand-cyan)]";
   return <aside className="grid content-start gap-5">

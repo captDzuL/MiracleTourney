@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { routing } from "./routing";
@@ -15,11 +15,17 @@ export async function redirectToActiveLocale(path: string): Promise<never> {
   let locale = routing.defaultLocale;
 
   try {
-    const cookieStore = await cookies();
-    const cookieLocale = cookieStore.get("NEXT_LOCALE")?.value;
-    locale = routing.locales.includes(cookieLocale as "id" | "en")
-      ? (cookieLocale as "id" | "en")
-      : routing.defaultLocale;
+    // The active route is authoritative: next-intl need not set a locale cookie
+    // when the URL already matches the browser's preferred language.
+    const requestLocale = (await headers()).get("x-next-intl-locale");
+    if (routing.locales.includes(requestLocale as "id" | "en")) {
+      locale = requestLocale as "id" | "en";
+    } else {
+      const cookieLocale = (await cookies()).get("NEXT_LOCALE")?.value;
+      locale = routing.locales.includes(cookieLocale as "id" | "en")
+        ? (cookieLocale as "id" | "en")
+        : routing.defaultLocale;
+    }
   } catch {
     redirect(path as never);
   }

@@ -28,7 +28,10 @@ export type RegistrationCta =
   | { kind: "status"; label: string; href: string; enabled: true }
   | { kind: "disabled"; label: string; reason: string; enabled: false };
 
-export type AdaptivePublicEventViewModel = {
+export type AdaptivePublicEventViewModel = AdaptiveRegistrationEventViewModel | import("./public-ongoing-types").PublicOngoingEventViewModel;
+
+export type AdaptiveRegistrationEventViewModel = {
+  mode: "registration";
   event: {
     id: string;
     slug: string;
@@ -259,7 +262,7 @@ export async function getAdaptivePublicEventView(
   slug: string,
   viewer: AppUser | null,
   now: Date = new Date(),
-): Promise<AdaptivePublicEventViewModel | null> {
+): Promise<AdaptiveRegistrationEventViewModel | null> {
   const row = await prisma.event.findFirst({
     where: { slug, status: { in: ["Published", "Registration Closed", "Ongoing", "Finished"] } },
     include: {
@@ -301,6 +304,7 @@ export async function getAdaptivePublicEventView(
   const href = `/captain?tab=registration&eventId=${encodeURIComponent(row.id)}`;
 
   return {
+    mode: "registration",
     event: {
       id: row.id,
       slug: row.slug,
@@ -352,7 +356,7 @@ export async function getAdaptivePublicEventViewWithRetry(
   slug: string,
   viewer: AppUser | null,
   now: Date = new Date(),
-): Promise<AdaptivePublicEventViewModel | null> {
+): Promise<AdaptiveRegistrationEventViewModel | null> {
   try {
     return await getAdaptivePublicEventView(slug, viewer, now);
   } catch {

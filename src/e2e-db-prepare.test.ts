@@ -7,6 +7,14 @@ type PreflightResult = {
 };
 
 type PrepareModule = {
+  runCommand(
+    command: string,
+    args: string[],
+    spawnImpl: (command: string, args: string[], options: Record<string, unknown>) => {
+      once(event: string, handler: (value?: unknown) => void): void;
+    },
+    runtime?: { platform: string; npmExecPath?: string; nodePath: string },
+  ): Promise<void>;
   prepareE2eDatabase(options: {
     env: Record<string, string | undefined>;
     checkConnection?: (options: { env: Record<string, string | undefined> }) => Promise<PreflightResult>;
@@ -16,7 +24,7 @@ type PrepareModule = {
 };
 
 const prepareModulePath = "../scripts/e2e-db-prepare.mjs";
-const { prepareE2eDatabase } = await import(prepareModulePath) as PrepareModule;
+const { prepareE2eDatabase, runCommand: runPrepareCommand } = await import(prepareModulePath) as PrepareModule;
 
 const validEnvironment = {
   DATABASE_URL: "postgresql://test-user:super-secret@example.test/testdb",
@@ -24,6 +32,30 @@ const validEnvironment = {
 };
 
 describe("E2E database preparation", () => {
+  it("uses the platform pnpm shim without a shell", async () => {
+    let invocation: { command: string; args: string[]; options: Record<string, unknown> } | undefined;
+    const spawnImpl = vi.fn((command: string, args: string[], options: Record<string, unknown>) => {
+      invocation = { command, args, options };
+      return {
+        once(event: string, handler: (value?: unknown) => void) {
+          if (event === "close") handler(0);
+        },
+      };
+    });
+
+    await runPrepareCommand("pnpm", ["db:seed"], spawnImpl, {
+      platform: "win32",
+      npmExecPath: "C:\\tools\\pnpm.mjs",
+      nodePath: "C:\\tools\\node.exe",
+    });
+
+    expect(invocation).toEqual({
+      command: "C:\\tools\\node.exe",
+      args: ["C:\\tools\\pnpm.mjs", "db:seed"],
+      options: { shell: false, stdio: "inherit" },
+    });
+  });
+
   it("runs the connectivity preflight before reset, then applies migrations and the normal seed", async () => {
     const events: string[] = [];
     const checkConnection = vi.fn(async () => {

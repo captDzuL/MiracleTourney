@@ -24,6 +24,7 @@ import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { getActiveEventEditRevisionIds } from "@/lib/events/event-revision";
 import { SubmitButton } from "@/components/submit-button";
+import { HydrationGate } from "@/components/HydrationGate";
 import {
   adminApproveStatAction,
   adminApprovePaymentAction,
@@ -156,9 +157,11 @@ const matchDeskCardGridClass = "grid gap-3 md:grid-cols-2";
 export default async function AdminPage({
   searchParams,
   workspaceScope = "admin",
+  locale,
 }: {
   searchParams?: Promise<AdminSearchParams>;
   workspaceScope?: AdminWorkspaceScope;
+  locale?: "id" | "en";
 }) {
   const user = await requireAnyRole(["platform_admin", "organizer", "admin"]);
   if (!user) {
@@ -342,7 +345,7 @@ export default async function AdminPage({
   };
 
   return (
-    <div className="space-y-6">
+    <HydrationGate className="space-y-6">
       <AdminHeader
         activeEvent={activeEvent}
         activePhase={activePhase}
@@ -448,6 +451,7 @@ export default async function AdminPage({
               selectedMatchBestOf={selectedMatchBestOf}
               selectedMatchGames={selectedMatchGames}
               selectedMatchRosterAndStats={selectedMatchRosterAndStats}
+              locale={locale}
               t={t}
               teamName={teamName}
             />
@@ -475,7 +479,7 @@ export default async function AdminPage({
           />
         </div>
       </div>
-    </div>
+    </HydrationGate>
   );
 }
 
@@ -1508,6 +1512,7 @@ function RunMatchDayPhase({
   selectedMatchBestOf,
   selectedMatchGames,
   selectedMatchRosterAndStats,
+  locale,
   t,
   teamName,
 }: {
@@ -1524,6 +1529,7 @@ function RunMatchDayPhase({
   selectedMatchBestOf: number;
   selectedMatchGames: MatchGameItem[];
   selectedMatchRosterAndStats: MatchRosterAndStats;
+  locale?: "id" | "en";
   t: AdminTranslator;
   teamName: (teamId: string | undefined) => string;
 }) {
@@ -1545,7 +1551,7 @@ function RunMatchDayPhase({
       title={t("runTitle")}
     >
       {hasContent ? (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.85fr)]">
+        <div className="grid gap-6 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]">
           <div className="grid gap-6">
             {selectedManageableEvent ? (
               <Section title={t("matchQueueTitle")} description={t("matchQueueDescription")} className="rounded-xl shadow-none">
@@ -1647,12 +1653,13 @@ function RunMatchDayPhase({
 
             {distinctRoundLabels.length && selectedManageableEvent ? (
               <Section title={t("roundConfigTitle")} description={t("roundConfigDesc")} className="rounded-xl shadow-none">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
                   {distinctRoundLabels.map((label) => {
                     const currentBestOf = roundConfigMap.get(label) ?? roundConfigs.find((config) => config.roundLabel === label)?.bestOf ?? 1;
                     return (
                       <form key={label} action={adminSetRoundConfigAction} className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
                         <input type="hidden" name="eventId" value={selectedManageableEvent.event.id} />
+                        {locale ? <input type="hidden" name="locale" value={locale} /> : null}
                         <input type="hidden" name="roundLabel" value={label} />
                         <label className={labelClass}>
                           {label}
@@ -1700,6 +1707,7 @@ function RunMatchDayPhase({
                         <input type="hidden" name="eventId" value={selectedManageableEvent?.event.id} />
                         <input type="hidden" name="matchEventId" value={selectedManageableEvent?.event.id} />
                         <input type="hidden" name="matchId" value={selectedMatch.id} />
+                        {locale ? <input type="hidden" name="locale" value={locale} /> : null}
                         <div className="grid gap-4 sm:grid-cols-2">
                           <label className={labelClass}>
                             {teamName(selectedMatch.homeTeamId)} (Home)
@@ -1720,6 +1728,7 @@ function RunMatchDayPhase({
                         <input type="hidden" name="matchId" value={selectedMatch.id} />
                         <input type="hidden" name="matchEventId" value={selectedManageableEvent?.event.id} />
                         <input type="hidden" name="bestOf" value={selectedMatchBestOf} />
+                        {locale ? <input type="hidden" name="locale" value={locale} /> : null}
                         <div className="grid gap-3">
                           <div className="grid grid-cols-[3rem_1fr_1fr] gap-3">
                             <div />

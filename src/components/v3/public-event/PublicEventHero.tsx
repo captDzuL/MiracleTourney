@@ -2,7 +2,7 @@ import React from "react";
 import { CalendarDays, MapPin, ShieldCheck, Trophy, Users } from "lucide-react";
 
 import { ShareButton } from "@/components/ShareButton";
-import type { AdaptivePublicEventViewModel } from "@/lib/events/adaptive-public-event";
+import type { AdaptiveRegistrationEventViewModel } from "@/lib/events/adaptive-public-event";
 
 export type AdaptiveEventCopy = {
   registrationOpen: string;
@@ -57,7 +57,7 @@ function fact(value: string, label: string, icon: React.ReactNode) {
 }
 
 export function PublicEventHero({ view, locale, copy }: {
-  view: AdaptivePublicEventViewModel;
+  view: AdaptiveRegistrationEventViewModel;
   locale: "id" | "en";
   copy: AdaptiveEventCopy;
 }) {

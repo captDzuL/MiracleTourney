@@ -1,5 +1,5 @@
 import React from "react";
-import type { AdaptivePublicEventViewModel } from "@/lib/events/adaptive-public-event";
+import type { AdaptiveRegistrationEventViewModel } from "@/lib/events/adaptive-public-event";
 
 import { OrganizerPublicCard } from "./OrganizerPublicCard";
 import { PublicEventSectionNav } from "./PublicEventSectionNav";
@@ -8,7 +8,7 @@ import { RegistrationEntryCta } from "./RegistrationEntryCta";
 import { RegistrationOverview } from "./RegistrationOverview";
 
 export function AdaptiveRegistrationEventPage({ view, locale, copy, readOnly = false }: {
-  view: AdaptivePublicEventViewModel;
+  view: AdaptiveRegistrationEventViewModel;
   locale: "id" | "en";
   copy: AdaptiveEventCopy;
   readOnly?: boolean;
