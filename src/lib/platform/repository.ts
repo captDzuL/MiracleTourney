@@ -1171,6 +1171,11 @@ async function legacyResultTransaction<T>(eventId: string, work: (tx: Prisma.Tra
     // snapshot. Rejection rolls the version increment back with the write.
     const locked = await tx.event.updateMany({ where: { id: eventId }, data: { competitionVersion: { increment: 1 } } });
     if (locked.count !== 1) throw new Error("Event not found");
+    const completion = await tx.tournamentCompletion.findUnique({
+      where: { eventId },
+      select: { status: true },
+    });
+    if (completion?.status === "completed") throw new Error("Tournament completion locks competitive writes");
     if (await tx.competitionPhase.count({ where: { eventId } })) throw new Error("Use the versioned competition operation to submit or correct this result.");
     return work(tx);
   });

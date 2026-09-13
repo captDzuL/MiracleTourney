@@ -83,6 +83,14 @@ export interface CompletionDependencies {
   transaction<T>(eventId: string, work: (tx: CompletionTransaction) => Promise<T>): Promise<T>;
 }
 
+/** A transaction race whose authoritative event version is safe to expose to callers. */
+export class CompletionVersionConflictError extends Error {
+  constructor(readonly version: number) {
+    super("Completion version changed during the transaction");
+    this.name = "CompletionVersionConflictError";
+  }
+}
+
 async function applyMutation(
   input: { eventId: string; expectedVersion: number; idempotencyKey: string },
   fingerprint: string,
@@ -92,26 +100,33 @@ async function applyMutation(
 ): Promise<CompletionResult> {
   // No Match Day persistence adapter is installed on this branch.
   if (!dependencies) return { status: "integration_required" };
-  return dependencies.transaction(input.eventId, async (tx) => {
-    const actor = await tx.authorize();
-    if (!actor) return { status: "blocked", code: "unauthorized" };
-    const state = await tx.loadState();
-    const existing = await tx.findMutation(input.idempotencyKey);
-    if (existing) {
-      if (existing.fingerprint !== fingerprint || existing.actor.id !== actor.id) {
-        return { status: "conflict", version: state.version, code: "idempotency_key_reused" };
+  try {
+    return await dependencies.transaction(input.eventId, async (tx) => {
+      const actor = await tx.authorize();
+      if (!actor) return { status: "blocked", code: "unauthorized" };
+      const state = await tx.loadState();
+      const existing = await tx.findMutation(input.idempotencyKey);
+      if (existing) {
+        if (existing.fingerprint !== fingerprint || existing.actor.id !== actor.id) {
+          return { status: "conflict", version: state.version, code: "idempotency_key_reused" };
+        }
+        return { status: "already_applied", eventId: input.eventId, version: existing.result.version, result: structuredClone(existing.result) };
       }
-      return { status: "already_applied", eventId: input.eventId, version: existing.result.version, result: structuredClone(existing.result) };
+      if (state.version !== input.expectedVersion) {
+        return { status: "conflict", version: state.version, code: "stale_version" };
+      }
+      const result = await createResult(tx, state, actor);
+      if (result.status === "completed" || result.status === "reopened") {
+        await tx.commit(structuredClone({ idempotencyKey: input.idempotencyKey, fingerprint, actor, reason, result }));
+      }
+      return result;
+    });
+  } catch (error) {
+    if (error instanceof CompletionVersionConflictError) {
+      return { status: "conflict", version: error.version, code: "stale_version" };
     }
-    if (state.version !== input.expectedVersion) {
-      return { status: "conflict", version: state.version, code: "stale_version" };
-    }
-    const result = await createResult(tx, state, actor);
-    if (result.status === "completed" || result.status === "reopened") {
-      await tx.commit(structuredClone({ idempotencyKey: input.idempotencyKey, fingerprint, actor, reason, result }));
-    }
-    return result;
-  });
+    throw error;
+  }
 }
 
 export async function completeTournament(

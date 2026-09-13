@@ -585,8 +585,12 @@ model CompletionAuditEntry {
   actorUserId  String
   reason       String?
   details      Json
+  idempotencyKey String?
+  fingerprint  String?
+  result       Json?
   createdAt    DateTime             @default(now())
 
+  @@unique([completionId, idempotencyKey])
   @@index([completionId, createdAt])
 }
 

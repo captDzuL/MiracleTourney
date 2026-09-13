@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const boundary = vi.hoisted(() => ({ phaseId: "phase-v3" as string | null, writes: 0, version: 0, initialized: false, locked: false, requireLock: false, roundBestOf: 3 as number | null, matchWhere: null as unknown, matchUpdate: null as unknown, games: [] as unknown[] }));
+const boundary = vi.hoisted(() => ({ phaseId: "phase-v3" as string | null, writes: 0, version: 0, initialized: false, completionStatus: null as string | null, locked: false, requireLock: false, roundBestOf: 3 as number | null, matchWhere: null as unknown, matchUpdate: null as unknown, games: [] as unknown[] }));
 const row = () => ({ id: "m", eventId: "event", phaseId: boundary.phaseId, resultVersion: boundary.phaseId ? 1 : 0, homeTeamId: "a", awayTeamId: "b", roundLabel: "Final", round: 1, slot: 1, homeScore: 0, awayScore: 0, status: "Scheduled" });
 const write = (value: unknown = row()) => { if (boundary.requireLock && !boundary.locked) throw new Error("Unlocked legacy write"); boundary.writes++; return value; };
 const delegates = () => ({
   competitionPhase: { count: async () => boundary.initialized ? 1 : 0 },
+  tournamentCompletion: { findUnique: async () => boundary.completionStatus ? { status: boundary.completionStatus } : null },
   event: { findUnique: async () => ({ id: "event", format: "Single Elimination" }), updateMany: async () => { boundary.locked = true; boundary.version++; return { count: 1 }; } },
   eventRoundConfig: {
     findUnique: async () => boundary.roundBestOf == null ? null : ({ eventId: "event", roundLabel: "Final", bestOf: boundary.roundBestOf }),
@@ -22,7 +23,18 @@ vi.mock("./db", () => ({ prisma: new Proxy({}, { get: (_, key) => key === "$tran
 import { setMatchResult, setMatchGames, upsertRoundConfig } from "./repository";
 
 describe("legacy result isolation", () => {
-  beforeEach(() => { boundary.phaseId = "phase-v3"; boundary.writes = 0; boundary.version = 0; boundary.initialized = false; boundary.requireLock = false; boundary.locked = false; boundary.roundBestOf = 3; boundary.matchWhere = null; boundary.matchUpdate = null; boundary.games = []; });
+  beforeEach(() => { boundary.phaseId = "phase-v3"; boundary.writes = 0; boundary.version = 0; boundary.initialized = false; boundary.completionStatus = null; boundary.requireLock = false; boundary.locked = false; boundary.roundBestOf = 3; boundary.matchWhere = null; boundary.matchUpdate = null; boundary.games = []; });
+  it.each(["score", "games", "round"])("rolls back and blocks legacy %s writes while completion is locked", async kind => {
+    boundary.phaseId = null; boundary.completionStatus = "completed";
+    const result = kind === "score"
+      ? setMatchResult({ eventId: "event", matchId: "m", homeScore: 3, awayScore: 0 })
+      : kind === "games"
+        ? setMatchGames("m", "event", [{ gameNumber: 1, homeScore: 3, awayScore: 0 }])
+        : upsertRoundConfig("event", "Final", 3);
+    await expect(result).rejects.toThrow("Tournament completion locks competitive writes");
+    expect(boundary.version).toBe(0);
+    expect(boundary.writes).toBe(0);
+  });
   it.each(["score", "games"])("gates the event rather than only the individual %s match", async kind => {
     boundary.phaseId = null; boundary.initialized = true;
     const result = kind === "score" ? setMatchResult({ eventId: "event", matchId: "m", homeScore: 3, awayScore: 0 }) : setMatchGames("m", "event", [{ gameNumber: 1, homeScore: 3, awayScore: 0 }]);

@@ -30,6 +30,13 @@ export function createCompetitionOperations(db: PrismaClient, clock: () => Date 
         if (!isDeepStrictEqual(payload.request, mutation)) throw new Error("Idempotency key already used for a different request");
         return payload.receipt;
       }
+      const completion = await tx.tournamentCompletion.findUnique({
+        where: { eventId },
+        select: { status: true },
+      });
+      if (completion?.status === "completed") {
+        throw new Error("Tournament completion locks competitive writes");
+      }
       const updated = await tx.event.updateMany({
         where: { id: eventId, organizerUserId: event.organizerUserId, competitionVersion: expectedVersion },
         data: { competitionVersion: { increment: 1 } },

@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppUser } from "@/lib/platform/types";
 import type { CompletionSnapshot } from "@/lib/completion/complete";
 
-const external = vi.hoisted(() => ({ requireAnyRole: vi.fn(), assertUserCanManageEvent: vi.fn(), revalidatePath: vi.fn() }));
+const external = vi.hoisted(() => ({ requireAnyRole: vi.fn(), assertUserCanManageEvent: vi.fn(), revalidatePath: vi.fn(), dependencies: vi.fn() }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: external.requireAnyRole }));
 vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent: external.assertUserCanManageEvent }));
 vi.mock("next/cache", () => ({ revalidatePath: external.revalidatePath }));
+vi.mock("@/lib/completion/prisma-adapter", () => ({ createPrismaCompletionDependencies: external.dependencies }));
 vi.mock("@/lib/completion/complete", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/completion/complete")>();
   return { ...actual, completeTournament: vi.fn(actual.completeTournament), reopenTournament: vi.fn(actual.reopenTournament) };
@@ -28,6 +29,9 @@ describe("completion V3 server actions", () => {
     vi.clearAllMocks();
     vi.stubEnv("FEATURE_FLAG_COMPLETION_WORKSPACE_V3", "true");
     external.requireAnyRole.mockResolvedValue(organizer);
+    external.dependencies.mockReturnValue({ transaction: vi.fn() });
+    vi.mocked(completeTournament).mockResolvedValue({ status: "integration_required" });
+    vi.mocked(reopenTournament).mockResolvedValue({ status: "integration_required" });
     // Models the existing repository's ownership result, without a database connection.
     external.assertUserCanManageEvent.mockImplementation(async (user: AppUser, eventId: string) => {
       if (user.role === "organizer" && (user.id !== "organizer-1" || eventId !== "event-1")) throw new Error("Not authorized");
@@ -69,6 +73,7 @@ describe("completion V3 server actions", () => {
       expect(await action(input)).toEqual({ status: "integration_required" });
       expect(external.requireAnyRole).toHaveBeenCalledWith(["organizer", "platform_admin", "admin"]);
       expect(external.assertUserCanManageEvent).toHaveBeenCalledWith(user, "event-1");
+      expect(external.dependencies).toHaveBeenCalledWith({ id: user.id, role });
       expect(external.revalidatePath).not.toHaveBeenCalled();
     });
     it.each([
@@ -113,7 +118,7 @@ describe("completion V3 server actions", () => {
     const result = { status: "completed" as const, eventId: "event-1", version: 1, snapshot };
     vi.mocked(completeTournament).mockResolvedValueOnce(result);
     expect(await completeTournamentAction({ ...base, decisions })).toEqual(result);
-    expect(completeTournament).toHaveBeenCalledWith("event-1", decisions, 0, base.idempotencyKey);
+    expect(completeTournament).toHaveBeenCalledWith("event-1", decisions, 0, base.idempotencyKey, expect.any(Object));
     expect(external.revalidatePath.mock.calls).toEqual([["/organizer/events/event-1/completion"]]);
     external.revalidatePath.mockClear();
     vi.mocked(completeTournament).mockResolvedValueOnce({ status: "already_applied", eventId: "event-1", version: 1, result });
@@ -124,7 +129,7 @@ describe("completion V3 server actions", () => {
   it("normalizes the reopen reason and revalidates only a newly committed reopen", async () => {
     vi.mocked(reopenTournament).mockResolvedValueOnce({ status: "reopened", eventId: "event-1", version: 2 });
     expect(await reopenTournamentAction({ ...base, expectedVersion: 1, reason: "  Correct score  " })).toEqual({ status: "reopened", eventId: "event-1", version: 2 });
-    expect(reopenTournament).toHaveBeenCalledWith("event-1", "Correct score", 1, base.idempotencyKey);
+    expect(reopenTournament).toHaveBeenCalledWith("event-1", "Correct score", 1, base.idempotencyKey, expect.any(Object));
     expect(external.revalidatePath.mock.calls).toEqual([["/organizer/events/event-1/completion"]]);
     external.revalidatePath.mockClear();
     vi.mocked(reopenTournament).mockResolvedValueOnce({ status: "conflict", code: "stale_version", version: 2 });

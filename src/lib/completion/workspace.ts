@@ -1,5 +1,11 @@
 import type { CompletionAwardStatistic } from "./readiness";
 import type { TournamentFormatConfig } from "@/lib/tournament/formats/types";
+import { deriveAwardCandidates } from "./awards";
+import { evaluateCompletionReadiness, type CompletionBlocker } from "./readiness";
+import {
+  loadPrismaCompletionWorkspaceData,
+  type PrismaCompletionWorkspaceData,
+} from "./prisma-adapter";
 
 export type CompletionWorkspaceStatus =
   | "integration_required"
@@ -78,6 +84,12 @@ export interface CompletionWorkspaceAvailableBase extends CompletionWorkspaceIde
     readonly actorLabel: string | null;
     readonly at: string | null;
     readonly summary: string;
+    readonly history: readonly {
+      readonly action: "completed" | "reopened";
+      readonly actorLabel: string;
+      readonly at: string;
+      readonly summary: string;
+    }[];
   };
 }
 
@@ -138,6 +150,10 @@ const AWARDS: readonly CompletionAwardStatistic[] = [
   "top_assist",
 ];
 
+export interface CompletionWorkspaceDependencies {
+  load(eventId: string): Promise<PrismaCompletionWorkspaceData>;
+}
+
 function formatLabel(kind: string | undefined, locale: "id" | "en"): string {
   const labels = locale === "id"
     ? {
@@ -155,53 +171,173 @@ function formatLabel(kind: string | undefined, locale: "id" | "en"): string {
   return labels[kind as keyof typeof labels] ?? (locale === "id" ? "Belum dikonfigurasi" : "Not configured");
 }
 
-/**
- * Safe production boundary until Match Day installs its authoritative read adapter.
- * Only event identity already scoped by getManageableEventDraft is exposed here.
- */
+const awardName = (award: CompletionAwardStatistic, locale: "id" | "en") => ({
+  mvp: "MVP",
+  top_scorer: locale === "id" ? "Top Scorer" : "Top Scorer",
+  top_defender: locale === "id" ? "Top Defender" : "Top Defender",
+  top_assist: locale === "id" ? "Top Assist" : "Top Assist",
+})[award];
+
+function workspaceBlocker(
+  blocker: CompletionBlocker,
+  eventId: string,
+  locale: "id" | "en",
+): CompletionWorkspaceBlocker {
+  const root = `/${locale}/organizer/events/${eventId}/competition`;
+  switch (blocker.code) {
+    case "UNOFFICIAL_REQUIRED_RESULT":
+      return { code: blocker.code, subject: `${blocker.stage} · ${blocker.matchId}`, repairHref: `${root}?match=${encodeURIComponent(blocker.matchId)}` };
+    case "ACTIVE_DISPUTE":
+      return { code: blocker.code, subject: `${blocker.disputeId}${blocker.matchId ? ` · ${blocker.matchId}` : ""}`, repairHref: `${root}?dispute=${encodeURIComponent(blocker.disputeId)}` };
+    case "UNRESOLVED_FINAL_TIE":
+      return { code: blocker.code, subject: blocker.teamIds.join(", "), repairHref: `${root}?view=standings` };
+    case "MISSING_VALIDATED_AWARD_STATISTICS":
+      return { code: blocker.code, subject: awardName(blocker.award, locale), repairHref: `${root}?view=statistics` };
+    case "INSUFFICIENT_PODIUM_STRUCTURE": {
+      const details = [...blocker.missingStages ?? [], ...blocker.matchIds ?? [], ...blocker.teamIds ?? []];
+      return { code: blocker.code, subject: details.join(", ") || (locale === "id" ? "Struktur podium" : "Podium structure"), repairHref: `${root}?view=results` };
+    }
+  }
+}
+
+function snapshotVersion(value: unknown): number | null {
+  if (!value || Array.isArray(value) || typeof value !== "object") return null;
+  const version = (value as { version?: unknown }).version;
+  return Number.isSafeInteger(version) && Number(version) >= 0 ? Number(version) : null;
+}
+
+function auditVersion(details: unknown): number | null {
+  if (!details || Array.isArray(details) || typeof details !== "object") return null;
+  const nested = (details as { result?: unknown }).result;
+  return snapshotVersion(nested) ?? snapshotVersion(details);
+}
+
+const auditAction = (action: string): "completed" | "reopened" | null =>
+  action === "completed" || action === "reopened" ? action : null;
+
 export async function loadCompletionWorkspace(
   event: CompletionWorkspaceEvent,
   locale: "id" | "en",
+  dependencies: CompletionWorkspaceDependencies = { load: loadPrismaCompletionWorkspaceData },
 ): Promise<CompletionWorkspaceState> {
+  const record = await dependencies.load(event.id);
+  const readiness = evaluateCompletionReadiness(record.source.facts);
+  const candidates = deriveAwardCandidates(record.source.statistics);
+  const completionVersion = snapshotVersion(record.completion?.sourceSnapshot);
+  const completionStatus = record.completion?.status;
+  const status = completionStatus === "completed"
+    ? "completed"
+    : completionStatus === "reopened"
+      ? "reopened"
+      : readiness.ready
+        ? "ready"
+        : "blocked";
+  const teamNames = new Map(record.source.teams.map(({ id, name }) => [id, name]));
+  const persistedPlacements = record.completion?.podiumPlacements
+    .filter((row): row is typeof row & { rank: 1 | 2 | 3 } => row.rank === 1 || row.rank === 2 || row.rank === 3)
+    .map(({ rank, teamId, teamName }) => ({ rank, teamId, teamName })) ?? [];
+  const currentTeamIds = readiness.podium
+    ? [readiness.podium.championTeamId, readiness.podium.runnerUpTeamId, readiness.podium.thirdPlaceTeamId]
+    : [];
+  const currentPlacements = currentTeamIds.flatMap((teamId, index) => {
+    const teamName = teamNames.get(teamId);
+    return teamName ? [{ rank: (index + 1) as 1 | 2 | 3, teamId, teamName }] : [];
+  });
+  const decisions = new Map(record.completion?.awards.map(({ type, decision }) => [type, decision]) ?? []);
+  const currentCertificates = completionVersion === null || !record.completion
+    ? []
+    : record.certificates.filter((certificate) =>
+      certificate.completionId === record.completion?.id
+      && certificate.completionVersion === completionVersion
+      && ["ready", "published", "superseded"].includes(certificate.status));
+  const generatedTypes = new Set(currentCertificates.map(({ type }) => type)).size;
+  const anyGenerating = record.certificates.some((certificate) =>
+    certificate.completionId === record.completion?.id
+    && certificate.completionVersion === completionVersion
+    && certificate.status === "generating");
+  const hasOldCertificates = record.certificates.some((certificate) =>
+    certificate.completionId === record.completion?.id
+    && certificate.completionVersion !== completionVersion);
+  const certificateStatus = generatedTypes === 7
+    ? "ready"
+    : anyGenerating
+      ? "generating"
+      : hasOldCertificates
+        ? "stale"
+        : "not_generated";
+  const published = Boolean(record.publication && completionVersion !== null
+    && record.publication.completionVersion === completionVersion && generatedTypes === 7);
+  const publicationStatus = published ? "published" : generatedTypes === 7 ? "ready" : generatedTypes > 0 || hasOldCertificates ? "needs_review" : "draft";
+  const auditHistory = record.audit.flatMap((entry) => {
+    const action = auditAction(entry.action);
+    if (!action) return [];
+    const version = auditVersion(entry.details);
+    return [{
+      action,
+      actorLabel: entry.actorLabel,
+      at: entry.createdAt.toISOString(),
+      summary: locale === "id"
+        ? `${action === "completed" ? "Turnamen diselesaikan" : "Turnamen dibuka kembali"}${version === null ? "" : ` · versi ${version}`}.`
+        : `${action === "completed" ? "Tournament completed" : "Tournament reopened"}${version === null ? "" : ` · version ${version}`}.`,
+    }];
+  });
+  const lastAudit = auditHistory[0] ?? null;
   return {
-    status: "integration_required",
+    status,
     event: {
       id: event.id,
       name: event.name,
       formatLabel: formatLabel(event.formatConfig?.kind, locale),
-      matchDayHref: `/${locale}/organizer/events/${event.id}/matches`,
+      matchDayHref: `/${locale}/organizer/events/${event.id}/competition`,
     },
-    version: null,
-    blockers: null,
+    version: record.version,
+    blockers: readiness.blockers.map((blocker) => workspaceBlocker(blocker, event.id, locale)),
     podium: {
-      sourceKind: "integration_pending",
-      sourceLabel: null,
-      locked: null,
-      placements: null,
+      sourceKind: record.source.facts.formatKind === "round_robin" ? "locked_standings" : "official_playoff",
+      sourceLabel: record.source.facts.formatKind === "round_robin"
+        ? locale === "id" ? "Klasemen terkunci" : "Locked standings"
+        : locale === "id" ? "Hasil playoff resmi" : "Official playoff results",
+      locked: status === "completed",
+      placements: status === "completed" && persistedPlacements.length === 3 ? persistedPlacements : currentPlacements,
     },
-    awards: AWARDS.map((award) => ({
-      award,
-      metricLabel: null,
-      candidates: null,
-      selectedPlayerId: null,
-      decisionReason: null,
-      tied: null,
-    })),
+    awards: AWARDS.map((award) => {
+      const rows = candidates[award];
+      const decision = decisions.get(award);
+      return {
+        award,
+        metricLabel: {
+          mvp: locale === "id" ? "Nilai MVP" : "MVP score",
+          top_scorer: locale === "id" ? "Skor/Gol/Kill" : "Score/Goal/Kill",
+          top_defender: locale === "id" ? "Kontribusi bertahan" : "Defensive contribution",
+          top_assist: locale === "id" ? "Assist" : "Assists",
+        }[award],
+        candidates: rows.map((candidate) => ({
+          playerId: candidate.playerId,
+          playerName: candidate.playerName,
+          teamName: candidate.teamName,
+          valueLabel: String(candidate.value),
+        })),
+        selectedPlayerId: decision?.recipientId ?? null,
+        decisionReason: decision?.reason ?? null,
+        tied: rows.length > 1,
+      };
+    }),
     certificates: {
-      generated: null,
-      total: null,
-      status: "integration_pending",
-      studioHref: null,
+      generated: generatedTypes,
+      total: 7,
+      status: certificateStatus,
+      studioHref: `/${locale}/organizer/events/${event.id}/certificates`,
     },
     publication: {
-      status: "integration_pending",
-      previewHref: null,
+      status: publicationStatus,
+      previewHref: `/${locale}/organizer/events/${event.id}/certificates`,
     },
     audit: {
-      lastAction: null,
-      actorLabel: null,
-      at: null,
-      summary: null,
+      lastAction: lastAudit?.action ?? "none",
+      actorLabel: lastAudit?.actorLabel ?? null,
+      at: lastAudit?.at ?? null,
+      summary: lastAudit?.summary ?? (locale === "id" ? "Belum ada tindakan penyelesaian." : "No completion action yet."),
+      history: auditHistory,
     },
   };
 }

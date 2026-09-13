@@ -22,6 +22,14 @@ function fixture() {
 }
 
 describe("competition operation transactions", () => {
+  it("rejects every new competitive write while tournament completion is locked", async () => {
+    const f = fixture();
+    f.seed("tournamentCompletion", { id: "completion-1", eventId: "event", status: "completed" });
+    await expect(f.run(initialize)).rejects.toThrow("Tournament completion locks competitive writes");
+    expect(f.rows("event")[0].competitionVersion).toBe(0);
+    expect(f.rows("competitionAuditLog")).toEqual([]);
+  });
+
   it("defaults legacy announcements to info and lets an organizer review urgency before publishing", async () => {
     const f = fixture();
     const draft = await f.run({ kind: "announcement_save", title: "Urgent title is just text", body: "Message" });

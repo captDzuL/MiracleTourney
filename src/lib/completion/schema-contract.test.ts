@@ -38,6 +38,9 @@ describe("completion persistence Prisma contract", () => {
     expect(field("EventAward", "candidateSnapshot")).toMatchObject({ type: "Json", isRequired: true });
     expect(field("AwardDecision", "recipientId")).toMatchObject({ type: "String", isRequired: true });
     expect(field("CompletionAuditEntry", "details")).toMatchObject({ type: "Json", isRequired: true });
+    expect(field("CompletionAuditEntry", "idempotencyKey")).toMatchObject({ type: "String", isRequired: false });
+    expect(field("CompletionAuditEntry", "fingerprint")).toMatchObject({ type: "String", isRequired: false });
+    expect(field("CompletionAuditEntry", "result")).toMatchObject({ type: "Json", isRequired: false });
   });
 
   it("supports multiple immutable certificate versions while keeping the legacy team relation", () => {
@@ -71,6 +74,23 @@ describe("completion persistence Prisma contract", () => {
       type: "Json",
       isRequired: false,
     });
+  });
+});
+
+describe("completion transaction adapter migration", () => {
+  const migrationPath = fileURLToPath(
+    new URL(
+      "../../../prisma/migrations/20260913010000_completion_transaction_adapter/migration.sql",
+      import.meta.url,
+    ),
+  );
+
+  it("adds a durable unique idempotency receipt without rewriting completion history", () => {
+    expect(existsSync(migrationPath), "missing completion transaction migration").toBe(true);
+    const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
+    expect(migration).toContain('ADD COLUMN "idempotencyKey" TEXT');
+    expect(migration).toContain('CREATE UNIQUE INDEX "CompletionAuditEntry_completionId_idempotencyKey_key"');
+    expect(migration).not.toMatch(/UPDATE\s+"CompletionAuditEntry"/i);
   });
 });
 

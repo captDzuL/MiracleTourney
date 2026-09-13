@@ -4,15 +4,16 @@ import { revalidatePath } from "next/cache";
 import { requireAnyRole } from "@/lib/auth/session";
 import {
   completeTournament, completeTournamentInputSchema,
-  reopenTournament, reopenTournamentInputSchema, type CompletionResult,
+  reopenTournament, reopenTournamentInputSchema, type CompletionActor, type CompletionResult,
 } from "@/lib/completion/complete";
+import { createPrismaCompletionDependencies } from "@/lib/completion/prisma-adapter";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { assertUserCanManageEvent } from "@/lib/platform/repository";
 
 type ActionBlocked = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" };
 export type CompletionActionResult = CompletionResult | ActionBlocked;
 
-async function gateCompletion(eventId: string): Promise<ActionBlocked | null> {
+async function gateCompletion(eventId: string): Promise<ActionBlocked | { actor: CompletionActor }> {
   if (!isFeatureEnabled("completion_workspace_v3")) return { status: "blocked", code: "feature_disabled" };
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
   if (!user) return { status: "blocked", code: "unauthorized" };
@@ -23,16 +24,16 @@ async function gateCompletion(eventId: string): Promise<ActionBlocked | null> {
     if (error instanceof Error && error.message === "Not authorized") return { status: "blocked", code: "forbidden" };
     throw error;
   }
-  return null;
+  return { actor: { id: user.id, role: user.role as CompletionActor["role"] } };
 }
 
 export async function completeTournamentAction(input: unknown): Promise<CompletionActionResult> {
   const parsed = completeTournamentInputSchema.safeParse(input);
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const { eventId, decisions, expectedVersion, idempotencyKey } = parsed.data;
-  const blocked = await gateCompletion(eventId);
-  if (blocked) return blocked;
-  const result = await completeTournament(eventId, decisions, expectedVersion, idempotencyKey);
+  const access = await gateCompletion(eventId);
+  if ("status" in access) return access;
+  const result = await completeTournament(eventId, decisions, expectedVersion, idempotencyKey, createPrismaCompletionDependencies(access.actor));
   if (result.status === "completed") revalidatePath(`/organizer/events/${eventId}/completion`);
   return result;
 }
@@ -41,9 +42,9 @@ export async function reopenTournamentAction(input: unknown): Promise<Completion
   const parsed = reopenTournamentInputSchema.safeParse(input);
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const { eventId, reason, expectedVersion, idempotencyKey } = parsed.data;
-  const blocked = await gateCompletion(eventId);
-  if (blocked) return blocked;
-  const result = await reopenTournament(eventId, reason, expectedVersion, idempotencyKey);
+  const access = await gateCompletion(eventId);
+  if ("status" in access) return access;
+  const result = await reopenTournament(eventId, reason, expectedVersion, idempotencyKey, createPrismaCompletionDependencies(access.actor));
   if (result.status === "reopened") revalidatePath(`/organizer/events/${eventId}/completion`);
   return result;
 }

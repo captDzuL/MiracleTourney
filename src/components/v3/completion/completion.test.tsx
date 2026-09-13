@@ -89,6 +89,7 @@ const baseState = {
     actorLabel: null,
     at: null,
     summary: "No completion action has been committed.",
+    history: [],
   },
 };
 
@@ -108,8 +109,8 @@ function state(status: CompletionWorkspaceState["status"]): CompletionWorkspaceS
   }
   if (status === "blocked") return { ...baseState, status };
   if (status === "ready") return { ...baseState, status, blockers: [], awards: awards.map((award) => award.award === "top_assist" ? { ...award, selectedPlayerId: "p4", decisionReason: "Higher contribution in wins" } : award) };
-  if (status === "completed") return { ...baseState, status, blockers: [], version: 5, podium: { ...baseState.podium, locked: true }, awards: awards.map((award) => award.award === "top_assist" ? { ...award, selectedPlayerId: "p4", decisionReason: "Higher contribution in wins" } : award), certificates: { ...baseState.certificates, generated: 7, status: "ready" }, publication: { ...baseState.publication, status: "ready" }, audit: { lastAction: "completed", actorLabel: "Organizer", at: "2026-09-12T02:00:00.000Z", summary: "Completion version 5 locked." } };
-  return { ...baseState, status, blockers: [], version: 6, awards: awards.map((award) => award.award === "top_assist" ? { ...award, selectedPlayerId: "p4", decisionReason: "Higher contribution in wins" } : award), audit: { lastAction: "reopened", actorLabel: "Organizer", at: "2026-09-12T03:00:00.000Z", summary: "Competition reopened for correction." } };
+  if (status === "completed") return { ...baseState, status, blockers: [], version: 5, podium: { ...baseState.podium, locked: true }, awards: awards.map((award) => award.award === "top_assist" ? { ...award, selectedPlayerId: "p4", decisionReason: "Higher contribution in wins" } : award), certificates: { ...baseState.certificates, generated: 7, status: "ready" }, publication: { ...baseState.publication, status: "ready" }, audit: { ...baseState.audit, lastAction: "completed", actorLabel: "Organizer", at: "2026-09-12T02:00:00.000Z", summary: "Completion version 5 locked." } };
+  return { ...baseState, status, blockers: [], version: 6, awards: awards.map((award) => award.award === "top_assist" ? { ...award, selectedPlayerId: "p4", decisionReason: "Higher contribution in wins" } : award), audit: { ...baseState.audit, lastAction: "reopened", actorLabel: "Organizer", at: "2026-09-12T03:00:00.000Z", summary: "Competition reopened for correction." } };
 }
 
 function provider(locale: "en" | "id", child: React.ReactNode) {
