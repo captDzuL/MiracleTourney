@@ -203,6 +203,24 @@ describe("completion workspace read model", () => {
     expect(state.status === "integration_required" ? null : state.publication.status).toBe("needs_review");
   });
 
+  it("marks the prior certificate set stale and unpublished while completion is reopened", async () => {
+    const certificates = awards.concat(["champion", "runner_up", "third_place"] as never).map((type, index) => ({
+      id: `certificate-${index}`, type, version: 1, completionId: "completion-1", completionVersion: 3,
+      status: "published", publishedAt: new Date("2026-09-13T01:00:00Z"),
+    }));
+    const state = await loadCompletionWorkspace(event, "en", dependencies(available({
+      version: 4,
+      completion: { id: "completion-1", status: "reopened", sourceSnapshot: { version: 3 }, podiumPlacements: [], awards: [] },
+      certificates,
+      publication: { version: 1, completionVersion: 3, certificateIds: certificates.map(({ id }) => id), publishedAt: new Date("2026-09-13T01:00:00Z") },
+    })));
+    expect(state).toMatchObject({
+      status: "reopened",
+      certificates: { generated: 0, total: 7, status: "stale" },
+      publication: { status: "needs_review" },
+    });
+  });
+
   it("returns a deterministic integration state without loading when format configuration is missing", async () => {
     const load = async () => { throw new Error("must not load invalid completion source"); };
     const state = await loadCompletionWorkspace({ ...event, formatConfig: null }, "id", { load });

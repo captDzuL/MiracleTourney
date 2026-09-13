@@ -125,38 +125,59 @@ function isCurrentOfficial(match: SourceMatch, revisions: readonly SourceRevisio
     && revision.winnerTeamId === match.winnerTeamId);
 }
 
-function eliminationFacts(rows: CompletionSourceRows): CompletionMatchFact[] {
+type CompletionProjection = {
+  readonly placements: readonly { rank: number; teamId: string | null }[];
+  readonly resolve: (source: CompetitionGraph["placements"][number]["source"]) => string;
+};
+
+function eliminationFacts(rows: CompletionSourceRows, projection: CompletionProjection | null): CompletionMatchFact[] {
   const graph = rows.graph;
-  if (!graph) return [];
+  if (!graph || !projection) return [];
   const eliminationKind = rows.event.formatConfig.kind === "group_playoffs"
     ? rows.event.formatConfig.playoffs.kind
     : rows.event.formatConfig.kind;
   if (eliminationKind !== "single_elimination" && eliminationKind !== "double_elimination") return [];
-  const sources = [
-    { placement: graph.placements.find(({ rank }) => rank === 1), stage: eliminationKind === "double_elimination" ? "grand_final" : "final" },
-    { placement: graph.placements.find(({ rank }) => rank === 3), stage: eliminationKind === "double_elimination" ? "lower_final" : "third_place" },
-  ] as const;
-  return sources.flatMap(({ placement, stage }) => {
-    const source = placement?.source;
-    if (!source || source.kind !== "match") return [];
-    const match = rows.matches.find(({ id }) => id === source.matchId);
-    if (!match) return [];
-    const loserTeamId = !match.winnerTeamId
-      ? null
-      : match.winnerTeamId === match.homeTeamId
-        ? match.awayTeamId
-        : match.winnerTeamId === match.awayTeamId
-          ? match.homeTeamId
-          : null;
-    return [{
-      id: match.id,
-      stage,
-      official: isCurrentOfficial(match, rows.revisions),
-      winnerTeamId: match.winnerTeamId,
-      loserTeamId,
-      revision: match.resultVersion,
-    }];
-  });
+  const graphPlacement = (rank: number) => graph.placements.find((placement) => placement.rank === rank);
+  const projectedTeam = (rank: number) => projection.placements.find((placement) => placement.rank === rank)?.teamId ?? null;
+  const titlePlacements = [graphPlacement(1), graphPlacement(2)];
+  const titleSources = titlePlacements.flatMap((placement) => placement?.source.kind === "match" ? [placement.source] : []);
+  const titleSource = titleSources[0];
+  const titleMatch = titleSource ? rows.matches.find(({ id }) => id === titleSource.matchId) : undefined;
+  const facts: CompletionMatchFact[] = [];
+  if (titleMatch) {
+    facts.push({
+      id: titleMatch.id,
+      stage: eliminationKind === "double_elimination" ? "grand_final" : "final",
+      official: titleSources.length === 2
+        && titleSources.every(({ matchId }) => matchId === titleMatch.id)
+        && isCurrentOfficial(titleMatch, rows.revisions),
+      winnerTeamId: projectedTeam(1),
+      loserTeamId: projectedTeam(2),
+      revision: titleMatch.resultVersion,
+    });
+  }
+
+  const thirdPlacement = graphPlacement(3);
+  const thirdSource = thirdPlacement?.source;
+  if (thirdSource?.kind === "match") {
+    const thirdMatch = rows.matches.find(({ id }) => id === thirdSource.matchId);
+    if (thirdMatch) {
+      const thirdTeamId = projectedTeam(3);
+      const oppositeTeamId = projection.resolve({
+        ...thirdSource,
+        outcome: thirdSource.outcome === "winner" ? "loser" : "winner",
+      }) || null;
+      facts.push({
+        id: thirdMatch.id,
+        stage: eliminationKind === "double_elimination" ? "lower_final" : "third_place",
+        official: isCurrentOfficial(thirdMatch, rows.revisions),
+        winnerTeamId: eliminationKind === "double_elimination" ? oppositeTeamId : thirdTeamId,
+        loserTeamId: eliminationKind === "double_elimination" ? thirdTeamId : oppositeTeamId,
+        revision: thirdMatch.resultVersion,
+      });
+    }
+  }
+  return facts;
 }
 
 function statisticMetrics(statKeys: readonly string[]) {
@@ -258,7 +279,7 @@ export function buildCompletionSource(rows: CompletionSourceRows): CompletionSou
     facts: {
       formatKind,
       ...(formatKind === "group_playoffs" ? { playoffFormatKind: rows.event.formatConfig.playoffs.kind } : {}),
-      matches: eliminationFacts(rows),
+      matches: eliminationFacts(rows, projection),
       standings,
       activeDisputes: rows.incidents
         .filter(({ resolvedAt }) => resolvedAt === null)
@@ -416,7 +437,10 @@ async function persistMutation(
 ): Promise<void> {
   const changed = await tx.event.updateMany({
     where: { id: eventId, competitionVersion: mutation.result.version - 1 },
-    data: { competitionVersion: { increment: 1 } },
+    data: {
+      competitionVersion: { increment: 1 },
+      status: mutation.result.status === "completed" ? "Finished" : "Ongoing",
+    },
   });
   if (changed.count !== 1) {
     const conflict = new Error("Completion version changed concurrently");

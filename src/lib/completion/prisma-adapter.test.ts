@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { CompetitionGraph } from "@/lib/tournament/competition";
 import type { TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { completeTournament, reopenTournament } from "./complete";
+import { derivePodium } from "./podium";
 import { buildCompletionSource, createPrismaCompletionDependencies, type CompletionSourceRows } from "./prisma-adapter";
 
 const revision = (matchId: string, version: number, winnerTeamId: string | null, homeScore = 2, awayScore = 0) => ({
@@ -93,6 +94,20 @@ describe("Prisma completion source adapter", () => {
     expect(source.facts.playoffFormatKind).toBe(kind === "group_playoffs" ? "single_elimination" : undefined);
   });
 
+  it("uses all authoritative projected placement ranks and their graph outcomes", () => {
+    const rows = eliminationRows("single_elimination");
+    rows.graph!.placements = [
+      { rank: 1, source: { kind: "match", matchId: "final", outcome: "loser" } },
+      { rank: 2, source: { kind: "match", matchId: "final", outcome: "winner" } },
+      { rank: 3, source: { kind: "match", matchId: "third", outcome: "loser" } },
+    ];
+    expect(derivePodium(buildCompletionSource(rows).facts).podium).toEqual({
+      championTeamId: "b", runnerUpTeamId: "a", thirdPlaceTeamId: "d",
+    });
+    rows.graph!.placements = rows.graph!.placements.filter(({ rank }) => rank !== 2);
+    expect(derivePodium(buildCompletionSource(rows).facts).podium).toBeNull();
+  });
+
   it("uses the Match Day projection for locked league standings and retains unresolved ties", () => {
     const config = {
       version: 1 as const, kind: "round_robin" as const, legs: 1 as const,
@@ -156,7 +171,7 @@ describe("Prisma completion source adapter", () => {
 
 class MemoryCompletionPrisma {
   data = {
-    event: { id: "event-1", organizerUserId: "organizer-1", competitionVersion: 0 },
+    event: { id: "event-1", organizerUserId: "organizer-1", competitionVersion: 0, status: "Ongoing" },
     user: { id: "organizer-1", role: "organizer", deactivatedAt: null as Date | null, mustChangePassword: false },
     completion: null as null | Record<string, unknown>,
     podium: [] as Record<string, unknown>[],
@@ -165,6 +180,7 @@ class MemoryCompletionPrisma {
     audit: [] as Record<string, unknown>[],
   };
   failDecision = false;
+  failAudit = false;
   readonly rows = (() => {
     const source = eliminationRows("single_elimination");
     source.playerStats.push({ matchId: "final", playerId: "p1", playerName: "Ari", teamId: "a", source: "admin", stats: { goal: 4, assist: 3, defense: 2 }, player: { id: "p1", teamId: "a", eventId: "event-1", displayName: "Ari", nickname: "Ari" } });
@@ -177,9 +193,10 @@ class MemoryCompletionPrisma {
     const tx = {
       event: {
         findUnique: async ({ where }: { where: { id: string } }) => where.id === draft.event.id ? { ...draft.event, ...source.event } : null,
-        updateMany: async ({ where }: { where: { id: string; competitionVersion: number } }) => {
+        updateMany: async ({ where, data }: { where: { id: string; competitionVersion: number }; data: { competitionVersion: { increment: number }; status?: string } }) => {
           if (where.id !== draft.event.id || where.competitionVersion !== draft.event.competitionVersion) return { count: 0 };
-          draft.event.competitionVersion += 1;
+          draft.event.competitionVersion += data.competitionVersion.increment;
+          if (data.status) draft.event.status = data.status;
           return { count: 1 };
         },
       },
@@ -237,6 +254,7 @@ class MemoryCompletionPrisma {
         findFirst: async ({ where }: { where: { completionId: string; idempotencyKey: string } }) =>
           structuredClone(draft.audit.find((row) => row.completionId === where.completionId && row.idempotencyKey === where.idempotencyKey) ?? null),
         create: async ({ data }: { data: Record<string, unknown> }) => {
+          if (this.failAudit) throw new Error("audit storage failed");
           const row = { id: `audit-${draft.audit.length + 1}`, createdAt: new Date(), ...structuredClone(data) };
           draft.audit.push(row);
           return structuredClone(row);
@@ -261,6 +279,7 @@ describe("Prisma completion transaction adapter", () => {
     const first = await completeTournament("event-1", decisions, 0, key1, dependencies);
     expect(first).toMatchObject({ status: "completed", version: 1 });
     expect(db.data.event.competitionVersion).toBe(1);
+    expect(db.data.event.status).toBe("Finished");
     expect(db.data.completion).toMatchObject({ id: "completion-1", status: "completed", completedByUserId: "organizer-1" });
     expect(db.data.podium).toHaveLength(3);
     expect(db.data.awards).toHaveLength(4);
@@ -303,7 +322,9 @@ describe("Prisma completion transaction adapter", () => {
     const dependencies = createPrismaCompletionDependencies(actor, db as never);
     const first = await completeTournament("event-1", decisions, 0, key1, dependencies);
     expect(await reopenTournament("event-1", "Correct official result", 1, key2, dependencies)).toEqual({ status: "reopened", eventId: "event-1", version: 2 });
+    expect(db.data.event.status).toBe("Ongoing");
     expect(await completeTournament("event-1", decisions, 2, "33333333-3333-4333-8333-333333333333", dependencies)).toMatchObject({ status: "completed", version: 3 });
+    expect(db.data.event.status).toBe("Finished");
     expect(db.data.audit).toHaveLength(3);
     expect(db.data.audit[0]).toMatchObject({ result: first });
     expect(db.data.completion).toMatchObject({ status: "completed", sourceSnapshot: { version: 3 } });
@@ -315,10 +336,23 @@ describe("Prisma completion transaction adapter", () => {
     await expect(completeTournament("event-1", decisions, 0, key1, createPrismaCompletionDependencies(actor, db as never)))
       .rejects.toThrow("decision storage failed");
     expect(db.data.event.competitionVersion).toBe(0);
+    expect(db.data.event.status).toBe("Ongoing");
     expect(db.data.completion).toBeNull();
     expect(db.data.podium).toEqual([]);
     expect(db.data.awards).toEqual([]);
     expect(db.data.audit).toEqual([]);
+  });
+
+  it("rolls back the reopen status transition when its audit receipt fails", async () => {
+    const db = new MemoryCompletionPrisma();
+    const dependencies = createPrismaCompletionDependencies(actor, db as never);
+    await completeTournament("event-1", decisions, 0, key1, dependencies);
+    db.failAudit = true;
+    await expect(reopenTournament("event-1", "Correct official result", 1, key2, dependencies))
+      .rejects.toThrow("audit storage failed");
+    expect(db.data.event).toMatchObject({ competitionVersion: 1, status: "Finished" });
+    expect(db.data.completion).toMatchObject({ status: "completed" });
+    expect(db.data.audit).toHaveLength(1);
   });
 
   it("returns a stable version conflict after exhausted PostgreSQL serialization retries", async () => {

@@ -274,6 +274,7 @@ export async function loadCompletionWorkspace(
   const liveCandidates = deriveAwardCandidates(record.source.statistics);
   const completionVersion = snapshotVersion(record.completion?.sourceSnapshot);
   const completionStatus = record.completion?.status;
+  const completionActive = completionStatus === "completed";
   const status = completionStatus === "completed"
     ? "completed"
     : completionStatus === "reopened"
@@ -293,7 +294,7 @@ export async function loadCompletionWorkspace(
     return teamName ? [{ rank: (index + 1) as 1 | 2 | 3, teamId, teamName }] : [];
   });
   const persistedAwards = new Map(record.completion?.awards.map((award) => [award.type, award]) ?? []);
-  const currentCertificates = completionVersion === null || !record.completion
+  const currentCertificates = completionVersion === null || !record.completion || !completionActive
     ? []
     : record.certificates.filter((certificate) =>
       certificate.completionId === record.completion?.id
@@ -309,7 +310,7 @@ export async function loadCompletionWorkspace(
     && certificate.status === "generating");
   const hasOldCertificates = record.certificates.some((certificate) =>
     certificate.completionId === record.completion?.id
-    && certificate.completionVersion !== completionVersion);
+    && (!completionActive || certificate.completionVersion !== completionVersion));
   const certificateStatus = generatedTypes === 7
     ? "ready"
     : anyGenerating
@@ -322,7 +323,7 @@ export async function loadCompletionWorkspace(
     ? new Set(record.publication.certificateIds)
     : null;
   const latestCertificateIds = new Set([...latestCertificates.values()].map(({ id }) => id));
-  const published = Boolean(record.publication && completionVersion !== null
+  const published = Boolean(completionActive && record.publication && completionVersion !== null
     && record.publication.completionVersion === completionVersion
     && generatedTypes === 7
     && publicationCertificateIds?.size === 7
