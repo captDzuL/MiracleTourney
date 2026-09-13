@@ -12,7 +12,7 @@ it.each(["id", "en"] as const)("renders simultaneous rooms, TBD, delayed state a
   expect(html).toContain(locale === "id" ? "Sedang berlangsung" : "Live now");
   expect(html).toContain(locale === "id" ? "Tertunda" : "Delayed"); expect(html).toContain("TBD");
   expect(html).toContain(`href="/${locale}/events/cup/leaderboards"`); expect(html).toContain("Room update");
-  expect(html).not.toContain("0 – 0");
+  expect(html).not.toMatch(/0\s[\u2013-]\s0/);
 });
 it("shows no-live and qualification context with official results", () => {
   const html = renderToStaticMarkup(<AdaptiveOngoingEventPage locale="en" view={{ ...view, liveMatches: [], recentResults: [{ ...match, status: "completed", homeScore: 2, awayScore: 1, resultVersion: 2 }], standings: [{ phaseId: "p", groupId: "g", groupNumber: 1, label: "Group A", complete: false, qualificationCutline: 2, rows: [{ teamId: "a", name: "Alpha", played: 1, wins: 1, draws: 0, losses: 0, points: 3, scoreFor: 2, scoreAgainst: 1, scoreDifference: 1, rank: 1, tied: false }] }] }} />);
@@ -44,3 +44,4 @@ it.each([
     expect(html).toContain(locale === "id" ? idLabel : enLabel); expect(html).not.toContain(internalLabel); expect(html).toContain("TBD");
   }
 });
+
