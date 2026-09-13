@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn as defaultSpawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import {
   checkE2eDatabaseConnection,
@@ -10,10 +10,27 @@ function redactDatabaseUrls(value) {
   return value.replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted database URL]");
 }
 
-export function runCommand(command, args) {
+export function runCommand(
+  command,
+  args,
+  spawnImpl = defaultSpawn,
+  runtime = {
+    platform: process.platform,
+    npmExecPath: process.env.npm_execpath,
+    nodePath: process.execPath,
+  },
+) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      shell: process.platform === "win32",
+    if (runtime.platform === "win32" && command === "pnpm" && !runtime.npmExecPath) {
+      reject(new Error("Windows E2E database preparation must be launched through a pnpm package script."));
+      return;
+    }
+    const executable = runtime.platform === "win32" && command === "pnpm" ? runtime.nodePath : command;
+    const executableArgs = runtime.platform === "win32" && command === "pnpm"
+      ? [runtime.npmExecPath, ...args]
+      : args;
+    const child = spawnImpl(executable, executableArgs, {
+      shell: false,
       stdio: "inherit",
     });
 

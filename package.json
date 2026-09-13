@@ -24,7 +24,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:test": "tsx prisma/seed.ts --test",
     "postinstall": "prisma generate",
-    "test:e2e:ci": "pnpm test:e2e:prepare && pnpm test:e2e"
+    "test:e2e:legacy": "playwright test --config playwright.legacy.config.ts",
+    "test:e2e:ci": "node scripts/e2e-ci.mjs"
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.3.0",
