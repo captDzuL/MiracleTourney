@@ -182,9 +182,9 @@ test("admin can rebuild a pre-kickoff bracket and rejects imports after kickoff"
   const eventStatusForm = page.locator("form").filter({
     has: page.getByRole("button", { name: /save event status|simpan status event/i }),
   });
-  await expect(eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i })).toBeEnabled();
   await eventStatusForm.getByLabel("Event").selectOption({ label: eventName });
   await eventStatusForm.getByLabel("Status").selectOption("Published");
+  await expect(eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i })).toBeEnabled();
   await eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i }).click();
   await expect(page).toHaveURL(/\/admin\?success=event-status-updated/, { timeout: 15_000 });
 

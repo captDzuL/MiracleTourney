@@ -23,13 +23,17 @@ async function publicState(page: Page) {
   return response.body;
 }
 async function openMatch(page: Page, id: string) { await page.goto(`/en/organizer/events/${fixture.id}/matches/${id}`); await expect(page.getByRole("heading", { name: "Official result", exact: true })).toBeVisible(); }
-async function result(page: Page, home = "2", away = "0") {
+async function result(page: Page, matchId: string, home = "2", away = "0") {
   const form = page.getByRole("form", { name: "Official result", exact: true });
   const submit = form.getByRole("button", { name: "Submit official result", exact: true });
   await expect(submit).toBeEnabled();
   await form.locator('input[name="home-1"]').fill(home); await form.locator('input[name="away-1"]').fill(away);
   await submit.click();
-  await expect(form.getByRole("button", { name: "Preview correction", exact: true })).toBeVisible();
+  await expect.poll(
+    async () => (await state(page)).matches.find((match) => match.id === matchId)?.resultVersion,
+    { timeout: 15_000 },
+  ).toBe(1);
+  await expect(form.getByRole("button", { name: "Preview correction", exact: true })).toBeVisible({ timeout: 15_000 });
 }
 
 test("generates competition, reviews the initial schedule and publishes explicitly", async ({ page }) => {
@@ -112,7 +116,7 @@ for (const kind of ["single_elimination", "double_elimination", "round_robin", "
   test(`official ${kind} result advances the authoritative competition and public state`, async ({ page }) => {
     fixture = await prepareMatchdayFixture(kind); const graph = await fixture.graph(); const match = graph.matches[0];
     await fixture.run({ kind: "match_start", matchId: match.id, reason: "Both teams confirmed at desk" });
-    await loginAsOrganizer(page, "en"); await openMatch(page, match.id); await result(page);
+    await loginAsOrganizer(page, "en"); await openMatch(page, match.id); await result(page, match.id);
     if (kind === "group_playoffs") {
       for (const groupMatch of graph.matches.filter(m => m.groupId && m.id !== match.id)) {
         await fixture.run({ kind: "match_start", matchId: groupMatch.id, reason: "Group fixture setup" });
@@ -140,7 +144,7 @@ for (const kind of ["single_elimination", "double_elimination", "round_robin", "
 test("allows a reviewed correction, then rejects correction once its downstream match is live", async ({ page }) => {
   fixture = await prepareMatchdayFixture(); const graph = await fixture.graph(); const first = graph.matches[0];
   await fixture.run({ kind: "match_start", matchId: first.id, reason: "Both teams confirmed at desk" });
-  await loginAsOrganizer(page, "en"); await openMatch(page, first.id); await result(page);
+  await loginAsOrganizer(page, "en"); await openMatch(page, first.id); await result(page, first.id);
   await page.getByRole("button", { name: "Reload official result", exact: true }).click();
   const form = page.getByRole("form", { name: "Official result", exact: true });
   await form.locator('input[name="home-1"]').fill("0"); await form.locator('input[name="away-1"]').fill("2");
