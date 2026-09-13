@@ -1,5 +1,5 @@
 import type { CompletionAwardStatistic } from "./readiness";
-import type { TournamentFormatConfig } from "@/lib/tournament/formats/types";
+import { tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { deriveAwardCandidates } from "./awards";
 import { evaluateCompletionReadiness, type CompletionBlocker } from "./readiness";
 import {
@@ -183,19 +183,21 @@ function workspaceBlocker(
   eventId: string,
   locale: "id" | "en",
 ): CompletionWorkspaceBlocker {
-  const root = `/${locale}/organizer/events/${eventId}/competition`;
+  const eventRoot = `/${locale}/organizer/events/${eventId}`;
   switch (blocker.code) {
     case "UNOFFICIAL_REQUIRED_RESULT":
-      return { code: blocker.code, subject: `${blocker.stage} · ${blocker.matchId}`, repairHref: `${root}?match=${encodeURIComponent(blocker.matchId)}` };
+      return { code: blocker.code, subject: `${blocker.stage} · ${blocker.matchId}`, repairHref: `${eventRoot}/matches/${encodeURIComponent(blocker.matchId)}` };
     case "ACTIVE_DISPUTE":
-      return { code: blocker.code, subject: `${blocker.disputeId}${blocker.matchId ? ` · ${blocker.matchId}` : ""}`, repairHref: `${root}?dispute=${encodeURIComponent(blocker.disputeId)}` };
+      return { code: blocker.code, subject: `${blocker.disputeId}${blocker.matchId ? ` · ${blocker.matchId}` : ""}`, repairHref: blocker.matchId
+        ? `${eventRoot}/matches/${encodeURIComponent(blocker.matchId)}`
+        : `${eventRoot}/competition` };
     case "UNRESOLVED_FINAL_TIE":
-      return { code: blocker.code, subject: blocker.teamIds.join(", "), repairHref: `${root}?view=standings` };
+      return { code: blocker.code, subject: blocker.teamIds.join(", "), repairHref: `${eventRoot}/competition` };
     case "MISSING_VALIDATED_AWARD_STATISTICS":
-      return { code: blocker.code, subject: awardName(blocker.award, locale), repairHref: `${root}?view=statistics` };
+      return { code: blocker.code, subject: awardName(blocker.award, locale), repairHref: `${eventRoot}/legacy-match-day` };
     case "INSUFFICIENT_PODIUM_STRUCTURE": {
       const details = [...blocker.missingStages ?? [], ...blocker.matchIds ?? [], ...blocker.teamIds ?? []];
-      return { code: blocker.code, subject: details.join(", ") || (locale === "id" ? "Struktur podium" : "Podium structure"), repairHref: `${root}?view=results` };
+      return { code: blocker.code, subject: details.join(", ") || (locale === "id" ? "Struktur podium" : "Podium structure"), repairHref: `${eventRoot}/competition` };
     }
   }
 }
@@ -215,14 +217,61 @@ function auditVersion(details: unknown): number | null {
 const auditAction = (action: string): "completed" | "reopened" | null =>
   action === "completed" || action === "reopened" ? action : null;
 
+function integrationState(event: CompletionWorkspaceEvent, locale: "id" | "en"): CompletionWorkspaceIntegrationState {
+  return {
+    status: "integration_required",
+    event: {
+      id: event.id,
+      name: event.name,
+      formatLabel: formatLabel(undefined, locale),
+      matchDayHref: `/${locale}/organizer/events/${event.id}/competition`,
+    },
+    version: null,
+    blockers: null,
+    podium: { sourceKind: "integration_pending", sourceLabel: null, locked: null, placements: null },
+    awards: AWARDS.map((award) => ({
+      award,
+      metricLabel: null,
+      candidates: null,
+      selectedPlayerId: null,
+      decisionReason: null,
+      tied: null,
+    })),
+    certificates: { generated: null, total: null, status: "integration_pending", studioHref: null },
+    publication: { status: "integration_pending", previewHref: null },
+    audit: { lastAction: null, actorLabel: null, at: null, summary: null },
+  };
+}
+
+function lockedCandidates(value: unknown): CompletionAwardCandidateSummary[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate) => {
+    if (!candidate || Array.isArray(candidate) || typeof candidate !== "object") return [];
+    const row = candidate as Record<string, unknown>;
+    if (typeof row.playerId !== "string" || !row.playerId
+      || typeof row.playerName !== "string" || !row.playerName.trim()
+      || typeof row.teamName !== "string" || !row.teamName.trim()
+      || typeof row.value !== "number" || !Number.isFinite(row.value) || row.value < 0) return [];
+    return [{
+      playerId: row.playerId,
+      playerName: row.playerName,
+      teamName: row.teamName,
+      valueLabel: String(row.value),
+    }];
+  });
+}
+
 export async function loadCompletionWorkspace(
   event: CompletionWorkspaceEvent,
   locale: "id" | "en",
   dependencies: CompletionWorkspaceDependencies = { load: loadPrismaCompletionWorkspaceData },
 ): Promise<CompletionWorkspaceState> {
+  if (!tournamentFormatConfigSchema.safeParse(event.formatConfig).success) {
+    return integrationState(event, locale);
+  }
   const record = await dependencies.load(event.id);
   const readiness = evaluateCompletionReadiness(record.source.facts);
-  const candidates = deriveAwardCandidates(record.source.statistics);
+  const liveCandidates = deriveAwardCandidates(record.source.statistics);
   const completionVersion = snapshotVersion(record.completion?.sourceSnapshot);
   const completionStatus = record.completion?.status;
   const status = completionStatus === "completed"
@@ -243,14 +292,17 @@ export async function loadCompletionWorkspace(
     const teamName = teamNames.get(teamId);
     return teamName ? [{ rank: (index + 1) as 1 | 2 | 3, teamId, teamName }] : [];
   });
-  const decisions = new Map(record.completion?.awards.map(({ type, decision }) => [type, decision]) ?? []);
+  const persistedAwards = new Map(record.completion?.awards.map((award) => [award.type, award]) ?? []);
   const currentCertificates = completionVersion === null || !record.completion
     ? []
     : record.certificates.filter((certificate) =>
       certificate.completionId === record.completion?.id
       && certificate.completionVersion === completionVersion
-      && ["ready", "published", "superseded"].includes(certificate.status));
-  const generatedTypes = new Set(currentCertificates.map(({ type }) => type)).size;
+      && ["ready", "published"].includes(certificate.status));
+  const latestCertificates = [...currentCertificates]
+    .sort((left, right) => left.version - right.version || left.id.localeCompare(right.id))
+    .reduce((latest, certificate) => latest.set(certificate.type, certificate), new Map<string, typeof currentCertificates[number]>());
+  const generatedTypes = latestCertificates.size;
   const anyGenerating = record.certificates.some((certificate) =>
     certificate.completionId === record.completion?.id
     && certificate.completionVersion === completionVersion
@@ -265,9 +317,25 @@ export async function loadCompletionWorkspace(
       : hasOldCertificates
         ? "stale"
         : "not_generated";
+  const publicationCertificateIds = Array.isArray(record.publication?.certificateIds)
+    && record.publication.certificateIds.every((id): id is string => typeof id === "string")
+    ? new Set(record.publication.certificateIds)
+    : null;
+  const latestCertificateIds = new Set([...latestCertificates.values()].map(({ id }) => id));
   const published = Boolean(record.publication && completionVersion !== null
-    && record.publication.completionVersion === completionVersion && generatedTypes === 7);
-  const publicationStatus = published ? "published" : generatedTypes === 7 ? "ready" : generatedTypes > 0 || hasOldCertificates ? "needs_review" : "draft";
+    && record.publication.completionVersion === completionVersion
+    && generatedTypes === 7
+    && publicationCertificateIds?.size === 7
+    && [...latestCertificateIds].every((id) => publicationCertificateIds.has(id)));
+  const publicationStatus = published
+    ? "published"
+    : record.publication
+      ? "needs_review"
+      : generatedTypes === 7
+        ? "ready"
+        : generatedTypes > 0 || hasOldCertificates
+          ? "needs_review"
+          : "draft";
   const auditHistory = record.audit.flatMap((entry) => {
     const action = auditAction(entry.action);
     if (!action) return [];
@@ -301,8 +369,16 @@ export async function loadCompletionWorkspace(
       placements: status === "completed" && persistedPlacements.length === 3 ? persistedPlacements : currentPlacements,
     },
     awards: AWARDS.map((award) => {
-      const rows = candidates[award];
-      const decision = decisions.get(award);
+      const persisted = persistedAwards.get(award);
+      const rows = status === "completed"
+        ? lockedCandidates(persisted?.candidateSnapshot)
+        : liveCandidates[award].map((candidate) => ({
+            playerId: candidate.playerId,
+            playerName: candidate.playerName,
+            teamName: candidate.teamName,
+            valueLabel: String(candidate.value),
+          }));
+      const decision = persisted?.decision;
       return {
         award,
         metricLabel: {
@@ -311,12 +387,7 @@ export async function loadCompletionWorkspace(
           top_defender: locale === "id" ? "Kontribusi bertahan" : "Defensive contribution",
           top_assist: locale === "id" ? "Assist" : "Assists",
         }[award],
-        candidates: rows.map((candidate) => ({
-          playerId: candidate.playerId,
-          playerName: candidate.playerName,
-          teamName: candidate.teamName,
-          valueLabel: String(candidate.value),
-        })),
+        candidates: rows,
         selectedPlayerId: decision?.recipientId ?? null,
         decisionReason: decision?.reason ?? null,
         tied: rows.length > 1,

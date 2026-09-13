@@ -97,11 +97,11 @@ describe("completion workspace read model", () => {
     const state = await loadCompletionWorkspace(event, "id", dependencies(available({ source: blockedSource })));
     expect(state.status).toBe("blocked");
     expect(state.status === "integration_required" ? [] : state.blockers).toEqual([
-      { code: "UNOFFICIAL_REQUIRED_RESULT", subject: "final · final", repairHref: "/id/organizer/events/event-1/competition?match=final" },
-      { code: "ACTIVE_DISPUTE", subject: "incident-1 · final", repairHref: "/id/organizer/events/event-1/competition?dispute=incident-1" },
-      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Scorer", repairHref: "/id/organizer/events/event-1/competition?view=statistics" },
-      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Defender", repairHref: "/id/organizer/events/event-1/competition?view=statistics" },
-      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Assist", repairHref: "/id/organizer/events/event-1/competition?view=statistics" },
+      { code: "UNOFFICIAL_REQUIRED_RESULT", subject: "final · final", repairHref: "/id/organizer/events/event-1/matches/final" },
+      { code: "ACTIVE_DISPUTE", subject: "incident-1 · final", repairHref: "/id/organizer/events/event-1/matches/final" },
+      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Scorer", repairHref: "/id/organizer/events/event-1/legacy-match-day" },
+      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Defender", repairHref: "/id/organizer/events/event-1/legacy-match-day" },
+      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Assist", repairHref: "/id/organizer/events/event-1/legacy-match-day" },
     ]);
   });
 
@@ -117,17 +117,23 @@ describe("completion workspace read model", () => {
       ],
       awards: awards.map((type) => ({
         type,
+        candidateSnapshot: type === "mvp"
+          ? [
+              { playerId: "p1", playerName: "Ari locked", teamId: "a", teamName: "Alpha", value: 9 },
+              { playerId: "p2", playerName: "Bima locked", teamId: "b", teamName: "Beta", value: 9 },
+            ]
+          : [{ playerId: "p1", playerName: "Ari locked", teamId: "a", teamName: "Alpha", value: 9 }],
         decision: { recipientId: "p1", reason: type === "mvp" ? "Tie resolved on finals impact" : null },
       })),
     };
     const certificates = awards.concat(["champion", "runner_up", "third_place"] as never).map((type, index) => ({
-      id: `certificate-${index}`, type, completionId: "completion-1", completionVersion: 3, status: "published", publishedAt: new Date("2026-09-13T01:00:00Z"),
+      id: `certificate-${index}`, type, version: 1, completionId: "completion-1", completionVersion: 3, status: "published", publishedAt: new Date("2026-09-13T01:00:00Z"),
     }));
     const state = await loadCompletionWorkspace(event, "en", dependencies(available({
       version: 4,
       completion,
       certificates,
-      publication: { version: 1, completionVersion: 3, publishedAt: new Date("2026-09-13T01:00:00Z") },
+      publication: { version: 1, completionVersion: 3, certificateIds: certificates.map(({ id }) => id), publishedAt: new Date("2026-09-13T01:00:00Z") },
       audit: [
         { action: "completed", actorLabel: "Organizer One", createdAt: new Date("2026-09-13T01:00:00Z"), details: { actorRole: "organizer", result: { status: "completed", version: 3 } } },
         { action: "reopened", actorLabel: "Admin", createdAt: new Date("2026-09-12T23:00:00Z"), details: { actorRole: "admin", result: { status: "reopened", version: 2 } } },
@@ -150,7 +156,61 @@ describe("completion workspace read model", () => {
       },
     });
     expect(state.status === "integration_required" ? [] : state.awards[0]).toMatchObject({
-      selectedPlayerId: "p1", decisionReason: "Tie resolved on finals impact",
+      selectedPlayerId: "p1",
+      decisionReason: "Tie resolved on finals impact",
+      tied: true,
+      candidates: [
+        { playerId: "p1", playerName: "Ari locked", teamName: "Alpha", valueLabel: "9" },
+        { playerId: "p2", playerName: "Bima locked", teamName: "Beta", valueLabel: "9" },
+      ],
+    });
+  });
+
+  it("marks a publication for review when a newer eligible certificate version exists", async () => {
+    const baseCertificates = awards.concat(["champion", "runner_up", "third_place"] as never).map((type, index) => ({
+      id: `certificate-${index}`,
+      type,
+      version: 1,
+      completionId: "completion-1",
+      completionVersion: 3,
+      status: "published",
+      publishedAt: new Date("2026-09-13T01:00:00Z"),
+    }));
+    const state = await loadCompletionWorkspace(event, "en", dependencies(available({
+      completion: {
+        id: "completion-1",
+        status: "completed",
+        sourceSnapshot: { version: 3 },
+        podiumPlacements: [],
+        awards: [],
+      },
+      certificates: [...baseCertificates, {
+        id: "certificate-champion-v2",
+        type: "champion",
+        version: 2,
+        completionId: "completion-1",
+        completionVersion: 3,
+        status: "ready",
+        publishedAt: null,
+      }],
+      publication: {
+        version: 1,
+        completionVersion: 3,
+        certificateIds: baseCertificates.map(({ id }) => id),
+        publishedAt: new Date("2026-09-13T01:00:00Z"),
+      },
+    })));
+    expect(state.status === "integration_required" ? null : state.publication.status).toBe("needs_review");
+  });
+
+  it("returns a deterministic integration state without loading when format configuration is missing", async () => {
+    const load = async () => { throw new Error("must not load invalid completion source"); };
+    const state = await loadCompletionWorkspace({ ...event, formatConfig: null }, "id", { load });
+    expect(state).toMatchObject({
+      status: "integration_required",
+      event: { formatLabel: "Belum dikonfigurasi" },
+      version: null,
+      blockers: null,
     });
   });
 });

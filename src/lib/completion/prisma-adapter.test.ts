@@ -122,25 +122,29 @@ describe("Prisma completion source adapter", () => {
       { rank: 3, teamId: "d", locked: true, unresolvedTie: false },
       { rank: 4, teamId: "c", locked: true, unresolvedTie: false },
     ]);
+
+    rows.revisions.push(revision("ab", 2, "b", 0, 3));
+    expect(buildCompletionSource(rows).facts.standings.every(({ locked }) => !locked)).toBe(true);
   });
 
   it("blocks unresolved incidents and aggregates only approved captain or direct-admin finite statistics", () => {
     const rows = eliminationRows("single_elimination");
     rows.incidents.push({ id: "incident-2", matchId: null, resolvedAt: null }, { id: "incident-1", matchId: "final", resolvedAt: null });
     rows.playerStats.push(
-      { matchId: "final", playerId: "p1", playerName: "Ari", teamId: "a", source: "admin", stats: { goal: 3, assist: 3, defense: 7 } },
-      { matchId: "final", playerId: "p2", playerName: "Bima", teamId: "b", source: "captain", stats: { goal: 4, assist: 0, defense: 1 } },
-      { matchId: "third", playerId: "p3", playerName: "Cici", teamId: "c", source: "captain", stats: { goal: 99, assist: 99, defense: 99 } },
-      { matchId: "third", playerId: "p4", playerName: "Deni", teamId: "d", source: "admin", stats: { goal: -1, assist: Number.POSITIVE_INFINITY, defense: 1 } },
+      { matchId: "final", playerId: "p1", playerName: "Forged Ari", teamId: "a", source: "admin", stats: { goal: 3, assist: 3, defense: 7 }, player: { id: "p1", teamId: "a", eventId: "event-1", displayName: "Ari Canonical", nickname: "Ari" } },
+      { matchId: "final", playerId: "p2", playerName: "Bima", teamId: "b", source: "captain", stats: { goal: 4, assist: 0, defense: 1 }, player: { id: "p2", teamId: "b", eventId: "event-1", displayName: "Bima", nickname: "Bima" } },
+      { matchId: "third", playerId: "p3", playerName: "Cici", teamId: "c", source: "captain", stats: { goal: 99, assist: 99, defense: 99 }, player: { id: "p3", teamId: "c", eventId: "event-1", displayName: "Cici", nickname: "Cici" } },
+      { matchId: "third", playerId: "p4", playerName: "Deni", teamId: "d", source: "admin", stats: { goal: -1, assist: Number.POSITIVE_INFINITY, defense: 1 }, player: { id: "p4", teamId: "d", eventId: "event-1", displayName: "Deni", nickname: "Deni" } },
+      { matchId: "final", playerId: "foreign-player", playerName: "Forged MVP", teamId: "a", source: "admin", stats: { goal: 999, assist: 999, defense: 999 }, player: { id: "foreign-player", teamId: "foreign-team", eventId: "other-event", displayName: "Foreign Player", nickname: "Foreign" } },
     );
     rows.approvedSubmissions.push({ matchId: "final", teamId: "b" });
     const source = buildCompletionSource(rows);
     expect(source.facts.activeDisputes).toEqual([{ id: "incident-1", matchId: "final" }, { id: "incident-2" }]);
     expect(source.statistics).toEqual([
-      { award: "mvp", playerId: "p1", playerName: "Ari", teamId: "a", teamName: "Team A", value: 13, validated: true, status: "published" },
-      { award: "top_scorer", playerId: "p1", playerName: "Ari", teamId: "a", teamName: "Team A", value: 3, validated: true, status: "published" },
-      { award: "top_defender", playerId: "p1", playerName: "Ari", teamId: "a", teamName: "Team A", value: 7, validated: true, status: "published" },
-      { award: "top_assist", playerId: "p1", playerName: "Ari", teamId: "a", teamName: "Team A", value: 3, validated: true, status: "published" },
+      { award: "mvp", playerId: "p1", playerName: "Ari Canonical", teamId: "a", teamName: "Team A", value: 13, validated: true, status: "published" },
+      { award: "top_scorer", playerId: "p1", playerName: "Ari Canonical", teamId: "a", teamName: "Team A", value: 3, validated: true, status: "published" },
+      { award: "top_defender", playerId: "p1", playerName: "Ari Canonical", teamId: "a", teamName: "Team A", value: 7, validated: true, status: "published" },
+      { award: "top_assist", playerId: "p1", playerName: "Ari Canonical", teamId: "a", teamName: "Team A", value: 3, validated: true, status: "published" },
       { award: "mvp", playerId: "p2", playerName: "Bima", teamId: "b", teamName: "Team B", value: 5, validated: true, status: "published" },
       { award: "top_scorer", playerId: "p2", playerName: "Bima", teamId: "b", teamName: "Team B", value: 4, validated: true, status: "published" },
       { award: "top_defender", playerId: "p2", playerName: "Bima", teamId: "b", teamName: "Team B", value: 1, validated: true, status: "published" },
@@ -163,7 +167,7 @@ class MemoryCompletionPrisma {
   failDecision = false;
   readonly rows = (() => {
     const source = eliminationRows("single_elimination");
-    source.playerStats.push({ matchId: "final", playerId: "p1", playerName: "Ari", teamId: "a", source: "admin", stats: { goal: 4, assist: 3, defense: 2 } });
+    source.playerStats.push({ matchId: "final", playerId: "p1", playerName: "Ari", teamId: "a", source: "admin", stats: { goal: 4, assist: 3, defense: 2 }, player: { id: "p1", teamId: "a", eventId: "event-1", displayName: "Ari", nickname: "Ari" } });
     return source;
   })();
 

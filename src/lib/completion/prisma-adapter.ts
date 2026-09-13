@@ -53,6 +53,13 @@ type SourcePlayerStat = {
   teamId: string;
   source: string | null;
   stats: unknown;
+  player: {
+    id: string;
+    teamId: string;
+    eventId: string | null;
+    displayName: string;
+    nickname: string;
+  };
 };
 
 export interface CompletionSourceRows {
@@ -83,12 +90,18 @@ export interface PrismaCompletionWorkspaceData {
   readonly certificates: readonly {
     id: string;
     type: string;
+    version: number;
     completionId: string | null;
     completionVersion: number | null;
     status: string;
     publishedAt: Date | null;
   }[];
-  readonly publication: null | { version: number; completionVersion: number; publishedAt: Date };
+  readonly publication: null | {
+    version: number;
+    completionVersion: number;
+    certificateIds: Prisma.JsonValue;
+    publishedAt: Date;
+  };
   readonly audit: readonly {
     action: string;
     actorLabel: string;
@@ -101,7 +114,11 @@ const AWARDS = ["mvp", "top_scorer", "top_defender", "top_assist"] as const;
 
 function isCurrentOfficial(match: SourceMatch, revisions: readonly SourceRevision[]): boolean {
   if (match.resultVersion < 1 || match.status !== "Completed" || match.scheduleStatus !== "completed") return false;
-  const revision = revisions.find((row) => row.matchId === match.id && row.version === match.resultVersion);
+  const latestVersion = revisions
+    .filter((row) => row.matchId === match.id)
+    .reduce((version, row) => Math.max(version, row.version), 0);
+  if (match.resultVersion !== latestVersion) return false;
+  const revision = revisions.find((row) => row.matchId === match.id && row.version === latestVersion);
   return Boolean(revision
     && revision.homeScore === match.homeScore
     && revision.awayScore === match.awayScore
@@ -176,9 +193,12 @@ function statistics(rows: CompletionSourceRows, officialMatchIds: ReadonlySet<st
   for (const row of rows.playerStats) {
     const match = matches.get(row.matchId);
     const values = row.stats;
+    const playerName = row.player.displayName.trim() || row.player.nickname.trim();
     const trusted = row.source === "admin"
       || row.source === "captain" && approved.has(`${row.matchId}:${row.teamId}`);
     if (!trusted || !match || !officialMatchIds.has(row.matchId)
+      || row.player.id !== row.playerId || row.player.teamId !== row.teamId
+      || row.player.eventId !== rows.event.id || !playerName
       || ![match.homeTeamId, match.awayTeamId].includes(row.teamId)
       || !teams.has(row.teamId) || !values || Array.isArray(values) || typeof values !== "object") continue;
     const record = values as Record<string, unknown>;
@@ -186,7 +206,7 @@ function statistics(rows: CompletionSourceRows, officialMatchIds: ReadonlySet<st
     if (suppliedConfiguredValues.some((value) => typeof value !== "number" || !Number.isFinite(value) || value < 0)) continue;
     const aggregate = totals.get(row.playerId) ?? {
       playerId: row.playerId,
-      playerName: row.playerName,
+      playerName,
       teamId: row.teamId,
       teamName: teams.get(row.teamId)!,
       values: { mvp: 0, top_scorer: 0, top_defender: 0, top_assist: 0 },
@@ -217,8 +237,11 @@ function statistics(rows: CompletionSourceRows, officialMatchIds: ReadonlySet<st
 }
 
 export function buildCompletionSource(rows: CompletionSourceRows): CompletionSource {
-  const projection = rows.graph ? competitionProjection(rows.graph, rows.matches as never) : null;
   const officialMatchIds = new Set(rows.matches.filter((match) => isCurrentOfficial(match, rows.revisions)).map(({ id }) => id));
+  const projectionMatches = rows.matches.map((match) => officialMatchIds.has(match.id)
+    ? match
+    : { ...match, resultVersion: 0, status: "Scheduled", scheduleStatus: "estimated" });
+  const projection = rows.graph ? competitionProjection(rows.graph, projectionMatches as never) : null;
   const aggregatedStatistics = statistics(rows, officialMatchIds);
   const formatKind = rows.event.formatConfig.kind;
   const standings = formatKind === "round_robin"
@@ -275,12 +298,12 @@ export async function loadPrismaCompletionWorkspaceData(eventId: string): Promis
       }),
       tx.certificate.findMany({
         where: { eventId },
-        select: { id: true, type: true, completionId: true, completionVersion: true, status: true, publishedAt: true },
+        select: { id: true, type: true, version: true, completionId: true, completionVersion: true, status: true, publishedAt: true },
         orderBy: [{ type: "asc" }, { version: "asc" }],
       }),
       tx.certificatePublication.findFirst({
         where: { eventId },
-        select: { version: true, completionVersion: true, publishedAt: true },
+        select: { version: true, completionVersion: true, certificateIds: true, publishedAt: true },
         orderBy: { version: "desc" },
       }),
       tx.completionAuditEntry.findMany({
@@ -325,7 +348,18 @@ async function loadSourceRows(
     tx.matchResultRevision.findMany({ where: { eventId: event.id }, orderBy: [{ matchId: "asc" }, { version: "desc" }] }),
     tx.competitionIncident.findMany({ where: { eventId: event.id, resolvedAt: null }, select: { id: true, matchId: true, resolvedAt: true } }),
     tx.team.findMany({ where: { eventId: event.id }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
-    tx.playerStat.findMany({ where: { match: { eventId: event.id } }, select: { matchId: true, playerId: true, playerName: true, teamId: true, source: true, stats: true } }),
+    tx.playerStat.findMany({
+      where: { match: { eventId: event.id } },
+      select: {
+        matchId: true,
+        playerId: true,
+        playerName: true,
+        teamId: true,
+        source: true,
+        stats: true,
+        player: { select: { id: true, teamId: true, eventId: true, displayName: true, nickname: true } },
+      },
+    }),
     tx.statSubmission.findMany({ where: { eventId: event.id, status: "approved" }, select: { matchId: true, teamId: true } }),
   ]);
   const graph = (phase?.configuration as unknown as { graph?: CompetitionGraph } | null)?.graph ?? null;
