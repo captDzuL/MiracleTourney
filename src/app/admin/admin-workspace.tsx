@@ -1545,7 +1545,7 @@ function RunMatchDayPhase({
       title={t("runTitle")}
     >
       {hasContent ? (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.85fr)]">
+        <div className="grid gap-6 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]">
           <div className="grid gap-6">
             {selectedManageableEvent ? (
               <Section title={t("matchQueueTitle")} description={t("matchQueueDescription")} className="rounded-xl shadow-none">
@@ -1647,7 +1647,7 @@ function RunMatchDayPhase({
 
             {distinctRoundLabels.length && selectedManageableEvent ? (
               <Section title={t("roundConfigTitle")} description={t("roundConfigDesc")} className="rounded-xl shadow-none">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
                   {distinctRoundLabels.map((label) => {
                     const currentBestOf = roundConfigMap.get(label) ?? roundConfigs.find((config) => config.roundLabel === label)?.bestOf ?? 1;
                     return (

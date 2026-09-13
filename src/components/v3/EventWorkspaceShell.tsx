@@ -62,7 +62,7 @@ export function EventWorkspaceShell({ children, eventTitle, navigation, nextActi
         </li>)}
       </ol>
     </nav>
-    <div className="grid min-w-0 gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_16rem]">
+    <div className={`grid min-w-0 gap-6 ${nextAction ? "min-[1100px]:grid-cols-[minmax(0,1fr)_16rem]" : ""}`}>
       <div className="min-w-0">{children}</div>
       {nextAction && <aside aria-label={t("nextAction")} className="h-fit rounded-[var(--radius-panel)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-4 min-[1100px]:sticky min-[1100px]:top-24">
         <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[var(--color-brand-cream)]">{t("nextStep")}</p>{nextAction}

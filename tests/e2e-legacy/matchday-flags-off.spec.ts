@@ -56,7 +56,16 @@ test("flags off keep organizer round configuration feedback on the English legac
   const roundConfig = page.getByRole("combobox", { name: "Round 2", exact: true });
   await expect(roundConfig).toBeVisible();
   await roundConfig.selectOption("3");
-  await roundConfig.locator("xpath=ancestor::form[1]").getByRole("button", { name: "Save", exact: true }).click();
+  const saveButton = roundConfig.locator("xpath=ancestor::form[1]").getByRole("button", { name: "Save", exact: true });
+  await saveButton.scrollIntoViewIfNeeded();
+  await expect(
+    saveButton.evaluate((button) => {
+      const bounds = button.getBoundingClientRect();
+      const hitTarget = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+      return hitTarget === button || button.contains(hitTarget);
+    }),
+  ).resolves.toBe(true);
+  await saveButton.click();
   await expect(page).toHaveURL(`${route}?success=round-config-saved`);
   expect(await matchdayDb.eventRoundConfig.findFirstOrThrow({ where: { eventId: legacy.id, roundLabel: "Round 2" } })).toMatchObject({ bestOf: 3 });
 });
