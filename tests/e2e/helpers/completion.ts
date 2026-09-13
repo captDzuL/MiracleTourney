@@ -407,7 +407,19 @@ export async function prepareCertificateFixture(namespace = randomUUID().slice(0
         })),
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       ),
-      generate: async (data) => `/certificates/${data.eventId}-${data.certificateType}-v${data.version}.png`,
+      generate: async (data) => {
+        const imageUrl = `/certificates/${data.eventId}-${data.certificateType}-v${data.version}.png`;
+        await completionDb.certificate.update({
+          where: { id: data.certificateId },
+          data: {
+            imageUrl,
+            status: "ready",
+            generatedAt: new Date("2026-09-13T04:10:00.000Z"),
+            attemptCount: { increment: 1 },
+          },
+        });
+        return imageUrl;
+      },
     };
     const generated = [];
     for (const type of MIRACLE_V3_CERTIFICATE_TYPES) {

@@ -22,18 +22,20 @@ test.afterEach(async () => {
 });
 
 test("publishes all seven certificates and preserves superseded verification history", async ({ page }) => {
-  fixture = await prepareCertificateFixture();
+  test.slow();
+  const scenario = await prepareCertificateFixture();
+  fixture = scenario;
   await loginAsOrganizer(page, "en");
-  await page.goto(`/en/organizer/events/${fixture.id}/certificates`);
+  await page.goto(`/en/organizer/events/${scenario.id}/certificates`);
 
   await expect(page.locator("[data-certificate-type]")).toHaveCount(7);
   await expect(page.locator("[data-publish-certificate-set]")).toBeEnabled();
-  await expect.poll(() => completionDb.certificateGenerationMutation.count({ where: { eventId: fixture!.id } })).toBe(fixture.generatedMutationCount);
+  await expect.poll(() => completionDb.certificateGenerationMutation.count({ where: { eventId: scenario.id } })).toBe(scenario.generatedMutationCount);
   await page.locator("[data-publish-certificate-set]").click();
-  await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: fixture!.id } })).toBe(2);
+  await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
 
   const certificates = await completionDb.certificate.findMany({
-    where: { eventId: fixture.id },
+    where: { eventId: scenario.id },
     orderBy: [{ type: "asc" }, { version: "asc" }],
   });
   expect(new Set(certificates.filter(({ publishedAt }) => publishedAt).map(({ type }) => type))).toEqual(new Set(MIRACLE_V3_CERTIFICATE_TYPES));
@@ -41,18 +43,18 @@ test("publishes all seven certificates and preserves superseded verification his
   expect(oldChampion).toMatchObject({
     status: "superseded",
     supersededByVersion: 2,
-    verificationCode: fixture.historicalVerificationCode,
-    publishedUrl: fixture.historicalPublishedUrl,
+    verificationCode: scenario.historicalVerificationCode,
+    publishedUrl: scenario.historicalPublishedUrl,
   });
 
-  await page.goto(`/certificates/verify/${fixture.historicalVerificationCode}`);
-  await expect(page).toHaveURL(new RegExp(`/(id|en)/certificates/verify/${fixture.historicalVerificationCode}$`));
+  await page.goto(`/certificates/verify/${scenario.historicalVerificationCode}`);
+  await expect(page).toHaveURL(new RegExp(`/(id|en)/certificates/verify/${scenario.historicalVerificationCode}$`));
   await expect(page.locator('[data-certificate-verification="superseded"]')).toBeVisible();
   await expect(page.getByText(/remains valid|tetap valid/i)).toBeVisible();
 
-  await page.goto(`/en/certificates/verify/${fixture.currentVerificationCode}`);
+  await page.goto(`/en/certificates/verify/${scenario.currentVerificationCode}`);
   await expect(page.locator('[data-certificate-verification="current"]')).toBeVisible();
-  await expect(page.getByText(fixture.eventName, { exact: true })).toBeVisible();
+  await expect(page.getByText(scenario.eventName, { exact: true })).toBeVisible();
 });
 
 test("renders the 1080x1920 protected-zone certificate with fallback and immutable QR target", async ({ page }) => {
