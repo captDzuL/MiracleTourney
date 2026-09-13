@@ -315,6 +315,7 @@ function mergeStats(current: StatLine, incoming: StatLine) {
   const merged = { ...current };
 
   for (const [key, value] of Object.entries(incoming)) {
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
     merged[key] = (merged[key] ?? 0) + value;
   }
 
@@ -343,7 +344,10 @@ export function aggregatePlayerLeaderboard(
         position: stat.position,
         gameSlug: stat.gameSlug,
         matchesPlayed: 1,
-        totalStats: { ...stat.stats },
+        totalStats: Object.fromEntries(
+          Object.entries(stat.stats).filter((entry): entry is [string, number] =>
+            typeof entry[1] === "number" && Number.isFinite(entry[1])),
+        ),
       });
       continue;
     }

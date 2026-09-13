@@ -49,13 +49,33 @@ describe("private organizer read state", () => {
   let store: ReturnType<typeof operationStore>;
   beforeEach(() => { store = operationStore(); boundary.db = store.db; boundary.user = { id: "owner", role: "organizer", mustChangePassword: false }; boundary.enabled = true; });
   it("returns serializable format context, seeded teams, and official match state", async () => {
-    await createCompetitionOperations(store.db).execute({ eventId: "event", actor: boundary.user!, expectedVersion: 0, idempotencyKey: "init", command: { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] } });
+    await createCompetitionOperations(store.db, undefined, { allowInternalInitialize: true }).execute({ eventId: "event", actor: boundary.user!, expectedVersion: 0, idempotencyKey: "init", command: { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] } });
     const state = await readCompetitionWorkspace("event");
     expect(state.event.version).toBe(1);
     expect(state.graph?.config.kind).toBe("round_robin");
     expect(state.standings[0].rows).toHaveLength(2);
     expect(state.matches[0].bestOf).toBe(1);
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+  it("exposes organizer-selected drawing order and publication state", async () => {
+    const operations = createCompetitionOperations(store.db, undefined, { allowInternalInitialize: true });
+    await operations.execute({
+      eventId: "event",
+      actor: boundary.user!,
+      expectedVersion: 0,
+      idempotencyKey: "drawing-draft",
+      command: {
+        kind: "drawing_save",
+        config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+        teams: [{ id: "b", seed: 1 }, { id: "a", seed: 2 }],
+      },
+    });
+
+    const draft = await readCompetitionWorkspace("event");
+    expect(draft.drawing).toEqual({
+      status: "draft",
+      teams: [{ id: "b", seed: 1 }, { id: "a", seed: 2 }],
+    });
   });
   it("blocks missing sessions, nonowners, password-change sessions, and rollout-off reads", async () => {
     boundary.user = null;
@@ -78,7 +98,7 @@ describe("private organizer read state", () => {
     expect(state.matches).toEqual([]);
   });
   it.each([false, true])("reopens published constraints without resurrecting superseded drafts (earlier draft: %s)", async earlierDraft => {
-    const operations = createCompetitionOperations(store.db);
+    const operations = createCompetitionOperations(store.db, undefined, { allowInternalInitialize: true });
     let version = 0;
     const execute = async (command: Parameters<typeof operations.execute>[0]["command"]) => {
       const receipt = await operations.execute({ eventId: "event", actor: boundary.user!, expectedVersion: version, idempotencyKey: `read-${version}`, command });

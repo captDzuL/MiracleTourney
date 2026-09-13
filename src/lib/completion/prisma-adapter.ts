@@ -211,6 +211,8 @@ function statistics(rows: CompletionSourceRows, officialMatchIds: ReadonlySet<st
     teamName: string;
     values: Record<CompletionAwardStatistic, number>;
     observed: Record<CompletionAwardStatistic, boolean>;
+    scoreTotal: number;
+    scoreCount: number;
   }>();
   for (const row of rows.playerStats) {
     const match = matches.get(row.matchId);
@@ -226,6 +228,16 @@ function statistics(rows: CompletionSourceRows, officialMatchIds: ReadonlySet<st
     const record = values as Record<string, unknown>;
     const suppliedConfiguredValues = configuredKeys.filter((key) => Object.hasOwn(record, key)).map((key) => record[key]);
     if (suppliedConfiguredValues.some((value) => typeof value !== "number" || !Number.isFinite(value) || value < 0)) continue;
+    const suppliedScores = Object.hasOwn(record, "scores");
+    const scores = Array.isArray(record.scores)
+      ? record.scores.filter((value): value is number => value !== null && typeof value === "number")
+      : [];
+    const validScores = !suppliedScores || Array.isArray(record.scores) && record.scores.every((value) =>
+      value === null
+      || typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 10
+        && Math.abs(value * 10 - Math.round(value * 10)) < Number.EPSILON * 10,
+    );
+    if (!validScores) continue;
     const aggregate = totals.get(row.playerId) ?? {
       playerId: row.playerId,
       playerName,
@@ -233,9 +245,17 @@ function statistics(rows: CompletionSourceRows, officialMatchIds: ReadonlySet<st
       teamName: teams.get(row.teamId)!,
       values: { mvp: 0, top_scorer: 0, top_defender: 0, top_assist: 0 },
       observed: { mvp: false, top_scorer: false, top_defender: false, top_assist: false },
+      scoreTotal: 0,
+      scoreCount: 0,
     };
     if (aggregate.teamId !== row.teamId) continue;
+    aggregate.scoreTotal += scores.reduce((sum, score) => sum + score, 0);
+    aggregate.scoreCount += scores.length;
     for (const award of AWARDS) {
+      if (award === "mvp" && scores.length) {
+        aggregate.observed.mvp = true;
+        continue;
+      }
       const keys = metrics[award];
       const observed = keys.filter((key) => typeof record[key] === "number");
       if (!observed.length) continue;
@@ -252,7 +272,9 @@ function statistics(rows: CompletionSourceRows, officialMatchIds: ReadonlySet<st
       playerName: row.playerName,
       teamId: row.teamId,
       teamName: row.teamName,
-      value: row.values[award],
+      value: award === "mvp" && row.scoreCount
+        ? Math.round(row.scoreTotal / row.scoreCount * 10) / 10
+        : row.values[award],
       validated: true,
       status: "published" as const,
     }] : []));

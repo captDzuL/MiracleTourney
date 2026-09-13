@@ -1,17 +1,25 @@
 import { unstable_cache } from "next/cache";
 import { BarChart3, CalendarDays, ListTree, Shield, Trophy, Users } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import { PublicHomeV2 } from "@/components/public-v2/PublicHomeV2";
+import { PublicDiscoveryHomeV3 } from "@/components/v3/public-discovery/PublicDiscoveryV3";
+import { filterDiscoveryEvents } from "@/lib/events/public-discovery";
+import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getDefaultModeLabel } from "@/lib/platform/config";
 import { getPublicEvents as getDemoPublicEvents } from "@/lib/platform/demo-store";
-import { getAllGames, getBracketPreview, getGameForEvent, getPublicEvents, getTeamsForEvent } from "@/lib/platform/repository";
+import { getAllGames, getBracketPreview, getGameForEvent, getPublicDiscoveryEvents, getPublicEvents, getTeamsForEvent } from "@/lib/platform/repository";
 import type { Event, Game } from "@/lib/platform/types";
 
 const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });
+const getCachedPublicDiscoveryEvents = unstable_cache(
+  getPublicDiscoveryEvents,
+  ["public-discovery-events-v3"],
+  { revalidate: 30 },
+);
 const PUBLIC_EVENTS_TIMEOUT_MS = 2_000;
 
 async function getHomepageEvents() {
@@ -103,8 +111,25 @@ export async function HomePageContent({
   const t = await getTranslations("home");
   const resolved = await searchParams;
   const gameFilter = resolved?.game ?? "all";
+  const games = getAllGames();
 
-  const [events, games] = await Promise.all([getHomepageEvents(), Promise.resolve(getAllGames())]);
+  if (isFeatureEnabled("public_discovery_v3")) {
+    const localeValue = await getLocale().catch(() => "id");
+    const locale = localeValue === "en" ? "en" : "id";
+    const discovery = await loadPublicDiscovery(getCachedPublicDiscoveryEvents);
+    const entries = filterDiscoveryEvents(discovery.entries, { game: gameFilter, status: "all" });
+    return (
+      <PublicDiscoveryHomeV3
+        locale={locale}
+        entries={entries}
+        games={games}
+        gameFilter={gameFilter}
+        loadState={discovery.loadState}
+      />
+    );
+  }
+
+  const events = await getHomepageEvents();
 
   const filteredEvents = gameFilter === "all" ? events : events.filter((event) => event.gameId === gameFilter);
   const featuredEvent = filteredEvents[0];

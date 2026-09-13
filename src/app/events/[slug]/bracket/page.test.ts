@@ -19,11 +19,23 @@ const {
   getEventRoundConfigsMock,
   getMatchGamesForEventMock,
   getMatchesForEventMock,
+  featureEnabledMock,
+  drawingEventMock,
 } = vi.hoisted(() => ({
   getEventRoundConfigsMock: vi.fn(),
   getMatchGamesForEventMock: vi.fn(),
   getMatchesForEventMock: vi.fn(),
+  featureEnabledMock: vi.fn(),
+  drawingEventMock: vi.fn(),
 }));
+
+vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: featureEnabledMock }));
+vi.mock("@/lib/events/adaptive-public-phases", () => ({
+  getPublicCompetitionPhaseVisibility: vi.fn().mockResolvedValue("none"),
+  getPublicDrawingEvent: drawingEventMock,
+  getPublicFinishedEvent: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("@/lib/events/public-ongoing", () => ({ getPublicOngoingEvent: vi.fn().mockResolvedValue(null) }));
 
 vi.mock("next-intl/server", async () => {
   const en = (await import("../../../../../messages/en.json")) as unknown as Record<string, Record<string, string>>;
@@ -72,6 +84,8 @@ describe("public bracket page", () => {
   afterEach(resetDemoStore);
 
   beforeEach(() => {
+    featureEnabledMock.mockReturnValue(false);
+    drawingEventMock.mockResolvedValue(null);
     roundConfigsByEvent = new Map();
     matchGamesByEvent = new Map();
     matchOverridesByEvent = new Map();
@@ -92,6 +106,36 @@ describe("public bracket page", () => {
 
     expect(source).toContain("getPublicVisibleBracketPreview");
     expect(source).toContain("getBracketPreview(event.id)");
+  });
+
+  it("keeps every registration bracket slot TBD when no drawing has been published", async () => {
+    const event = createEvent({
+      name: "Private registration order",
+      slug: "private-registration-order",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Published");
+    importTeams([
+      { eventId: event.id, teamName: "First Registrant", teamTag: "FIRST", captainName: "One", captainContact: "one@example.test" },
+      { eventId: event.id, teamName: "Second Registrant", teamTag: "SECOND", captainName: "Two", captainContact: "two@example.test" },
+    ]);
+    featureEnabledMock.mockReturnValue(true);
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain("TBD");
+    expect(markup).not.toContain("First Registrant");
+    expect(markup).not.toContain("Second Registrant");
+  });
+
+  test("uses only published adaptive phase readers when the adaptive experience is enabled", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "./bracket-page-content.tsx"), "utf8");
+    expect(source).toContain("getPublicDrawingEvent");
+    expect(source).toContain("getPublicOngoingEvent");
+    expect(source).toContain("getPublicFinishedEvent");
+    expect(source).toContain("AdaptiveBracketBoard");
   });
 
   test("bracket routes stay dynamic so production builds do not query the database", () => {

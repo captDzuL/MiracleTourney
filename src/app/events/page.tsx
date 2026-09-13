@@ -4,12 +4,20 @@ import { ArrowRight, CalendarDays, Trophy, Users } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 
 import { PublicEventsV2 } from "@/components/public-v2/PublicEventsV2";
+import { PublicEventsCenterV3 } from "@/components/v3/public-discovery/PublicDiscoveryV3";
 import { Pill, Section } from "@/components/ui";
+import { filterDiscoveryEvents } from "@/lib/events/public-discovery";
+import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getAllGames, getGameForEvent, getModeForEvent, getPublicEvents, getTeamCountsForEvents, getTeamsForEvents } from "@/lib/platform/repository";
+import { getAllGames, getGameForEvent, getModeForEvent, getPublicDiscoveryEvents, getPublicEvents, getTeamCountsForEvents, getTeamsForEvents } from "@/lib/platform/repository";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 
 const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });
+const getCachedPublicDiscoveryEvents = unstable_cache(
+  getPublicDiscoveryEvents,
+  ["public-discovery-events-v3"],
+  { revalidate: 30 },
+);
 
 function getInitials(name: string) {
   return name
@@ -30,10 +38,28 @@ export default async function EventsPage({
   const params = await searchParams;
   const gameFilter = params?.game ?? "all";
   const statusFilter = params?.status ?? "all";
-  const [eventsRaw, games] = await Promise.all([
-    getCachedPublicEvents().catch(() => []),
-    Promise.resolve(getAllGames()),
-  ]);
+  const games = getAllGames();
+
+  if (isFeatureEnabled("public_discovery_v3")) {
+    const discovery = await loadPublicDiscovery(getCachedPublicDiscoveryEvents);
+    const localeValue = locale === "en" ? "en" : "id";
+    const filteredEntries = filterDiscoveryEvents(discovery.entries, {
+      game: gameFilter,
+      status: statusFilter,
+    });
+    return (
+      <PublicEventsCenterV3
+        locale={localeValue}
+        entries={discovery.entries}
+        filteredEntries={filteredEntries}
+        games={games}
+        filters={{ game: gameFilter, status: statusFilter }}
+        loadState={discovery.loadState}
+      />
+    );
+  }
+
+  const eventsRaw = await getCachedPublicEvents().catch(() => []);
   const events = eventsRaw.filter((event) => {
     const gameMatches = gameFilter === "all" || event.gameId === gameFilter;
     const statusMatches = statusFilter === "all" || event.status.toLowerCase().replaceAll(" ", "-") === statusFilter;

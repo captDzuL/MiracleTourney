@@ -9,7 +9,7 @@ const scheduling = { timezone: "Asia/Jakarta", eventWindow: { start: "2026-09-12
 const games = (bestOf = 1, away = false) => Array.from({ length: Math.ceil(bestOf / 2) }, (_, i) => ({ gameNumber: i + 1, homeScore: away ? 0 : 2, awayScore: away ? 2 : 0 }));
 async function fixture(format: keyof typeof TOURNAMENT_FORMAT_PRESETS = "singleElimination", count = 4) {
   const store = operationStore();
-  const service = createCompetitionOperations(store.db, () => new Date("2026-09-12T10:00:00Z"));
+  const service = createCompetitionOperations(store.db, () => new Date("2026-09-12T10:00:00Z"), { allowInternalInitialize: true });
   const teams = ["a", "b", ...Array.from({ length: count - 2 }, (_, i) => `t${i + 3}`)];
   teams.slice(2).forEach(id => store.seed("team", { id, eventId: "event" }));
   let key = 0;
@@ -45,6 +45,23 @@ describe("official result transaction", () => {
     expect(f.rows("match")[0]).toMatchObject({ homeScore: 4, awayScore: 4, winnerTeamId: null, resultVersion: 1 });
     const config = f.rows("competitionPhase")[0].configuration as { projection: { standings: { rows: unknown[] }[] } };
     expect(config.projection.standings[0].rows).toEqual(expect.arrayContaining([expect.objectContaining({ teamId: "a", points: 1, draws: 1, played: 1 }), expect.objectContaining({ teamId: "b", points: 1, draws: 1 })]));
+  });
+
+  it("persists played games in MatchGame order and replaces them on correction", async () => {
+    const f = await fixture();
+    const match = f.graph.matches[0];
+    await f.submit(match);
+    expect(f.rows("matchGame")).toEqual(games(match.bestOf).map((game, index) => expect.objectContaining({
+      ...game,
+      matchId: match.id,
+      id: `matchGame-${index + 1}`,
+    })));
+
+    const corrected = games(match.bestOf, true);
+    const preview = await f.service.previewResultCorrection({ eventId: "event", actor, matchId: match.id, games: corrected });
+    await f.run({ kind: "result_correct", matchId: match.id, games: corrected, reason: "Official sheet corrected", previewToken: preview.token });
+    expect(f.rows("matchGame")).toHaveLength(corrected.length);
+    expect(f.rows("matchGame").map(({ gameNumber, homeScore, awayScore }) => ({ gameNumber, homeScore, awayScore }))).toEqual(corrected);
   });
 
   it("qualifies completed groups into playoffs and propagates their winners", async () => {

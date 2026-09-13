@@ -14,6 +14,10 @@ export type CompetitionWorkspaceState = {
   compatibility?: Pick<import("@/lib/tournament/operations/legacy-compatibility").LegacyDiagnostic, "status" | "reason"> | null;
   event: { id: string; name: string; version: number; timezone: string; startsAt: string | null; publishedScheduleVersion: number | null; config: TournamentFormatConfig | null };
   graph: CompetitionGraph | null; matches: WorkspaceMatch[]; teams: { id: string; name: string }[];
+  drawing: {
+    status: "draft" | "published";
+    teams: { id: string; seed: number }[];
+  } | null;
   standings: StandingsTable[];
   readiness: { matchId: string; teamId: string; status: string; note: string | null }[];
   actions: { id: string; matchId: string | null; priority: string; title: string; detail: string | null }[];

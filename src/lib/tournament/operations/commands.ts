@@ -14,8 +14,135 @@ import { outstandingDelayEstimates } from "./delay-estimates";
 
 function requireReason(value: string | undefined) { if (!value?.trim()) throw new Error("An override or resolution reason is required"); }
 
+type DrawingInput = {
+  config: Extract<ParsedCommand, { kind: "drawing_save" }>["config"];
+  teams: Extract<ParsedCommand, { kind: "drawing_save" }>["teams"];
+  slotCount?: number;
+};
+
+function validateDrawingTeams(teams: DrawingInput["teams"]) {
+  if (new Set(teams.map((team) => team.id)).size !== teams.length) {
+    throw new Error("Drawing teams must be unique");
+  }
+  if (new Set(teams.map((team) => team.seed)).size !== teams.length) {
+    throw new Error("Drawing seeds must be unique");
+  }
+}
+
+async function persistDrawing(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  command: DrawingInput,
+  status: "draft" | "active",
+) {
+  validateDrawingTeams(command.teams);
+  const teams = await tx.team.findMany({
+    where: { eventId },
+    select: { id: true },
+  });
+  const authoritativeIds = new Set(teams.map((team) => team.id));
+  if (teams.length !== command.teams.length
+    || command.teams.some((team) => !authoritativeIds.has(team.id))) {
+    throw new Error("Teams must match the complete authoritative roster for the event");
+  }
+  const graph = generateCompetitionGraph({ eventId, ...command });
+  for (const phase of graph.phases) await tx.competitionPhase.create({ data: {
+    id: phase.id,
+    eventId,
+    label: phase.kind,
+    sequence: phase.sequence,
+    status,
+    configuration: json({
+      ...phase,
+      ...(phase.sequence === 1 ? {
+        graph,
+        drawing: { teams: command.teams.map((team) => ({ id: team.id, seed: team.seed })) },
+      } : {}),
+    }),
+  } });
+  for (const group of graph.groups) {
+    await tx.competitionGroup.create({ data: {
+      id: group.id,
+      eventId,
+      phaseId: group.phaseId,
+      label: group.label,
+      sequence: group.sequence,
+    } });
+    for (const team of group.teams) await tx.competitionGroupMember.create({ data: {
+      eventId,
+      groupId: group.id,
+      teamId: team.id,
+      seed: team.seed,
+    } });
+  }
+  const rounds = new Map<string, number>();
+  for (const [index, match] of graph.matches.entries()) {
+    const key = `${match.phaseId}:${match.bracket}:${match.round}:${match.leg}`;
+    if (!rounds.has(key)) rounds.set(key, rounds.size + 1);
+    await tx.match.create({ data: {
+      id: match.id,
+      eventId,
+      phaseId: match.phaseId,
+      groupId: match.groupId,
+      roundLabel: `${match.bracket} ${match.round}`,
+      round: rounds.get(key),
+      slot: index + 1,
+      homeTeamId: match.home.kind === "team" ? match.home.teamId : "",
+      awayTeamId: match.away.kind === "team" ? match.away.teamId : "",
+      status: match.status === "pending" ? "Scheduled" : "Bye",
+      scheduleStatus: "estimated",
+      resultVersion: 0,
+      scheduleMetadata: json({ graphMatch: match }),
+    } });
+  }
+  for (const dependency of graph.dependencies) {
+    await tx.matchDependency.create({ data: { ...dependency, eventId } });
+  }
+  await tx.event.update({ where: { id: eventId }, data: {
+    formatConfig: json(graph.config),
+    format: getLegacyTournamentFormat(graph.config),
+  } });
+  return graph.phases[0].id;
+}
+
+async function assertDrawingMutable(tx: Prisma.TransactionClient, eventId: string) {
+  const [event, phases, publishedScheduleCount, resultRevisionCount, terminalMatchCount] = await Promise.all([
+    tx.event.findUniqueOrThrow({ where: { id: eventId } }),
+    tx.competitionPhase.findMany({ where: { eventId } }),
+    tx.scheduleRevision.count({ where: { eventId, status: "published" } }),
+    tx.matchResultRevision.count({ where: { eventId } }),
+    tx.match.count({ where: { eventId, status: { in: ["Live", "Completed"] } } }),
+  ]);
+  if (phases.some((phase) => phase.status !== "draft")
+    || event.publishedScheduleVersion != null
+    || publishedScheduleCount
+    || resultRevisionCount
+    || terminalMatchCount) {
+    throw new Error("Drawing is locked after publication, official schedule, live match, or result");
+  }
+}
+
+async function clearDrawingDraft(tx: Prisma.TransactionClient, eventId: string) {
+  await tx.scheduleRevision.deleteMany({ where: { eventId, status: "draft" } });
+  await tx.matchReadiness.deleteMany({ where: { eventId } });
+  await tx.matchDependency.deleteMany({ where: { eventId } });
+  await tx.matchGame.deleteMany({ where: { match: { eventId } } });
+  await tx.match.deleteMany({ where: { eventId } });
+  await tx.competitionGroupMember.deleteMany({ where: { eventId } });
+  await tx.competitionGroup.deleteMany({ where: { eventId } });
+  await tx.competitionPhase.deleteMany({ where: { eventId, status: "draft" } });
+}
+
+async function requirePublishedDrawing(tx: Prisma.TransactionClient, eventId: string) {
+  const phase = await tx.competitionPhase.findFirst({ where: { eventId, status: "active" } });
+  if (!phase) throw new Error("Drawing must be published before this operation");
+}
+
 /** Internal: must run only after authorization and event CAS in execute(). */
 export async function applyCommand(tx: Prisma.TransactionClient, eventId: string, actorId: string, command: ParsedCommand, version: number, idempotencyKey: string, now: Date, readinessActor: "organizer" | "captain" = "organizer"): Promise<string | undefined> {
+  if (["schedule_publish", "match_start", "result_submit", "result_correct"].includes(command.kind)) {
+    await requirePublishedDrawing(tx, eventId);
+  }
   if (["readiness_update", "readiness_deadline", "match_start", "match_timing"].includes(command.kind)) {
     const graph = await readGraph(tx, eventId);
     if (!("matchId" in command) || !graph.matches.some(m => m.id === command.matchId)) throw new Error("Match not found in competition");
@@ -37,7 +164,7 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       if (!diagnosis.graph) throw new Error(`Legacy competition cannot be upgraded: ${diagnosis.reason}`);
       const graph = diagnosis.graph;
       if (!matches.length) return applyCommand(tx, eventId, actorId, { kind: "initialize", config: graph.config, teams: seeded }, version, idempotencyKey, now);
-      for (const phase of graph.phases) await tx.competitionPhase.create({ data: { id: phase.id, eventId, label: phase.kind, sequence: phase.sequence, status: "draft", configuration: json({ ...phase, graph }) } });
+      for (const phase of graph.phases) await tx.competitionPhase.create({ data: { id: phase.id, eventId, label: phase.kind, sequence: phase.sequence, status: "active", configuration: json({ ...phase, graph }) } });
       for (const match of graph.matches) await tx.match.update({ where: { id: match.id }, data: { phaseId: match.phaseId, scheduleMetadata: json({ graphMatch: match }) } });
       for (const dependency of graph.dependencies) await tx.matchDependency.create({ data: { ...dependency, eventId } });
       await tx.event.update({ where: { id: eventId }, data: { formatConfig: json(graph.config) } });
@@ -46,38 +173,46 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
     case "result_submit":
     case "result_correct":
       return applyResult(tx, eventId, actorId, command, version, idempotencyKey, now);
+    case "drawing_save": {
+      await assertDrawingMutable(tx, eventId);
+      await clearDrawingDraft(tx, eventId);
+      return persistDrawing(tx, eventId, command, "draft");
+    }
+    case "drawing_publish": {
+      const phases = await tx.competitionPhase.findMany({ where: { eventId } });
+      if (!phases.length || phases.some((phase) => phase.status !== "draft")) {
+        throw new Error("Drawing draft not found or drawing is locked");
+      }
+      const event = await tx.event.findUniqueOrThrow({ where: { id: eventId } });
+      if (event.status !== "Registration Closed") {
+        throw new Error("Drawing can be published only after registration is closed");
+      }
+      const firstPhase = phases.slice().sort((left, right) => left.sequence - right.sequence)[0];
+      const configuration = firstPhase.configuration && typeof firstPhase.configuration === "object" && !Array.isArray(firstPhase.configuration)
+        ? firstPhase.configuration as { drawing?: { teams?: Array<{ id?: unknown }> } }
+        : null;
+      const draftIds = Array.isArray(configuration?.drawing?.teams)
+        ? configuration.drawing.teams.flatMap((team) => typeof team.id === "string" ? [team.id] : [])
+        : [];
+      const currentTeams = await tx.team.findMany({ where: { eventId }, select: { id: true } });
+      const currentIds = new Set(currentTeams.map((team) => team.id));
+      if (draftIds.length !== currentTeams.length || draftIds.some((id) => !currentIds.has(id))) {
+        throw new Error("Drawing roster changed after the draft was saved; save a new draft");
+      }
+      await tx.competitionPhase.updateMany({
+        where: { eventId, status: "draft" },
+        data: { status: "active" },
+      });
+      return String(firstPhase.id);
+    }
+    case "drawing_reset":
+      await assertDrawingMutable(tx, eventId);
+      await clearDrawingDraft(tx, eventId);
+      return undefined;
     case "initialize": {
       if (await tx.matchResultRevision.count({ where: { eventId } }) || await tx.match.count({ where: { eventId, resultVersion: { gt: 0 } } })) throw new Error("Competition has official results");
       if (await tx.match.count({ where: { eventId } }) || await tx.competitionPhase.count({ where: { eventId } })) throw new Error("Competition already initialized");
-      const teams = await tx.team.findMany({ where: { eventId, id: { in: command.teams.map(t => t.id) } } });
-      if (teams.length !== command.teams.length) throw new Error("Teams must belong to the event");
-      const graph = generateCompetitionGraph({ eventId, ...command });
-      for (const phase of graph.phases) await tx.competitionPhase.create({ data: {
-        id: phase.id, eventId, label: phase.kind, sequence: phase.sequence, status: "draft",
-        configuration: json({ ...phase, ...(phase.sequence === 1 ? { graph } : {}) }),
-      } });
-      for (const group of graph.groups) {
-        await tx.competitionGroup.create({ data: { id: group.id, eventId, phaseId: group.phaseId, label: group.label, sequence: group.sequence } });
-        for (const team of group.teams) await tx.competitionGroupMember.create({ data: { eventId, groupId: group.id, teamId: team.id, seed: team.seed } });
-      }
-      // Legacy round/slot uniqueness is event-wide. Keep the structural round
-      // in metadata and assign separate ordinals per phase/bracket round.
-      const rounds = new Map<string, number>();
-      for (const [index, match] of graph.matches.entries()) {
-        const key = `${match.phaseId}:${match.bracket}:${match.round}:${match.leg}`;
-        if (!rounds.has(key)) rounds.set(key, rounds.size + 1);
-        await tx.match.create({ data: {
-          id: match.id, eventId, phaseId: match.phaseId, groupId: match.groupId,
-          roundLabel: `${match.bracket} ${match.round}`, round: rounds.get(key), slot: index + 1,
-          homeTeamId: match.home.kind === "team" ? match.home.teamId : "",
-          awayTeamId: match.away.kind === "team" ? match.away.teamId : "",
-          status: match.status === "pending" ? "Scheduled" : "Bye", scheduleStatus: "estimated", resultVersion: 0,
-          scheduleMetadata: json({ graphMatch: match }),
-        } });
-      }
-      for (const dependency of graph.dependencies) await tx.matchDependency.create({ data: { ...dependency, eventId } });
-      await tx.event.update({ where: { id: eventId }, data: { formatConfig: json(graph.config), format: getLegacyTournamentFormat(graph.config) } });
-      return graph.phases[0].id;
+      return persistDrawing(tx, eventId, command, "active");
     }
     case "schedule_save": {
       if (command.input.manualOverrides?.length) requireReason(command.reason);

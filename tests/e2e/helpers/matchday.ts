@@ -191,7 +191,12 @@ export async function prepareMatchdayFixture(
       throw new Error("Unreachable: competition operation retry loop exhausted unexpectedly.");
     };
 
-    if (stage !== "empty") await run({ kind: "initialize", config, teams: teams.map((t, i) => ({ id: t.id, seed: i + 1 })) });
+    if (stage !== "empty") {
+      await withRetry(() => matchdayDb.event.update({ where: { id }, data: { status: "Registration Closed" } }));
+      await run({ kind: "drawing_save", config, teams: teams.map((t, i) => ({ id: t.id, seed: i + 1 })) });
+      await run({ kind: "drawing_publish" });
+      await withRetry(() => matchdayDb.event.update({ where: { id }, data: { status: "Ongoing" } }));
+    }
     if (stage === "published" || stage === "showcase") {
       const draft = await run({ kind: "schedule_save", input: matchdaySchedule });
       await run({ kind: "schedule_publish", revisionId: draft.resourceId! });

@@ -3,7 +3,12 @@ import { getTranslations } from "next-intl/server";
 
 import { BackToEvent } from "@/components/public-v2/BackToEvent";
 import { TeamIdentity } from "@/components/TeamAvatar";
+import { AdaptiveBracketBoard } from "@/components/v3/public-event/AdaptiveBracketBoard";
 import { DataTable, Pill, Section } from "@/components/ui";
+import { getPublicDrawingEvent, getPublicFinishedEvent } from "@/lib/events/adaptive-public-phases";
+import { getPublicOngoingEvent } from "@/lib/events/public-ongoing";
+import { publicMatchLabel } from "@/lib/events/public-match-label";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import {
   getBracketPreview,
   getEventRoundConfigs,
@@ -388,6 +393,32 @@ export async function renderBracketPage(slug: string, locale?: "id" | "en") {
     roundN: (n: number) => t("round", { n }),
   };
 
+  if (isFeatureEnabled("adaptive_public_event_v3")) {
+    const drawing = ["Published", "Registration Closed"].includes(event.status)
+      ? await getPublicDrawingEvent(slug).catch(() => null)
+      : null;
+    const ongoing = event.status === "Ongoing"
+      ? await getPublicOngoingEvent(slug).catch(() => null)
+      : null;
+    const finished = event.status === "Finished"
+      ? await getPublicFinishedEvent(slug).catch(() => null)
+      : null;
+    const view = drawing ?? ongoing ?? finished;
+    const format = view?.event.format ?? event.formatConfig?.kind ?? (event.format === "League" ? "round_robin" : "single_elimination");
+    const adaptiveMatches = view?.mode === "ongoing"
+      ? view.matches.map((match) => ({ ...match, roundLabel: publicMatchLabel(match, locale ?? "id") }))
+      : view?.matches ?? [];
+    const standings = view && "standings" in view ? view.standings : [];
+    const registrationSlots = !view && ["Published", "Registration Closed"].includes(event.status) ? event.participantCap : 0;
+
+    return <>
+      <BackToEvent slug={slug} locale={locale} label={t("backToEvent")} />
+      <Section title={t("title", { name: event.name })} description={format === "round_robin" ? t("leagueDescription") : t("description")}>
+        <AdaptiveBracketBoard locale={locale ?? "id"} format={format} matches={adaptiveMatches} standings={standings} registrationSlots={registrationSlots} />
+      </Section>
+    </>;
+  }
+
   const [teams, items, recordedMatches, roundConfigs, gamesMap] = await Promise.all([
     getTeamsForEvent(event.id),
     getPublicVisibleBracketPreview(event.id),
@@ -493,7 +524,7 @@ export async function renderBracketPage(slug: string, locale?: "id" | "en") {
         description={t("description")}
       >
         {bracketMatches.length ? (
-          <div className="overflow-x-auto pb-2">
+          <div className="max-w-full overflow-x-auto overscroll-x-contain pb-2">
             <div className="flex min-w-max gap-5">
               {matchesByRound.map((roundMatches, roundIndex) => {
                 const hasNextRound = roundIndex < matchesByRound.length - 1;

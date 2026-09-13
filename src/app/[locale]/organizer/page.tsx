@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import LegacyOrganizerPage from "@/app/organizer/page";
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
@@ -41,7 +42,8 @@ type OrganizerCommandCenterPageProps = { params: Promise<{ locale: string }> };
 
 export default async function OrganizerCommandCenterPage({ params }: OrganizerCommandCenterPageProps) {
   const { locale } = await params;
-  if ((locale !== "id" && locale !== "en") || !isFeatureEnabled("organizer_workspace_v3")) notFound();
+  if (locale !== "id" && locale !== "en") notFound();
+  if (!isFeatureEnabled("organizer_workspace_v3")) return <LegacyOrganizerPage />;
 
   const user = await requireAnyRole(["organizer"]);
   if (!user) return redirectToActiveLocale("/login");

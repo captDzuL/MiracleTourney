@@ -167,6 +167,22 @@ describe("Prisma completion source adapter", () => {
     ]);
     expect(source.facts.validatedAwardStatistics).toEqual(["mvp", "top_scorer", "top_defender", "top_assist"]);
   });
+
+  it("uses the validated Flashpeak game-score average as MVP supporting data", () => {
+    const rows = eliminationRows("single_elimination");
+    rows.playerStats.push({
+      matchId: "final",
+      playerId: "p1",
+      playerName: "Ari",
+      teamId: "a",
+      source: "admin",
+      stats: { scores: [7.6, null, 8.1], goal: 3, assist: 4, passing: 28, defense: 12 },
+      player: { id: "p1", teamId: "a", eventId: "event-1", displayName: "Ari", nickname: "Ari" },
+    });
+
+    const mvp = buildCompletionSource(rows).statistics.find(({ award }) => award === "mvp");
+    expect(mvp).toMatchObject({ playerId: "p1", value: 7.9, validated: true, status: "published" });
+  });
 });
 
 class MemoryCompletionPrisma {

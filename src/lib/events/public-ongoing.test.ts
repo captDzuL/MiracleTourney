@@ -13,7 +13,7 @@ describe("sanitized ongoing public state", () => {
   beforeEach(async () => {
     store = operationStore(); boundary.db = store.db; boundary.flags = true;
     await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { slug: "cup", name: "Cup", status: "Ongoing", timezone: "Asia/Jakarta", updatedAt: now } }); });
-    await createCompetitionOperations(store.db).execute({ eventId: "event", actor: { id: "owner", role: "organizer" }, expectedVersion: 0, idempotencyKey: "init", command: { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] } });
+    await createCompetitionOperations(store.db, undefined, { allowInternalInitialize: true }).execute({ eventId: "event", actor: { id: "owner", role: "organizer" }, expectedVersion: 0, idempotencyKey: "init", command: { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] } });
   });
   it("does not infer LIVE from the clock or expose draft schedules or private fields", async () => {
     store.seed("scheduleRevision", { eventId: "event", version: 2, status: "draft", snapshot: { private: "draft secret" } });
@@ -26,11 +26,17 @@ describe("sanitized ongoing public state", () => {
     const serialized = JSON.stringify(view);
     for (const secret of ["private incident", "draft secret", "readiness", "audit", "resultSnapshot", "actorUserId"]) expect(serialized).not.toContain(secret);
   });
+  it("does not expose ongoing state from a private drawing draft", async () => {
+    await store.db.$transaction(async tx => {
+      await tx.competitionPhase.updateMany({ where: { eventId: "event" }, data: { status: "draft" } });
+    });
+    await expect(getPublicOngoingEvent("cup", now)).resolves.toBeNull();
+  });
   it.each(["singleElimination", "doubleElimination", "roundRobin", "groupPlayoffs"] as const)("projects initialized %s competition with simultaneous rooms and TBD playoff context", async format => {
     store = operationStore(); boundary.db = store.db;
     for (const id of ["c", "d", "e", "f", "g", "h"]) store.seed("team", { id, eventId: "event", name: id.toUpperCase() });
     await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { slug: "cup", name: "Cup", status: "Ongoing", timezone: "Asia/Jakarta", updatedAt: now } }); });
-    const service = createCompetitionOperations(store.db, () => now);
+    const service = createCompetitionOperations(store.db, () => now, { allowInternalInitialize: true });
     const initialized = await service.execute({ eventId: "event", actor: { id: "owner", role: "organizer" }, expectedVersion: 0, idempotencyKey: "init", command: { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS[format], teams: ["a", "b", "c", "d", "e", "f", "g", "h"].map((id, index) => ({ id, seed: index + 1 })) } });
     const draft = await service.execute({ eventId: "event", actor: { id: "owner", role: "organizer" }, expectedVersion: initialized.version, idempotencyKey: "draft", command: { kind: "schedule_save", input: { timezone: "Asia/Jakarta", eventWindow: { start: "2026-09-12T02:00:00Z", end: "2026-09-13T02:00:00Z" }, matchDurationMinutes: 20, bufferMinutes: 0, minimumRestMinutes: 5, rooms: ["A", "B"] } } });
     await service.execute({ eventId: "event", actor: { id: "owner", role: "organizer" }, expectedVersion: draft.version, idempotencyKey: "publish", command: { kind: "schedule_publish", revisionId: draft.resourceId! } });
@@ -79,7 +85,7 @@ describe("sanitized ongoing public state", () => {
     expect(JSON.stringify(corrected)).not.toContain("secretPlayerStats");
   });
   it("keeps a live overrun estimate private until explicit schedule publication", async () => {
-    const service = createCompetitionOperations(store.db, () => now); let sequence = 0;
+    const service = createCompetitionOperations(store.db, () => now, { allowInternalInitialize: true }); let sequence = 0;
     const execute = (command: import("../tournament/operations").OperationCommand) => service.execute({ eventId: "event", actor: { id: "owner", role: "organizer" }, expectedVersion: Number(store.rows("event")[0].competitionVersion), idempotencyKey: `overrun-${++sequence}`, command });
     const first = await execute({ kind: "schedule_save", input: { timezone: "Asia/Jakarta", eventWindow: { start: "2026-09-12T02:00:00Z", end: "2026-09-12T12:00:00Z" }, matchDurationMinutes: 30, bufferMinutes: 0, minimumRestMinutes: 0, rooms: ["A"] } });
     await execute({ kind: "schedule_publish", revisionId: first.resourceId! });

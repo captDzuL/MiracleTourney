@@ -5,6 +5,7 @@ import { unstable_cache } from "next/cache";
 import bcrypt from "bcryptjs";
 
 import { applyEventLifecycleSideEffects } from "@/lib/events/event-lifecycle";
+import type { PublicDiscoveryEvent } from "@/lib/events/public-discovery";
 import {
   gameModes,
   games,
@@ -14,7 +15,19 @@ import {
   getGameIdForMode,
   getGameModeConfig,
   getGamePrimaryStatKey,
+  getStatKeysForMode,
 } from "@/lib/platform/config";
+import {
+  resolvePlayerScoreGameNumbers,
+  validatePlayerStatPayload,
+  type PlayerStatPayloadMap,
+} from "@/lib/player-stats/form";
+import {
+  aggregateFlashpeakLeaderboard,
+  parsePlayerScoreArray,
+  type FlashpeakLeaderboardEntry,
+  type FlashpeakLeaderboardSource,
+} from "@/lib/player-stats/flashpeak";
 import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventStream, EventVisualAsset, Match, MatchGame, PaymentSettings, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, TournamentFormat, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import { tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
@@ -2644,13 +2657,180 @@ export type CompletedMatchRow = {
   opponentName: string;
   homeScore: number;
   awayScore: number;
+  scoreGameNumbers: number[] | null;
   submission: {
     id: string;
     status: string;
     rejectionNote: string | null;
-    stats: Record<string, Record<string, number>>;
+    stats: PlayerStatPayloadMap;
   } | null;
 };
+
+export type PlayerStatFormContext = {
+  match: {
+    id: string;
+    eventId: string;
+    status: string;
+    homeTeamId: string;
+    awayTeamId: string;
+  };
+  allowedStatKeys: string[];
+  scoreGameNumbers: number[] | null;
+};
+
+export async function getPlayerStatFormContext(matchId: string, eventId: string): Promise<PlayerStatFormContext> {
+  const match = await prisma.match.findFirst({
+    where: { id: matchId, eventId, status: "Completed" },
+    select: {
+      id: true,
+      eventId: true,
+      status: true,
+      homeTeamId: true,
+      awayTeamId: true,
+      roundLabel: true,
+      resultSnapshot: true,
+      games: { select: { gameNumber: true }, orderBy: { gameNumber: "asc" } },
+      event: { select: { gameId: true, gameModeId: true } },
+    },
+  });
+  if (!match) throw new Error("Completed match not found.");
+  const allowedStatKeys = getStatKeysForMode(match.event.gameModeId, match.event.gameId);
+  if (match.event.gameId !== "game-flashpeak") {
+    return {
+      match: { id: match.id, eventId: match.eventId, status: match.status, homeTeamId: match.homeTeamId, awayTeamId: match.awayTeamId },
+      allowedStatKeys,
+      scoreGameNumbers: null,
+    };
+  }
+  const roundConfig = await prisma.eventRoundConfig.findUnique({
+    where: { eventId_roundLabel: { eventId, roundLabel: match.roundLabel } },
+    select: { bestOf: true },
+  });
+  const snapshotBestOf = match.resultSnapshot && typeof match.resultSnapshot === "object" && !Array.isArray(match.resultSnapshot)
+    && Number.isSafeInteger((match.resultSnapshot as { bestOf?: unknown }).bestOf)
+    ? Number((match.resultSnapshot as { bestOf: number }).bestOf)
+    : null;
+  const scoreGameNumbers = resolvePlayerScoreGameNumbers({
+    matchGames: match.games,
+    resultSnapshot: match.resultSnapshot,
+    roundBestOf: roundConfig?.bestOf ?? snapshotBestOf ?? 1,
+  });
+  return {
+    match: { id: match.id, eventId: match.eventId, status: match.status, homeTeamId: match.homeTeamId, awayTeamId: match.awayTeamId },
+    allowedStatKeys,
+    scoreGameNumbers,
+  };
+}
+
+/**
+ * Public discovery read without fixtures or demo fallbacks.
+ *
+ * Callers own timeout/error presentation so they can state honestly that live
+ * tournament data is temporarily unavailable.
+ */
+export async function getPublicDiscoveryEvents(): Promise<PublicDiscoveryEvent[]> {
+  const rows = await prisma.event.findMany({
+    where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
+    include: {
+      ...eventPublicInclude,
+      competitionPhases: {
+        where: { sequence: 1 },
+        select: { status: true },
+        take: 1,
+      },
+      matches: {
+        where: { status: "Live" },
+        select: { id: true },
+        take: 1,
+      },
+      _count: { select: { teams: true } },
+    },
+    orderBy: [{ updatedAt: "desc" }, { slug: "asc" }],
+  });
+
+  return rows.map((row) => ({
+    event: mapEvent(row),
+    phaseStatus: row.competitionPhases[0]?.status ?? null,
+    hasLiveMatch: row.matches.length > 0,
+    teamCount: row._count.teams,
+    updatedAt: row.updatedAt.toISOString(),
+  }));
+}
+
+/**
+ * Reads the V3 Flashpeak leaderboard from completed matches only.
+ *
+ * This public discovery path intentionally has no demo fallback: an unavailable
+ * database must produce an honest empty/error state instead of invented players.
+ */
+export async function getFlashpeakLeaderboardForEvent(
+  eventId: string,
+): Promise<FlashpeakLeaderboardEntry[]> {
+  try {
+    const rows = await prisma.playerStat.findMany({
+      where: {
+        gameSlug: "flashpeak",
+        match: { eventId, status: "Completed" },
+      },
+      select: {
+        matchId: true,
+        teamId: true,
+        stats: true,
+        match: {
+          select: {
+            resultSnapshot: true,
+            games: { select: { gameNumber: true }, orderBy: { gameNumber: "asc" } },
+          },
+        },
+        player: {
+          select: {
+            id: true,
+            displayName: true,
+            nickname: true,
+            position: true,
+            team: { select: { id: true, name: true, eventId: true } },
+          },
+        },
+      },
+    });
+    const sources: FlashpeakLeaderboardSource[] = rows.flatMap((row) => {
+      const stored = row.stats && typeof row.stats === "object" && !Array.isArray(row.stats)
+        ? row.stats as Record<string, unknown>
+        : null;
+      try {
+        if (row.teamId !== row.player.team.id || row.player.team.eventId !== eventId) {
+          throw new Error("PlayerStat roster identity does not match its event.");
+        }
+        if (stored && "scores" in stored) {
+          const gameNumbers = resolvePlayerScoreGameNumbers({
+            matchGames: row.match.games,
+            resultSnapshot: row.match.resultSnapshot,
+            roundBestOf: 1,
+          });
+          if (!Array.isArray(stored.scores)) throw new Error("Invalid stored player score array.");
+          parsePlayerScoreArray(stored.scores, gameNumbers.length);
+        }
+      } catch (error) {
+        console.error("Ignoring invalid Flashpeak PlayerStat row", { eventId, matchId: row.matchId, playerId: row.player.id, error });
+        return [];
+      }
+      return [{
+        matchId: row.matchId,
+        playerId: row.player.id,
+        playerName: row.player.displayName,
+        nickname: row.player.nickname,
+        teamId: row.player.team.id,
+        teamName: row.player.team.name,
+        position: row.player.position,
+        stats: row.stats,
+      }];
+    });
+    return aggregateFlashpeakLeaderboard(sources);
+  } catch (error) {
+    console.error("Failed to load Flashpeak leaderboard", { eventId, error });
+    return [];
+  }
+}
 
 /**
  * Returns all completed matches where the captain's teams participated, including stat submission status.
@@ -2669,7 +2849,7 @@ export async function getCompletedMatchesForCaptain(captainId: string): Promise<
   const teamIds = eventTeams.map((t) => t.id);
   const eventIds = [...new Set(eventTeams.map((t) => t.eventId))];
 
-  const [matches, events, allTeams, submissions] = await Promise.all([
+  const [matches, events, allTeams, submissions, roundConfigs] = await Promise.all([
     prisma.match.findMany({
       where: {
         eventId: { in: eventIds },
@@ -2677,6 +2857,7 @@ export async function getCompletedMatchesForCaptain(captainId: string): Promise<
         OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }],
       },
       orderBy: [{ round: "asc" }, { slot: "asc" }],
+      include: { games: { select: { gameNumber: true }, orderBy: { gameNumber: "asc" } } },
     }),
     prisma.event.findMany({
       where: { id: { in: eventIds } },
@@ -2688,6 +2869,10 @@ export async function getCompletedMatchesForCaptain(captainId: string): Promise<
     }),
     prisma.statSubmission.findMany({
       where: { teamId: { in: teamIds } },
+    }),
+    prisma.eventRoundConfig.findMany({
+      where: { eventId: { in: eventIds } },
+      select: { eventId: true, roundLabel: true, bestOf: true },
     }),
   ]);
 
@@ -2708,6 +2893,19 @@ export async function getCompletedMatchesForCaptain(captainId: string): Promise<
       const opponentId = isHome ? match.awayTeamId : match.homeTeamId;
       const opponent = teamMap.get(opponentId);
       const submission = submissionMap.get(`${match.id}::${team.id}`) ?? null;
+      const roundBestOf = roundConfigs.find((config) => config.eventId === event.id && config.roundLabel === match.roundLabel)?.bestOf ?? 1;
+      let scoreGameNumbers: number[] | null = null;
+      if (event.gameId === "game-flashpeak") {
+        try {
+          scoreGameNumbers = resolvePlayerScoreGameNumbers({
+            matchGames: match.games,
+            resultSnapshot: match.resultSnapshot,
+            roundBestOf,
+          });
+        } catch {
+          scoreGameNumbers = [];
+        }
+      }
 
       rows.push({
         matchId: match.id,
@@ -2722,12 +2920,13 @@ export async function getCompletedMatchesForCaptain(captainId: string): Promise<
         opponentName: opponent?.name ?? "Unknown",
         homeScore: match.homeScore,
         awayScore: match.awayScore,
+        scoreGameNumbers,
         submission: submission
           ? {
               id: submission.id,
               status: submission.status,
               rejectionNote: submission.rejectionNote,
-              stats: submission.stats as Record<string, Record<string, number>>,
+              stats: submission.stats as PlayerStatPayloadMap,
             }
           : null,
       });
@@ -2827,9 +3026,16 @@ export async function upsertStatSubmission(input: {
   teamId: string;
   eventId: string;
   submittedBy: string;
-  stats: Record<string, Record<string, number>>;
+  stats: PlayerStatPayloadMap;
 }): Promise<void> {
   await awardSourceTransaction(input.eventId, async (tx) => {
+    await validatePlayerStatWriteContext(tx, {
+      matchId: input.matchId,
+      teamId: input.teamId,
+      eventId: input.eventId,
+      stats: input.stats,
+      captainId: input.submittedBy,
+    });
     await tx.statSubmission.upsert({
       where: { matchId_teamId: { matchId: input.matchId, teamId: input.teamId } },
       update: {
@@ -2871,7 +3077,7 @@ export type StatSubmissionRow = {
   submittedBy: string;
   status: string;
   rejectionNote: string | null;
-  stats: Record<string, Record<string, number>>;
+  stats: PlayerStatPayloadMap;
   submittedAt: Date;
   matchLabel: string;
   teamName: string;
@@ -2922,7 +3128,7 @@ export async function getPendingStatSubmissions(user?: AppUser): Promise<StatSub
     submittedBy: row.submittedBy,
     status: row.status,
     rejectionNote: row.rejectionNote,
-    stats: row.stats as Record<string, Record<string, number>>,
+    stats: row.stats as PlayerStatPayloadMap,
     submittedAt: row.submittedAt,
     matchLabel: (() => {
       const m = matchMap.get(row.matchId);
@@ -2943,19 +3149,24 @@ async function writePlayerStatsToDb(
   matchId: string,
   teamId: string,
   gameSlug: string,
-  statsMap: Record<string, Record<string, number>>,
+  statsMap: PlayerStatPayloadMap,
+  roster: ReadonlyMap<string, { nickname: string; position: string }>,
   audit?: { source: string; lastUpdatedBy: string },
 ): Promise<void> {
   for (const [playerId, playerStats] of Object.entries(statsMap)) {
-    const player = await tx.player.findUnique({
-      where: { id: playerId },
-      select: { displayName: true, nickname: true, position: true },
-    });
-    if (!player) continue;
+    const player = roster.get(playerId);
+    if (!player) throw new Error("Player does not belong to the submitted team and event.");
 
     await tx.playerStat.upsert({
       where: { matchId_playerId: { matchId, playerId } },
-      update: { stats: playerStats as object, ...(audit ? { source: audit.source, lastUpdatedBy: audit.lastUpdatedBy } : {}) },
+      update: {
+        teamId,
+        playerName: player.nickname,
+        position: player.position,
+        gameSlug,
+        stats: playerStats as object,
+        ...(audit ? { source: audit.source, lastUpdatedBy: audit.lastUpdatedBy } : {}),
+      },
       create: {
         matchId,
         playerId,
@@ -2970,21 +3181,86 @@ async function writePlayerStatsToDb(
   }
 }
 
+async function validatePlayerStatWriteContext(
+  tx: Prisma.TransactionClient,
+  input: { matchId: string; teamId: string; eventId: string; stats: PlayerStatPayloadMap; captainId?: string },
+): Promise<{ gameSlug: string; roster: Map<string, { nickname: string; position: string }> }> {
+  const [match, team, players] = await Promise.all([
+    tx.match.findFirst({
+      where: {
+        id: input.matchId,
+        eventId: input.eventId,
+        status: "Completed",
+        OR: [{ homeTeamId: input.teamId }, { awayTeamId: input.teamId }],
+      },
+      select: {
+        id: true,
+        roundLabel: true,
+        resultSnapshot: true,
+        games: { select: { gameNumber: true }, orderBy: { gameNumber: "asc" } },
+        event: { select: { gameId: true, gameModeId: true } },
+      },
+    }),
+    tx.team.findFirst({
+      where: {
+        id: input.teamId,
+        eventId: input.eventId,
+        ...(input.captainId ? { captainId: input.captainId } : {}),
+      },
+      select: { id: true },
+    }),
+    tx.player.findMany({
+      where: { teamId: input.teamId },
+      select: { id: true, nickname: true, position: true },
+    }),
+  ]);
+  if (!match || !team) throw new Error("Match, team, and event relationship is invalid.");
+
+  const roundConfig = match.event.gameId === "game-flashpeak"
+    ? await tx.eventRoundConfig.findUnique({
+        where: { eventId_roundLabel: { eventId: input.eventId, roundLabel: match.roundLabel } },
+        select: { bestOf: true },
+      })
+    : null;
+  const snapshotBestOf = match.resultSnapshot && typeof match.resultSnapshot === "object" && !Array.isArray(match.resultSnapshot)
+    && Number.isSafeInteger((match.resultSnapshot as { bestOf?: unknown }).bestOf)
+    ? Number((match.resultSnapshot as { bestOf: number }).bestOf)
+    : null;
+  const scoreGameNumbers = match.event.gameId === "game-flashpeak"
+    ? resolvePlayerScoreGameNumbers({
+        matchGames: match.games,
+        resultSnapshot: match.resultSnapshot,
+        roundBestOf: roundConfig?.bestOf ?? snapshotBestOf ?? 1,
+      })
+    : null;
+  validatePlayerStatPayload(input.stats, {
+    allowedStatKeys: getStatKeysForMode(match.event.gameModeId, match.event.gameId),
+    scoreSlotCount: scoreGameNumbers?.length ?? null,
+  });
+
+  const roster = new Map(players.map((player) => [player.id, { nickname: player.nickname, position: player.position }]));
+  for (const playerId of Object.keys(input.stats)) {
+    if (!roster.has(playerId)) throw new Error("Player does not belong to the submitted team and event.");
+  }
+  const game = getGameConfig(match.event.gameId);
+  return { gameSlug: game?.slug ?? "unknown", roster };
+}
+
 /**
  * Approves a stat submission: writes `PlayerStat` rows for each player and marks the
  * submission as "approved" in a single transaction. Skips players not found in the DB.
  */
 export async function approveStatSubmission(submissionId: string, adminId: string): Promise<void> {
   await statSubmissionAwardSourceTransaction(submissionId, async (tx, submission) => {
-    const event = await tx.event.findUnique({
-      where: { id: submission.eventId },
-      select: { gameId: true },
+    const statsMap = submission.stats as PlayerStatPayloadMap;
+    const { gameSlug, roster } = await validatePlayerStatWriteContext(tx, {
+      matchId: submission.matchId,
+      teamId: submission.teamId,
+      eventId: submission.eventId,
+      stats: statsMap,
     });
-    const game = event?.gameId ? getGameConfig(event.gameId) : null;
-    const gameSlug = game?.slug ?? "unknown";
-    const statsMap = submission.stats as Record<string, Record<string, number>>;
 
-    await writePlayerStatsToDb(tx, submission.matchId, submission.teamId, gameSlug, statsMap, { source: "captain", lastUpdatedBy: submission.submittedBy });
+    await writePlayerStatsToDb(tx, submission.matchId, submission.teamId, gameSlug, statsMap, roster, { source: "captain", lastUpdatedBy: submission.submittedBy });
     await tx.statSubmission.update({
       where: { id: submissionId },
       data: { status: "approved", reviewedAt: new Date(), reviewedBy: adminId },
@@ -3000,7 +3276,8 @@ export async function getMatchWithRosterAndStats(matchId: string): Promise<{
   match: { id: string; homeTeamId: string; awayTeamId: string; status: string; eventId: string };
   homePlayers: Player[];
   awayPlayers: Player[];
-  existingStats: Record<string, Record<string, number>>;
+  existingStats: PlayerStatPayloadMap;
+  scoreGameNumbers: number[] | null;
 } | null> {
   const match = await prisma.match.findUnique({
     where: { id: matchId },
@@ -3008,14 +3285,15 @@ export async function getMatchWithRosterAndStats(matchId: string): Promise<{
   });
   if (!match || !match.homeTeamId || !match.awayTeamId) return null;
 
-  const [allPlayers, statRows] = await Promise.all([
+  const [allPlayers, statRows, statContext] = await Promise.all([
     getPlayersForTeams([match.homeTeamId, match.awayTeamId]),
     prisma.playerStat.findMany({ where: { matchId } }),
+    getPlayerStatFormContext(match.id, match.eventId).catch(() => null),
   ]);
 
-  const existingStats: Record<string, Record<string, number>> = {};
+  const existingStats: PlayerStatPayloadMap = {};
   for (const row of statRows) {
-    existingStats[row.playerId] = row.stats as Record<string, number>;
+    existingStats[row.playerId] = row.stats as PlayerStatPayloadMap[string];
   }
 
   return {
@@ -3023,6 +3301,7 @@ export async function getMatchWithRosterAndStats(matchId: string): Promise<{
     homePlayers: allPlayers.filter((p) => p.teamId === match.homeTeamId),
     awayPlayers: allPlayers.filter((p) => p.teamId === match.awayTeamId),
     existingStats,
+    scoreGameNumbers: statContext?.scoreGameNumbers ?? null,
   };
 }
 
@@ -3035,17 +3314,12 @@ export async function adminWriteMatchPlayerStats(input: {
   teamId: string;
   eventId: string;
   adminId: string;
-  stats: Record<string, Record<string, number>>;
+  stats: PlayerStatPayloadMap;
 }): Promise<void> {
   await awardSourceTransaction(input.eventId, async (tx) => {
-    const event = await tx.event.findUnique({
-      where: { id: input.eventId },
-      select: { gameId: true },
-    });
-    const game = event?.gameId ? getGameConfig(event.gameId) : null;
-    const gameSlug = game?.slug ?? "unknown";
+    const { gameSlug, roster } = await validatePlayerStatWriteContext(tx, input);
 
-    await writePlayerStatsToDb(tx, input.matchId, input.teamId, gameSlug, input.stats, {
+    await writePlayerStatsToDb(tx, input.matchId, input.teamId, gameSlug, input.stats, roster, {
       source: "admin",
       lastUpdatedBy: input.adminId,
     });

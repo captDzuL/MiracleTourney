@@ -10,7 +10,7 @@ import { getPublicOngoingEvent } from "./public-ongoing";
 async function fixture() {
   const store = operationStore(); boundary.db = store.db;
   await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { slug: "cup", name: "Cup", status: "Ongoing", timezone: "Asia/Jakarta" } }); });
-  const service = createCompetitionOperations(store.db);
+  const service = createCompetitionOperations(store.db, undefined, { allowInternalInitialize: true });
   let version = 0;
   const run = async (command: Parameters<typeof service.execute>[0]["command"]) => { const result = await service.execute({ eventId: "event", actor: { id: "owner", role: "organizer" }, expectedVersion: version, idempotencyKey: `change-${version}`, command }); version = result.version; return result; };
   await run({ kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] });

@@ -62,6 +62,9 @@ describe("AdaptiveRegistrationEventPage", () => {
     expect(html).toContain("Sedang ditinjau");
     expect(html).toContain("https://wa.me/6281234567890");
     expect(html).not.toContain("phase simulator");
+    expect(html).toContain("Template bracket");
+    expect(html).toContain("Jadwal resmi belum diterbitkan");
+    for (const route of ["participants", "schedule", "bracket", "leaderboards"]) expect(html).toContain(`/id/events/miracle-cup/${route}`);
   });
 
   it("removes registration actions for read-only previews", () => {

@@ -116,6 +116,15 @@ export async function applyResult(tx: Prisma.TransactionClient, eventId: string,
     resultSnapshot: json(score), resultConfirmedAt: now,
     ...(command.kind === "result_submit" ? { actualEndedAt: match.actualEndedAt ?? now } : {}),
   } });
+  await tx.matchGame.deleteMany({ where: { matchId: match.id } });
+  await tx.matchGame.createMany({
+    data: score.games.map((game) => ({
+      matchId: match.id,
+      gameNumber: game.gameNumber,
+      homeScore: game.homeScore,
+      awayScore: game.awayScore,
+    })),
+  });
   const matches = await tx.match.findMany({ where: { eventId } });
   const projection = competitionProjection(graph, matches);
   for (const node of graph.matches) {

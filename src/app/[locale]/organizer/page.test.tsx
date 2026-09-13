@@ -69,9 +69,15 @@ describe("organizer command center", () => {
     expect(markup).toContain("Revisi privat aktif");
   });
 
-  it("requires the V3 flag and an organizer session", async () => {
+  it("preserves the database-free organizer landing page when the V3 flag is off", async () => {
     isFeatureEnabled.mockReturnValue(false);
-    await expect(OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "id" }) })).rejects.toThrow("NOT_FOUND");
+    const markup = renderToStaticMarkup(await OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "id" }) }));
+    expect(markup).toContain("Buat turnamen yang hasilnya rapi sampai selesai.");
+    expect(markup).toContain('href="/login"');
+    expect(requireAnyRole).not.toHaveBeenCalled();
+  });
+
+  it("requires an organizer session when the V3 flag is on", async () => {
     isFeatureEnabled.mockReturnValue(true);
     requireAnyRole.mockResolvedValue(null);
     await expect(OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "id" }) })).rejects.toThrow("REDIRECT");

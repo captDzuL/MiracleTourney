@@ -4,6 +4,8 @@ import { permanentRedirect } from "next/navigation";
 
 import { AdaptiveRegistrationEventPage } from "@/components/v3/public-event/AdaptiveRegistrationEventPage";
 import { AdaptiveOngoingEventPage } from "@/components/v3/public-event/AdaptiveOngoingEventPage";
+import { AdaptivePhaseEventPage } from "@/components/v3/public-event/AdaptivePhaseEventPage";
+import { getPublicDrawingEvent, getPublicFinishedEvent } from "@/lib/events/adaptive-public-phases";
 import { getPublicOngoingEvent, publicOngoingEnabled } from "@/lib/events/public-ongoing";
 import type { AdaptiveEventCopy } from "@/components/v3/public-event/PublicEventHero";
 import { getSessionUser } from "@/lib/auth/session";
@@ -123,6 +125,21 @@ export default async function LocalizedEventDetailPage({
   if (!event) {
     const redirectSlug = await getPublicEventSlugRedirect(slug);
     if (redirectSlug) permanentRedirect(`/${locale}/events/${redirectSlug}`);
+  }
+
+  if (event && isFeatureEnabled("adaptive_public_event_v3")) {
+    if (["Published", "Registration Closed"].includes(event.status)) {
+      const drawing = await getPublicDrawingEvent(slug).catch(() => null);
+      if (drawing) {
+        return <AdaptivePhaseEventPage view={drawing} locale={locale} />;
+      }
+    }
+    if (event.status === "Finished") {
+      const finished = await getPublicFinishedEvent(slug).catch(() => null);
+      if (finished) {
+        return <AdaptivePhaseEventPage view={finished} locale={locale} />;
+      }
+    }
   }
 
   if (event?.status === "Ongoing" && publicOngoingEnabled()) {

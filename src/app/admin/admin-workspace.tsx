@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import { getPlayerStatNumericValue, type PlayerStatPayloadMap } from "@/lib/player-stats/form";
 
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
@@ -1782,6 +1783,7 @@ function RunMatchDayPhase({
                   homeTeamName={teamName(selectedMatchRosterAndStats.match.homeTeamId)}
                   awayTeamName={teamName(selectedMatchRosterAndStats.match.awayTeamId)}
                   existingStats={selectedMatchRosterAndStats.existingStats}
+                  scoreGameNumbers={selectedMatchRosterAndStats.scoreGameNumbers}
                 />
               ) : null}
             </Section>
@@ -2111,6 +2113,7 @@ function PlayerStatsSection({
   homeTeamName,
   awayTeamName,
   existingStats,
+  scoreGameNumbers,
 }: {
   eventId: string;
   gameModeId: string;
@@ -2122,7 +2125,8 @@ function PlayerStatsSection({
   awayTeamId: string;
   homeTeamName: string;
   awayTeamName: string;
-  existingStats: Record<string, Record<string, number>>;
+  existingStats: PlayerStatPayloadMap;
+  scoreGameNumbers: number[] | null;
   t: AdminTranslator;
   recording: MatchStatRecording;
 }) {
@@ -2130,7 +2134,8 @@ function PlayerStatsSection({
   if (!statKeys.length) return null;
 
   const statColWidth = statKeys.length <= 3 ? "5rem" : "4rem";
-  const gridCols = `grid-cols-[minmax(8rem,1fr)_repeat(${statKeys.length},${statColWidth})]`;
+  const metricCount = statKeys.length + (scoreGameNumbers?.length ?? 0);
+  const gridCols = `grid-cols-[minmax(8rem,1fr)_repeat(${metricCount},${statColWidth})]`;
 
   function TeamStatForm({ teamId, teamName, players }: { teamId: string; teamName: string; players: PlayerInfo[] }) {
     const status = teamId === homeTeamId ? recording.home : recording.away;
@@ -2153,6 +2158,9 @@ function PlayerStatsSection({
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
               <div className={`grid gap-0 border-b border-slate-100 bg-slate-50 px-3 py-2 ${gridCols}`}>
                 <p className="text-xs font-semibold text-slate-400">{t("statRecording.player")}</p>
+                {scoreGameNumbers?.map((gameNumber) => (
+                  <p key={gameNumber} className="text-center text-xs font-bold text-slate-500">Score G{gameNumber}</p>
+                ))}
                 {statKeys.map((key) => (
                   <p key={key} className="text-center text-xs font-bold capitalize text-slate-500">{key}</p>
                 ))}
@@ -2164,6 +2172,23 @@ function PlayerStatsSection({
                   className={`grid items-center gap-0 px-3 py-2 ${gridCols} ${i < players.length - 1 ? "border-b border-slate-100" : ""}`}
                 >
                   <p className="truncate pr-2 text-sm font-medium text-slate-800">{player.nickname}</p>
+                  {scoreGameNumbers?.map((gameNumber, scoreIndex) => {
+                    const savedScores = existingStats[player.id]?.scores;
+                    const savedScore = Array.isArray(savedScores) ? savedScores[scoreIndex] : null;
+                    return (
+                      <input
+                        key={gameNumber}
+                        aria-label={`${player.nickname} score game ${gameNumber}`}
+                        className="mx-0.5 min-h-11 w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-center text-sm font-semibold text-slate-900 outline-none transition focus:border-cyan-400 focus:bg-white focus:ring-2 focus:ring-cyan-100"
+                        name={`score_${player.id}_${gameNumber}`}
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        defaultValue={typeof savedScore === "number" ? savedScore : ""}
+                      />
+                    );
+                  })}
                   {statKeys.map((key) => (
                     <input
                       key={key}
@@ -2172,7 +2197,7 @@ function PlayerStatsSection({
                       type="number"
                       min="0"
                       max="9999"
-                      defaultValue={existingStats[player.id]?.[key] ?? 0}
+                      defaultValue={getPlayerStatNumericValue(existingStats[player.id], key)}
                     />
                   ))}
                 </div>

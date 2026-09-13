@@ -22,6 +22,7 @@ import { isDisposableEmail } from "@/lib/validation/email";
 import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 import { validateTeamData } from "@/lib/validation/team-data";
 import { getGameModeConfig } from "@/lib/platform/config";
+import { parsePlayerStatForm } from "@/lib/player-stats/form";
 import type { AppUser } from "@/lib/platform/types";
 import {
   addPlayer,
@@ -40,6 +41,7 @@ import {
   getImportSnapshot,
   getEventsByIds,
   getOrganizerUserById,
+  getPlayerStatFormContext,
   getUserByEmail,
   getUserPasswordHashById,
   autoTransitionEventToOngoing,
@@ -1363,21 +1365,12 @@ export async function captainSubmitStatsAction(formData: FormData) {
     eventId: formData.get("eventId"),
   });
 
-  // Collect all stat keys in form: stat_{playerId}_{statKey}
-  const stats: Record<string, Record<string, number>> = {};
-  for (const [key, value] of formData.entries()) {
-    const m = key.match(/^stat_(.+)_(.+)$/);
-    if (!m) continue;
-    const [, playerId, statKey] = m;
-    if (!isSafeStatToken(playerId) || !isSafeStatToken(statKey)) {
-      throw new Error("Invalid stat field name.");
-    }
-    const parsedValue = z.coerce.number().int().min(0).max(9999).parse(value);
-    if (!stats[playerId]) stats[playerId] = {};
-    stats[playerId][statKey] = parsedValue;
-  }
-
   await assertCaptainCanSubmitStats({ captainId: user.id, matchId, teamId, eventId });
+  const context = await getPlayerStatFormContext(matchId, eventId);
+  const stats = parsePlayerStatForm(formData, {
+    allowedStatKeys: context.allowedStatKeys,
+    scoreSlotCount: context.scoreGameNumbers?.length ?? null,
+  });
   await upsertStatSubmission({ matchId, teamId, eventId, submittedBy: user.id, stats });
   revalidatePath("/captain/stats");
 }
@@ -1424,27 +1417,15 @@ export async function adminSaveMatchPlayerStatsAction(formData: FormData) {
 
   await assertUserCanManageEvent(user, eventId);
 
-  const match = await prisma.match.findUnique({
-    where: { id: matchId },
-    select: { status: true, homeTeamId: true, awayTeamId: true, eventId: true },
-  });
-  if (!match) throw new Error("Match not found");
-  if (match.status !== "Completed") throw new Error("Stats can only be entered for completed matches");
+  const context = await getPlayerStatFormContext(matchId, eventId);
+  const match = context.match;
   if (match.homeTeamId !== teamId && match.awayTeamId !== teamId) throw new Error("Team is not part of this match");
   if (match.eventId !== eventId) throw new Error("Match does not belong to this event");
 
-  const stats: Record<string, Record<string, number>> = {};
-  for (const [key, value] of formData.entries()) {
-    const m = key.match(/^stat_(.+)_(.+)$/);
-    if (!m) continue;
-    const [, playerId, statKey] = m;
-    if (!isSafeStatToken(playerId) || !isSafeStatToken(statKey)) {
-      throw new Error("Invalid stat field name.");
-    }
-    const parsedValue = z.coerce.number().int().min(0).max(9999).parse(value);
-    if (!stats[playerId]) stats[playerId] = {};
-    stats[playerId][statKey] = parsedValue;
-  }
+  const stats = parsePlayerStatForm(formData, {
+    allowedStatKeys: context.allowedStatKeys,
+    scoreSlotCount: context.scoreGameNumbers?.length ?? null,
+  });
 
   await adminWriteMatchPlayerStats({ matchId, teamId, eventId, adminId: user.id, stats });
   revalidateTag("stats");

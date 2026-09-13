@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 
 import {
   buildRegistrationCta,
@@ -107,5 +109,20 @@ describe("adaptive renderer eligibility", () => {
     expect(shouldUseAdaptiveRegistrationRenderer({ enabled: true, status: "Published", availability: "legacy" })).toBe(false);
     expect(shouldUseAdaptiveRegistrationRenderer({ enabled: true, status: "Ongoing", availability: "open" })).toBe(false);
     expect(shouldUseAdaptiveRegistrationRenderer({ enabled: true, status: "Finished", availability: "open" })).toBe(false);
+  });
+});
+
+describe("adaptive event route phases", () => {
+  it("keeps registration, drawing, ongoing, and finished on the permanent event URL", () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), "src/app/[locale]/events/[slug]/page.tsx"),
+      "utf8",
+    );
+    expect(source).toContain("getPublicDrawingEvent");
+    expect(source).toContain("getPublicFinishedEvent");
+    expect(source).toContain("<AdaptivePhaseEventPage");
+    expect(source.indexOf("getPublicDrawingEvent")).toBeLessThan(source.indexOf("getAdaptivePublicEventViewWithRetry"));
+    expect(source).not.toContain("/live-center");
+    expect(source).not.toContain("/recap");
   });
 });

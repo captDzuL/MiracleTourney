@@ -5,6 +5,7 @@ import { captainSubmitStatsAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { getStatKeysForMode } from "@/lib/platform/config";
 import { getCompletedMatchesForCaptain, getPlayersForTeams } from "@/lib/platform/repository";
+import { getPlayerStatNumericValue } from "@/lib/player-stats/form";
 import { Section } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 
@@ -97,6 +98,14 @@ export default async function CaptainStatsPage() {
                             <th className="py-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-400">
                               Player
                             </th>
+                            {row.scoreGameNumbers?.map((gameNumber) => (
+                              <th
+                                key={gameNumber}
+                                className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-widest text-slate-400"
+                              >
+                                Score G{gameNumber}
+                              </th>
+                            ))}
                             {statKeys.map((k) => (
                               <th
                                 key={k}
@@ -114,13 +123,31 @@ export default async function CaptainStatsPage() {
                                 <p className="font-medium text-slate-900">{player.nickname}</p>
                                 <p className="text-xs text-slate-400">{player.position}</p>
                               </td>
+                              {row.scoreGameNumbers?.map((gameNumber, scoreIndex) => {
+                                const savedScores = sub?.stats?.[player.id]?.scores;
+                                const savedScore = Array.isArray(savedScores) ? savedScores[scoreIndex] : null;
+                                return (
+                                  <td key={gameNumber} className="px-2 py-2">
+                                    <input
+                                      aria-label={`${player.nickname} score game ${gameNumber}`}
+                                      type="number"
+                                      name={`score_${player.id}_${gameNumber}`}
+                                      min={0}
+                                      max={10}
+                                      step={0.1}
+                                      defaultValue={typeof savedScore === "number" ? savedScore : ""}
+                                      className="min-h-11 w-20 rounded-lg border border-slate-200 px-2 py-1 text-center text-sm"
+                                    />
+                                  </td>
+                                );
+                              })}
                               {statKeys.map((k) => (
                                 <td key={k} className="px-2 py-2">
                                   <input
                                     type="number"
                                     name={`stat_${player.id}_${k}`}
                                     min={0}
-                                    defaultValue={sub?.stats?.[player.id]?.[k] ?? 0}
+                                    defaultValue={getPlayerStatNumericValue(sub?.stats?.[player.id], k)}
                                     className="w-16 rounded-lg border border-slate-200 px-2 py-1 text-center text-sm"
                                   />
                                 </td>

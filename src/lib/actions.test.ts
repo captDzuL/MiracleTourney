@@ -22,6 +22,7 @@ const {
   getImportSnapshot,
   getEventsByIds,
   getOrganizerUserById,
+  getPlayerStatFormContext,
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
@@ -56,6 +57,7 @@ const {
   updateEventPublicInfo,
   upsertRoundConfig,
   upsertStatSubmission,
+  adminWriteMatchPlayerStats,
   setTeamCaptainDisplay,
 } = vi.hoisted(() => ({
   addPlayer: vi.fn(),
@@ -79,6 +81,7 @@ const {
   getImportSnapshot: vi.fn(),
   getEventsByIds: vi.fn(),
   getOrganizerUserById: vi.fn(),
+  getPlayerStatFormContext: vi.fn(),
   getPublishedEvents: vi.fn(),
   getUserByEmail: vi.fn(),
   getUserPasswordHashById: vi.fn(),
@@ -113,6 +116,7 @@ const {
   updateEventPublicInfo: vi.fn(),
   upsertRoundConfig: vi.fn(),
   upsertStatSubmission: vi.fn(),
+  adminWriteMatchPlayerStats: vi.fn(),
   setTeamCaptainDisplay: vi.fn(),
 }));
 
@@ -149,6 +153,7 @@ vi.mock("@/lib/platform/repository", () => ({
   getImportSnapshot,
   getEventsByIds,
   getOrganizerUserById,
+  getPlayerStatFormContext,
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
@@ -173,6 +178,7 @@ vi.mock("@/lib/platform/repository", () => ({
   updatePlayer,
   upsertRoundConfig,
   upsertStatSubmission,
+  adminWriteMatchPlayerStats,
   setTeamCaptainDisplay,
 }));
 vi.mock("@/lib/certificate/generate", () => ({
@@ -1343,6 +1349,11 @@ describe("captainSubmitStatsAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireRole.mockResolvedValue(captainSession());
+    getPlayerStatFormContext.mockResolvedValue({
+      match: { id: "match-1", eventId: "event-1", status: "Completed", homeTeamId: "team-1", awayTeamId: "team-2" },
+      allowedStatKeys: ["goals", "assists"],
+      scoreGameNumbers: null,
+    });
   });
 
   it("requires a captain session", async () => {
@@ -1379,6 +1390,36 @@ describe("captainSubmitStatsAction", () => {
         "player-2": { goals: 2 },
       },
     });
+  });
+
+  it("persists canonical Flashpeak scores and stats in one captain submission payload", async () => {
+    getPlayerStatFormContext.mockResolvedValue({
+      match: { id: "match-1", eventId: "event-1", status: "Completed", homeTeamId: "team-1", awayTeamId: "team-2" },
+      allowedStatKeys: ["goal", "assist", "passing", "defense"],
+      scoreGameNumbers: [1, 2, 3],
+    });
+    const f = fd({ matchId: "match-1", teamId: "team-1", eventId: "event-1" });
+    f.set("score_player-1_1", "7.6");
+    f.set("score_player-1_2", "");
+    f.set("score_player-1_3", "8.1");
+    f.set("stat_player-1_goal", "3");
+    f.set("stat_player-1_assist", "4");
+    f.set("stat_player-1_passing", "28");
+    f.set("stat_player-1_defense", "12");
+
+    await captainSubmitStatsAction(f);
+
+    expect(upsertStatSubmission).toHaveBeenCalledWith(expect.objectContaining({
+      stats: {
+        "player-1": {
+          scores: [7.6, null, 8.1],
+          goal: 3,
+          assist: 4,
+          passing: 28,
+          defense: 12,
+        },
+      },
+    }));
   });
 
   it("blocks manipulated team or match identifiers before persisting stats", async () => {

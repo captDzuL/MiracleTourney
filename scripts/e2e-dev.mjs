@@ -12,6 +12,7 @@ const E2E_V3_FEATURE_FLAGS = [
   "FEATURE_FLAG_COMPETITION_OPERATIONS_V3",
   "FEATURE_FLAG_COMPLETION_WORKSPACE_V3",
   "FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3",
+  "FEATURE_FLAG_PUBLIC_DISCOVERY_V3",
 ];
 
 export function startE2eDevServer({
@@ -33,6 +34,7 @@ export function startE2eDevServer({
     serverEnvironment.FEATURE_FLAG_COMPETITION_OPERATIONS_V3 = "false";
     serverEnvironment.FEATURE_FLAG_COMPLETION_WORKSPACE_V3 = "false";
     serverEnvironment.FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3 = "false";
+    serverEnvironment.FEATURE_FLAG_PUBLIC_DISCOVERY_V3 = "false";
   }
 
   return spawnImpl(

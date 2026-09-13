@@ -9,6 +9,7 @@ const { prisma } = vi.hoisted(() => ({
     },
     eventRoundConfig: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
     },
     matchGame: {
       findMany: vi.fn(),
@@ -92,6 +93,12 @@ const { prisma } = vi.hoisted(() => ({
     },
     playerStat: {
       findMany: vi.fn(),
+      upsert: vi.fn(),
+    },
+    statSubmission: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
     },
     certificate: {
       count: vi.fn(),
@@ -103,6 +110,7 @@ const { prisma } = vi.hoisted(() => ({
     },
     tournamentCompletion: {
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
     },
     $transaction: vi.fn(),
   },
@@ -132,6 +140,8 @@ import {
   getCertificatesForEvents,
   getPaymentSettings,
   getLeaderboardForEvent,
+  getFlashpeakLeaderboardForEvent,
+  getPublicDiscoveryEvents,
   getManageableEventsForUser,
   getManageableEventDraft,
   getOrganizerProfileForUser,
@@ -160,6 +170,9 @@ import {
   updatePaymentSettings,
   updateTeamLogo,
   updatePlayer,
+  adminWriteMatchPlayerStats,
+  approveStatSubmission,
+  upsertStatSubmission,
 } from "./repository";
 
 const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
@@ -2063,6 +2076,189 @@ describe("public demo fallback reads", () => {
         expect.objectContaining({ playerName: "Taiga Kagami" }),
       ]),
     );
+  });
+});
+
+describe("Flashpeak V3 leaderboard reads", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("aggregates only completed event matches without demo fallback", async () => {
+    prisma.playerStat.findMany.mockResolvedValue([
+      {
+        matchId: "match-1",
+        teamId: "team-1",
+        stats: { scores: [7.6, null, 8.1], goal: 3, assist: 4, passing: 28, defense: 12 },
+        match: {
+          resultSnapshot: { bestOf: 3, games: [{ gameNumber: 1 }, { gameNumber: 2 }, { gameNumber: 3 }] },
+          games: [{ gameNumber: 1 }, { gameNumber: 2 }, { gameNumber: 3 }],
+        },
+        player: {
+          id: "player-1",
+          displayName: "Nadia Putri",
+          nickname: "Nyx",
+          position: "Forward",
+          team: { id: "team-1", name: "Garuda Nova", eventId: "event-1" },
+        },
+      },
+    ]);
+
+    await expect(getFlashpeakLeaderboardForEvent("event-1")).resolves.toEqual([
+      expect.objectContaining({
+        playerId: "player-1",
+        nickname: "Nyx",
+        game: 2,
+        score: 7.85,
+        goal: 3,
+        assist: 4,
+        passing: 28,
+        defense: 12,
+      }),
+    ]);
+    expect(prisma.playerStat.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        gameSlug: "flashpeak",
+        match: { eventId: "event-1", status: "Completed" },
+      },
+    }));
+  });
+
+  it("returns an honest empty state when the database is unavailable", async () => {
+    const error = new Error("database unavailable");
+    prisma.playerStat.findMany.mockRejectedValue(error);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(getFlashpeakLeaderboardForEvent("event-1")).resolves.toEqual([]);
+    expect(consoleError).toHaveBeenCalledWith(
+      "Failed to load Flashpeak leaderboard",
+      expect.objectContaining({ eventId: "event-1", error }),
+    );
+    consoleError.mockRestore();
+  });
+});
+
+describe("authoritative player-stat write boundary", () => {
+  const canonicalStats = {
+    "player-1": { scores: [7.6], goal: 3, assist: 4, passing: 28, defense: 12 },
+  };
+
+  function prepareBoundary() {
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
+    prisma.event.updateMany.mockResolvedValue({ count: 1 });
+    prisma.tournamentCompletion.findUnique.mockResolvedValue(null);
+    prisma.match.findFirst.mockResolvedValue({
+      id: "match-1",
+      eventId: "event-1",
+      status: "Completed",
+      homeTeamId: "team-1",
+      awayTeamId: "team-2",
+      roundLabel: "Final",
+      resultSnapshot: { bestOf: 1, games: [{ gameNumber: 1 }] },
+      games: [{ gameNumber: 1 }],
+      event: { gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5" },
+    });
+    prisma.team.findFirst.mockResolvedValue({ id: "team-1" });
+    prisma.player.findMany.mockResolvedValue([{ id: "player-1", nickname: "Nyx", position: "Forward" }]);
+    prisma.eventRoundConfig.findUnique.mockResolvedValue({ bestOf: 1 });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prepareBoundary();
+  });
+
+  it("rejects a captain payload containing a player from another team", async () => {
+    await expect(upsertStatSubmission({
+      matchId: "match-1",
+      teamId: "team-1",
+      eventId: "event-1",
+      submittedBy: "captain-1",
+      stats: { "foreign-player": canonicalStats["player-1"] },
+    })).rejects.toThrow("does not belong");
+    expect(prisma.statSubmission.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a forged stored captain payload again during approval", async () => {
+    prisma.statSubmission.findUnique.mockResolvedValue({
+      id: "submission-1",
+      matchId: "match-1",
+      teamId: "team-1",
+      eventId: "event-1",
+      submittedBy: "captain-1",
+      stats: { "foreign-player": canonicalStats["player-1"] },
+    });
+    await expect(approveStatSubmission("submission-1", "admin-1")).rejects.toThrow("does not belong");
+    expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
+    expect(prisma.statSubmission.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects an organizer direct save when match, team, and event do not agree", async () => {
+    prisma.match.findFirst.mockResolvedValue(null);
+    await expect(adminWriteMatchPlayerStats({
+      matchId: "match-other-event",
+      teamId: "team-1",
+      eventId: "event-1",
+      adminId: "admin-1",
+      stats: canonicalStats,
+    })).rejects.toThrow("relationship is invalid");
+    expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a captain submission whose score array became stale before approval", async () => {
+    prisma.match.findFirst.mockResolvedValue({
+      id: "match-1",
+      eventId: "event-1",
+      status: "Completed",
+      homeTeamId: "team-1",
+      awayTeamId: "team-2",
+      roundLabel: "Final",
+      resultSnapshot: { bestOf: 3, games: [{ gameNumber: 1 }, { gameNumber: 2 }, { gameNumber: 3 }] },
+      games: [{ gameNumber: 1 }, { gameNumber: 2 }, { gameNumber: 3 }],
+      event: { gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5" },
+    });
+    prisma.eventRoundConfig.findUnique.mockResolvedValue({ bestOf: 3 });
+    prisma.statSubmission.findUnique.mockResolvedValue({
+      id: "submission-1",
+      matchId: "match-1",
+      teamId: "team-1",
+      eventId: "event-1",
+      submittedBy: "captain-1",
+      stats: canonicalStats,
+    });
+    await expect(approveStatSubmission("submission-1", "admin-1")).rejects.toThrow("score array length");
+    expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("public discovery V3 reads", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns public database events with drawing, live, count, and freshness metadata", async () => {
+    prisma.event.findMany.mockResolvedValue([
+      {
+        ...publishedEventRow({ id: "event-1", status: "Ongoing" }),
+        updatedAt: new Date("2026-09-12T10:00:00.000Z"),
+        competitionPhases: [{ status: "active" }],
+        matches: [{ id: "match-live" }],
+        _count: { teams: 12 },
+      },
+    ]);
+
+    await expect(getPublicDiscoveryEvents()).resolves.toEqual([
+      expect.objectContaining({
+        event: expect.objectContaining({ id: "event-1", status: "Ongoing" }),
+        phaseStatus: "active",
+        hasLiveMatch: true,
+        teamCount: 12,
+        updatedAt: "2026-09-12T10:00:00.000Z",
+      }),
+    ]);
+  });
+
+  it("rejects database failures instead of returning fixture events", async () => {
+    prisma.event.findMany.mockRejectedValue(new Error("database unavailable"));
+    await expect(getPublicDiscoveryEvents()).rejects.toThrow("database unavailable");
   });
 });
 

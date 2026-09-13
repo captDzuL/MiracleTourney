@@ -6,7 +6,7 @@ type Row = Record<string, unknown>;
 type Query = { where?: Row; data?: Row; create?: Row; update?: Row; orderBy?: Row };
 export function operationStore() {
   let state: Record<string, Row[]> = {
-    event: [{ id: "event", organizerUserId: "owner", competitionVersion: 0, publishedScheduleVersion: null }],
+    event: [{ id: "event", organizerUserId: "owner", competitionVersion: 0, publishedScheduleVersion: null, status: "Registration Closed" }],
     team: [{ id: "a", eventId: "event" }, { id: "b", eventId: "event" }],
     competitionPhase: [], competitionGroup: [], competitionGroupMember: [], match: [], matchDependency: [],
     matchReadiness: [], matchResultRevision: [], competitionAuditLog: [], competitionActionItem: [],
@@ -54,6 +54,20 @@ export function operationStore() {
         write(); const row = { id: `${table}-${tables[table].length + 1}`, ...structuredClone(data) };
         tables[table].push(row); return structuredClone(row);
       },
+      createMany: async ({ data }: { data: Row[] }) => {
+        write();
+        for (const item of data) {
+          tables[table].push({ id: `${table}-${tables[table].length + 1}`, ...structuredClone(item) });
+        }
+        return { count: data.length };
+      },
+      deleteMany: async (q: Query = {}) => {
+        write();
+        const selected = new Set(find(q));
+        const before = tables[table].length;
+        tables[table] = tables[table].filter((row) => !selected.has(row));
+        return { count: before - tables[table].length };
+      },
       update: async (q: Query) => { write(); const row = find(q)[0]; if (!row) throw new Error("missing row"); return update(row, q.data); },
       updateMany: async (q: Query) => { write(); const rows = find(q); rows.forEach(row => update(row, q.data)); return { count: rows.length }; },
       upsert: async (q: Query) => {
@@ -83,6 +97,11 @@ export function operationStore() {
     db: client as unknown as PrismaClient,
     rows: (table: string) => structuredClone(state[table]),
     seed: (table: string, row: Row) => state[table].push(structuredClone(row)),
+    updateRow: (table: string, id: string, data: Row) => {
+      const row = state[table].find((candidate) => candidate.id === id);
+      if (!row) throw new Error(`missing ${table} row ${id}`);
+      update(row, data);
+    },
     failWrites: (table: string) => { failTable = table; },
     reverseReadOrder: (reverse: boolean) => { reverseReadOrder = reverse; },
   };

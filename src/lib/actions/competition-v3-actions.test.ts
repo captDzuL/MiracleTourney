@@ -19,15 +19,16 @@ describe("authenticated competition actions", () => {
   beforeEach(() => { store = operationStore(); boundary.db = store.db; boundary.session.user = { id: "owner", role: "organizer" }; boundary.enabled = true; });
   it("previews an official correction through the authenticated owner without writing", async () => {
     const call = (version: number, command: unknown) => executeCompetitionOperationAction({ eventId: "event", expectedVersion: version, idempotencyKey: `k${version}`, command });
-    await call(0, { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] });
+    await call(0, { kind: "drawing_save", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] });
+    await call(1, { kind: "drawing_publish" });
     const matchId = String(store.rows("match")[0].id);
     await store.db.$transaction(async tx => tx.match.update({ where: { id: matchId }, data: { status: "Live", scheduleStatus: "live", actualStartedAt: new Date("2026-09-12T09:00:00Z") } }));
-    await call(1, { kind: "result_submit", matchId, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
+    await call(2, { kind: "result_submit", matchId, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
     const input = { eventId: "event", matchId, games: [{ gameNumber: 1, homeScore: 0, awayScore: 2 }] };
     const preview = await previewCompetitionResultCorrectionAction(input);
-    expect(preview).toMatchObject({ competitionVersion: 2, score: { winnerTeamId: "b" }, blockedMatchIds: [] });
-    expect(store.rows("event")[0].competitionVersion).toBe(2);
-    await call(2, { kind: "result_correct", matchId, games: input.games, reason: "Correction confirmed", previewToken: preview.token });
+    expect(preview).toMatchObject({ competitionVersion: 3, score: { winnerTeamId: "b" }, blockedMatchIds: [] });
+    expect(store.rows("event")[0].competitionVersion).toBe(3);
+    await call(3, { kind: "result_correct", matchId, games: input.games, reason: "Correction confirmed", previewToken: preview.token });
     expect(store.rows("matchResultRevision")).toHaveLength(2);
     boundary.enabled = false;
     await expect(previewCompetitionResultCorrectionAction(input)).rejects.toThrow("unavailable");
@@ -43,14 +44,24 @@ describe("authenticated competition actions", () => {
   });
   it("passes reviewed draft locks to generation and exposes stale source conflicts", async () => {
     const call = (version: number, command: unknown) => executeCompetitionOperationAction({ eventId: "event", expectedVersion: version, idempotencyKey: `lock-${version}`, command });
-    await call(0, { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.singleElimination, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] });
+    await call(0, { kind: "drawing_save", config: TOURNAMENT_FORMAT_PRESETS.singleElimination, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] });
+    await call(1, { kind: "drawing_publish" });
     const input = { timezone: "Asia/Jakarta", eventWindow: { start: "2026-09-12T09:00:00Z", end: "2026-09-12T12:00:00Z" }, matchDurationMinutes: 30, bufferMinutes: 0, minimumRestMinutes: 0, rooms: ["room"] };
-    const first = await call(1, { kind: "schedule_save", input });
+    const first = await call(2, { kind: "schedule_save", input });
     const command = { kind: "schedule_save", input: { ...input, sourceRevision: { id: first.resourceId, version: first.version, status: "draft" }, lockedMatchIds: [store.rows("match")[0].id] } };
-    expect(await mutateCompetitionWorkspaceAction({ eventId: "event", expectedVersion: 2, idempotencyKey: "locked", command })).toMatchObject({ status: "saved", receipt: { version: 3 } });
+    expect(await mutateCompetitionWorkspaceAction({ eventId: "event", expectedVersion: 3, idempotencyKey: "locked", command })).toMatchObject({ status: "saved", receipt: { version: 4 } });
     expect(store.rows("scheduleRevision")[1].snapshot).toMatchObject({ draft: { feasible: true }, input: command.input });
-    expect(await mutateCompetitionWorkspaceAction({ eventId: "event", expectedVersion: 3, idempotencyKey: "stale-source", command })).toEqual({ status: "conflict" });
-    expect(store.rows("event")[0].competitionVersion).toBe(3);
+    expect(await mutateCompetitionWorkspaceAction({ eventId: "event", expectedVersion: 4, idempotencyKey: "stale-source", command })).toEqual({ status: "conflict" });
+    expect(store.rows("event")[0].competitionVersion).toBe(4);
+  });
+
+  it("rejects the internal initialize command at the public action schema", async () => {
+    await expect(executeCompetitionOperationAction({
+      eventId: "event",
+      expectedVersion: 0,
+      idempotencyKey: "initialize-bypass",
+      command: { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.singleElimination, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] },
+    })).rejects.toThrow("initialize is internal");
   });
   it("returns serializable conflict and authorization outcomes for production client rendering", async () => {
     expect(await mutateCompetitionWorkspaceAction(request)).toMatchObject({ status: "saved", receipt: { version: 1 } });

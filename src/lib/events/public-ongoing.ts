@@ -32,7 +32,7 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
     const event = await tx.event.findFirst({ where: { slug, status: "Ongoing" }, include: { stream: true } });
     if (!event) return null;
     const [phase, matches, teams, announcements, revision, preceding] = await Promise.all([
-      tx.competitionPhase.findFirst({ where: { eventId: event.id, sequence: 1 } }),
+      tx.competitionPhase.findFirst({ where: { eventId: event.id, sequence: 1, status: "active" } }),
       tx.match.findMany({ where: { eventId: event.id }, orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }] }),
       tx.team.findMany({ where: { eventId: event.id }, select: { id: true, name: true } }),
       tx.eventAnnouncement.findMany({ where: { eventId: event.id, status: "published" }, orderBy: [{ publishedAt: "desc" }, { id: "asc" }] }),

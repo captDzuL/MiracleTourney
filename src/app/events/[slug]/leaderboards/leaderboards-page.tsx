@@ -2,15 +2,36 @@ import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
 import { BackToEvent } from "@/components/public-v2/BackToEvent";
+import { FlashpeakLeaderboardTable } from "@/components/v3/public-event/FlashpeakLeaderboardTable";
 import { TeamIdentity } from "@/components/TeamAvatar";
 import { DataTable, Section } from "@/components/ui";
 import { getOrderedStatEntries } from "@/lib/platform/config";
-import { getEventBySlug, getLeaderboardForEvent, getTeamsForEvent } from "@/lib/platform/repository";
+import {
+  getEventBySlug,
+  getFlashpeakLeaderboardForEvent,
+  getLeaderboardForEvent,
+  getTeamsForEvent,
+} from "@/lib/platform/repository";
 
 export async function renderLeaderboardsPage(slug: string, locale?: "id" | "en") {
   const t = await getTranslations("leaderboard");
   const event = await getEventBySlug(slug);
   if (!event || event.status === "Draft") notFound();
+
+  if (event.gameId === "game-flashpeak") {
+    const leaderboard = await getFlashpeakLeaderboardForEvent(event.id);
+    return (
+      <>
+        <BackToEvent slug={slug} locale={locale} label={t("backToEvent")} />
+        <Section
+          title={t("sectionTitle", { name: event.name })}
+          description={t("sectionDescription")}
+        >
+          <FlashpeakLeaderboardTable entries={leaderboard} locale={locale ?? "id"} />
+        </Section>
+      </>
+    );
+  }
 
   const [leaderboard, teams] = await Promise.all([
     getLeaderboardForEvent(event.id, event.gameId),

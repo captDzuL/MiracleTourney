@@ -12,6 +12,7 @@ it.each(["id", "en"] as const)("renders simultaneous rooms, TBD, delayed state a
   expect(html).toContain(locale === "id" ? "Sedang berlangsung" : "Live now");
   expect(html).toContain(locale === "id" ? "Tertunda" : "Delayed"); expect(html).toContain("TBD");
   expect(html).toContain(`href="/${locale}/events/cup/leaderboards"`); expect(html).toContain("Room update");
+  for (const route of ["participants", "schedule", "bracket"]) expect(html).toContain(`href="/${locale}/events/cup/${route}"`);
   expect(html).not.toMatch(/0\s[\u2013-]\s0/);
 });
 it("shows no-live and qualification context with official results", () => {

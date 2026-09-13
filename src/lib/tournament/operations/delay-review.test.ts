@@ -8,7 +8,7 @@ const scheduling = { timezone: "Asia/Jakarta", eventWindow: { start: "2026-01-01
 async function fixture(count = 4, double = false) {
   const store = operationStore(); const teams = ["a", "b", ...Array.from({ length: count - 2 }, (_, i) => `team-${i}`)];
   teams.slice(2).forEach(id => store.seed("team", { id, eventId: "event" }));
-  const service = createCompetitionOperations(store.db, () => new Date("2026-01-01T02:00:00Z")); let key = 0;
+  const service = createCompetitionOperations(store.db, () => new Date("2026-01-01T02:00:00Z"), { allowInternalInitialize: true }); let key = 0;
   const execute = (command: OperationCommand) => service.execute({ eventId: "event", actor, expectedVersion: Number(store.rows("event")[0].competitionVersion), idempotencyKey: `d-${++key}`, command });
   await execute({ kind: "initialize", config: double ? TOURNAMENT_FORMAT_PRESETS.doubleElimination : TOURNAMENT_FORMAT_PRESETS.singleElimination, teams: teams.map((id, i) => ({ id, seed: i + 1 })) });
   const first = await execute({ kind: "schedule_save", input: scheduling }); await execute({ kind: "schedule_publish", revisionId: first.resourceId! });

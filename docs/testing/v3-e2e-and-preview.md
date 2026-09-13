@@ -22,6 +22,11 @@ Set these variables in **Preview** only with Delicate credentials:
 - `FEATURE_FLAG_ORGANIZER_WORKSPACE_V3=true`
 - `FEATURE_FLAG_REGISTRATION_WORKSPACE_V3=true`
 - `FEATURE_FLAG_COMPETITION_OPERATIONS_V3=true`
+- `FEATURE_FLAG_COMPLETION_WORKSPACE_V3=true`
+- `FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3=true`
+- `FEATURE_FLAG_PUBLIC_DISCOVERY_V3=true`
+
+Keep `FEATURE_FLAG_PUBLIC_VISUAL_V2` available as the public visual rollback path. The V3 composition flags remain default-off outside intentionally configured test and Preview environments.
 
 Preview builds reject missing database safety variables and reject either URL when it points to production. They run `next build` only; no Prisma migration runs in Preview.
 

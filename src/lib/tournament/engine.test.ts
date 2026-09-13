@@ -445,6 +445,31 @@ describe("aggregatePlayerLeaderboard", () => {
       matchesPlayed: 1,
     });
   });
+
+  it("ignores non-numeric JSON values such as per-game score arrays", () => {
+    const leaderboard = aggregatePlayerLeaderboard([
+      {
+        matchId: "match-1",
+        playerId: "player-1",
+        playerName: "Aomine",
+        teamId: "team-a",
+        position: "Forward",
+        gameSlug: "flashpeak",
+        stats: { goal: 2, scores: [7.6, null, 8.1] } as unknown as Record<string, number>,
+      },
+      {
+        matchId: "match-2",
+        playerId: "player-1",
+        playerName: "Aomine",
+        teamId: "team-a",
+        position: "Forward",
+        gameSlug: "flashpeak",
+        stats: { goal: 1, scores: [9.0] } as unknown as Record<string, number>,
+      },
+    ], "goal");
+
+    expect(leaderboard[0]?.totalStats).toEqual({ goal: 3 });
+  });
 });
 
 describe("getLiveStreamPresentation", () => {

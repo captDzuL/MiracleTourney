@@ -28,7 +28,11 @@ export type RegistrationCta =
   | { kind: "status"; label: string; href: string; enabled: true }
   | { kind: "disabled"; label: string; reason: string; enabled: false };
 
-export type AdaptivePublicEventViewModel = AdaptiveRegistrationEventViewModel | import("./public-ongoing-types").PublicOngoingEventViewModel;
+export type AdaptivePublicEventViewModel =
+  | AdaptiveRegistrationEventViewModel
+  | import("./adaptive-public-phases").PublicDrawingEventViewModel
+  | import("./public-ongoing-types").PublicOngoingEventViewModel
+  | import("./adaptive-public-phases").PublicFinishedEventViewModel;
 
 export type AdaptiveRegistrationEventViewModel = {
   mode: "registration";

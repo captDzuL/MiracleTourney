@@ -121,6 +121,18 @@ describe("events page public cards", () => {
     expect(detailSource).not.toContain("Object.entries(leaderboard[0].totalStats)");
   });
 
+  test("Flashpeak leaderboard uses the sortable six-parameter V3 table", () => {
+    const leaderboardSource = fs.readFileSync(
+      path.resolve(__dirname, "./[slug]/leaderboards/leaderboards-page.tsx"),
+      "utf8",
+    );
+
+    expect(leaderboardSource).toContain("getFlashpeakLeaderboardForEvent");
+    expect(leaderboardSource).toContain("<FlashpeakLeaderboardTable");
+    expect(leaderboardSource).toContain('event.gameId === "game-flashpeak"');
+    expect(leaderboardSource).toContain('locale={locale ?? "id"}');
+  });
+
   test("event detail links do not require a next-intl client provider on the non-locale route", () => {
     const detailSource = fs.readFileSync(
       path.resolve(__dirname, "./[slug]/event-detail-page.tsx"),
@@ -156,6 +168,17 @@ describe("events page public cards", () => {
 
     expect(localizedEventsSource).toContain("searchParams");
     expect(localizedEventsSource).toContain("<EventsPage searchParams={searchParams} />");
+  });
+
+  test("Homepage and Event Center route through default-off public discovery V3", () => {
+    const homeSource = fs.readFileSync(path.resolve(__dirname, "../home-page-content.tsx"), "utf8");
+    const eventsSource = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(homeSource).toContain('isFeatureEnabled("public_discovery_v3")');
+    expect(homeSource).toContain("<PublicDiscoveryHomeV3");
+    expect(eventsSource).toContain('isFeatureEnabled("public_discovery_v3")');
+    expect(eventsSource).toContain("<PublicEventsCenterV3");
+    expect(`${homeSource}\n${eventsSource}`).toContain("loadPublicDiscovery");
   });
 
   test("non-locale events page does not require a next-intl client link provider", () => {

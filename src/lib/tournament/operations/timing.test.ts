@@ -7,7 +7,7 @@ const input = { timezone: "Asia/Jakarta", eventWindow: { start: "2026-01-01T02:0
 async function fixture() {
   const store = operationStore(); ["c", "d"].forEach(id => store.seed("team", { id, eventId: "event" }));
   let time = new Date("2026-01-01T02:00:00Z"); let key = 0;
-  const service = createCompetitionOperations(store.db, () => time);
+  const service = createCompetitionOperations(store.db, () => time, { allowInternalInitialize: true });
   const run = (command: OperationCommand) => {
     const latest = store.rows("scheduleRevision").sort((a, b) => Number(b.version) - Number(a.version))[0];
     if (command.kind === "delay_preview" && !command.sourceRevision && latest) command = { ...command, sourceRevision: { id: String(latest.id), version: Number(latest.version), status: latest.status as "draft" | "published" } };

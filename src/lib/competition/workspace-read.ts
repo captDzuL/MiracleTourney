@@ -32,7 +32,12 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
       tx.matchGame.findMany({ where: { match: { eventId } }, select: { matchId: true } }),
       tx.matchResultRevision.count({ where: { eventId } }),
     ]);
-    const graph = (phases.find(p => p.sequence === 1)?.configuration as unknown as { graph?: CompetitionGraph } | null)?.graph ?? null;
+    const firstPhase = phases.find(p => p.sequence === 1);
+    const drawingConfiguration = firstPhase?.configuration as unknown as {
+      graph?: CompetitionGraph;
+      drawing?: { teams?: { id: string; seed: number }[] };
+    } | null;
+    const graph = drawingConfiguration?.graph ?? null;
     if (graph && graph.eventId !== eventId) throw new Error("Invalid competition state");
     const config = tournamentFormatConfigSchema.safeParse(event.formatConfig);
     const legacy = !graph && (matches.length > 0 || roundConfigs.length > 0 || matchGames.length > 0 || resultRevisionCount > 0 || !config.success) ? diagnoseLegacyCompetition(event, teams.map((t, i) => ({ id: t.id, seed: i + 1 })), matches, { roundConfigs, matchGames, resultRevisionCount }) : null;
@@ -44,7 +49,12 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
     return {
       compatibility: legacy ? { status: legacy.status, reason: legacy.reason } : null,
       event: { id: event.id, name: event.name ?? "", version: event.competitionVersion, timezone: event.timezone ?? "Asia/Jakarta", startsAt: event.eventStartsAt?.toISOString() ?? null, publishedScheduleVersion: event.publishedScheduleVersion, config: config.success ? config.data : null },
-      graph, teams: teams.map(t => ({ id: t.id, name: t.name ?? t.id })),
+      graph,
+      drawing: firstPhase && drawingConfiguration?.drawing?.teams ? {
+        status: firstPhase.status === "draft" ? "draft" as const : "published" as const,
+        teams: drawingConfiguration.drawing.teams,
+      } : null,
+      teams: teams.map(t => ({ id: t.id, name: t.name ?? t.id })),
       matches: matches.map(m => ({ id: m.id, homeTeamId: m.homeTeamId, awayTeamId: m.awayTeamId, homeScore: m.homeScore ?? 0, awayScore: m.awayScore ?? 0, status: m.status, scheduleStatus: m.scheduleStatus, resultVersion: m.resultVersion, bestOf: graph?.matches.find(n => n.id === m.id)?.bestOf ?? 1, roundLabel: m.roundLabel, phaseId: m.phaseId ?? null, groupId: m.groupId ?? null, start: m.scheduledAt?.toISOString() ?? null, end: m.scheduledEndsAt?.toISOString() ?? null, room: m.scheduleRoom ?? null, games: (m.resultSnapshot as unknown as { games?: CompetitionWorkspaceState["matches"][number]["games"] } | null)?.games ?? [] })),
       standings: graph ? competitionProjection(graph, matches).standings : [],
       readiness: readiness.map(r => ({ matchId: r.matchId, teamId: r.teamId, status: r.status, note: r.note ?? null })),

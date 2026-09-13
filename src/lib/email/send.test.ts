@@ -3,9 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const resendSend = vi.fn();
 
 vi.mock("resend", () => ({
-  Resend: vi.fn().mockImplementation(() => ({
+  Resend: vi.fn().mockImplementation(function ResendMock() {
+    return {
     emails: { send: resendSend },
-  })),
+    };
+  }),
 }));
 
 import { sendEmail } from "./send";

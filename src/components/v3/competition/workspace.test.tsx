@@ -14,7 +14,7 @@ const boundary = vi.hoisted(() => ({ execute: vi.fn(), preview: vi.fn(), refresh
 vi.mock("@/lib/actions/competition-v3-actions", () => ({ mutateCompetitionWorkspaceAction: async (input: unknown) => ({ status: "saved", receipt: await boundary.execute(input) }), previewCompetitionResultCorrectionAction: boundary.preview }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: boundary.refresh }), useParams: () => ({ locale: "id" }) }));
 export function fixture(): CompetitionWorkspaceState {
-  return { event: { id: "event", name: "Miracle Open", version: 4, timezone: "Asia/Jakarta", startsAt: "2026-09-12T02:00:00.000Z", publishedScheduleVersion: 3, config: TOURNAMENT_FORMAT_PRESETS.singleElimination }, graph: null, teams: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }], matches: [{ id: "match", homeTeamId: "a", awayTeamId: "b", homeScore: 0, awayScore: 0, status: "Scheduled", scheduleStatus: "confirmed", resultVersion: 0, bestOf: 1, roundLabel: "single 1", phaseId: null, groupId: null, start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T02:30:00.000Z", room: "Room A", games: [] }], standings: [], readiness: [], actions: [{ id: "action", matchId: "match", priority: "critical", title: "Missing readiness", detail: null }], schedule: null, publishedSchedule: null, incidents: [], announcements: [], audit: [], unavailableSections: [] };
+  return { event: { id: "event", name: "Miracle Open", version: 4, timezone: "Asia/Jakarta", startsAt: "2026-09-12T02:00:00.000Z", publishedScheduleVersion: 3, config: TOURNAMENT_FORMAT_PRESETS.singleElimination }, graph: null, drawing: null, teams: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }], matches: [{ id: "match", homeTeamId: "a", awayTeamId: "b", homeScore: 0, awayScore: 0, status: "Scheduled", scheduleStatus: "confirmed", resultVersion: 0, bestOf: 1, roundLabel: "single 1", phaseId: null, groupId: null, start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T02:30:00.000Z", room: "Room A", games: [] }], standings: [], readiness: [], actions: [{ id: "action", matchId: "match", priority: "critical", title: "Missing readiness", detail: null }], schedule: null, publishedSchedule: null, incidents: [], announcements: [], audit: [], unavailableSections: [] };
 }
 describe("organizer Match Day workspace", () => {
   it("keeps server-rendered fields disabled until their input handlers hydrate", () => {
@@ -65,6 +65,33 @@ describe("organizer Match Day workspace", () => {
   const set = (name: string, value: string, scope: ParentNode = host) => act(() => { const field = scope.querySelector<HTMLInputElement>(`[name="${name}"]`)!; Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value")!.set!.call(field, value); field.dispatchEvent(new Event("input", { bubbles: true })); field.dispatchEvent(new Event("change", { bubbles: true })); });
   beforeEach(() => { vi.useFakeTimers(); vi.clearAllMocks(); state = fixture(); host = document.createElement("div"); document.body.append(host); root = createRoot(host); boundary.execute.mockResolvedValue({ version: 5 }); vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => ({ ok: true, json: async () => state }))); Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" }); });
   afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+  it("lets the organizer reorder seeds before saving a private drawing draft", async () => {
+    state.matches = [];
+    state.event.publishedScheduleVersion = null;
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="competition" />));
+
+    await act(async () => button("Move Beta up").click());
+    await act(async () => button("Save drawing draft").click());
+
+    expect(boundary.execute).toHaveBeenCalledWith(expect.objectContaining({
+      command: {
+        kind: "drawing_save",
+        config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+        teams: [{ id: "b", seed: 1 }, { id: "a", seed: 2 }],
+      },
+    }));
+    expect(host.textContent).toContain("Preview");
+  });
+
+  it("offers explicit publish and reset controls for a drawing draft", () => {
+    state.drawing = {
+      status: "draft",
+      teams: [{ id: "b", seed: 1 }, { id: "a", seed: 2 }],
+    };
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="competition" />));
+    expect(button("Publish drawing")).toBeTruthy();
+    expect(button("Reset drawing")).toBeTruthy();
+  });
   it.each([["en", "Action queue", "Next matches"], ["id", "Antrean tindakan", "Pertandingan berikutnya"]] as const)("renders %s action-first cards and localized match links", (locale, queue, next) => {
     act(() => root.render(<CompetitionWorkspace initialState={state} locale={locale} view="match-control" />));
     expect(host.querySelector("h2")?.textContent).toBe(queue);

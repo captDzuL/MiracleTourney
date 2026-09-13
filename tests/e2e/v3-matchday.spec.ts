@@ -82,7 +82,10 @@ test("generates competition, reviews the initial schedule and publishes explicit
   fixture = await prepareMatchdayFixture("single_elimination", "empty");
   await loginAsOrganizer(page, "en");
   await page.goto(`/en/organizer/events/${fixture.id}/competition`);
-  await page.getByRole("button", { name: "Generate competition", exact: true }).click();
+  await page.getByRole("button", { name: "Save drawing draft", exact: true }).click();
+  await expect.poll(async () => (await state(page)).drawing?.status, { timeout: POLL_TIMEOUT_MS }).toBe("draft");
+  await page.getByRole("button", { name: "Publish drawing", exact: true }).click();
+  await expect.poll(async () => (await state(page)).drawing?.status, { timeout: POLL_TIMEOUT_MS }).toBe("published");
   await expect.poll(async () => (await state(page)).matches.length, { timeout: POLL_TIMEOUT_MS }).toBe(3);
   await page.getByRole("link", { name: "Schedule", exact: true }).click();
   await page.getByLabel("Window end", { exact: true }).fill("2026-01-02T09:00");

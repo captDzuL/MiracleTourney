@@ -169,6 +169,12 @@ describe("PublicHomeV2", () => {
     expect(headings[0]?.textContent).toContain("Dawn Finals");
   });
 
+  it("carries its own visual scope when rendered inside the V3 shell", () => {
+    renderHome();
+
+    expect(container.querySelector(".pv-home.public-visual-v2")).not.toBeNull();
+  });
+
   it("links the primary call to action to the featured event page", () => {
     renderHome();
 

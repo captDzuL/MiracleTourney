@@ -23,7 +23,7 @@ const boundary = vi.hoisted(() => ({
     eventId: "event-1",
     submittedBy: "captain-1",
     status: "pending",
-    stats: { "player-1": { points: 12 } },
+    stats: { "player-1": { points: 12, assists: 2, rebounds: 3, steals: 1, blocks: 0, flb: 4 } },
   } as Submission,
 }));
 
@@ -36,6 +36,18 @@ function delegates() {
         return { count: 1 };
       },
       findUnique: async () => ({ gameId: "game-kuroko" }),
+    },
+    match: {
+      findFirst: async () => ({
+        id: "match-1",
+        roundLabel: "Final",
+        resultSnapshot: null,
+        games: [],
+        event: { gameId: "game-kuroko", gameModeId: "mode-kuroko-3v3" },
+      }),
+    },
+    team: {
+      findFirst: async () => ({ id: "team-1" }),
     },
     tournamentCompletion: {
       findUnique: async () => boundary.completionStatus ? { status: boundary.completionStatus } : null,
@@ -51,6 +63,7 @@ function delegates() {
     },
     player: {
       findUnique: async () => ({ displayName: "Player One", nickname: "P1", position: "Guard" }),
+      findMany: async () => [{ id: "player-1", nickname: "P1", position: "Guard" }],
     },
     playerStat: {
       upsert: async () => {
@@ -97,7 +110,7 @@ const mutations = {
     teamId: "team-1",
     eventId: "event-1",
     submittedBy: "captain-1",
-    stats: { "player-1": { points: 12 } },
+    stats: { "player-1": { points: 12, assists: 2, rebounds: 3, steals: 1, blocks: 0, flb: 4 } },
   }),
   approve: () => approveStatSubmission("submission-1", "admin-1"),
   reject: () => rejectStatSubmission("submission-1", "admin-1", "Incorrect total"),
@@ -106,7 +119,7 @@ const mutations = {
     teamId: "team-1",
     eventId: "event-1",
     adminId: "admin-1",
-    stats: { "player-1": { points: 15 } },
+    stats: { "player-1": { points: 15, assists: 2, rebounds: 3, steals: 1, blocks: 0, flb: 4 } },
   }),
 };
 

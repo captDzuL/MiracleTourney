@@ -9,7 +9,7 @@ const initialize: OperationCommand = { kind: "initialize", config: TOURNAMENT_FO
 const scheduling = { timezone: "Asia/Jakarta", eventWindow: { start: "2026-09-12T09:00:00Z", end: "2026-09-12T12:00:00Z" }, matchDurationMinutes: 30, bufferMinutes: 0, minimumRestMinutes: 0, rooms: ["room"] };
 function fixture() {
   const store = operationStore();
-  const service = createCompetitionOperations(store.db, () => now);
+  const service = createCompetitionOperations(store.db, () => now, { allowInternalInitialize: true });
   let version = 0;
   let key = 0;
   const run = async (command: OperationCommand, actor = owner) => {
@@ -22,6 +22,117 @@ function fixture() {
 }
 
 describe("competition operation transactions", () => {
+  it("keeps initialize unavailable at the public service boundary", async () => {
+    const store = operationStore();
+    const service = createCompetitionOperations(store.db, () => now);
+    await expect(service.execute({
+      eventId: "event",
+      actor: owner,
+      expectedVersion: 0,
+      idempotencyKey: "public-initialize-bypass",
+      command: initialize,
+    })).rejects.toThrow("initialize is internal");
+  });
+
+  it("keeps drawing drafts private, invalidates dependent schedule drafts, and locks after publish", async () => {
+    const f = fixture();
+    const first = await f.run({
+      kind: "drawing_save",
+      config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      teams: [{ id: "b", seed: 1 }, { id: "a", seed: 2 }],
+    });
+    expect(first.resourceId).toBeTruthy();
+    expect(f.rows("competitionPhase")).toEqual([
+      expect.objectContaining({ status: "draft" }),
+    ]);
+    expect(f.rows("match")[0]).toMatchObject({ homeTeamId: "b", awayTeamId: "a" });
+
+    await f.run({ kind: "schedule_save", input: scheduling });
+    expect(f.rows("scheduleRevision")).toHaveLength(1);
+    await expect(f.run({
+      kind: "schedule_publish",
+      revisionId: String(f.rows("scheduleRevision")[0].id),
+    })).rejects.toThrow(/drawing.*published/i);
+
+    await f.run({
+      kind: "drawing_save",
+      config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }],
+    });
+    expect(f.rows("scheduleRevision")).toEqual([]);
+    expect(f.rows("match")[0]).toMatchObject({ homeTeamId: "a", awayTeamId: "b" });
+
+    await f.run({ kind: "drawing_publish" });
+    expect(f.rows("competitionPhase")).toEqual([
+      expect.objectContaining({ status: "active" }),
+    ]);
+    await expect(f.run({
+      kind: "drawing_save",
+      config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      teams: [{ id: "b", seed: 1 }, { id: "a", seed: 2 }],
+    })).rejects.toThrow(/drawing.*locked/i);
+    expect(f.rows("competitionAuditLog").map((row) => row.action)).toEqual(
+      expect.arrayContaining(["drawing_save", "drawing_publish"]),
+    );
+  });
+
+  it("resets only an unpublished drawing", async () => {
+    const f = fixture();
+    await f.run({
+      kind: "drawing_save",
+      config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }],
+    });
+    await f.run({ kind: "drawing_reset" });
+    expect(f.rows("competitionPhase")).toEqual([]);
+    expect(f.rows("match")).toEqual([]);
+    expect(f.rows("matchDependency")).toEqual([]);
+  });
+
+  it("validates explicit unique drawing seeds instead of inferring registration order", async () => {
+    const f = fixture();
+    await expect(f.run({
+      kind: "drawing_save",
+      config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      teams: [{ id: "a", seed: 1 }, { id: "b", seed: 1 }],
+    })).rejects.toThrow();
+    expect(f.rows("competitionPhase")).toEqual([]);
+  });
+
+  it("requires a drawing draft to contain the complete authoritative event roster", async () => {
+    const f = fixture();
+    f.seed("team", { id: "c", eventId: "event" });
+    await expect(f.run({
+      kind: "drawing_save",
+      config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }],
+    })).rejects.toThrow("complete authoritative roster");
+    expect(f.rows("competitionPhase")).toEqual([]);
+  });
+
+  it("rejects publishing after the authoritative roster changes", async () => {
+    const f = fixture();
+    await f.run({
+      kind: "drawing_save",
+      config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }],
+    });
+    f.seed("team", { id: "late-team", eventId: "event" });
+    await expect(f.run({ kind: "drawing_publish" })).rejects.toThrow("roster changed");
+    expect(f.rows("competitionPhase")).toEqual([expect.objectContaining({ status: "draft" })]);
+  });
+
+  it("rejects drawing publication while registration remains open", async () => {
+    const f = fixture();
+    await f.run({
+      kind: "drawing_save",
+      config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }],
+    });
+    f.updateRow("event", "event", { status: "Published" });
+    await expect(f.run({ kind: "drawing_publish" })).rejects.toThrow("registration is closed");
+  });
+
   it("rejects every new competitive write while tournament completion is locked", async () => {
     const f = fixture();
     f.seed("tournamentCompletion", { id: "completion-1", eventId: "event", status: "completed" });
@@ -221,10 +332,35 @@ describe("competition operation transactions", () => {
       if (!failed) { failed = true; return Promise.reject({ code: "P2034" }); }
       return Reflect.apply(store.db.$transaction, store.db, args);
     } } as typeof store.db;
-    const service = createCompetitionOperations(db, () => now);
+    const service = createCompetitionOperations(db, () => now, { allowInternalInitialize: true });
     expect(await service.execute({ eventId: "event", actor: owner, expectedVersion: 0, idempotencyKey: "retry", command: initialize })).toMatchObject({ version: 1 });
     expect(store.rows("competitionAuditLog")).toHaveLength(1);
     expect(store.rows("match")).toHaveLength(1);
+  });
+
+  it("fails a stale CAS immediately without retrying the same expected version", async () => {
+    const store = operationStore();
+    let transactionCalls = 0;
+    const db = {
+      $transaction: (...args: unknown[]) => {
+        transactionCalls += 1;
+        return Reflect.apply(store.db.$transaction, store.db, args);
+      },
+    } as typeof store.db;
+    const service = createCompetitionOperations(db, () => now, { allowInternalInitialize: true });
+
+    await expect(service.execute({
+      eventId: "event",
+      actor: owner,
+      expectedVersion: 1,
+      idempotencyKey: "stale-cas",
+      command: initialize,
+    })).rejects.toThrow("refresh competition state");
+
+    expect(transactionCalls).toBe(1);
+    expect(store.rows("event")[0].competitionVersion).toBe(0);
+    expect(store.rows("match")).toEqual([]);
+    expect(store.rows("competitionAuditLog")).toEqual([]);
   });
 
   it("rejects other organizers and captain commands outside readiness, but permits Platform Admin", async () => {

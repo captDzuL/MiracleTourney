@@ -8,7 +8,7 @@ const viewports = [
 
 const shellCases = [
   { name: "public", path: "/id", role: null, expectedHref: "/id/events" },
-  { name: "organizer", path: "/id/organizer", role: "organizer", expectedHref: "/id/admin" },
+  { name: "organizer", path: "/id/organizer", role: "organizer", expectedHref: "/id/organizer" },
   { name: "captain", path: "/id/organizer", role: "captain", expectedHref: "/id/captain" },
   { name: "admin", path: "/id/organizer", role: "platform_admin", expectedHref: "/id/admin" },
 ] as const;
@@ -91,9 +91,9 @@ for (const viewport of viewports) {
 
         await page.keyboard.press("Enter");
         const reopenedDialog = page.getByRole("dialog");
-        await page.keyboard.press("Tab");
-        const firstNavigationLink = reopenedDialog.locator('a[href="/id/events"]');
-        await expectVisibleFocus(firstNavigationLink);
+        await expect(reopenedDialog.getByRole("button", { name: "Tutup navigasi" })).toBeFocused();
+        const eventsLink = await tabToHref(page, "/id/events");
+        await expectVisibleFocus(eventsLink);
         await page.keyboard.press("Enter");
         await expect(page).toHaveURL(/\/id\/events$/);
       } else {
