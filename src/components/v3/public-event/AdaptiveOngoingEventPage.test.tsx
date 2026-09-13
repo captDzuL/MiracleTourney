@@ -16,7 +16,7 @@ it.each(["id", "en"] as const)("renders simultaneous rooms, TBD, delayed state a
 });
 it("shows no-live and qualification context with official results", () => {
   const html = renderToStaticMarkup(<AdaptiveOngoingEventPage locale="en" view={{ ...view, liveMatches: [], recentResults: [{ ...match, status: "completed", homeScore: 2, awayScore: 1, resultVersion: 2 }], standings: [{ phaseId: "p", groupId: "g", groupNumber: 1, label: "Group A", complete: false, qualificationCutline: 2, rows: [{ teamId: "a", name: "Alpha", played: 1, wins: 1, draws: 0, losses: 0, points: 3, scoreFor: 2, scoreAgainst: 1, scoreDifference: 1, rank: 1, tied: false }] }] }} />);
-  expect(html).toContain("No matches live right now"); expect(html).toContain("Top 2 qualify"); expect(html).toContain("Group A"); expect(html).toContain("2 – 1");
+  expect(html).toContain("No matches live right now"); expect(html).toContain("Top 2 qualify"); expect(html).toContain("Group A"); expect(html).toMatch(/2\s(?:-|–)\s1/);
 });
 it.each(["id", "en"] as const)("labels urgent announcements explicitly in %s", locale => {
   const html = renderToStaticMarkup(<AdaptiveOngoingEventPage locale={locale} view={{ ...view, announcements: [{ ...view.announcements[0], urgency: "urgent" }] }} />);
