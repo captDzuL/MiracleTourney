@@ -221,6 +221,31 @@ describe("completion workspace read model", () => {
     });
   });
 
+  it("prioritizes stale over an in-progress generation from a reopened completion", async () => {
+    const state = await loadCompletionWorkspace(event, "en", dependencies(available({
+      completion: {
+        id: "completion-1",
+        status: "reopened",
+        sourceSnapshot: { version: 3 },
+        podiumPlacements: [],
+        awards: [],
+      },
+      certificates: [{
+        id: "certificate-generating",
+        type: "champion",
+        version: 2,
+        completionId: "completion-1",
+        completionVersion: 3,
+        status: "generating",
+        publishedAt: null,
+      }],
+    })));
+    expect(state.status === "integration_required" ? null : state.certificates).toMatchObject({
+      generated: 0,
+      status: "stale",
+    });
+  });
+
   it("returns a deterministic integration state without loading when format configuration is missing", async () => {
     const load = async () => { throw new Error("must not load invalid completion source"); };
     const state = await loadCompletionWorkspace({ ...event, formatConfig: null }, "id", { load });

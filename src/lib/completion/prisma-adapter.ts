@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 
 import { getStatKeysForMode } from "@/lib/platform/config";
 import { prisma } from "@/lib/platform/db";
+import { applyEventLifecycleSideEffects } from "@/lib/events/event-lifecycle";
 import type { CompetitionGraph } from "@/lib/tournament/competition";
 import { tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { competitionProjection } from "@/lib/tournament/operations/result-projection";
@@ -435,11 +436,12 @@ async function persistMutation(
   eventId: string,
   mutation: CompletionMutation,
 ): Promise<void> {
+  const lifecycleStatus = mutation.result.status === "completed" ? "Finished" : "Ongoing";
   const changed = await tx.event.updateMany({
     where: { id: eventId, competitionVersion: mutation.result.version - 1 },
     data: {
       competitionVersion: { increment: 1 },
-      status: mutation.result.status === "completed" ? "Finished" : "Ongoing",
+      status: lifecycleStatus,
     },
   });
   if (changed.count !== 1) {
@@ -447,6 +449,7 @@ async function persistMutation(
     Object.assign(conflict, { code: "P2034" });
     throw conflict;
   }
+  await applyEventLifecycleSideEffects(tx, eventId, lifecycleStatus, new Date());
   const result = mutation.result;
   let completion: { id: string };
   if (result.status === "completed") {

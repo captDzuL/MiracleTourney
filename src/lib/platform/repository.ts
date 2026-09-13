@@ -4,6 +4,7 @@ import { unstable_cache } from "next/cache";
 
 import bcrypt from "bcryptjs";
 
+import { applyEventLifecycleSideEffects } from "@/lib/events/event-lifecycle";
 import {
   gameModes,
   games,
@@ -1659,16 +1660,7 @@ export async function setEventStatus(eventId: string, status: Event["status"]): 
   const now = new Date();
   const row = await prisma.$transaction(async (tx) => {
     const updatedEvent = await tx.event.update({ where: { id: eventId }, data: { status }, include: eventPublicInclude });
-    if (status === "Ongoing" || status === "Finished") {
-      await tx.eventEditRevision.updateMany({
-        where: { eventId, status: "Draft" },
-        data: { status: "Discarded", discardedAt: now, discardReason: status === "Finished" ? "event_finished" : "event_started" },
-      });
-    }
-    await tx.eventPreviewToken.updateMany({
-      where: { eventId, revokedAt: null },
-      data: { revokedAt: now },
-    });
+    await applyEventLifecycleSideEffects(tx, eventId, status, now);
     return updatedEvent;
   });
   return mapEvent(row);
@@ -1686,14 +1678,7 @@ export async function autoTransitionEventToOngoing(eventId: string): Promise<voi
       data: { status: "Ongoing" },
     });
     if (transitioned.count === 0) return;
-    await tx.eventEditRevision.updateMany({
-      where: { eventId, status: "Draft" },
-      data: { status: "Discarded", discardedAt: now, discardReason: "event_started" },
-    });
-    await tx.eventPreviewToken.updateMany({
-      where: { eventId, revokedAt: null },
-      data: { revokedAt: now },
-    });
+    await applyEventLifecycleSideEffects(tx, eventId, "Ongoing", now);
   });
 }
 

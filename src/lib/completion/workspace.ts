@@ -305,6 +305,8 @@ export async function loadCompletionWorkspace(
     .reduce((latest, certificate) => latest.set(certificate.type, certificate), new Map<string, typeof currentCertificates[number]>());
   const generatedTypes = latestCertificates.size;
   const anyGenerating = record.certificates.some((certificate) =>
+    completionActive
+    &&
     certificate.completionId === record.completion?.id
     && certificate.completionVersion === completionVersion
     && certificate.status === "generating");

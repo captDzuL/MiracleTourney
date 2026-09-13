@@ -178,6 +178,8 @@ class MemoryCompletionPrisma {
     awards: [] as Record<string, unknown>[],
     decisions: [] as Record<string, unknown>[],
     audit: [] as Record<string, unknown>[],
+    draftRevisions: [{ id: "draft-1", status: "Draft", discardedAt: null as Date | null, discardReason: null as string | null }],
+    previewTokens: [{ id: "preview-1", revokedAt: null as Date | null }],
   };
   failDecision = false;
   failAudit = false;
@@ -216,6 +218,18 @@ class MemoryCompletionPrisma {
       team: { findMany: async () => structuredClone(source.teams) },
       playerStat: { findMany: async () => structuredClone(source.playerStats) },
       statSubmission: { findMany: async () => structuredClone(source.approvedSubmissions) },
+      eventEditRevision: {
+        updateMany: async ({ data }: { data: { status: string; discardedAt: Date; discardReason: string } }) => {
+          for (const revision of draft.draftRevisions.filter(({ status }) => status === "Draft")) Object.assign(revision, structuredClone(data));
+          return { count: draft.draftRevisions.length };
+        },
+      },
+      eventPreviewToken: {
+        updateMany: async ({ data }: { data: { revokedAt: Date } }) => {
+          for (const token of draft.previewTokens.filter(({ revokedAt }) => revokedAt === null)) Object.assign(token, structuredClone(data));
+          return { count: draft.previewTokens.length };
+        },
+      },
       tournamentCompletion: {
         findUnique: async () => draft.completion ? structuredClone(draft.completion) : null,
         upsert: async ({ create, update }: { create: Record<string, unknown>; update: Record<string, unknown> }) => {
@@ -280,6 +294,8 @@ describe("Prisma completion transaction adapter", () => {
     expect(first).toMatchObject({ status: "completed", version: 1 });
     expect(db.data.event.competitionVersion).toBe(1);
     expect(db.data.event.status).toBe("Finished");
+    expect(db.data.draftRevisions).toMatchObject([{ status: "Discarded", discardedAt: expect.any(Date), discardReason: "event_finished" }]);
+    expect(db.data.previewTokens).toMatchObject([{ revokedAt: expect.any(Date) }]);
     expect(db.data.completion).toMatchObject({ id: "completion-1", status: "completed", completedByUserId: "organizer-1" });
     expect(db.data.podium).toHaveLength(3);
     expect(db.data.awards).toHaveLength(4);
@@ -321,8 +337,12 @@ describe("Prisma completion transaction adapter", () => {
     const db = new MemoryCompletionPrisma();
     const dependencies = createPrismaCompletionDependencies(actor, db as never);
     const first = await completeTournament("event-1", decisions, 0, key1, dependencies);
+    db.data.draftRevisions.push({ id: "draft-2", status: "Draft", discardedAt: null, discardReason: null });
+    db.data.previewTokens.push({ id: "preview-2", revokedAt: null });
     expect(await reopenTournament("event-1", "Correct official result", 1, key2, dependencies)).toEqual({ status: "reopened", eventId: "event-1", version: 2 });
     expect(db.data.event.status).toBe("Ongoing");
+    expect(db.data.draftRevisions.at(-1)).toMatchObject({ status: "Discarded", discardedAt: expect.any(Date), discardReason: "event_started" });
+    expect(db.data.previewTokens.at(-1)).toMatchObject({ revokedAt: expect.any(Date) });
     expect(await completeTournament("event-1", decisions, 2, "33333333-3333-4333-8333-333333333333", dependencies)).toMatchObject({ status: "completed", version: 3 });
     expect(db.data.event.status).toBe("Finished");
     expect(db.data.audit).toHaveLength(3);
@@ -347,12 +367,16 @@ describe("Prisma completion transaction adapter", () => {
     const db = new MemoryCompletionPrisma();
     const dependencies = createPrismaCompletionDependencies(actor, db as never);
     await completeTournament("event-1", decisions, 0, key1, dependencies);
+    db.data.draftRevisions.push({ id: "rollback-draft", status: "Draft", discardedAt: null, discardReason: null });
+    db.data.previewTokens.push({ id: "rollback-preview", revokedAt: null });
     db.failAudit = true;
     await expect(reopenTournament("event-1", "Correct official result", 1, key2, dependencies))
       .rejects.toThrow("audit storage failed");
     expect(db.data.event).toMatchObject({ competitionVersion: 1, status: "Finished" });
     expect(db.data.completion).toMatchObject({ status: "completed" });
     expect(db.data.audit).toHaveLength(1);
+    expect(db.data.draftRevisions.at(-1)).toMatchObject({ status: "Draft", discardedAt: null, discardReason: null });
+    expect(db.data.previewTokens.at(-1)).toMatchObject({ revokedAt: null });
   });
 
   it("returns a stable version conflict after exhausted PostgreSQL serialization retries", async () => {
