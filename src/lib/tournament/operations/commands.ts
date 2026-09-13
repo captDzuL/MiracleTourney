@@ -25,11 +25,15 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
     case "legacy_upgrade": {
       if (await tx.competitionPhase.count({ where: { eventId } })) throw new Error("Competition already initialized");
       const event = await tx.event.findUniqueOrThrow({ where: { id: eventId } });
-      const matches = await tx.match.findMany({ where: { eventId } });
-      if (await tx.matchResultRevision.count({ where: { eventId } }) || await tx.matchGame.count({ where: { match: { eventId } } })) throw new Error("Legacy competition has recorded results");
-      const teams = await tx.team.findMany({ where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+      const [matches, resultRevisions, matchGames, roundConfigs, teams] = await Promise.all([
+        tx.match.findMany({ where: { eventId } }),
+        tx.matchResultRevision.count({ where: { eventId } }),
+        tx.matchGame.findMany({ where: { match: { eventId } }, select: { matchId: true } }),
+        tx.eventRoundConfig.findMany({ where: { eventId }, select: { eventId: true, roundLabel: true, bestOf: true } }),
+        tx.team.findMany({ where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
+      ]);
       const seeded = teams.map((t, i) => ({ id: t.id, seed: i + 1 }));
-      const diagnosis = diagnoseLegacyCompetition(event, seeded, matches);
+      const diagnosis = diagnoseLegacyCompetition(event, seeded, matches, { roundConfigs, matchGames, resultRevisionCount: resultRevisions });
       if (!diagnosis.graph) throw new Error(`Legacy competition cannot be upgraded: ${diagnosis.reason}`);
       const graph = diagnosis.graph;
       if (!matches.length) return applyCommand(tx, eventId, actorId, { kind: "initialize", config: graph.config, teams: seeded }, version, idempotencyKey, now);

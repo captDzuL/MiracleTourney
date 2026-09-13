@@ -20,7 +20,7 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
     return read(tx, event);
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   const core = await authorized(async (tx, event) => {
-    const [matches, phases, teams, readiness, actions, revisions, published] = await Promise.all([
+    const [matches, phases, teams, readiness, actions, revisions, published, roundConfigs, matchGames, resultRevisionCount] = await Promise.all([
       tx.match.findMany({ where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }] }),
       tx.competitionPhase.findMany({ where: { eventId }, orderBy: { sequence: "asc" } }),
       tx.team.findMany({ where: { eventId }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
@@ -28,11 +28,14 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
       tx.competitionActionItem.findMany({ where: { eventId, resolvedAt: null }, orderBy: { createdAt: "asc" } }),
       tx.scheduleRevision.findMany({ where: { eventId, status: "draft", version: { gt: event.publishedScheduleVersion ?? -1 } }, orderBy: { version: "desc" }, take: 1 }),
       event.publishedScheduleVersion == null ? Promise.resolve(null) : tx.scheduleRevision.findFirst({ where: { eventId, version: event.publishedScheduleVersion, status: "published" } }),
+      tx.eventRoundConfig.findMany({ where: { eventId }, select: { eventId: true, roundLabel: true, bestOf: true } }),
+      tx.matchGame.findMany({ where: { match: { eventId } }, select: { matchId: true } }),
+      tx.matchResultRevision.count({ where: { eventId } }),
     ]);
     const graph = (phases.find(p => p.sequence === 1)?.configuration as unknown as { graph?: CompetitionGraph } | null)?.graph ?? null;
     if (graph && graph.eventId !== eventId) throw new Error("Invalid competition state");
     const config = tournamentFormatConfigSchema.safeParse(event.formatConfig);
-    const legacy = !graph && (matches.length > 0 || !config.success) ? diagnoseLegacyCompetition(event, teams.map((t, i) => ({ id: t.id, seed: i + 1 })), matches) : null;
+    const legacy = !graph && (matches.length > 0 || roundConfigs.length > 0 || matchGames.length > 0 || resultRevisionCount > 0 || !config.success) ? diagnoseLegacyCompetition(event, teams.map((t, i) => ({ id: t.id, seed: i + 1 })), matches, { roundConfigs, matchGames, resultRevisionCount }) : null;
     const revision = revisions.sort((a, b) => b.version - a.version)[0];
     const priority: Record<(typeof actions)[number]["priority"], number> = { critical: 0, urgent: 1, attention_soon: 2 };
     const orderedActions = actions.sort((a, b) => priority[a.priority] - priority[b.priority]

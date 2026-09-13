@@ -16,6 +16,25 @@ describe("private organizer read state", () => {
     expect((await readCompetitionWorkspace("event")).compatibility).toMatchObject({ status: "blocked", reason: "existing_results" });
     expect(store.rows("competitionPhase")).toEqual([]);
   });
+  it("uses round rules and MatchGame evidence from the authorized read snapshot", async () => {
+    await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { format: "League", formatConfig: TOURNAMENT_FORMAT_PRESETS.roundRobin } }); });
+    store.seed("match", { id: "old", eventId: "event", round: 1, slot: 1, roundLabel: "Matchday 1", homeTeamId: "a", awayTeamId: "b", homeScore: 0, awayScore: 0, status: "Scheduled", resultVersion: 0 });
+    store.seed("eventRoundConfig", { id: "round", eventId: "event", roundLabel: "Matchday 1", bestOf: 3 });
+    expect((await readCompetitionWorkspace("event")).compatibility).toMatchObject({ status: "blocked", reason: "incompatible_round_rules" });
+    store.seed("matchGame", { id: "game", matchId: "old", gameNumber: 1, homeScore: 1, awayScore: 0 });
+    expect((await readCompetitionWorkspace("event")).compatibility).toMatchObject({ status: "blocked", reason: "existing_results" });
+  });
+  it("does not report an empty event with orphan round rules differently from upgrade", async () => {
+    await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { format: "League", formatConfig: TOURNAMENT_FORMAT_PRESETS.roundRobin } }); });
+    store.seed("eventRoundConfig", { id: "orphan", eventId: "event", roundLabel: "Missing round", bestOf: 3 });
+    expect((await readCompetitionWorkspace("event")).compatibility).toMatchObject({ status: "blocked", reason: "incompatible_round_rules" });
+  });
+  it("blocks an inconsistent hidden result revision in the same read snapshot", async () => {
+    await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { format: "League", formatConfig: TOURNAMENT_FORMAT_PRESETS.roundRobin } }); });
+    store.seed("match", { id: "old", eventId: "event", round: 1, slot: 1, roundLabel: "Matchday 1", homeTeamId: "a", awayTeamId: "b", homeScore: 0, awayScore: 0, status: "Scheduled", resultVersion: 0 });
+    store.seed("matchResultRevision", { id: "hidden-result", eventId: "event", matchId: "old", version: 1 });
+    expect((await readCompetitionWorkspace("event")).compatibility).toMatchObject({ status: "blocked", reason: "existing_results" });
+  });
   it("includes explicit announcement urgency in organizer read state", async () => {
     store.seed("eventAnnouncement", { id: "notice", eventId: "event", title: "Notice", body: "Body", status: "draft", urgency: "important" });
     expect((await readCompetitionWorkspace("event")).announcements[0]).toMatchObject({ urgency: "important" });

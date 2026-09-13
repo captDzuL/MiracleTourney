@@ -1571,7 +1571,6 @@ describe("adminSetMatchGamesAction", () => {
         { gameNumber: 2, homeScore: 10, awayScore: 21 },
         { gameNumber: 3, homeScore: 21, awayScore: 18 },
       ],
-      3,
     );
     expect(autoTransitionEventToOngoing).toHaveBeenCalledWith("event-1");
     expect(revalidateTag).toHaveBeenCalledWith("teams");
@@ -1605,8 +1604,21 @@ describe("adminSetMatchGamesAction", () => {
         { gameNumber: 1, homeScore: 21, awayScore: 15 },
         { gameNumber: 2, homeScore: 10, awayScore: 21 },
       ],
-      5,
     );
+  });
+
+  it("validates the hidden best-of hint but never lets it truncate submitted games", async () => {
+    await expect(adminSetMatchGamesAction(bo3FormData({ bestOf: "1" }))).rejects.toThrow("REDIRECT:");
+    expect(setMatchGames).toHaveBeenCalledWith("match-1", "event-1", [
+      { gameNumber: 1, homeScore: 21, awayScore: 15 },
+      { gameNumber: 2, homeScore: 10, awayScore: 21 },
+      { gameNumber: 3, homeScore: 21, awayScore: 18 },
+    ]);
+  });
+
+  it.each(["2", "0", "7", "not-a-number"])("rejects invalid client best-of hint %s before a write", async bestOf => {
+    await expect(adminSetMatchGamesAction(bo3FormData({ bestOf }))).rejects.toThrow();
+    expect(setMatchGames).not.toHaveBeenCalled();
   });
 
   it("redirects with error when setMatchGames throws", async () => {

@@ -1452,11 +1452,13 @@ export async function adminSetMatchGamesAction(formData: FormData) {
 
   const matchId = z.string().min(1).parse(formData.get("matchId"));
   const matchEventId = z.string().min(1).parse(formData.get("matchEventId"));
-  const bestOf = z.coerce.number().int().min(1).max(5).parse(formData.get("bestOf"));
+  // The hidden value is only a render-integrity hint. The repository resolves
+  // the authoritative rule from this match's event and round in one transaction.
+  z.coerce.number().int().refine((n) => [1, 3, 5].includes(n), { message: "bestOf must be 1, 3, or 5" }).parse(formData.get("bestOf"));
   await assertUserCanManageEvent(user, matchEventId);
 
   const games: { gameNumber: number; homeScore: number; awayScore: number }[] = [];
-  for (let i = 1; i <= bestOf; i++) {
+  for (let i = 1; i <= 5; i++) {
     const homeRaw = formData.get(`game${i}_home`);
     const awayRaw = formData.get(`game${i}_away`);
     if (homeRaw === null || homeRaw === "" || awayRaw === null || awayRaw === "") continue;
@@ -1471,7 +1473,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
   }
 
   try {
-    await setMatchGames(matchId, matchEventId, games, bestOf);
+    await setMatchGames(matchId, matchEventId, games);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save match games.";
     await redirectToRequestedLocale(legacyMatchReturn(user, matchEventId, matchId, `error=${encodeURIComponent(message)}`), locale);

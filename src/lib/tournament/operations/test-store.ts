@@ -10,7 +10,7 @@ export function operationStore() {
     team: [{ id: "a", eventId: "event" }, { id: "b", eventId: "event" }],
     competitionPhase: [], competitionGroup: [], competitionGroupMember: [], match: [], matchDependency: [],
     matchReadiness: [], matchResultRevision: [], competitionAuditLog: [], competitionActionItem: [],
-    competitionIncident: [], scheduleRevision: [], eventAnnouncement: [], matchGame: [],
+    competitionIncident: [], scheduleRevision: [], eventAnnouncement: [], matchGame: [], eventRoundConfig: [],
   };
   let failTable: string | undefined;
   let reverseReadOrder = false;
@@ -34,7 +34,15 @@ export function operationStore() {
   };
   const delegates = (tables: Record<string, Row[]>) => Object.fromEntries(Object.keys(tables).map(table => {
     const write = () => { if (table === failTable) throw new Error("storage failure"); };
-    const find = ({ where }: Query = {}) => tables[table].filter(row => matches(row, where));
+    const find = ({ where }: Query = {}) => tables[table].filter(row => {
+      const scoped = { ...where };
+      if (table === "matchGame" && scoped.match && typeof scoped.match === "object") {
+        const parent = tables.match.find(match => match.id === row.matchId);
+        if (!parent || !matches(parent, scoped.match as Row)) return false;
+        delete scoped.match;
+      }
+      return matches(row, scoped);
+    });
     return [table, {
       findUnique: async (q: Query) => structuredClone(find(q)[0] ?? null),
       findUniqueOrThrow: async (q: Query) => { const row = find(q)[0]; if (!row) throw new Error("missing row"); return structuredClone(row); },
