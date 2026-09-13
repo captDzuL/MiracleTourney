@@ -10,6 +10,26 @@ export type OperationCommand = ParsedCommand;
 export type OperationInput = { eventId: string; actor: { id: string; role: string }; expectedVersion: number; idempotencyKey: string; command: OperationCommand };
 export type OperationReceipt = { version: number; resourceId?: string };
 
+type JsonError = { code?: string };
+const VERSION_CONFLICT_RETRIES = 6;
+
+function isVersionConflictError(error: unknown): boolean {
+  if (error instanceof Error && error.message.startsWith("Version conflict:")) return true;
+
+  if (error && typeof error === "object" && "code" in error) {
+    const prismaError = error as JsonError;
+    return prismaError.code === "P2034";
+  }
+
+  return false;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 /** Actors must come from server sessions. Every competition writer, including
  * result services, must share this event CAS and transaction boundary. */
 export function createCompetitionOperations(db: PrismaClient, clock: () => Date = () => new Date()) {
@@ -53,15 +73,23 @@ export function createCompetitionOperations(db: PrismaClient, clock: () => Date 
       return receipt;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 20000 });
     // Re-read a committed retry receipt after a PostgreSQL serialization race.
-    for (let attempt = 0; ; attempt++) {
-      try { return await transact(); } catch (error) {
-        if (typeof error === "object" && error !== null && "code" in error && error.code === "P2034") {
-          if (attempt < 2) continue;
+    for (let attempt = 0; attempt < VERSION_CONFLICT_RETRIES; attempt++) {
+      try {
+        return await transact();
+      } catch (error) {
+        if (!isVersionConflictError(error)) {
+          throw error;
+        }
+
+        if (attempt === VERSION_CONFLICT_RETRIES - 1) {
           throw new Error("Version conflict: retry with the same idempotency key");
         }
-        throw error;
+
+        await wait(25 * 2 ** attempt);
       }
     }
+
+    throw new Error("Version conflict: retry with the same idempotency key");
   }
   async function readPublishedSchedule(eventId: string) {
     return db.$transaction(async tx => {

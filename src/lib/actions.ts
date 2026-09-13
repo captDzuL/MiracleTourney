@@ -408,7 +408,8 @@ export async function loginAction(formData: FormData) {
       return await redirectToRequestedLocale(loginErrorPath("database"), requestedLocale);
     }
 
-    throw error;
+    console.error("[loginAction] signIn failed", error);
+    return await redirectToRequestedLocale(loginErrorPath("invalid"), requestedLocale);
   }
 
   if (!result.ok) {
@@ -1886,3 +1887,4 @@ export async function resetPasswordAction(formData: FormData) {
     `/login?message=${encodeURIComponent("Password berhasil direset. Silakan login.")}` as never,
   );
 }
+
