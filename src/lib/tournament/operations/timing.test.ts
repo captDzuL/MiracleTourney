@@ -18,8 +18,16 @@ async function fixture() {
   return { ...store, run, service, setTime: (value: string) => { time = new Date(value); } };
 }
 describe("actual timing and delay review", () => {
+  it("rejects an official result until the match has actually started", async () => {
+    const f = await fixture(); const id = String(f.rows("match")[0].id);
+    await expect(f.run({ kind: "result_submit", matchId: id, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] })).rejects.toThrow("started");
+    expect(f.rows("match")[0]).toMatchObject({ status: "Scheduled", resultVersion: 0 });
+    expect(f.rows("match")[0].actualStartedAt ?? null).toBeNull();
+    expect(f.rows("matchResultRevision")).toEqual([]);
+  });
   it("does not invent an actual end when correcting a pre-migration official result", async () => {
     const f = await fixture(); const id = String(f.rows("match")[0].id);
+    await f.run({ kind: "match_start", matchId: id, reason: "Historical fixture setup" });
     await f.run({ kind: "result_submit", matchId: id, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
     await f.db.$transaction(async tx => { await tx.match.update({ where: { id }, data: { actualEndedAt: null } }); });
     const games = [{ gameNumber: 1, homeScore: 0, awayScore: 2 }];

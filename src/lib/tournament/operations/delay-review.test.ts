@@ -108,6 +108,7 @@ describe("reviewed delay revisions", () => {
     const f = await fixture(); const [a, b] = f.graph.matches;
     await f.execute({ kind: "match_start", matchId: a.id, reason: "Desk ready" });
     await f.delay(a.id, "2026-01-01T03:30:00Z");
+    await f.execute({ kind: "match_start", matchId: b.id, reason: "Desk ready" });
     await f.execute({ kind: "result_submit", matchId: b.id, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }, { gameNumber: 2, homeScore: 2, awayScore: 0 }] });
     await f.execute({ kind: "schedule_publish", revisionId: f.source().id });
     expect((await f.service.readPublishedSchedule("event"))?.assignments.find(m => m.matchId === a.id)?.end).toBe("2026-01-01T03:30:00.000Z");

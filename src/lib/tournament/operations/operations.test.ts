@@ -219,7 +219,7 @@ describe("competition operation transactions", () => {
     expect(store.rows("match")).toHaveLength(1);
   });
 
-  it("rejects other organizers and captains before any mutation, but permits Platform Admin", async () => {
+  it("rejects other organizers and captain commands outside readiness, but permits Platform Admin", async () => {
     const f = fixture();
     for (const actor of [{ id: "other", role: "organizer" }, { id: "owner", role: "captain" }])
       await expect(f.run(initialize, actor)).rejects.toThrow("Not authorized");
@@ -227,6 +227,20 @@ describe("competition operation transactions", () => {
     expect(f.rows("event")[0].competitionVersion).toBe(0);
     await f.run(initialize, { id: "admin", role: "platform_admin" });
     expect(f.rows("match")).toHaveLength(1);
+  });
+
+  it("lets a captain update only their own participating team's readiness", async () => {
+    const f = fixture(); const matchId = await f.setup();
+    await f.db.$transaction(async tx => {
+      await tx.team.update({ where: { id: "a" }, data: { captainId: "captain-a" } });
+      await tx.team.update({ where: { id: "b" }, data: { captainId: "captain-b" } });
+    });
+    await f.run({ kind: "readiness_update", matchId, teamId: "a", status: "checked_in" }, { id: "captain-a", role: "captain" });
+    expect(f.rows("matchReadiness")[0]).toMatchObject({ teamId: "a", status: "checked_in", actor: "captain", actorUserId: "captain-a" });
+    await expect(f.run({ kind: "readiness_update", matchId, teamId: "b", status: "ready" }, { id: "captain-a", role: "captain" })).rejects.toThrow("Not authorized");
+    await expect(f.run({ kind: "announcement_save", title: "No", body: "No" }, { id: "captain-a", role: "captain" })).rejects.toThrow("Not authorized");
+    expect(f.rows("event")[0].competitionVersion).toBe(2);
+    expect(f.rows("competitionAuditLog")).toHaveLength(2);
   });
 
   it("replays exactly the original receipt and rejects changed payload reuse, even after later writes", async () => {

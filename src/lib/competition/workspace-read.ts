@@ -34,7 +34,10 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
     const config = tournamentFormatConfigSchema.safeParse(event.formatConfig);
     const legacy = !graph && (matches.length > 0 || !config.success) ? diagnoseLegacyCompetition(event, teams.map((t, i) => ({ id: t.id, seed: i + 1 })), matches) : null;
     const revision = revisions.sort((a, b) => b.version - a.version)[0];
-    const priority: Record<string, number> = { critical: 0, high: 1, normal: 2 };
+    const priority: Record<(typeof actions)[number]["priority"], number> = { critical: 0, urgent: 1, attention_soon: 2 };
+    const orderedActions = actions.sort((a, b) => priority[a.priority] - priority[b.priority]
+      || (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0)
+      || a.id.localeCompare(b.id));
     return {
       compatibility: legacy ? { status: legacy.status, reason: legacy.reason } : null,
       event: { id: event.id, name: event.name ?? "", version: event.competitionVersion, timezone: event.timezone ?? "Asia/Jakarta", startsAt: event.eventStartsAt?.toISOString() ?? null, publishedScheduleVersion: event.publishedScheduleVersion, config: config.success ? config.data : null },
@@ -42,7 +45,7 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
       matches: matches.map(m => ({ id: m.id, homeTeamId: m.homeTeamId, awayTeamId: m.awayTeamId, homeScore: m.homeScore ?? 0, awayScore: m.awayScore ?? 0, status: m.status, scheduleStatus: m.scheduleStatus, resultVersion: m.resultVersion, bestOf: graph?.matches.find(n => n.id === m.id)?.bestOf ?? 1, roundLabel: m.roundLabel, phaseId: m.phaseId ?? null, groupId: m.groupId ?? null, start: m.scheduledAt?.toISOString() ?? null, end: m.scheduledEndsAt?.toISOString() ?? null, room: m.scheduleRoom ?? null, games: (m.resultSnapshot as unknown as { games?: CompetitionWorkspaceState["matches"][number]["games"] } | null)?.games ?? [] })),
       standings: graph ? competitionProjection(graph, matches).standings : [],
       readiness: readiness.map(r => ({ matchId: r.matchId, teamId: r.teamId, status: r.status, note: r.note ?? null })),
-      actions: actions.map(a => ({ id: a.id, matchId: a.matchId ?? null, priority: a.priority, title: a.title, detail: a.detail ?? null })).sort((a, b) => (priority[a.priority] ?? 3) - (priority[b.priority] ?? 3)),
+      actions: orderedActions.map(a => ({ id: a.id, matchId: a.matchId ?? null, priority: a.priority, title: a.title, detail: a.detail ?? null })),
       schedule: revision ? { id: revision.id, version: revision.version, ...revision.snapshot as unknown as StoredSchedule } : null,
       publishedSchedule: published ? { id: published.id, version: published.version, ...published.snapshot as unknown as StoredSchedule } : null,
     };

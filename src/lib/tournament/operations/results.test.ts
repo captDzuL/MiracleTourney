@@ -16,8 +16,9 @@ async function fixture(format: keyof typeof TOURNAMENT_FORMAT_PRESETS = "singleE
   const run = (command: OperationCommand) => service.execute({ eventId: "event", actor, expectedVersion: Number(store.rows("event")[0].competitionVersion), idempotencyKey: `r${++key}`, command });
   await run({ kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS[format], teams: teams.map((id, i) => ({ id, seed: i + 1 })) });
   const graph = (store.rows("competitionPhase")[0].configuration as { graph: CompetitionGraph }).graph;
-  const submit = (m: CompetitionMatch, away = false) => run({ kind: "result_submit", matchId: m.id, games: games(m.bestOf, away) } as OperationCommand);
-  return { ...store, service, run, graph, submit };
+  const start = (m: CompetitionMatch) => store.db.$transaction(async tx => tx.match.update({ where: { id: m.id }, data: { status: "Live", scheduleStatus: "live", actualStartedAt: new Date("2026-09-12T09:00:00Z") } }));
+  const submit = async (m: CompetitionMatch, away = false) => { await start(m); return run({ kind: "result_submit", matchId: m.id, games: games(m.bestOf, away) } as OperationCommand); };
+  return { ...store, service, run, graph, start, submit };
 }
 
 describe("official result transaction", () => {
@@ -39,6 +40,7 @@ describe("official result transaction", () => {
 
   it("records a draw without inventing a winner and updates configured standings", async () => {
     const f = await fixture("roundRobin", 2); const m = f.graph.matches[0];
+    await f.start(m);
     await f.run({ kind: "result_submit", matchId: m.id, games: [{ gameNumber: 1, homeScore: 4, awayScore: 4 }] } as OperationCommand);
     expect(f.rows("match")[0]).toMatchObject({ homeScore: 4, awayScore: 4, winnerTeamId: null, resultVersion: 1 });
     const config = f.rows("competitionPhase")[0].configuration as { projection: { standings: { rows: unknown[] }[] } };
@@ -57,12 +59,14 @@ describe("official result transaction", () => {
 
   it.each([[[]], [[{ gameNumber: 1, homeScore: 2, awayScore: 2 }]], [[{ gameNumber: 1, homeScore: 1, awayScore: 0 }]], [[{ gameNumber: 2, homeScore: 2, awayScore: 0 }, { gameNumber: 3, homeScore: 2, awayScore: 0 }]], [games(5)]])("rejects invalid or incomplete best-of series %j", async invalid => {
     const f = await fixture();
+    await f.start(f.graph.matches[0]);
     await expect(f.run({ kind: "result_submit", matchId: f.graph.matches[0].id, games: invalid } as OperationCommand)).rejects.toThrow();
     expect(f.rows("matchResultRevision")).toEqual([]); expect(f.rows("event")[0].competitionVersion).toBe(1);
   });
 
   it("returns the identical committed revision for a retry and conflicts on another stale writer", async () => {
     const f = await fixture(); const m = f.graph.matches[0];
+    await f.start(m);
     const request = { eventId: "event", actor, expectedVersion: 1, idempotencyKey: "same", command: { kind: "result_submit", matchId: m.id, games: games(m.bestOf) } as OperationCommand };
     const receipt = await f.service.execute(request);
     expect(await f.service.execute(request)).toEqual(receipt);
@@ -74,6 +78,7 @@ describe("official result transaction", () => {
   it.each(["matchResultRevision", "match", "competitionPhase", "scheduleRevision", "competitionActionItem", "competitionAuditLog"])("rolls back every result effect when %s fails", async table => {
     const f = await fixture(); const draft = await f.run({ kind: "schedule_save", input: scheduling });
     await f.run({ kind: "schedule_publish", revisionId: draft.resourceId! });
+    await f.start(f.graph.matches[0]);
     const tables = ["event", "match", "matchResultRevision", "competitionPhase", "scheduleRevision", "competitionActionItem", "competitionAuditLog"];
     const before = tables.map(f.rows); f.failWrites(table);
     await expect(f.submit(f.graph.matches[0])).rejects.toThrow("storage failure");

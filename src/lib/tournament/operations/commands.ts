@@ -15,7 +15,7 @@ import { outstandingDelayEstimates } from "./delay-estimates";
 function requireReason(value: string | undefined) { if (!value?.trim()) throw new Error("An override or resolution reason is required"); }
 
 /** Internal: must run only after authorization and event CAS in execute(). */
-export async function applyCommand(tx: Prisma.TransactionClient, eventId: string, actorId: string, command: ParsedCommand, version: number, idempotencyKey: string, now: Date): Promise<string | undefined> {
+export async function applyCommand(tx: Prisma.TransactionClient, eventId: string, actorId: string, command: ParsedCommand, version: number, idempotencyKey: string, now: Date, readinessActor: "organizer" | "captain" = "organizer"): Promise<string | undefined> {
   if (["readiness_update", "readiness_deadline", "match_start", "match_timing"].includes(command.kind)) {
     const graph = await readGraph(tx, eventId);
     if (!("matchId" in command) || !graph.matches.some(m => m.id === command.matchId)) throw new Error("Match not found in competition");
@@ -144,7 +144,7 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       if (isTerminal(match)) throw new Error("Cannot change readiness for a live or completed match");
       if (![match.homeTeamId, match.awayTeamId].includes(command.teamId)) throw new Error("Team is not a match participant");
       const prior = await tx.matchReadiness.findUnique({ where: { matchId_teamId: { matchId: match.id, teamId: command.teamId } } });
-      const data = { status: command.status, actor: "organizer" as const, actorUserId: actorId, note: command.note ?? null,
+      const data = { status: command.status, actor: readinessActor, actorUserId: actorId, note: command.note ?? null,
         checkedInAt: command.status === "checked_in" || command.status === "ready" ? prior?.checkedInAt ?? now : prior?.checkedInAt ?? null,
         readyAt: command.status === "ready" ? prior?.readyAt ?? now : null };
       const readiness = await tx.matchReadiness.upsert({ where: { matchId_teamId: { matchId: match.id, teamId: command.teamId } },

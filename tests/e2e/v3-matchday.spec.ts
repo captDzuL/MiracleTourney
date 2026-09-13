@@ -99,9 +99,13 @@ test("readiness deadline raises an action without walkover, organizer can overri
 for (const kind of ["single_elimination", "double_elimination", "round_robin", "group_playoffs"] as MatchdayKind[]) {
   test(`official ${kind} result advances the authoritative competition and public state`, async ({ page }) => {
     fixture = await prepareMatchdayFixture(kind); const graph = await fixture.graph(); const match = graph.matches[0];
+    await fixture.run({ kind: "match_start", matchId: match.id, reason: "Both teams confirmed at desk" });
     await loginAsOrganizer(page, "en"); await openMatch(page, match.id); await result(page);
     if (kind === "group_playoffs") {
-      for (const groupMatch of graph.matches.filter(m => m.groupId && m.id !== match.id)) await fixture.run({ kind: "result_submit", matchId: groupMatch.id, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
+      for (const groupMatch of graph.matches.filter(m => m.groupId && m.id !== match.id)) {
+        await fixture.run({ kind: "match_start", matchId: groupMatch.id, reason: "Group fixture setup" });
+        await fixture.run({ kind: "result_submit", matchId: groupMatch.id, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
+      }
     }
     const updated = await state(page); const completed = updated.matches.find(m => m.id === match.id)!;
     if (kind === "group_playoffs") for (const node of graph.matches.filter(m => !m.groupId && m.round === 1)) {
@@ -123,6 +127,7 @@ for (const kind of ["single_elimination", "double_elimination", "round_robin", "
 
 test("allows a reviewed correction, then rejects correction once its downstream match is live", async ({ page }) => {
   fixture = await prepareMatchdayFixture(); const graph = await fixture.graph(); const first = graph.matches[0];
+  await fixture.run({ kind: "match_start", matchId: first.id, reason: "Both teams confirmed at desk" });
   await loginAsOrganizer(page, "en"); await openMatch(page, first.id); await result(page);
   await page.getByRole("button", { name: "Reload official result", exact: true }).click();
   const form = page.getByRole("form", { name: "Official result", exact: true });
@@ -132,6 +137,7 @@ test("allows a reviewed correction, then rejects correction once its downstream 
   await expect(form.getByRole("button", { name: "Confirm correction" })).toBeEnabled();
   await form.getByRole("button", { name: "Confirm correction" }).click();
   await expect.poll(async () => (await state(page)).matches.find(m => m.id === first.id)?.resultVersion).toBe(2);
+  await fixture.run({ kind: "match_start", matchId: graph.matches[1].id, reason: "Both teams confirmed at desk" });
   await fixture.run({ kind: "result_submit", matchId: graph.matches[1].id, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
   await fixture.run({ kind: "match_start", matchId: graph.matches[2].id, reason: "Both finalists confirmed" });
   await page.reload();

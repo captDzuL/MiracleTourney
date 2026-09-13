@@ -21,6 +21,7 @@ describe("authenticated competition actions", () => {
     const call = (version: number, command: unknown) => executeCompetitionOperationAction({ eventId: "event", expectedVersion: version, idempotencyKey: `k${version}`, command });
     await call(0, { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] });
     const matchId = String(store.rows("match")[0].id);
+    await store.db.$transaction(async tx => tx.match.update({ where: { id: matchId }, data: { status: "Live", scheduleStatus: "live", actualStartedAt: new Date("2026-09-12T09:00:00Z") } }));
     await call(1, { kind: "result_submit", matchId, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
     const input = { eventId: "event", matchId, games: [{ gameNumber: 1, homeScore: 0, awayScore: 2 }] };
     const preview = await previewCompetitionResultCorrectionAction(input);

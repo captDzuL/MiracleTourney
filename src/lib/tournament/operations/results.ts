@@ -100,7 +100,10 @@ export async function applyResult(tx: Prisma.TransactionClient, eventId: string,
     const preview = await correctionPreview(tx, eventId, match.id, command.games, version - 1);
     if (preview.blockedMatchIds.length) throw new Error("Cannot correct a result with a live or completed dependent match");
     if (preview.token !== command.previewToken) throw new Error("Correction preview is missing or stale: review the impact again");
-  } else if (match.resultVersion > 0 || match.status === "Completed") throw new Error("Official result already exists: use correction");
+  } else {
+    if (match.resultVersion > 0 || match.status === "Completed") throw new Error("Official result already exists: use correction");
+    if (!match.actualStartedAt || match.status !== "Live" || !["live", "delayed"].includes(match.scheduleStatus)) throw new Error("Official result requires a started match");
+  }
 
   const revision = await tx.matchResultRevision.create({ data: {
     eventId, matchId: match.id, version: match.resultVersion + 1, homeScore: score.homeScore, awayScore: score.awayScore,

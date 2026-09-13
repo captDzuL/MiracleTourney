@@ -16,12 +16,14 @@ export function createCompetitionOperations(db: PrismaClient, clock: () => Date 
   async function execute(input: OperationInput): Promise<OperationReceipt> {
     const { actor } = input;
     const request = operationRequestSchema.parse({ eventId: input.eventId, expectedVersion: input.expectedVersion, idempotencyKey: input.idempotencyKey, command: input.command });
-    if (!actor?.id || !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new Error("Not authorized");
     const { eventId, expectedVersion, idempotencyKey, command } = request;
+    const isCaptainReadiness = actor?.role === "captain" && command.kind === "readiness_update";
+    if (!actor?.id || !isCaptainReadiness && !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new Error("Not authorized");
     const mutation = JSON.parse(JSON.stringify({ ...request, actorId: actor.id }));
     const transact = () => db.$transaction(async tx => {
       const event = await tx.event.findUnique({ where: { id: eventId } });
       if (!event || actor.role === "organizer" && event.organizerUserId !== actor.id) throw new Error("Not authorized");
+      if (isCaptainReadiness && !await tx.team.findFirst({ where: { id: command.teamId, eventId, captainId: actor.id } })) throw new Error("Not authorized");
       const previous = await tx.competitionAuditLog.findFirst({ where: { eventId, idempotencyKey } });
       if (previous) {
         const payload = previous.payload as { request: Prisma.JsonValue; receipt: OperationReceipt };
@@ -33,7 +35,7 @@ export function createCompetitionOperations(db: PrismaClient, clock: () => Date 
         data: { competitionVersion: { increment: 1 } },
       });
       if (updated.count !== 1) throw new Error("Version conflict: refresh competition state");
-      const resourceId = await applyCommand(tx, eventId, actor.id, command, expectedVersion + 1, idempotencyKey, clock());
+      const resourceId = await applyCommand(tx, eventId, actor.id, command, expectedVersion + 1, idempotencyKey, clock(), isCaptainReadiness ? "captain" : "organizer");
       const receipt: OperationReceipt = { version: expectedVersion + 1, ...(resourceId ? { resourceId } : {}) };
       await tx.competitionAuditLog.create({ data: {
         eventId, actorUserId: actor.id, action: command.kind, idempotencyKey,

@@ -50,6 +50,7 @@ export async function prepareMatchdayFixture(kind: MatchdayKind = "single_elimin
     if (stage === "showcase") {
       const playable = (await graph()).matches.filter(m => m.home.kind === "team" && m.away.kind === "team");
       const first = playable[0];
+      await run({ kind: "match_start", matchId: first.id, reason: "Showcase fixture setup" });
       await run({ kind: "result_submit", matchId: first.id, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
       const games = [{ gameNumber: 1, homeScore: 0, awayScore: 2 }];
       const preview = await operations.previewResultCorrection({ eventId: id, actor, matchId: first.id, games });

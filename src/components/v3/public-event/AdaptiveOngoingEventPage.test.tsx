@@ -25,7 +25,9 @@ it.each(["id", "en"] as const)("labels urgent announcements explicitly in %s", l
 it("keeps the complete published fixture list accessible beyond the next twelve matches", () => {
   const nextMatches = Array.from({ length: 14 }, (_, index) => ({ ...match, id: `fixture-${index}`, home: `Team ${index}`, status: "scheduled" as const }));
   const html = renderToStaticMarkup(<AdaptiveOngoingEventPage locale="en" view={{ ...view, matches: [], nextMatches }} />);
-  expect(html).toContain("Team 13"); expect(html).toContain("<summary"); expect(html).toContain("Full schedule");
+  expect(html).toContain("Team 13"); expect(html).toContain("<summary"); expect(html).toContain("Remaining schedule");
+  expect(html.match(/Team 0/g)).toHaveLength(1);
+  expect(html.match(/Team 13/g)).toHaveLength(1);
 });
 it.each([
   ["single", null, false, "single 1", "Eliminasi · Babak 1", "Elimination · Round 1"],

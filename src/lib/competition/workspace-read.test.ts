@@ -20,6 +20,13 @@ describe("private organizer read state", () => {
     store.seed("eventAnnouncement", { id: "notice", eventId: "event", title: "Notice", body: "Body", status: "draft", urgency: "important" });
     expect((await readCompetitionWorkspace("event")).announcements[0]).toMatchObject({ urgency: "important" });
   });
+  it("orders the action queue by every persisted priority and then creation order", async () => {
+    store.seed("competitionActionItem", { id: "soon", eventId: "event", conditionKey: "soon", priority: "attention_soon", title: "Soon", resolvedAt: null, createdAt: new Date("2026-09-12T01:00:00Z") });
+    store.seed("competitionActionItem", { id: "urgent-new", eventId: "event", conditionKey: "urgent-new", priority: "urgent", title: "Urgent new", resolvedAt: null, createdAt: new Date("2026-09-12T03:00:00Z") });
+    store.seed("competitionActionItem", { id: "critical", eventId: "event", conditionKey: "critical", priority: "critical", title: "Critical", resolvedAt: null, createdAt: new Date("2026-09-12T04:00:00Z") });
+    store.seed("competitionActionItem", { id: "urgent-old", eventId: "event", conditionKey: "urgent-old", priority: "urgent", title: "Urgent old", resolvedAt: null, createdAt: new Date("2026-09-12T02:00:00Z") });
+    expect((await readCompetitionWorkspace("event")).actions.map(action => action.id)).toEqual(["critical", "urgent-old", "urgent-new", "soon"]);
+  });
   let store: ReturnType<typeof operationStore>;
   beforeEach(() => { store = operationStore(); boundary.db = store.db; boundary.user = { id: "owner", role: "organizer", mustChangePassword: false }; boundary.enabled = true; });
   it("returns serializable format context, seeded teams, and official match state", async () => {
