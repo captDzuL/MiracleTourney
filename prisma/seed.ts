@@ -1,7 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { completeTournament } from "../src/lib/completion/complete";
+import { createPrismaCompletionDependencies } from "../src/lib/completion/prisma-adapter";
 import { createCompetitionOperations, type OperationCommand } from "../src/lib/tournament/operations";
-import { TOURNAMENT_FORMAT_PRESETS } from "../src/lib/tournament/formats/types";
+import { TOURNAMENT_FORMAT_PRESETS, type TournamentFormatConfig } from "../src/lib/tournament/formats/types";
 
 const prisma = new PrismaClient();
 const isTestMode = process.argv.includes("--test");
@@ -41,6 +43,14 @@ const seededFinishedSchedule = {
   rooms: ["Flashpeak Arena Final A", "Flashpeak Arena Final B"],
 };
 
+const seededFinishedFormat: TournamentFormatConfig = {
+  version: 1,
+  kind: "single_elimination",
+  bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 },
+  thirdPlace: "required",
+};
+const finishedCompletionIdempotencyKey = "00000000-0000-4000-8000-000000000032";
+
 const legacyFlashpeakMatchIds = new Set([
   "match-flash-o-1", "match-flash-o-2", "match-flash-o-3", "match-flash-o-4",
   "match-flash-f-1", "match-flash-f-2", "match-flash-f-3", "match-flash-f-4",
@@ -50,19 +60,14 @@ const legacyFlashpeakMatchIds = new Set([
 async function clearLegacyFlashpeakFixture(eventId: string) {
   if (await prisma.competitionPhase.count({ where: { eventId } })) return;
 
-  const legacyMatches = await prisma.match.findMany({
-    where: { eventId, id: { in: [...legacyFlashpeakMatchIds] } },
-    select: { id: true },
-  });
-  if (!legacyMatches.length) return;
-
   const allMatches = await prisma.match.findMany({ where: { eventId }, select: { id: true } });
+  if (!allMatches.length) return;
   if (allMatches.some((match) => !legacyFlashpeakMatchIds.has(match.id))) {
     throw new Error(`Refusing to replace non-fixture matches while upgrading Flashpeak event ${eventId}`);
   }
-
-  const ids = legacyMatches.map((match) => match.id);
+  const ids = allMatches.map((match) => match.id);
   await prisma.$transaction(async (tx) => {
+    await tx.tournamentCompletion.deleteMany({ where: { eventId } });
     await tx.match.deleteMany({ where: { eventId, id: { in: ids } } });
     await tx.scheduleRevision.deleteMany({ where: { eventId, idempotencyKey: { startsWith: "seed-v3-flashpeak-" } } });
     await tx.competitionAuditLog.deleteMany({ where: { eventId, idempotencyKey: { startsWith: "seed-v3-flashpeak-" } } });
@@ -94,6 +99,7 @@ async function ensureAuthoritativeCompetition(
   teams: Array<{ id: string }>,
   namespace: string,
   schedule?: typeof seededOngoingSchedule,
+  config: TournamentFormatConfig = TOURNAMENT_FORMAT_PRESETS.singleElimination,
 ) {
   await clearLegacyFlashpeakFixture(eventId);
   const run = createSeedOperationRunner(eventId, organizerId);
@@ -110,7 +116,7 @@ async function ensureAuthoritativeCompetition(
     if (!phase) {
       await run(`seed-v3-${namespace}-drawing`, {
         kind: "drawing_save",
-        config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+        config,
         teams: teams.map((team, index) => ({ id: team.id, seed: index + 1 })),
       });
     }
@@ -159,12 +165,83 @@ async function seedAuthoritativeOngoingCompetition(eventId: string, organizerId:
   }
 }
 
-async function seedAuthoritativeFinishedCompetition(eventId: string, organizerId: string, teams: Array<{ id: string }>) {
-  const existingCompletion = await prisma.tournamentCompletion.findUnique({ where: { eventId }, select: { id: true } });
-  if (existingCompletion) return;
+async function seedFinishedCompletionSource(eventId: string, organizerId: string) {
+  const sourceMatch = await prisma.match.findFirst({
+    where: { eventId, status: "Completed", homeTeamId: { not: "" }, awayTeamId: { not: "" } },
+    orderBy: [{ round: "desc" }, { slot: "desc" }, { id: "asc" }],
+    select: { id: true, homeTeamId: true },
+  });
+  if (!sourceMatch) throw new Error("Seeded finished competition has no completed source match");
 
-  const run = await ensureAuthoritativeCompetition(eventId, organizerId, teams, "flashpeak-champions", seededFinishedSchedule);
-  const phase = await prisma.competitionPhase.findFirstOrThrow({ where: { eventId, sequence: 1 } });
+  const player = await prisma.player.findFirst({
+    where: { eventId, teamId: sourceMatch.homeTeamId },
+    orderBy: [{ id: "asc" }],
+  });
+  if (!player) throw new Error("Seeded finished competition has no player source");
+
+  const stats = { goal: 10, assist: 10, passing: 10, defense: 10 };
+  await prisma.playerStat.upsert({
+    where: { matchId_playerId: { matchId: sourceMatch.id, playerId: player.id } },
+    update: {
+      playerName: player.displayName,
+      teamId: player.teamId,
+      position: player.position,
+      gameSlug: "flashpeak",
+      stats,
+      source: "admin",
+      lastUpdatedBy: organizerId,
+    },
+    create: {
+      id: "stat-" + sourceMatch.id + "-" + player.id,
+      matchId: sourceMatch.id,
+      playerId: player.id,
+      playerName: player.displayName,
+      teamId: player.teamId,
+      position: player.position,
+      gameSlug: "flashpeak",
+      stats,
+      source: "admin",
+      lastUpdatedBy: organizerId,
+    },
+  });
+
+  const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId }, select: { competitionVersion: true } });
+  const actor = { id: organizerId, role: "organizer" as const };
+  const decisions = [
+    { award: "mvp" as const, playerId: player.id },
+    { award: "top_scorer" as const, playerId: player.id },
+    { award: "top_defender" as const, playerId: player.id },
+    { award: "top_assist" as const, playerId: player.id },
+  ];
+  const result = await completeTournament(
+    eventId,
+    decisions,
+    event.competitionVersion,
+    finishedCompletionIdempotencyKey,
+    createPrismaCompletionDependencies(actor, prisma),
+  );
+  if (result.status !== "completed" && result.status !== "already_applied") {
+    throw new Error("Seeded finished completion was not committed: " + JSON.stringify(result));
+  }
+}
+
+async function seedAuthoritativeFinishedCompetition(eventId: string, organizerId: string, teams: Array<{ id: string }>) {
+  const existingCompletion = await prisma.tournamentCompletion.findUnique({
+    where: { eventId },
+    select: { id: true, status: true, podiumPlacements: { select: { id: true } }, awards: { select: { id: true } } },
+  });
+  if (existingCompletion?.status === "completed"
+    && existingCompletion.podiumPlacements.length === 3
+    && existingCompletion.awards.length === 4) return;
+
+  const run = await ensureAuthoritativeCompetition(
+    eventId,
+    organizerId,
+    teams,
+    "flashpeak-champions",
+    seededFinishedSchedule,
+    seededFinishedFormat,
+  );
 
   for (;;) {
     const match = await prisma.match.findFirst({
@@ -176,36 +253,22 @@ async function seedAuthoritativeFinishedCompetition(eventId: string, organizerId
     const graphMatch = (match.scheduleMetadata as { graphMatch?: { bestOf?: number } } | null)?.graphMatch;
     const bestOf = graphMatch?.bestOf ?? 1;
     if (match.status === "Scheduled") {
-      await run(`seed-v3-flashpeak-champions-match-start-${match.id}`, {
+      await run("seed-v3-flashpeak-champions-match-start-" + match.id, {
         kind: "match_start",
         matchId: match.id,
         reason: "Deterministic public V3 completed fixture",
       });
     }
     const gameCount = bestOf === 1 ? 1 : Math.ceil(bestOf / 2);
-    await run(`seed-v3-flashpeak-champions-result-${match.id}`, {
+    await run("seed-v3-flashpeak-champions-result-" + match.id, {
       kind: "result_submit",
       matchId: match.id,
       games: Array.from({ length: gameCount }, (_, index) => ({ gameNumber: index + 1, homeScore: 2, awayScore: 0 })),
     });
   }
 
-  const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId }, select: { competitionVersion: true } });
-  await prisma.$transaction(async (tx) => {
-    await tx.competitionPhase.update({ where: { id: phase.id }, data: { status: "completed" } });
-    await tx.event.update({ where: { id: eventId }, data: { status: "Finished" } });
-    await tx.tournamentCompletion.create({
-      data: {
-        eventId,
-        status: "completed",
-        format: "single_elimination",
-        sourceSnapshot: { eventId, version: event.competitionVersion },
-        completedByUserId: organizerId,
-      },
-    });
-  });
+  await seedFinishedCompletionSource(eventId, organizerId);
 }
-
 async function seedTest() {
   const adminPasswordHash = await bcrypt.hash("TestAdmin123!", 10);
   const captainPasswordHash = await bcrypt.hash("TestCaptain123!", 10);
