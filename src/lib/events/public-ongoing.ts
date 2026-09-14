@@ -78,3 +78,7 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
     return { ...publicState, stateVersion: createHash("sha256").update(JSON.stringify(publicState)).digest("hex").slice(0, 24) };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }
+
+
+/** Stable reader name consumed by the normalized public V3 boundary. */
+export const readPublicOngoing = getPublicOngoingEvent;
