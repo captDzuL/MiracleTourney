@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 import type { PublicDiscoveryEvent } from "@/lib/events/public-discovery";
 import type { Event, Game } from "@/lib/platform/types";
 import { PublicDiscoveryHomeV3, PublicEventsCenterV3 } from "./PublicDiscoveryV3";
+import { projectCompatiblePublicV3Event } from "@/lib/events/public-v3-read";
+
+(globalThis as typeof globalThis & { React: typeof React }).React = React;
 
 function event(slug: string, status: Event["status"], phaseStatus: PublicDiscoveryEvent["phaseStatus"] = null): PublicDiscoveryEvent {
   return {
@@ -54,6 +57,7 @@ describe("public discovery V3 presentation", () => {
       games={games}
       gameFilter="all"
       loadState="ready"
+      featuredView={projectCompatiblePublicV3Event({ event: event("live", "Ongoing", "active").event })}
     />);
 
     expect(html).toContain("Miracle live");

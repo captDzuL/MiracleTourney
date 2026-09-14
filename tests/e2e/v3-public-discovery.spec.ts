@@ -13,7 +13,7 @@ async function expectNoDocumentOverflow(page: import("@playwright/test").Page) {
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
   }));
-  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
+  expect(geometry.scrollWidth, page.url()).toBeLessThanOrEqual(geometry.clientWidth);
 }
 
 test("homepage and Event Center expose the live-first discovery experience without overflow", async ({ page }) => {
@@ -24,6 +24,21 @@ test("homepage and Event Center expose the live-first discovery experience witho
     await expect(page.getByRole("navigation", { name: "Navigasi event utama" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Event lain" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Lihat semua event" }).first()).toBeVisible();
+    await expect(page.locator("header")).toHaveCount(1);
+    await expect(page.getByRole("main")).toHaveCount(1);
+    await expect(page.locator("[data-public-v3-event]")).toHaveAttribute("data-public-source", /authoritative|compatible/);
+    const hero = page.locator("[data-featured-event]");
+    const poster = hero.locator(".mpv3-poster-stage");
+    await expect(poster).toBeVisible();
+    const flow = await hero.evaluate((element) => {
+      const copy = element.querySelector(".mpv3-hero-copy")!.getBoundingClientRect();
+      const facts = element.querySelector(".mpv3-fact-strip")!.getBoundingClientRect();
+      return { copyBottom: copy.bottom, factsTop: facts.top };
+    });
+    expect(flow.factsTop).toBeGreaterThanOrEqual(flow.copyBottom);
+    if (viewport.width === 390 || viewport.width === 1440) {
+      await page.screenshot({ path: `test-results/task-5-homepage-${viewport.width}.png`, fullPage: true });
+    }
     await expectNoDocumentOverflow(page);
   }
 

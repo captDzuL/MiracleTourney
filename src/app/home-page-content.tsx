@@ -6,7 +6,9 @@ import { Link } from "@/i18n/navigation";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import { PublicHomeV2 } from "@/components/public-v2/PublicHomeV2";
 import { PublicDiscoveryHomeV3 } from "@/components/v3/public-discovery/PublicDiscoveryV3";
-import { filterDiscoveryEvents } from "@/lib/events/public-discovery";
+import { chooseFeaturedDiscoveryEvent, filterDiscoveryEvents } from "@/lib/events/public-discovery";
+import { readPublicV3Event } from "@/lib/events/public-v3-read";
+import type { PublicV3EventViewModel } from "@/lib/events/public-v3-types";
 import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getDefaultModeLabel } from "@/lib/platform/config";
@@ -118,6 +120,16 @@ export async function HomePageContent({
     const locale = localeValue === "en" ? "en" : "id";
     const discovery = await loadPublicDiscovery(getCachedPublicDiscoveryEvents);
     const entries = filterDiscoveryEvents(discovery.entries, { game: gameFilter, status: "all" });
+    const featured = chooseFeaturedDiscoveryEvent(entries);
+    let featuredView: PublicV3EventViewModel | null = null;
+    if (featured) {
+      try {
+        featuredView = await readPublicV3Event(featured.event.slug, null);
+        if (!featuredView) console.error("Homepage featured event unavailable", { slug: featured.event.slug });
+      } catch (error) {
+        console.error("Homepage featured event unavailable", { slug: featured.event.slug, error });
+      }
+    }
     return (
       <PublicDiscoveryHomeV3
         locale={locale}
@@ -125,6 +137,7 @@ export async function HomePageContent({
         games={games}
         gameFilter={gameFilter}
         loadState={discovery.loadState}
+        featuredView={featuredView}
       />
     );
   }

@@ -1,4 +1,66 @@
 /* Final public mockup palette and geometry. No global theme/token overrides. */
+.miracle-public-v3 .mpv3-home-intro { display:flex; justify-content:space-between; gap:16px; margin-bottom:20px; align-items:center; }
+.miracle-public-v3 .mpv3-home-intro > span:last-child { font-size:11px; color:var(--mpv3-muted); }
+.miracle-public-v3 .mpv3-featured { border:1px solid var(--mpv3-border); border-radius:16px; background:var(--mpv3-inset); }
+.miracle-public-v3 .mpv3-featured .mpv3-hero-grid { border:0; border-radius:16px 16px 0 0; }
+.miracle-public-v3 .mpv3-home-description { font-size:13px; line-height:1.85; max-width:430px; }
+.miracle-public-v3.mpv3-homepage .mpv3-hero-copy h1 { text-wrap:balance; }
+.miracle-public-v3 .mpv3-hero-match { margin:24px 0; border:1px solid var(--mpv3-border); border-left:2px solid var(--mpv3-cyan); padding:15px 17px; border-radius:7px; background:var(--mpv3-surface); }
+.miracle-public-v3 .mpv3-hero-match-top { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
+.miracle-public-v3 .mpv3-hero-match-top > span:last-child { font-size:10px; color:var(--mpv3-muted); }
+.miracle-public-v3 .mpv3-hero-match-score { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); gap:16px; align-items:center; margin-top:10px; font-size:12px; font-weight:600; }
+.miracle-public-v3 .mpv3-hero-match-score > span { overflow-wrap:anywhere; }
+.miracle-public-v3 .mpv3-hero-match-score > span:last-child { text-align:right; }
+.miracle-public-v3 .mpv3-hero-match-score strong { color:var(--mpv3-cream); font-size:25px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.miracle-public-v3 .mpv3-hero-match p { font-size:11px; margin-top:7px; }
+.miracle-public-v3 .mpv3-home-metadata { margin-top:24px; font-size:11px; display:flex; gap:8px; flex-wrap:wrap; }
+.miracle-public-v3 .mpv3-home-metadata > span { margin-left:16px; }
+.miracle-public-v3 .mpv3-pulse-strip { display:grid; grid-template-columns:150px minmax(0,1fr) minmax(0,1fr); border:1px solid var(--mpv3-border); background:var(--mpv3-surface); border-radius:10px; margin-top:18px; }
+.miracle-public-v3 h2.mpv3-pulse-title { display:flex; align-items:center; gap:9px; padding:20px; font-size:11px; color:var(--mpv3-cyan); letter-spacing:.08em; text-transform:uppercase; }
+.miracle-public-v3 .mpv3-pulse-item { min-width:0; padding:17px 22px; border-left:1px solid var(--mpv3-border); font-size:11px; overflow-wrap:anywhere; }
+.miracle-public-v3 a.mpv3-pulse-item:hover { background:var(--mpv3-selected); }
+.miracle-public-v3 .mpv3-pulse-item p { font-size:10px; margin-top:5px; }
+.miracle-public-v3 .mpv3-quick-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; }
+.miracle-public-v3 .mpv3-quick-card { display:block; position:relative; min-width:0; padding:22px; border:1px solid var(--mpv3-border); border-radius:10px; background:var(--mpv3-surface); }
+.miracle-public-v3 a.mpv3-quick-card:hover { border-color:var(--mpv3-violet); background:var(--mpv3-selected); }
+.miracle-public-v3 .mpv3-quick-card > svg { color:var(--mpv3-cyan); margin-bottom:24px; }
+.miracle-public-v3 .mpv3-quick-card > .mpv3-quick-arrow { position:absolute; top:20px; right:18px; width:14px; color:var(--mpv3-muted); }
+.miracle-public-v3 .mpv3-quick-card h3 { font-size:15px; margin-bottom:8px; }
+.miracle-public-v3 .mpv3-quick-card p { font-size:10px; }
+.miracle-public-v3 .mpv3-quick-card[aria-disabled="true"] { opacity:.65; }
+.miracle-public-v3 .mpv3-lifecycle { margin-top:24px; }
+.miracle-public-v3 .mpv3-lifecycle > h3 { font-size:13px; margin-bottom:14px; letter-spacing:.02em; }
+.miracle-public-v3 .mpv3-lifecycle > h3 span { color:var(--mpv3-cyan); margin-left:8px; }
+.miracle-public-v3 .mpv3-group-empty { font-size:12px; padding:16px; border:1px dashed var(--mpv3-border); border-radius:8px; }
+.miracle-public-v3 .mpv3-event-card h4 { font-size:13px; line-height:1.4; margin:15px 0 5px; font-weight:700; }
+.miracle-public-v3 .mpv3-event-card-copy > p { font-size:10px; margin-top:3px; }
+.miracle-public-v3 .mpv3-event-card-copy .mpv3-action { margin-top:auto; font-size:10px; }
+.miracle-public-v3 .mpv3-home-organizer { display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:24px; margin-top:32px; border:1px solid var(--mpv3-border); border-radius:10px; background:var(--mpv3-surface); }
+.miracle-public-v3 .mpv3-home-organizer > span:last-child { display:flex; gap:6px; font-size:11px; color:var(--mpv3-cyan); }
+.miracle-public-v3 .mpv3-empty-heading { margin-bottom:20px; }
+@media(max-width:800px) {
+  .miracle-public-v3 .mpv3-quick-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .miracle-public-v3 .mpv3-pulse-strip { grid-template-columns:110px minmax(0,1fr) minmax(0,1fr); }
+}
+@media(max-width:580px) {
+  .miracle-public-v3.mpv3-homepage .mpv3-header-inner { flex-wrap:nowrap; gap:10px; min-height:64px; }
+  .miracle-public-v3.mpv3-homepage .mpv3-brand, .miracle-public-v3.mpv3-homepage .mpv3-brand img { width:96px; }
+  .miracle-public-v3.mpv3-homepage .mpv3-global-nav { gap:10px; flex-wrap:nowrap; }
+  .miracle-public-v3.mpv3-homepage .mpv3-global-nav a { font-size:9px; white-space:nowrap; }
+  .miracle-public-v3.mpv3-homepage .mpv3-global-nav a:first-child { display:none; }
+  .miracle-public-v3.mpv3-homepage .mpv3-header-end .mpv3-action { padding:8px 10px; min-height:44px; font-size:10px; }
+  .miracle-public-v3.mpv3-homepage .mpv3-header-end svg { display:none; }
+  .miracle-public-v3 .mpv3-home-intro { align-items:flex-start; }
+  .miracle-public-v3 .mpv3-home-intro .mpv3-eyebrow { font-size:9px; max-width:190px; }
+  .miracle-public-v3 .mpv3-home-intro > span:last-child { font-size:9px; text-align:right; }
+  .miracle-public-v3 .mpv3-pulse-strip { display:flex; flex-direction:column; }
+  .miracle-public-v3 h2.mpv3-pulse-title { padding:12px 16px; }
+  .miracle-public-v3 .mpv3-pulse-item { border-left:0; border-top:1px solid var(--mpv3-border); padding:12px 16px; }
+  .miracle-public-v3 .mpv3-quick-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  .miracle-public-v3 .mpv3-quick-card { padding:19px; }
+  .miracle-public-v3 .mpv3-hero-match-score { gap:10px; }
+  .miracle-public-v3 .mpv3-hero-match-score strong { font-size:23px; }
+}
 .miracle-public-v3 {
   --mpv3-bg: #09111e;
   --mpv3-surface: #101b2b;

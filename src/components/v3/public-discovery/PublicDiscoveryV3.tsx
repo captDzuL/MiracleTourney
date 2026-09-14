@@ -1,13 +1,17 @@
 import React from "react";
 import Link from "next/link";
+import { publicV3LocalizedHref, publicV3RouteTarget, resolvePublicV3Route, type PublicV3EventViewModel } from "@/lib/events/public-v3-types";
+import { PublicV3Frame } from "./PublicV3Frame";
+import { EventPosterStage } from "./EventPosterStage";
+import { FeaturedEventHero } from "./FeaturedEventHero";
+import { EventPulse } from "./EventPulse";
+import { PublicDiscoveryShortcuts } from "./PublicDiscoveryShortcuts";
+import { PublicV3Action, PublicV3EmptyState, PublicV3Eyebrow, PublicV3SectionHeading, PublicV3StatusBadge, PublicV3Tabs } from "./PublicV3Primitives";
+import { homeCopy, homeDate } from "./home-copy";
 import {
   ArrowRight,
-  BarChart3,
   CalendarDays,
-  ListTree,
-  Radio,
   ShieldCheck,
-  Trophy,
   Users,
 } from "lucide-react";
 
@@ -139,96 +143,51 @@ function HonestEmpty({ locale, loadState }: { locale: Locale; loadState: LoadSta
   );
 }
 
-export function PublicDiscoveryHomeV3({
-  locale,
-  entries,
-  games,
-  gameFilter,
-  loadState,
-}: {
-  locale: Locale;
-  entries: readonly PublicDiscoveryEvent[];
-  games: readonly Game[];
-  gameFilter: string;
-  loadState: LoadState;
+export function PublicDiscoveryHomeV3({ locale, entries, games, gameFilter, loadState, featuredView }: {
+  locale: Locale; entries: readonly PublicDiscoveryEvent[]; games: readonly Game[];
+  gameFilter: string; loadState: LoadState; featuredView?: PublicV3EventViewModel | null;
 }) {
-  const t = copy[locale];
+  const t = homeCopy[locale];
   const featured = chooseFeaturedDiscoveryEvent(entries);
-  const otherGroups = groupDiscoveryEvents(entries.filter((entry) => entry.event.id !== featured?.event.id));
-  const stage = featured ? stageCopy(featured, locale) : null;
-  const base = featured ? `/${locale}/events/${featured.event.slug}` : `/${locale}/events`;
-  const shortcuts = featured ? [
-    { label: t.overview, href: base, icon: Trophy },
-    { label: t.participants, href: `${base}/participants`, icon: Users },
-    { label: t.schedule, href: `${base}/schedule`, icon: CalendarDays },
-    { label: t.bracket, href: `${base}/bracket`, icon: ListTree },
-    { label: t.leaderboard, href: `${base}/leaderboards`, icon: BarChart3 },
-  ] : [];
+  const view = featuredView?.identity.id === featured?.event.id ? featuredView : null;
+  const groups = groupDiscoveryEvents(entries.filter((entry) => entry.event.id !== view?.identity.id));
+  const localized = (path: string) => publicV3LocalizedHref(path)[locale];
+  const error = loadState === "error" || Boolean(featured && !view);
+  const navigation = [
+    { href: localized("/"), label: t.home, active: true },
+    ...(view ? [{ href: resolvePublicV3Route(view.identity.routes.overview, locale), label: t.featured }] : []),
+    { href: localized("/events"), label: locale === "id" ? "Semua event" : "All events" },
+  ];
+  return <PublicV3Frame className="mpv3-homepage" brandHref={localized("/")} homeLabel={t.home} skipLabel={t.skip} navigationLabel={t.mainNav} navigation={navigation}
+    headerEnd={<PublicV3Action href={localized("/login")}>{t.login}<ArrowRight aria-hidden="true" /></PublicV3Action>}
+    footer={<><span>MIRACLE</span><p>{t.footer}</p></>}>
+    <div className="mpv3-home-intro"><PublicV3Eyebrow>{t.frontRow}</PublicV3Eyebrow>{view && <span>{view.identity.game.name} / {view.identity.game.modeName}</span>}</div>
+    {view ? <>
+      <FeaturedEventHero view={view} locale={locale} gameSlug={games.find((game) => game.id === view.identity.game.id)?.slug} />
+      <EventPulse view={view} locale={locale} />
+      <PublicDiscoveryShortcuts view={view} locale={locale} />
+    </> : <div role={error ? "alert" : "status"}><h1 className="mpv3-empty-heading">{t.unavailable}</h1><PublicV3EmptyState title={error ? t.error : t.empty} description={t.footer} /></div>}
+    <section className="mpv3-section" aria-labelledby="other-events">
+      <PublicV3SectionHeading id="other-events" title={t.other} number="02" action={<PublicV3Action variant="text" href={localized("/events")}>{t.allEvents}<ArrowRight aria-hidden="true" /></PublicV3Action>} />
+      <PublicV3Tabs label={t.filters} variant="segmented" items={[{ id: "all", name: t.allGames }, ...games].map((game) => ({ href: localized(game.id === "all" ? "/" : "/?game=" + encodeURIComponent(game.id)), label: game.name, active: gameFilter === game.id }))} />
+      {([["ongoing", t.ongoing, groups.ongoing], ["upcoming", t.upcoming, groups.upcoming], ["finished", t.archive, groups.finished]] as const).map(([key, label, rows]) => <section className="mpv3-lifecycle" data-lifecycle={key} key={key}>
+        <h3>{label} <span>{rows.length}</span></h3>
+        {rows.length ? <div className="mpv3-card-grid">{rows.map((entry) => <HomeEventCard key={entry.event.id} entry={entry} games={games} locale={locale} />)}</div> : <p className="mpv3-group-empty">{t.empty}</p>}
+      </section>)}
+    </section>
+    {view && <aside className="mpv3-home-organizer"><PublicV3Eyebrow tone="muted">{t.organizer}</PublicV3Eyebrow><strong>{view.organizer.name}</strong>{view.organizer.verified && <span><ShieldCheck aria-hidden="true" />{t.verified}</span>}</aside>}
+  </PublicV3Frame>;
+}
 
-  return (
-    <div className="grid gap-8 bg-[#071012] text-[#f4f1e9]">
-      {featured ? (
-        <>
-          <section className="relative isolate min-h-[520px] overflow-hidden border border-white/15 bg-[#0b1519] p-6 sm:p-10 lg:p-14">
-            <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_76%_25%,rgba(91,105,255,0.34),transparent_32%),linear-gradient(120deg,rgba(9,22,25,0.98)_12%,rgba(9,22,25,0.78)_55%,rgba(15,24,48,0.9))]" />
-            <div className="pointer-events-none absolute -right-16 top-8 -z-10 h-72 w-72 rotate-45 border-[42px] border-violet-400/10" />
-            <div className="flex h-full max-w-4xl flex-col justify-end pt-36">
-              <p className="flex items-center gap-2 text-xs font-black tracking-[0.22em] text-[#c7ff35]">
-                {featured.hasLiveMatch ? <Radio aria-hidden="true" size={16} /> : <ShieldCheck aria-hidden="true" size={16} />}
-                {stage?.label} / {gameName(games, featured.event.gameId)}
-              </p>
-              <h1 className="mt-5 max-w-4xl text-5xl font-black uppercase leading-[0.94] tracking-[-0.045em] sm:text-7xl">{featured.event.name}</h1>
-              <p className="mt-5 max-w-2xl text-base leading-7 text-white/70">{featured.event.description}</p>
-              <p className="mt-4 text-sm font-bold text-cyan-200">{stage?.action}</p>
-              <div className="mt-7 flex flex-wrap gap-3">
-                <Link href={base} className="miracle-focus-ring inline-flex min-h-11 items-center gap-2 bg-[#c7ff35] px-5 py-3 text-sm font-black uppercase text-[#071012]">
-                  {t.explore}<ArrowRight aria-hidden="true" size={16} />
-                </Link>
-                <Link href={`/${locale}/events`} className="miracle-focus-ring inline-flex min-h-11 items-center border border-white/35 px-5 py-3 text-sm font-black uppercase text-white">
-                  {t.allEvents}
-                </Link>
-              </div>
-            </div>
-            <dl className="absolute inset-x-0 bottom-0 grid grid-cols-2 border-t border-white/15 bg-[#071012]/90 md:grid-cols-4">
-              {[
-                [locale === "id" ? "Mulai" : "Starts", featured.event.startsAt],
-                [locale === "id" ? "Venue" : "Venue", featured.event.venue],
-                [locale === "id" ? "Prize pool" : "Prize pool", featured.event.prizePoolLabel ?? "—"],
-                [locale === "id" ? "Peserta" : "Teams", `${featured.teamCount}/${featured.event.participantCap}`],
-              ].map(([label, value]) => <div key={label} className="border-r border-white/10 p-4"><dt className="text-[10px] font-bold uppercase tracking-widest text-white/45">{label}</dt><dd className="mt-1 text-sm font-bold">{value}</dd></div>)}
-            </dl>
-          </section>
-
-          <nav aria-label={locale === "id" ? "Navigasi event utama" : "Featured event navigation"} className="grid grid-cols-2 border border-white/15 sm:grid-cols-5">
-            {shortcuts.map(({ label, href, icon: Icon }) => <Link key={href} href={href} className="miracle-focus-ring flex min-h-20 items-center gap-3 border-b border-r border-white/10 bg-[#0c1518] px-4 font-bold transition hover:bg-white/5 hover:text-[#c7ff35]"><Icon aria-hidden="true" size={18} />{label}</Link>)}
-          </nav>
-        </>
-      ) : <HonestEmpty locale={locale} loadState={loadState} />}
-
-      <section className="grid gap-5" aria-labelledby="other-events">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div><p className="text-xs font-bold tracking-[0.2em] text-cyan-300">MIRACLE LEAGUE</p><h2 id="other-events" className="mt-2 text-3xl font-black uppercase">{t.otherEvents}</h2></div>
-          <Link href={`/${locale}/events`} className="miracle-focus-ring inline-flex min-h-11 items-center gap-2 text-sm font-bold text-[#c7ff35]">{t.allEvents}<ArrowRight size={16} /></Link>
-        </div>
-        {[
-          [t.ongoing, otherGroups.ongoing],
-          [t.upcoming, otherGroups.upcoming],
-          [t.finishedGroup, otherGroups.finished],
-        ].map(([label, group]) => {
-          const rows = group as PublicDiscoveryEvent[];
-          if (!rows.length) return null;
-          return <section key={label as string}><h3 className="mb-3 text-sm font-black uppercase tracking-[0.16em] text-white/55">{label as string} <span className="text-[#c7ff35]">{rows.length}</span></h3><div className="grid gap-3">{rows.map((entry) => <EventCard key={entry.event.id} entry={entry} games={games} locale={locale} />)}</div></section>;
-        })}
-      </section>
-
-      <nav aria-label={locale === "id" ? "Filter game" : "Game filters"} className="flex gap-2 overflow-x-auto pb-2">
-        {[{ id: "all", name: t.allGames }, ...games].map((game) => {
-          const href = game.id === "all" ? `/${locale}` : `/${locale}?game=${encodeURIComponent(game.id)}`;
-          return <Link key={game.id} href={href} aria-current={gameFilter === game.id ? "page" : undefined} className="miracle-focus-ring inline-flex min-h-11 shrink-0 items-center border border-white/20 px-4 text-xs font-bold uppercase tracking-wide aria-[current=page]:border-[#c7ff35] aria-[current=page]:text-[#c7ff35]">{game.name}</Link>;
-        })}
-      </nav>
-    </div>
-  );
+function HomeEventCard({ entry, games, locale }: { entry: PublicDiscoveryEvent; games: readonly Game[]; locale: Locale }) {
+  const t = homeCopy[locale];
+  const stage = getPublicDiscoveryStage(entry);
+  const label = { ongoing: t.ongoing, registration: t.registration, drawing: t.drawing, finished: t.finished }[stage];
+  const href = resolvePublicV3Route(publicV3RouteTarget(entry.event.slug, "overview"), locale);
+  return <article className="mpv3-event-card">
+    <EventPosterStage eventName={entry.event.name} gameSlug={games.find((game) => game.id === entry.event.gameId)?.slug} variant="compact" eyebrow={gameName(games, entry.event.gameId)} />
+    <div className="mpv3-event-card-copy"><PublicV3StatusBadge status={stage} label={label} /><h4><a href={href}>{entry.event.name}</a></h4><p>{gameName(games, entry.event.gameId)}</p><p>{homeDate(entry.event.startsAt, locale)}</p><p>{entry.teamCount}{entry.event.participantCap > 0 ? " / " + entry.event.participantCap : ""} {t.teams}</p><PublicV3Action variant="text" href={href}>{t.overview}<ArrowRight aria-hidden="true" /></PublicV3Action></div>
+  </article>;
 }
 
 export function PublicEventsCenterV3({

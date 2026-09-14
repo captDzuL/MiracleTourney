@@ -9,8 +9,13 @@ import { SiteFooter } from "@/components/v3/SiteFooter";
 import { getConfiguredV3Socials } from "@/components/v3/social-links";
 import { V3ShellRouter } from "@/components/v3/OperatorShell";
 import { isFeatureEnabled } from "@/lib/feature-flags";
+import { PublicHomepageShellBoundary } from "@/components/v3/public-discovery/PublicHomepageShellBoundary";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return <PublicHomepageShellBoundary enabled={isFeatureEnabled("public_discovery_v3")} shell={<ExistingAppShell>{children}</ExistingAppShell>}>{children}</PublicHomepageShellBoundary>;
+}
+
+function ExistingAppShell({ children }: { children: React.ReactNode }) {
   const t = useTranslations("nav");
   const v3Footer = useTranslations("v3Footer");
   const v3Shell = useTranslations("v3Shell");
