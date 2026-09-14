@@ -17,6 +17,24 @@ describe("private organizer read state", () => {
       timeout: 20_000,
     });
   });
+  it("forwards bounded transaction options to every workspace read transaction", async () => {
+    const forwardedOptions: unknown[] = [];
+    const transact = store.db.$transaction.bind(store.db);
+    vi.spyOn(store.db, "$transaction").mockImplementation(((work: (tx: unknown) => Promise<unknown>, options?: unknown) => {
+      forwardedOptions.push(options);
+      return transact(work);
+    }) as typeof store.db.$transaction);
+
+    await readCompetitionWorkspace("event");
+
+    expect(forwardedOptions).toHaveLength(4);
+    expect(forwardedOptions).toEqual([
+      COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS,
+      COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS,
+      COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS,
+      COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS,
+    ]);
+  });
   it("exposes a safe compatibility diagnostic for result-bearing legacy data", async () => {
     await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { format: "League" } }); });
     store.seed("match", { id: "old", eventId: "event", homeTeamId: "a", awayTeamId: "b", homeScore: 2, awayScore: 1, status: "Completed", resultVersion: 0 });
