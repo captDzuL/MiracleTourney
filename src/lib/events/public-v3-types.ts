@@ -29,6 +29,7 @@ export type PublicV3Navigation = {
 };
 
 export type PublicV3Cta = {
+  kind?: RegistrationCta["kind"] | "link";
   label: string;
   href: string | null;
   enabled: boolean;
@@ -55,6 +56,7 @@ export type PublicV3Identity = {
     contactHref: string | null;
   };
   statusExplanation: string;
+  statusExplanationKey: string;
   facts: {
     startsAt: string;
     timezone: string;
@@ -150,6 +152,7 @@ export type PublicV3Shared = {
   organizer: PublicV3Identity["organizer"];
   facts: PublicV3Identity["facts"];
   statusExplanation: string;
+  statusExplanationKey: string;
   cta: PublicV3Cta;
   navigation: PublicV3Navigation;
   teams: PublicV3Team[];
