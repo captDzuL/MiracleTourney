@@ -10,6 +10,21 @@ export type PublicDiscoveryEvent = {
 
 export type PublicDiscoveryStage = "ongoing" | "drawing" | "registration" | "finished";
 
+export type PublicDiscoveryQuery = { game?: string | string[]; status?: string | string[] };
+
+/** First recognized value wins, including explicit all; blank/unknown values are skipped. */
+export function normalizePublicDiscoveryFilters(
+  query: PublicDiscoveryQuery | undefined,
+  games: readonly { id: string }[],
+  statuses: readonly string[] = ["ongoing", "upcoming", "registration", "drawing", "finished"],
+) {
+  const firstValid = (value: string | string[] | undefined, allowed: readonly string[]) => {
+    const values = Array.isArray(value) ? value : [value];
+    return values.map((item) => item?.trim()).find((item) => item && (item === "all" || allowed.includes(item))) ?? "all";
+  };
+  return { game: firstValid(query?.game, games.map((game) => game.id)), status: firstValid(query?.status, statuses) };
+}
+
 export function getPublicDiscoveryStage(item: PublicDiscoveryEvent): PublicDiscoveryStage {
   if (item.event.status === "Ongoing") return "ongoing";
   if (item.event.status === "Finished") return "finished";

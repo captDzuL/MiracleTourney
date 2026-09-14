@@ -83,6 +83,13 @@ test("homepage and Event Center expose the live-first discovery experience witho
 
   await page.goto("/en/events");
   await expect(page.getByText("Find live events, upcoming registrations, and the official results archive.")).toBeVisible();
+  await page.goto("/en/events?game=unknown&game=game-flashpeak&game=game-other&status=&status=finished&status=ongoing");
+  const englishStatus = page.getByRole("navigation", { name: "Status filters" }).locator('a[aria-current="page"]');
+  await expect(englishStatus).toHaveAttribute("href", "/en/events?game=game-flashpeak&status=finished");
+  await expect(page.getByRole("navigation", { name: "Game filters" }).locator('a[aria-current="page"]')).toHaveText("Flashpeak");
+  await page.goto("/en/events?game=&status=unknown");
+  await expect(englishStatus).toHaveAttribute("href", "/en/events");
+  await expect(page.getByRole("navigation", { name: "Game filters" }).locator('a[aria-current="page"]')).toHaveText("All games");
 });
 
 test("public detail routes remain reachable and leaderboard sorts all six parameters", async ({ page }) => {

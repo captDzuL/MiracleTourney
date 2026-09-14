@@ -7,16 +7,13 @@ import { PublicEventsV2 } from "@/components/public-v2/PublicEventsV2";
 import { PublicEventsCenterV3 } from "@/components/v3/public-discovery/PublicDiscoveryV3";
 import { Pill, Section } from "@/components/ui";
 import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
+import { normalizePublicDiscoveryFilters, type PublicDiscoveryQuery } from "@/lib/events/public-discovery";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getAllGames, getGameForEvent, getModeForEvent, getPublicDiscoveryEvents, getPublicEvents, getTeamCountsForEvents, getTeamsForEvents } from "@/lib/platform/repository";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 
 const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });
-const getCachedPublicDiscoveryEvents = unstable_cache(
-  getPublicDiscoveryEvents,
-  ["public-discovery-events-v3"],
-  { revalidate: 30 },
-);
+export const dynamic = "force-dynamic";
 
 function getInitials(name: string) {
   return name
@@ -30,17 +27,17 @@ function getInitials(name: string) {
 export default async function EventsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ game?: string; status?: string }>;
+  searchParams?: Promise<PublicDiscoveryQuery>;
 }) {
   const t = await getTranslations("events");
   const locale = await getLocale().catch(() => undefined);
   const params = await searchParams;
-  const gameFilter = params?.game ?? "all";
-  const statusFilter = params?.status ?? "all";
   const games = getAllGames();
+  const discoveryEnabled = isFeatureEnabled("public_discovery_v3");
+  const { game: gameFilter, status: statusFilter } = normalizePublicDiscoveryFilters(params, games, discoveryEnabled ? undefined : ["published", "ongoing", "finished"]);
 
-  if (isFeatureEnabled("public_discovery_v3")) {
-    const discovery = await loadPublicDiscovery(getCachedPublicDiscoveryEvents);
+  if (discoveryEnabled) {
+    const discovery = await loadPublicDiscovery(getPublicDiscoveryEvents);
     const localeValue = locale === "en" ? "en" : "id";
     return (
       <PublicEventsCenterV3
