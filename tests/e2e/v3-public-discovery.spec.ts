@@ -45,7 +45,17 @@ test("homepage and Event Center expose the live-first discovery experience witho
   await page.goto("/id/events");
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
-    await expect(page.getByRole("heading", { level: 1, name: "Event Center" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Satu panggung utama. Semua cerita tetap hidup." })).toBeVisible();
+    await expect(page.locator("header")).toHaveCount(1);
+    await expect(page.getByRole("main")).toHaveCount(1);
+    await expect(page.locator("[data-lifecycle]")).toHaveCount(3);
+    const grid = page.locator(".mpv3-directory-grid").first();
+    await expect(grid).toBeVisible();
+    const columns = await grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length);
+    expect(columns).toBe(viewport.width <= 580 ? 1 : 2);
+    if (viewport.width === 390 || viewport.width === 1440) {
+      await page.screenshot({ path: `test-results/task-6-event-center-${viewport.width}.png`, fullPage: true });
+    }
     await expect(page.getByRole("navigation", { name: "Filter status" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Filter game" })).toBeVisible();
     await expectNoDocumentOverflow(page);
@@ -56,6 +66,20 @@ test("homepage and Event Center expose the live-first discovery experience witho
   await finished.click();
   await expect(page).toHaveURL(/\/id\/events\?status=finished$/);
   await expect(finished).toHaveAttribute("aria-current", "page");
+
+  const flashpeak = page.getByRole("navigation", { name: "Filter game" }).getByRole("link", { name: "Flashpeak", exact: true });
+  await flashpeak.click();
+  await expect(page).toHaveURL(/\/id\/events\?game=game-flashpeak&status=finished$/);
+  await expect(flashpeak).toHaveAttribute("aria-current", "page");
+  const sharedUrl = page.url();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/id\/events\?status=finished$/);
+  await page.goForward();
+  await expect(page).toHaveURL(sharedUrl);
+  await expect(flashpeak).toHaveAttribute("aria-current", "page");
+  await page.goto(sharedUrl);
+  await expect(finished).toHaveAttribute("aria-current", "page");
+  await expect(flashpeak).toHaveAttribute("aria-current", "page");
 
   await page.goto("/en/events");
   await expect(page.getByText("Find live events, upcoming registrations, and the official results archive.")).toBeVisible();

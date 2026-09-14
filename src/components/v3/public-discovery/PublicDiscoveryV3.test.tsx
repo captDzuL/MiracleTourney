@@ -92,7 +92,6 @@ describe("public discovery V3 presentation", () => {
     const html = renderToStaticMarkup(<PublicEventsCenterV3
       locale="id"
       entries={entries}
-      filteredEntries={entries}
       games={games}
       filters={{ game: "all", status: "all" }}
       loadState="ready"

@@ -6,7 +6,6 @@ import { getLocale, getTranslations } from "next-intl/server";
 import { PublicEventsV2 } from "@/components/public-v2/PublicEventsV2";
 import { PublicEventsCenterV3 } from "@/components/v3/public-discovery/PublicDiscoveryV3";
 import { Pill, Section } from "@/components/ui";
-import { filterDiscoveryEvents } from "@/lib/events/public-discovery";
 import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getAllGames, getGameForEvent, getModeForEvent, getPublicDiscoveryEvents, getPublicEvents, getTeamCountsForEvents, getTeamsForEvents } from "@/lib/platform/repository";
@@ -43,15 +42,10 @@ export default async function EventsPage({
   if (isFeatureEnabled("public_discovery_v3")) {
     const discovery = await loadPublicDiscovery(getCachedPublicDiscoveryEvents);
     const localeValue = locale === "en" ? "en" : "id";
-    const filteredEntries = filterDiscoveryEvents(discovery.entries, {
-      game: gameFilter,
-      status: statusFilter,
-    });
     return (
       <PublicEventsCenterV3
         locale={localeValue}
         entries={discovery.entries}
-        filteredEntries={filteredEntries}
         games={games}
         filters={{ game: gameFilter, status: statusFilter }}
         loadState={discovery.loadState}

@@ -1,9 +1,15 @@
 import type { Metadata } from "next";
 import { setRequestLocale } from "next-intl/server";
+import { unstable_cache } from "next/cache";
+import { EventDirectory } from "@/components/v3/public-discovery/EventDirectory";
+import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
+import { getAllGames, getPublicDiscoveryEvents } from "@/lib/platform/repository";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 
 import EventsPage from "../../events/page";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
+const getCachedDiscovery = unstable_cache(getPublicDiscoveryEvents, ["public-discovery-events-v3"], { revalidate: 30 });
 
 export async function generateMetadata({
   params,
@@ -38,6 +44,11 @@ export default async function LocalizedEventsPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale as "id" | "en");
+
+  if (isFeatureEnabled("public_discovery_v3")) {
+    const [discovery, query] = await Promise.all([loadPublicDiscovery(getCachedDiscovery), searchParams]);
+    return <EventDirectory locale={locale === "en" ? "en" : "id"} entries={discovery.entries} games={getAllGames()} filters={{ game: query?.game ?? "all", status: query?.status ?? "all" }} loadState={discovery.loadState} />;
+  }
 
   return <EventsPage searchParams={searchParams} />;
 }

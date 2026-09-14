@@ -1,4 +1,4 @@
-import type { PublicDiscoveryEvent } from "./public-discovery";
+import { sortDiscoveryEvents, type PublicDiscoveryEvent } from "./public-discovery";
 
 export type PublicDiscoveryLoadResult = {
   entries: PublicDiscoveryEvent[];
@@ -18,7 +18,7 @@ export async function loadPublicDiscovery(
         timer = setTimeout(() => reject(new Error("Public event read timed out")), timeoutMs);
       }),
     ]);
-    return { entries, loadState: "ready" };
+    return { entries: sortDiscoveryEvents(entries), loadState: "ready" };
   } catch (error) {
     logger("Public discovery events unavailable", { error });
     return { entries: [], loadState: "error" };

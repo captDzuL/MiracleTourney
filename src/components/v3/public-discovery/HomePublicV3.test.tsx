@@ -131,7 +131,7 @@ describe("final homepage composition", () => {
     expect(root.querySelector("[data-phase-highlight]")?.textContent).toContain(published ? "Drawing resmi sudah terbit" : "Drawing resmi belum diterbitkan");
     expect(root.querySelector("[data-phase-highlight]")?.textContent).not.toContain("North Force");
   });
-  it.each([["/", true, false], ["/", false, true], ["/events", true, true], ["/organizer", true, true]])("selects the correct landmark owner for %s with flag %s", (pathname, enabled, expectedShell) => {
+  it.each([["/", true, false], ["/", false, true], ["/events", true, false], ["/events", false, true], ["/events/live", true, true], ["/admin", true, true], ["/organizer", true, true]])("selects the correct landmark owner for %s with flag %s", (pathname, enabled, expectedShell) => {
     dependencies.pathname = pathname;
     const html = renderToStaticMarkup(<PublicHomepageShellBoundary enabled={enabled} shell={<main data-existing-shell>Existing route</main>}><main data-homepage-frame>Homepage</main></PublicHomepageShellBoundary>);
     expect(html.includes("data-existing-shell")).toBe(expectedShell);
