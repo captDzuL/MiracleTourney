@@ -20,22 +20,94 @@ export type PublicViewer =
     }
   | null;
 
+export type PublicV3Locale = "id" | "en";
+export type PublicV3LocalizedHref = Record<PublicV3Locale, string>;
+export type PublicV3RouteKey = "overview" | "register" | "participants" | "schedule" | "bracket" | "leaderboard" | "standings" | "custom";
+
+export type PublicV3RouteTarget = {
+  key: PublicV3RouteKey;
+  hrefByLocale: PublicV3LocalizedHref;
+};
+
+export type PublicV3RouteTargets = {
+  overview: PublicV3RouteTarget;
+  register: PublicV3RouteTarget;
+  participants: PublicV3RouteTarget;
+  schedule: PublicV3RouteTarget;
+  bracket: PublicV3RouteTarget;
+  leaderboard: PublicV3RouteTarget;
+  standings: PublicV3RouteTarget;
+};
+
+function localizedPath(path: string, locale: PublicV3Locale): string {
+  const [rawPathname, search = ""] = path.split("?");
+  const pathname = rawPathname.replace(/^\/(?:id|en)(?=\/|$)/, "") || "/";
+  const query = search ? "?" + search : "";
+  return pathname === "/" ? "/" + locale + query : "/" + locale + pathname + query;
+}
+
+/** Build the two canonical public paths once so consumers never concatenate locales themselves. */
+export function publicV3LocalizedHref(path: string): PublicV3LocalizedHref {
+  return { id: localizedPath(path, "id"), en: localizedPath(path, "en") };
+}
+
+export function publicV3RouteTarget(slug: string, key: PublicV3RouteKey): PublicV3RouteTarget {
+  const encodedSlug = encodeURIComponent(slug);
+  const suffix = key === "overview"
+    ? ""
+    : key === "register"
+      ? "/register"
+      : key === "participants"
+        ? "/participants"
+        : key === "schedule"
+          ? "/schedule"
+          : key === "bracket"
+            ? "/bracket"
+            : key === "leaderboard"
+              ? "/leaderboards"
+              : key === "standings"
+                ? "/standings"
+                : "";
+  return {
+    key,
+    hrefByLocale: publicV3LocalizedHref("/events/" + encodedSlug + suffix),
+  };
+}
+
+export function publicV3RouteTargets(slug: string): PublicV3RouteTargets {
+  return {
+    overview: publicV3RouteTarget(slug, "overview"),
+    register: publicV3RouteTarget(slug, "register"),
+    participants: publicV3RouteTarget(slug, "participants"),
+    schedule: publicV3RouteTarget(slug, "schedule"),
+    bracket: publicV3RouteTarget(slug, "bracket"),
+    leaderboard: publicV3RouteTarget(slug, "leaderboard"),
+    standings: publicV3RouteTarget(slug, "standings"),
+  };
+}
+
+export function resolvePublicV3Route(target: PublicV3RouteTarget, locale: PublicV3Locale): string {
+  return target.hrefByLocale[locale];
+}
+
 export type PublicV3Navigation = {
   overview: boolean;
   participants: boolean;
   schedule: boolean;
   bracket: boolean;
   leaderboard: boolean;
+  targets: PublicV3RouteTargets;
 };
 
 export type PublicV3Cta = {
   kind?: RegistrationCta["kind"] | "link";
   label: string;
   href: string | null;
+  hrefByLocale: PublicV3LocalizedHref | null;
+  target?: PublicV3RouteTarget;
   enabled: boolean;
   reason?: string;
 };
-
 export type PublicV3Identity = {
   id: string;
   slug: string;
@@ -57,6 +129,7 @@ export type PublicV3Identity = {
   };
   statusExplanation: string;
   statusExplanationKey: string;
+  routes: PublicV3RouteTargets;
   facts: {
     startsAt: string;
     timezone: string;

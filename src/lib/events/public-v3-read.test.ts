@@ -246,7 +246,7 @@ describe("normalized public V3 event reader", () => {
 
     if (view?.mode !== "registration") throw new Error("Expected registration projection");
     expect(view.viewer).toMatchObject({ state: "pending_review", cta: { kind: "status", href: "/captain?tab=registration&eventId=event-1" } });
-    expect(view.cta).toMatchObject({ kind: "status", label: "view_registration_status", href: "/captain?tab=registration&eventId=event-1", enabled: true });
+    expect(view.cta).toMatchObject({ kind: "status", label: "view_registration_status", href: "/id/captain?tab=registration&eventId=event-1", enabled: true });
     expect(view.facts.participants).toBe(3);
     expect(view.registration.activeTeamCount).toBe(3);
   });
@@ -257,7 +257,7 @@ describe("normalized public V3 event reader", () => {
       matches: [{ id: "match-1", status: "Completed", homeScore: null, awayScore: null }],
     });
     if (view.mode !== "drawing") throw new Error("Expected drawing projection");
-    expect(view.cta).toMatchObject({ kind: "link", label: "view_leaderboard", href: "/events/miracle-cup/leaderboards" });
+    expect(view.cta).toMatchObject({ kind: "link", label: "view_leaderboard", href: "/id/events/miracle-cup/leaderboards" });
     expect(view.navigation).toMatchObject({ bracket: false, leaderboard: true });
     expect(view.identity.organizer.name).toBe("TBD");
     expect(view.identity.facts.venue).toBe("TBD");
@@ -325,5 +325,64 @@ describe("normalized public V3 event reader", () => {
     expect(view.certificates.items).toHaveLength(7);
     expect(view.awards).toHaveLength(1);
     expect(view.awards[0]?.certificate).toMatchObject({ type: "mvp" });
+  });
+
+
+  it("emits locale-safe overview and detail targets for both supported locales", () => {
+    const view = projectCompatiblePublicV3Event({
+      event: { ...baseEvent, status: "Registration Closed", format: "League" },
+    });
+    if (view.mode !== "drawing") throw new Error("Expected drawing projection");
+    expect(view.identity.routes.overview.hrefByLocale).toEqual({
+      id: "/id/events/miracle-cup",
+      en: "/en/events/miracle-cup",
+    });
+    expect(view.navigation.targets.leaderboard.hrefByLocale).toEqual({
+      id: "/id/events/miracle-cup/leaderboards",
+      en: "/en/events/miracle-cup/leaderboards",
+    });
+    expect(view.cta.href).toBe("/id/events/miracle-cup/leaderboards");
+    expect(view.cta.hrefByLocale).toEqual({
+      id: "/id/events/miracle-cup/leaderboards",
+      en: "/en/events/miracle-cup/leaderboards",
+    });
+  });
+
+  it("keeps a human-readable status explanation separate from its localization key", () => {
+    const view = projectCompatiblePublicV3Event({ event: { ...baseEvent, status: "Ongoing" } });
+    expect(view.statusExplanationKey).toBe("ongoing.compatible");
+    expect(view.statusExplanation).not.toBe(view.statusExplanationKey);
+    expect(view.statusExplanation).toMatch(/[A-Za-z].* /);
+  });
+
+  it("keeps reopened completions in preparing state even when publication versions match", () => {
+    const certificateTypes = ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"];
+    const view = projectCompatiblePublicV3Event({
+      event: { ...baseEvent, status: "Finished" },
+      completion: {
+        id: "completion-reopened",
+        status: "reopened",
+        sourceSnapshot: { version: 4 },
+        podium: [{ rank: 1, teamId: "team-a", teamName: "Alpha" }],
+        awards: [{ type: "mvp", status: "approved", decision: { recipientId: "p1", recipientName: "Nyx", teamId: "team-a", teamName: "Alpha", reason: null } }],
+      },
+      publication: { completionId: "completion-reopened", completionVersion: 4, version: 5, certificateIds: certificateTypes.map((type) => "cert-" + type) },
+      certificates: certificateTypes.map((type) => ({
+        id: "cert-" + type,
+        type,
+        recipientKind: type === "mvp" ? "player" : "team",
+        recipientId: "recipient-" + type,
+        recipientName: type,
+        publishedUrl: "https://cert/" + type,
+        verificationCode: "CODE-" + type,
+        status: "published",
+        completionId: "completion-reopened",
+        completionVersion: 4,
+      })),
+    });
+    if (view.mode !== "finished") throw new Error("Expected finished projection");
+    expect(view.certificates).toMatchObject({ status: "preparing", isCurrent: false, isComplete: false, publishedCount: 0 });
+    expect(view.certificates.items).toEqual([]);
+    expect(view.awards).toEqual([]);
   });
 });

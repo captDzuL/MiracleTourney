@@ -8,6 +8,7 @@ import { readPublicRegistration } from "./public-registration";
 import { readPublicDrawing } from "./public-drawing";
 import { readPublicFinished } from "./public-finished";
 import { readFlashpeakStatPayload } from "@/lib/player-stats/flashpeak";
+import { publicV3LocalizedHref, publicV3RouteTargets, publicV3RouteTarget } from "./public-v3-types";
 import type {
   CompatiblePublicCertificate,
   CompatiblePublicEventInput,
@@ -85,7 +86,22 @@ function statusExplanationKey(mode: "registration" | "drawing" | "ongoing" | "fi
   return mode + "." + source;
 }
 
-function navigation(mode: "registration" | "drawing" | "ongoing" | "finished", format: string): PublicV3Navigation {
+function statusExplanationCopy(mode: "registration" | "drawing" | "ongoing" | "finished", source: PublicV3DataSource): string {
+  if (mode === "registration") return source === "authoritative"
+    ? "Official registration details are available."
+    : "Registration details are available from saved event data.";
+  if (mode === "drawing") return source === "authoritative"
+    ? "The official drawing is published."
+    : "The drawing is not yet officially published.";
+  if (mode === "ongoing") return source === "authoritative"
+    ? "The event is in progress with official schedule and results."
+    : "The event is in progress using the latest saved schedule and results.";
+  return source === "authoritative"
+    ? "The event is complete with official results and published awards."
+    : "The event is complete; awards appear after publication is verified.";
+}
+
+function navigation(mode: "registration" | "drawing" | "ongoing" | "finished", format: string, routes: ReturnType<typeof publicV3RouteTargets>): PublicV3Navigation {
   const roundRobin = /league|round.?robin/i.test(format);
   const bracket = mode !== "registration" && !roundRobin;
   return {
@@ -94,6 +110,7 @@ function navigation(mode: "registration" | "drawing" | "ongoing" | "finished", f
     schedule: mode !== "registration",
     bracket,
     leaderboard: mode === "ongoing" || mode === "finished" || (mode === "drawing" && roundRobin),
+    targets: routes,
   };
 }
 
@@ -115,16 +132,29 @@ function identityFor(
   const contactValue = text(event.organizerContactValue);
   const format = text(event.format, "TBD");
   const roundRobin = /league|round.?robin/i.test(format);
-  const cta: PublicV3Cta = mode === "registration"
-    ? { kind: "start", label: "register_team", href: "/events/" + encodeURIComponent(slug) + "/register", enabled: event.status === "Published" }
+  const routes = publicV3RouteTargets(slug);
+  const ctaTarget = mode === "registration"
+    ? routes.register
     : mode === "drawing"
-      ? roundRobin
-        ? { kind: "link", label: "view_leaderboard", href: "/events/" + encodeURIComponent(slug) + "/leaderboards", enabled: true }
-        : { kind: "link", label: "view_bracket", href: "/events/" + encodeURIComponent(slug) + "/bracket", enabled: true }
+      ? roundRobin ? routes.leaderboard : routes.bracket
       : mode === "ongoing"
-        ? { kind: "link", label: "view_live_event", href: "/events/" + encodeURIComponent(slug), enabled: true }
-        : { kind: "link", label: "view_leaderboard", href: "/events/" + encodeURIComponent(slug) + "/leaderboards", enabled: true };
-  const nav = navigation(mode, format);
+        ? routes.overview
+        : routes.leaderboard;
+  const cta: PublicV3Cta = {
+    kind: mode === "registration" ? "start" : "link",
+    label: mode === "registration"
+      ? "register_team"
+      : mode === "drawing"
+        ? roundRobin ? "view_leaderboard" : "view_bracket"
+        : mode === "ongoing"
+          ? "view_live_event"
+          : "view_leaderboard",
+    href: ctaTarget.hrefByLocale.id,
+    hrefByLocale: ctaTarget.hrefByLocale,
+    target: ctaTarget,
+    enabled: mode === "registration" ? event.status === "Published" : true,
+  };
+  const nav = navigation(mode, format, routes);
   const explanationKey = statusExplanationKey(mode, source);
   return {
     id: text(event.id, slug),
@@ -140,8 +170,9 @@ function identityFor(
       contactValue,
       contactHref: null,
     },
-    statusExplanation: explanationKey,
+    statusExplanation: statusExplanationCopy(mode, source),
     statusExplanationKey: explanationKey,
+    routes,
     facts: {
       startsAt,
       timezone: text(event.timezone, "TBD"),
@@ -315,10 +346,14 @@ function mapRegistrationCta(value: unknown, fallback: RegistrationCta): Registra
 }
 
 function publicCta(cta: RegistrationCta): PublicV3Cta {
+  const rawHref = "href" in cta ? cta.href : null;
+  const hrefByLocale = rawHref ? publicV3LocalizedHref(rawHref) : null;
   return {
     kind: cta.kind,
     label: cta.label,
-    href: "href" in cta ? cta.href : null,
+    href: hrefByLocale?.id ?? null,
+    hrefByLocale,
+    target: hrefByLocale ? { key: "custom", hrefByLocale } : undefined,
     enabled: cta.enabled,
     ...("reason" in cta ? { reason: cta.reason } : {}),
   };
@@ -428,6 +463,7 @@ function completionVersion(completion: CompatiblePublicEventInput["completion"])
 
 function certificatePublicationIsComplete(input: {
   published: boolean;
+  completionCompleted: boolean;
   expectedCount: number;
   publicationIds: string[];
   certificates: PublicV3Certificate[];
@@ -435,6 +471,7 @@ function certificatePublicationIsComplete(input: {
   const types = new Set(input.certificates.map((certificate) => certificate.type));
   const ids = new Set(input.publicationIds);
   return input.published
+    && input.completionCompleted
     && input.expectedCount === EXPECTED_CERTIFICATE_COUNT
     && input.publicationIds.length === EXPECTED_CERTIFICATE_COUNT
     && ids.size === EXPECTED_CERTIFICATE_COUNT
@@ -460,7 +497,8 @@ function certificateRows(input: CompatiblePublicEventInput, completion: Compatib
     : [];
   const version = completionVersion(completion);
   const current = Boolean(
-    publication
+    completion?.status === "completed"
+      && publication
       && completion?.id
       && publication.completionId === completion.id
       && version !== null
@@ -491,6 +529,7 @@ function certificateRows(input: CompatiblePublicEventInput, completion: Compatib
     }));
   const complete = certificatePublicationIsComplete({
     published: current,
+    completionCompleted: completion?.status === "completed",
     expectedCount: EXPECTED_CERTIFICATE_COUNT,
     publicationIds: ids,
     certificates,
@@ -910,6 +949,7 @@ function normalizeAuthoritative(
   const publishedCount = Math.floor(nonNegative(rawCertificates.publishedCount));
   const complete = certificatePublicationIsComplete({
     published: rawCertificates.status === "published" && publishedCount === expectedCount,
+    completionCompleted: true,
     expectedCount,
     publicationIds: certificateItems.map((certificate) => certificate.id),
     certificates: certificateItems,
