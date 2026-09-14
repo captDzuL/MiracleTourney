@@ -44,7 +44,7 @@ export function AdaptiveOngoingEventPage({ view, locale }: { view: PublicOngoing
   const base = `/${locale}/events/${state.event.slug}`;
   const contextRoute = state.event.format === "round_robin" ? "standings" : "bracket";
   const bracketGroups = Object.entries(Object.groupBy(state.matches.filter(m => m.bracket !== "round_robin"), m => `${m.phaseId}:${m.bracket}:${m.round}`));
-  return <div className="miracle-v3 adaptive-public-event grid min-w-0 gap-6 pb-12 text-[var(--color-text)]">
+  return <div data-public-v3-event="true" data-public-source="authoritative" className="miracle-v3 adaptive-public-event grid min-w-0 gap-6 pb-12 text-[var(--color-text)]">
     <header className={panel}>
       <p className="flex items-center gap-2 text-sm font-bold text-[var(--color-brand-cyan)]"><Radio className="h-4 w-4" aria-hidden />{t.ongoing}</p>
       <h1 className="mt-3 break-words text-3xl font-extrabold sm:text-5xl">{state.event.name}</h1>

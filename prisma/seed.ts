@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { createCompetitionOperations, type OperationCommand } from "../src/lib/tournament/operations";
 import { TOURNAMENT_FORMAT_PRESETS } from "../src/lib/tournament/formats/types";
 
 const prisma = new PrismaClient();
@@ -23,6 +24,87 @@ async function seedPlatformProfile() {
 }
 function demoTeamId(eventSlug: string, index: number) {
   return `team-${eventSlug}-${index + 1}`;
+}
+
+const seededOngoingSchedule = {
+  timezone: "Asia/Jakarta",
+  eventWindow: { start: "2026-08-12T02:00:00.000Z", end: "2026-08-13T02:00:00.000Z" },
+  matchDurationMinutes: 45,
+  bufferMinutes: 10,
+  minimumRestMinutes: 15,
+  rooms: ["Flashpeak Arena A", "Flashpeak Arena B"],
+};
+async function seedAuthoritativeOngoingCompetition(eventId: string, organizerId: string, teams: Array<{ id: string }>) {
+  const operations = createCompetitionOperations(prisma);
+  const actor = { id: organizerId, role: "organizer" };
+
+  const run = async (idempotencyKey: string, command: OperationCommand) => {
+    const event = await prisma.event.findUniqueOrThrow({
+      where: { id: eventId },
+      select: { competitionVersion: true },
+    });
+    return operations.execute({
+      eventId,
+      actor,
+      expectedVersion: event.competitionVersion,
+      idempotencyKey,
+      command,
+    });
+  };
+
+  let event = await prisma.event.findUniqueOrThrow({
+    where: { id: eventId },
+    select: { status: true, publishedScheduleVersion: true },
+  });
+  let phase = await prisma.competitionPhase.findFirst({ where: { eventId, sequence: 1 } });
+
+  if (!phase || phase.status === "draft") {
+    if (event.status !== "Registration Closed") {
+      await prisma.event.update({ where: { id: eventId }, data: { status: "Registration Closed" } });
+    }
+    if (!phase) {
+      await run("seed-v3-flashpeak-rising-drawing", {
+        kind: "drawing_save",
+        config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+        teams: teams.map((team, index) => ({ id: team.id, seed: index + 1 })),
+      });
+    }
+    await run("seed-v3-flashpeak-rising-drawing-publish", { kind: "drawing_publish" });
+  }
+
+  await prisma.event.update({ where: { id: eventId }, data: { status: "Ongoing" } });
+  event = await prisma.event.findUniqueOrThrow({
+    where: { id: eventId },
+    select: { status: true, publishedScheduleVersion: true },
+  });
+  if (event.publishedScheduleVersion == null) {
+    const draft = await run("seed-v3-flashpeak-rising-schedule-save", {
+      kind: "schedule_save",
+      input: seededOngoingSchedule,
+    });
+    const revisionId = draft.resourceId
+      ?? (await prisma.scheduleRevision.findFirst({
+        where: { eventId, idempotencyKey: "seed-v3-flashpeak-rising-schedule-save" },
+        select: { id: true },
+      }))?.id;
+    if (!revisionId) throw new Error("Seeded ongoing schedule draft did not return a revision id");
+    await run("seed-v3-flashpeak-rising-schedule-publish", { kind: "schedule_publish", revisionId });
+  }
+
+  const liveMatch = await prisma.match.findFirst({ where: { eventId, status: "Live" }, select: { id: true } });
+  if (!liveMatch) {
+    const playableMatch = await prisma.match.findFirst({
+      where: { eventId, status: "Scheduled", homeTeamId: { not: "" }, awayTeamId: { not: "" } },
+      orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }],
+      select: { id: true },
+    });
+    if (!playableMatch) throw new Error("Seeded ongoing competition has no playable match to start");
+    await run("seed-v3-flashpeak-rising-match-start", {
+      kind: "match_start",
+      matchId: playableMatch.id,
+      reason: "Deterministic public V3 showcase fixture",
+    });
+  }
 }
 
 async function seedTest() {
@@ -321,7 +403,7 @@ async function main() {
       gameId: "game-flashpeak",
       gameModeId: "mode-flashpeak-5v5",
       format: "Single Elimination",
-      status: "Ongoing",
+      status: "Registration Closed",
       participantCap: 64,
       registrationWindow: "August 1, 2026 - August 9, 2026",
       startsAt: "August 12, 2026",
@@ -529,6 +611,12 @@ async function main() {
     teamsByEventSlug.set(event.slug, teams);
   }
 
+  await seedAuthoritativeOngoingCompetition(
+    flashpeakOngoingEvent.id,
+    organizerA.id,
+    teamsByEventSlug.get(flashpeakOngoingEvent.slug) ?? [],
+  );
+
   const matchSeeds = [
     { id: "match-flash-f-1", event: flashpeakFinishedEvent, roundLabel: "Quarterfinal", teams: [0, 7], score: [3, 1], status: "Completed", round: 1, slot: 1 },
     { id: "match-flash-f-2", event: flashpeakFinishedEvent, roundLabel: "Quarterfinal", teams: [3, 4], score: [2, 0], status: "Completed", round: 1, slot: 2 },
@@ -537,10 +625,6 @@ async function main() {
     { id: "match-flash-f-5", event: flashpeakFinishedEvent, roundLabel: "Semifinal", teams: [0, 3], score: [2, 1], status: "Completed", round: 2, slot: 1 },
     { id: "match-flash-f-6", event: flashpeakFinishedEvent, roundLabel: "Semifinal", teams: [6, 2], score: [1, 3], status: "Completed", round: 2, slot: 2 },
     { id: "match-flash-f-7", event: flashpeakFinishedEvent, roundLabel: "Final", teams: [0, 2], score: [3, 2], status: "Completed", round: 3, slot: 1 },
-    { id: "match-flash-o-1", event: flashpeakOngoingEvent, roundLabel: "Round 1", teams: [0, 7], score: [2, 1], status: "Completed", round: 1, slot: 1 },
-    { id: "match-flash-o-2", event: flashpeakOngoingEvent, roundLabel: "Round 1", teams: [3, 4], score: [0, 2], status: "Completed", round: 1, slot: 2 },
-    { id: "match-flash-o-3", event: flashpeakOngoingEvent, roundLabel: "Round 1", teams: [1, 6], score: [0, 0], status: "Scheduled", round: 1, slot: 3, scheduledLabel: "Tonight 20:00 WIB" },
-    { id: "match-flash-o-4", event: flashpeakOngoingEvent, roundLabel: "Round 1", teams: [2, 5], score: [0, 0], status: "Scheduled", round: 1, slot: 4, scheduledLabel: "Tonight 21:00 WIB" },
     { id: "match-mlbb-f-1", event: mlbbFinishedEvent, roundLabel: "Quarterfinal", teams: [0, 7], score: [2, 0], status: "Completed", round: 1, slot: 1 },
     { id: "match-mlbb-f-2", event: mlbbFinishedEvent, roundLabel: "Quarterfinal", teams: [3, 4], score: [2, 1], status: "Completed", round: 1, slot: 2 },
     { id: "match-mlbb-f-3", event: mlbbFinishedEvent, roundLabel: "Quarterfinal", teams: [1, 6], score: [1, 2], status: "Completed", round: 1, slot: 3 },
