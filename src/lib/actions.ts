@@ -1868,4 +1868,3 @@ export async function resetPasswordAction(formData: FormData) {
     `/login?message=${encodeURIComponent("Password berhasil direset. Silakan login.")}` as never,
   );
 }
-

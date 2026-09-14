@@ -45,4 +45,3 @@ it.each([
     expect(html).toContain(locale === "id" ? idLabel : enLabel); expect(html).not.toContain(internalLabel); expect(html).toContain("TBD");
   }
 });
-

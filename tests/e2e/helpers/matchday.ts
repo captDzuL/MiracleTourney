@@ -275,7 +275,3 @@ export async function prepareMatchdayFixture(
     throw error;
   }
 }
-
-
-
-

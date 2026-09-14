@@ -64,6 +64,12 @@ async function openMatch(page: Page, id: string) {
   await expect(page.getByRole("heading", { name: "Official result", exact: true })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
 }
 
+async function openSchedule(page: Page, linkName: "Schedule" | "Review schedule impact") {
+  await page.getByRole("link", { name: linkName, exact: true }).click();
+  await page.waitForURL(/\/schedule$/, { timeout: NAV_TIMEOUT_MS });
+  await expect(page.getByRole("heading", { name: "Schedule generation", exact: true })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
+}
+
 async function result(page: Page, matchId: string, home = "2", away = "0") {
   const form = page.getByRole("form", { name: "Official result", exact: true });
   const submit = form.getByRole("button", { name: "Submit official result", exact: true });
@@ -72,10 +78,10 @@ async function result(page: Page, matchId: string, home = "2", away = "0") {
   await form.locator('input[name="away-1"]').fill(away);
   await submit.click();
   await expect.poll(
-    async () => (await state(page)).matches.find((match) => match.id === matchId)?.resultVersion,
-    { timeout: 15_000 },
+    async () => (await matchdayDb.match.findUnique({ where: { id: matchId }, select: { resultVersion: true } }))?.resultVersion,
+    { timeout: POLL_TIMEOUT_MS },
   ).toBe(1);
-  await expect(form.getByRole("button", { name: "Preview correction", exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(form.getByRole("button", { name: "Preview correction", exact: true })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
 }
 
 test("generates competition, reviews the initial schedule and publishes explicitly", async ({ page }) => {
@@ -91,11 +97,11 @@ test("generates competition, reviews the initial schedule and publishes explicit
     where: { id: fixture.id },
     data: { status: "Ongoing" },
   });
-  await page.getByRole("link", { name: "Schedule", exact: true }).click();
+  await openSchedule(page, "Schedule");
   await page.getByLabel("Window end", { exact: true }).fill("2026-01-02T09:00");
   await page.getByLabel("Rooms (comma separated)", { exact: true }).fill("Arena A, Arena B");
   await page.getByRole("button", { name: "Generate schedule preview", exact: true }).click();
-  await expect(page.getByRole("heading", { name: /Impact preview/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Impact preview/ })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
 
   const [organizerPreview, unpublishedPublic] = await Promise.all([state(page), publicState(page)]);
   expect(organizerPreview.publishedSchedule).toBeNull();
@@ -121,8 +127,8 @@ test("marks a delay, reviews downstream impact and publishes a schedule revision
   await expect.poll(async () => (await state(page)).matches[0].scheduleStatus, { timeout: POLL_TIMEOUT_MS }).toBe("delayed");
   expect((await state(page)).publishedSchedule?.version).toBe(before?.version);
 
-  await page.getByRole("link", { name: "Review schedule impact" }).click();
-  await expect(page.getByRole("heading", { name: /Impact preview/ })).toBeVisible();
+  await openSchedule(page, "Review schedule impact");
+  await expect(page.getByRole("heading", { name: /Impact preview/ })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
   await expect(page.getByText("Before:", { exact: false }).first()).toBeVisible();
   await page.getByRole("button", { name: "Publish schedule", exact: true }).click();
   await expect.poll(async () => (await state(page)).publishedSchedule?.version, { timeout: POLL_TIMEOUT_MS }).not.toBe(before?.version);
@@ -150,8 +156,8 @@ test("reviews a live overrun without moving the live match or exposing its estim
   await expect.poll(async () => (await state(page)).matches.find(m => m.id === id)?.scheduleStatus, { timeout: POLL_TIMEOUT_MS }).toBe("delayed");
   expect((await publicState(page)).liveMatches.find((m: { id: string }) => m.id === id)).toMatchObject({ status: "live", end: before.end });
 
-  await page.getByRole("link", { name: "Review schedule impact" }).click();
-  await expect(page.getByRole("heading", { name: /Impact preview/ })).toBeVisible();
+  await openSchedule(page, "Review schedule impact");
+  await expect(page.getByRole("heading", { name: /Impact preview/ })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
   await page.getByRole("button", { name: "Publish schedule", exact: true }).click();
   await expect.poll(async () => (await publicState(page)).liveMatches.find((m: { id: string }) => m.id === id)?.end, { timeout: POLL_TIMEOUT_MS }).toBe("2026-01-01T03:30:00.000Z");
 

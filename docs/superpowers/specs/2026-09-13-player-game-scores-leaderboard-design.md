@@ -1,6 +1,6 @@
 # Player game scores and sortable Flashpeak leaderboard
 
-Date: 13 September 2026  
+Date: 13 September 2026
 Status: Approved design; implementation not started.
 
 ## Objective
