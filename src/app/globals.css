@@ -4,6 +4,7 @@
 @import "@fontsource/montserrat/700.css";
 @import "@fontsource/montserrat/800.css";
 @import "../styles/miracle-v3-tokens.css";
+@import "../styles/miracle-public-v3.css";
 @import "tailwindcss";
 @source "../**/*.{js,ts,jsx,tsx,mdx}";
 
