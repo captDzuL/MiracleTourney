@@ -29,6 +29,11 @@ type EventIdentity = { readonly id: string; readonly name: string };
 type CertificateAssetPurpose = TrustedCertificateAsset["purpose"];
 type StoredSelectedAsset = { readonly assetId: string; readonly placement: CertificateAssetPlacement; readonly asset: Omit<TrustedCertificateAsset, "storageOwnershipVerified"> };
 const STALE_MUTATION_MS = 5 * 60 * 1000;
+export const CERTIFICATE_STUDIO_TRANSACTION_OPTIONS = {
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  maxWait: 5_000,
+  timeout: 20_000,
+} as const;
 
 const completionVersion = (snapshot: Prisma.JsonValue): number | null => {
   if (!snapshot || Array.isArray(snapshot) || typeof snapshot !== "object") return null;
@@ -503,7 +508,10 @@ export function createPrismaCertificateStudioDependencies(actor: CertificateStud
   const storage = createOnlyCertificateStorage();
   return { transaction: async (eventId, work) => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      try { return await prisma.$transaction((tx) => work(createCertificateStudioTransaction(tx, eventId, actor)), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); }
+      try { return await prisma.$transaction(
+        (tx) => work(createCertificateStudioTransaction(tx, eventId, actor)),
+        CERTIFICATE_STUDIO_TRANSACTION_OPTIONS,
+      ); }
       catch (error) {
         const code = typeof error === "object" && error && "code" in error ? (error as { code?: string }).code : undefined;
         if (!["P2034", "P2002"].includes(code ?? "") || attempt === 2) throw error;

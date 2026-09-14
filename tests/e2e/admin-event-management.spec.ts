@@ -62,14 +62,23 @@ test.describe("admin event management", () => {
   });
 
   test("admin can change event status from Draft to Published", async ({ page }) => {
+    const event = await prisma.event.findUniqueOrThrow({
+      where: { slug: "kuroko-summer-cup" },
+      select: { id: true },
+    });
     const eventStatusForm = page.locator("form").filter({
       has: page.getByRole("button", { name: "Save event status" }),
     });
     await eventStatusForm.getByLabel("Event").selectOption({ label: "Kuroko Street Rival Summer Cup" });
     await eventStatusForm.getByLabel("Status").selectOption("Published");
-    await eventStatusForm.getByRole("button", { name: "Save event status" }).click();
-
-    await expect(page).toHaveURL(/success=event-status-updated/);
+    await Promise.all([
+      page.waitForURL(/success=event-status-updated/, { waitUntil: "load", timeout: 30_000 }),
+      eventStatusForm.getByRole("button", { name: "Save event status" }).click(),
+    ]);
+    await expect.poll(async () => (await prisma.event.findUnique({
+      where: { id: event.id },
+      select: { status: true },
+    }))?.status, { timeout: 30_000 }).toBe("Published");
   });
 
   test("admin can import teams via CSV and see success count", async ({ page }) => {

@@ -7,7 +7,10 @@ import {
   regenerateCertificate,
   type CertificateStudioDependencies,
 } from "../../../src/lib/certificate/service";
-import { createCertificateStudioTransaction } from "../../../src/lib/certificate/studio-repository";
+import {
+  CERTIFICATE_STUDIO_TRANSACTION_OPTIONS,
+  createCertificateStudioTransaction,
+} from "../../../src/lib/certificate/studio-repository";
 import { completeTournament } from "../../../src/lib/completion/complete";
 import { createPrismaCompletionDependencies } from "../../../src/lib/completion/prisma-adapter";
 import { MIRACLE_V3_CERTIFICATE_TYPES } from "../../../src/lib/certificate/templates/miracle-v3-contract";
@@ -478,7 +481,7 @@ export async function prepareCertificateFixture(namespace = randomUUID().slice(0
         (tx) => work(createCertificateStudioTransaction(tx, eventId, studioActor, {
           materializeAssetUrl: async () => "data:image/png;base64,iVBORw0KGgo=",
         })),
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        CERTIFICATE_STUDIO_TRANSACTION_OPTIONS,
       ),
       generate: async (data) => {
         const imageUrl = `/certificates/${data.eventId}-${data.certificateType}-v${data.version}.png`;

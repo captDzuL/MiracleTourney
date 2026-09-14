@@ -1,10 +1,25 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { certificateStudioAvailability, createCertificateStudioTransaction, materializeOwnedCertificateAssetUrl } from "./studio-repository";
+import {
+  CERTIFICATE_STUDIO_TRANSACTION_OPTIONS,
+  certificateStudioAvailability,
+  createCertificateStudioTransaction,
+  materializeOwnedCertificateAssetUrl,
+} from "./studio-repository";
 import { MIRACLE_V3_CERTIFICATE_TYPES } from "./templates/miracle-v3-contract";
 import { getMiracleV3CertificateFingerprint } from "./templates/miracle-v3";
 
 const recipients = Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, `recipient-${type}`]));
+
+describe("certificate studio transaction policy", () => {
+  it("uses the same bounded remote-database budget as completion writes", () => {
+    expect(CERTIFICATE_STUDIO_TRANSACTION_OPTIONS).toEqual({
+      isolationLevel: "Serializable",
+      maxWait: 5_000,
+      timeout: 20_000,
+    });
+  });
+});
 
 function reverseJsonObjectKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(reverseJsonObjectKeys);

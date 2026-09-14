@@ -89,9 +89,18 @@ test.describe("admin player stats entry", () => {
     await expect(homeForm).toBeVisible();
 
     await goalInput(homeForm, fixture.homePlayers[0].id).fill("3");
-    await homeForm.getByRole("button", { name: /simpan statistik/i }).click();
-
-    await expect(page).toHaveURL(/success=player-stats-saved/, { timeout: 15_000 });
+    await Promise.all([
+      page.waitForURL(/success=player-stats-saved/, { waitUntil: "load", timeout: 30_000 }),
+      homeForm.getByRole("button", { name: /simpan statistik/i }).click(),
+    ]);
+    await expect.poll(async () => {
+      const row = await prisma.playerStat.findUnique({
+        where: { matchId_playerId: { matchId: fixture.matchId, playerId: fixture.homePlayers[0].id } },
+        select: { stats: true },
+      });
+      if (!row || typeof row.stats !== "object" || row.stats === null || Array.isArray(row.stats)) return null;
+      return (row.stats as Record<string, unknown>).goal;
+    }, { timeout: 30_000 }).toBe(3);
     await expect(page).toHaveURL(new RegExp(`activeEventId=${fixture.eventId}`));
   });
 
