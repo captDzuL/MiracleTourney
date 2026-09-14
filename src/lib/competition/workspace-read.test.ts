@@ -7,9 +7,16 @@ const boundary = vi.hoisted(() => ({ user: { id: "owner", role: "organizer", mus
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: async () => boundary.user }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => boundary.enabled }));
 vi.mock("@/lib/platform/db", () => ({ prisma: new Proxy({}, { get: (_, key) => Reflect.get(boundary.db!, key) }) }));
-import { readCompetitionWorkspace } from "./workspace-read";
+import { COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS, readCompetitionWorkspace } from "./workspace-read";
 
 describe("private organizer read state", () => {
+  it("uses a bounded transaction budget for the remote workspace snapshot", () => {
+    expect(COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS).toEqual({
+      isolationLevel: "RepeatableRead",
+      maxWait: 5_000,
+      timeout: 20_000,
+    });
+  });
   it("exposes a safe compatibility diagnostic for result-bearing legacy data", async () => {
     await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { format: "League" } }); });
     store.seed("match", { id: "old", eventId: "event", homeTeamId: "a", awayTeamId: "b", homeScore: 2, awayScore: 1, status: "Completed", resultVersion: 0 });

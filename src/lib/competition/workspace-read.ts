@@ -9,6 +9,12 @@ import type { StoredSchedule } from "@/lib/tournament/operations/state";
 import type { CompetitionWorkspaceState } from "./workspace-types";
 import { diagnoseLegacyCompetition } from "@/lib/tournament/operations/legacy-compatibility";
 
+export const COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS = {
+  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+  maxWait: 5_000,
+  timeout: 20_000,
+};
+
 export async function readCompetitionWorkspace(eventId: string): Promise<CompetitionWorkspaceState> {
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
   if (!user) throw new Error("Unauthorized");
@@ -18,7 +24,7 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
     const event = await tx.event.findUnique({ where: { id: eventId } });
     if (!event || user.role === "organizer" && event.organizerUserId !== user.id) throw new Error("Not authorized");
     return read(tx, event);
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }, COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS);
   const core = await authorized(async (tx, event) => {
     const [matches, phases, teams, readiness, actions, revisions, published, roundConfigs, matchGames, resultRevisionCount] = await Promise.all([
       tx.match.findMany({ where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }] }),
