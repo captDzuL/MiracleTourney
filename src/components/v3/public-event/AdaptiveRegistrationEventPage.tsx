@@ -14,7 +14,7 @@ export function AdaptiveRegistrationEventPage({ view, locale, copy, readOnly = f
   copy: AdaptiveEventCopy;
   readOnly?: boolean;
 }) {
-  return <div className="miracle-v3 adaptive-public-event grid min-w-0 gap-6 pb-20 lg:pb-12">
+  return <div data-public-v3-event="true" data-public-source="authoritative" className="miracle-v3 adaptive-public-event grid min-w-0 gap-6 pb-20 lg:pb-12">
     <PublicEventHero view={view} locale={locale} copy={copy} />
     <PublicEventSectionNav
       ariaLabel={copy.publicTitle}

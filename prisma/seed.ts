@@ -34,11 +34,46 @@ const seededOngoingSchedule = {
   minimumRestMinutes: 15,
   rooms: ["Flashpeak Arena A", "Flashpeak Arena B"],
 };
-async function seedAuthoritativeOngoingCompetition(eventId: string, organizerId: string, teams: Array<{ id: string }>) {
+
+const seededFinishedSchedule = {
+  ...seededOngoingSchedule,
+  eventWindow: { start: "2026-06-28T02:00:00.000Z", end: "2026-06-28T10:00:00.000Z" },
+  rooms: ["Flashpeak Arena Final A", "Flashpeak Arena Final B"],
+};
+
+const legacyFlashpeakMatchIds = new Set([
+  "match-flash-o-1", "match-flash-o-2", "match-flash-o-3", "match-flash-o-4",
+  "match-flash-f-1", "match-flash-f-2", "match-flash-f-3", "match-flash-f-4",
+  "match-flash-f-5", "match-flash-f-6", "match-flash-f-7",
+]);
+
+async function clearLegacyFlashpeakFixture(eventId: string) {
+  if (await prisma.competitionPhase.count({ where: { eventId } })) return;
+
+  const legacyMatches = await prisma.match.findMany({
+    where: { eventId, id: { in: [...legacyFlashpeakMatchIds] } },
+    select: { id: true },
+  });
+  if (!legacyMatches.length) return;
+
+  const allMatches = await prisma.match.findMany({ where: { eventId }, select: { id: true } });
+  if (allMatches.some((match) => !legacyFlashpeakMatchIds.has(match.id))) {
+    throw new Error(`Refusing to replace non-fixture matches while upgrading Flashpeak event ${eventId}`);
+  }
+
+  const ids = legacyMatches.map((match) => match.id);
+  await prisma.$transaction(async (tx) => {
+    await tx.match.deleteMany({ where: { eventId, id: { in: ids } } });
+    await tx.scheduleRevision.deleteMany({ where: { eventId, idempotencyKey: { startsWith: "seed-v3-flashpeak-" } } });
+    await tx.competitionAuditLog.deleteMany({ where: { eventId, idempotencyKey: { startsWith: "seed-v3-flashpeak-" } } });
+    await tx.event.update({ where: { id: eventId }, data: { publishedScheduleVersion: null } });
+  });
+}
+
+function createSeedOperationRunner(eventId: string, organizerId: string) {
   const operations = createCompetitionOperations(prisma);
   const actor = { id: organizerId, role: "organizer" };
-
-  const run = async (idempotencyKey: string, command: OperationCommand) => {
+  return async (idempotencyKey: string, command: OperationCommand) => {
     const event = await prisma.event.findUniqueOrThrow({
       where: { id: eventId },
       select: { competitionVersion: true },
@@ -51,7 +86,17 @@ async function seedAuthoritativeOngoingCompetition(eventId: string, organizerId:
       command,
     });
   };
+}
 
+async function ensureAuthoritativeCompetition(
+  eventId: string,
+  organizerId: string,
+  teams: Array<{ id: string }>,
+  namespace: string,
+  schedule?: typeof seededOngoingSchedule,
+) {
+  await clearLegacyFlashpeakFixture(eventId);
+  const run = createSeedOperationRunner(eventId, organizerId);
   let event = await prisma.event.findUniqueOrThrow({
     where: { id: eventId },
     select: { status: true, publishedScheduleVersion: true },
@@ -63,14 +108,16 @@ async function seedAuthoritativeOngoingCompetition(eventId: string, organizerId:
       await prisma.event.update({ where: { id: eventId }, data: { status: "Registration Closed" } });
     }
     if (!phase) {
-      await run("seed-v3-flashpeak-rising-drawing", {
+      await run(`seed-v3-${namespace}-drawing`, {
         kind: "drawing_save",
         config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
         teams: teams.map((team, index) => ({ id: team.id, seed: index + 1 })),
       });
     }
-    await run("seed-v3-flashpeak-rising-drawing-publish", { kind: "drawing_publish" });
+    await run(`seed-v3-${namespace}-drawing-publish`, { kind: "drawing_publish" });
   }
+
+  if (!schedule) return run;
 
   await prisma.event.update({ where: { id: eventId }, data: { status: "Ongoing" } });
   event = await prisma.event.findUniqueOrThrow({
@@ -78,19 +125,24 @@ async function seedAuthoritativeOngoingCompetition(eventId: string, organizerId:
     select: { status: true, publishedScheduleVersion: true },
   });
   if (event.publishedScheduleVersion == null) {
-    const draft = await run("seed-v3-flashpeak-rising-schedule-save", {
-      kind: "schedule_save",
-      input: seededOngoingSchedule,
-    });
+    const draft = await run(`seed-v3-${namespace}-schedule-save`, { kind: "schedule_save", input: schedule });
     const revisionId = draft.resourceId
       ?? (await prisma.scheduleRevision.findFirst({
-        where: { eventId, idempotencyKey: "seed-v3-flashpeak-rising-schedule-save" },
+        where: { eventId, idempotencyKey: `seed-v3-${namespace}-schedule-save` },
         select: { id: true },
       }))?.id;
-    if (!revisionId) throw new Error("Seeded ongoing schedule draft did not return a revision id");
-    await run("seed-v3-flashpeak-rising-schedule-publish", { kind: "schedule_publish", revisionId });
+    if (!revisionId) throw new Error(`Seeded ${namespace} schedule draft did not return a revision id`);
+    await run(`seed-v3-${namespace}-schedule-publish`, { kind: "schedule_publish", revisionId });
   }
+  return run;
+}
 
+async function seedAuthoritativeDrawingCompetition(eventId: string, organizerId: string, teams: Array<{ id: string }>) {
+  await ensureAuthoritativeCompetition(eventId, organizerId, teams, "flashpeak-revision-closed");
+}
+
+async function seedAuthoritativeOngoingCompetition(eventId: string, organizerId: string, teams: Array<{ id: string }>) {
+  const run = await ensureAuthoritativeCompetition(eventId, organizerId, teams, "flashpeak-rising", seededOngoingSchedule);
   const liveMatch = await prisma.match.findFirst({ where: { eventId, status: "Live" }, select: { id: true } });
   if (!liveMatch) {
     const playableMatch = await prisma.match.findFirst({
@@ -105,6 +157,53 @@ async function seedAuthoritativeOngoingCompetition(eventId: string, organizerId:
       reason: "Deterministic public V3 showcase fixture",
     });
   }
+}
+
+async function seedAuthoritativeFinishedCompetition(eventId: string, organizerId: string, teams: Array<{ id: string }>) {
+  const existingCompletion = await prisma.tournamentCompletion.findUnique({ where: { eventId }, select: { id: true } });
+  if (existingCompletion) return;
+
+  const run = await ensureAuthoritativeCompetition(eventId, organizerId, teams, "flashpeak-champions", seededFinishedSchedule);
+  const phase = await prisma.competitionPhase.findFirstOrThrow({ where: { eventId, sequence: 1 } });
+
+  for (;;) {
+    const match = await prisma.match.findFirst({
+      where: { eventId, status: { in: ["Scheduled", "Live"] }, homeTeamId: { not: "" }, awayTeamId: { not: "" } },
+      orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }],
+      select: { id: true, status: true, scheduleMetadata: true },
+    });
+    if (!match) break;
+    const graphMatch = (match.scheduleMetadata as { graphMatch?: { bestOf?: number } } | null)?.graphMatch;
+    const bestOf = graphMatch?.bestOf ?? 1;
+    if (match.status === "Scheduled") {
+      await run(`seed-v3-flashpeak-champions-match-start-${match.id}`, {
+        kind: "match_start",
+        matchId: match.id,
+        reason: "Deterministic public V3 completed fixture",
+      });
+    }
+    const gameCount = bestOf === 1 ? 1 : Math.ceil(bestOf / 2);
+    await run(`seed-v3-flashpeak-champions-result-${match.id}`, {
+      kind: "result_submit",
+      matchId: match.id,
+      games: Array.from({ length: gameCount }, (_, index) => ({ gameNumber: index + 1, homeScore: 2, awayScore: 0 })),
+    });
+  }
+
+  const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId }, select: { competitionVersion: true } });
+  await prisma.$transaction(async (tx) => {
+    await tx.competitionPhase.update({ where: { id: phase.id }, data: { status: "completed" } });
+    await tx.event.update({ where: { id: eventId }, data: { status: "Finished" } });
+    await tx.tournamentCompletion.create({
+      data: {
+        eventId,
+        status: "completed",
+        format: "single_elimination",
+        sourceSnapshot: { eventId, version: event.competitionVersion },
+        completedByUserId: organizerId,
+      },
+    });
+  });
 }
 
 async function seedTest() {
@@ -309,7 +408,7 @@ async function main() {
     },
   });
 
-  await prisma.event.upsert({
+  const flashpeakDrawingEvent = await prisma.event.upsert({
     where: { slug: "flashpeak-revision-closed" },
     update: {
       name: "Flashpeak Registration Closed", description: "Closed registration revision fixture.",
@@ -362,7 +461,7 @@ async function main() {
       gameId: "game-flashpeak",
       gameModeId: "mode-flashpeak-5v5",
       format: "Single Elimination",
-      status: "Finished",
+      status: "Registration Closed",
       participantCap: 32,
       registrationWindow: "June 1, 2026 - June 20, 2026",
       startsAt: "June 28, 2026",
@@ -500,6 +599,11 @@ async function main() {
 
   const eventTeamSets = [
     {
+      event: flashpeakDrawingEvent,
+      names: ["Closed Circuit", "Bracket Bloom", "Seeded Sparks", "Draw District"],
+      positions: ["Forward", "Midfielder", "Defender", "Goalkeeper"],
+    },
+    {
       event: flashpeakFinishedEvent,
       names: [
         "Summit Strikers",
@@ -611,20 +715,23 @@ async function main() {
     teamsByEventSlug.set(event.slug, teams);
   }
 
+  await seedAuthoritativeDrawingCompetition(
+    flashpeakDrawingEvent.id,
+    organizerA.id,
+    teamsByEventSlug.get(flashpeakDrawingEvent.slug) ?? [],
+  );
   await seedAuthoritativeOngoingCompetition(
     flashpeakOngoingEvent.id,
     organizerA.id,
     teamsByEventSlug.get(flashpeakOngoingEvent.slug) ?? [],
   );
+  await seedAuthoritativeFinishedCompetition(
+    flashpeakFinishedEvent.id,
+    organizerA.id,
+    teamsByEventSlug.get(flashpeakFinishedEvent.slug) ?? [],
+  );
 
   const matchSeeds = [
-    { id: "match-flash-f-1", event: flashpeakFinishedEvent, roundLabel: "Quarterfinal", teams: [0, 7], score: [3, 1], status: "Completed", round: 1, slot: 1 },
-    { id: "match-flash-f-2", event: flashpeakFinishedEvent, roundLabel: "Quarterfinal", teams: [3, 4], score: [2, 0], status: "Completed", round: 1, slot: 2 },
-    { id: "match-flash-f-3", event: flashpeakFinishedEvent, roundLabel: "Quarterfinal", teams: [1, 6], score: [1, 2], status: "Completed", round: 1, slot: 3 },
-    { id: "match-flash-f-4", event: flashpeakFinishedEvent, roundLabel: "Quarterfinal", teams: [2, 5], score: [4, 2], status: "Completed", round: 1, slot: 4 },
-    { id: "match-flash-f-5", event: flashpeakFinishedEvent, roundLabel: "Semifinal", teams: [0, 3], score: [2, 1], status: "Completed", round: 2, slot: 1 },
-    { id: "match-flash-f-6", event: flashpeakFinishedEvent, roundLabel: "Semifinal", teams: [6, 2], score: [1, 3], status: "Completed", round: 2, slot: 2 },
-    { id: "match-flash-f-7", event: flashpeakFinishedEvent, roundLabel: "Final", teams: [0, 2], score: [3, 2], status: "Completed", round: 3, slot: 1 },
     { id: "match-mlbb-f-1", event: mlbbFinishedEvent, roundLabel: "Quarterfinal", teams: [0, 7], score: [2, 0], status: "Completed", round: 1, slot: 1 },
     { id: "match-mlbb-f-2", event: mlbbFinishedEvent, roundLabel: "Quarterfinal", teams: [3, 4], score: [2, 1], status: "Completed", round: 1, slot: 2 },
     { id: "match-mlbb-f-3", event: mlbbFinishedEvent, roundLabel: "Quarterfinal", teams: [1, 6], score: [1, 2], status: "Completed", round: 1, slot: 3 },

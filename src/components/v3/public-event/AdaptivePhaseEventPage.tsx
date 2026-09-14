@@ -38,7 +38,7 @@ export function AdaptivePhaseEventPage({ view, locale }: { view: View; locale: "
     [view.navigation.leaderboard, "Leaderboard", `${base}/leaderboards`],
   ] as const;
   return (
-    <div className="miracle-v3 adaptive-public-event grid min-w-0 gap-6 bg-[#071012] pb-12 text-[#f4f1e9]">
+    <div data-public-v3-event="true" data-public-source="authoritative" className="miracle-v3 adaptive-public-event grid min-w-0 gap-6 bg-[#071012] pb-12 text-[#f4f1e9]">
       <header className="relative isolate min-h-[390px] overflow-hidden border border-white/15 p-6 sm:p-10">
         <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_72%_18%,rgba(111,78,255,0.3),transparent_34%),linear-gradient(125deg,#0b171a,#10152b)]" />
         <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-[#c7ff35]">
