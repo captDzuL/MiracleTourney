@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React, { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EventPosterStage } from "./EventPosterStage";
 import { PublicV3Frame } from "./PublicV3Frame";
@@ -61,6 +62,45 @@ describe("final public V3 primitives", () => {
     expect(container.querySelector("img")).toBeNull();
     render(<EventPosterStage eventName="Other Cup" gameSlug="other" posterUrl="/new.png" />);
     expect(container.querySelector("img")?.getAttribute("src")).toBe("/new.png");
+  });
+
+  // Model browser image state before attaching React, without dispatching error events.
+  function hydrateImages(node: React.ReactNode, states: { complete: boolean; naturalWidth: number }[]) {
+    act(() => root.unmount());
+    container.innerHTML = renderToString(node);
+    Array.from(container.querySelectorAll("img")).forEach((image, index) => {
+      const state = states[index];
+      Object.defineProperties(image, {
+        complete: { configurable: true, value: state.complete },
+        naturalWidth: { configurable: true, value: state.naturalWidth },
+      });
+    });
+    act(() => { root = hydrateRoot(container, node); });
+  }
+
+  it("recovers an SSR poster that completed failing before hydration", () => {
+    hydrateImages(<EventPosterStage eventName="Community Cup" gameSlug="flashpeak" posterUrl="/pre-hydration-404.png" />, [{ complete: true, naturalWidth: 0 }]);
+    expect(Array.from(container.querySelectorAll("img")).map((image) => image.getAttribute("src"))).toEqual([
+      "/character-art/roster/midfielder/Kelly.png", "/character-art/roster/striker/Rafael.png",
+    ]);
+  });
+
+  it.each([0, 1])("recovers local character %s that completed failing before hydration", (failedIndex) => {
+    hydrateImages(<EventPosterStage eventName="Community Cup" gameSlug="flashpeak" />, [0, 1].map((index) => ({ complete: true, naturalWidth: index === failedIndex ? 0 : 120 })));
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("Community Cup");
+    expect(container.textContent).toContain("MIRACLE");
+  });
+
+  it.each([{ complete: true, naturalWidth: 120 }, { complete: false, naturalWidth: 0 }])("preserves an SSR poster that is loaded or still pending (%j)", (state) => {
+    hydrateImages(<EventPosterStage eventName="Community Cup" gameSlug="flashpeak" posterUrl="/valid-poster.png" />, [state]);
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("/valid-poster.png");
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+  });
+
+  it("preserves already-loaded local characters during hydration", () => {
+    hydrateImages(<EventPosterStage eventName="Community Cup" gameSlug="flashpeak" />, [{ complete: true, naturalWidth: 120 }, { complete: true, naturalWidth: 120 }]);
+    expect(container.querySelectorAll("img")).toHaveLength(2);
   });
 
   it("keeps resolved CTA targets keyboard focusable and represents an unavailable target without a false link", () => {
