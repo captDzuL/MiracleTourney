@@ -100,13 +100,29 @@ describe("final homepage composition", () => {
     expect(root.querySelector("[data-event-pulse]")?.textContent).toContain("Hasil akhir belum tersedia");
     expect(root.querySelector("[data-event-pulse]")?.textContent).not.toContain("Jadwal pertandingan berikutnya");
   });
-  it("shows registration capacity and a disabled action when registration is closed", () => {
+  it.each(["id", "en"] as const)("keeps closed registration disabled in %s", (locale) => {
     const base = homepageView();
     const view: PublicV3EventViewModel = { ...base, mode: "registration", statusExplanationKey: "registration.compatible", cta: { label: "registration_closed", href: null, hrefByLocale: null, enabled: false }, registration: { availability: "closed", opensAt: null, closesAt: null, activeTeamCount: 12, pendingReviewCount: 0, occupiedSlots: 12, remainingSlots: 20, participantCap: 32, feeRequired: false, feeAmount: null, feeLabel: "", minimumRoster: 5, maximumRoster: 7, bracket: { status: "tbd", slots: [] } }, viewer: { state: "anonymous", cta: { kind: "disabled", label: "registration_closed", reason: "registration_closed", enabled: false } }, matches: [], leaderboard: [] };
-    const root = render(view);
+    const root = render(view, locale);
     expect(root.querySelector("[data-phase-highlight]")?.textContent).toContain("12 / 32");
-    expect(root.querySelector('[data-featured-event] [aria-disabled="true"]')?.textContent).toContain("Pendaftaran ditutup");
+    expect(root.querySelector('[data-featured-event] [aria-disabled="true"]')?.textContent).toContain(locale === "id" ? "Pendaftaran ditutup" : "Registration closed");
+    expect(root.querySelector('[data-featured-event] a[href*="/login"]')).toBeNull();
     expect(root.querySelector("[data-phase-highlight]")?.textContent).not.toContain("North Force");
+  });
+  it.each([
+    ["id", "/id/login?returnTo=%2Fid%2Fevents%2Flive%2Fregister", "Daftarkan tim"],
+    ["en", "/en/login?returnTo=%2Fen%2Fevents%2Flive%2Fregister", "Register a team"],
+  ] as const)("makes open anonymous registration actionable in %s with event return context", (locale, href, label) => {
+    const base = homepageView();
+    const cta = { kind: "login" as const, label: "register_team", href: null, hrefByLocale: null, enabled: true };
+    const identity = { ...base.identity, cta };
+    const view: PublicV3EventViewModel = { ...base, identity, event: identity, mode: "registration", statusExplanationKey: "registration.authoritative", cta, registration: { availability: "open", opensAt: null, closesAt: null, activeTeamCount: 12, pendingReviewCount: 0, occupiedSlots: 12, remainingSlots: 20, participantCap: 32, feeRequired: false, feeAmount: null, feeLabel: "", minimumRoster: 5, maximumRoster: 7, bracket: { status: "tbd", slots: [] } }, viewer: { state: "anonymous", cta: { kind: "login", label: "register_team", enabled: true } }, matches: [], leaderboard: [] };
+    const root = render(view, locale);
+    const action = root.querySelector(`[data-featured-event] a[href="${href}"]`);
+    expect(action).not.toBeNull();
+    expect(action?.textContent).toBe(label);
+    expect(action?.hasAttribute("aria-disabled")).toBe(false);
+    expect(root.querySelector('[data-featured-event] [aria-disabled="true"]')).toBeNull();
   });
   it.each([true, false])("shows drawing publication %s without inventing a match", (published) => {
     const base = homepageView();

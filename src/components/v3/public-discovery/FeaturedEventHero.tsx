@@ -1,5 +1,5 @@
 import { ArrowRight } from "lucide-react";
-import { resolvePublicV3Route, type PublicV3EventViewModel, type PublicV3Locale, type PublicV3Match } from "@/lib/events/public-v3-types";
+import { publicV3LocalizedHref, resolvePublicV3Route, type PublicV3EventViewModel, type PublicV3Locale, type PublicV3Match } from "@/lib/events/public-v3-types";
 import { EventPosterStage } from "./EventPosterStage";
 import { PublicV3Action, PublicV3Eyebrow, PublicV3FactStrip, PublicV3StatusBadge } from "./PublicV3Primitives";
 import { homeCopy, homeDate, homeStatusExplanation } from "./home-copy";
@@ -32,7 +32,12 @@ export function FeaturedEventHero({ view, locale, gameSlug }: { view: PublicV3Ev
   const t = homeCopy[locale];
   const identity = view.identity;
   const phaseLabel = { ongoing: t.live, registration: t.registration, drawing: t.drawing, finished: t.final }[view.mode];
-  const secondaryTarget = view.mode === "registration" ? view.cta.hrefByLocale?.[locale] : view.navigation.bracket ? resolvePublicV3Route(identity.routes.bracket, locale) : view.navigation.leaderboard ? resolvePublicV3Route(identity.routes.leaderboard, locale) : null;
+  // Login CTAs intentionally have no href (RegistrationEntryCta opens the captain dialog).
+  // Use the existing login page's safe returnTo flow for this server-rendered link.
+  const registrationTarget = view.mode === "registration" && view.cta.kind === "login" && view.cta.enabled
+    ? publicV3LocalizedHref("/login?returnTo=" + encodeURIComponent(resolvePublicV3Route(identity.routes.register, locale)))[locale]
+    : view.cta.hrefByLocale?.[locale];
+  const secondaryTarget = view.mode === "registration" ? registrationTarget : view.navigation.bracket ? resolvePublicV3Route(identity.routes.bracket, locale) : view.navigation.leaderboard ? resolvePublicV3Route(identity.routes.leaderboard, locale) : null;
   const registrationLabels: Record<string, string> = {
     register_team: t.register, registration_unavailable: t.registrationUnavailable,
     registration_closed: locale === "id" ? "Pendaftaran ditutup" : "Registration closed",
