@@ -25,3 +25,7 @@ Task 5: reviewer fix round 1 in progress — secure all event-local repository r
 Task 5: reviewer fix round 1 RED — 7 failed, 145 passed in compatibility/contract tests before production fixes
 Task 5: reviewer fix round 1 GREEN — focused 4 files/271 passed; contract evidence 1 file/5 passed; full 172 files passed/2 skipped, 1,893 passed/6 skipped
 Task 5: reviewer fix round 1 complete — dedicated fix commit 7e28b1e3045b528d83224c46388596af056f8d53; no live DB claim, injected Prisma boundary limitation documented in task-5-report.md
+Task 5: reviewer fix round 2 in progress — precise missing-mapping labels and exact legacy event-not-found redirect
+Task 5: reviewer fix round 2 RED — 2 failed, 152 passed in affected contract/actions tests before production corrections
+Task 5: reviewer fix round 2 GREEN — affected 2 files/154 passed; required focused 4 files/272 passed; full 172 files passed/2 skipped, 1,895 passed/6 skipped
+Task 5: reviewer fix round 2 complete — dedicated fix commit bce4f53193cbb148e02016c98171dbf99f900036

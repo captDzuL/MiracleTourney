@@ -6,6 +6,8 @@ Commit: final focused Task 5 commit (hash returned in the handoff)
 
 Fix Round 1 commit: `7e28b1e3045b528d83224c46388596af056f8d53`
 
+Fix Round 2 commit: `bce4f53193cbb148e02016c98171dbf99f900036`
+
 ## TDD evidence
 
 RED:
@@ -103,3 +105,31 @@ GREEN:
 - `pnpm test`: 172 files passed, 2 skipped; 1,893 tests passed, 6 skipped.
 
 The protected `2026-09-14-release-1.0-verification.md` file remains untouched and untracked; Task 6 UI files remain outside the change set.
+
+## Fix Round 2 — residual P2 findings
+
+### TDD evidence
+
+RED after adding the two narrow regressions:
+
+```text
+pnpm exec vitest run src/lib/registration/registration-v3-contract.test.ts src/lib/actions.test.ts
+```
+
+- 2 files were discovered; 2 tests failed and 152 passed. The event-not-found assertion still received an `activeEventId`, and the real shared-core partial-mapping test initially needed its fixture switched to an existing configured game mode before reaching the intended mapping branch.
+
+GREEN:
+
+- The affected contract/actions suite passed 2 files / 154 tests after the two production corrections.
+- The real shared-core regression now reports only `captain UID` when `teamName` and `captainIgn` are present; required labels retain the prior Indonesian ordering and punctuation.
+- The legacy event-not-found adapter now returns exactly `/admin?phase=import&error=Event%20tidak%20ditemukan.` while other import failures retain their active event context.
+
+### Fix Round 2 verification
+
+- Required focused command: 4 files passed; 272 tests passed.
+- `pnpm lint`: exit 0 (`tsc --noEmit`).
+- `pnpm exec prisma validate`: exit 0; schema valid.
+- `git diff --check`: exit 0.
+- `pnpm test`: 172 files passed, 2 skipped; 1,895 tests passed, 6 skipped.
+
+Only the two requested P2 compatibility corrections were made in this round. The protected verification note remains untouched and untracked.

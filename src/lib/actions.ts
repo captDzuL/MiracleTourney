@@ -1139,8 +1139,11 @@ export async function adminPreviewRegistrationImportAction(formData: FormData) {
     : result.status === "blocked" || result.status === "conflict"
       ? result.message
       : "Preview import registrasi gagal.";
+  const activeEventId = result.status === "blocked" && result.legacy?.includeActiveEventId === false
+    ? ""
+    : `&activeEventId=${eventId}`;
   return redirectToActiveLocale(
-    `/admin?phase=${phase}&activeEventId=${eventId}&error=${encodeURIComponent(message)}` as never,
+    `/admin?phase=${phase}${activeEventId}&error=${encodeURIComponent(message)}` as never,
   );
 }
 

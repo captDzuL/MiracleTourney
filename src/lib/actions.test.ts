@@ -1246,6 +1246,18 @@ describe("legacy registration import adapters", () => {
     );
   });
 
+  it("preserves the legacy event-not-found redirect without an active event id", async () => {
+    previewRegistrationImportForUser.mockResolvedValue({
+      status: "blocked",
+      code: "not_found",
+      message: "The registration data was not found.",
+      legacy: { phase: "import", message: "Event tidak ditemukan.", behavior: "redirect", includeActiveEventId: false },
+    });
+    await expect(adminPreviewRegistrationImportAction(fd({
+      eventId: "event-1", registrationFile: new File(["data"], "registrations.csv", { type: "text/csv" }),
+    }))).rejects.toThrow("REDIRECT:/admin?phase=import&error=Event%20tidak%20ditemukan.");
+  });
+
   it("preserves a legacy preview repository failure as an error", async () => {
     previewRegistrationImportForUser.mockResolvedValue({
       status: "blocked",

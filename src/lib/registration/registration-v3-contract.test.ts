@@ -43,14 +43,14 @@ const { state, prisma, resetState } = vi.hoisted(() => {
     state.events = [
       {
         id: "event-1", slug: "event-one", name: "Event One", description: "Contract event one",
-        logoUrl: null, gameImageUrl: null, gameId: "game-1", gameModeId: "mode-1", format: "Single Elimination",
+        logoUrl: null, gameImageUrl: null, gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", format: "Single Elimination",
         formatConfig: null, status: "Published", participantCap: 8, registrationWindow: "Open", startsAt: "2026-10-01",
         venue: "Online", organizerUserId: "organizer-1", organizerName: "Organizer One", organizerVerified: true,
         registrationFeeRequired: true, competitionVersion: 0, stream: null,
       },
       {
         id: "event-2", slug: "event-two", name: "Event Two", description: "Contract event two",
-        logoUrl: null, gameImageUrl: null, gameId: "game-1", gameModeId: "mode-1", format: "Single Elimination",
+        logoUrl: null, gameImageUrl: null, gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", format: "Single Elimination",
         formatConfig: null, status: "Published", participantCap: 8, registrationWindow: "Open", startsAt: "2026-10-01",
         venue: "Online", organizerUserId: "organizer-2", organizerName: "Organizer Two", organizerVerified: true,
         registrationFeeRequired: true, competitionVersion: 0, stream: null,
@@ -266,6 +266,7 @@ import {
   getTeamRegistrationRequestForEvent,
   RegistrationMutationConflictError,
 } from "../platform/repository";
+import { previewRegistrationImportForUser } from "../actions/registration-v3-actions";
 
 const owner = { id: "organizer-1", role: "organizer" as const, email: "organizer-1@example.test", name: "Organizer One" };
 const unrelated = { id: "organizer-2", role: "organizer" as const, email: "organizer-2@example.test", name: "Organizer Two" };
@@ -305,6 +306,24 @@ describe("registration V3 real-contract evidence", () => {
     const oversized = ["header", ...Array.from({ length: 513 }, (_, index) => `row-${index}`)].join("\n");
     await expect(parseRegistrationSource({ kind: "csv", fileName: "oversized.csv", buffer: Buffer.from(oversized) }))
       .rejects.toThrow("File registrasi maksimal 512 baris data.");
+  });
+
+  it("reports only the missing required mapping labels through the real shared core", async () => {
+    const form = new FormData();
+    form.set("locale", "id");
+    form.set("eventId", "event-1");
+    form.set("registrationFile", new File([
+      "Nama Tim,Captain IGN\nPending Team,captain",
+    ], "partial.csv", { type: "text/csv" }));
+
+    await expect(previewRegistrationImportForUser(owner, form, { legacyCompatibility: true })).resolves.toMatchObject({
+      status: "blocked",
+      legacy: {
+        phase: "registration",
+        message: "Mapping wajib belum ditemukan: captain UID.",
+        behavior: "redirect",
+      },
+    });
   });
 
   it("enforces actual event-row scoping and manager authorization across readers", async () => {

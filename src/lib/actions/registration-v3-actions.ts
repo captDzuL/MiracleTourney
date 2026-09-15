@@ -52,6 +52,7 @@ export type RegistrationLegacyFailure = {
   phase: "import" | "registration";
   message: string;
   behavior: "redirect" | "throw";
+  includeActiveEventId?: boolean;
 };
 
 export type RegistrationActionOptions = {
@@ -255,7 +256,7 @@ export async function previewRegistrationImportForUser(
     const event = await getRegistrationImportEventContext(user, eventId);
     if (!event) {
       return withLegacyFailure(blocked(locale, "not_found", redirectTo), options, {
-        phase: "import", message: "Event tidak ditemukan.", behavior: "redirect",
+        phase: "import", message: "Event tidak ditemukan.", behavior: "redirect", includeActiveEventId: false,
       });
     }
 
@@ -287,11 +288,18 @@ export async function previewRegistrationImportForUser(
     const mode = getGameModeConfig(event.gameModeId);
     const headers = worksheet.rows[0].map((cell) => cell.value);
     const mapping = suggestRegistrationMapping(headers, { maxRosterSize: mode.maxRosterSize });
-    const required = ["teamName", "captainIgn", "captainUid"] as const;
-    if (required.some((key) => mapping.columns[key] == null)) {
+    const required = [
+      ["teamName", "nama tim"],
+      ["captainIgn", "captain IGN"],
+      ["captainUid", "captain UID"],
+    ] as const;
+    const missingRequired = required
+      .filter(([key]) => mapping.columns[key] == null)
+      .map(([, label]) => label);
+    if (missingRequired.length > 0) {
       return withLegacyFailure(blocked(locale, "invalid_input", redirectTo), options, {
         phase: "registration",
-        message: "Mapping wajib belum ditemukan: nama tim, captain IGN, captain UID.",
+        message: `Mapping wajib belum ditemukan: ${missingRequired.join(", ")}.`,
         behavior: "redirect",
       });
     }
