@@ -10,9 +10,10 @@ import { getConfiguredV3Socials } from "@/components/v3/social-links";
 import { V3ShellRouter } from "@/components/v3/OperatorShell";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { PublicHomepageShellBoundary } from "@/components/v3/public-discovery/PublicHomepageShellBoundary";
+import { OrganizerShellBoundary } from "@/components/v3/organizer/OrganizerShellBoundary";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  return <PublicHomepageShellBoundary enabled={isFeatureEnabled("public_discovery_v3")} shell={<ExistingAppShell>{children}</ExistingAppShell>}>{children}</PublicHomepageShellBoundary>;
+  return <OrganizerShellBoundary enabled={isFeatureEnabled("organizer_master_shell_v3")} shell={<PublicHomepageShellBoundary enabled={isFeatureEnabled("public_discovery_v3")} shell={<ExistingAppShell>{children}</ExistingAppShell>}>{children}</PublicHomepageShellBoundary>}>{children}</OrganizerShellBoundary>;
 }
 
 function ExistingAppShell({ children }: { children: React.ReactNode }) {

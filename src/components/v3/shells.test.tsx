@@ -65,6 +65,28 @@ afterEach(() => {
 });
 
 describe("V3 shell integration", () => {
+  it("limits setup steps to editor routes and preserves cross-route navigation", async () => {
+    const shell = () => <EventWorkspaceShell eventTitle="Cup" organizerLabel="Owner" navigation={[{ href: "/organizer/events/other/overview#section-identity", label: "Identity" }]}><p>Content</p></EventWorkspaceShell>;
+    route.pathname = "/en/organizer/events/cup/overview"; await render(shell());
+    expect(container.querySelector('nav[aria-label="Event navigation"]')).toBeNull();
+    route.pathname = "/en/organizer/events/cup/edit"; await render(shell());
+    const link = container.querySelector<HTMLAnchorElement>('nav a')!;
+    let prevented = true; container.addEventListener("click", event => { prevented = event.defaultPrevented; event.preventDefault(); }, { once: true });
+    click(link); expect(prevented).toBe(false);
+    expect(link.getAttribute("href")).toBe("/en/organizer/events/other/edit#section-identity");
+  });
+  it.each(["true", "false"])("uses one event-owned rail when master shell flag is %s", async flag => {
+    vi.stubEnv("FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3", flag);
+    route.pathname = "/en/organizer/events/cup/overview";
+    await render(<AppShell><PanelShell><aside><nav aria-label="Event-owned rail"><a href="/en/organizer/events/cup/overview">Overview</a></nav></aside></PanelShell></AppShell>);
+    expect(container.querySelectorAll("aside nav")).toHaveLength(flag === "true" ? 1 : 2);
+    expect(container.querySelector(".panel-scope") === null).toBe(flag === "true");
+    expect(container.querySelector('nav[aria-label="Operator navigation"]') === null).toBe(flag === "true");
+  });
+  it.each(["/en/admin/events/cup/overview", "/en/organizer/events/new", "/en/organizer/profile"])("retains existing outer chrome at %s under master flag", async pathname => {
+    vi.stubEnv("FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3", "true"); route.pathname = pathname;
+    await render(); expect(container.querySelector('nav[aria-label="Operator navigation"]')).not.toBeNull();
+  });
   it.each(["en", "id"])("uses operations navigation on %s match routes without setup interception", async locale => {
     route.locale = locale; route.pathname = `/${locale}/organizer/events/event/matches/match`;
     await render(<EventWorkspaceShell eventTitle="Cup" organizerLabel="Owner" navigation={[]} operations={{ eventId: "event", locale: locale as "en" | "id" }}><p>Match content</p></EventWorkspaceShell>);
@@ -187,13 +209,14 @@ describe("V3 shell integration", () => {
   });
 
   it("localizes workspace navigation and next action while retaining the current locale", async () => {
+    route.pathname = "/en/organizer/events/cup/edit";
     await render(<EventWorkspaceShell eventTitle="Community Cup" organizerLabel="Community" navigation={[
       { href: "/organizer/events/cup/overview#section-identity", label: "Identity", active: true },
       { href: "/organizer/events/cup/overview#section-schedule", label: "Schedule" },
     ]} nextAction={<button>Continue setup</button>}><p>Workspace</p></EventWorkspaceShell>);
     expect(container.querySelector('nav[aria-label="Event navigation"]')).not.toBeNull();
-    expect(links()).toContain("/en/organizer/events/cup/overview#section-identity");
-    expect(links()).toContain("/en/organizer/events/cup/overview#section-schedule");
+    expect(links()).toContain("/en/organizer/events/cup/edit#section-identity");
+    expect(links()).toContain("/en/organizer/events/cup/edit#section-schedule");
     expect(container.querySelectorAll('nav[aria-label="Event navigation"] a[tabindex="-1"]')).toHaveLength(0);
     expect(container.querySelector('aside[aria-label="Next action"]')?.textContent).toContain("Continue setup");
     expect(container.querySelector("h1")?.textContent).toBe("Community Cup");

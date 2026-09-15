@@ -778,7 +778,12 @@
       "lifecycle": "Event lifecycle",
       "publication": "Publication",
       "showGuide": "Show guide",
-      "hideGuide": "Hide guide"
+      "hideGuide": "Hide guide",
+      "brand": "Miracle",
+      "allEvents": "All events",
+      "language": "Select language",
+      "language_id": "ID",
+      "language_en": "EN"
     },
     "lifecycle": {
       "draft": "Draft",
@@ -862,11 +867,22 @@
       "save": "Save changes"
     },
     "guide": {
+      "draft": "Complete event identity, format, and registration details before publishing.",
+      "registration": "Review registration requests and payment receipts, then prepare your competition.",
+      "drawing": "Review the drawing and publish the match schedule before play begins.",
+      "ongoing": "Use Match Control to check readiness, record results, and resolve match issues.",
+      "finished": "Review completion readiness, confirm awards, and prepare certificates and publication.",
       "title": "Contextual guide",
       "dismiss": "Do not show again for this phase",
       "restore": "Show guide again"
     },
+    "formats": { "singleElimination": "Single elimination", "league": "League" },
+    "setup": { "identity": "Identity", "format": "Format & schedule", "registration": "Registration", "public": "Public page", "review": "Review & publish", "title": "Bring your event to life.", "description": "Complete each step and preview your progress.", "matchDay": "Match Day", "eventSetup": "Event setup" },
     "blockers": {
+      "registration_review": "Registration requests need review.",
+      "match_results": "Match results are still outstanding.",
+      "statistics_review": "Player statistics need review.",
+      "schedule_unpublished": "The match schedule has not been published.",
       "title": "Remaining blockers",
       "review": "Review",
       "none": "No blockers remain."

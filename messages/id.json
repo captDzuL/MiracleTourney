@@ -778,7 +778,12 @@
       "lifecycle": "Tahap event",
       "publication": "Publikasi",
       "showGuide": "Tampilkan panduan",
-      "hideGuide": "Sembunyikan panduan"
+      "hideGuide": "Sembunyikan panduan",
+      "brand": "Miracle",
+      "allEvents": "Semua event",
+      "language": "Pilih bahasa",
+      "language_id": "ID",
+      "language_en": "EN"
     },
     "lifecycle": {
       "draft": "Draf",
@@ -862,11 +867,22 @@
       "save": "Simpan perubahan"
     },
     "guide": {
+      "draft": "Lengkapi identitas event, format, dan rincian registrasi sebelum menerbitkan.",
+      "registration": "Tinjau permintaan registrasi dan bukti pembayaran, lalu siapkan kompetisi.",
+      "drawing": "Tinjau drawing dan terbitkan jadwal pertandingan sebelum kompetisi dimulai.",
+      "ongoing": "Gunakan Kontrol Pertandingan untuk memeriksa kesiapan, mencatat hasil, dan menangani kendala pertandingan.",
+      "finished": "Tinjau kesiapan penyelesaian, tetapkan penghargaan, lalu siapkan sertifikat dan publikasi.",
       "title": "Panduan kontekstual",
       "dismiss": "Jangan tampilkan lagi untuk fase ini",
       "restore": "Tampilkan panduan lagi"
     },
+    "formats": { "singleElimination": "Sistem gugur", "league": "Liga" },
+    "setup": { "identity": "Identitas", "format": "Format & Jadwal", "registration": "Registrasi", "public": "Halaman Publik", "review": "Tinjau & Terbitkan", "title": "Wujudkan event pertamamu.", "description": "Isi sedikit demi sedikit. Lihat hasilnya sambil berjalan.", "matchDay": "Hari Pertandingan", "eventSetup": "Pengaturan event" },
     "blockers": {
+      "registration_review": "Permintaan registrasi perlu ditinjau.",
+      "match_results": "Hasil pertandingan belum lengkap.",
+      "statistics_review": "Statistik pemain perlu ditinjau.",
+      "schedule_unpublished": "Jadwal pertandingan belum diterbitkan.",
       "title": "Pemblokir tersisa",
       "review": "Tinjau",
       "none": "Tidak ada pemblokir tersisa."

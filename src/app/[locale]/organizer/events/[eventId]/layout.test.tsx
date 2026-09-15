@@ -1,6 +1,12 @@
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createTranslator, NextIntlClientProvider } from "next-intl";
+import en from "../../../../../../messages/en.json";
+vi.mock("next-intl/server", () => ({ getTranslations: async ({ locale, namespace }: { locale: string; namespace: "organizerMaster.setup" }) => createTranslator({ locale, namespace, messages: en }) }));
+const { readOrganizerWorkspaceSummary } = vi.hoisted(() => ({ readOrganizerWorkspaceSummary: vi.fn() }));
+vi.mock("@/lib/organizer/workspace-read", () => ({ readOrganizerWorkspaceSummary }));
+vi.mock("@/i18n/navigation", () => ({ usePathname: () => "/organizer/events/event-1/overview", Link: ({ href, locale = "en", ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { locale?: string }) => <a {...props} href={`/${locale}${href}`} /> }));
 
 Object.assign(globalThis, { React });
 
@@ -38,9 +44,23 @@ vi.mock("@/components/v3/EventWorkspaceShell", () => ({
 import EventLayout from "./layout";
 
 describe("organizer event layout", () => {
+  it.each(["organizer", "admin", "platform_admin"])("renders the real master shell for %s without loading editor data", async role => {
+    isFeatureEnabled.mockReturnValue(true);
+    requireAnyRole.mockResolvedValue({ id: "org-1", role, name: "Manager" });
+    readOrganizerWorkspaceSummary.mockResolvedValue({ event: { id: "event-1", title: "Miracle Open", game: "Arena", format: "League" }, lifecycle: "ongoing", publication: "published", role, capabilities: { overview: true, registration: true, participants: false, competition: false, schedule: false, "match-control": false, completion: false, announcements: false, settings: false }, badges: {}, blockers: [], updatedAt: "2026-09-14T10:00:00.000Z" });
+    const layout = await EventLayout({ children: <p>Event route content</p>, params: Promise.resolve({ locale: "en", eventId: "event-1" }) });
+    const markup = renderToStaticMarkup(<NextIntlClientProvider locale="en" messages={en} timeZone="Asia/Jakarta">{layout}</NextIntlClientProvider>);
+    expect(markup).toContain('href="/en/organizer/events/event-1/overview"');
+    expect(markup).toContain("Ongoing"); expect(markup).toContain("Event route content");
+    expect(getManageableEventDraft).not.toHaveBeenCalled();
+  });
+  it("denies missing or unowned events through the compact reader under master flag", async () => {
+    isFeatureEnabled.mockReturnValue(true); readOrganizerWorkspaceSummary.mockResolvedValue(null);
+    await expect(EventLayout({ children: null, params: Promise.resolve({ locale: "en", eventId: "event-other" }) })).rejects.toThrow("NOT_FOUND");
+  });
   beforeEach(() => {
     vi.clearAllMocks();
-    isFeatureEnabled.mockReturnValue(true);
+    isFeatureEnabled.mockImplementation(flag => flag !== "organizer_master_shell_v3");
     requireAnyRole.mockResolvedValue({ id: "org-1", role: "organizer", name: "Organizer" });
     getManageableEventDraft.mockResolvedValue({ id: "event-1", name: "Miracle Open", status: "Draft", organizerUserId: "org-1", organizer: { organizerProfile: { contactChannel: "WhatsApp", contactValue: "+6281" } } });
   });
