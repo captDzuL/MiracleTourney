@@ -65,6 +65,13 @@ afterEach(() => {
 });
 
 describe("V3 shell integration", () => {
+  it("localizes the Indonesian setup competition action", async () => {
+    route.locale = "id";
+    route.pathname = "/id/organizer/events/cup/edit";
+    await render(<EventWorkspaceShell eventTitle="Cup" organizerLabel="Owner" navigation={[]} operations={{ eventId: "cup", locale: "id" }}><p>Editor</p></EventWorkspaceShell>);
+    const action = container.querySelector('a[href="/id/organizer/events/cup/competition"]');
+    expect(action?.textContent).toBe("Hari Pertandingan");
+  });
   it("limits setup steps to editor routes and preserves cross-route navigation", async () => {
     const shell = () => <EventWorkspaceShell eventTitle="Cup" organizerLabel="Owner" navigation={[{ href: "/organizer/events/other/overview#section-identity", label: "Identity" }]}><p>Content</p></EventWorkspaceShell>;
     route.pathname = "/en/organizer/events/cup/overview"; await render(shell());

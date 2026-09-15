@@ -52,7 +52,7 @@ export function EventWorkspaceShell({ children, eventTitle, navigation, nextActi
       <h1 className="mt-2 break-words text-sm font-semibold text-[var(--color-text)]">{eventTitle}</h1>
       {setupRoute && <><h2 className="mt-4 text-2xl font-extrabold text-[var(--color-text)]">{master("setup.title")}</h2>
       <p className="mt-2 text-sm text-[var(--color-text-subtle)]">{master("setup.description")}</p></>}
-      {operations && <Link className="miracle-focus-ring mt-3 inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-brand-cyan)]" href={`/organizer/events/${operations.eventId}/competition`}>Match Day</Link>}
+      {operations && <Link className="miracle-focus-ring mt-3 inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-brand-cyan)]" href={`/organizer/events/${operations.eventId}/competition`}>{master("setup.matchDay")}</Link>}
     </header>
     {setupRoute && <nav aria-label={t("eventNavigation")} className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 min-[700px]:p-3">
       <ol className="grid min-w-0 grid-cols-[repeat(var(--setup-step-count),minmax(0,1fr))] gap-1 min-[700px]:gap-2" style={{ "--setup-step-count": effectiveNavigation.length } as React.CSSProperties}>
