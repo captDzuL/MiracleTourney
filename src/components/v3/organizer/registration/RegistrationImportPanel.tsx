@@ -16,15 +16,20 @@ export function RegistrationImportPanel({ locale, eventId, returnTo, history }: 
  const [preview, setPreview] = useState<Preview | null>(null); const [selected, setSelected] = useState<string[]>([]);
  const [needsPreview, setNeedsPreview] = useState(false); const [busy, setBusy] = useState(false); const [done, setDone] = useState(false); const [dragging, setDragging] = useState(false);
  const [feedback, setFeedback] = useState<{ message: string; error?: boolean }>({ message: "" });
+ const [completedCount, setCompletedCount] = useState(0);
+ const [previewPage, setPreviewPage] = useState(1); const [pageSize, setPageSize] = useState(10); const [previewStatus, setPreviewStatus] = useState("");
+ const canDownloadCredentials = completedCount > 0 || history.some(batch => batch.eventId === eventId && batch.committedAt && batch.itemCount > 0);
  function chooseFile(next?: File) {
   if (!next || busy) return;
   setPreview(null); setSelected([]); setMapping(null); setHeaders([]); setDone(false); setNeedsPreview(false); setFeedback({ message: "" }); setFile(null);
   if (!/\.(csv|xlsx)$/i.test(next.name) || next.size === 0 || next.size > 5242880) { setFeedback({ message: t("fileHelp"), error: true }); return; }
   setFile(next);
+  setPreviewPage(1); setPreviewStatus("");
  }
  async function validate() {
   if (!file || busy) return;
   setBusy(true); setPreview(null); setSelected([]); setDone(false); setFeedback({ message: "" });
+  setPreviewPage(1); setPreviewStatus("");
   const data = actionForm(locale, eventId, returnTo); data.set("registrationFile", file);
   if (mapping) data.set("mapping", JSON.stringify({ columns: mapping.columns, players: mapping.players }));
   try {
@@ -46,7 +51,7 @@ export function RegistrationImportPanel({ locale, eventId, returnTo, history }: 
   selected.forEach(id => data.append("itemId", id));
   try {
    const result = await commitEventRegistrationImportAction(data);
-   if (result.status === "imported") { setDone(true); setFeedback({ message: t("imported", { count: result.importedCount }) }); router.refresh(); }
+   if (result.status === "imported") { setDone(true); setCompletedCount(result.importedCount); setFeedback({ message: t("imported", { count: result.importedCount }) }); router.refresh(); }
    else { setNeedsPreview(true); setFeedback({ message: t(result.status === "conflict" ? "conflict" : "expiredHelp"), error: true }); router.refresh(); }
   } catch { setNeedsPreview(true); setFeedback({ message: t("expiredHelp"), error: true }); } finally { setBusy(false); }
  }
@@ -60,6 +65,11 @@ export function RegistrationImportPanel({ locale, eventId, returnTo, history }: 
   </label>;
  }
  const expired = !!preview?.expiresAt && Date.parse(preview.expiresAt) <= Date.now();
+ const filteredRows = (preview?.items ?? []).filter(item => !previewStatus || item.status === previewStatus);
+ const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize)); const page = Math.min(previewPage, totalPages);
+ const pageRows = filteredRows.slice((page - 1) * pageSize, page * pageSize);
+ const selectablePageIds = pageRows.filter(item => ["new", "changed"].includes(item.status)).map(item => item.id);
+ const selectionLocked = busy || done || expired || needsPreview;
  const headingStyle = { fontFamily: "var(--font-miracle-v3)" };
  return <div className="grid min-w-0 gap-4">
   <section className={panel + " grid gap-5"} aria-busy={busy}>
@@ -97,10 +107,21 @@ export function RegistrationImportPanel({ locale, eventId, returnTo, history }: 
     )}</div>
     {needsPreview && <p role="status" className={muted}>{t("revalidateMapping")}</p>}
     {expired && <p role="alert" className={muted}>{t("expiredHelp")}</p>}
+    <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+     <label className="grid min-w-0 gap-2 text-sm">{t("previewStatus")}<select data-preview-status className={field} value={previewStatus} onChange={event => { setPreviewStatus(event.target.value); setPreviewPage(1); }}>
+      <option value="">{t("allStatuses")}</option>{["new", "changed", "same", "error"].map(status => <option key={status} value={status}>{t(`importStatuses.${status}`)}</option>)}
+     </select></label>
+     <label className="grid min-w-0 gap-2 text-sm">{t("rowsPerPage")}<select data-preview-page-size className={field} value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPreviewPage(1); }}>{[10, 25, 50].map(size => <option key={size} value={size}>{size}</option>)}</select></label>
+    </div>
+    <div className="flex flex-wrap gap-3">
+     <button type="button" data-select-page className={control} disabled={selectionLocked || !selectablePageIds.some(id => !selected.includes(id))} onClick={() => setSelected(current => [...new Set([...current, ...selectablePageIds])])}>{t("selectPage")}</button>
+     <button type="button" data-unselect-page className={control} disabled={selectionLocked || !selectablePageIds.some(id => selected.includes(id))} onClick={() => setSelected(current => current.filter(id => !selectablePageIds.includes(id)))}>{t("unselectPage")}</button>
+    </div>
+    <p data-selection-count role="status" className={muted}>{t("selectionRetained", { count: selected.length, total: filteredRows.length })}</p>
     <div className="max-h-[32rem] max-w-full overflow-auto">
      <table className="w-full text-left text-sm"><caption className="sr-only">{t("previewRows")}</caption>
       <thead><tr>{["select", "row", "team", "validation"].map(key => <th style={headingStyle} className="border-b border-[var(--color-border)] p-3" key={key} scope="col">{t(key)}</th>)}</tr></thead>
-      <tbody>{preview.items?.map(item => <tr key={item.id}>
+      <tbody>{pageRows.map(item => <tr key={item.id}>
        <td className="p-2"><label className="flex min-h-11 min-w-11 items-center justify-center">
         <input type="checkbox" className="miracle-focus-ring size-5" value={item.id} aria-label={t("selectRow", { row: item.sourceRow })} checked={selected.includes(item.id)}
          disabled={busy || done || expired || needsPreview || !["new", "changed"].includes(item.status)}
@@ -113,10 +134,17 @@ export function RegistrationImportPanel({ locale, eventId, returnTo, history }: 
       </tr>)}</tbody>
      </table>
     </div>
+    {filteredRows.length === 0 && <p className={muted}>{t("emptyPreviewFilter")}</p>}
+    <nav aria-label={t("previewPagination")} className="flex flex-wrap items-center justify-between gap-3">
+     <button type="button" data-import-previous className={control} disabled={page <= 1} onClick={() => setPreviewPage(page - 1)}>{t("previous")}</button>
+     <span className={muted}>{t("pageCount", { page, total: totalPages })}</span>
+     <button type="button" data-import-next className={control} disabled={page >= totalPages} onClick={() => setPreviewPage(page + 1)}>{t("next")}</button>
+    </nav>
     <button type="button" data-commit className={primary + " justify-self-start"} disabled={busy || done || expired || needsPreview || selected.length === 0} onClick={commit}>{t("commit", { count: selected.length })}</button>
    </>}
   </section>
   <section className={panel}><h2 style={headingStyle} className="mb-3 text-lg font-extrabold">{t("importHistory")}</h2>
+   {canDownloadCredentials && <div className="mb-4 grid gap-2"><a className={control + " justify-self-start"} href={`/api/admin/captain-credentials?eventId=${encodeURIComponent(eventId)}`}>{t("downloadCredentials")}</a><p className={muted}>{t("credentialsHelp")}</p></div>}
    {history.length ? <ul className="grid gap-3">{history.map(batch =>
     <li className="flex min-w-0 flex-wrap justify-between gap-3 border-b border-[var(--color-border)] py-3 text-sm" key={batch.id}>
      <div className="min-w-0"><strong className="break-all">{batch.sourceLabel}</strong><p className={muted}>{t("rowsCount", { count: batch.itemCount })} · {t(batch.committedAt ? "importComplete" : Date.parse(String(batch.expiresAt)) <= Date.now() ? "expired" : "draft")}</p></div>

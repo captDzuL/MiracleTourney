@@ -6,8 +6,9 @@ export type QueryInput = Record<string, string | string[] | undefined>;
 export function normalizeRegistrationQuery(raw: QueryInput = {}): RegistrationQuery {
   const one = (key: string) => typeof raw[key] === "string" ? raw[key] as string : "";
   const view = one("view");
+  const status = view === "payments" ? ({ accepted: "approved", needs_correction: "expired" }[one("status")] ?? one("status")) : one("status");
   return { view: ["queue", "import", "payments", "qris"].includes(view) ? view as RegistrationQuery["view"] : "queue",
-    status: [...statuses, "approved", "expired"].includes(one("status") as RegistrationStatus) ? one("status") : "",
+    status: [...statuses, "approved", "expired"].includes(status as RegistrationStatus) ? status : "",
     source: sources.includes(one("source") as RegistrationSource) ? one("source") : "", q: one("q").trim().slice(0, 200), page: Math.max(1, Number.parseInt(one("page"), 10) || 1) };
 }
 export function registrationHref(locale: string, eventId: string, query: RegistrationQuery, overrides: Partial<RegistrationQuery> = {}, participants = false) {

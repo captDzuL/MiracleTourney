@@ -23,5 +23,16 @@ describe("event registration route", () => {
     expect(html).toContain("Alpha"); expect(html).toContain("import_csv");
   });
   it("rejects unauthenticated reads before querying event data", async () => { m.auth.mockResolvedValue(null); await expect(Page({ params: Promise.resolve({ locale: "en", eventId: "cup" }) })).rejects.toThrow("/login"); expect(m.context).not.toHaveBeenCalled(); });
+  it.each([
+    ["pending_payment", "pending_payment"], ["pending_review", "pending_review"],
+    ["approved", "approved"], ["rejected", "rejected"], ["expired", "expired"],
+    ["accepted", "approved"], ["needs_correction", "expired"], ["bogus", ""],
+  ])("passes payment status %s to the reader as %s on refreshed URL requests", async (status, expected) => {
+    m.payments.mockImplementation(async ({ status: selected }) => [{ id: "payment", status: selected ?? "pending_review" }]);
+    const result = await Page({ params: Promise.resolve({ locale: "id", eventId: "cup" }), searchParams: Promise.resolve({ view: "payments", status, q: "Alpha", page: "2" }) });
+    expect(m.payments).toHaveBeenCalledWith({ user: { id: "owner", role: "organizer" }, eventId: "cup", status: expected || undefined });
+    expect(result.props.query).toEqual({ view: "payments", status: expected, q: "Alpha", source: "", page: 2 });
+    expect(result.props.payments[0].status).toBe(expected || "pending_review");
+  });
   it("checks ownership before loading any module", async () => { m.access.mockRejectedValue(Error("Not authorized")); await expect(Page({ params: Promise.resolve({ locale: "en", eventId: "cup" }) })).rejects.toThrow(); expect(m.queue).not.toHaveBeenCalled(); });
 });

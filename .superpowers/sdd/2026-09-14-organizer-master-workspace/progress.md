@@ -38,3 +38,7 @@ Task 6: RED/GREEN — routes, preview/upload adapter, components, conflicts, URL
 Task 6: verification in progress — full production-component ID/EN browser matrix, final source commit and committed-HEAD full suite
 Task 6: implementation complete — 3c25255128fd512cd9a18df80341c05b1f47f950; independent review pending
 Task 6: GREEN — focused 9 files / 72 tests; browser 60 cases with no overflow/undersized targets/errors; committed-HEAD full 174 files passed / 2 skipped, 1,934 tests passed / 6 skipped; lint/typecheck/diff-check pass
+Task 6: reviewer fix round 1 in progress — payment route-to-reader statuses, captain credential handoff, import pagination and cross-page retained selection
+Task 6: reviewer fix round 1 RED/GREEN — payment 7 RED -> 14 GREEN; credentials 3 RED -> 16 GREEN; pagination 1 RED -> 17 GREEN
+Task 6: reviewer fix round 1 verified — expanded 10 files / 88 tests; browser 12 cases ID/EN at 360/390/1280 with paging/selection/download/filter-refresh checks; lint/typecheck/diff-check pass; full 174 files passed / 2 skipped, 1,945 passed / 6 skipped
+Task 6: reviewer fix round 1 implementation complete — dedicated fix commit follows 6feef6b; committed-HEAD full rerun and independent review handoff

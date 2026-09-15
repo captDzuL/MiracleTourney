@@ -60,3 +60,23 @@ Committed-HEAD `pnpm test`, 2026-09-16 04:54 Jakarta: 174 files passed / two ski
 Final browser pass after upload localization and hit-area fixes: 60 cases passed, zero document overflow, zero undersized Task6 targets, dialog keyboard checks passed, zero page errors. Final mobile Indonesian import screenshot manually inspected after this pass.
 
 Implementation-HEAD lint, explicit no-emit TypeScript check and diff check pass. Source worktree is clean; the pre-existing protected verification file remains untracked and untouched. Documentation is saved separately after this source verification.
+
+## Task 6 review fix round 1
+
+Base: `6feef6b1fd2bb2316d5a44800175da64c719adec`. Dedicated fix commit follows this base.
+
+1. Payment URL filters now normalize queue aliases (`accepted` -> `approved`, `needs_correction` -> `expired`) before rendering and pass the selected status into the actual event-scoped payment reader. The reader's existing pending-only default is preserved when no status is selected. Route contract tests exercise pending-payment, pending-review, approved, rejected, expired, both aliases and invalid values, including the reader payload and rendered query/result.
+2. Successful nonzero imports and committed current-event history expose the existing ownership-checked `/api/admin/captain-credentials?eventId=...` download. No raw credentials/passwords are rendered or logged. Link text and privacy help are localized. Tests check correct event href, no draft/cross-event-history link, success visibility, locale labels, keyboard focus, and absence of returned password data in the DOM. Existing endpoint security tests remain green.
+3. Import preview now has 10/25/50 rows-per-page, status filtering, page-only select/unselect, paging controls, and an announced global selection count. Stable persisted item IDs retain their original source-row correspondence across page/filter changes; commit sends exactly those retained IDs via the existing Task5 `itemId` contract, never page-relative offsets. Invalid rows cannot be selected; mapping/expiry/busy/committed protections remain active.
+
+TDD evidence:
+- Payment route: seven RED failures, then 14 GREEN tests.
+- Credential handoff: three RED failures, then 16 GREEN component tests.
+- Import pagination/retention: one RED failure (32 rows rendered instead of 10), then 17 GREEN component tests.
+- Expanded focused run: 10 files / 88 tests passed, including all required Task6 paths, action/security contracts, image helper, workspace/i18n and credential endpoint tests.
+- Lint, explicit no-emit TypeScript and diff-check passed.
+- Full suite before dedicated fix commit: 174 files passed / two skipped, 1,945 tests passed / six skipped, exit 0 at 05:12 Jakarta (24.16s). The same suite is rerun on the dedicated committed HEAD before handoff.
+
+Browser evidence: `task-6-fix-1-browser.mjs` and `task-6-fix-1-browser/` in this task evidence directory. Twelve production-component cases cover ID/EN x 360/390/1280 x import/payments. All passed with zero document overflow, zero undersized targets and zero page errors. Import interactions cover every page size, status-filter changes, page-only selection changes, exact retained commit IDs and keyboard-triggered credential CSV download. Payments exercise pending-review/approved/rejected/expired through native form navigation and reload. Receipt dialog keyboard focus/Escape remains green. Screenshots include all 12 cases; final ID 360 import inspected manually.
+
+Browser actions/download responses are local fixtures; this is not a live DB or credential export claim. Authenticated persistence remains Task11. No Task7+ changes, production access, protected report edits or new server contracts in this fix round.

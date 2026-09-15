@@ -6,6 +6,7 @@ import { isFeatureEnabled } from "@/lib/feature-flags";
 import { assertUserCanManageEvent, getRegistrationImportEventContext } from "@/lib/platform/repository";
 import { getEventRegistrationQueue, getEventImportHistory, getEventPaymentReview, getEventQris } from "@/lib/registration/organizer-workspace-read";
 import type { RegistrationStatus, RegistrationSource } from "@/lib/registration/records";
+import type { TeamRegistrationRequestStatus } from "@/lib/platform/types";
 import { RegistrationWorkspace } from "@/components/v3/organizer/registration/RegistrationWorkspace";
 import { normalizeRegistrationQuery, type QueryInput } from "@/components/v3/organizer/registration/query";
 export default async function OrganizerRegistrationPage({ params, searchParams }: { params: Promise<{ locale: string; eventId: string }>; searchParams?: Promise<QueryInput> }) {
@@ -28,7 +29,7 @@ export default async function OrganizerRegistrationPage({ params, searchParams }
    return <RegistrationWorkspace {...common} queue={queue} teams={context.teams.filter(team => visible.has(team.id))} />;
   }
   if (query.view === "import") return <RegistrationWorkspace {...common} history={await getEventImportHistory({ user, eventId })} />;
-  if (query.view === "payments") return <RegistrationWorkspace {...common} payments={await getEventPaymentReview({ user, eventId })} />;
+  if (query.view === "payments") return <RegistrationWorkspace {...common} payments={await getEventPaymentReview({ user, eventId, status: query.status as TeamRegistrationRequestStatus || undefined })} />;
   return <RegistrationWorkspace {...common} qris={await getEventQris({ user, eventId })} />;
  } catch { return <RegistrationWorkspace {...base} capacity={0} acceptedCount={0} error />; }
 }
