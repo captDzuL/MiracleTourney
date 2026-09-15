@@ -147,7 +147,7 @@ describe("registration V3 actions", () => {
       locale: "en", eventId: "event-1", requestId: "request-1", version: "2026-09-14T10:00:00.000Z",
       returnTo: "/en/organizer/events/event-1/registration?view=payments",
     }))).resolves.toMatchObject({ status: "conflict", code: "stale_mutation" });
-    expect(mocks.getTeamRegistrationRequestForEvent).toHaveBeenCalledWith("request-1");
+    expect(mocks.getTeamRegistrationRequestForEvent).toHaveBeenCalledWith(organizer, "event-1", "request-1");
     expect(mocks.approveTeamRegistrationRequest).toHaveBeenCalledWith(
       organizer,
       "request-1",

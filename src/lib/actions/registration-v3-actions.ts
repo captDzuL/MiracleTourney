@@ -45,6 +45,17 @@ export type RegistrationActionBlocked = {
   code: BlockedCode;
   message: string;
   redirectTo?: string;
+  legacy?: RegistrationLegacyFailure;
+};
+
+export type RegistrationLegacyFailure = {
+  phase: "import" | "registration";
+  message: string;
+  behavior: "redirect" | "throw";
+};
+
+export type RegistrationActionOptions = {
+  legacyCompatibility?: boolean;
 };
 
 export type RegistrationActionResult =
@@ -102,6 +113,18 @@ function localizedMessage(locale: Locale, key: string) {
 
 function blocked(locale: Locale, code: BlockedCode, redirectTo?: string): RegistrationActionBlocked {
   return { status: "blocked", code, message: localizedMessage(locale, code), ...(redirectTo ? { redirectTo } : {}) };
+}
+
+function withLegacyFailure(
+  result: RegistrationActionBlocked,
+  options: RegistrationActionOptions,
+  failure: RegistrationLegacyFailure,
+): RegistrationActionBlocked {
+  return options.legacyCompatibility ? { ...result, legacy: failure } : result;
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function value(formData: FormData, key: string) {
@@ -205,34 +228,73 @@ function readPreviewInput(formData: FormData): PreviewInput | RegistrationAction
   return { locale, eventId: parsed.data.eventId, returnTo: parsed.data.returnTo ?? "", worksheetName: parsed.data.worksheetName, file };
 }
 
-export async function previewRegistrationImportForUser(user: AppUser, formData: FormData): Promise<RegistrationActionResult> {
+export async function previewRegistrationImportForUser(
+  user: AppUser,
+  formData: FormData,
+  options: RegistrationActionOptions = {},
+): Promise<RegistrationActionResult> {
   const input = readPreviewInput(formData);
   if ("status" in input) return input;
   const { locale, eventId, file } = input;
   const redirectTo = canonicalRegistrationPath(locale, eventId, input.returnTo, "import");
   try {
     await assertUserCanManageEvent(user, eventId);
-    if (file.size > MAX_REGISTRATION_INTAKE_BYTES) return blocked(locale, "invalid_input", redirectTo);
+    if (file.size > MAX_REGISTRATION_INTAKE_BYTES) {
+      return withLegacyFailure(blocked(locale, "invalid_input", redirectTo), options, {
+        phase: "import", message: "File registrasi maksimal 5 MiB.", behavior: "redirect",
+      });
+    }
     const lowerName = file.name.toLowerCase();
     const kind = lowerName.endsWith(".xlsx") ? "xlsx" : lowerName.endsWith(".csv") ? "csv" : null;
-    if (!kind) return blocked(locale, "invalid_input", redirectTo);
+    if (!kind) {
+      return withLegacyFailure(blocked(locale, "invalid_input", redirectTo), options, {
+        phase: "import", message: "File harus berformat .xlsx atau .csv.", behavior: "redirect",
+      });
+    }
 
     const event = await getRegistrationImportEventContext(user, eventId);
-    if (!event) return blocked(locale, "not_found", redirectTo);
-    const parsed = await parseRegistrationSource({
-      kind,
-      fileName: file.name,
-      buffer: Buffer.from(await file.arrayBuffer()),
-      worksheetName: input.worksheetName,
-    });
+    if (!event) {
+      return withLegacyFailure(blocked(locale, "not_found", redirectTo), options, {
+        phase: "import", message: "Event tidak ditemukan.", behavior: "redirect",
+      });
+    }
+
+    let parsed;
+    try {
+      parsed = await parseRegistrationSource({
+        kind,
+        fileName: file.name,
+        buffer: Buffer.from(await file.arrayBuffer()),
+        worksheetName: input.worksheetName,
+      });
+    } catch (error) {
+      if (options.legacyCompatibility) {
+        return withLegacyFailure(blocked(locale, "invalid_input", redirectTo), options, {
+          phase: "import",
+          message: errorMessage(error, "File registrasi tidak dapat dibaca."),
+          behavior: "redirect",
+        });
+      }
+      return asErrorResult(locale, error);
+    }
     const worksheet = parsed.worksheets[0];
-    if (!worksheet || worksheet.rows.length < 2) return blocked(locale, "invalid_input", redirectTo);
+    if (!worksheet || worksheet.rows.length < 2) {
+      return withLegacyFailure(blocked(locale, "invalid_input", redirectTo), options, {
+        phase: "import", message: "File perlu header dan minimal satu baris registrasi.", behavior: "redirect",
+      });
+    }
 
     const mode = getGameModeConfig(event.gameModeId);
     const headers = worksheet.rows[0].map((cell) => cell.value);
     const mapping = suggestRegistrationMapping(headers, { maxRosterSize: mode.maxRosterSize });
     const required = ["teamName", "captainIgn", "captainUid"] as const;
-    if (required.some((key) => mapping.columns[key] == null)) return blocked(locale, "invalid_input", redirectTo);
+    if (required.some((key) => mapping.columns[key] == null)) {
+      return withLegacyFailure(blocked(locale, "invalid_input", redirectTo), options, {
+        phase: "registration",
+        message: "Mapping wajib belum ditemukan: nama tim, captain IGN, captain UID.",
+        behavior: "redirect",
+      });
+    }
 
     const rows: RegistrationParsedRow[] = worksheet.rows.slice(1).map((row, index) => ({
       sourceRow: index + 2,
@@ -244,7 +306,7 @@ export async function previewRegistrationImportForUser(user: AppUser, formData: 
       ? []
       : rows.map((row) => row.cells[emailColumn]?.trim().toLowerCase()).filter((item): item is string => Boolean(item));
     const existingUsers = emailValues.length && typeof getRegistrationImportUsersByEmails === "function"
-      ? await getRegistrationImportUsersByEmails(emailValues)
+      ? await getRegistrationImportUsersByEmails(user, eventId, emailValues)
       : [];
     const preview = buildRegistrationPreview({
       event: {
@@ -281,6 +343,7 @@ export async function previewRegistrationImportForUser(user: AppUser, formData: 
     });
     return { status: "preview_ready", batchId: batch.id, redirectTo, summary: preview.summary };
   } catch (error) {
+    if (options.legacyCompatibility) throw error;
     return asErrorResult(locale, error);
   }
 }
@@ -301,20 +364,43 @@ function readCommitInput(formData: FormData) {
   return { input: { ...parsed.data, selectedItemIds }, locale } as const;
 }
 
-export async function commitRegistrationImportForUser(user: AppUser, formData: FormData): Promise<RegistrationActionResult> {
+export async function commitRegistrationImportForUser(
+  user: AppUser,
+  formData: FormData,
+  options: RegistrationActionOptions = {},
+): Promise<RegistrationActionResult> {
   const parsed = readCommitInput(formData);
   if (!parsed.input) return blocked(parsed.locale, "invalid_input");
   const { eventId, batchId, selectedItemIds, returnTo } = parsed.input;
   const redirectTo = canonicalRegistrationPath(parsed.locale, eventId, returnTo ?? "", "import");
-  if (selectedItemIds.length === 0) return blocked(parsed.locale, "invalid_input", redirectTo);
+  if (selectedItemIds.length === 0) {
+    return withLegacyFailure(blocked(parsed.locale, "invalid_input", redirectTo), options, {
+      phase: "registration",
+      message: "Pilih minimal satu baris Baru atau Berubah untuk diimport.",
+      behavior: "redirect",
+    });
+  }
   try {
     await assertUserCanManageEvent(user, eventId);
     const batch = await getRegistrationImportBatchForAdmin(user, batchId);
-    if (!batch) return blocked(parsed.locale, "not_found", redirectTo);
+    if (!batch) {
+      return withLegacyFailure(blocked(parsed.locale, "not_found", redirectTo), options, {
+        phase: "registration", message: "Batch import registrasi tidak ditemukan.", behavior: "redirect",
+      });
+    }
     if (batch.eventId !== eventId) return blocked(parsed.locale, "forbidden", redirectTo);
     const result = await commitRegistrationImportBatch(user, batchId, selectedItemIds);
     return { status: "imported", importedCount: result.importedCount, credentials: result.credentials, redirectTo };
   } catch (error) {
+    if (options.legacyCompatibility) {
+      const result = asErrorResult(parsed.locale, error);
+      const blockedResult = result.status === "blocked"
+        ? result
+        : blocked(parsed.locale, "operation_failed", redirectTo);
+      return withLegacyFailure(blockedResult, options, {
+        phase: "registration", message: errorMessage(error, "Import registrasi gagal."), behavior: "redirect",
+      });
+    }
     return asErrorResult(parsed.locale, error);
   }
 }
@@ -356,8 +442,8 @@ function readReviewInput(formData: FormData, requireReason: boolean): ReviewInpu
   };
 }
 
-async function readReviewTarget(input: ReviewInput, locale: Locale, expected: TeamRegistrationRequestStatus | TeamRegistrationRequestStatus[]) {
-  const target = await getTeamRegistrationRequestForEvent(input.requestId);
+async function readReviewTarget(user: AppUser, input: ReviewInput, locale: Locale, expected: TeamRegistrationRequestStatus | TeamRegistrationRequestStatus[]) {
+  const target = await getTeamRegistrationRequestForEvent(user, input.eventId, input.requestId);
   if (!target) return blocked(locale, "not_found");
   if (target.eventId !== input.eventId) return blocked(locale, "forbidden");
   const statuses = Array.isArray(expected) ? expected : [expected];
@@ -374,7 +460,7 @@ export async function approveEventPaymentAction(formData: FormData): Promise<Act
   if ("status" in access) return { ...access, message: localizedMessage(input.locale, access.code) };
   const redirectTo = canonicalRegistrationPath(input.locale, input.eventId, input.returnTo, "payments");
   try {
-    const target = await readReviewTarget(input, input.locale, "pending_review");
+    const target = await readReviewTarget(access, input, input.locale, "pending_review");
     if (target.status === "blocked" || target.status === "conflict") return { ...target, redirectTo };
     const team = await approveTeamRegistrationRequest(access, input.requestId, {
       expectedStatus: "pending_review",
@@ -397,7 +483,7 @@ export async function rejectEventPaymentAction(formData: FormData): Promise<Acti
   if ("status" in access) return { ...access, message: localizedMessage(input.locale, access.code) };
   const redirectTo = canonicalRegistrationPath(input.locale, input.eventId, input.returnTo, "payments");
   try {
-    const target = await readReviewTarget(input, input.locale, ["pending_review", "pending_payment"]);
+    const target = await readReviewTarget(access, input, input.locale, ["pending_review", "pending_payment"]);
     if (target.status === "blocked" || target.status === "conflict") return { ...target, redirectTo };
     const request = await rejectTeamRegistrationRequest(access, input.requestId, input.reason!, {
       expectedStatus: target.status,
@@ -455,7 +541,7 @@ export async function saveEventQrisDraftAction(formData: FormData): Promise<Acti
   if ("status" in access) return { ...access, message: localizedMessage(input.locale, access.code) };
   const redirectTo = canonicalRegistrationPath(input.locale, input.eventId, input.returnTo, "qris");
   try {
-    const current = await getEventPaymentSettingsForManager(input.eventId);
+    const current = await getEventPaymentSettingsForManager(access, input.eventId);
     if (current.eventId !== input.eventId) return blocked(input.locale, "forbidden", redirectTo);
     const result = await saveEventPaymentSettingsDraft({
       eventId: input.eventId,
@@ -480,7 +566,7 @@ export async function publishEventQrisAction(formData: FormData): Promise<Action
   if ("status" in access) return { ...access, message: localizedMessage(input.locale, access.code) };
   const redirectTo = canonicalRegistrationPath(input.locale, input.eventId, input.returnTo, "qris");
   try {
-    const current = await getEventPaymentSettingsForManager(input.eventId);
+    const current = await getEventPaymentSettingsForManager(access, input.eventId);
     if (current.eventId !== input.eventId) return blocked(input.locale, "forbidden", redirectTo);
     const result = await publishEventPaymentSettings({ eventId: input.eventId, actor: access, expectedVersion: input.expectedVersion });
     if (result.status === "conflict") return { status: "conflict", code: "stale_mutation", version: result.version, message: localizedMessage(input.locale, "stale_mutation"), redirectTo };

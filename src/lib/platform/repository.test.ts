@@ -165,6 +165,7 @@ import {
   getRegistrationImportHistoryForEvent,
   getPaymentReviewForEvent,
   getRegistrationImportEventContext,
+  getRegistrationImportUsersByEmails,
   getTeamRegistrationRequestForEvent,
   getEventPaymentSettingsForManager,
   RegistrationMutationConflictError,
@@ -193,6 +194,7 @@ import {
 } from "./repository";
 
 const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
+const admin = { id: "admin-2", role: "admin" as const, email: "admin2@test.com", name: "Admin Two" };
 const organizer = { id: "org-1", role: "organizer" as const, email: "org@test.com", name: "Organizer" };
 
 beforeEach(() => {
@@ -937,11 +939,36 @@ describe("event-local registration workspace repository", () => {
       updatedAt: new Date("2026-09-10T00:00:00.000Z"),
     });
 
-    await expect(getEventPaymentSettingsForManager("event-1")).resolves.toMatchObject({
+    await expect(getEventPaymentSettingsForManager(platformAdmin, "event-1")).resolves.toMatchObject({
       eventId: "event-1", source: "event", status: "draft", version: 4,
       qrisImageUrl: "/payment-qris/event-1.png",
     });
     expect(prisma.paymentSettings.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("does not expose sensitive event reads through an unauthenticated string-only call", async () => {
+    await expect((getRegistrationRecordsForEvent as unknown as (eventId: string) => Promise<unknown>)("event-1"))
+      .rejects.toThrow("Not authorized");
+    await expect((getRegistrationImportHistoryForEvent as unknown as (eventId: string) => Promise<unknown>)("event-1"))
+      .rejects.toThrow("Not authorized");
+    await expect((getPaymentReviewForEvent as unknown as (eventId: string) => Promise<unknown>)("event-1"))
+      .rejects.toThrow("Not authorized");
+    await expect((getRegistrationImportEventContext as unknown as (eventId: string) => Promise<unknown>)("event-1"))
+      .rejects.toThrow("Not authorized");
+    await expect((getEventPaymentSettingsForManager as unknown as (eventId: string) => Promise<unknown>)("event-1"))
+      .rejects.toThrow("Not authorized");
+    await expect((getRegistrationImportUsersByEmails as unknown as (emails: string[]) => Promise<unknown>)(["captain@example.com"]))
+      .rejects.toThrow("Not authorized");
+  });
+
+  it("allows the event owner and platform roles through the secured repository boundary", async () => {
+    prisma.team.findMany.mockResolvedValue([]);
+    prisma.teamRegistrationRequest.findMany.mockResolvedValue([]);
+    prisma.registrationImportItem.findMany.mockResolvedValue([]);
+    await expect(getRegistrationRecordsForEvent(organizer, "event-1")).resolves.toEqual([]);
+    await expect(getRegistrationRecordsForEvent(admin, "event-1")).resolves.toEqual([]);
+    await expect(getRegistrationRecordsForEvent(platformAdmin, "event-1")).resolves.toEqual([]);
+    expect(prisma.event.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizerUserId: "org-1" }) }));
   });
 
   it("rejects stale approval before creating a team", async () => {

@@ -33,7 +33,7 @@ export type OrganizerPaymentReviewInput = {
 
 export async function getEventRegistrationQueue(input: OrganizerRegistrationQueueInput): Promise<RegistrationRecordPage> {
   await assertUserCanManageEvent(input.user, input.eventId);
-  const records = await getRegistrationRecordsForEvent(input.eventId);
+  const records = await getRegistrationRecordsForEvent(input.user, input.eventId);
   const filter: RegistrationRecordFilter = {
     status: input.status,
     source: input.source,
@@ -46,15 +46,15 @@ export async function getEventRegistrationQueue(input: OrganizerRegistrationQueu
 
 export async function getEventImportHistory(input: { user: AppUser; eventId: string }): Promise<RegistrationImportHistoryEntry[]> {
   await assertUserCanManageEvent(input.user, input.eventId);
-  return getRegistrationImportHistoryForEvent(input.eventId);
+  return getRegistrationImportHistoryForEvent(input.user, input.eventId);
 }
 
 export async function getEventPaymentReview(input: OrganizerPaymentReviewInput): Promise<PaymentReviewEntry[]> {
   await assertUserCanManageEvent(input.user, input.eventId);
-  return getPaymentReviewForEvent(input.eventId, input.status);
+  return getPaymentReviewForEvent(input.user, input.eventId, input.status);
 }
 
 export async function getEventQris(input: { user: AppUser; eventId: string }): Promise<EventPaymentManagerSettings> {
   await assertUserCanManageEvent(input.user, input.eventId);
-  return getEventPaymentSettingsForManager(input.eventId);
+  return getEventPaymentSettingsForManager(input.user, input.eventId);
 }

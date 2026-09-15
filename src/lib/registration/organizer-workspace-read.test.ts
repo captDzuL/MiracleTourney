@@ -105,7 +105,7 @@ describe("organizer registration workspace readers", () => {
       totalPages: 1,
     });
     expect(mocks.assertUserCanManageEvent).toHaveBeenCalledWith(organizer, "event-1");
-    expect(mocks.getRegistrationRecordsForEvent).toHaveBeenCalledWith("event-1");
+    expect(mocks.getRegistrationRecordsForEvent).toHaveBeenCalledWith(organizer, "event-1");
   });
 
   it("rejects a non-owner before reading any event registration data", async () => {
@@ -124,8 +124,8 @@ describe("organizer registration workspace readers", () => {
     await expect(getEventPaymentReview({ user: organizer, eventId: "event-1", status: "pending_review" }))
       .resolves.toEqual([expect.objectContaining({ id: "request-gamma", eventId: "event-1" })]);
 
-    expect(mocks.getRegistrationImportHistoryForEvent).toHaveBeenCalledWith("event-1");
-    expect(mocks.getPaymentReviewForEvent).toHaveBeenCalledWith("event-1", "pending_review");
+    expect(mocks.getRegistrationImportHistoryForEvent).toHaveBeenCalledWith(organizer, "event-1");
+    expect(mocks.getPaymentReviewForEvent).toHaveBeenCalledWith(organizer, "event-1", "pending_review");
     expect(mocks.assertUserCanManageEvent).toHaveBeenCalledTimes(2);
   });
 
@@ -137,6 +137,6 @@ describe("organizer registration workspace readers", () => {
       version: 4,
       qrisImageUrl: "/payment-qris/event-1.png",
     });
-    expect(mocks.getEventPaymentSettingsForManager).toHaveBeenCalledWith("event-1");
+    expect(mocks.getEventPaymentSettingsForManager).toHaveBeenCalledWith(organizer, "event-1");
   });
 });

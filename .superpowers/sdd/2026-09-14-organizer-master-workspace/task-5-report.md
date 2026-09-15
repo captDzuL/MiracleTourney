@@ -4,6 +4,8 @@ Base: `90d2e07`
 
 Commit: final focused Task 5 commit (hash returned in the handoff)
 
+Fix Round 1 commit: `7e28b1e3045b528d83224c46388596af056f8d53`
+
 ## TDD evidence
 
 RED:
@@ -53,6 +55,7 @@ pnpm exec vitest run src/lib/registration/organizer-workspace-read.test.ts src/l
 
 - `src/lib/registration/organizer-workspace-read.ts`
 - `src/lib/registration/organizer-workspace-read.test.ts`
+- `src/lib/registration/registration-v3-contract.test.ts`
 - `src/lib/actions/registration-v3-actions.ts`
 - `src/lib/actions/registration-v3-actions.test.ts`
 - `src/lib/actions.ts`
@@ -61,3 +64,42 @@ pnpm exec vitest run src/lib/registration/organizer-workspace-read.test.ts src/l
 - `.superpowers/sdd/2026-09-14-organizer-master-workspace/progress.md`
 - `.superpowers/sdd/2026-09-14-organizer-master-workspace/task-5-brief.md`
 - `.superpowers/sdd/2026-09-14-organizer-master-workspace/task-5-report.md`
+
+## Fix Round 1 — reviewer findings
+
+### TDD evidence
+
+RED after adding the reviewer regressions and contract evidence:
+
+```text
+pnpm exec vitest run src/lib/registration/registration-v3-contract.test.ts src/lib/actions.test.ts
+```
+
+- 2 files were discovered; 7 tests failed and 145 passed. The failures were expected: legacy metadata was not yet consumed, the shared adapter did not receive compatibility mode, and the faithful transaction fixture exposed a Date-match fixture defect before production behavior was changed.
+
+GREEN:
+
+- `pnpm exec vitest run src/lib/registration/registration-v3-contract.test.ts src/lib/actions.test.ts`: 2 files passed; 152 tests passed.
+- The contract test executes the production parser, mapping, validation/preview builder, event-local repository readers, authorization checks, and approval CAS transaction. It verifies that the transaction snapshot rolls back the event competition version, created team, and request mutation when the conditional claim loses a race.
+
+### Contract-test boundary and limitation
+
+- No live registration database was used. The repository has no always-available safe registration integration database in the unit-test command; the existing database integration harness is conditional on a separately configured guarded environment. The new test therefore injects a minimal faithful Prisma boundary with real event/request/team relations, query predicates, CAS update counts, serializable transaction snapshots, and rollback semantics. This is contract evidence for production repository control flow, not a claim of live PostgreSQL execution.
+- Real CSV parser validation is exercised with an oversized source and a valid source flowing through mapping and preview validation. Repository authorization and event scoping are exercised for the owner, unrelated organizer, admin, and platform-admin paths.
+
+### Legacy compatibility
+
+- Legacy preview now performs the established authorization and file prechecks, preserves parser failures on the import phase, preserves required-mapping failures on the registration phase, and retains preview repository failures as errors with their original message.
+- Legacy commit preserves empty-selection, expiry, and repository messages on the registration phase while delegating all parsing/import business logic to the shared action module. No second parser or import implementation was introduced.
+- Event-local repository readers no longer expose string-only overloads. Every sensitive queue, history, payment-review, import-user, request-target, and manager QRIS read requires an authenticated actor and enforces owner/admin/platform-admin authorization internally.
+
+### Fix Round 1 verification
+
+- `pnpm lint`: exit 0 (`tsc --noEmit`).
+- `pnpm exec prisma validate`: exit 0; schema valid.
+- `git diff --check`: exit 0.
+- Required focused command: 4 files passed; 271 tests passed.
+- Contract evidence command: 1 file passed; 5 tests passed.
+- `pnpm test`: 172 files passed, 2 skipped; 1,893 tests passed, 6 skipped.
+
+The protected `2026-09-14-release-1.0-verification.md` file remains untouched and untracked; Task 6 UI files remain outside the change set.

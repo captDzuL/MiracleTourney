@@ -294,14 +294,6 @@ export type RegistrationReviewPrecondition = {
   expectedUpdatedAt?: Date;
 };
 
-type EventAccessTarget = string | AppUser;
-
-function resolveEventAccessTarget(first: EventAccessTarget, eventId?: string): { eventId: string; user?: AppUser } {
-  if (typeof first === "string") return { eventId: first };
-  if (!eventId) throw new Error("Event tidak ditemukan.");
-  return { eventId, user: first };
-}
-
 async function assertEventExists(eventId: string) {
   const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true } });
   if (!event) throw new Error("Event tidak ditemukan.");
@@ -2497,16 +2489,13 @@ export type TeamRegistrationRequestTarget = {
 
 export type EventPaymentManagerSettings = ResolvedEventPaymentSettings & { eventId: string; source: "event" };
 
-export async function getRegistrationRecordsForEvent(eventId: string): Promise<RegistrationRecord[]>;
-export async function getRegistrationRecordsForEvent(user: AppUser, eventId: string): Promise<RegistrationRecord[]>;
-export async function getRegistrationRecordsForEvent(first: string | AppUser, requestedEventId?: string): Promise<RegistrationRecord[]> {
-  const target = resolveEventAccessTarget(first, requestedEventId);
-  if (target.user) await assertUserCanManageEvent(target.user, target.eventId);
-  await assertEventExists(target.eventId);
+export async function getRegistrationRecordsForEvent(user: AppUser, eventId: string): Promise<RegistrationRecord[]> {
+  await assertUserCanManageEvent(user, eventId);
+  await assertEventExists(eventId);
 
   const [teams, requests] = await Promise.all([
     prisma.team.findMany({
-      where: { eventId: target.eventId },
+      where: { eventId },
       include: {
         players: { select: { id: true } },
         captain: { select: { id: true, name: true, email: true } },
@@ -2515,7 +2504,7 @@ export async function getRegistrationRecordsForEvent(first: string | AppUser, re
     }),
     prisma.teamRegistrationRequest.findMany({
       where: {
-        eventId: target.eventId,
+        eventId,
         status: { in: ["pending_payment", "pending_review", "rejected", "expired"] },
       },
       include: { captain: { select: { id: true, name: true, email: true } } },
@@ -2538,7 +2527,7 @@ export async function getRegistrationRecordsForEvent(first: string | AppUser, re
 
   const teamRecords: RegistrationRecord[] = teams.map((team) => ({
     id: team.id,
-    eventId: target.eventId,
+    eventId,
     teamId: team.id,
     teamName: team.name,
     teamTag: team.tag,
@@ -2556,7 +2545,7 @@ export async function getRegistrationRecordsForEvent(first: string | AppUser, re
 
   const requestRecords: RegistrationRecord[] = requests.map((request) => ({
     id: request.id,
-    eventId: target.eventId,
+    eventId,
     ...(request.teamId ? { teamId: request.teamId } : {}),
     teamName: request.teamName,
     teamTag: request.teamTag,
@@ -2573,14 +2562,11 @@ export async function getRegistrationRecordsForEvent(first: string | AppUser, re
   return [...teamRecords, ...requestRecords];
 }
 
-export async function getRegistrationImportHistoryForEvent(eventId: string): Promise<RegistrationImportHistoryEntry[]>;
-export async function getRegistrationImportHistoryForEvent(user: AppUser, eventId: string): Promise<RegistrationImportHistoryEntry[]>;
-export async function getRegistrationImportHistoryForEvent(first: string | AppUser, requestedEventId?: string): Promise<RegistrationImportHistoryEntry[]> {
-  const target = resolveEventAccessTarget(first, requestedEventId);
-  if (target.user) await assertUserCanManageEvent(target.user, target.eventId);
-  await assertEventExists(target.eventId);
+export async function getRegistrationImportHistoryForEvent(user: AppUser, eventId: string): Promise<RegistrationImportHistoryEntry[]> {
+  await assertUserCanManageEvent(user, eventId);
+  await assertEventExists(eventId);
   const rows = await prisma.registrationImportBatch.findMany({
-    where: { eventId: target.eventId },
+    where: { eventId },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 50,
     include: { items: { select: { id: true, status: true, teamId: true }, orderBy: { sourceRow: "asc" } } },
@@ -2602,20 +2588,14 @@ export async function getRegistrationImportHistoryForEvent(first: string | AppUs
   }));
 }
 
-export async function getPaymentReviewForEvent(eventId: string, status?: TeamRegistrationRequestStatus): Promise<PaymentReviewEntry[]>;
-export async function getPaymentReviewForEvent(user: AppUser, eventId: string, status?: TeamRegistrationRequestStatus): Promise<PaymentReviewEntry[]>;
-export async function getPaymentReviewForEvent(first: string | AppUser, requestedEventId?: string, status?: TeamRegistrationRequestStatus): Promise<PaymentReviewEntry[]> {
-  const target = resolveEventAccessTarget(first, requestedEventId);
-  const requestedStatus = typeof first === "string"
-    ? requestedEventId as TeamRegistrationRequestStatus | undefined
-    : status;
-  if (target.user) await assertUserCanManageEvent(target.user, target.eventId);
-  await assertEventExists(target.eventId);
+export async function getPaymentReviewForEvent(user: AppUser, eventId: string, status?: TeamRegistrationRequestStatus): Promise<PaymentReviewEntry[]> {
+  await assertUserCanManageEvent(user, eventId);
+  await assertEventExists(eventId);
   await expireStaleRegistrationRequests();
   const rows = await prisma.teamRegistrationRequest.findMany({
     where: {
-      eventId: target.eventId,
-      status: requestedStatus ?? { in: ["pending_payment", "pending_review"] },
+      eventId,
+      status: status ?? { in: ["pending_payment", "pending_review"] },
     },
     include: { captain: { select: { id: true, name: true, email: true } } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -2637,13 +2617,10 @@ export async function getPaymentReviewForEvent(first: string | AppUser, requeste
   }));
 }
 
-export async function getRegistrationImportEventContext(eventId: string): Promise<RegistrationImportEventContext | null>;
-export async function getRegistrationImportEventContext(user: AppUser, eventId: string): Promise<RegistrationImportEventContext | null>;
-export async function getRegistrationImportEventContext(first: string | AppUser, requestedEventId?: string): Promise<RegistrationImportEventContext | null> {
-  const target = resolveEventAccessTarget(first, requestedEventId);
-  if (target.user) await assertUserCanManageEvent(target.user, target.eventId);
+export async function getRegistrationImportEventContext(user: AppUser, eventId: string): Promise<RegistrationImportEventContext | null> {
+  await assertUserCanManageEvent(user, eventId);
   const row = await prisma.event.findUnique({
-    where: { id: target.eventId },
+    where: { id: eventId },
     select: {
       id: true, slug: true, name: true, gameModeId: true, participantCap: true, format: true,
       teams: {
@@ -2659,15 +2636,19 @@ export async function getRegistrationImportEventContext(first: string | AppUser,
   return row;
 }
 
-export async function getRegistrationImportUsersByEmails(emails: string[]) {
+export async function getRegistrationImportUsersByEmails(user: AppUser, eventId: string, emails: string[]) {
+  await assertUserCanManageEvent(user, eventId);
+  await assertEventExists(eventId);
   const normalized = [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))];
   if (normalized.length === 0) return [];
   return prisma.user.findMany({ where: { email: { in: normalized } }, select: { id: true, email: true, role: true } });
 }
 
-export async function getTeamRegistrationRequestForEvent(requestId: string): Promise<TeamRegistrationRequestTarget | null> {
+export async function getTeamRegistrationRequestForEvent(user: AppUser, eventId: string, requestId: string): Promise<TeamRegistrationRequestTarget | null> {
+  await assertUserCanManageEvent(user, eventId);
+  await assertEventExists(eventId);
   const row = await prisma.teamRegistrationRequest.findFirst({
-    where: { id: requestId },
+    where: { id: requestId, eventId },
     select: {
       id: true, eventId: true, captainId: true, teamId: true, teamName: true, teamTag: true,
       status: true, proofImageUrl: true, updatedAt: true, createdAt: true,
@@ -2677,7 +2658,8 @@ export async function getTeamRegistrationRequestForEvent(requestId: string): Pro
   return { ...row, status: row.status as TeamRegistrationRequestStatus };
 }
 
-export async function getEventPaymentSettingsForManager(eventId: string): Promise<EventPaymentManagerSettings> {
+export async function getEventPaymentSettingsForManager(user: AppUser, eventId: string): Promise<EventPaymentManagerSettings> {
+  await assertUserCanManageEvent(user, eventId);
   await assertEventExists(eventId);
   const row = await prisma.eventPaymentSettings.findUnique({ where: { eventId } });
   if (!row) {

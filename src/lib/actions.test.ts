@@ -59,6 +59,8 @@ const {
   upsertStatSubmission,
   adminWriteMatchPlayerStats,
   setTeamCaptainDisplay,
+  previewRegistrationImportForUser,
+  commitRegistrationImportForUser,
 } = vi.hoisted(() => ({
   addPlayer: vi.fn(),
   approveEventVisualAsset: vi.fn(),
@@ -118,6 +120,8 @@ const {
   upsertStatSubmission: vi.fn(),
   adminWriteMatchPlayerStats: vi.fn(),
   setTeamCaptainDisplay: vi.fn(),
+  previewRegistrationImportForUser: vi.fn(),
+  commitRegistrationImportForUser: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
@@ -129,6 +133,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/headers", () => ({ headers }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
 vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut }));
+vi.mock("@/lib/actions/registration-v3-actions", () => ({ previewRegistrationImportForUser, commitRegistrationImportForUser }));
 vi.mock("@/lib/imports/team-import", () => ({
   parseAndValidateTeamImport: vi.fn(),
 }));
@@ -207,6 +212,8 @@ import {
   adminApprovePaymentAction,
   adminCreateEventAction,
   adminImportTeamsCsvAction,
+  adminPreviewRegistrationImportAction,
+  adminCommitRegistrationImportAction,
   adminRejectEventVisualAction,
   adminRejectStatAction,
   adminSetEventVisualFocalPointAction,
@@ -1175,6 +1182,129 @@ describe("adminImportTeamsCsvAction", () => {
     );
     expect(importTeams).toHaveBeenCalledWith(rows);
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+});
+
+describe("legacy registration import adapters", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+  });
+
+  it("preserves the established missing-file error and import phase", async () => {
+    previewRegistrationImportForUser.mockResolvedValue({ status: "blocked", code: "invalid_input", message: "shared error" });
+    await expect(adminPreviewRegistrationImportAction(fd({ eventId: "event-1" }))).rejects.toThrow(
+      "REDIRECT:/admin?phase=import&activeEventId=event-1&error=Pilih%20file%20XLSX%20atau%20CSV%20terlebih%20dahulu.",
+    );
+  });
+
+  it("preserves the established size and extension errors before the shared core", async () => {
+    previewRegistrationImportForUser.mockResolvedValue({ status: "blocked", code: "invalid_input", message: "shared error" });
+    const large = new File(["x".repeat(5 * 1024 * 1024 + 1)], "large.csv", { type: "text/csv" });
+    await expect(adminPreviewRegistrationImportAction(fd({ eventId: "event-1", registrationFile: large }))).rejects.toThrow(
+      "REDIRECT:/admin?phase=import&activeEventId=event-1&error=File%20registrasi%20maksimal%205%20MiB.",
+    );
+
+    const unsupported = new File(["data"], "registrations.txt", { type: "text/plain" });
+    await expect(adminPreviewRegistrationImportAction(fd({ eventId: "event-1", registrationFile: unsupported }))).rejects.toThrow(
+      "REDIRECT:/admin?phase=import&activeEventId=event-1&error=File%20harus%20berformat%20.xlsx%20atau%20.csv.",
+    );
+  });
+
+  it("keeps parser failures from the shared core on the legacy import phase", async () => {
+    previewRegistrationImportForUser.mockResolvedValue({ status: "blocked", code: "invalid_input", message: "Parser failed" });
+    await expect(adminPreviewRegistrationImportAction(fd({
+      eventId: "event-1", registrationFile: new File(["data"], "registrations.csv", { type: "text/csv" }),
+    }))).rejects.toThrow("REDIRECT:/admin?phase=import&activeEventId=event-1&error=Parser%20failed");
+  });
+
+  it("preserves parser and mapping compatibility metadata from the shared core", async () => {
+    previewRegistrationImportForUser.mockResolvedValueOnce({
+      status: "blocked",
+      code: "operation_failed",
+      message: "Preview import registrasi gagal.",
+      legacy: { phase: "import", message: "File rusak.", behavior: "redirect" },
+    });
+    await expect(adminPreviewRegistrationImportAction(fd({
+      eventId: "event-1", registrationFile: new File(["data"], "registrations.csv", { type: "text/csv" }),
+    }))).rejects.toThrow("REDIRECT:/admin?phase=import&activeEventId=event-1&error=File%20rusak.");
+
+    previewRegistrationImportForUser.mockResolvedValueOnce({
+      status: "blocked",
+      code: "invalid_input",
+      message: "Input registrasi tidak valid.",
+      legacy: {
+        phase: "registration",
+        message: "Mapping wajib belum ditemukan: nama tim, captain IGN, captain UID.",
+        behavior: "redirect",
+      },
+    });
+    await expect(adminPreviewRegistrationImportAction(fd({
+      eventId: "event-1", registrationFile: new File(["data"], "registrations.csv", { type: "text/csv" }),
+    }))).rejects.toThrow(
+      "REDIRECT:/admin?phase=registration&activeEventId=event-1&error=Mapping%20wajib%20belum%20ditemukan%3A%20nama%20tim%2C%20captain%20IGN%2C%20captain%20UID.",
+    );
+  });
+
+  it("preserves a legacy preview repository failure as an error", async () => {
+    previewRegistrationImportForUser.mockResolvedValue({
+      status: "blocked",
+      code: "operation_failed",
+      message: "Preview import registrasi gagal.",
+      legacy: { phase: "registration", message: "Database unavailable.", behavior: "throw" },
+    });
+    await expect(adminPreviewRegistrationImportAction(fd({
+      eventId: "event-1", registrationFile: new File(["data"], "registrations.csv", { type: "text/csv" }),
+    }))).rejects.toThrow("Database unavailable.");
+  });
+
+  it("preserves the established empty-selection and expiry commit feedback", async () => {
+    commitRegistrationImportForUser.mockResolvedValue({ status: "blocked", code: "invalid_input", message: "shared error" });
+    await expect(adminCommitRegistrationImportAction(fd({ eventId: "event-1", batchId: "batch-1" }))).rejects.toThrow(
+      "REDIRECT:/admin?phase=registration&activeEventId=event-1&registrationBatchId=batch-1&error=Pilih%20minimal%20satu%20baris%20Baru%20atau%20Berubah%20untuk%20diimport.",
+    );
+
+    commitRegistrationImportForUser.mockResolvedValue({
+      status: "blocked",
+      code: "operation_failed",
+      message: "Import registrasi gagal.",
+      legacy: { phase: "registration", message: "Batch import registrasi sudah kedaluwarsa.", behavior: "redirect" },
+    });
+    await expect(adminCommitRegistrationImportAction(fd({ eventId: "event-1", batchId: "batch-1", itemId: "item-1" }))).rejects.toThrow(
+      "REDIRECT:/admin?phase=registration&activeEventId=event-1&registrationBatchId=batch-1&error=Batch%20import%20registrasi%20sudah%20kedaluwarsa.",
+    );
+  });
+
+  it("preserves a legacy commit repository failure and registration phase", async () => {
+    commitRegistrationImportForUser.mockResolvedValue({
+      status: "blocked",
+      code: "operation_failed",
+      message: "Import registrasi gagal.",
+      legacy: { phase: "registration", message: "Import transaction failed.", behavior: "redirect" },
+    });
+    await expect(adminCommitRegistrationImportAction(fd({ eventId: "event-1", batchId: "batch-1", itemId: "item-1" }))).rejects.toThrow(
+      "REDIRECT:/admin?phase=registration&activeEventId=event-1&registrationBatchId=batch-1&error=Import%20transaction%20failed.",
+    );
+  });
+
+  it("keeps the established legacy success redirects while delegating business work", async () => {
+    previewRegistrationImportForUser.mockResolvedValue({ status: "preview_ready", batchId: "batch-1", redirectTo: "/en/organizer/events/event-1/registration?view=import" });
+    await expect(adminPreviewRegistrationImportAction(fd({
+      eventId: "event-1", registrationFile: new File(["data"], "registrations.csv", { type: "text/csv" }),
+    }))).rejects.toThrow("REDIRECT:/admin?phase=registration&activeEventId=event-1&registrationBatchId=batch-1&success=registration-preview-ready");
+
+    commitRegistrationImportForUser.mockResolvedValue({ status: "imported", importedCount: 2, redirectTo: "/id/organizer/events/event-1/registration?view=import" });
+    await expect(adminCommitRegistrationImportAction(fd({ eventId: "event-1", batchId: "batch-1", itemId: "item-1" }))).rejects.toThrow(
+      "REDIRECT:/admin?phase=registration&activeEventId=event-1&success=registration-imported&count=2",
+    );
+    expect(previewRegistrationImportForUser).toHaveBeenCalledOnce();
+    expect(commitRegistrationImportForUser).toHaveBeenCalledOnce();
+    expect(previewRegistrationImportForUser).toHaveBeenCalledWith(
+      expect.anything(), expect.any(FormData), { legacyCompatibility: true },
+    );
+    expect(commitRegistrationImportForUser).toHaveBeenCalledWith(
+      expect.anything(), expect.any(FormData), { legacyCompatibility: true },
+    );
   });
 });
 

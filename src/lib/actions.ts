@@ -1107,18 +1107,40 @@ export async function adminImportTeamsCsvAction(formData: FormData) {
 export async function adminPreviewRegistrationImportAction(formData: FormData) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const result = await previewRegistrationImportForUser(user, formData);
+  await assertUserCanManageEvent(user, eventId);
+  const file = formData.get("registrationFile");
+  if (!(file instanceof File) || file.size === 0) {
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&error=${encodeURIComponent("Pilih file XLSX atau CSV terlebih dahulu.")}` as never,
+    );
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&error=${encodeURIComponent("File registrasi maksimal 5 MiB.")}` as never,
+    );
+  }
+  const fileName = file.name.toLowerCase();
+  if (!fileName.endsWith(".xlsx") && !fileName.endsWith(".csv")) {
+    return redirectToActiveLocale(
+      `/admin?phase=import&activeEventId=${eventId}&error=${encodeURIComponent("File harus berformat .xlsx atau .csv.")}` as never,
+    );
+  }
+  const result = await previewRegistrationImportForUser(user, formData, { legacyCompatibility: true });
   if (result.status === "preview_ready") {
     revalidatePath("/", "layout");
     return redirectToActiveLocale(
       `/admin?phase=registration&activeEventId=${eventId}&registrationBatchId=${result.batchId}&success=registration-preview-ready` as never,
     );
   }
-  const message = result.status === "blocked" || result.status === "conflict"
-    ? result.message
-    : "Preview import registrasi gagal.";
+  if (result.status === "blocked" && result.legacy?.behavior === "throw") throw new Error(result.legacy.message);
+  const phase = result.status === "blocked" && result.legacy?.phase === "registration" ? "registration" : "import";
+  const message = result.status === "blocked" && result.legacy?.message
+    ? result.legacy.message
+    : result.status === "blocked" || result.status === "conflict"
+      ? result.message
+      : "Preview import registrasi gagal.";
   return redirectToActiveLocale(
-    `/admin?phase=import&activeEventId=${eventId}&error=${encodeURIComponent(message)}` as never,
+    `/admin?phase=${phase}&activeEventId=${eventId}&error=${encodeURIComponent(message)}` as never,
   );
 }
 
@@ -1126,7 +1148,13 @@ export async function adminCommitRegistrationImportAction(formData: FormData) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   const batchId = z.string().min(1).parse(formData.get("batchId"));
-  const result = await commitRegistrationImportForUser(user, formData);
+  const selectedItemIds = formData.getAll("itemId").map(String).filter(Boolean);
+  if (selectedItemIds.length === 0) {
+    return redirectToActiveLocale(
+      `/admin?phase=registration&activeEventId=${eventId}&registrationBatchId=${batchId}&error=${encodeURIComponent("Pilih minimal satu baris Baru atau Berubah untuk diimport.")}` as never,
+    );
+  }
+  const result = await commitRegistrationImportForUser(user, formData, { legacyCompatibility: true });
   if (result.status === "imported") {
     revalidateTag("teams");
     revalidatePath("/", "layout");
@@ -1134,9 +1162,12 @@ export async function adminCommitRegistrationImportAction(formData: FormData) {
       `/admin?phase=registration&activeEventId=${eventId}&success=registration-imported&count=${result.importedCount}` as never,
     );
   }
-  const message = result.status === "blocked" || result.status === "conflict"
-    ? result.message
-    : "Import registrasi gagal.";
+  if (result.status === "blocked" && result.legacy?.behavior === "throw") throw new Error(result.legacy.message);
+  const message = result.status === "blocked" && result.legacy?.message
+    ? result.legacy.message
+    : result.status === "blocked" || result.status === "conflict"
+      ? result.message
+      : "Import registrasi gagal.";
   return redirectToActiveLocale(
     `/admin?phase=registration&activeEventId=${eventId}&registrationBatchId=${batchId}&error=${encodeURIComponent(message)}` as never,
   );
