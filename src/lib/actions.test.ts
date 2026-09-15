@@ -1866,6 +1866,32 @@ describe("event visual revision actions", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
+  it.each(["id", "en"] as const)("returns master uploads to the public editor section in %s and preserves rollback", async locale => {
+    try {
+      for (const master of [true, false]) {
+        vi.stubEnv("FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3", String(master));
+        for (const [action, field, success] of [[organizerUploadEventLogoAction, "eventLogo", "event-logo-uploaded"], [organizerUploadEventVisualAction, "eventVisual", "event-visual-uploaded"]] as const) {
+          await expect(action(fd({ eventId: "event-safe", locale, rightsAttestation: "confirmed", [field]: validPngFile() }))).rejects.toThrow(
+            `REDIRECT:/${locale}/organizer/events/event-safe/${master ? "edit" : "overview"}?success=${success}#section-${master ? "public" : "visuals"}`,
+          );
+          expect(assertUserCanManageEvent).toHaveBeenCalledWith(expect.objectContaining({ role: "organizer" }), "event-safe");
+        }
+      }
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it("keeps master upload errors on the editor and does not bypass ownership", async () => {
+    vi.stubEnv("FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3", "true");
+    try {
+      await expect(organizerUploadEventLogoAction(fd({ eventId: "event-safe", locale: "en" }))).rejects.toThrow(/REDIRECT:\/en\/organizer\/events\/event-safe\/edit\?error=.*#section-public/);
+      assertUserCanManageEvent.mockRejectedValue(new Error("Not authorized"));
+      await expect(organizerUploadEventVisualAction(fd({ eventId: "event-safe", locale: "en", rightsAttestation: "confirmed", eventVisual: validPngFile() }))).rejects.toThrow("Not%20authorized");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateEventBrandAssets).not.toHaveBeenCalled();
+      expect(createEventVisualAsset).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
+  });
+
   it("returns a workspace poster upload to the locale-aware visual section", async () => {
     await expect(
       organizerUploadEventVisualAction(fd({

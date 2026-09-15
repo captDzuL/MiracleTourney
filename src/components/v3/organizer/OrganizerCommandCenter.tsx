@@ -1,4 +1,5 @@
-import { ChevronDown, Plus } from "lucide-react";
+import { OrganizerEventSelector } from "./OrganizerEventSelector";
+import { Plus } from "lucide-react";
 import { Link } from "@/i18n/navigation";
 import type { Event } from "@/lib/platform/types";
 import { eventLifecycle, lifecycleAction, OrganizerEventCard, organizerControl, type OrganizerTranslator } from "./OrganizerEventCard";
@@ -16,12 +17,11 @@ export function OrganizerCommandCenter({ events, teamCounts, activeRevisions, or
       <div className="min-w-0"><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--color-accent-cream-foreground)]">{t("shell.title")}</p><h1 style={{ fontFamily: "var(--font-miracle-v3)" }} className="mt-2 break-words text-3xl font-extrabold">{t("commandCenter.title")}</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--color-text-muted)]">{t("commandCenter.description")}</p></div>
       <Link locale={locale} href="/organizer/events/new" className={`${organizerControl} self-start bg-[var(--color-brand-violet)] text-[var(--color-on-accent)]`}><Plus aria-hidden="true" className="size-4" />{t("commandCenter.createEvent")}</Link>
     </header>
-    <details className="group min-w-0 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-      <summary className="miracle-focus-ring flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 p-4 font-bold">{t("commandCenter.selectEvent")}<ChevronDown aria-hidden="true" className="size-5 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none" /></summary>
-      <nav aria-label={t("commandCenter.selectEvent")} className="grid max-h-80 min-w-0 gap-2 overflow-y-auto border-t border-[var(--color-border)] p-3">
-        {events.length ? events.map(event => <Link key={event.id} locale={locale} className={`${organizerControl} min-w-0 justify-between`} href={`/organizer/events/${encodeURIComponent(event.id)}/overview`}><span className="min-w-0 break-words">{event.name}</span><span className="shrink-0 text-xs text-[var(--color-accent-cream-foreground)]">{t(`lifecycle.${eventLifecycle[event.status]}`)}</span></Link>) : <p className="p-2 text-sm text-[var(--color-text-muted)]">{t("commandCenter.empty")}</p>}
-      </nav>
-    </details>
+    <OrganizerEventSelector events={events.map(event => ({ id: event.id, name: event.name, lifecycle: eventLifecycle[event.status] }))} locale={locale} labels={{
+      select: t("commandCenter.selectEvent"), search: t("commandCenter.searchEvents"),
+      empty: t("commandCenter.empty"), noResults: t("commandCenter.noMatchingEvents"),
+      lifecycle: { draft: t("lifecycle.draft"), registration: t("lifecycle.registration"), drawing: t("lifecycle.drawing"), ongoing: t("lifecycle.ongoing"), finished: t("lifecycle.finished") },
+    }} />
     <section aria-label={t("commandCenter.counts")} className="grid min-w-0 grid-cols-1 gap-3 min-[480px]:grid-cols-3">
       {([["allEvents", events.length], ["drafts", drafts.length], ["ongoing", ongoing.length]] as const).map(([key, count]) => <div key={key} className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"><p className="text-sm text-[var(--color-text-muted)]">{t(`commandCenter.${key}`)}</p><p className="mt-2 text-3xl font-extrabold">{count}</p></div>)}
     </section>

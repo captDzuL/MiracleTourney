@@ -1,12 +1,13 @@
 import { OrganizerEventSetup } from "@/components/v3/organizer/OrganizerEventSetup";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
-import { lifecycleAction, organizerControl } from "@/components/v3/organizer/OrganizerEventCard";
+import { isLifecycleActionAvailable, isPublishedEventEditable, lifecycleAction, organizerControl } from "@/components/v3/organizer/OrganizerEventCard";
 import { readOrganizerWorkspaceSummary } from "@/lib/organizer/workspace-read";
 
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
+import { getActiveEventEditRevisionIds } from "@/lib/events/event-revision";
 import { evaluatePublishReadiness } from "@/lib/events/publish-readiness";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getManageableEventDraft, getPlatformProfile } from "@/lib/platform/repository";
@@ -33,6 +34,8 @@ export default async function OverviewPage({ params }: OverviewPageProps) {
     if (!summary) notFound();
     const t = await getTranslations({ locale, namespace: "organizerMaster" });
     const base = `/organizer/events/${encodeURIComponent(event.id)}`;
+    const editable = isPublishedEventEditable(event.status);
+    const revisions = editable ? await getActiveEventEditRevisionIds({ actor: { id: user.id, role: user.role as "organizer" | "platform_admin" | "admin" }, eventIds: [event.id] }) : {};
     const now = Date.now();
     const milestone = [
       { label: "registrationOpens", date: event.registrationOpensAt },
@@ -46,7 +49,8 @@ export default async function OverviewPage({ params }: OverviewPageProps) {
     return <div className="grid min-w-0 gap-5">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div><h2 style={{ fontFamily: "var(--font-miracle-v3)" }} className="text-2xl font-extrabold">{t("overview.title")}</h2><p className="mt-2 text-sm text-[var(--color-text-muted)]">{t("overview.description")}</p></div>
-        <Link locale={locale} href={`${base}/${lifecycleAction[summary.lifecycle]}`} className={`${organizerControl} bg-[var(--color-brand-cyan)] text-[var(--color-on-accent)]`}>{t(`commandCenter.actions.${summary.lifecycle}`)}</Link>
+        <div className="flex min-w-0 flex-wrap gap-2">{isLifecycleActionAvailable(summary.lifecycle) ? <Link locale={locale} href={`${base}/${lifecycleAction[summary.lifecycle]}`} className={`${organizerControl} bg-[var(--color-brand-cyan)] text-[var(--color-on-accent)]`}>{t(`commandCenter.actions.${summary.lifecycle}`)}</Link> : <span aria-disabled="true" className={`${organizerControl} text-[var(--color-text-muted)]`}>{t("commandCenter.actionUnavailable", { action: t(`commandCenter.actions.${summary.lifecycle}`) })}</span>}
+        {editable && <Link locale={locale} href={`${base}/edit`} className={organizerControl}>{t(revisions[event.id] ? "commandCenter.continueRevision" : "commandCenter.editEvent")}</Link>}</div>
       </header>
       <dl className="grid min-w-0 gap-3 min-[620px]:grid-cols-3">
         <div className={panel}><dt className="text-sm text-[var(--color-text-muted)]">{t("shell.lifecycle")}</dt><dd className="mt-2 text-lg font-extrabold">{t(`lifecycle.${summary.lifecycle}`)}</dd></div>

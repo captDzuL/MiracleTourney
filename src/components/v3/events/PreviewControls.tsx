@@ -68,7 +68,7 @@ export function PreviewControls({
         {t("previewOpen")} <ExternalLink aria-hidden="true" className="h-4 w-4" />
       </a>
       <button className="inline-flex min-h-11 items-center justify-center gap-2 text-sm font-bold text-[var(--color-danger)] disabled:opacity-60" data-revoke-preview disabled={pending} onClick={revoke} type="button">
-        <Link2Off aria-hidden="true" className="h-4 w-4" />Revoke link
+        <Link2Off aria-hidden="true" className="h-4 w-4" />{t("previewRevoke")}
       </button>
     </div>}
     {error && <p role="alert" className="text-sm font-semibold text-[var(--color-danger)]">{error}</p>}

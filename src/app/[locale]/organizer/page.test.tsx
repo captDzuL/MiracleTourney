@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-Object.assign(globalThis, { React });
+Object.assign(globalThis, { React, IS_REACT_ACT_ENVIRONMENT: true });
 
 const { requireAnyRole, getManageableEventsForUser, getTeamCountsForEvents, getOrganizerProfileForUser, getActiveEventEditRevisionIds, isFeatureEnabled, notFound, redirectToActiveLocale } = vi.hoisted(() => ({
   requireAnyRole: vi.fn(),
@@ -39,6 +40,62 @@ const events = [
 ];
 
 describe("organizer command center", () => {
+  it.each(["id", "en"] as const)("searches the native lifecycle-grouped selector in %s", async locale => {
+    isFeatureEnabled.mockReturnValue(true);
+    getManageableEventsForUser.mockResolvedValue([...events, { ...events[1], id: "finished-1", name: "Final Cup", status: "Finished" }]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      const page = await OrganizerCommandCenterPage({ params: Promise.resolve({ locale }) });
+      await React.act(async () => root.render(page));
+      expect(container.querySelector("details > summary")?.textContent).toBe(locale === "id" ? "Pilih acara" : "Choose event");
+      const search = container.querySelector('input[type="search"]') as HTMLInputElement;
+      expect(search).not.toBeNull();
+      expect(container.querySelector(`label[for="${search.id}"]`)?.textContent).toBe(locale === "id" ? "Cari acara" : "Search events");
+      expect([...container.querySelectorAll("details section")].map(section => section.getAttribute("aria-label"))).toEqual(locale === "id" ? ["Draf", "Registrasi", "Selesai"] : ["Draft", "Registration", "Finished"]);
+      await React.act(async () => { search.value = "  KUROKO  "; search.dispatchEvent(new Event("input", { bubbles: true })); });
+      expect(container.querySelectorAll("details nav a")).toHaveLength(1);
+      expect(container.querySelector("details nav a")?.getAttribute("href")).toBe(`/${locale}/organizer/events/live-1/overview`);
+      await React.act(async () => { search.value = "unmatched"; search.dispatchEvent(new Event("input", { bubbles: true })); });
+      expect(container.querySelectorAll("details nav a")).toHaveLength(0);
+      expect(container.querySelector('details [role="status"]')?.textContent).toBe(locale === "id" ? "Tidak ada acara yang cocok." : "No matching events.");
+      await React.act(async () => { search.value = ""; search.dispatchEvent(new Event("input", { bubbles: true })); });
+      expect(container.querySelectorAll("details nav a")).toHaveLength(3);
+    } finally { await React.act(async () => root.unmount()); }
+  });
+
+  it.each(["Published", "Registration Closed"])("keeps a start-edit action for %s without a revision", async status => {
+    isFeatureEnabled.mockReturnValue(true);
+    getManageableEventsForUser.mockResolvedValue([{ ...events[1], status }]);
+    const doc = new DOMParser().parseFromString(renderToStaticMarkup(await OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "en" }) })), "text/html");
+    expect(doc.querySelector('article a[href="/en/organizer/events/live-1/edit"]')?.textContent).toBe("Edit event");
+  });
+
+  it.each([["Registration Closed", "competition_operations_v3", "competition"], ["Ongoing", "competition_operations_v3", "match-control"], ["Finished", "completion_workspace_v3", "completion"]])("does not offer unavailable %s operations", async (status, disabledFlag, section) => {
+    isFeatureEnabled.mockImplementation((flag: string) => flag !== disabledFlag);
+    getManageableEventsForUser.mockResolvedValue([{ ...events[1], status }]);
+    const doc = new DOMParser().parseFromString(renderToStaticMarkup(await OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "en" }) })), "text/html");
+    expect(doc.querySelector(`article a[href$="/${section}"]`)).toBeNull();
+    expect(doc.querySelector("article [aria-disabled=true]")?.textContent).toContain("currently unavailable");
+  });
+
+  it.each([
+    ["en", "double_elimination", "Double elimination"], ["en", "group_playoffs", "Groups and playoffs"], ["en", "round_robin", "Round robin"],
+    ["id", "double_elimination", "Eliminasi ganda"], ["id", "group_playoffs", "Grup dan playoff"], ["id", "round_robin", "Sistem liga"],
+  ])("uses authoritative %s %s format labels", async (locale, kind, label) => {
+    isFeatureEnabled.mockReturnValue(true);
+    getManageableEventsForUser.mockResolvedValue([{ ...events[1], format: "Single Elimination", formatConfig: { kind } }]);
+    const doc = new DOMParser().parseFromString(renderToStaticMarkup(await OrganizerCommandCenterPage({ params: Promise.resolve({ locale }) })), "text/html");
+    expect(doc.querySelector("article")?.textContent).toContain(label);
+  });
+
+  it("uses legacy format only when authoritative configuration is absent", async () => {
+    isFeatureEnabled.mockReturnValue(true);
+    getManageableEventsForUser.mockResolvedValue([{ ...events[1], formatConfig: null }]);
+    const doc = new DOMParser().parseFromString(renderToStaticMarkup(await OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "en" }) })), "text/html");
+    expect(doc.querySelector("article p")?.textContent).toContain("League");
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     isFeatureEnabled.mockImplementation((flag: string) => flag !== "organizer_master_shell_v3");

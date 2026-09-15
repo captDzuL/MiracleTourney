@@ -27,7 +27,8 @@ import OverviewPage from "./page";
 import { createTranslator } from "next-intl";
 import en from "../../../../../../../messages/en.json";
 import id from "../../../../../../../messages/id.json";
-const { readOrganizerWorkspaceSummary } = vi.hoisted(() => ({ readOrganizerWorkspaceSummary: vi.fn() }));
+const { readOrganizerWorkspaceSummary, getActiveEventEditRevisionIds } = vi.hoisted(() => ({ readOrganizerWorkspaceSummary: vi.fn(), getActiveEventEditRevisionIds: vi.fn() }));
+vi.mock("@/lib/events/event-revision", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/events/event-revision")>(), getActiveEventEditRevisionIds }));
 vi.mock("@/lib/organizer/workspace-read", () => ({ readOrganizerWorkspaceSummary }));
 vi.mock("next-intl/server", () => ({ getTranslations: async ({ locale, namespace }: { locale: "id" | "en"; namespace: "organizerMaster" }) => createTranslator({ locale, messages: locale === "id" ? id : en, namespace }) }));
 
@@ -35,12 +36,40 @@ describe("organizer event overview", () => {
   afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     vi.clearAllMocks();
+    getActiveEventEditRevisionIds.mockResolvedValue({});
     vi.spyOn(Date, "now").mockReturnValue(new Date("2026-09-15T10:00:00Z").getTime());
     isFeatureEnabled.mockImplementation((flag: string) => flag !== "organizer_master_shell_v3");
     requireAnyRole.mockResolvedValue({ id: "org-1", role: "organizer", name: "Organizer" });
     getManageableEventDraft.mockResolvedValue({
       id: "event-1", name: "Miracle Open", organizerUserId: "org-1", organizer: { organizerProfile: null }, formatConfig: null, draftRevision: 3, status: "Draft",
     });
+  });
+
+  it.each(["id", "en"] as const)("retains canonical admin editing entry for complete published events in %s", async locale => {
+    isFeatureEnabled.mockReturnValue(true);
+    requireAnyRole.mockResolvedValue({ id: "admin-1", role: "platform_admin" });
+    getManageableEventDraft.mockResolvedValue({
+      id: "event-1", slug: "miracle-open", name: "Miracle Open", description: "Tournament",
+      gameId: "game-flashpeak", gameModeId: "mode-1", status: "Published", format: "Single Elimination",
+      formatConfig: null, participantCap: 16, timezone: "Asia/Jakarta", venue: "Online",
+      registrationFeeRequired: false, organizerUserId: "org-1",
+      organizer: { organizerProfile: { contactChannel: "WhatsApp", contactValue: "+62812" } },
+      registrationOpensAt: new Date("2026-09-14T10:00:00Z"), registrationClosesAt: new Date("2026-09-17T10:00:00Z"), eventStartsAt: new Date("2026-09-20T10:00:00Z"),
+    });
+    readOrganizerWorkspaceSummary.mockResolvedValue({ lifecycle: "registration", publication: "published", badges: {}, blockers: [] });
+    const doc = new DOMParser().parseFromString(renderToStaticMarkup(await OverviewPage({ params: Promise.resolve({ locale, eventId: "event-1" }) })), "text/html");
+    expect(doc.querySelector(`header a[href="/${locale}/organizer/events/event-1/edit"]`)?.textContent).toBe(locale === "id" ? "Edit acara" : "Edit event");
+    getActiveEventEditRevisionIds.mockResolvedValue({ "event-1": { id: "revision-1", revision: 2 } });
+    const revisionMarkup = renderToStaticMarkup(await OverviewPage({ params: Promise.resolve({ locale, eventId: "event-1" }) }));
+    expect(revisionMarkup).toContain(locale === "id" ? "Lanjutkan revisi" : "Continue revision");
+  });
+
+  it.each([["drawing", "competition_operations_v3", "competition"], ["ongoing", "competition_operations_v3", "match-control"], ["finished", "completion_workspace_v3", "completion"]])("does not route overview to disabled %s operations", async (lifecycle, disabledFlag, section) => {
+    isFeatureEnabled.mockImplementation((flag: string) => flag !== disabledFlag);
+    readOrganizerWorkspaceSummary.mockResolvedValue({ lifecycle, publication: "published", badges: {}, blockers: [] });
+    const doc = new DOMParser().parseFromString(renderToStaticMarkup(await OverviewPage({ params: Promise.resolve({ locale: "en", eventId: "event-1" }) })), "text/html");
+    expect(doc.querySelector(`header a[href$="/${section}"]`)).toBeNull();
+    expect(doc.querySelector("header [aria-disabled=true]")?.textContent).toContain("currently unavailable");
   });
 
   it("summarizes authoritative event facts without rendering an editor or global workspace", async () => {

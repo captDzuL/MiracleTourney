@@ -1,3 +1,4 @@
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import { ArrowUpRight } from "lucide-react";
 import { Link } from "@/i18n/navigation";
 import { findGameConfig } from "@/lib/platform/config";
@@ -11,6 +12,18 @@ export const eventLifecycle: Record<Event["status"], OrganizerWorkspaceLifecycle
 export const lifecycleAction: Record<OrganizerWorkspaceLifecycle, string> = {
   draft: "edit", registration: "registration", drawing: "competition", ongoing: "match-control", finished: "completion",
 };
+export function isLifecycleActionAvailable(lifecycle: OrganizerWorkspaceLifecycle) {
+  if (lifecycle === "drawing" || lifecycle === "ongoing") return isFeatureEnabled("competition_operations_v3");
+  if (lifecycle === "finished") return isFeatureEnabled("completion_workspace_v3");
+  return true;
+}
+export function isPublishedEventEditable(status: string) {
+  return status === "Published" || status === "Registration Closed";
+}
+const formatKeys = {
+  single_elimination: "formats.singleElimination", double_elimination: "formats.doubleElimination",
+  round_robin: "formats.roundRobin", group_playoffs: "formats.groupPlayoffs",
+} as const;
 export const organizerControl = "miracle-focus-ring inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-4 py-2 text-sm font-bold transition-colors hover:border-[var(--color-accent-cyan-foreground)]";
 
 export function OrganizerEventCard({ event, teamCount, hasActiveRevision, locale, t }: {
@@ -21,7 +34,7 @@ export function OrganizerEventCard({ event, teamCount, hasActiveRevision, locale
   return <article className="grid min-w-0 content-start gap-4 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-bold text-[var(--color-text-muted)]">{findGameConfig(event.gameId)?.name ?? t("commandCenter.unknownGame")} · {t(event.format === "League" ? "formats.league" : "formats.singleElimination")}</p>
+        <p className="text-xs font-bold text-[var(--color-text-muted)]">{findGameConfig(event.gameId)?.name ?? t("commandCenter.unknownGame")} · {t(event.formatConfig ? formatKeys[event.formatConfig.kind] : event.format === "League" ? "formats.league" : "formats.singleElimination")}</p>
         <h3 style={{ fontFamily: "var(--font-miracle-v3)" }} className="mt-2 break-words text-lg font-extrabold">{event.name}</h3>
       </div>
       <span className="rounded-full border border-[var(--color-border-strong)] px-3 py-1 text-xs font-bold text-[var(--color-accent-cream-foreground)]">{t(`lifecycle.${lifecycle}`)}</span>
@@ -32,9 +45,9 @@ export function OrganizerEventCard({ event, teamCount, hasActiveRevision, locale
     </dl>
     {hasActiveRevision && <p className="text-sm text-[var(--color-accent-cream-foreground)]">{t("commandCenter.activeRevision")}</p>}
     <div className="flex flex-wrap gap-2">
-      <Link locale={locale} className={`${organizerControl} bg-[var(--color-brand-cyan)] text-[var(--color-on-accent)] hover:brightness-110`} href={`${base}/${lifecycleAction[lifecycle]}`}>{t(`commandCenter.actions.${lifecycle}`)}<ArrowUpRight className="size-4 shrink-0" aria-hidden="true" /></Link>
+      {isLifecycleActionAvailable(lifecycle) ? <Link locale={locale} className={`${organizerControl} bg-[var(--color-brand-cyan)] text-[var(--color-on-accent)] hover:brightness-110`} href={`${base}/${lifecycleAction[lifecycle]}`}>{t(`commandCenter.actions.${lifecycle}`)}<ArrowUpRight className="size-4 shrink-0" aria-hidden="true" /></Link> : <span aria-disabled="true" className={`${organizerControl} text-[var(--color-text-muted)]`}>{t("commandCenter.actionUnavailable", { action: t(`commandCenter.actions.${lifecycle}`) })}</span>}
       <Link locale={locale} className={organizerControl} href={`${base}/overview`}>{t("overview.open")}</Link>
-      {hasActiveRevision && <Link locale={locale} className={organizerControl} href={`${base}/edit`}>{t("commandCenter.continueRevision")}</Link>}
+      {isPublishedEventEditable(event.status) && <Link locale={locale} className={organizerControl} href={`${base}/edit`}>{t(hasActiveRevision ? "commandCenter.continueRevision" : "commandCenter.editEvent")}</Link>}
       {lifecycle !== "draft" && <Link locale={locale} className={organizerControl} href={`/events/${event.slug}`}>{t("commandCenter.publicPage")}</Link>}
     </div>
   </article>;

@@ -956,9 +956,13 @@
     },
     "commandCenter": {
       "title": "Organizer Command Center",
+      "editEvent": "Edit event",
+      "actionUnavailable": "{action} is currently unavailable",
       "description": "Choose an event, see its current phase, and continue the work that matters next.",
       "createEvent": "Create event",
       "selectEvent": "Choose event",
+      "searchEvents": "Search events",
+      "noMatchingEvents": "No matching events.",
       "counts": "Event counts",
       "allEvents": "All events",
       "drafts": "Drafts to finish",
@@ -1125,7 +1129,7 @@
       "dismiss": "Do not show again for this phase",
       "restore": "Show guide again"
     },
-    "formats": { "singleElimination": "Single elimination", "league": "League" },
+    "formats": { "singleElimination": "Single elimination", "doubleElimination": "Double elimination", "roundRobin": "Round robin", "groupPlayoffs": "Groups and playoffs", "league": "League" },
     "setup": { "identity": "Identity", "format": "Format & schedule", "registration": "Registration", "public": "Public page", "review": "Review & publish", "title": "Bring your event to life.", "description": "Complete each step and preview your progress.", "matchDay": "Match Day", "eventSetup": "Event setup" },
     "blockers": {
       "registration_review": "Registration requests need review.",

@@ -1,4 +1,6 @@
-import React from "react";
+// @vitest-environment jsdom
+import React, { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { EventDraftForm } from "./EventDraftForm";
@@ -9,10 +11,22 @@ import { PublishedRevisionControls } from "./PublishedRevisionControls";
 import { RevisionVisualEditor } from "./RevisionVisualEditor";
 import { TOURNAMENT_FORMAT_PRESETS } from "@/lib/tournament/formats/types";
 
-Object.assign(globalThis, { React });
+Object.assign(globalThis, { React, IS_REACT_ACT_ENVIRONMENT: true });
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 
 describe("event editor locale contract", () => {
+  it.each(["id", "en"] as const)("localizes the created preview revoke action in %s", async locale => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const createPreview = vi.fn().mockResolvedValue({ status: "created", url: "/preview/token" });
+    try {
+      await act(async () => root.render(<PreviewControls eventId="event-1" locale={locale} createPreview={createPreview} />));
+      await act(async () => (container.querySelector("[data-create-preview]") as HTMLButtonElement).click());
+      expect(createPreview).toHaveBeenCalledWith({ eventId: "event-1", locale });
+      expect(container.querySelector("a")?.getAttribute("href")).toBe("/preview/token");
+      expect(container.querySelector("[data-revoke-preview]")?.textContent).toBe(locale === "id" ? "Cabut tautan" : "Revoke link");
+    } finally { await act(async () => root.unmount()); }
+  });
   it.each(["id", "en"] as const)("renders draft setup and publication controls entirely in %s", locale => {
     const contact = React.createElement(OrganizerContactForm, { eventId: "event-1", ...{ locale } });
     const review = <><PublishReadiness eventId="event-1" readiness={{ ready: false, incomplete: [{ code: "name", field: "name", section: "identity" }], notices: [] }} {...{ locale }} /><PreviewControls eventId="event-1" locale={locale} /></>;

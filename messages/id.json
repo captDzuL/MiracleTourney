@@ -956,9 +956,13 @@
     },
     "commandCenter": {
       "title": "Pusat Kendali Organizer",
+      "editEvent": "Edit acara",
+      "actionUnavailable": "{action} saat ini tidak tersedia",
       "description": "Pilih acara, lihat tahap saat ini, dan lanjutkan pekerjaan yang perlu dilakukan berikutnya.",
       "createEvent": "Buat acara",
       "selectEvent": "Pilih acara",
+      "searchEvents": "Cari acara",
+      "noMatchingEvents": "Tidak ada acara yang cocok.",
       "counts": "Jumlah acara",
       "allEvents": "Semua acara",
       "drafts": "Draf belum selesai",
@@ -1125,7 +1129,7 @@
       "dismiss": "Jangan tampilkan lagi untuk fase ini",
       "restore": "Tampilkan panduan lagi"
     },
-    "formats": { "singleElimination": "Sistem gugur", "league": "Liga" },
+    "formats": { "singleElimination": "Sistem gugur", "doubleElimination": "Eliminasi ganda", "roundRobin": "Sistem liga", "groupPlayoffs": "Grup dan playoff", "league": "Liga" },
     "setup": { "identity": "Identitas", "format": "Format & Jadwal", "registration": "Registrasi", "public": "Halaman Publik", "review": "Tinjau & Terbitkan", "title": "Wujudkan event pertamamu.", "description": "Isi sedikit demi sedikit. Lihat hasilnya sambil berjalan.", "matchDay": "Hari Pertandingan", "eventSetup": "Pengaturan event" },
     "blockers": {
       "registration_review": "Permintaan registrasi perlu ditinjau.",

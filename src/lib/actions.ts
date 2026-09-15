@@ -1533,7 +1533,7 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
   await redirectToActiveLocale(`/admin?success=character-art-uploaded`);
 }
 
-async function uploadEventLogo(formData: FormData, returnPath: string) {
+async function uploadEventLogo(formData: FormData, returnPath: string, returnSection = "visuals") {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
@@ -1550,12 +1550,12 @@ async function uploadEventLogo(formData: FormData, returnPath: string) {
     await updateEventBrandAssets(eventId, { logoUrl: asset.url });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(appendActionError(returnPath, message) as never);
+    redirect(`${appendActionError(returnPath, message)}${returnSection === "public" ? "#section-public" : ""}` as never);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`${returnPath}?success=event-logo-uploaded#section-visuals` as never);
+  redirect(`${returnPath}?success=event-logo-uploaded#section-${returnSection}` as never);
 }
 
 export async function adminUploadEventLogoAction(formData: FormData) {
@@ -1565,7 +1565,8 @@ export async function adminUploadEventLogoAction(formData: FormData) {
 export async function organizerUploadEventLogoAction(formData: FormData) {
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   const locale = z.enum(["id", "en"]).parse(formData.get("locale"));
-  return uploadEventLogo(formData, `/${locale}/organizer/events/${eventId}/overview`);
+  const master = isFeatureEnabled("organizer_master_shell_v3");
+  return uploadEventLogo(formData, `/${locale}/organizer/events/${eventId}/${master ? "edit" : "overview"}`, master ? "public" : "visuals");
 }
 
 /**
@@ -1581,7 +1582,7 @@ const DUAL_WRITE_LEGACY_EVENT_IMAGE = true;
  * Organizer uploads are trusted after the rights attestation, so the revision
  * is created already approved and then activated through the repository.
  */
-async function uploadEventVisual(formData: FormData, returnPath: string) {
+async function uploadEventVisual(formData: FormData, returnPath: string, returnSection = "visuals") {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
 
@@ -1618,12 +1619,12 @@ async function uploadEventVisual(formData: FormData, returnPath: string) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
-    redirect(appendActionError(returnPath, message) as never);
+    redirect(`${appendActionError(returnPath, message)}${returnSection === "public" ? "#section-public" : ""}` as never);
   }
 
   revalidateTag("events");
   revalidatePath("/", "layout");
-  redirect(`${returnPath}?success=event-visual-uploaded#section-visuals` as never);
+  redirect(`${returnPath}?success=event-visual-uploaded#section-${returnSection}` as never);
 }
 
 export async function adminUploadEventVisualAction(formData: FormData) {
@@ -1633,7 +1634,8 @@ export async function adminUploadEventVisualAction(formData: FormData) {
 export async function organizerUploadEventVisualAction(formData: FormData) {
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   const locale = z.enum(["id", "en"]).parse(formData.get("locale"));
-  return uploadEventVisual(formData, `/${locale}/organizer/events/${eventId}/overview`);
+  const master = isFeatureEnabled("organizer_master_shell_v3");
+  return uploadEventVisual(formData, `/${locale}/organizer/events/${eventId}/${master ? "edit" : "overview"}`, master ? "public" : "visuals");
 }
 
 /** Approves a revision that is waiting for review and makes it the active one. */
