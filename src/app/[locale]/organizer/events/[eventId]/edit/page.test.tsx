@@ -77,6 +77,24 @@ describe("published event edit route", () => {
     mocks.startEventEditRevision.mockResolvedValue({ status: "active", revision: { id: "revision-1", revision: 3, payload } });
   });
 
+  it("opens editable draft setup at /edit with the master flag enabled", async () => {
+    mocks.getManageableEventDraft.mockResolvedValue({ ...payload, ...event, status: "Draft", draftRevision: 4 });
+    const page = await EditEventPage({ params: Promise.resolve({ locale: "id", eventId: "event-1" }) });
+    const editor = React.Children.toArray(page.props.children).find(child => React.isValidElement(child) && (child.props as { eventId?: string }).eventId === "event-1") as React.ReactElement<{ editable: boolean; initialRevision: number; initialDraft: { description: string } }>;
+    expect(editor.props.editable).toBe(true);
+    expect(editor.props.initialRevision).toBe(4);
+    expect(editor.props.initialDraft.description).toBe("Public description");
+    expect(mocks.startEventEditRevision).not.toHaveBeenCalled();
+    expect(mocks.redirectToActiveLocale).not.toHaveBeenCalled();
+  });
+
+  it("keeps the draft-to-overview redirect when the master flag is off", async () => {
+    mocks.isFeatureEnabled.mockImplementation(flag => flag !== "organizer_master_shell_v3");
+    mocks.getManageableEventDraft.mockResolvedValue({ ...event, status: "Draft" });
+    await expect(EditEventPage({ params: Promise.resolve({ locale: "id", eventId: "event-1" }) })).rejects.toThrow("REDIRECT");
+    expect(mocks.redirectToActiveLocale).toHaveBeenCalledWith("/organizer/events/event-1/overview");
+  });
+
   it("opens a private autosave editor for Published events", async () => {
     const markup = renderToStaticMarkup(await EditEventPage({ params: Promise.resolve({ locale: "id", eventId: "event-1" }) }));
     expect(mocks.startEventEditRevision).toHaveBeenCalledWith({

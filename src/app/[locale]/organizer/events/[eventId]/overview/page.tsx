@@ -1,16 +1,13 @@
+import { OrganizerEventSetup } from "@/components/v3/organizer/OrganizerEventSetup";
 import { notFound } from "next/navigation";
+import { getTranslations } from "next-intl/server";
+import { lifecycleAction, organizerControl } from "@/components/v3/organizer/OrganizerEventCard";
+import { readOrganizerWorkspaceSummary } from "@/lib/organizer/workspace-read";
 
-import { EventDraftForm } from "@/components/v3/events/EventDraftForm";
-import { OrganizerContactForm } from "@/components/v3/events/OrganizerContactForm";
-import { PreviewControls } from "@/components/v3/events/PreviewControls";
-import { PublishReadiness } from "@/components/v3/events/PublishReadiness";
-import { DiscardRevisionButton } from "@/components/v3/events/PublishedRevisionControls";
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
-import { eventDateToLocalInput } from "@/lib/events/event-datetime";
 import { evaluatePublishReadiness } from "@/lib/events/publish-readiness";
-import { getActiveEventEditRevisionIds } from "@/lib/events/event-revision";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getManageableEventDraft, getPlatformProfile } from "@/lib/platform/repository";
 
@@ -31,65 +28,40 @@ export default async function OverviewPage({ params }: OverviewPageProps) {
 
   const platformProfile = event.organizerUserId ? null : await getPlatformProfile();
   const readiness = evaluatePublishReadiness({ ...event, platformProfile });
-  const routeBase = user.role === "organizer" ? "/organizer" : "/admin";
-  const activeRevisions = event.status === "Published" || event.status === "Registration Closed"
-    ? await getActiveEventEditRevisionIds({ eventIds: [event.id], actor: { id: user.id, role: user.role as "organizer" | "platform_admin" | "admin" } })
-    : {};
-  const activeRevision = activeRevisions[event.id];
-  const workspaceMenu = event.status !== "Draft" ? <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
-    <Link className="inline-flex min-h-11 items-center px-3 text-sm font-bold text-[var(--color-brand-cyan)]" href={`/events/${event.slug}`}>Lihat halaman publik</Link>
-    {(event.status === "Published" || event.status === "Registration Closed") && <Link className="inline-flex min-h-11 items-center rounded-[var(--radius-control)] bg-[var(--color-brand-violet)] px-4 text-sm font-extrabold text-white" href={`${routeBase}/events/${event.id}/edit`}>{activeRevision ? "Lanjutkan revisi" : "Edit event"}</Link>}
-    {activeRevision && <DiscardRevisionButton revisionId={activeRevision.id} />}
-  </div> : null;
-  const registrationPanel = event.organizerUserId ? <OrganizerContactForm
-      eventId={event.id}
-      initialChannel={event.organizer?.organizerProfile?.contactChannel ?? ""}
-      initialValue={event.organizer?.organizerProfile?.contactValue ?? ""}
-    /> : <section className="rounded-[var(--radius-control)] border border-[var(--color-border)] p-4">
-      <h4 className="font-extrabold text-[var(--color-text)]">Miracle contact</h4>
-      <p className="mt-1 text-sm text-[var(--color-text-subtle)]">This official Miracle event uses the platform contact shown to participants.</p>
-      <Link className="mt-3 inline-flex text-sm font-bold text-[var(--color-brand-cyan)]" href="/admin/platform-profile">Edit Miracle contact</Link>
-    </section>;
-  const reviewPanel = <div className="grid gap-6">
-    <div>
-      <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--color-brand-cream)]">Final step</p>
-      <h3 className="mt-2 text-lg font-extrabold text-[var(--color-text)]">Review & publish</h3>
-      <p className="mt-1 text-sm text-[var(--color-text-subtle)]">Confirm the public information, create a private preview, then publish when everything is ready.</p>
-    </div>
-    <div className="grid gap-6 border-t border-[var(--color-border)] pt-6 min-[700px]:grid-cols-2">
-      <PublishReadiness eventId={event.id} organizerSection="review" readiness={readiness} />
-      <PreviewControls eventId={event.id} locale={locale} />
-    </div>
-  </div>;
-
-  return <section className="grid gap-4 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 min-[700px]:p-7">
-    {workspaceMenu}
-    <EventDraftForm
-      eventId={event.id}
-      editable={event.status === "Draft"}
-      locale={locale}
-      competitionOperationsEnabled={isFeatureEnabled("competition_operations_v3")}
-      initialDraft={{
-        name: event.name,
-        slug: event.slug,
-        description: event.description,
-        formatConfig: event.formatConfig,
-        participantCap: event.participantCap,
-        prizePoolLabel: event.prizePoolLabel,
-        registrationOpensAt: event.registrationOpensAt ? eventDateToLocalInput(event.registrationOpensAt, event.timezone) : null,
-        registrationClosesAt: event.registrationClosesAt ? eventDateToLocalInput(event.registrationClosesAt, event.timezone) : null,
-        eventStartsAt: event.eventStartsAt ? eventDateToLocalInput(event.eventStartsAt, event.timezone) : null,
-        timezone: event.timezone,
-        venue: event.venue,
-        venueAddress: event.venueAddress,
-        registrationFeeRequired: event.registrationFeeRequired,
-        registrationFeeAmount: event.registrationFeeAmount,
-        logoUrl: event.logoUrl,
-        gameImageUrl: event.gameImageUrl,
-      }}
-      initialRevision={event.draftRevision}
-      registrationPanel={registrationPanel}
-      reviewPanel={reviewPanel}
-    />
-  </section>;
+  if (isFeatureEnabled("organizer_master_shell_v3")) {
+    const summary = await readOrganizerWorkspaceSummary(eventId, user);
+    if (!summary) notFound();
+    const t = await getTranslations({ locale, namespace: "organizerMaster" });
+    const base = `/organizer/events/${encodeURIComponent(event.id)}`;
+    const now = Date.now();
+    const milestone = [
+      { label: "registrationOpens", date: event.registrationOpensAt },
+      { label: "registrationCloses", date: event.registrationClosesAt },
+      { label: "eventStarts", date: event.eventStartsAt },
+    ].filter((item): item is { label: string; date: Date } => item.date instanceof Date && item.date.getTime() >= now)
+      .sort((a, b) => a.date.getTime() - b.date.getTime())[0];
+    const requirements = [...new Set(readiness.incomplete.map(item => item.section))];
+    const setupSections = { identity: "identity", schedule: "format", registration: "registration", organizer: "registration" };
+    const panel = "min-w-0 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5";
+    return <div className="grid min-w-0 gap-5">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div><h2 style={{ fontFamily: "var(--font-miracle-v3)" }} className="text-2xl font-extrabold">{t("overview.title")}</h2><p className="mt-2 text-sm text-[var(--color-text-muted)]">{t("overview.description")}</p></div>
+        <Link locale={locale} href={`${base}/${lifecycleAction[summary.lifecycle]}`} className={`${organizerControl} bg-[var(--color-brand-cyan)] text-[var(--color-on-accent)]`}>{t(`commandCenter.actions.${summary.lifecycle}`)}</Link>
+      </header>
+      <dl className="grid min-w-0 gap-3 min-[620px]:grid-cols-3">
+        <div className={panel}><dt className="text-sm text-[var(--color-text-muted)]">{t("shell.lifecycle")}</dt><dd className="mt-2 text-lg font-extrabold">{t(`lifecycle.${summary.lifecycle}`)}</dd></div>
+        <div className={panel}><dt className="text-sm text-[var(--color-text-muted)]">{t("eventSummary.participants")}</dt><dd className="mt-2 text-lg font-extrabold">{summary.badges.participants ?? 0} / {event.participantCap}</dd></div>
+        <div className={panel}><dt className="text-sm text-[var(--color-text-muted)]">{t("shell.publication")}</dt><dd className="mt-2 text-lg font-extrabold">{t(`publication.${summary.publication}`)}</dd></div>
+      </dl>
+      <div className="grid min-w-0 gap-5 min-[780px]:grid-cols-2">
+        <section className={panel}><h2 style={{ fontFamily: "var(--font-miracle-v3)" }} className="text-lg font-extrabold">{t("eventSummary.readiness")}</h2><p className="mt-3 text-sm">{t(readiness.ready ? "eventSummary.requirementsMet" : "eventSummary.incomplete", { count: readiness.incomplete.length })}</p>
+          {requirements.length > 0 && <ul className="mt-3 grid gap-2">{requirements.map(section => <li key={section}><Link locale={locale} className={organizerControl} href={`${base}/edit#section-${setupSections[section]}`}>{t("eventSummary.readinessSection", { section: t(`eventSummary.sections.${section}`) })}</Link></li>)}</ul>}
+        </section>
+        <section className={panel}><h2 style={{ fontFamily: "var(--font-miracle-v3)" }} className="text-lg font-extrabold">{t("eventSummary.nextMilestone")}</h2>{milestone ? <div className="mt-3"><p className="text-sm text-[var(--color-text-muted)]">{t(`eventSummary.${milestone.label}`)}</p><time className="mt-2 block font-bold" dateTime={milestone.date.toISOString()}>{new Intl.DateTimeFormat(locale === "id" ? "id-ID" : "en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: event.timezone }).format(milestone.date)}</time><p className="mt-1 text-xs text-[var(--color-text-muted)]">{event.timezone}</p></div> : <p className="mt-3 text-sm text-[var(--color-text-muted)]">{t("eventSummary.noMilestone")}</p>}</section>
+      </div>
+      <section className={panel}><h2 style={{ fontFamily: "var(--font-miracle-v3)" }} className="text-lg font-extrabold">{t("overview.blockers")}</h2>{summary.blockers.length ? <ul className="mt-3 grid gap-3">{summary.blockers.map(blocker => <li key={blocker.code} className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3"><p className="text-sm">{t(blocker.message)}</p>{blocker.href && <Link locale={locale} className={organizerControl} href={blocker.href}>{t("blockers.review")}</Link>}</li>)}</ul> : <p className="mt-3 text-sm text-[var(--color-text-muted)]">{t("eventSummary.noBlockers")}</p>}</section>
+      {summary.publication !== "private" && <div><Link locale={locale} href={`/events/${event.slug}`} className={organizerControl}>{t("commandCenter.publicPage")}</Link></div>}
+    </div>;
+  }
+  return OrganizerEventSetup({ event, user, locale, readiness });
 }

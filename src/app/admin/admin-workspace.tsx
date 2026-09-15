@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getPlayerStatNumericValue, type PlayerStatPayloadMap } from "@/lib/player-stats/form";
 
 import { Link } from "@/i18n/navigation";
@@ -2021,8 +2022,8 @@ function OperationsOverview({
           allTeamsByEvent.get(event.id)?.length ?? teamCountsByEvent.get(event.id) ?? 0,
           activeEvent?.id === event.id ? activeMatches.length : 0,
           <div className="flex flex-wrap gap-2" key={`${event.id}-actions`}>
-            <Link className={quietButton} href={event.status === "Draft" ? `/admin/events/${event.id}/overview` : event.status === "Published" || event.status === "Registration Closed" ? `/admin/events/${event.id}/edit` : `/admin/events/${event.id}/overview`}>
-              {event.status === "Draft" ? "Lanjutkan setup" : event.status === "Published" || event.status === "Registration Closed" ? (activeEditRevisions[event.id] ? "Lanjutkan revisi" : "Edit event") : "Buka workspace"}
+            <Link className={quietButton} href={isFeatureEnabled("organizer_master_shell_v3") && isFeatureEnabled("organizer_workspace_v3") ? `/organizer/events/${encodeURIComponent(event.id)}/overview` : event.status === "Draft" ? `/admin/events/${event.id}/overview` : event.status === "Published" || event.status === "Registration Closed" ? `/admin/events/${event.id}/edit` : `/admin/events/${event.id}/overview`}>
+              {isFeatureEnabled("organizer_master_shell_v3") && isFeatureEnabled("organizer_workspace_v3") ? t("openEventWorkspace") : event.status === "Draft" ? "Lanjutkan setup" : event.status === "Published" || event.status === "Registration Closed" ? (activeEditRevisions[event.id] ? "Lanjutkan revisi" : "Edit event") : "Buka workspace"}
             </Link>
             {event.status !== "Draft" && <Link className="inline-flex items-center text-xs font-semibold text-cyan-700" href={`/events/${event.slug}`}>Lihat publik</Link>}
           </div>,

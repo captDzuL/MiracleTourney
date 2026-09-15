@@ -122,7 +122,7 @@ describe("EventDraftForm", () => {
       prize.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    expect(container.querySelector("[data-live-preview]")?.textContent).toContain("Hadiah");
+    expect(container.querySelector("[data-live-preview]")?.textContent).toContain("Prizes");
     expect(container.querySelector("[data-live-preview]")?.textContent).toContain("Rp5.000.000 + merchandise");
   });
 
@@ -136,7 +136,7 @@ describe("EventDraftForm", () => {
     />));
 
     expect(container.querySelector("[data-event-read-only-unused]")).toBeNull();
-    expect(container.querySelector("[data-event-read-only]")?.textContent).toContain("Event sudah diterbitkan");
+    expect(container.querySelector("[data-event-read-only]")?.textContent).toContain("Acara sudah diterbitkan");
     expect(container.querySelector("[data-live-preview]")?.textContent).toContain("Rp5.000.000");
     expect(container.querySelector('input[name="prizePoolLabel"]')).toBeNull();
   });
@@ -471,7 +471,7 @@ describe("EventDraftForm", () => {
     />));
     expect(container.querySelector<HTMLInputElement>('input[name="name"]')?.disabled).toBe(true);
     expect(container.querySelector<HTMLInputElement>('input[name="slug"]')?.disabled).toBe(true);
-    expect(container.querySelector('[data-field-lock="name"]')?.textContent).toContain("Pertandingan sudah dibuat");
+    expect(container.querySelector('[data-field-lock="name"]')?.textContent).toContain("Matches exist");
     expect(container.querySelector('[data-live-preview]')?.textContent).toContain("Revisi privat");
   });
 

@@ -1,9 +1,11 @@
 "use client";
+import { getEventEditorTranslator } from "./event-editor-translations";
 
 import type { TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { TOURNAMENT_FORMAT_PRESETS } from "@/lib/tournament/formats/types";
 
 type FormatConfiguratorProps = {
+  locale?: "id" | "en";
   allowAdvanced?: boolean;
   value: TournamentFormatConfig | null;
   onChange: (value: TournamentFormatConfig) => void;
@@ -12,18 +14,19 @@ type FormatConfiguratorProps = {
 };
 
 const formatOptions = [
-  { kind: "single_elimination", label: "Single Elimination", preset: TOURNAMENT_FORMAT_PRESETS.singleElimination },
-  { kind: "double_elimination", label: "Double Elimination", preset: TOURNAMENT_FORMAT_PRESETS.doubleElimination },
-  { kind: "round_robin", label: "Round Robin", preset: TOURNAMENT_FORMAT_PRESETS.roundRobin },
-  { kind: "group_playoffs", label: "Group + Playoffs", preset: TOURNAMENT_FORMAT_PRESETS.groupPlayoffs },
+  { kind: "single_elimination", label: "single", preset: TOURNAMENT_FORMAT_PRESETS.singleElimination },
+  { kind: "double_elimination", label: "double", preset: TOURNAMENT_FORMAT_PRESETS.doubleElimination },
+  { kind: "round_robin", label: "roundRobin", preset: TOURNAMENT_FORMAT_PRESETS.roundRobin },
+  { kind: "group_playoffs", label: "groupPlayoffs", preset: TOURNAMENT_FORMAT_PRESETS.groupPlayoffs },
 ] as const;
 
-function advancedTitle(value: TournamentFormatConfig) {
+function advancedTitle(value: TournamentFormatConfig, locale: "id" | "en") {
+  const t = getEventEditorTranslator(locale);
   switch (value.kind) {
-    case "single_elimination": return "Bracket rounds";
-    case "double_elimination": return "Upper and lower brackets";
-    case "round_robin": return "League rules";
-    case "group_playoffs": return "Group stage and playoffs";
+    case "single_elimination": return t("bracketRounds");
+    case "double_elimination": return t("doubleBrackets");
+    case "round_robin": return t("leagueRules");
+    case "group_playoffs": return t("groupStage");
   }
 }
 
@@ -37,25 +40,26 @@ function BestOfSelect({ label, name, value, onChange }: { label: string; name: s
   </select></label>;
 }
 
-function AdvancedFormatControls({ value, onChange }: FormatConfiguratorProps & { value: TournamentFormatConfig }) {
+function AdvancedFormatControls({ value, onChange, locale = "en" }: FormatConfiguratorProps & { value: TournamentFormatConfig }) {
+  const t = getEventEditorTranslator(locale);
   if (value.kind === "single_elimination") return <div className="grid gap-4">
     <div className="grid gap-3 min-[700px]:grid-cols-2">
-      {(["earlyRounds", "semifinals", "final"] as const).map((field) => <BestOfSelect key={field} label={{ earlyRounds: "Early rounds", semifinals: "Semifinals", final: "Final" }[field]} name={field} value={value.bestOf[field]} onChange={(bestOf) => onChange({ ...value, bestOf: { ...value.bestOf, [field]: bestOf } })} />)}
+      {(["earlyRounds", "semifinals", "final"] as const).map((field) => <BestOfSelect key={field} label={{ earlyRounds: t("earlyRounds"), semifinals: t("semifinals"), final: t("final") }[field]} name={field} value={value.bestOf[field]} onChange={(bestOf) => onChange({ ...value, bestOf: { ...value.bestOf, [field]: bestOf } })} />)}
     </div>
     <label className="flex min-h-11 items-center gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 text-sm font-bold text-[var(--color-text)]">
       <input checked={value.thirdPlace === "required"} name="thirdPlaceEnabled" onChange={(event) => onChange({ ...value, thirdPlace: event.target.checked ? "required" : "none" })} type="checkbox" />
-      Include a third-place match
+      {t("includeThird")}
     </label>
-    {value.thirdPlace === "required" && <BestOfSelect label="Third-place match" name="thirdPlace" value={value.bestOf.thirdPlace} onChange={(bestOf) => onChange({ ...value, bestOf: { ...value.bestOf, thirdPlace: bestOf } })} />}
+    {value.thirdPlace === "required" && <BestOfSelect label={t("thirdPlace")} name="thirdPlace" value={value.bestOf.thirdPlace} onChange={(bestOf) => onChange({ ...value, bestOf: { ...value.bestOf, thirdPlace: bestOf } })} />}
   </div>;
   if (value.kind === "double_elimination") return <div className="grid gap-3 min-[700px]:grid-cols-2">
     {([
-      ["earlyRounds", "Early rounds"], ["upperFinal", "Upper final"], ["lowerFinal", "Lower final"], ["grandFinal", "Grand final"],
+      ["earlyRounds", t("earlyRounds")], ["upperFinal", t("upperFinal")], ["lowerFinal", t("lowerFinal")], ["grandFinal", t("grandFinal")],
     ] as const).map(([field, label]) => <BestOfSelect key={field} label={label} name={field} value={value.bestOf[field]} onChange={(bestOf) => onChange({ ...value, bestOf: { ...value.bestOf, [field]: bestOf } })} />)}
   </div>;
 
-  if (value.kind === "round_robin") return <label className={labelClass}>Meetings per team pair<select className={selectClass} name="legs" onChange={(event) => onChange({ ...value, legs: Number(event.target.value) as 1 | 2 })} value={value.legs}>
-    <option value="1">Once</option><option value="2">Twice</option>
+  if (value.kind === "round_robin") return <label className={labelClass}>{t("meetings")}<select className={selectClass} name="legs" onChange={(event) => onChange({ ...value, legs: Number(event.target.value) as 1 | 2 })} value={value.legs}>
+    <option value="1">{t("once")}</option><option value="2">{t("twice")}</option>
   </select></label>;
 
   const validQualifiers = [1, 2, 4].filter((qualifiers) => {
@@ -63,7 +67,7 @@ function AdvancedFormatControls({ value, onChange }: FormatConfiguratorProps & {
     return total >= 4 && (total & (total - 1)) === 0;
   });
   return <div className="grid gap-3 min-[700px]:grid-cols-2">
-    <label className={labelClass}>Group count<select className={selectClass} name="groupCount" onChange={(event) => {
+    <label className={labelClass}>{t("groupCount")}<select className={selectClass} name="groupCount" onChange={(event) => {
       const groupCount = Number(event.target.value);
       const qualifiersPerGroup = [1, 2, 4].find((qualifiers) => {
         const total = groupCount * qualifiers;
@@ -71,15 +75,15 @@ function AdvancedFormatControls({ value, onChange }: FormatConfiguratorProps & {
       }) ?? value.qualifiersPerGroup;
       onChange({ ...value, groupCount, qualifiersPerGroup });
     }} value={value.groupCount}>
-      {[2, 4, 8, 16].map((count) => <option key={count} value={count}>{count} groups</option>)}
+      {[2, 4, 8, 16].map((count) => <option key={count} value={count}>{t("groupsCount", { count })}</option>)}
     </select></label>
-    <label className={labelClass}>Qualifiers per group<select className={selectClass} name="qualifiersPerGroup" onChange={(event) => onChange({ ...value, qualifiersPerGroup: Number(event.target.value) })} value={value.qualifiersPerGroup}>
-      {validQualifiers.map((count) => <option key={count} value={count}>Top {count}</option>)}
+    <label className={labelClass}>{t("qualifiers")}<select className={selectClass} name="qualifiersPerGroup" onChange={(event) => onChange({ ...value, qualifiersPerGroup: Number(event.target.value) })} value={value.qualifiersPerGroup}>
+      {validQualifiers.map((count) => <option key={count} value={count}>{t("topCount", { count })}</option>)}
     </select></label>
-    <label className={labelClass}>Group meetings<select className={selectClass} name="groupStageLegs" onChange={(event) => onChange({ ...value, groupStage: { ...value.groupStage, legs: Number(event.target.value) as 1 | 2 } })} value={value.groupStage.legs}>
-      <option value="1">Once</option><option value="2">Twice</option>
+    <label className={labelClass}>{t("groupMeetings")}<select className={selectClass} name="groupStageLegs" onChange={(event) => onChange({ ...value, groupStage: { ...value.groupStage, legs: Number(event.target.value) as 1 | 2 } })} value={value.groupStage.legs}>
+      <option value="1">{t("once")}</option><option value="2">{t("twice")}</option>
     </select></label>
-    <label className={labelClass}>Playoff bracket<select className={selectClass} name="playoffKind" onChange={(event) => onChange({
+    <label className={labelClass}>{t("playoffBracket")}<select className={selectClass} name="playoffKind" onChange={(event) => onChange({
       ...value,
       playoffs: event.target.value === "double_elimination"
         ? {
@@ -93,20 +97,21 @@ function AdvancedFormatControls({ value, onChange }: FormatConfiguratorProps & {
             thirdPlace: "none", avoidImmediateGroupRematches: true,
           },
     })} value={value.playoffs.kind}>
-      <option value="single_elimination">Single Elimination</option><option value="double_elimination">Double Elimination</option>
+      <option value="single_elimination">{t("single")}</option><option value="double_elimination">{t("double")}</option>
     </select></label>
   </div>;
 }
 
-export function FormatConfigurator({ allowAdvanced = true, value, onChange, disabled = false, lockedReason }: FormatConfiguratorProps) {
+export function FormatConfigurator({ locale = "en", allowAdvanced = true, value, onChange, disabled = false, lockedReason }: FormatConfiguratorProps) {
+  const t = getEventEditorTranslator(locale);
   const availableOptions = allowAdvanced ? formatOptions : formatOptions.slice(0, 1);
   return <fieldset aria-labelledby="format-heading" className="grid gap-4 disabled:opacity-70" disabled={disabled}>
     <div>
-      <h2 id="format-heading" className="text-lg font-extrabold text-[var(--color-text)]">Competition format</h2>
-      <p className="mt-1 text-sm text-[var(--color-text-subtle)]">Choose how teams progress through the tournament.</p>
+      <h2 id="format-heading" className="text-lg font-extrabold text-[var(--color-text)]">{t("competitionFormat")}</h2>
+      <p className="mt-1 text-sm text-[var(--color-text-subtle)]">{t("formatHelp")}</p>
     </div>
     {lockedReason && <p className="rounded-[var(--radius-control)] border border-[var(--color-brand-cream)] px-3 py-2 text-sm text-[var(--color-brand-cream)]" data-lock-reason>{lockedReason}</p>}
-    <div aria-label="Competition format" className="grid gap-3 sm:grid-cols-2" role="group">
+    <div aria-label={t("competitionFormat")} className="grid gap-3 sm:grid-cols-2" role="group">
       {availableOptions.map((option) => <button
         aria-pressed={value?.kind === option.kind}
         className="min-h-20 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left text-sm font-bold text-[var(--color-text)] aria-pressed:border-[var(--color-brand-violet)] aria-pressed:bg-[var(--color-surface-strong)]"
@@ -114,12 +119,12 @@ export function FormatConfigurator({ allowAdvanced = true, value, onChange, disa
         key={option.kind}
         onClick={() => onChange(option.preset)}
         type="button"
-      >{option.label}</button>)}
+      >{t(option.label)}</button>)}
     </div>
     {value && (allowAdvanced || value.kind === "single_elimination") && <fieldset data-advanced-format className="grid gap-3 border-t border-[var(--color-border)] pt-4">
-      <legend className="pr-3 text-sm font-bold text-[var(--color-text)]">{advancedTitle(value)}</legend>
-      <p className="text-sm text-[var(--color-text-subtle)]">Adjust the supported rules before publishing.</p>
-      <AdvancedFormatControls onChange={onChange} value={value} />
+      <legend className="pr-3 text-sm font-bold text-[var(--color-text)]">{advancedTitle(value, locale)}</legend>
+      <p className="text-sm text-[var(--color-text-subtle)]">{t("formatAdjust")}</p>
+      <AdvancedFormatControls locale={locale} onChange={onChange} value={value} />
     </fieldset>}
   </fieldset>;
 }

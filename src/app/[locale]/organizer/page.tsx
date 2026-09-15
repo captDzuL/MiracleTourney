@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import { getTranslations } from "next-intl/server";
+import { OrganizerCommandCenter } from "@/components/v3/organizer/OrganizerCommandCenter";
 
 import LegacyOrganizerPage from "@/app/organizer/page";
 import { Link } from "@/i18n/navigation";
@@ -52,6 +54,10 @@ export default async function OrganizerCommandCenterPage({ params }: OrganizerCo
   const [events, profile] = await Promise.all([getManageableEventsForUser(user), getOrganizerProfileForUser(user)]);
   const teamCounts = await getTeamCountsForEvents(events.map(event => event.id));
   const activeRevisions = await getActiveEventEditRevisionIds({ eventIds: events.map((event) => event.id), actor: { id: user.id, role: "organizer" } });
+  if (isFeatureEnabled("organizer_master_shell_v3")) {
+    const t = await getTranslations({ locale, namespace: "organizerMaster" });
+    return <OrganizerCommandCenter events={events} teamCounts={teamCounts} activeRevisions={activeRevisions} organizerName={profile?.organizationName ?? user.name} hasProfile={Boolean(profile)} locale={locale} t={t} />;
+  }
   const drafts = events.filter(event => event.status === "Draft");
   const published = events.filter(event => event.status !== "Draft");
   const criticalEvents = drafts.slice(0, 3);

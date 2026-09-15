@@ -1,4 +1,5 @@
 "use client";
+import { getEventEditorTranslator } from "./event-editor-translations";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -105,33 +106,34 @@ function displayPatch(patch: DraftPatch | null, fallbackTimezone: string) {
 
 type LivePreviewDraft = Omit<DraftPatch, "formatConfig"> & { formatConfig: TournamentFormatConfig | null };
 
-function LiveDraftPreview({ draft, editorLabel = "Draft pribadi" }: { draft: LivePreviewDraft; editorLabel?: string }) {
+function LiveDraftPreview({ draft, editorLabel, locale }: { draft: LivePreviewDraft; editorLabel?: string; locale: "id" | "en" }) {
+  const t = getEventEditorTranslator(locale);
   const capacity = draft.participantCap ?? 16;
   const config = draft.formatConfig;
-  const formatLabel = config?.kind === "double_elimination" ? "Double Elimination"
-    : config?.kind === "round_robin" ? "Round Robin"
-      : config?.kind === "group_playoffs" ? "Group + Playoffs" : "Single Elimination";
+  const formatLabel = config?.kind === "double_elimination" ? t("double")
+    : config?.kind === "round_robin" ? t("roundRobin")
+      : config?.kind === "group_playoffs" ? t("groupPlayoffs") : t("single");
   const matchCount = config?.kind === "round_robin" ? capacity * (capacity - 1) / 2
     : config?.kind === "group_playoffs" ? Math.max(0, capacity - config.groupCount) + (config.groupCount * config.qualifiersPerGroup) - 1
       : config?.kind === "double_elimination" ? capacity * 2 - 2
         : capacity - 1 + (config?.kind === "single_elimination" && config.thirdPlace === "required" ? 1 : 0);
   const thirdPlaceEnabled = config?.kind === "single_elimination" && config.thirdPlace === "required";
-  const dateLabel = (value?: string | null) => value ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Belum diatur";
-  return <aside aria-label="Live public preview" className="h-fit rounded-[var(--radius-panel)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-5 min-[1100px]:sticky min-[1100px]:top-6" data-live-preview>
-    <div className="flex items-center justify-between gap-3 text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--color-brand-cream)]"><span>Live preview</span><span>{editorLabel}</span></div>
+  const dateLabel = (value?: string | null) => value ? new Intl.DateTimeFormat(locale === "id" ? "id-ID" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : t("notSet");
+  return <aside aria-label={t("livePreviewLabel")} className="h-fit rounded-[var(--radius-panel)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-5 min-[1100px]:sticky min-[1100px]:top-6" data-live-preview>
+    <div className="flex items-center justify-between gap-3 text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--color-brand-cream)]"><span>{t("livePreview")}</span><span>{editorLabel ?? t("privateDraft")}</span></div>
     <div className="mt-5 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="grid size-9 overflow-hidden rounded-lg bg-[var(--color-brand-violet)] font-extrabold text-white">{draft.logoUrl ? <img alt="Logo event" className="size-full object-cover" src={draft.logoUrl} /> : <span className="grid size-full place-items-center">M</span>}</div>
-      {draft.gameImageUrl && <img alt="Poster event" className="mt-4 aspect-[16/6] w-full rounded-[var(--radius-control)] object-cover" src={draft.gameImageUrl} />}<h3 className="mt-4 break-words text-xl font-extrabold text-[var(--color-text)]">{draft.name || "Nama event kamu"}</h3>
-      <p className="mt-2 line-clamp-3 text-sm text-[var(--color-text-subtle)]">{draft.description || "Deskripsi event akan tampil untuk calon peserta dan pengunjung."}</p>
-      <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-border)] text-sm"><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-xs text-[var(--color-text-subtle)]">Format</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{formatLabel}</dd></div><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-xs text-[var(--color-text-subtle)]">Kapasitas</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{capacity} tim</dd></div></dl>
-      <p className="mt-4 text-sm font-bold text-[var(--color-text)]">{matchCount} pertandingan terencana{thirdPlaceEnabled ? " · perebutan juara 3 termasuk" : ""}</p>
+      <div className="grid size-9 overflow-hidden rounded-lg bg-[var(--color-brand-violet)] font-extrabold text-white">{draft.logoUrl ? <img alt={t("logoAlt")} className="size-full object-cover" src={draft.logoUrl} /> : <span className="grid size-full place-items-center">M</span>}</div>
+      {draft.gameImageUrl && <img alt={t("posterAlt")} className="mt-4 aspect-[16/6] w-full rounded-[var(--radius-control)] object-cover" src={draft.gameImageUrl} />}<h3 className="mt-4 break-words text-xl font-extrabold text-[var(--color-text)]">{draft.name || t("eventNameEmpty")}</h3>
+      <p className="mt-2 line-clamp-3 text-sm text-[var(--color-text-subtle)]">{draft.description || t("descriptionEmpty")}</p>
+      <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-border)] text-sm"><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-xs text-[var(--color-text-subtle)]">{t("format")}</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{formatLabel}</dd></div><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-xs text-[var(--color-text-subtle)]">{t("previewCapacity")}</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{t("teamsCount", { count: capacity })}</dd></div></dl>
+      <p className="mt-4 text-sm font-bold text-[var(--color-text)]">{t("matchesPlanned", { count: matchCount })}{thirdPlaceEnabled ? t("thirdIncluded") : ""}</p>
       <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3" data-preview-prize>
-        <p className="text-xs text-[var(--color-text-subtle)]">Hadiah</p>
-        <p className="mt-1 break-words text-sm font-bold text-[var(--color-text)]">{draft.prizePoolLabel || "Informasi hadiah belum diisi"}</p>
+        <p className="text-xs text-[var(--color-text-subtle)]">{t("prizeTitle")}</p>
+        <p className="mt-1 break-words text-sm font-bold text-[var(--color-text)]">{draft.prizePoolLabel || t("prizeEmpty")}</p>
       </div>
-      <dl className="mt-4 grid gap-px overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-border)] text-xs"><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-[var(--color-text-subtle)]">Mulai event</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{dateLabel(draft.eventStartsAt)}</dd></div><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-[var(--color-text-subtle)]">Lokasi</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{draft.venue || "Belum diatur"}</dd></div><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-[var(--color-text-subtle)]">Pendaftaran</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{dateLabel(draft.registrationOpensAt)} — {dateLabel(draft.registrationClosesAt)}</dd></div><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-[var(--color-text-subtle)]">Biaya</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{draft.registrationFeeRequired ? (draft.registrationFeeAmount != null ? `Rp${draft.registrationFeeAmount.toLocaleString("id-ID")}` : "Belum diatur") : "Gratis"}</dd></div></dl>
+      <dl className="mt-4 grid gap-px overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-border)] text-xs"><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-[var(--color-text-subtle)]">{t("previewStarts")}</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{dateLabel(draft.eventStartsAt)}</dd></div><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-[var(--color-text-subtle)]">{t("location")}</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{draft.venue || t("notSet")}</dd></div><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-[var(--color-text-subtle)]">{t("registration")}</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{dateLabel(draft.registrationOpensAt)} — {dateLabel(draft.registrationClosesAt)}</dd></div><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-[var(--color-text-subtle)]">{t("cost")}</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{draft.registrationFeeRequired ? (draft.registrationFeeAmount != null ? `Rp${draft.registrationFeeAmount.toLocaleString("id-ID")}` : t("notSet")) : t("free")}</dd></div></dl>
     </div>
-    <p className="mt-3 text-xs leading-5 text-[var(--color-text-subtle)]">Ini adalah struktur halaman publik yang akan dilihat pengunjung. Preview diperbarui langsung saat kamu mengisi Draft.</p>
+    <p className="mt-3 text-xs leading-5 text-[var(--color-text-subtle)]">{t("previewDescription")}</p>
   </aside>;
 }
 type EventDraftFormProps = {
@@ -167,11 +169,12 @@ export function EventDraftForm({
   journalNamespace = "event-draft",
   fieldLocks = {},
   gameModes = [],
-  editorLabel = "Draft pribadi",
+  editorLabel,
   visualEditor,
   registrationPanel,
   reviewPanel,
 }: EventDraftFormProps) {
+  const t = getEventEditorTranslator(locale);
   const router = useRouter();
   const [recoveredJournal] = useState(() => editable ? readJournal(journalNamespace, saveTargetId, initialRevision) : null);
   const recoveredPatch = recoveredJournal?.patch ?? null;
@@ -309,16 +312,19 @@ export function EventDraftForm({
   }
   const inputClass = "h-11 min-h-11 w-full min-w-0 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-0 leading-5 text-[var(--color-text)]";
   const labelClass = "grid gap-1.5 text-sm font-bold leading-5 text-[var(--color-text)]";
-  const lockCopy: Record<string, string> = { event_started: "Event sudah dimulai; informasi ini tidak dapat diubah.", event_finished: "Event sudah selesai; informasi ini tidak dapat diubah.", registration_closed: "Pendaftaran sudah ditutup; periode dan biaya tidak dapat diubah.", matches_exist: "Pertandingan sudah dibuat; struktur kompetisi tidak dapat diubah.", slug_published: "URL publik tidak dapat diubah organizer setelah event diterbitkan." };
-  const lockedReason = (field: keyof DraftPatch) => fieldLocks[field] ? (lockCopy[fieldLocks[field]!] ?? fieldLocks[field]!) : null;
+  const lockCopy: Record<string, string> = {
+    event_started: t("lock_event_started"), event_finished: t("lock_event_finished"),
+    registration_closed: t("lock_registration_closed"), matches_exist: t("lock_matches_exist"), slug_published: t("lock_slug_published"),
+  };
+  const lockedReason = (field: keyof DraftPatch) => fieldLocks[field] ? (lockCopy[fieldLocks[field]!] ?? t("lockedField")) : null;
   const LockNote = ({ field }: { field: keyof DraftPatch }) => lockedReason(field) ? <span className="text-xs font-semibold text-[var(--color-brand-cream)]" data-field-lock={field}>{lockedReason(field)}</span> : null;
 
   if (!editable) return <section className="grid items-start gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_19rem]" data-event-read-only>
     <div className="rounded-[var(--radius-control)] border border-[var(--color-brand-cream)] bg-[var(--color-surface-subtle)] p-4">
-      <p className="text-sm font-extrabold text-[var(--color-brand-cream)]">{locale === "id" ? "Event sudah diterbitkan" : "Event already published"}</p>
-      <p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">{locale === "id" ? "Editor Draft telah dikunci. Informasi di samping adalah tampilan baca-saja dari event yang sudah tersimpan." : "The Draft editor is locked. The preview shows the event information currently stored."}</p>
+      <p className="text-sm font-extrabold text-[var(--color-brand-cream)]">{t("alreadyPublished")}</p>
+      <p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">{t("readOnly")}</p>
     </div>
-    <LiveDraftPreview draft={draft} editorLabel={editorLabel} />
+    <LiveDraftPreview locale={locale} draft={draft} editorLabel={editorLabel ?? t("privateDraft")} />
   </section>;
   return <section aria-labelledby="event-details-heading">
     <div className="grid items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_19rem]"><div className="grid min-w-0 content-start gap-6">
@@ -332,66 +338,66 @@ export function EventDraftForm({
             setSaveCycle((cycle) => cycle + 1);
           }}
           type="button"
-        >{locale === "id" ? "Coba lagi" : "Retry"}</button>}
+        >{t("retry")}</button>}
       </div>
     <section className={activeStep === 0 ? "grid content-start scroll-mt-24 gap-4" : "hidden"} id="section-identity" tabIndex={-1}>
-      <div><h3 className="text-xl font-extrabold text-[var(--color-text)]">Kenalkan event-mu.</h3><p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">Mulai dari informasi yang akan dilihat calon peserta. Semua isian bisa kamu ubah lagi.</p></div>
+      <div><h3 className="text-xl font-extrabold text-[var(--color-text)]">{t("identityTitle")}</h3><p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">{t("identityDescription")}</p></div>
       <div className="grid gap-4 min-[700px]:grid-cols-2">
-        <label className={labelClass}>Nama event<input className={inputClass} disabled={Boolean(lockedReason("name"))} name="name" onChange={(event) => updateDraft({ name: event.target.value })} value={draft.name} /><LockNote field="name" /></label>
-        <label className={labelClass}>URL publik<input className={inputClass} disabled={Boolean(lockedReason("slug"))} name="slug" onChange={(event) => updateDraft({ slug: event.target.value })} value={draft.slug ?? ""} /><LockNote field="slug" /></label>
+        <label className={labelClass}>{t("name")}<input className={inputClass} disabled={Boolean(lockedReason("name"))} name="name" onChange={(event) => updateDraft({ name: event.target.value })} value={draft.name} /><LockNote field="name" /></label>
+        <label className={labelClass}>{t("slug")}<input className={inputClass} disabled={Boolean(lockedReason("slug"))} name="slug" onChange={(event) => updateDraft({ slug: event.target.value })} value={draft.slug ?? ""} /><LockNote field="slug" /></label>
       </div>
-      {gameModes.length > 0 && <label className={labelClass}>Game & mode<select className={inputClass} disabled={Boolean(lockedReason("gameModeId"))} name="gameModeId" onChange={(event) => updateDraft({ gameModeId: event.target.value })} value={draft.gameModeId ?? gameModes[0]?.id}>{gameModes.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}</select><LockNote field="gameModeId" /></label>}
-      <label className={labelClass}>Deskripsi singkat<textarea className={`${inputClass} h-32 min-h-32 py-3`} disabled={Boolean(lockedReason("description"))} name="description" onChange={(event) => updateDraft({ description: event.target.value })} value={draft.description ?? ""} /><LockNote field="description" /></label>
+      {gameModes.length > 0 && <label className={labelClass}>{t("mode")}<select className={inputClass} disabled={Boolean(lockedReason("gameModeId"))} name="gameModeId" onChange={(event) => updateDraft({ gameModeId: event.target.value })} value={draft.gameModeId ?? gameModes[0]?.id}>{gameModes.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}</select><LockNote field="gameModeId" /></label>}
+      <label className={labelClass}>{t("description")}<textarea className={`${inputClass} h-32 min-h-32 py-3`} disabled={Boolean(lockedReason("description"))} name="description" onChange={(event) => updateDraft({ description: event.target.value })} value={draft.description ?? ""} /><LockNote field="description" /></label>
     </section>
     <section className={activeStep === 1 ? "grid content-start scroll-mt-24 gap-6" : "hidden"} id="section-format" tabIndex={-1}>
-      <div><h3 className="text-xl font-extrabold text-[var(--color-text)]">Tentukan format & jadwal.</h3><p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">Pilih bentuk kompetisi, jumlah peserta, lalu tentukan kapan pendaftaran dan event dimulai.</p></div>
+      <div><h3 className="text-xl font-extrabold text-[var(--color-text)]">{t("formatTitle")}</h3><p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">{t("formatDescription")}</p></div>
       <div className="grid gap-4 min-[700px]:grid-cols-2">
-        <label className={labelClass}>Kapasitas tim<select className={inputClass} disabled={Boolean(lockedReason("participantCap"))} name="participantCap" onChange={(event) => updateDraft({ participantCap: Number(event.target.value) })} value={draft.participantCap ?? 16}>{[8, 12, 16, 24, 32, 64, 128, 256].map((cap) => <option key={cap} value={cap}>{cap} tim</option>)}</select><LockNote field="participantCap" /></label>
-        <label className={labelClass}>Event dimulai<input className={inputClass} disabled={Boolean(lockedReason("eventStartsAt"))} name="eventStartsAt" onChange={(event) => updateDateDraft("eventStartsAt", event.target.value)} type="datetime-local" value={draft.eventStartsAt ?? ""} /><LockNote field="eventStartsAt" /></label>
-        <label className={labelClass}>Zona waktu<select className={inputClass} disabled={Boolean(lockedReason("timezone"))} name="timezone" onChange={(event) => updateTimezone(event.target.value)} value={draft.timezone ?? "Asia/Jakarta"}>
-          <option value="Asia/Jakarta">WIB · Asia/Jakarta</option>
-          <option value="Asia/Makassar">WITA · Asia/Makassar</option>
-          <option value="Asia/Jayapura">WIT · Asia/Jayapura</option>
+        <label className={labelClass}>{t("capacity")}<select className={inputClass} disabled={Boolean(lockedReason("participantCap"))} name="participantCap" onChange={(event) => updateDraft({ participantCap: Number(event.target.value) })} value={draft.participantCap ?? 16}>{[8, 12, 16, 24, 32, 64, 128, 256].map((cap) => <option key={cap} value={cap}>{t("teamsCount", { count: cap })}</option>)}</select><LockNote field="participantCap" /></label>
+        <label className={labelClass}>{t("starts")}<input className={inputClass} disabled={Boolean(lockedReason("eventStartsAt"))} name="eventStartsAt" onChange={(event) => updateDateDraft("eventStartsAt", event.target.value)} type="datetime-local" value={draft.eventStartsAt ?? ""} /><LockNote field="eventStartsAt" /></label>
+        <label className={labelClass}>{t("timezone")}<select className={inputClass} disabled={Boolean(lockedReason("timezone"))} name="timezone" onChange={(event) => updateTimezone(event.target.value)} value={draft.timezone ?? "Asia/Jakarta"}>
+          <option value="Asia/Jakarta">{t("wib")}</option>
+          <option value="Asia/Makassar">{t("wita")}</option>
+          <option value="Asia/Jayapura">{t("wit")}</option>
         </select><LockNote field="timezone" /></label>
-        <label className={labelClass}>Pelaksanaan<input className={inputClass} disabled={Boolean(lockedReason("venue"))} name="venue" onChange={(event) => updateDraft({ venue: event.target.value })} value={draft.venue ?? ""} /><LockNote field="venue" /></label>
-        <label className={labelClass}>Platform / kanal pertandingan <span className="font-normal text-[var(--color-text-subtle)]">Opsional</span><input className={inputClass} disabled={Boolean(lockedReason("venueAddress"))} name="venueAddress" onChange={(event) => updateDraft({ venueAddress: event.target.value || null })} value={draft.venueAddress ?? ""} /><LockNote field="venueAddress" /></label>
+        <label className={labelClass}>{t("venue")}<input className={inputClass} disabled={Boolean(lockedReason("venue"))} name="venue" onChange={(event) => updateDraft({ venue: event.target.value })} value={draft.venue ?? ""} /><LockNote field="venue" /></label>
+        <label className={labelClass}>{t("venueAddress")}<span className="font-normal text-[var(--color-text-subtle)]">{t("optional")}</span><input className={inputClass} disabled={Boolean(lockedReason("venueAddress"))} name="venueAddress" onChange={(event) => updateDraft({ venueAddress: event.target.value || null })} value={draft.venueAddress ?? ""} /><LockNote field="venueAddress" /></label>
       </div>
-      <FormatConfigurator allowAdvanced={competitionOperationsEnabled} disabled={Boolean(lockedReason("formatConfig"))} lockedReason={lockedReason("formatConfig") ?? undefined} onChange={(formatConfig) => updateDraft({ formatConfig })} value={draft.formatConfig} />
+      <FormatConfigurator locale={locale} allowAdvanced={competitionOperationsEnabled} disabled={Boolean(lockedReason("formatConfig"))} lockedReason={lockedReason("formatConfig") ?? undefined} onChange={(formatConfig) => updateDraft({ formatConfig })} value={draft.formatConfig} />
     </section>
     <section className={activeStep === 2 ? "grid content-start scroll-mt-24 gap-4" : "hidden"} id="section-registration" tabIndex={-1}>
-      <div><h3 className="text-xl font-extrabold text-[var(--color-text)]">Atur pendaftaran.</h3><p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">Tentukan kapan peserta bisa mendaftar, biaya yang berlaku, dan kontak organizer yang dapat dihubungi.</p></div><div className="grid gap-4 min-[700px]:grid-cols-2">
-        <label className={labelClass}>Pendaftaran dibuka<input className={inputClass} disabled={Boolean(lockedReason("registrationOpensAt"))} name="registrationOpensAt" onChange={(event) => updateDateDraft("registrationOpensAt", event.target.value)} type="datetime-local" value={draft.registrationOpensAt ?? ""} /><LockNote field="registrationOpensAt" /></label>
-        <label className={labelClass}>Pendaftaran ditutup<input className={inputClass} disabled={Boolean(lockedReason("registrationClosesAt"))} name="registrationClosesAt" onChange={(event) => updateDateDraft("registrationClosesAt", event.target.value)} type="datetime-local" value={draft.registrationClosesAt ?? ""} /><LockNote field="registrationClosesAt" /></label>
+      <div><h3 className="text-xl font-extrabold text-[var(--color-text)]">{t("registrationTitle")}</h3><p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">{t("registrationDescription")}</p></div><div className="grid gap-4 min-[700px]:grid-cols-2">
+        <label className={labelClass}>{t("opens")}<input className={inputClass} disabled={Boolean(lockedReason("registrationOpensAt"))} name="registrationOpensAt" onChange={(event) => updateDateDraft("registrationOpensAt", event.target.value)} type="datetime-local" value={draft.registrationOpensAt ?? ""} /><LockNote field="registrationOpensAt" /></label>
+        <label className={labelClass}>{t("closes")}<input className={inputClass} disabled={Boolean(lockedReason("registrationClosesAt"))} name="registrationClosesAt" onChange={(event) => updateDateDraft("registrationClosesAt", event.target.value)} type="datetime-local" value={draft.registrationClosesAt ?? ""} /><LockNote field="registrationClosesAt" /></label>
       </div>
-      <label className="flex min-h-11 items-center gap-3 text-sm font-bold text-[var(--color-text)]"><input checked={draft.registrationFeeRequired ?? false} disabled={Boolean(lockedReason("registrationFeeRequired"))} name="registrationFeeRequired" onChange={(event) => updateDraft({ registrationFeeRequired: event.target.checked })} type="checkbox" />Pendaftaran berbayar<LockNote field="registrationFeeRequired" /></label>
-      {draft.registrationFeeRequired && <label className={labelClass}>Biaya pendaftaran<input className={inputClass} disabled={Boolean(lockedReason("registrationFeeAmount"))} min="0" name="registrationFeeAmount" onChange={(event) => updateDraft({ registrationFeeAmount: event.target.value ? Number(event.target.value) : null })} type="number" value={draft.registrationFeeAmount ?? ""} /><LockNote field="registrationFeeAmount" /></label>}{registrationPanel}
+      <label className="flex min-h-11 items-center gap-3 text-sm font-bold text-[var(--color-text)]"><input checked={draft.registrationFeeRequired ?? false} disabled={Boolean(lockedReason("registrationFeeRequired"))} name="registrationFeeRequired" onChange={(event) => updateDraft({ registrationFeeRequired: event.target.checked })} type="checkbox" />{t("paid")}<LockNote field="registrationFeeRequired" /></label>
+      {draft.registrationFeeRequired && <label className={labelClass}>{t("fee")}<input className={inputClass} disabled={Boolean(lockedReason("registrationFeeAmount"))} min="0" name="registrationFeeAmount" onChange={(event) => updateDraft({ registrationFeeAmount: event.target.value ? Number(event.target.value) : null })} type="number" value={draft.registrationFeeAmount ?? ""} /><LockNote field="registrationFeeAmount" /></label>}{registrationPanel}
     </section>
     <section className={activeStep === 3 ? "grid content-start scroll-mt-24 gap-4" : "hidden"} id="section-public" tabIndex={-1}>
-      <div><h3 className="text-xl font-extrabold text-[var(--color-text)]">Siapkan halaman publik.</h3><p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">Tambahkan poster untuk halaman event dan logo kecil untuk identitas event. Keduanya punya tempat yang berbeda.</p></div>
-      <label className={labelClass}>Informasi hadiah<input className={inputClass} disabled={Boolean(lockedReason("prizePoolLabel"))} name="prizePoolLabel" onChange={(event) => updateDraft({ prizePoolLabel: event.target.value || null })} placeholder="Contoh: Rp5.000.000 + merchandise" value={draft.prizePoolLabel ?? ""} /><LockNote field="prizePoolLabel" /></label>      {visualEditor ?? <div className="grid gap-4 min-[700px]:grid-cols-2">
+      <div><h3 className="text-xl font-extrabold text-[var(--color-text)]">{t("publicTitle")}</h3><p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">{t("publicDescription")}</p></div>
+      <label className={labelClass}>{t("prize")}<input className={inputClass} disabled={Boolean(lockedReason("prizePoolLabel"))} name="prizePoolLabel" onChange={(event) => updateDraft({ prizePoolLabel: event.target.value || null })} placeholder={t("prizeExample")} value={draft.prizePoolLabel ?? ""} /><LockNote field="prizePoolLabel" /></label>      {visualEditor ?? <div className="grid gap-4 min-[700px]:grid-cols-2">
         <form action={organizerUploadEventVisualAction} className="grid content-start gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] p-5">
           <input name="eventId" type="hidden" value={eventId} /><input name="locale" type="hidden" value={locale} />
-          <label className={labelClass}>Visual promosi untuk halaman event <span className="font-normal text-[var(--color-text-subtle)]">PNG atau JPG · disarankan 4:5 · maks. 2 MB</span><input accept="image/png,image/jpeg,image/webp" className={inputClass} name="eventVisual" required type="file" /></label>
-          <label className="flex items-start gap-3 text-sm text-[var(--color-text)]"><input className="mt-1" name="rightsAttestation" required type="checkbox" value="confirmed" />Saya memiliki izin untuk menerbitkan karya visual ini.</label>
-          <button className="min-h-11 border border-[var(--color-brand-cyan)] px-4 text-sm font-extrabold text-[var(--color-brand-cyan)]" type="submit">Unggah poster</button>
+          <label className={labelClass}>{t("posterLabel")}<span className="font-normal text-[var(--color-text-subtle)]">{t("posterHint")}</span><input accept="image/png,image/jpeg,image/webp" className={inputClass} name="eventVisual" required type="file" /></label>
+          <label className="flex items-start gap-3 text-sm text-[var(--color-text)]"><input className="mt-1" name="rightsAttestation" required type="checkbox" value="confirmed" />{t("rights")}</label>
+          <button className="min-h-11 border border-[var(--color-brand-cyan)] px-4 text-sm font-extrabold text-[var(--color-brand-cyan)]" type="submit">{t("uploadPoster")}</button>
         </form>
         <form action={organizerUploadEventLogoAction} className="grid content-start gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] p-5">
           <input name="eventId" type="hidden" value={eventId} /><input name="locale" type="hidden" value={locale} />
-          <label className={labelClass}>Identitas kecil untuk event-mu <span className="font-normal text-[var(--color-text-subtle)]">PNG atau JPG · persegi 1:1 · maks. 2 MB</span><input accept="image/png,image/jpeg,image/webp" className={inputClass} name="eventLogo" required type="file" /></label>
-          <button className="min-h-11 border border-[var(--color-brand-cyan)] px-4 text-sm font-extrabold text-[var(--color-brand-cyan)]" type="submit">Unggah logo</button>
+          <label className={labelClass}>{t("logoLabel")}<span className="font-normal text-[var(--color-text-subtle)]">{t("logoHint")}</span><input accept="image/png,image/jpeg,image/webp" className={inputClass} name="eventLogo" required type="file" /></label>
+          <button className="min-h-11 border border-[var(--color-brand-cyan)] px-4 text-sm font-extrabold text-[var(--color-brand-cyan)]" type="submit">{t("uploadLogo")}</button>
         </form>
       </div>}
     </section>
     <section className={activeStep === 4 ? "grid content-start scroll-mt-24 gap-6" : "hidden"} id="section-review" tabIndex={-1}>
-      {reviewPanel ?? <div className="rounded-[var(--radius-control)] border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Lengkapi detail event, lalu kembali ke sini untuk meninjau dan menerbitkan.</div>}
+      {reviewPanel ?? <div className="rounded-[var(--radius-control)] border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">{t("reviewEmpty")}</div>}
     </section>
       <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-5" data-workspace-step-controls>
-        <button className="min-h-11 rounded-[var(--radius-control)] border border-[var(--color-border)] px-4 text-sm font-extrabold text-[var(--color-text)] disabled:opacity-40" disabled={activeStep === 0} onClick={() => moveToStep(activeStep - 1)} type="button">Kembali</button>
-        <p className="text-sm font-semibold text-[var(--color-text-subtle)]">Step {activeStep + 1} of {stepIds.length}</p>
-        {activeStep < stepIds.length - 1 ? <button className="min-h-11 rounded-[var(--radius-control)] bg-[var(--color-brand-violet)] px-4 text-sm font-extrabold text-white" onClick={() => moveToStep(activeStep + 1)} type="button">Lanjut</button> : <span className="px-2 text-sm font-bold text-[var(--color-text-subtle)]">Siap diterbitkan</span>}
+        <button className="min-h-11 rounded-[var(--radius-control)] border border-[var(--color-border)] px-4 text-sm font-extrabold text-[var(--color-text)] disabled:opacity-40" disabled={activeStep === 0} onClick={() => moveToStep(activeStep - 1)} type="button">{t("back")}</button>
+        <p className="text-sm font-semibold text-[var(--color-text-subtle)]">{t("step", { step: activeStep + 1, total: stepIds.length })}</p>
+        {activeStep < stepIds.length - 1 ? <button className="min-h-11 rounded-[var(--radius-control)] bg-[var(--color-brand-violet)] px-4 text-sm font-extrabold text-white" onClick={() => moveToStep(activeStep + 1)} type="button">{t("next")}</button> : <span className="px-2 text-sm font-bold text-[var(--color-text-subtle)]">{t("ready")}</span>}
       </div>
       </div>
-      <LiveDraftPreview draft={draft} editorLabel={editorLabel} />
+      <LiveDraftPreview locale={locale} draft={draft} editorLabel={editorLabel ?? t("privateDraft")} />
     </div>
   </section>;
 }

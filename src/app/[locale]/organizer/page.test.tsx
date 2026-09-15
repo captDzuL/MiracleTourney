@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,10 +23,15 @@ vi.mock("@/lib/platform/repository", () => ({ getManageableEventsForUser, getTea
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale }));
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/i18n/navigation", () => ({
-  Link: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
+  Link: ({ href, children, locale, ...props }: { href: string; children: React.ReactNode; locale?: string }) => <a {...props} href={locale ? `/${locale}${href}` : href}>{children}</a>,
 }));
 
 import OrganizerCommandCenterPage from "./page";
+import { createTranslator, NextIntlClientProvider } from "next-intl";
+import en from "../../../../messages/en.json";
+import id from "../../../../messages/id.json";
+
+vi.mock("next-intl/server", () => ({ getTranslations: async ({ locale, namespace }: { locale: "id" | "en"; namespace: "organizerMaster" }) => createTranslator({ locale, messages: locale === "id" ? id : en, namespace }) }));
 
 const events = [
   { id: "draft-1", name: "Miracle Draft Cup", status: "Draft", participantCap: 16, format: "Single Elimination", gameId: "flashpeak" },
@@ -35,12 +41,65 @@ const events = [
 describe("organizer command center", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    isFeatureEnabled.mockReturnValue(true);
+    isFeatureEnabled.mockImplementation((flag: string) => flag !== "organizer_master_shell_v3");
     requireAnyRole.mockResolvedValue({ id: "org-1", role: "organizer", name: "Miracle Organizer" });
     getManageableEventsForUser.mockResolvedValue(events);
     getTeamCountsForEvents.mockResolvedValue(new Map([["draft-1", 4], ["live-1", 8]]));
     getActiveEventEditRevisionIds.mockResolvedValue({});
     getOrganizerProfileForUser.mockResolvedValue({ organizationName: "Miracle Esports", contactChannel: "WhatsApp", contactValue: "+628123456789", verified: false });
+  });
+
+  it.each([
+    ["Draft", "edit", "Continue setup"],
+    ["Published", "registration", "Manage registration"],
+    ["Registration Closed", "competition", "Prepare competition"],
+    ["Ongoing", "match-control", "Open Match Control"],
+    ["Finished", "completion", "Review completion"],
+  ])("routes %s to the next lifecycle action", async (status, section, label) => {
+    isFeatureEnabled.mockReturnValue(true);
+    getManageableEventsForUser.mockResolvedValue([{ ...events[0], status, gameId: "game-flashpeak" }]);
+    const markup = renderToStaticMarkup(<NextIntlClientProvider locale="en" messages={en}>{await OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "en" }) })}</NextIntlClientProvider>);
+    const card = new DOMParser().parseFromString(markup, "text/html").querySelector("article")!;
+    expect(card.querySelector("a")?.getAttribute("href")).toBe(`/en/organizer/events/draft-1/${section}`);
+    expect(card.querySelector("a")?.textContent).toBe(label);
+    expect(markup).toContain("Flashpeak");
+    expect(markup).not.toContain("game-flashpeak");
+    expect(markup).not.toContain("�");
+  });
+
+  it("renders Indonesian inventory, accessible event selection and revision work without changing the primary lifecycle action", async () => {
+    isFeatureEnabled.mockReturnValue(true);
+    getManageableEventsForUser.mockResolvedValue([{ ...events[1], gameId: "game-kuroko", slug: "kuroko-cup" }]);
+    getActiveEventEditRevisionIds.mockResolvedValue({ "live-1": { id: "rev-1", revision: 2 } });
+    const markup = renderToStaticMarkup(await OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "id" }) }));
+    const document = new DOMParser().parseFromString(markup, "text/html");
+    expect(document.querySelector("h1")?.textContent).toBe("Pusat Kendali Organizer");
+    expect(document.querySelector("details > summary")?.textContent).toBe("Pilih acara");
+    expect(document.querySelector("details nav a")?.getAttribute("href")).toBe("/id/organizer/events/live-1/overview");
+    expect(document.querySelector("article a")?.getAttribute("href")).toBe("/id/organizer/events/live-1/registration");
+    expect(document.querySelector("article")?.textContent).toContain("Kuroko no Basket Street Rival");
+    expect(document.querySelector("article")?.textContent).toContain("Lanjutkan revisi");
+    expect(markup).not.toContain("Organizer Command Center");
+    expect(markup).not.toContain("�");
+  });
+
+  it("shows a truthful empty inventory and no fabricated event links", async () => {
+    isFeatureEnabled.mockReturnValue(true);
+    getManageableEventsForUser.mockResolvedValue([]);
+    const markup = renderToStaticMarkup(await OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "en" }) }));
+    const document = new DOMParser().parseFromString(markup, "text/html");
+    expect(document.querySelectorAll("article")).toHaveLength(0);
+    expect(document.querySelectorAll("details a")).toHaveLength(0);
+    expect(markup).toContain("No events yet.");
+    expect(markup).toContain('href="/en/organizer/events/new"');
+  });
+
+  it("requires password change before loading event inventory", async () => {
+    isFeatureEnabled.mockReturnValue(true);
+    requireAnyRole.mockResolvedValue({ id: "org-1", role: "organizer", mustChangePassword: true });
+    await expect(OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "en" }) })).rejects.toThrow("REDIRECT");
+    expect(redirectToActiveLocale).toHaveBeenCalledWith("/organizer/change-password");
+    expect(getManageableEventsForUser).not.toHaveBeenCalled();
   });
 
   it("shows only the organizer's event inventory, priority draft work, and workspace links", async () => {
