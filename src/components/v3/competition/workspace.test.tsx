@@ -17,6 +17,11 @@ export function fixture(): CompetitionWorkspaceState {
   return { event: { id: "event", name: "Miracle Open", version: 4, timezone: "Asia/Jakarta", startsAt: "2026-09-12T02:00:00.000Z", publishedScheduleVersion: 3, config: TOURNAMENT_FORMAT_PRESETS.singleElimination }, graph: null, drawing: null, teams: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }], matches: [{ id: "match", homeTeamId: "a", awayTeamId: "b", homeScore: 0, awayScore: 0, status: "Scheduled", scheduleStatus: "confirmed", resultVersion: 0, bestOf: 1, roundLabel: "single 1", phaseId: null, groupId: null, start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T02:30:00.000Z", room: "Room A", games: [] }], standings: [], readiness: [], actions: [{ id: "action", matchId: "match", priority: "critical", title: "Missing readiness", detail: null }], schedule: null, publishedSchedule: null, incidents: [], announcements: [], audit: [], unavailableSections: [] };
 }
 describe("organizer Match Day workspace", () => {
+  it("keeps the existing report composition available when the master flag is off", () => {
+    act(() => root.render(<CompetitionWorkspace initialState={state} locale="en" view="competition" masterShell={false} />));
+    expect(host.textContent).toContain("Audit history");
+    expect(host.querySelector("[data-operations]")).toBeNull();
+  });
   it("keeps server-rendered fields disabled until their input handlers hydrate", () => {
     const server = document.createElement("div");
     server.innerHTML = renderToString(<Field label="Window end" type="datetime-local" name="windowEnd" value="" onChange={() => {}} />);

@@ -3,11 +3,11 @@ import { notFound } from "next/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { CompetitionWorkspace } from "@/components/v3/competition/CompetitionWorkspace";
-import type { WorkspaceView } from "./workspace-types";
+import type { WorkspaceView, WorkspaceQuery } from "./workspace-types";
 import { readCompetitionWorkspace } from "./workspace-read";
 
-export type WorkspacePageProps = { params: Promise<{ locale: string; eventId: string; matchId?: string }> };
-export async function workspacePage({ params }: WorkspacePageProps, view: WorkspaceView) {
+export type WorkspacePageProps = { params: Promise<{ locale: string; eventId: string; matchId?: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> };
+export async function workspacePage({ params, searchParams }: WorkspacePageProps, view: WorkspaceView) {
   const { locale, eventId, matchId: requestedMatchId } = await params;
   if ((locale !== "en" && locale !== "id") || !isFeatureEnabled("competition_operations_v3") || !isFeatureEnabled("organizer_workspace_v3")) notFound();
   let state;
@@ -27,5 +27,11 @@ export async function workspacePage({ params }: WorkspacePageProps, view: Worksp
     try { matchId = decodeURIComponent(matchId); } catch { notFound(); }
   }
   if (view === "match" && !state.matches.some(m => m.id === matchId)) notFound();
-  return <CompetitionWorkspace key={`${eventId}:${view}:${matchId || ""}`} initialState={state} locale={locale} view={view} matchId={matchId} />;
+  const rawQuery = await searchParams ?? {};
+  const query: WorkspaceQuery = {};
+  for (const key of ["filter", "group", "round", "matchday", "phase", "match", "page"] as const) {
+    const value = rawQuery[key];
+    if (typeof value === "string" && value.length <= 300) query[key] = value;
+  }
+  return <CompetitionWorkspace key={`${eventId}:${view}:${matchId || ""}`} initialState={state} locale={locale} view={view} matchId={matchId} masterShell={isFeatureEnabled("organizer_master_shell_v3")} query={query} />;
 }

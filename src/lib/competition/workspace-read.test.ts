@@ -10,6 +10,12 @@ vi.mock("@/lib/platform/db", () => ({ prisma: new Proxy({}, { get: (_, key) => R
 import { COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS, readCompetitionWorkspace } from "./workspace-read";
 
 describe("private organizer read state", () => {
+  it("exposes authoritative event status even when no graph or matches exist", async () => {
+    await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { status: "Finished" } }); });
+    const state = await readCompetitionWorkspace("event");
+    expect(state.event).toMatchObject({ status: "Finished" });
+    expect(JSON.parse(JSON.stringify(state)).event.status).toBe("Finished");
+  });
   it("uses a bounded transaction budget for the remote workspace snapshot", () => {
     expect(COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS).toEqual({
       isolationLevel: "RepeatableRead",
@@ -77,6 +83,7 @@ describe("private organizer read state", () => {
     await createCompetitionOperations(store.db, undefined, { allowInternalInitialize: true }).execute({ eventId: "event", actor: boundary.user!, expectedVersion: 0, idempotencyKey: "init", command: { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] } });
     const state = await readCompetitionWorkspace("event");
     expect(state.event.version).toBe(1);
+    expect(state.drawingPublished).toBe(true);
     expect(state.graph?.config.kind).toBe("round_robin");
     expect(state.standings[0].rows).toHaveLength(2);
     expect(state.matches[0].bestOf).toBe(1);
@@ -97,6 +104,7 @@ describe("private organizer read state", () => {
     });
 
     const draft = await readCompetitionWorkspace("event");
+    expect(draft.drawingPublished).toBe(false);
     expect(draft.drawing).toEqual({
       status: "draft",
       teams: [{ id: "b", seed: 1 }, { id: "a", seed: 2 }],

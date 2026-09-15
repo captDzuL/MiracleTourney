@@ -42,7 +42,7 @@ function scheduleForm(state: CompetitionWorkspaceState) {
   };
 }
 
-export function ScheduleControls({ state, busy, run, t }: { state: CompetitionWorkspaceState; busy: boolean; run: Run; t: Translate }) {
+export function ScheduleControls({ state, busy, run, t, visibleMatchIds, publicationDisabled = false }: { state: CompetitionWorkspaceState; busy: boolean; run: Run; t: Translate; visibleMatchIds?: string[]; publicationDisabled?: boolean }) {
   const [error, setError] = useState(false);
   const [form, setForm] = useState(() => scheduleForm(state));
   const incoming = scheduleForm(state);
@@ -113,9 +113,9 @@ export function ScheduleControls({ state, busy, run, t }: { state: CompetitionWo
         <Field label={t("Minimum rest (minutes)", "Istirahat minimum (menit)")} type="number" min={0} required {...field("rest")} />
         <Field label={t("Rooms (comma separated)", "Ruangan (pisahkan dengan koma)")} required {...field("rooms")} />
       </div>
-      <fieldset className="grid gap-3">
+      <fieldset className="grid max-h-[32rem] min-w-0 gap-3 overflow-y-auto">
         <legend className="mb-3 font-bold">{t("Room / time overrides and locks", "Penyesuaian ruangan / waktu dan kunci")}</legend>
-        {state.matches.filter(match => match.status !== "Bye").map(match => {
+        {state.matches.filter(match => match.status !== "Bye" && (!visibleMatchIds || visibleMatchIds.includes(match.id))).map(match => {
           const immutable = ["Live", "Completed"].includes(match.status) || ["live", "completed", "locked"].includes(match.scheduleStatus);
           return <div key={match.id} className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3 sm:grid-cols-3">
             <p className="break-words text-sm sm:col-span-3">{match.roundLabel} · {state.teams.find(team => team.id === match.homeTeamId)?.name || "TBD"} vs {state.teams.find(team => team.id === match.awayTeamId)?.name || "TBD"}</p>
@@ -142,7 +142,7 @@ export function ScheduleControls({ state, busy, run, t }: { state: CompetitionWo
       <ul className="my-3 grid gap-2">{state.schedule.draft.impact.map(i => <li key={i.matchId} className="rounded-lg bg-[var(--color-surface-subtle)] p-3 text-sm"><p className="font-semibold">{names([i.matchId])}</p><p>{t("Before", "Sebelum")}: {local(i.before?.start || null) || "—"} · {i.before?.roomId || "—"}</p><p>{t("After", "Sesudah")}: {local(i.after?.start || null) || "—"} · {i.after?.roomId || "—"}</p><p>{t("Delay (minutes)", "Keterlambatan (menit)")}: {i.delayMinutes ?? "—"}</p></li>)}</ul>
       <details className="mb-3"><summary className="miracle-focus-ring flex min-h-11 cursor-pointer items-center">{t("All proposed assignments", "Semua usulan jadwal")}</summary><ul className="grid gap-2">{state.schedule.draft.assignments.map(a => <li key={a.matchId} className="text-sm">{names([a.matchId])} · {local(a.start)} – {local(a.end)} · {a.roomId}</li>)}</ul></details>
       {dirty && <p role="status" className="my-3">{t("Generate a new preview after changing the schedule.", "Buat pratinjau baru setelah mengubah jadwal.")}</p>}
-      <Button disabled={busy || stale || dirty || !state.schedule.draft.feasible || !!state.schedule.draft.conflicts.length} onClick={() => { if (!stale && !dirty) void run({ kind: "schedule_publish", revisionId: state.schedule!.id }); }}>{t("Publish schedule", "Terbitkan jadwal")}</Button>
+      <Button disabled={busy || publicationDisabled || stale || dirty || !state.schedule.draft.feasible || !!state.schedule.draft.conflicts.length} onClick={() => { if (!publicationDisabled && !stale && !dirty) void run({ kind: "schedule_publish", revisionId: state.schedule!.id }); }}>{t("Publish schedule", "Terbitkan jadwal")}</Button>
     </section>}
   </section>;
 }

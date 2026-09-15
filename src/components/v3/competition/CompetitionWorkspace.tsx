@@ -2,7 +2,8 @@
 import React from "react";
 import { Activity, AlertTriangle, History, ShieldCheck, Trophy } from "lucide-react";
 import { Button } from "@/components/v3/Button";
-import type { CompetitionWorkspaceState, WorkspaceMatch, WorkspaceView } from "@/lib/competition/workspace-types";
+import type { CompetitionWorkspaceState, WorkspaceMatch, WorkspaceView, WorkspaceQuery } from "@/lib/competition/workspace-types";
+import { MatchControlWorkspace } from "../organizer/match-control/MatchControlWorkspace";
 import type { OperationCommand } from "@/lib/tournament/operations";
 import { useWorkspace } from "./useWorkspace";
 import { ScheduleControls, ResultControls, DelayControls } from "./WorkspaceForms";
@@ -20,7 +21,11 @@ export function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputEl
   // Controlled fields must not accept edits before React attaches their handlers.
   return <label className="grid min-w-0 gap-2 text-sm">{label}<input className={inputClass} {...props} disabled={!hydrated || props.disabled} /></label>;
 }
-export function CompetitionWorkspace({ initialState, locale, view, matchId }: { initialState: CompetitionWorkspaceState; locale: "en" | "id"; view: WorkspaceView; matchId?: string }) {
+export function CompetitionWorkspace(props: { initialState: CompetitionWorkspaceState; locale: "en" | "id"; view: WorkspaceView; matchId?: string; masterShell?: boolean; query?: WorkspaceQuery }) {
+  if (props.masterShell && props.view !== "match" && !props.initialState.compatibility) return <MatchControlWorkspace initialState={props.initialState} locale={props.locale} view={props.view} query={props.query} />;
+  return <LegacyCompetitionWorkspace {...props} />;
+}
+function LegacyCompetitionWorkspace({ initialState, locale, view, matchId }: { initialState: CompetitionWorkspaceState; locale: "en" | "id"; view: WorkspaceView; matchId?: string }) {
   const { state, busy, saved, connectionError, actionError, refresh, run, canRetry, retry } = useWorkspace(initialState);
   const t: Translate = (en, id) => locale === "id" ? id : en;
   const team = (id: string) => state.teams.find(team => team.id === id)?.name || t("To be decided", "Belum ditentukan");

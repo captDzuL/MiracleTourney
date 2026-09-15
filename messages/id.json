@@ -1,4 +1,293 @@
 {
+  "organizerOperations": {
+    "diagnostics": {
+      "UNKNOWN": "Tinjau batasan jadwal untuk pertandingan terdampak.",
+      "INVALID_INPUT": "Periksa rentang waktu acara, ruangan, dan durasi.",
+      "TBD_PARTICIPANTS": "Peserta belum ditentukan. Waktu istirahat disediakan untuk semua calon tim.",
+      "PREFERRED_REST_UNMET": "Waktu istirahat pilihan tidak tersedia. Tinjau jeda yang lebih singkat.",
+      "UNRESOLVED_DEPENDENCY": "Pertandingan prasyarat belum tersedia atau belum dijadwalkan.",
+      "MISSING_IMMUTABLE_ASSIGNMENT": "Pertandingan terkunci, berlangsung, atau selesai memerlukan jadwal aslinya.",
+      "IMMUTABLE_OVERRIDE": "Perubahan akan menggeser pertandingan yang dilindungi.",
+      "OVERRIDE_OUTSIDE_SCOPE": "Penyesuaian berada di luar cakupan pertandingan terpilih.",
+      "OUTSIDE_WINDOW_OR_ROOM": "Jadwal berada di luar rentang acara atau ruangan yang tersedia.",
+      "ROOM_OVERLAP": "Dua pertandingan bertabrakan di ruangan yang sama.",
+      "TEAM_REST": "Tim tidak memiliki cukup istirahat antarpertandingan.",
+      "DEPENDENCY_ORDER": "Pertandingan dimulai sebelum prasyarat dan waktu istirahat berakhir.",
+      "NO_FEASIBLE_SLOT": "Tidak ada slot yang memenuhi rentang acara, ruangan, dan waktu istirahat."
+    },
+    "readinessDeadline": "Tenggat kesiapan tim terlewat",
+    "reviewDelay": "Tinjau jadwal pertandingan terlambat",
+    "titleCompetition": "Kompetisi",
+    "titleSchedule": "Jadwal",
+    "titleControl": "Kontrol Pertandingan",
+    "descriptionCompetition": "Tinjau fase, undian, dan kelolosan berdasarkan hasil resmi.",
+    "descriptionSchedule": "Tinjau pertandingan, ruangan, dan perubahan waktu sebelum diterbitkan.",
+    "descriptionControl": "Kelola kesiapan dan pantau pertandingan yang memerlukan tindakan.",
+    "refresh": "Muat ulang",
+    "revision": "Revisi {version}",
+    "published": "Versi terbit {version}",
+    "unpublished": "Jadwal belum diterbitkan",
+    "all": "Semua",
+    "live": "Berlangsung",
+    "next": "Berikutnya",
+    "needs-result": "Perlu hasil",
+    "readiness": "Kesiapan",
+    "incidents": "Insiden",
+    "action": "Perlu tindakan",
+    "completed": "Selesai",
+    "delayed": "Terlambat",
+    "postponed": "Ditunda",
+    "locked": "Terkunci",
+    "confirmed": "Dikonfirmasi",
+    "estimated": "Perkiraan",
+    "pending": "Menunggu",
+    "ready": "Siap",
+    "checked_in": "Hadir",
+    "not_ready": "Belum siap",
+    "bye": "Lolos tanpa lawan",
+    "filter": "Filter pertandingan",
+    "group": "Grup",
+    "groupLabel": "Grup {label}",
+    "round": "Babak",
+    "roundLabel": "Babak {round}",
+    "matchday": "Hari pertandingan",
+    "dayLabel": "Hari pertandingan {round}",
+    "phase": "Fase",
+    "apply": "Terapkan filter",
+    "reset": "Hapus filter",
+    "queue": "Antrean pertandingan",
+    "fixtures": "Jadwal pertandingan",
+    "selected": "Pertandingan terpilih",
+    "selectPrompt": "Pilih pertandingan untuk meninjau kesiapan dan tindakan.",
+    "noMatches": "Tidak ada pertandingan untuk filter ini.",
+    "missingSelection": "Pertandingan terpilih tidak tersedia. Pilih pertandingan dari antrean.",
+    "previous": "Sebelumnya",
+    "nextPage": "Halaman berikutnya",
+    "page": "Halaman {page} dari {pages} · {total} pertandingan",
+    "teams": "Tim",
+    "time": "Waktu",
+    "room": "Ruangan",
+    "status": "Status",
+    "unscheduled": "Belum dijadwalkan",
+    "roomPending": "Ruangan belum ditentukan",
+    "tbd": "Belum ditentukan",
+    "matchNumber": "Pertandingan {number}",
+    "bestOf": "Maksimal {count} gim",
+    "openMatch": "Buka detail pertandingan",
+    "markReady": "Tandai {team} siap",
+    "start": "Mulai pertandingan",
+    "startBlocked": "Kedua tim harus siap dengan jadwal terbit yang lengkap.",
+    "operationalLock": "Kesiapan terkunci di luar kompetisi aktif atau setelah pertandingan dimulai.",
+    "closeRegistration": "Tutup pendaftaran sebelum menerbitkan undian.",
+    "drawingLocked": "Undian terbit telah dikunci.",
+    "finished": "Kompetisi selesai. Tinjau hasil resmi dan klasemen.",
+    "publishDrawing": "Terbitkan undian sebelum mengelola pertandingan.",
+    "single_elimination": "Bagan eliminasi",
+    "double_elimination": "Bagan atas & bawah",
+    "round_robin": "Klasemen liga",
+    "groups": "Klasemen grup",
+    "playoffs": "Babak gugur",
+    "standings": "Klasemen",
+    "rank": "Peringkat",
+    "played": "Main",
+    "points": "Poin",
+    "qualification": "Batas kualifikasi: {count}",
+    "qualificationPending": "Kelolosan masih sementara sampai grup selesai.",
+    "qualificationComplete": "Hasil grup telah lengkap.",
+    "emptyStandings": "Klasemen diperbarui setelah hasil resmi.",
+    "qualified": "Zona lolos",
+    "tied": "Seri",
+    "canvas": "Bagan kompetisi",
+    "upper": "Bagan atas",
+    "lower": "Bagan bawah",
+    "grand_final": "Final utama",
+    "third_place": "Perebutan tempat ketiga",
+    "saving": "Menyimpan…",
+    "saved": "Tersimpan. Memperbarui ruang kerja.",
+    "conflict": "Data berubah. Tinjau data terbaru lalu kirim ulang.",
+    "unauthorized": "Akses tidak tersedia. Masuk dengan akun yang berwenang.",
+    "failed": "Tindakan gagal. Periksa isian lalu coba lagi.",
+    "connection": "Koneksi terputus. Menampilkan data terakhir.",
+    "retry": "Coba lagi",
+    "retryAction": "Ulangi tindakan",
+    "partial": "Sebagian bagian gagal dimuat. Muat ulang untuk mencoba lagi.",
+    "priorityCritical": "Kritis",
+    "priorityUrgent": "Mendesak",
+    "prioritySoon": "Perlu ditinjau",
+    "eventAction": "Tindakan acara",
+    "reviewAction": "Tinjau tindakan",
+    "incidentCount": "{count} insiden belum selesai",
+    "actionCount": "{count} tindakan tertunda",
+    "actionReason": "Alasan",
+    "resolve": "Selesaikan tindakan",
+    "noActions": "Tidak ada tindakan tertunda",
+    "details": "Detail",
+    "moveUp": "Naikkan {name}",
+    "moveDown": "Turunkan {name}",
+    "scheduleDiagnostic": "Batasan jadwal: {code}",
+    "controls": [
+      {
+        "source": "TBD",
+        "label": "Belum ditentukan"
+      },
+      {
+        "source": "TBD",
+        "label": "Belum ditentukan"
+      },
+      {
+        "source": "Official drawing",
+        "label": "Undian resmi"
+      },
+      {
+        "source": "No matches yet",
+        "label": "Belum ada pertandingan"
+      },
+      {
+        "source": "Registration order never becomes a public seed automatically. Review this order, save a private draft, then publish it explicitly.",
+        "label": "Urutan pendaftaran tidak otomatis menjadi unggulan publik. Tinjau urutan ini, simpan draf privat, lalu terbitkan secara eksplisit."
+      },
+      {
+        "source": "Private draft",
+        "label": "Draf privat"
+      },
+      {
+        "source": "Not saved",
+        "label": "Belum disimpan"
+      },
+      {
+        "source": "Shuffle",
+        "label": "Acak"
+      },
+      {
+        "source": "Save drawing draft",
+        "label": "Simpan draf undian"
+      },
+      {
+        "source": "Publish drawing",
+        "label": "Terbitkan undian"
+      },
+      {
+        "source": "Reset drawing",
+        "label": "Atur ulang undian"
+      },
+      {
+        "source": "Drawing preview",
+        "label": "Pratinjau undian"
+      },
+      {
+        "source": "Preview",
+        "label": "Pratinjau"
+      },
+      {
+        "source": "Schedule generation",
+        "label": "Pembuatan jadwal"
+      },
+      {
+        "source": "Review changes before publishing. All times use the event timezone.",
+        "label": "Tinjau perubahan sebelum diterbitkan. Semua waktu mengikuti zona waktu event."
+      },
+      {
+        "source": "New schedule revision available. Your edits are preserved. Reload replaces your unsaved edits.",
+        "label": "Revisi jadwal baru tersedia. Isian Anda dipertahankan. Muat ulang akan mengganti isian yang belum disimpan."
+      },
+      {
+        "source": "Reload schedule",
+        "label": "Muat ulang jadwal"
+      },
+      {
+        "source": "Schedule generation",
+        "label": "Pembuatan jadwal"
+      },
+      {
+        "source": "Window start",
+        "label": "Awal rentang waktu"
+      },
+      {
+        "source": "Window end",
+        "label": "Akhir rentang waktu"
+      },
+      {
+        "source": "Duration (minutes)",
+        "label": "Durasi (menit)"
+      },
+      {
+        "source": "Buffer (minutes)",
+        "label": "Jeda (menit)"
+      },
+      {
+        "source": "Minimum rest (minutes)",
+        "label": "Istirahat minimum (menit)"
+      },
+      {
+        "source": "Rooms (comma separated)",
+        "label": "Ruangan (pisahkan dengan koma)"
+      },
+      {
+        "source": "Room / time overrides and locks",
+        "label": "Penyesuaian ruangan / waktu dan kunci"
+      },
+      {
+        "source": "Override time",
+        "label": "Ubah waktu"
+      },
+      {
+        "source": "Room",
+        "label": "Ruangan"
+      },
+      {
+        "source": "Preserve assignment",
+        "label": "Pertahankan jadwal"
+      },
+      {
+        "source": "Live, completed, or locked assignments are preserved.",
+        "label": "Jadwal yang berlangsung, selesai, atau terkunci dipertahankan."
+      },
+      {
+        "source": "Reason for overrides",
+        "label": "Alasan penyesuaian"
+      },
+      {
+        "source": "Check dates and scheduling values. Room changes need an existing assignment or an override time.",
+        "label": "Periksa tanggal dan isian jadwal. Perubahan ruangan memerlukan jadwal yang ada atau waktu pengganti."
+      },
+      {
+        "source": "Generate schedule preview",
+        "label": "Buat pratinjau jadwal"
+      },
+      {
+        "source": "Impact preview",
+        "label": "Pratinjau dampak"
+      },
+      {
+        "source": "Affected matches",
+        "label": "Pertandingan terdampak"
+      },
+      {
+        "source": "Before",
+        "label": "Sebelum"
+      },
+      {
+        "source": "After",
+        "label": "Sesudah"
+      },
+      {
+        "source": "Delay (minutes)",
+        "label": "Keterlambatan (menit)"
+      },
+      {
+        "source": "All proposed assignments",
+        "label": "Semua usulan jadwal"
+      },
+      {
+        "source": "Generate a new preview after changing the schedule.",
+        "label": "Buat pratinjau baru setelah mengubah jadwal."
+      },
+      {
+        "source": "Publish schedule",
+        "label": "Terbitkan jadwal"
+      }
+    ]
+  },
   "registrationWorkspace": {
     "issues": {
       "formula": "Kolom yang dipetakan tidak boleh berisi rumus.",

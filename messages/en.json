@@ -1,4 +1,293 @@
 {
+  "organizerOperations": {
+    "diagnostics": {
+      "UNKNOWN": "Review the scheduling constraints for the affected matches.",
+      "INVALID_INPUT": "Review the event window, rooms and duration settings.",
+      "TBD_PARTICIPANTS": "Participants unresolved. Rest is reserved for all possible teams.",
+      "PREFERRED_REST_UNMET": "Preferred rest is unavailable. Review the shorter interval.",
+      "UNRESOLVED_DEPENDENCY": "A prerequisite match is missing or unscheduled.",
+      "MISSING_IMMUTABLE_ASSIGNMENT": "A locked, live or completed match needs its original assignment.",
+      "IMMUTABLE_OVERRIDE": "The change would move a protected match.",
+      "OVERRIDE_OUTSIDE_SCOPE": "The override is outside the selected match scope.",
+      "OUTSIDE_WINDOW_OR_ROOM": "An assignment is outside the event window or available rooms.",
+      "ROOM_OVERLAP": "Two matches overlap in the same room.",
+      "TEAM_REST": "A team does not have enough rest between matches.",
+      "DEPENDENCY_ORDER": "A match starts before its prerequisite and rest interval end.",
+      "NO_FEASIBLE_SLOT": "No slot satisfies the event window, room and rest constraints."
+    },
+    "readinessDeadline": "Team readiness deadline missed",
+    "reviewDelay": "Review delayed match schedule",
+    "titleCompetition": "Competition",
+    "titleSchedule": "Schedule",
+    "titleControl": "Match Control",
+    "descriptionCompetition": "Review phases, drawing and advancement from official results.",
+    "descriptionSchedule": "Review fixtures, rooms and time changes before publication.",
+    "descriptionControl": "Manage readiness and follow the matches that need attention.",
+    "refresh": "Refresh",
+    "revision": "Revision {version}",
+    "published": "Published version {version}",
+    "unpublished": "Schedule not published",
+    "all": "All",
+    "live": "Live",
+    "next": "Next",
+    "needs-result": "Needs result",
+    "readiness": "Readiness",
+    "incidents": "Incidents",
+    "action": "Needs attention",
+    "completed": "Completed",
+    "delayed": "Delayed",
+    "postponed": "Postponed",
+    "locked": "Locked",
+    "confirmed": "Confirmed",
+    "estimated": "Estimated",
+    "pending": "Pending",
+    "ready": "Ready",
+    "checked_in": "Checked in",
+    "not_ready": "Not ready",
+    "bye": "Bye",
+    "filter": "Match filter",
+    "group": "Group",
+    "groupLabel": "Group {label}",
+    "round": "Round",
+    "roundLabel": "Round {round}",
+    "matchday": "Match day",
+    "dayLabel": "Matchday {round}",
+    "phase": "Phase",
+    "apply": "Apply filters",
+    "reset": "Reset filters",
+    "queue": "Match queue",
+    "fixtures": "Fixture schedule",
+    "selected": "Selected match",
+    "selectPrompt": "Select a match to review readiness and actions.",
+    "noMatches": "No matches for these filters.",
+    "missingSelection": "The selected match is unavailable. Select a match from the queue.",
+    "previous": "Previous",
+    "nextPage": "Next page",
+    "page": "Page {page} of {pages} · {total} matches",
+    "teams": "Teams",
+    "time": "Time",
+    "room": "Room",
+    "status": "Status",
+    "unscheduled": "Unscheduled",
+    "roomPending": "Room pending",
+    "tbd": "To be decided",
+    "matchNumber": "Match {number}",
+    "bestOf": "Best of {count}",
+    "openMatch": "Open match detail",
+    "markReady": "Mark {team} ready",
+    "start": "Start match",
+    "startBlocked": "Both teams must be ready with a complete published schedule.",
+    "operationalLock": "Readiness is locked outside active competition or after a match starts.",
+    "closeRegistration": "Close registration before publishing the drawing.",
+    "drawingLocked": "Published drawing is locked.",
+    "finished": "Competition finished. Review official results and standings.",
+    "publishDrawing": "Publish the drawing before match operations.",
+    "single_elimination": "Elimination bracket",
+    "double_elimination": "Upper & lower bracket",
+    "round_robin": "League standings",
+    "groups": "Group standings",
+    "playoffs": "Playoffs",
+    "standings": "Standings",
+    "rank": "Rank",
+    "played": "Played",
+    "points": "Points",
+    "qualification": "Qualification cutline: {count}",
+    "qualificationPending": "Qualification remains provisional until the group is complete.",
+    "qualificationComplete": "Group results are complete.",
+    "emptyStandings": "Standings will update after official results.",
+    "qualified": "Qualification zone",
+    "tied": "Tied",
+    "canvas": "Competition bracket",
+    "upper": "Upper bracket",
+    "lower": "Lower bracket",
+    "grand_final": "Grand final",
+    "third_place": "Third place",
+    "saving": "Saving…",
+    "saved": "Saved. Updating workspace.",
+    "conflict": "State changed. Review refreshed data and submit again.",
+    "unauthorized": "Access unavailable. Sign in with an authorized account.",
+    "failed": "Action failed. Review your entries and retry.",
+    "connection": "Connection lost. Showing the last received state.",
+    "retry": "Retry",
+    "retryAction": "Retry action",
+    "partial": "Some sections could not load. Refresh to retry.",
+    "priorityCritical": "Critical",
+    "priorityUrgent": "Urgent",
+    "prioritySoon": "Attention soon",
+    "eventAction": "Event action",
+    "reviewAction": "Review action",
+    "incidentCount": "{count} unresolved incidents",
+    "actionCount": "{count} pending actions",
+    "actionReason": "Reason",
+    "resolve": "Resolve action",
+    "noActions": "No pending actions",
+    "details": "Details",
+    "moveUp": "Move {name} up",
+    "moveDown": "Move {name} down",
+    "scheduleDiagnostic": "Schedule constraint: {code}",
+    "controls": [
+      {
+        "source": "TBD",
+        "label": "TBD"
+      },
+      {
+        "source": "TBD",
+        "label": "TBD"
+      },
+      {
+        "source": "Official drawing",
+        "label": "Official drawing"
+      },
+      {
+        "source": "No matches yet",
+        "label": "No matches yet"
+      },
+      {
+        "source": "Registration order never becomes a public seed automatically. Review this order, save a private draft, then publish it explicitly.",
+        "label": "Registration order never becomes a public seed automatically. Review this order, save a private draft, then publish it explicitly."
+      },
+      {
+        "source": "Private draft",
+        "label": "Private draft"
+      },
+      {
+        "source": "Not saved",
+        "label": "Not saved"
+      },
+      {
+        "source": "Shuffle",
+        "label": "Shuffle"
+      },
+      {
+        "source": "Save drawing draft",
+        "label": "Save drawing draft"
+      },
+      {
+        "source": "Publish drawing",
+        "label": "Publish drawing"
+      },
+      {
+        "source": "Reset drawing",
+        "label": "Reset drawing"
+      },
+      {
+        "source": "Drawing preview",
+        "label": "Drawing preview"
+      },
+      {
+        "source": "Preview",
+        "label": "Preview"
+      },
+      {
+        "source": "Schedule generation",
+        "label": "Schedule generation"
+      },
+      {
+        "source": "Review changes before publishing. All times use the event timezone.",
+        "label": "Review changes before publishing. All times use the event timezone."
+      },
+      {
+        "source": "New schedule revision available. Your edits are preserved. Reload replaces your unsaved edits.",
+        "label": "New schedule revision available. Your edits are preserved. Reload replaces your unsaved edits."
+      },
+      {
+        "source": "Reload schedule",
+        "label": "Reload schedule"
+      },
+      {
+        "source": "Schedule generation",
+        "label": "Schedule generation"
+      },
+      {
+        "source": "Window start",
+        "label": "Window start"
+      },
+      {
+        "source": "Window end",
+        "label": "Window end"
+      },
+      {
+        "source": "Duration (minutes)",
+        "label": "Duration (minutes)"
+      },
+      {
+        "source": "Buffer (minutes)",
+        "label": "Buffer (minutes)"
+      },
+      {
+        "source": "Minimum rest (minutes)",
+        "label": "Minimum rest (minutes)"
+      },
+      {
+        "source": "Rooms (comma separated)",
+        "label": "Rooms (comma separated)"
+      },
+      {
+        "source": "Room / time overrides and locks",
+        "label": "Room / time overrides and locks"
+      },
+      {
+        "source": "Override time",
+        "label": "Override time"
+      },
+      {
+        "source": "Room",
+        "label": "Room"
+      },
+      {
+        "source": "Preserve assignment",
+        "label": "Preserve assignment"
+      },
+      {
+        "source": "Live, completed, or locked assignments are preserved.",
+        "label": "Live, completed, or locked assignments are preserved."
+      },
+      {
+        "source": "Reason for overrides",
+        "label": "Reason for overrides"
+      },
+      {
+        "source": "Check dates and scheduling values. Room changes need an existing assignment or an override time.",
+        "label": "Check dates and scheduling values. Room changes need an existing assignment or an override time."
+      },
+      {
+        "source": "Generate schedule preview",
+        "label": "Generate schedule preview"
+      },
+      {
+        "source": "Impact preview",
+        "label": "Impact preview"
+      },
+      {
+        "source": "Affected matches",
+        "label": "Affected matches"
+      },
+      {
+        "source": "Before",
+        "label": "Before"
+      },
+      {
+        "source": "After",
+        "label": "After"
+      },
+      {
+        "source": "Delay (minutes)",
+        "label": "Delay (minutes)"
+      },
+      {
+        "source": "All proposed assignments",
+        "label": "All proposed assignments"
+      },
+      {
+        "source": "Generate a new preview after changing the schedule.",
+        "label": "Generate a new preview after changing the schedule."
+      },
+      {
+        "source": "Publish schedule",
+        "label": "Publish schedule"
+      }
+    ]
+  },
   "registrationWorkspace": {
     "issues": {
       "formula": "Mapped cells must not contain formulas.",

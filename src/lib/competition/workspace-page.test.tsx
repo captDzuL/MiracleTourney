@@ -13,6 +13,10 @@ import MatchControlPage from "@/app/[locale]/organizer/events/[eventId]/match-co
 import MatchPage from "@/app/[locale]/organizer/events/[eventId]/matches/[matchId]/page";
 import { GET } from "@/app/api/organizer/events/[eventId]/competition/route";
 describe("organizer server routes", () => {
+  it("preserves URL operational filters and owned stable selection in master composition", async () => {
+    const element = await MatchControlPage({ params: Promise.resolve({ locale: "id", eventId: "event" }), searchParams: Promise.resolve({ filter: "needs-result", group: "group-a", round: "2", matchday: "2026-09-12", match: "match", page: "2" }) });
+    expect(element.props).toMatchObject({ masterShell: true, query: { filter: "needs-result", group: "group-a", round: "2", matchday: "2026-09-12", match: "match", page: "2" } });
+  });
   beforeEach(() => { boundary.enabled = true; boundary.read.mockReset(); boundary.read.mockResolvedValue({ event: { id: "event", version: 7 }, matches: [{ id: "match" }], unavailableSections: [] }); });
   it.each([[CompetitionPage, "competition"], [SchedulePage, "schedule"], [MatchControlPage, "match-control"], [MatchPage, "match"]] as const)("loads async localized params for view %s", async (page, view) => {
     const element = await page({ params: Promise.resolve({ locale: "id", eventId: "event", matchId: "match" }) });

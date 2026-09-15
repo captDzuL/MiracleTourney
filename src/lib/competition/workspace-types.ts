@@ -5,15 +5,16 @@ import type { StoredSchedule } from "@/lib/tournament/operations/state";
 
 export type WorkspaceMatch = {
   id: string; homeTeamId: string; awayTeamId: string; homeScore: number; awayScore: number;
-  status: string; scheduleStatus: string; resultVersion: number; bestOf: number;
+  status: string; scheduleStatus: string; scheduleVersion?: number | null; resultVersion: number; bestOf: number;
   roundLabel: string; phaseId: string | null; groupId: string | null;
   start: string | null; end: string | null; room: string | null;
   games: { gameNumber: number; homeScore: number; awayScore: number }[];
 };
 export type CompetitionWorkspaceState = {
   compatibility?: Pick<import("@/lib/tournament/operations/legacy-compatibility").LegacyDiagnostic, "status" | "reason"> | null;
-  event: { id: string; name: string; version: number; timezone: string; startsAt: string | null; publishedScheduleVersion: number | null; config: TournamentFormatConfig | null };
+  event: { id: string; name: string; status?: string; version: number; timezone: string; startsAt: string | null; publishedScheduleVersion: number | null; config: TournamentFormatConfig | null };
   graph: CompetitionGraph | null; matches: WorkspaceMatch[]; teams: { id: string; name: string }[];
+  drawingPublished?: boolean;
   drawing: {
     status: "draft" | "published";
     teams: { id: string; seed: number }[];
@@ -29,3 +30,4 @@ export type CompetitionWorkspaceState = {
   unavailableSections: string[];
 };
 export type WorkspaceView = "competition" | "schedule" | "match-control" | "match";
+export type WorkspaceQuery = Partial<Record<"filter" | "group" | "round" | "matchday" | "phase" | "match" | "page", string>>;

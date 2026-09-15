@@ -42,3 +42,10 @@ Task 6: reviewer fix round 1 in progress — payment route-to-reader statuses, c
 Task 6: reviewer fix round 1 RED/GREEN — payment 7 RED -> 14 GREEN; credentials 3 RED -> 16 GREEN; pagination 1 RED -> 17 GREEN
 Task 6: reviewer fix round 1 verified — expanded 10 files / 88 tests; browser 12 cases ID/EN at 360/390/1280 with paging/selection/download/filter-refresh checks; lint/typecheck/diff-check pass; full 174 files passed / 2 skipped, 1,945 passed / 6 skipped
 Task 6: reviewer fix round 1 implementation complete — dedicated fix commit follows 6feef6b; committed-HEAD full rerun and independent review handoff
+Task 6: complete (135802f9db49e657c89059fb707ce5299b71cd0e, review approved)
+Task 7: in progress (approved base 135802f9db49e657c89059fb707ce5299b71cd0e)
+Task 7: RED/GREEN — 15 initial failures; lifecycle/active-phase/schedule-version and localized diagnostics regressions proved before fixes; final required 4 files / 90 passed
+Task 7: Task 5 integration correction approved — Next use-server direct re-exports replaced by async wrappers; 1 RED -> 170 GREEN with existing action suites; commit 19c871011d49a57b252ca10448a0d438ecc26cae
+Task 7: final browser matrix — 120 cases ID/EN, four formats, three screens and five widths; overflow/target/keyboard/selection checks pass
+Task 7: safe Match Day E2E — exact chromium project command exposes existing config mismatch; unnamed msedge 10/10 pass with master off and 10/10 pass with master on, no flaky retries
+Task 7: implementation verified — focused 90; full 1,971 passed / 6 skipped; typecheck/diff pass; lint 0 errors with one pre-existing actions.ts unused-function warning; independent review and committed-HEAD rerun follow
