@@ -133,3 +133,41 @@ GREEN:
 - `pnpm test`: 172 files passed, 2 skipped; 1,895 tests passed, 6 skipped.
 
 Only the two requested P2 compatibility corrections were made in this round. The protected verification note remains untouched and untracked.
+
+## Fix Round 3 - real missing-event contract coverage
+
+### TDD evidence
+
+Added a faithful shared-core contract regression that invokes the actual `previewRegistrationImportForUser` missing-event lookup with an authenticated admin actor and an absent event row. It asserts the complete result consumed by the legacy adapter: `not_found`, the Indonesian error, `import` phase, redirect behavior, canonical return path, and `includeActiveEventId: false`.
+
+The new test passed immediately because the Round 2 production correction already returned the required metadata through the real repository lookup; no production defect was exposed and no source module was changed in this round.
+
+### Fix Round 3 verification
+
+- Affected contract/actions command: 2 files passed; 155 tests passed.
+- Required focused command: 4 files passed; 272 tests passed.
+- `pnpm lint`: exit 0 (`tsc --noEmit`).
+- `pnpm exec prisma validate`: exit 0; schema valid.
+- `git diff --check`: exit 0.
+- `pnpm test`: 172 files passed, 2 skipped; 1,896 tests passed, 6 skipped.
+
+This round adds only the requested real missing-event contract coverage. Task 6 UI files and the protected verification note remain untouched.
+
+## Fix Round 3  real missing-event contract coverage
+
+### TDD evidence
+
+Added a faithful shared-core contract regression that invokes the actual `previewRegistrationImportForUser` missing-event lookup with an authenticated admin actor and an absent event row. It asserts the complete result consumed by the legacy adapter: `not_found`, the Indonesian error, `import` phase, redirect behavior, canonical return path, and `includeActiveEventId: false`.
+
+The new test passed immediately because the Round 2 production correction already returned the required metadata through the real repository lookup; no production defect was exposed and no source module was changed in this round.
+
+### Fix Round 3 verification
+
+- Affected contract/actions command: 2 files passed; 155 tests passed.
+- Required focused command: 4 files passed; 272 tests passed.
+- `pnpm lint`: exit 0 (`tsc --noEmit`).
+- `pnpm exec prisma validate`: exit 0; schema valid.
+- `git diff --check`: exit 0.
+- `pnpm test`: 172 files passed, 2 skipped; 1,896 tests passed, 6 skipped.
+
+This round adds only the requested real missing-event contract coverage. Task 6 UI files and the protected verification note remain untouched.

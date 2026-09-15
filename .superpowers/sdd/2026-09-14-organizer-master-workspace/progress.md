@@ -29,3 +29,6 @@ Task 5: reviewer fix round 2 in progress — precise missing-mapping labels and 
 Task 5: reviewer fix round 2 RED — 2 failed, 152 passed in affected contract/actions tests before production corrections
 Task 5: reviewer fix round 2 GREEN — affected 2 files/154 passed; required focused 4 files/272 passed; full 172 files passed/2 skipped, 1,895 passed/6 skipped
 Task 5: reviewer fix round 2 complete — dedicated fix commit bce4f53193cbb148e02016c98171dbf99f900036
+Task 5: reviewer fix round 3 in progress - real shared-core missing-event lookup contract coverage
+Task 5: reviewer fix round 3 GREEN - affected 2 files/155 passed; required focused 4 files/272 passed; full 172 files passed/2 skipped, 1,896 passed/6 skipped
+Task 5: reviewer fix round 3 complete - dedicated fix commit pending handoff; no production source change required

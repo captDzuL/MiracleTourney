@@ -326,6 +326,28 @@ describe("registration V3 real-contract evidence", () => {
     });
   });
 
+  it("returns real missing-event compatibility metadata for the legacy redirect", async () => {
+    const form = new FormData();
+    form.set("locale", "id");
+    form.set("eventId", "missing-event");
+    form.set("registrationFile", new File([
+      "Nama Tim,Captain IGN,Captain UID\nMissing Team,captain,uid",
+    ], "registrations.csv", { type: "text/csv" }));
+
+    await expect(previewRegistrationImportForUser(admin, form, { legacyCompatibility: true })).resolves.toEqual({
+      status: "blocked",
+      code: "not_found",
+      message: "Data registrasi tidak ditemukan.",
+      redirectTo: "/id/organizer/events/missing-event/registration?view=import",
+      legacy: {
+        phase: "import",
+        message: "Event tidak ditemukan.",
+        behavior: "redirect",
+        includeActiveEventId: false,
+      },
+    });
+  });
+
   it("enforces actual event-row scoping and manager authorization across readers", async () => {
     const records = await getRegistrationRecordsForEvent(owner, "event-1");
     expect(records).toEqual(expect.arrayContaining([expect.objectContaining({ eventId: "event-1", id: "request-event-1" })]));
