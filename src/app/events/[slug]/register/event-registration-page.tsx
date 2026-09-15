@@ -8,11 +8,11 @@ import { getGameModeConfig } from "@/lib/platform/config";
 import {
   getCaptainRegistrationRequests,
   getCaptainTeams,
-  getPaymentSettings,
   getPlayersForTeam,
   getPublicEventBySlug,
   getTeamCountsForEvents,
 } from "@/lib/platform/repository";
+import { getCaptainPaymentSettings } from "@/lib/registration/captain-repository";
 
 type SearchParams = { error?: string; success?: string };
 
@@ -48,7 +48,7 @@ export async function renderEventRegistrationPage(
   const [teams, requests, paymentSettings] = await Promise.all([
     getCaptainTeams(user.id),
     getCaptainRegistrationRequests(user.id),
-    getPaymentSettings(),
+    getCaptainPaymentSettings(event.id),
   ]);
   const draft = teams.find((team) => !team.eventId && team.source === "draft");
   const registeredTeam = teams.find((team) => team.eventId === event.id);
