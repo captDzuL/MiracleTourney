@@ -86,11 +86,16 @@ const { prisma } = vi.hoisted(() => ({
     registrationImportBatch: {
       create: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    eventPaymentSettings: {
+      findUnique: vi.fn(),
+    },
     registrationImportItem: {
       createMany: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
     },
@@ -156,6 +161,13 @@ import {
   getPublicEventBySlug,
   getPublicVisibleBracketPreview,
   commitRegistrationImportBatch,
+  getRegistrationRecordsForEvent,
+  getRegistrationImportHistoryForEvent,
+  getPaymentReviewForEvent,
+  getRegistrationImportEventContext,
+  getTeamRegistrationRequestForEvent,
+  getEventPaymentSettingsForManager,
+  RegistrationMutationConflictError,
   getTeamCountsForEvents,
   getTeamsForEvent,
   getTeamsForEvents,
@@ -822,6 +834,140 @@ describe("registration intake commit", () => {
     await expect(commitRegistrationImportBatch(platformAdmin, "batch-1", ["item-new"]))
       .rejects.toThrow("Slot pendaftaran event ini tidak cukup");
     expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("event-local registration workspace repository", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
+    prisma.event.findUnique.mockResolvedValue({ id: "event-1" });
+  });
+
+  it("maps queue records to the requested event and preserves import source provenance", async () => {
+    prisma.team.findMany.mockResolvedValue([{
+      id: "team-import",
+      eventId: "event-1",
+      name: "Imported Team",
+      tag: "IMP",
+      source: "registration-intake",
+      captainId: "captain-1",
+      captainName: "Captain",
+      captainContact: "081",
+      captainIgn: "CaptainIGN",
+      captainUid: "uid-1",
+      captainIsPlayer: true,
+      createdAt: new Date("2026-09-10T00:00:00.000Z"),
+      players: [{ id: "player-1" }],
+      captain: { id: "captain-1", name: "Captain", email: "captain@example.com" },
+    }]);
+    prisma.teamRegistrationRequest.findMany.mockResolvedValue([]);
+    prisma.registrationImportItem.findMany.mockResolvedValue([{ teamId: "team-import", batch: { sourceKind: "csv" } }]);
+
+    await expect(getRegistrationRecordsForEvent(organizer, "event-1")).resolves.toEqual([
+      expect.objectContaining({
+        id: "team-import",
+        eventId: "event-1",
+        source: "import_csv",
+        status: "accepted",
+        rosterCount: 1,
+      }),
+    ]);
+    expect(prisma.team.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: "event-1" } }));
+    expect(prisma.teamRegistrationRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ eventId: "event-1" }) }));
+  });
+
+  it("returns import history without exposing unrelated batches", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue([{
+      id: "batch-1",
+      eventId: "event-1",
+      sourceKind: "xlsx",
+      sourceLabel: "teams.xlsx",
+      worksheetName: "Sheet1",
+      status: "committed",
+      summary: { new: 2 },
+      expiresAt: new Date("2026-09-20T00:00:00.000Z"),
+      committedAt: new Date("2026-09-10T00:00:00.000Z"),
+      createdAt: new Date("2026-09-10T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-10T00:00:00.000Z"),
+      items: [{ id: "item-1", status: "imported", teamId: "team-1" }],
+    }]);
+
+    await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1")).resolves.toEqual([
+      expect.objectContaining({ id: "batch-1", eventId: "event-1", itemCount: 1 }),
+    ]);
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: "event-1" } }));
+  });
+
+  it("reads payment proofs only for the event and requested review status", async () => {
+    prisma.teamRegistrationRequest.updateMany.mockResolvedValue({ count: 0 });
+    prisma.teamRegistrationRequest.findMany.mockResolvedValue([{
+      id: "request-1",
+      eventId: "event-1",
+      captainId: "captain-1",
+      teamId: null,
+      teamName: "Proof Team",
+      teamTag: "PRF",
+      status: "pending_review",
+      proofImageUrl: "/proofs/request-1.png",
+      rejectReason: null,
+      expiresAt: new Date("2026-09-20T00:00:00.000Z"),
+      createdAt: new Date("2026-09-10T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-10T00:00:00.000Z"),
+      captain: { id: "captain-1", name: "Captain", email: "captain@example.com" },
+    }]);
+
+    await expect(getPaymentReviewForEvent(organizer, "event-1", "pending_review")).resolves.toEqual([
+      expect.objectContaining({ id: "request-1", eventId: "event-1", proofImageUrl: "/proofs/request-1.png" }),
+    ]);
+    expect(prisma.teamRegistrationRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { eventId: "event-1", status: "pending_review" },
+    }));
+  });
+
+  it("returns event QRIS draft state without falling back to global settings", async () => {
+    prisma.eventPaymentSettings.findUnique.mockResolvedValue({
+      id: "event-payment-1",
+      eventId: "event-1",
+      qrisImageUrl: "/payment-qris/event-1.png",
+      instructions: "Scan QRIS",
+      status: "draft",
+      version: 4,
+      publishedAt: null,
+      updatedAt: new Date("2026-09-10T00:00:00.000Z"),
+    });
+
+    await expect(getEventPaymentSettingsForManager("event-1")).resolves.toMatchObject({
+      eventId: "event-1", source: "event", status: "draft", version: 4,
+      qrisImageUrl: "/payment-qris/event-1.png",
+    });
+    expect(prisma.paymentSettings.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejects stale approval before creating a team", async () => {
+    const updatedAt = new Date("2026-09-14T10:00:00.000Z");
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({
+      eventId: "event-1", status: "pending_review", updatedAt,
+    });
+
+    await expect(approveTeamRegistrationRequest(platformAdmin, "request-1", {
+      expectedStatus: "pending_review",
+      expectedUpdatedAt: new Date("2026-09-14T09:00:00.000Z"),
+    })).rejects.toBeInstanceOf(RegistrationMutationConflictError);
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects stale payment rejection without a partial write", async () => {
+    const updatedAt = new Date("2026-09-14T10:00:00.000Z");
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({
+      id: "request-1", eventId: "event-1", status: "pending_review", updatedAt,
+    });
+
+    await expect(rejectTeamRegistrationRequest(platformAdmin, "request-1", "Tidak sesuai", {
+      expectedStatus: "pending_review",
+      expectedUpdatedAt: new Date("2026-09-14T09:00:00.000Z"),
+    })).rejects.toBeInstanceOf(RegistrationMutationConflictError);
+    expect(prisma.teamRegistrationRequest.updateMany).not.toHaveBeenCalled();
   });
 });
 
