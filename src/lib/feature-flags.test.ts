@@ -12,6 +12,7 @@ const OWNED_KEYS = [
   "FEATURE_FLAG_COMPLETION_WORKSPACE_V3",
   "FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3",
   "FEATURE_FLAG_PUBLIC_DISCOVERY_V3",
+  "FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3",
 ] as const;
 
 beforeEach(() => {
@@ -74,6 +75,12 @@ describe("public visual feature flags", () => {
 
     process.env.FEATURE_FLAG_PUBLIC_DISCOVERY_V3 = "true";
     expect(isFeatureEnabled("public_discovery_v3")).toBe(true);
+  });
+  it("keeps the organizer master shell disabled until explicitly enabled", () => {
+    expect(isFeatureEnabled("organizer_master_shell_v3")).toBe(false);
+
+    process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 = "true";
+    expect(isFeatureEnabled("organizer_master_shell_v3")).toBe(true);
   });
   it("enables ui_v3_foundation when the environment override is true", () => {
     process.env.FEATURE_FLAG_UI_V3_FOUNDATION = "true";

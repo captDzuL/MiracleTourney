@@ -752,5 +752,138 @@
       "blocked":"The action is blocked. Review readiness and repair the listed issue.",
       "failed":"The action could not be completed. Try again."
     }
+  },
+  "organizerMaster": {
+    "navigation": {
+      "overview": "Overview",
+      "registration": "Registration",
+      "participants": "Participants",
+      "competition": "Competition",
+      "schedule": "Schedule",
+      "matchControl": "Match Control",
+      "completion": "Completion",
+      "announcements": "Announcements",
+      "settings": "Settings",
+      "certificateStudio": "Premium Certificate Studio"
+    },
+    "shell": {
+      "title": "Organizer workspace",
+      "eventNavigation": "Event navigation",
+      "openNavigation": "Open event navigation",
+      "closeNavigation": "Close event navigation",
+      "lastUpdated": "Last updated {date}",
+      "role": "Role",
+      "game": "Game",
+      "format": "Format",
+      "lifecycle": "Event lifecycle",
+      "publication": "Publication",
+      "showGuide": "Show guide",
+      "hideGuide": "Hide guide"
+    },
+    "lifecycle": {
+      "draft": "Draft",
+      "registration": "Registration",
+      "drawing": "Drawing",
+      "ongoing": "Ongoing",
+      "finished": "Finished"
+    },
+    "publication": {
+      "private": "Private",
+      "published": "Published",
+      "completed": "Completed"
+    },
+    "roles": {
+      "organizer": "Organizer",
+      "admin": "Admin",
+      "platform_admin": "Platform admin"
+    },
+    "overview": {
+      "title": "Operations overview",
+      "description": "What you need to know and act on today.",
+      "needsAction": "Needs action",
+      "nextAction": "Next action",
+      "completionProgress": "Completion progress",
+      "recentActivity": "Recent activity",
+      "blockers": "Remaining blockers",
+      "open": "Open overview"
+    },
+    "registration": {
+      "title": "Participant registration",
+      "description": "Manage registration, participant imports, payment receipts, and event QRIS.",
+      "queue": "Registration queue",
+      "import": "XLSX / CSV import",
+      "payments": "Payment verification",
+      "qris": "Payment QRIS"
+    },
+    "participants": {
+      "title": "Participants",
+      "description": "Directory of accepted teams and rosters.",
+      "search": "Search participants",
+      "empty": "No matching participants."
+    },
+    "competition": {
+      "title": "Competition",
+      "description": "Manage format, phases, drawing, standings, and advancement.",
+      "official": "Official",
+      "draft": "Draft"
+    },
+    "schedule": {
+      "title": "Schedule",
+      "description": "Manage match times, arenas, locks, and publication.",
+      "published": "Schedule published",
+      "unpublished": "Not published"
+    },
+    "matchControl": {
+      "title": "Match Control",
+      "description": "Operate the match queue, readiness, results, and incidents.",
+      "live": "Live",
+      "next": "Next",
+      "needsResult": "Needs result",
+      "openMatch": "Open match"
+    },
+    "completion": {
+      "title": "Completion",
+      "description": "Review readiness, awards, certificates, and final publication.",
+      "readiness": "Readiness",
+      "awards": "Awards",
+      "certificates": "Certificates",
+      "publication": "Publication"
+    },
+    "announcements": {
+      "title": "Announcements",
+      "description": "Share event updates with participants and viewers.",
+      "publish": "Publish announcement",
+      "empty": "No announcements yet."
+    },
+    "settings": {
+      "title": "Settings",
+      "description": "Manage event identity, publication, organizer contact, and operational preferences.",
+      "editEvent": "Edit event",
+      "save": "Save changes"
+    },
+    "guide": {
+      "title": "Contextual guide",
+      "dismiss": "Do not show again for this phase",
+      "restore": "Show guide again"
+    },
+    "blockers": {
+      "title": "Remaining blockers",
+      "review": "Review",
+      "none": "No blockers remain."
+    },
+    "certificateStudio": {
+      "title": "Premium Certificate Studio",
+      "description": "Prepare seven certificates with Miracle identity and controlled assets.",
+      "open": "Open certificate studio",
+      "recipients": "Recipients",
+      "generate": "Generate certificates",
+      "publish": "Publish link"
+    },
+    "feedback": {
+      "saved": "Changes saved.",
+      "published": "Changes published.",
+      "conflict": "Data changed in another session. Refresh the workspace.",
+      "forbidden": "You do not have permission to manage this event."
+    }
   }
 }

@@ -752,5 +752,138 @@
       "blocked":"Tindakan terblokir. Tinjau kesiapan dan perbaiki masalah yang tercantum.",
       "failed":"Tindakan tidak dapat diselesaikan. Coba lagi."
     }
+  },
+  "organizerMaster": {
+    "navigation": {
+      "overview": "Ringkasan",
+      "registration": "Registrasi",
+      "participants": "Peserta",
+      "competition": "Kompetisi",
+      "schedule": "Jadwal",
+      "matchControl": "Kontrol Pertandingan",
+      "completion": "Penyelesaian",
+      "announcements": "Pengumuman",
+      "settings": "Pengaturan",
+      "certificateStudio": "Studio Sertifikat Premium"
+    },
+    "shell": {
+      "title": "Workspace organizer",
+      "eventNavigation": "Navigasi event",
+      "openNavigation": "Buka navigasi event",
+      "closeNavigation": "Tutup navigasi event",
+      "lastUpdated": "Pembaruan terakhir {date}",
+      "role": "Peran",
+      "game": "Game",
+      "format": "Format",
+      "lifecycle": "Tahap event",
+      "publication": "Publikasi",
+      "showGuide": "Tampilkan panduan",
+      "hideGuide": "Sembunyikan panduan"
+    },
+    "lifecycle": {
+      "draft": "Draf",
+      "registration": "Registrasi",
+      "drawing": "Pengundian",
+      "ongoing": "Berlangsung",
+      "finished": "Selesai"
+    },
+    "publication": {
+      "private": "Privat",
+      "published": "Diterbitkan",
+      "completed": "Selesai"
+    },
+    "roles": {
+      "organizer": "Organizer",
+      "admin": "Admin",
+      "platform_admin": "Admin platform"
+    },
+    "overview": {
+      "title": "Ringkasan operasional",
+      "description": "Hal yang perlu kamu ketahui dan kerjakan hari ini.",
+      "needsAction": "Perlu tindakan",
+      "nextAction": "Tindakan berikutnya",
+      "completionProgress": "Progres penyelesaian",
+      "recentActivity": "Aktivitas terbaru",
+      "blockers": "Pemblokir tersisa",
+      "open": "Buka ringkasan"
+    },
+    "registration": {
+      "title": "Registrasi peserta",
+      "description": "Kelola pendaftaran, impor peserta, bukti pembayaran, dan QRIS event.",
+      "queue": "Antrean pendaftaran",
+      "import": "Impor XLSX / CSV",
+      "payments": "Verifikasi pembayaran",
+      "qris": "QRIS pembayaran"
+    },
+    "participants": {
+      "title": "Peserta",
+      "description": "Direktori tim dan roster yang sudah diterima.",
+      "search": "Cari peserta",
+      "empty": "Belum ada peserta yang sesuai."
+    },
+    "competition": {
+      "title": "Kompetisi",
+      "description": "Kelola format, fase, pengundian, klasemen, dan kelanjutan.",
+      "official": "Resmi",
+      "draft": "Draf"
+    },
+    "schedule": {
+      "title": "Jadwal",
+      "description": "Kelola waktu, arena, kunci, dan publikasi pertandingan.",
+      "published": "Jadwal diterbitkan",
+      "unpublished": "Belum diterbitkan"
+    },
+    "matchControl": {
+      "title": "Kontrol Pertandingan",
+      "description": "Atur antrean pertandingan, kesiapan, hasil, dan insiden.",
+      "live": "Sedang berlangsung",
+      "next": "Berikutnya",
+      "needsResult": "Memerlukan hasil",
+      "openMatch": "Buka pertandingan"
+    },
+    "completion": {
+      "title": "Penyelesaian",
+      "description": "Tinjau kesiapan, penghargaan, sertifikat, dan publikasi akhir.",
+      "readiness": "Kesiapan",
+      "awards": "Penghargaan",
+      "certificates": "Sertifikat",
+      "publication": "Publikasi"
+    },
+    "announcements": {
+      "title": "Pengumuman",
+      "description": "Sampaikan pembaruan event kepada peserta dan penonton.",
+      "publish": "Terbitkan pengumuman",
+      "empty": "Belum ada pengumuman."
+    },
+    "settings": {
+      "title": "Pengaturan",
+      "description": "Kelola identitas event, publikasi, kontak organizer, dan preferensi operasional.",
+      "editEvent": "Edit event",
+      "save": "Simpan perubahan"
+    },
+    "guide": {
+      "title": "Panduan kontekstual",
+      "dismiss": "Jangan tampilkan lagi untuk fase ini",
+      "restore": "Tampilkan panduan lagi"
+    },
+    "blockers": {
+      "title": "Pemblokir tersisa",
+      "review": "Tinjau",
+      "none": "Tidak ada pemblokir tersisa."
+    },
+    "certificateStudio": {
+      "title": "Studio Sertifikat Premium",
+      "description": "Siapkan tujuh sertifikat dengan identitas Miracle dan aset yang terarah.",
+      "open": "Buka studio sertifikat",
+      "recipients": "Penerima",
+      "generate": "Buat sertifikat",
+      "publish": "Terbitkan tautan"
+    },
+    "feedback": {
+      "saved": "Perubahan tersimpan.",
+      "published": "Perubahan diterbitkan.",
+      "conflict": "Data berubah di sesi lain. Muat ulang workspace.",
+      "forbidden": "Kamu tidak memiliki izin mengelola event ini."
+    }
   }
 }
