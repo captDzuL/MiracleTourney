@@ -30,6 +30,7 @@ model User {
   registrationImportProfiles       RegistrationImportProfile[]
   registrationImportBatches        RegistrationImportBatch[]
   createdVisualAssets              EventVisualAsset[]
+  updatedEventPaymentSettings      EventPaymentSettings[]       @relation("EventPaymentSettingsUpdatedBy")
   readinessUpdates                 MatchReadiness[]            @relation("MatchReadinessActor")
   resultRevisions                  MatchResultRevision[]       @relation("MatchResultRevisionActor")
   reportedIncidents                CompetitionIncident[]       @relation("CompetitionIncidentReporter")
@@ -116,6 +117,7 @@ model Event {
   promotions                     EventPromotion[]
   analyticsSnapshots             EventAnalyticsSnapshot[]
   checkIns                       CheckIn[]
+  paymentSettings                EventPaymentSettings?
   registrationImportProfiles     RegistrationImportProfile[]
   registrationImportBatches      RegistrationImportBatch[]
   visualAssets                   EventVisualAsset[]              @relation("EventVisualAssets")
@@ -299,6 +301,24 @@ model PaymentSettings {
   qrisImageUrl String?
   instructions String?
   updatedAt    DateTime @updatedAt
+}
+
+model EventPaymentSettings {
+  id            String    @id @default(cuid())
+  eventId       String    @unique
+  event         Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  qrisImageUrl  String?
+  instructions  String?
+  status        String    @default("draft")
+  version       Int       @default(0)
+  publishedAt   DateTime?
+  updatedById   String?
+  updatedBy     User?     @relation("EventPaymentSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, publishedAt])
+  @@index([updatedById])
 }
 
 model Player {

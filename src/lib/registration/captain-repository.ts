@@ -2,6 +2,11 @@ import { getGameModeConfig } from "@/lib/platform/config";
 import { prisma } from "@/lib/platform/db";
 import { buildCaptainCoreRoster, type CaptainCorePlayer } from "@/lib/registration/captain-registration";
 import { validateTeamData } from "@/lib/validation/team-data";
+import { getPublishedPaymentSettingsForEvent } from "@/lib/registration/event-payment-settings";
+
+export async function getCaptainPaymentSettings(eventId: string) {
+  return getPublishedPaymentSettingsForEvent(eventId);
+}
 
 export async function saveCaptainRegistrationDraft(input: {
   captainId: string;

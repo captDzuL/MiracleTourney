@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const { getPublishedPaymentSettingsForEvent } = vi.hoisted(() => ({
+  getPublishedPaymentSettingsForEvent: vi.fn(),
+}));
+vi.mock("./event-payment-settings", () => ({ getPublishedPaymentSettingsForEvent }));
 
 import { buildCaptainCoreRoster } from "./captain-registration";
+import { getCaptainPaymentSettings } from "./captain-repository";
 
 describe("captain core roster", () => {
   it("counts the captain once when the captain is also a player", () => {
@@ -73,5 +79,25 @@ describe("captain core roster", () => {
       requiredPlayers: 1,
       players: [{ ign: " ", uid: "UID-002" }],
     })).toThrow("IGN dan UID setiap pemain wajib diisi");
+  });
+});
+
+describe("captain payment settings", () => {
+  it("delegates captain reads to the event-scoped published settings reader", async () => {
+    getPublishedPaymentSettingsForEvent.mockResolvedValue({
+      id: "event-settings-1",
+      eventId: "event-1",
+      source: "event",
+      status: "published",
+      version: 2,
+      qrisImageUrl: "https://blob.example/event-1.png",
+    });
+
+    await expect(getCaptainPaymentSettings("event-1")).resolves.toMatchObject({
+      eventId: "event-1",
+      source: "event",
+      status: "published",
+    });
+    expect(getPublishedPaymentSettingsForEvent).toHaveBeenCalledWith("event-1");
   });
 });
