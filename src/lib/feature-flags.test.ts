@@ -79,6 +79,11 @@ describe("public visual feature flags", () => {
   it("keeps the organizer master shell disabled until explicitly enabled", () => {
     expect(isFeatureEnabled("organizer_master_shell_v3")).toBe(false);
 
+    for (const value of ["false", "TRUE", "1", "yes", "on", " true", "true ", ""]) {
+      process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 = value;
+      expect(isFeatureEnabled("organizer_master_shell_v3")).toBe(false);
+    }
+
     process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 = "true";
     expect(isFeatureEnabled("organizer_master_shell_v3")).toBe(true);
   });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import idMessages from "../../../messages/id.json";
 import { buildOrganizerEventNavigation } from "./workspace-navigation";
 import type { OrganizerEventSection, OrganizerWorkspaceSummary } from "./workspace-types";
 
@@ -48,6 +49,19 @@ describe("buildOrganizerEventNavigation", () => {
     const navigation = buildOrganizerEventNavigation("id", "event-1", summary, "/id/organizer/events/event-1/overview");
     expect(navigation.find(item => item.section === "match-control")?.label).toBe("Kontrol Pertandingan");
     expect(navigation.find(item => item.section === "completion")?.label).toBe("Penyelesaian");
+  });
+
+  it("derives labels from the locale message catalog", () => {
+    const navigationMessages = idMessages.organizerMaster.navigation as Record<string, string>;
+    const original = navigationMessages.matchControl;
+    navigationMessages.matchControl = "Catalog-controlled match label";
+
+    try {
+      const navigation = buildOrganizerEventNavigation("id", "event-1", summary, "/id/organizer/events/event-1/overview");
+      expect(navigation.find(item => item.section === "match-control")?.label).toBe("Catalog-controlled match label");
+    } finally {
+      navigationMessages.matchControl = original;
+    }
   });
 
   it("hides sections that are not capabilities of the current workspace", () => {

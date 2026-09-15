@@ -1,3 +1,5 @@
+import enMessages from "../../../messages/en.json";
+import idMessages from "../../../messages/id.json";
 import type { OrganizerEventSection, OrganizerWorkspaceSummary } from "./workspace-types";
 
 export type OrganizerLocale = "id" | "en";
@@ -22,29 +24,24 @@ const EVENT_SECTIONS: readonly OrganizerEventSection[] = [
   "settings",
 ];
 
-const SECTION_LABELS: Record<OrganizerLocale, Record<OrganizerEventSection, string>> = {
-  id: {
-    overview: "Ringkasan",
-    registration: "Registrasi",
-    participants: "Peserta",
-    competition: "Kompetisi",
-    schedule: "Jadwal",
-    "match-control": "Kontrol Pertandingan",
-    completion: "Penyelesaian",
-    announcements: "Pengumuman",
-    settings: "Pengaturan",
-  },
-  en: {
-    overview: "Overview",
-    registration: "Registration",
-    participants: "Participants",
-    competition: "Competition",
-    schedule: "Schedule",
-    "match-control": "Match Control",
-    completion: "Completion",
-    announcements: "Announcements",
-    settings: "Settings",
-  },
+type OrganizerNavigationMessageKey = Exclude<keyof typeof idMessages.organizerMaster.navigation, "certificateStudio">;
+type OrganizerNavigationMessages = Record<OrganizerNavigationMessageKey, string>;
+
+const NAVIGATION_MESSAGES: Record<OrganizerLocale, OrganizerNavigationMessages> = {
+  id: idMessages.organizerMaster.navigation,
+  en: enMessages.organizerMaster.navigation,
+};
+
+const SECTION_MESSAGE_KEYS: Record<OrganizerEventSection, OrganizerNavigationMessageKey> = {
+  overview: "overview",
+  registration: "registration",
+  participants: "participants",
+  competition: "competition",
+  schedule: "schedule",
+  "match-control": "matchControl",
+  completion: "completion",
+  announcements: "announcements",
+  settings: "settings",
 };
 
 function routePath(locale: OrganizerLocale, eventId: string, section: OrganizerEventSection) {
@@ -71,7 +68,7 @@ export function buildOrganizerEventNavigation(
       return {
         section,
         href,
-        label: SECTION_LABELS[locale][section],
+        label: NAVIGATION_MESSAGES[locale][SECTION_MESSAGE_KEYS[section]],
         active: isActivePath(pathname, href),
         ...(badge === undefined ? {} : { badge }),
       };
