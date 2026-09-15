@@ -43,3 +43,11 @@ The first real E2E prewarm exposed an earlier Task 5 defect: src/lib/actions.ts 
 No production database, deployment, production flag, schema or migration was changed. Test fixtures used the existing guarded non-production lifecycle. The protected untracked release verification report remains untouched. Task 8 forms, Task 9+ work and final release approval are outside this task. The named Chromium project mismatch remains documented for Task 11.
 
 Committed-HEAD full verification is run after this report/source commit and returned in the task handoff.
+
+## Reviewer fix round 1: event-level tiebreak action
+
+The result engine emits a critical "Standings require a tiebreak decision" action with no matchId and the detail "Unresolved ranks cannot qualify automatically". The original queue flattened its message to a generic action and linked to a match-only action filter, leaving no useful match destination.
+
+The event action now preserves both statements through ID/EN messages, displays a clear Review standings CTA, and links to the canonical locale/event competition route with the real competition-standings anchor. Match-specific actions retain their existing selected-match links. No mutation or resolution engine was added.
+
+Regression evidence: the four new cases (Group + Playoffs/League × ID/EN) failed first because the reason/link was absent; the required focused four-file suite now passes 94 tests. The local fix browser harness passed eight cases (both formats/locales at 360 and 1440 pixels), checking visible reason/detail, no match-only query destination, focus, Enter activation, the real destination standings, format retention and no overflow. Indonesian mobile action screenshot inspected. Changed-source lint, typecheck and diff check pass. The full unit suite is rerun on the dedicated fix commit and reported at handoff.

@@ -1,5 +1,8 @@
 {
   "organizerOperations": {
+    "tiebreakDecision": "Standings require a tiebreak decision",
+    "tiebreakQualificationBlocked": "Unresolved ranks cannot qualify automatically",
+    "reviewStandings": "Review standings",
     "diagnostics": {
       "UNKNOWN": "Review the scheduling constraints for the affected matches.",
       "INVALID_INPUT": "Review the event window, rooms and duration settings.",

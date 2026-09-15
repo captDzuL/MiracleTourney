@@ -49,3 +49,6 @@ Task 7: Task 5 integration correction approved — Next use-server direct re-exp
 Task 7: final browser matrix — 120 cases ID/EN, four formats, three screens and five widths; overflow/target/keyboard/selection checks pass
 Task 7: safe Match Day E2E — exact chromium project command exposes existing config mismatch; unnamed msedge 10/10 pass with master off and 10/10 pass with master on, no flaky retries
 Task 7: implementation verified — focused 90; full 1,971 passed / 6 skipped; typecheck/diff pass; lint 0 errors with one pre-existing actions.ts unused-function warning; independent review and committed-HEAD rerun follow
+Task 7: reviewer fix round 1 in progress — preserve event-level tiebreak reason and blocked qualification detail, and route to canonical standings context
+Task 7: reviewer fix round 1 RED/GREEN — 4 failing localized group/league cases before fix; required focused 4 files / 94 passed afterward
+Task 7: reviewer fix round 1 browser — 8 ID/EN group/league cases at 360/1440 passed for reason/detail, canonical standings destination, keyboard activation and geometry; lint/typecheck/diff pass

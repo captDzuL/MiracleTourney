@@ -139,4 +139,24 @@ describe("master competition operations",()=>{
     expect([...host.querySelectorAll("button")].some(button=>button.textContent==="Save drawing draft")).toBe(false);
     expect(host.textContent).toContain("Published drawing is locked");
   });
+  it.each([
+    ["groupPlayoffs", "id", "Klasemen memerlukan keputusan pemecah seri", "Peringkat yang belum ditentukan tidak dapat lolos secara otomatis."],
+    ["groupPlayoffs", "en", "Standings require a tiebreak decision", "Unresolved ranks cannot qualify automatically"],
+    ["roundRobin", "id", "Klasemen memerlukan keputusan pemecah seri", "Peringkat yang belum ditentukan tidak dapat lolos secara otomatis."],
+    ["roundRobin", "en", "Standings require a tiebreak decision", "Unresolved ranks cannot qualify automatically"],
+  ] as const)("links the event-level %s tiebreak action to standings in %s", (preset, locale, reason, detail) => {
+    state = fixture(preset);
+    // Exact event-scoped action produced by applyResult when complete standings remain tied.
+    state.actions = [{ id: "tiebreak-action", matchId: null, priority: "critical", title: "Standings require a tiebreak decision", detail: "Unresolved ranks cannot qualify automatically" }];
+    render("match-control", { filter: "live", match: state.matches[0].id, page: "2" }, locale);
+    const action = [...host.querySelectorAll<HTMLAnchorElement>("a")].find(link => link.textContent?.includes(reason));
+    expect(action).toBeDefined();
+    expect(action!.textContent).toContain(detail);
+    expect(action!.getAttribute("href")).toBe(`/${locale}/organizer/events/event/competition#competition-standings`);
+    expect(action!.search).toBe("");
+    expect(action!.pathname).not.toContain("match-control");
+    if (locale === "id") expect(action!.textContent).not.toMatch(/Standings require|Unresolved ranks/);
+    render("competition", {}, locale);
+    expect(host.querySelector("#competition-standings")?.textContent).toMatch(locale === "id" ? /Klasemen/ : /standings/i);
+  });
 });

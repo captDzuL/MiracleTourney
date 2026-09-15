@@ -10,7 +10,7 @@ export function FormatContextPanel({state,locale,groupId,phaseId,compact=false}:
   const t=useTranslations("organizerOperations");
   const groups=state.graph?.groups.filter(group=>!groupId||group.id===groupId)??[];
   const tables=state.standings.filter(table=>(!groupId||table.groupId===groupId)&&(!phaseId||table.phaseId===phaseId));
-  return <section className={surface} aria-label={t("standings")}>
+  return <section id={compact ? undefined : "competition-standings"} className={surface+" scroll-mt-4"} aria-label={t("standings")}>
     <h2 className="text-lg font-bold">{t(state.event.config?.kind==="round_robin"?"round_robin":"standings")}</h2>
     {groups.map(group=><div key={group.id} className="mt-4 rounded-lg border border-[var(--color-border)] p-3 text-sm"><strong>{t("groupLabel",{label:group.label})}</strong><p className="mt-1 text-[var(--color-brand-cyan)]">{t("qualification",{count:group.qualificationCutline})}</p><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{t(state.standings.find(table=>table.groupId===group.id)?.complete?"qualificationComplete":"qualificationPending")}</p></div>)}
     {tables.map(table=><div key={table.groupId||table.phaseId} className="mt-4">

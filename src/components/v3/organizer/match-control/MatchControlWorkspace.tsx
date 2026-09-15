@@ -62,7 +62,23 @@ export function MatchControlWorkspace({initialState,locale,view,query={}}:{
     <p role="status" aria-live="polite" className="text-sm text-[var(--color-text-subtle)]">{busy?t("saving"):workspace.saved?t("saved"):""}</p>
     {view==="match-control"&&<>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{["live","needs-result","readiness","action"].map(key=><a key={key} href={workspaceHref(base,query,{filter:key,page:"1"})} className={surface+" miracle-focus-ring hover:border-[var(--color-brand-cyan)]"}><span className="block text-xs text-[var(--color-text-subtle)]">{t(key)}</span><strong data-action-count={key==="action"?"":undefined} className="mt-2 block text-2xl font-bold tabular-nums">{key==="action"?state.actions.length:state.matches.filter(match=>matchesFilter(state,match,key)).length}</strong></a>)}</div>
-      {!!state.actions.length&&<section className={surface} aria-label={t("action")}><h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle aria-hidden="true" size={18}/>{t("action")}</h2><div className="mt-3 grid max-h-64 gap-2 overflow-y-auto">{state.actions.map(action=><a key={action.id} className="miracle-focus-ring flex min-h-11 flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] p-3 text-sm" href={workspaceHref(base,query,{match:action.matchId??"",filter:"action",page:"1"})}><span className="font-semibold">{t(action.priority==="critical"?"priorityCritical":action.priority==="urgent"?"priorityUrgent":"prioritySoon")} · {actionMatch(action.matchId)?matchLabel(state,actionMatch(action.matchId)!,t):t("eventAction")}</span><span className="text-[var(--color-brand-cyan)]">{actionLabel(action.title,t)}</span></a>)}</div></section>}
+      {!!state.actions.length && <section className={surface} aria-label={t("action")}>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle aria-hidden="true" size={18}/>{t("action")}</h2>
+        <div className="mt-3 grid max-h-64 gap-2 overflow-y-auto">{state.actions.map(action => {
+          const match = actionMatch(action.matchId);
+          const destination = action.matchId
+            ? workspaceHref(base, query, {match:action.matchId, filter:"action", page:"1"})
+            : `/${locale}/organizer/events/${encodeURIComponent(state.event.id)}/competition#competition-standings`;
+          return <a key={action.id} data-event-action={action.matchId ? undefined : action.id} className="miracle-focus-ring flex min-h-11 flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] p-3 text-sm" href={destination}>
+            <span className="font-semibold">{t(action.priority==="critical"?"priorityCritical":action.priority==="urgent"?"priorityUrgent":"prioritySoon")} · {match ? matchLabel(state,match,t) : t("eventAction")}</span>
+            <span className="min-w-0">
+              <span className="block font-semibold text-[var(--color-brand-cyan)]">{actionLabel(action.title,t)}</span>
+              {!action.matchId && action.detail==="Unresolved ranks cannot qualify automatically" && <span className="mt-1 block text-[var(--color-text-subtle)]">{t("tiebreakQualificationBlocked")}</span>}
+              {!action.matchId && <span className="mt-2 block text-xs font-semibold text-[var(--color-brand-cyan)]">{t("reviewStandings")}</span>}
+            </span>
+          </a>;
+        })}</div>
+      </section>}
     </>}
     <form key={JSON.stringify(formQuery)} method="get" action={base} aria-label={t("filter")} className={surface+" grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-4"}>
       {view!=="competition"&&<label className="grid min-w-0 gap-2 text-sm">{t("filter")}<select name="filter" defaultValue={filter} className={control}>{filters.map(value=><option key={value} value={value}>{t(value)}</option>)}</select></label>}

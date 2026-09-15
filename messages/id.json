@@ -1,5 +1,8 @@
 {
   "organizerOperations": {
+    "tiebreakDecision": "Klasemen memerlukan keputusan pemecah seri",
+    "tiebreakQualificationBlocked": "Peringkat yang belum ditentukan tidak dapat lolos secara otomatis.",
+    "reviewStandings": "Tinjau klasemen",
     "diagnostics": {
       "UNKNOWN": "Tinjau batasan jadwal untuk pertandingan terdampak.",
       "INVALID_INPUT": "Periksa rentang waktu acara, ruangan, dan durasi.",

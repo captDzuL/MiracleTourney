@@ -7,7 +7,7 @@ export const link = "miracle-focus-ring inline-flex min-h-11 items-center justif
 export const terminal = (match: WorkspaceMatch) => ["Live", "Completed", "Bye"].includes(match.status) || ["live", "completed"].includes(match.scheduleStatus) || match.resultVersion > 0;
 export const activeCompetition = (state: CompetitionWorkspaceState) => ["Registration Closed", "Ongoing"].includes(state.event.status ?? "");
 export const teamName = (state: CompetitionWorkspaceState, id: string, t: OperationsText) => state.teams.find(team => team.id === id)?.name ?? t("tbd");
-export const actionLabel = (title: string, t: OperationsText) => t(title==="Team readiness deadline missed"||title==="Missing readiness"?"readinessDeadline":title==="Review delayed match schedule"?"reviewDelay":"reviewAction");
+export const actionLabel = (title: string, t: OperationsText) => t(title==="Standings require a tiebreak decision"?"tiebreakDecision":title==="Team readiness deadline missed"||title==="Missing readiness"?"readinessDeadline":title==="Review delayed match schedule"?"reviewDelay":"reviewAction");
 export const localDay = (start: string | null, timezone: string) => start ? new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(start)) : "";
 export function matchLabel(state: CompetitionWorkspaceState, match: WorkspaceMatch, t: OperationsText) {
   const node = state.graph?.matches.find(node => node.id === match.id);
