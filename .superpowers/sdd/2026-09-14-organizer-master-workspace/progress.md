@@ -32,3 +32,9 @@ Task 5: reviewer fix round 2 complete — dedicated fix commit bce4f53193cbb148e
 Task 5: reviewer fix round 3 in progress - real shared-core missing-event lookup contract coverage
 Task 5: reviewer fix round 3 GREEN - affected 2 files/155 passed; required focused 4 files/272 passed; full 172 files passed/2 skipped, 1,896 passed/6 skipped
 Task 5: reviewer fix round 3 complete - dedicated fix commit pending handoff; no production source change required
+Task 5: complete (7122cf1ea0d43469e4fc1570f61524393b24c64b, review approved)
+Task 6: in progress (approved base 7122cf1ea0d43469e4fc1570f61524393b24c64b)
+Task 6: RED/GREEN — routes, preview/upload adapter, components, conflicts, URL restoration and localized file controls verified; latest focused 9 files / 72 passed
+Task 6: verification in progress — full production-component ID/EN browser matrix, final source commit and committed-HEAD full suite
+Task 6: implementation complete — 3c25255128fd512cd9a18df80341c05b1f47f950; independent review pending
+Task 6: GREEN — focused 9 files / 72 tests; browser 60 cases with no overflow/undersized targets/errors; committed-HEAD full 174 files passed / 2 skipped, 1,934 tests passed / 6 skipped; lint/typecheck/diff-check pass
