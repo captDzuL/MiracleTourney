@@ -16,6 +16,7 @@ import { createPasswordResetToken, consumePasswordResetToken } from "@/lib/platf
 import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { commitRegistrationImportForUser, previewRegistrationImportForUser } from "@/lib/actions/registration-v3-actions";
+import * as eventRegistrationActions from "@/lib/actions/registration-v3-actions";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendEmail } from "@/lib/email/send";
 import { isDisposableEmail } from "@/lib/validation/email";
@@ -1773,11 +1774,22 @@ export async function resetPasswordAction(formData: FormData) {
   );
 }
 
-export {
-  approveEventPaymentAction,
-  commitEventRegistrationImportAction,
-  previewEventRegistrationImportAction,
-  publishEventQrisAction,
-  rejectEventPaymentAction,
-  saveEventQrisDraftAction,
-} from "@/lib/actions/registration-v3-actions";
+// Next's server-action compiler requires explicit async function exports.
+export async function approveEventPaymentAction(formData: FormData) {
+  return eventRegistrationActions.approveEventPaymentAction(formData);
+}
+export async function commitEventRegistrationImportAction(formData: FormData) {
+  return eventRegistrationActions.commitEventRegistrationImportAction(formData);
+}
+export async function previewEventRegistrationImportAction(formData: FormData) {
+  return eventRegistrationActions.previewEventRegistrationImportAction(formData);
+}
+export async function publishEventQrisAction(formData: FormData) {
+  return eventRegistrationActions.publishEventQrisAction(formData);
+}
+export async function rejectEventPaymentAction(formData: FormData) {
+  return eventRegistrationActions.rejectEventPaymentAction(formData);
+}
+export async function saveEventQrisDraftAction(formData: FormData) {
+  return eventRegistrationActions.saveEventQrisDraftAction(formData);
+}
