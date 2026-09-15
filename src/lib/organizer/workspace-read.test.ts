@@ -18,6 +18,11 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("readOrganizerWorkspaceSummary", () => {
+  it("exposes the completed participant destination when registration is enabled", async () => {
+    vi.stubEnv("FEATURE_FLAG_REGISTRATION_WORKSPACE_V3", "true");
+    const view = await readOrganizerWorkspaceSummary("cup", { id: "owner", role: "organizer" });
+    expect(view?.capabilities.participants).toBe(true);
+  });
   it.each(["organizer", "admin", "platform_admin"] as const)("returns the same compact event facts for an authorized %s", async role => {
     const view = await readOrganizerWorkspaceSummary("cup", { id: role === "organizer" ? "owner" : "staff", role });
     expect(view).toMatchObject({ event: { id: "cup", title: "Miracle Cup" }, role, lifecycle: "ongoing", publication: "published", updatedAt: "2026-09-14T10:00:00.000Z" });

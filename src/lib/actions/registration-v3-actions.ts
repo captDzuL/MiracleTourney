@@ -61,7 +61,8 @@ export type RegistrationActionOptions = {
 
 export type RegistrationActionResult =
   | RegistrationActionBlocked
-  | { status: "preview_ready"; batchId: string; redirectTo: string; summary?: unknown }
+  | { status: "mapping_required"; headers: string[]; mapping: RegistrationMapping; maxRosterSize: number; redirectTo: string }
+  | { status: "preview_ready"; batchId: string; redirectTo: string; summary?: unknown; headers?: string[]; mapping?: RegistrationMapping; maxRosterSize?: number; expiresAt?: string; items?: RegistrationPreviewRow[] }
   | { status: "imported"; importedCount: number; redirectTo: string; credentials?: unknown }
   | { status: "approved"; redirectTo: string; team?: unknown }
   | { status: "rejected"; redirectTo: string; request?: unknown }
@@ -70,6 +71,22 @@ export type RegistrationActionResult =
   | { status: "conflict"; code: "stale_mutation"; message: string; version?: number; redirectTo?: string };
 
 export type ActionResult = RegistrationActionResult;
+export type RegistrationPreviewRow = { id: string; sourceRow: number; teamName: string; status: string; selected: boolean; issueCount: number; issueCodes?: string[] };
+
+function previewIssueCode(issue: unknown): string {
+  if (typeof issue !== "string") return "validation";
+  if (/formula/i.test(issue)) return "formula";
+  if (/terkunci/i.test(issue)) return "locked";
+  if (/UID.*duplikat/i.test(issue)) return "duplicate_uid";
+  if (/duplikat/i.test(issue)) return "duplicate_team";
+  if (/roster.*(batas|minimal)|nickname pemain/i.test(issue)) return "roster_size";
+  if (/email.*non-captain/i.test(issue)) return "email_in_use";
+  if (/kontak atau email/i.test(issue)) return "captain_contact";
+  if (/nama tim/i.test(issue)) return "team_name";
+  if (/tag tim/i.test(issue)) return "team_tag";
+  if (/Captain (IGN|UID)|nama kapten/i.test(issue)) return "captain_identity";
+  return "validation";
+}
 
 const idSchema = z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9_-]+$/);
 const localeSchema = z.enum(["id", "en"]).default("id");
@@ -287,7 +304,23 @@ export async function previewRegistrationImportForUser(
 
     const mode = getGameModeConfig(event.gameModeId);
     const headers = worksheet.rows[0].map((cell) => cell.value);
-    const mapping = suggestRegistrationMapping(headers, { maxRosterSize: mode.maxRosterSize });
+    if (!options.legacyCompatibility && worksheet.rows.length > 501) return blocked(locale, "invalid_input", redirectTo);
+    let mapping = suggestRegistrationMapping(headers, { maxRosterSize: mode.maxRosterSize });
+    const rawMapping = value(formData, "mapping");
+    if (rawMapping && !options.legacyCompatibility) {
+      const column = z.number().int().min(0).max(headers.length - 1).optional();
+      const schema = z.object({
+        columns: z.object({ teamName: column, teamTag: column, captainName: column, captainContact: column, captainEmail: column, captainIgn: column, captainUid: column, captainIsPlayer: column }).strict(),
+        players: z.array(z.object({ nickname: column, displayName: column, position: column }).strict()).max(mode.maxRosterSize),
+      }).strict();
+      try {
+        const parsedMapping = schema.safeParse(JSON.parse(rawMapping));
+        if (!parsedMapping.success) return blocked(locale, "invalid_input", redirectTo);
+        const used = [...Object.values(parsedMapping.data.columns), ...parsedMapping.data.players.flatMap(player => Object.values(player))].filter(column => column !== undefined);
+        if (new Set(used).size !== used.length) return blocked(locale, "invalid_input", redirectTo);
+        mapping = parsedMapping.data;
+      } catch { return blocked(locale, "invalid_input", redirectTo); }
+    }
     const required = [
       ["teamName", "nama tim"],
       ["captainIgn", "captain IGN"],
@@ -297,6 +330,7 @@ export async function previewRegistrationImportForUser(
       .filter(([key]) => mapping.columns[key] == null)
       .map(([, label]) => label);
     if (missingRequired.length > 0) {
+      if (!options.legacyCompatibility) return { status: "mapping_required", headers, mapping, maxRosterSize: mode.maxRosterSize, redirectTo };
       return withLegacyFailure(blocked(locale, "invalid_input", redirectTo), options, {
         phase: "registration",
         message: `Mapping wajib belum ditemukan: ${missingRequired.join(", ")}.`,
@@ -349,7 +383,17 @@ export async function previewRegistrationImportForUser(
       items: preview.items,
       summary: preview.summary,
     });
-    return { status: "preview_ready", batchId: batch.id, redirectTo, summary: preview.summary };
+    if (options.legacyCompatibility) return { status: "preview_ready", batchId: batch.id, redirectTo, summary: preview.summary };
+    return {
+      status: "preview_ready", batchId: batch.id, redirectTo, summary: preview.summary,
+      headers, mapping, maxRosterSize: mode.maxRosterSize, expiresAt: batch.expiresAt?.toISOString(),
+      items: (batch.items ?? []).slice(0, 500).map(item => ({
+        id: item.id, sourceRow: item.sourceRow, status: item.status, selected: item.selected,
+        teamName: typeof item.normalizedData === "object" && item.normalizedData !== null && !Array.isArray(item.normalizedData) && typeof item.normalizedData.teamName === "string" ? item.normalizedData.teamName.slice(0, 200) : "",
+        issueCount: Array.isArray(item.validationErrors) ? item.validationErrors.length : 0,
+        issueCodes: Array.isArray(item.validationErrors) ? [...new Set(item.validationErrors.map(previewIssueCode))] : [],
+      })),
+    };
   } catch (error) {
     if (options.legacyCompatibility) throw error;
     return asErrorResult(locale, error);
@@ -548,9 +592,19 @@ export async function saveEventQrisDraftAction(formData: FormData): Promise<Acti
   const access = await gate(input.eventId);
   if ("status" in access) return { ...access, message: localizedMessage(input.locale, access.code) };
   const redirectTo = canonicalRegistrationPath(input.locale, input.eventId, input.returnTo, "qris");
+  let uploaded: Awaited<ReturnType<typeof import("@/lib/actions").uploadImageAsset>> | undefined;
+  let stored = false;
   try {
     const current = await getEventPaymentSettingsForManager(access, input.eventId);
     if (current.eventId !== input.eventId) return blocked(input.locale, "forbidden", redirectTo);
+    const file = formData.get("qrisImage");
+    if (file instanceof File && file.size > 0) {
+      if ((current.version ?? 0) !== input.expectedVersion) return { status: "conflict", code: "stale_mutation", version: current.version, message: localizedMessage(input.locale, "stale_mutation"), redirectTo };
+      const { uploadImageAsset } = await import("@/lib/actions");
+      const asset = await uploadImageAsset({ file, folder: "event-payment-qris", entityId: input.eventId, label: "QRIS", maxBytes: MAX_REGISTRATION_INTAKE_BYTES, validationMode: "throw" });
+      uploaded = asset;
+      input.qrisImageUrl = asset.url;
+    }
     const result = await saveEventPaymentSettingsDraft({
       eventId: input.eventId,
       actor: access,
@@ -559,11 +613,25 @@ export async function saveEventQrisDraftAction(formData: FormData): Promise<Acti
       instructions: input.instructions,
     });
     if (result.status === "conflict") return { status: "conflict", code: "stale_mutation", version: result.version, message: localizedMessage(input.locale, "stale_mutation"), redirectTo };
+    stored = true;
     revalidatePath(registrationPath(input.locale, input.eventId));
     return { status: "saved", version: result.settings.version ?? input.expectedVersion + 1, settings: result.settings, redirectTo };
   } catch (error) {
     const result = asErrorResult(input.locale, error);
     return "status" in result && result.status === "conflict" ? { ...result, redirectTo } : result;
+  } finally {
+    // The object is immutable and was created by this call; never delete the previous QRIS.
+    if (uploaded && !stored && uploaded.storageKey?.startsWith(`event-payment-qris/${input.eventId}-`)) {
+      try {
+        if (uploaded.storageProvider === "vercel_blob") { const { del } = await import("@vercel/blob"); await del(uploaded.url); }
+        else if (uploaded.storageProvider === "local") {
+          const path = await import("node:path"); const fs = await import("node:fs/promises");
+          const folder = path.resolve(process.cwd(), "public", "event-payment-qris");
+          const target = path.resolve(process.cwd(), "public", uploaded.storageKey);
+          if (path.dirname(target) === folder) await fs.unlink(target);
+        }
+      } catch { console.warn("Event QRIS upload cleanup failed", { eventId: input.eventId }); }
+    }
   }
 }
 

@@ -20,7 +20,11 @@ const mocks = vi.hoisted(() => ({
   getGameModeConfig: vi.fn(),
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
+  uploadImageAsset: vi.fn(),
+  deleteBlob: vi.fn(),
 }));
+vi.mock("@vercel/blob", () => ({ del: mocks.deleteBlob }));
+vi.mock("@/lib/actions", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
 vi.mock("@/lib/platform/repository", () => ({
@@ -108,6 +112,63 @@ describe("registration V3 actions", () => {
     await expect(previewEventRegistrationImportAction(form({ eventId: "", locale: "en" })))
       .resolves.toMatchObject({ status: "blocked", code: "invalid_input" });
     expect(mocks.requireAnyRole).not.toHaveBeenCalled();
+  });
+
+  it.each(["{", JSON.stringify({ columns: { secret: 0 }, players: [] }), JSON.stringify({ columns: { teamName: 9 }, players: [] }), JSON.stringify({ columns: { teamName: 0, captainIgn: 0 }, players: [] })])("rejects malformed, unknown, out-of-range or duplicate mapping: %s", async mapping => {
+    await expect(previewEventRegistrationImportAction(form({ locale: "en", eventId: "event-1", mapping, registrationFile: new File(["x"], "a.csv") }))).resolves.toMatchObject({ status: "blocked", code: "invalid_input" });
+    expect(mocks.saveRegistrationImportPreviewBatch).not.toHaveBeenCalled();
+  });
+  it("returns mapping choices for unrecognized headers without creating a commit batch", async () => {
+    mocks.suggestRegistrationMapping.mockReturnValue({ columns: {}, players: [] });
+    await expect(previewEventRegistrationImportAction(form({ locale: "en", eventId: "event-1", registrationFile: new File(["x"], "a.csv") }))).resolves.toMatchObject({ status: "mapping_required", headers: ["Team Name"], mapping: { columns: {} } });
+    expect(mocks.saveRegistrationImportPreviewBatch).not.toHaveBeenCalled();
+  });
+  it("enforces 500 UI data rows without changing legacy parser policy", async () => {
+    mocks.parseRegistrationSource.mockResolvedValue({ sourceKind: "csv", worksheets: [{ name: "a", rows: Array.from({ length: 502 }, () => [{ value: "x", formula: false }]) }] });
+    await expect(previewEventRegistrationImportAction(form({ locale: "en", eventId: "event-1", registrationFile: new File(["x"], "a.csv") }))).resolves.toMatchObject({ status: "blocked", code: "invalid_input" });
+    expect(mocks.saveRegistrationImportPreviewBatch).not.toHaveBeenCalled();
+  });
+  it("returns only safe persisted preview metadata and honors explicit mapping", async () => {
+    mocks.parseRegistrationSource.mockResolvedValue({ sourceKind: "csv", worksheets: [{ name: "a", rows: [["Club", "IGN", "UID"].map(value => ({ value, formula: false })), ["Alpha", "Cap", "123"].map(value => ({ value, formula: false }))] }] });
+    const mapping = { columns: { teamName: 0, captainIgn: 1, captainUid: 2 }, players: [] };
+    mocks.saveRegistrationImportPreviewBatch.mockResolvedValue({ id: "batch-1", expiresAt: new Date("2026-09-20"), items: [{ id: "row-1", sourceRow: 2, status: "new", selected: true, normalizedData: { teamName: "Alpha", captainEmail: "private@example.test", password: "SECRET" }, validationErrors: [] }] });
+    const result = await previewEventRegistrationImportAction(form({ locale: "en", eventId: "event-1", mapping: JSON.stringify(mapping), registrationFile: new File(["x"], "a.csv") }));
+    expect(result).toMatchObject({ status: "preview_ready", headers: ["Club", "IGN", "UID"], mapping, items: [{ id: "row-1", teamName: "Alpha", sourceRow: 2, status: "new" }] });
+    expect(JSON.stringify(result)).not.toMatch(/private@example|SECRET/);
+    expect(mocks.buildRegistrationPreview).toHaveBeenCalledWith(expect.objectContaining({ mapping }));
+  });
+  it("returns localized issue codes without echoing private row content", async () => {
+    mocks.saveRegistrationImportPreviewBatch.mockResolvedValue({ id: "batch-1", items: [{ id: "bad", sourceRow: 2, status: "error", selected: false, normalizedData: { teamName: "Alpha" }, validationErrors: ["UID PRIVATE-UID duplikat dalam roster.", "Nama tim wajib diisi.", "Kolom yang dipetakan tidak boleh berisi formula spreadsheet."] }] });
+    const result = await previewEventRegistrationImportAction(form({ locale: "en", eventId: "event-1", registrationFile: new File(["x"], "a.csv") }));
+    expect(result).toMatchObject({ items: [{ issueCodes: ["duplicate_uid", "team_name", "formula"] }] });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE-UID");
+  });
+  it("rejects stale QRIS uploads before storing any file", async () => {
+    await expect(saveEventQrisDraftAction(form({ locale: "en", eventId: "event-1", expectedVersion: "1", qrisImage: new File(["png"], "q.png", { type: "image/png" }) }))).resolves.toMatchObject({ status: "conflict" });
+    expect(mocks.uploadImageAsset).not.toHaveBeenCalled(); expect(mocks.saveEventPaymentSettingsDraft).not.toHaveBeenCalled();
+  });
+  it("cleans up only its newly created QRIS object if CAS loses a concurrent save", async () => {
+    mocks.uploadImageAsset.mockResolvedValue({ url: "https://store.public.blob.vercel-storage.com/event-payment-qris/event-1-new.png", storageProvider: "vercel_blob", storageKey: "event-payment-qris/event-1-new.png" });
+    mocks.saveEventPaymentSettingsDraft.mockResolvedValue({ status: "conflict", version: 4 });
+    await expect(saveEventQrisDraftAction(form({ locale: "en", eventId: "event-1", expectedVersion: "2", qrisImage: new File(["png"], "q.png", { type: "image/png" }) }))).resolves.toMatchObject({ status: "conflict" });
+    expect(mocks.deleteBlob).toHaveBeenCalledWith("https://store.public.blob.vercel-storage.com/event-payment-qris/event-1-new.png");
+  });
+  it("does not upload QRIS for a non-owner", async () => {
+    mocks.assertUserCanManageEvent.mockRejectedValue(Error("Not authorized"));
+    await expect(saveEventQrisDraftAction(form({ locale: "en", eventId: "event-1", expectedVersion: "2", qrisImage: new File(["png"], "q.png", { type: "image/png" }) }))).resolves.toMatchObject({ status: "blocked", code: "forbidden" });
+    expect(mocks.uploadImageAsset).not.toHaveBeenCalled();
+  });
+  it("stores an authorized QRIS upload under the event identity", async () => {
+    mocks.uploadImageAsset.mockResolvedValue({ url: "/event-payment-qris/event-1-unique.png" });
+    const result = await saveEventQrisDraftAction(form({ locale: "en", eventId: "event-1", expectedVersion: "2", qrisImage: new File(["png"], "q.png", { type: "image/png" }), qrisImageUrl: "https://evil.test/a.png" }));
+    expect(result.status).toBe("saved");
+    expect(mocks.uploadImageAsset).toHaveBeenCalledWith(expect.objectContaining({ folder: "event-payment-qris", entityId: "event-1", maxBytes: 5242880, validationMode: "throw" }));
+    expect(mocks.saveEventPaymentSettingsDraft).toHaveBeenCalledWith(expect.objectContaining({ qrisImageUrl: "/event-payment-qris/event-1-unique.png" }));
+  });
+  it("does not save QRIS content rejected by the validated upload helper", async () => {
+    mocks.uploadImageAsset.mockRejectedValue(Error("signature mismatch"));
+    await expect(saveEventQrisDraftAction(form({ locale: "en", eventId: "event-1", expectedVersion: "2", qrisImage: new File(["fake"], "q.png", { type: "image/png" }) }))).resolves.toMatchObject({ status: "blocked" });
+    expect(mocks.saveEventPaymentSettingsDraft).not.toHaveBeenCalled();
   });
 
   it("previews an import for one event and returns a localized canonical registration URL", async () => {

@@ -15,6 +15,16 @@ async function imageFile(width: number, height: number) {
 }
 
 describe("uploadImageAsset immutable storage", () => {
+  it.each([
+    ["text/plain", "not an image", "unsupported_type"],
+    ["image/png", "not an image", "signature_mismatch"],
+    ["image/png", "\\x89PNG\\r\\n\\x1a\\n", "decode_failed"],
+  ])("rejects QRIS %s invalid content before storage", async (type, content, code) => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-token";
+    const bytes = content.startsWith("\\x89") ? Buffer.from([137,80,78,71,13,10,26,10]) : Buffer.from(content);
+    await expect(uploadImageAsset({ file: new File([bytes], "qris.png", { type }), folder: "event-payment-qris", entityId: "event-1", label: "QRIS", maxBytes: 5 * 1024 * 1024, validationMode: "throw" })).rejects.toMatchObject({ code });
+    expect(blobPut).not.toHaveBeenCalled();
+  });
   afterEach(() => {
     delete process.env.BLOB_READ_WRITE_TOKEN;
     vi.restoreAllMocks();
