@@ -81,6 +81,9 @@ async function result(page: Page, matchId: string, home = "2", away = "0") {
     async () => (await matchdayDb.match.findUnique({ where: { id: matchId }, select: { resultVersion: true } }))?.resultVersion,
     { timeout: POLL_TIMEOUT_MS },
   ).toBe(1);
+  if(process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3==="true"){
+    await page.getByRole("button",{name:"Reopen for correction",exact:true}).click();
+  }
   await expect(form.getByRole("button", { name: "Preview correction", exact: true })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
 }
 
@@ -253,7 +256,7 @@ test("allows a reviewed correction, then rejects correction once its downstream 
   await loginAsOrganizer(page, "en");
   await openMatch(page, first.id);
   await result(page, first.id);
-  await page.getByRole("button", { name: "Reload official result", exact: true }).click();
+  if(process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3!=="true")await page.getByRole("button", { name: "Reload official result", exact: true }).click();
   const form = page.getByRole("form", { name: "Official result", exact: true });
   await form.locator('input[name="home-1"]').fill("0");
   await form.locator('input[name="away-1"]').fill("2");
@@ -269,6 +272,7 @@ test("allows a reviewed correction, then rejects correction once its downstream 
   await fixture.run({ kind: "match_start", matchId: graph.matches[2].id, reason: "Both finalists confirmed" });
 
   await page.reload();
+  if(process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3==="true")await page.getByRole("button",{name:"Reopen for correction",exact:true}).click();
   await form.locator('input[name="home-1"]').fill("2");
   await form.locator('input[name="away-1"]').fill("0");
   await form.getByLabel("Correction reason").fill("Another review");
@@ -277,6 +281,34 @@ test("allows a reviewed correction, then rejects correction once its downstream 
   await expect(form.getByRole("alert")).toContainText("Blocked by live or completed matches");
   await expect(form.getByRole("button", { name: "Confirm correction" })).toBeDisabled();
   expect((await matchdayDb.match.findUniqueOrThrow({ where: { id: first.id } })).resultVersion).toBe(2);
+});
+
+test("canonical match statistics saves organizer values and reviews a pending captain submission",async({page})=>{
+  test.skip(process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3!=="true","Master statistics composition is disabled");
+  fixture=await prepareMatchdayFixture();
+  const matchId=(await fixture.graph()).matches[0].id;
+  await fixture.run({kind:"match_start",matchId,reason:"Captains ready"});
+  await fixture.run({kind:"result_submit",matchId,games:[{gameNumber:1,homeScore:2,awayScore:0}]});
+  const match=await matchdayDb.match.findUniqueOrThrow({where:{id:matchId}});
+  const player=await matchdayDb.player.create({data:{teamId:match.homeTeamId,eventId:fixture.id,nickname:"Task8 Player",displayName:"Task8 Player",position:"Forward"}});
+  await loginAsOrganizer(page,"en");
+  const url=`/en/organizer/events/${fixture.id}/matches/${encodeURIComponent(matchId)}?view=statistics`;
+  await page.goto(url);
+  const form=page.locator(`[data-player-form="${match.homeTeamId}"]`);
+  await form.locator(`input[name="score_${player.id}_1"]`).fill("7.6");
+  await form.locator(`input[name="stat_${player.id}_goal"]`).fill("3");
+  await form.getByRole("button",{name:"Save player statistics",exact:true}).click();
+  await expect.poll(async()=> (await matchdayDb.playerStat.findUnique({where:{matchId_playerId:{matchId,playerId:player.id}}}))?.stats,{timeout:POLL_TIMEOUT_MS}).toEqual({scores:[7.6],goal:3,assist:0,passing:0,defense:0});
+  expect(await matchdayDb.competitionAuditLog.count({where:{eventId:fixture.id,matchId,action:"player_stats_save"}})).toBe(1);
+  const pending=await matchdayDb.statSubmission.create({data:{eventId:fixture.id,matchId,teamId:match.homeTeamId,submittedBy:"task8-captain",stats:{[player.id]:{scores:[8.1],goal:4,assist:2,passing:3,defense:1}},status:"pending"}});
+  await page.reload();
+  expect((await matchdayDb.playerStat.findUniqueOrThrow({where:{matchId_playerId:{matchId,playerId:player.id}}})).stats).toMatchObject({goal:3});
+  const review=page.locator(`[data-submission="${pending.id}"]`);
+  await review.getByRole("button",{name:"Approve submission",exact:true}).click();
+  await expect.poll(async()=> (await matchdayDb.statSubmission.findUniqueOrThrow({where:{id:pending.id}})).status,{timeout:POLL_TIMEOUT_MS}).toBe("approved");
+  expect((await matchdayDb.playerStat.findUniqueOrThrow({where:{matchId_playerId:{matchId,playerId:player.id}}}))).toMatchObject({source:"captain",stats:{scores:[8.1],goal:4}});
+  await page.getByRole("link",{name:"History",exact:true}).click();
+  await expect(page.getByText("Captain statistics approved",{exact:true})).toBeVisible();
 });
 
 test("public ongoing hides draft/expired announcements and draft schedule on mobile", async ({ page }) => {

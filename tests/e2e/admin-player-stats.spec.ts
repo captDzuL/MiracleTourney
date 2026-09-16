@@ -17,6 +17,15 @@ function goalInput(form: import("@playwright/test").Locator, playerId: string) {
   return form.locator(`input[name="stat_${playerId}_goal"]`);
 }
 
+async function fillGoal(form: import("@playwright/test").Locator, playerId: string, value: string) {
+  // HydrationGate renders visible but inert inputs until the form is ready.
+  // Browser fill can resolve without entering text while that gate is inert.
+  await expect(form.getByRole("button", { name: /simpan statistik|save statistics/i })).toBeEnabled();
+  const input = goalInput(form, playerId);
+  await input.fill(value);
+  await expect(input).toHaveValue(value);
+}
+
 test.describe("admin player stats entry", () => {
   test.beforeAll(async () => {
     fixture = await prepareCompletedMatchWithPlayers(`admin-stats-e2e-${RUN_ID}`);
@@ -88,7 +97,7 @@ test.describe("admin player stats entry", () => {
     });
     await expect(homeForm).toBeVisible();
 
-    await goalInput(homeForm, fixture.homePlayers[0].id).fill("3");
+    await fillGoal(homeForm, fixture.homePlayers[0].id, "3");
     await Promise.all([
       page.waitForURL(/success=player-stats-saved/, { waitUntil: "load", timeout: 30_000 }),
       homeForm.getByRole("button", { name: /simpan statistik/i }).click(),
@@ -110,7 +119,7 @@ test.describe("admin player stats entry", () => {
     const homeForm = page.locator("form").filter({
       has: page.locator(`input[name="teamId"][value="${fixture.homeTeamId}"]`),
     });
-    await goalInput(homeForm, fixture.homePlayers[0].id).fill("7");
+    await fillGoal(homeForm, fixture.homePlayers[0].id, "7");
     await homeForm.getByRole("button", { name: /simpan statistik/i }).click();
     await expect(page).toHaveURL(/success=player-stats-saved/, { timeout: 15_000 });
 
@@ -149,7 +158,7 @@ test.describe("admin player stats entry", () => {
       }, { timeout: 15_000 }).toBe(goal);
     };
 
-    await goalInput(getHomeForm(), fixture.homePlayers[0].id).fill("4");
+    await fillGoal(getHomeForm(), fixture.homePlayers[0].id, "4");
     await Promise.all([
       page.waitForURL(/success=player-stats-saved/, { waitUntil: "load", timeout: 15_000 }),
       getHomeForm().getByRole("button", { name: /simpan statistik/i }).click(),
@@ -160,7 +169,7 @@ test.describe("admin player stats entry", () => {
     await expect(page.getByText("Statistik Pemain", { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(goalInput(getHomeForm(), fixture.homePlayers[0].id)).toHaveValue("4");
 
-    await goalInput(getHomeForm(), fixture.homePlayers[0].id).fill("3");
+    await fillGoal(getHomeForm(), fixture.homePlayers[0].id, "3");
     await Promise.all([
       page.waitForURL(/success=player-stats-saved/, { waitUntil: "load", timeout: 15_000 }),
       getHomeForm().getByRole("button", { name: /simpan statistik/i }).click(),
@@ -191,7 +200,7 @@ test.describe("admin player stats entry", () => {
     await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
     const saveHomeStats = teamForm(fixture.homeTeamId).getByRole("button", { name: /simpan statistik/i });
     await expect(saveHomeStats).toBeEnabled();
-    await goalInput(teamForm(fixture.homeTeamId), fixture.homePlayers[0].id).fill("5");
+    await fillGoal(teamForm(fixture.homeTeamId), fixture.homePlayers[0].id, "5");
     await Promise.all([
       page.waitForURL(/success=player-stats-saved/, { waitUntil: "load" }),
       saveHomeStats.click(),
