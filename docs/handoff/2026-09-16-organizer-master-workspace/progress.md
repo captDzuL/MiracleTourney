@@ -1,8 +1,8 @@
 # Progress Handoff — Organizer Master Workspace
 
-Snapshot date: 2026-09-16 Asia/Jakarta  
-Branch: feature/ui/release/1.0  
-HEAD: a3624c60186fefa2f6e5474cf423e1af7a7639d8  
+Snapshot date: 2026-09-16 Asia/Jakarta
+Branch: feature/ui/release/1.0
+HEAD: a3624c60186fefa2f6e5474cf423e1af7a7639d8
 Release decision at this point: BLOCKED. No READY claim is permitted.
 
 ## Task ledger
@@ -74,4 +74,3 @@ Task 8 cannot be marked complete until:
 7. Dispatch fresh gpt-5.6-luna/max implementers and reviewers for Tasks 9 and 10. Use gpt-6-astra/high for complex Certificate Studio decisions.
 8. Dispatch Task 11 E2E/visual work after routes are complete; resolve the Playwright project mismatch systematically without increasing timeouts to mask failures.
 9. Execute Task 12 release gates and preview/CI checks. Update the protected release report only after all required evidence exists; state BLOCKED if any gate remains incomplete.
-

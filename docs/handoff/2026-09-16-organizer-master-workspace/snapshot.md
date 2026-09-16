@@ -1,6 +1,6 @@
 # Snapshot Handoff — Organizer Master Workspace
 
-Tanggal snapshot: 2026-09-16, Asia/Jakarta  
+Tanggal snapshot: 2026-09-16, Asia/Jakarta
 Status kandidat: BLOCKED untuk release/deploy; implementasi Organizer Master Workspace sudah sampai Task 8, tetapi verifikasi dan review belum selesai.
 
 ## Repo dan worktree
@@ -256,4 +256,3 @@ Run release gates only after Tasks 9–11:
 ## Handoff rule
 
 Do not update 2026-09-14-release-1.0-verification.md, push, deploy, or claim READY until Tasks 8–12, independent reviews, local gates, CI, and preview verification are complete. If any gate remains red or incomplete, the release report must state BLOCKED and name the evidence.
-

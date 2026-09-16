@@ -234,4 +234,3 @@ The release candidate is product-complete only when all of the following are dem
 10. Feature-flag on/off and role/ownership rollback checks pass.
 11. Local unit, static, build, audit, preflight, smoke, pressure, and CI-style E2E gates pass without flaky retries.
 12. Preview verification is green. Only then may the release report state READY; otherwise it must state BLOCKED with factual evidence.
-

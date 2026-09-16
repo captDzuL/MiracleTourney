@@ -286,5 +286,3 @@ Do not stage the protected release report during Tasks 8–11. The handoff docum
 
     git add docs/handoff/2026-09-16-organizer-master-workspace/plan.md docs/handoff/2026-09-16-organizer-master-workspace/snapshot.md docs/handoff/2026-09-16-organizer-master-workspace/prd.md docs/handoff/2026-09-16-organizer-master-workspace/progress.md
     git commit -m "docs(handoff): capture organizer workspace continuation state"
-
-
