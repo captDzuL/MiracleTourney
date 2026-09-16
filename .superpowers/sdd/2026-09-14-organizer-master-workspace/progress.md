@@ -52,3 +52,10 @@ Task 7: implementation verified — focused 90; full 1,971 passed / 6 skipped; t
 Task 7: reviewer fix round 1 in progress — preserve event-level tiebreak reason and blocked qualification detail, and route to canonical standings context
 Task 7: reviewer fix round 1 RED/GREEN — 4 failing localized group/league cases before fix; required focused 4 files / 94 passed afterward
 Task 7: reviewer fix round 1 browser — 8 ID/EN group/league cases at 360/1440 passed for reason/detail, canonical standings destination, keyboard activation and geometry; lint/typecheck/diff pass
+Task 7: complete (465192fa8527b6463bccaee1ff0f27443292a9b7, review approved)
+Task 8: in progress (approved base 465192fa8527b6463bccaee1ff0f27443292a9b7)
+Task 8: implementation commit 2a7a70ef53d30580ed3a5227a06f9ded8f2ecf05; authorized guarded stat core, combined URL views, preserved authoritative result/delay/readiness operations
+Task 8: final self-check RED/GREEN — event-timezone regression 2 failed then required focused 5 files / 322 passed; browser 110 ID/EN cases passed after fix; typecheck/lint/Prisma/diff checks pass
+Task 8: legacy E2E readiness root cause — master-OFF pre-fix repetitions 8 passed / 1 failed; trace and inert-input reproduction prove ignored early fill; approved test-only readiness helper retains DB assertions, corrected master-ON repetitions 9/9 passed
+Task 8: final master-ON full specs 23/23 passed; chained master-OFF session 59639 still running at low-limit user handoff
+Task 8: latest full unit before final timezone regressions 179 files passed / 2 skipped, 2020 tests passed / 6 skipped; final committed-HEAD full rerun and independent review remain pending
