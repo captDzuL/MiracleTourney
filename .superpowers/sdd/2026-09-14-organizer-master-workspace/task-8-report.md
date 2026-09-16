@@ -38,3 +38,13 @@ Next action: collect session 59639 completion (master-OFF expected 22 applicable
 ## Limits
 
 Unit race/rollback tests use stateful injected Prisma transaction boundaries, not proof of every real PostgreSQL interleaving. Guarded E2E exercises actual writes/readback/audit and engine correction against the non-production database; no stress/concurrency claim. Browser matrix mocks mutation transport; E2E provides the real transport/storage evidence. This task does not certify full release readiness.
+
+## Continuation verification (2026-09-17)
+
+- Required focused Task 8 suite: 5 files / 322 passed.
+- Cold parallel full-unit runs exposed existing 5-second filesystem/import contention in `security-smoke.test.ts`; both timeout cases pass focused (11/11). Serialized full suite is authoritative for this checkout: 179 files passed / 2 skipped, 2,022 passed / 6 skipped.
+- TypeScript, Task 8 scoped ESLint, Prisma schema validation with non-production placeholder URLs, and `git diff --check` pass. Repo-wide ESLint remains blocked by eight errors in unrelated legacy tests and is recorded as baseline debt rather than changed here.
+- Local no-DB Edge smoke: 24 passed / 9 intentionally skipped. The first public `/id/events` navigation originally exceeded Playwright's 5-second assertion while Next cold-compiled that route in 4.5 seconds; the smoke assertion now allows 15 seconds within the existing 30-second test budget. The complete rerun passes.
+- Local no-DB pressure smoke passes: `/id/login` p95 5,290 ms (8,000 ms budget), `/api/me` p95 669 ms (2,000 ms budget), `/id/admin` p95 83 ms (8,000 ms budget), zero failures.
+- Production build passes with 46/46 static pages. Existing `jose` Edge Runtime warnings remain; the placeholder local PostgreSQL URL predictably cannot connect during optional page-data fallback and does not fail the build.
+- Real PostgreSQL concurrency/storage claims remain remote-E2E-only. Fresh Sol/high independent review approved the complete Task 8 diff with no findings; Task 9 is unblocked.
