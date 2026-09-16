@@ -13,6 +13,6 @@ Jangan mengubah, men-stage, atau commit `2026-09-14-release-1.0-verification.md`
 Gunakan isolated worktree `E:\dev\MiracleTourney-gitnative\.worktrees\miracle-ui-release-1.0-full`, lalu baca dokumen dalam urutan berikut:
 
 1. [Snapshot workspace](docs/handoff/2026-09-16-organizer-master-workspace/snapshot.md)
-2. [PRD](prd.md)
-3. [Progress](progress.md)
-4. [Plan](plan.md)
+2. [PRD](docs/handoff/2026-09-16-organizer-master-workspace/prd.md)
+3. [Progress](docs/handoff/2026-09-16-organizer-master-workspace/progress.md)
+4. [Plan](docs/handoff/2026-09-16-organizer-master-workspace/plan.md)
