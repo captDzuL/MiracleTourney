@@ -2,7 +2,7 @@
 
 Snapshot date: 2026-09-16 Asia/Jakarta
 Branch: feature/ui/release/1.0
-HEAD: a3624c60186fefa2f6e5474cf423e1af7a7639d8
+Product implementation anchor: a3624c60186fefa2f6e5474cf423e1af7a7639d8
 Release decision at this point: BLOCKED. No READY claim is permitted.
 
 ## Task ledger

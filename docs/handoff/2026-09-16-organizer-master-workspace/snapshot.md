@@ -8,16 +8,17 @@ Status kandidat: BLOCKED untuk release/deploy; implementasi Organizer Master Wor
 - Repository root: E:\dev\MiracleTourney-gitnative
 - Worktree yang wajib dipakai: E:\dev\MiracleTourney-gitnative\.worktrees\miracle-ui-release-1.0-full
 - Branch: feature/ui/release/1.0
-- HEAD saat snapshot: a3624c60186fefa2f6e5474cf423e1af7a7639d8
+- Product implementation anchor sebelum commit dokumentasi handoff: a3624c60186fefa2f6e5474cf423e1af7a7639d8
+- Live branch HEAD harus selalu dibaca ulang dengan git rev-parse HEAD; hash di atas adalah anchor product sebelum dokumentasi handoff.
 - Base merge-base terhadap origin/feature/ui/release/1.0: bd9d389211a70fe54a464b3bec87acf9f628b7
-- Status terhadap origin/feature/ui/release/1.0: ahead 40 commits
+- Branch product berada ahead 40 commits terhadap origin/feature/ui/release/1.0 sebelum commit dokumentasi handoff; hitungan live harus dihitung ulang.
 - Git status: hanya satu file untracked yang dilindungi, 2026-09-14-release-1.0-verification.md
 - File report tersebut berasal dari pekerjaan sebelumnya, tidak boleh dibaca untuk diubah, di-stage, dihapus, atau di-commit sebelum seluruh release gate selesai.
 - Tidak ada production deployment, production migration, atau production feature-flag activation yang dilakukan.
 
 ## Commit map branch
 
-Commit berikut adalah seluruh delta branch dari base sampai HEAD saat snapshot.
+Commit berikut adalah seluruh delta product dari base sampai product implementation anchor, sebelum commit dokumentasi handoff.
 
 ### Public V3
 

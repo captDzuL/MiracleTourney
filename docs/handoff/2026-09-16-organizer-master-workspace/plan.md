@@ -24,7 +24,7 @@
 
 ## Recovery context
 
-Worktree HEAD saat rencana ini dibuat adalah a3624c60186fefa2f6e5474cf423e1af7a7639d8. Task 1–7 sudah selesai dan review-approved. Task 8 sudah implemented/committed tetapi belum review-complete. Read docs/handoff/2026-09-16-organizer-master-workspace/snapshot.md dan progress.md sebelum menjalankan task.
+Product implementation anchor saat rencana ini dibuat adalah a3624c60186fefa2f6e5474cf423e1af7a7639d8; live branch HEAD harus dibaca dengan git rev-parse HEAD karena dokumentasi handoff memiliki commit tersendiri. Task 1–7 sudah selesai dan review-approved. Task 8 sudah implemented/committed tetapi belum review-complete. Read docs/handoff/2026-09-16-organizer-master-workspace/snapshot.md dan progress.md sebelum menjalankan task.
 
 ## File and interface map
 
