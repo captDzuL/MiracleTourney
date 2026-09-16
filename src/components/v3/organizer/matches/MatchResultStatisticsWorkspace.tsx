@@ -73,7 +73,7 @@ export function MatchResultStatisticsWorkspace({initialState,statistics:data,mat
      {data.teams.map(team=><PlayerStatisticsForm key={`${team.id}:${data.eventVersion}`} team={team} data={data} disabled={disabled} onSave={form=>submit(form,"save")}/>)}
      <h2 className="text-xl font-bold">{t("captain")}</h2><p className="text-sm text-[var(--color-text-subtle)]">{t("pendingGuide")}</p>
      {!data.submissions.length&&<p className={surface}>{t("noSubmissions")}</p>}
-     {data.submissions.map(submission=><StatSubmissionReview key={`${submission.id}:${submission.submittedAt}:${data.eventVersion}`} submission={submission} data={data} locale={locale} disabled={disabled} onReview={submit}/>)}
+     {data.submissions.map(submission=><StatSubmissionReview key={`${submission.id}:${submission.submittedAt}:${data.eventVersion}`} submission={submission} data={data} locale={locale} timeZone={state.event.timezone} disabled={disabled} onReview={submit}/>)}
     </>}
     {view==="history"&&<>
      <section className={surface}><h2 className="text-xl font-bold">{t("resultHistory")}</h2><p className="mt-2 text-xs text-[var(--color-text-subtle)]">{t("latest")}</p><ol className="mt-4 grid max-h-[32rem] gap-4 overflow-auto">{data.revisions.map(revision=><li data-result-revision key={revision.id} className="break-words border-t border-[var(--color-border)] pt-3 text-sm"><strong>{t("revision",{version:revision.version})} · {revision.homeScore} : {revision.awayScore}</strong><p>{revision.reason==="Official result submission"?t("actionResult"):revision.reason}</p><p>{t("recordedBy",{actor:revision.actorUserId})} · {date(revision.createdAt)}</p></li>)}</ol>{!data.revisions.length&&<p>{t("noHistory")}</p>}</section>

@@ -72,6 +72,12 @@ describe("combined match result and statistics workspace",()=>{
   const sent=boundary.approve.mock.calls[0][0] as FormData;
   expect(sent.get("submissionId")).toBe("sub");expect(sent.get("submittedAt")).toBe("2026-09-16T00:00:00.000Z");
  });
+ it.each(["id","en"] as const)("formats submission and review dates in event timezone (%s)",locale=>{
+  state.event.timezone="Pacific/Honolulu";data.submissions[0].status="approved";data.submissions[0].reviewedAt="2026-09-16T01:00:00.000Z";render("statistics",locale);
+  const format=(value:string)=>new Intl.DateTimeFormat(locale,{dateStyle:"medium",timeStyle:"short",timeZone:state.event.timezone}).format(new Date(value));
+  const card=host.querySelector("[data-submission]")!.textContent;
+  expect(card).toContain(format(data.submissions[0].submittedAt));expect(card).toContain(format(data.submissions[0].reviewedAt));
+ });
  it("preserves the original operation for uncertain replay and locks new writes",async()=>{
   boundary.save.mockRejectedValueOnce(new Error("lost response"));render("statistics");
   const form=host.querySelector<HTMLFormElement>("[data-player-form]")!;
