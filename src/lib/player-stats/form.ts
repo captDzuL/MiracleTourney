@@ -42,6 +42,7 @@ export function validatePlayerStatPayload(
   statsMap: PlayerStatPayloadMap,
   options: { allowedStatKeys: readonly string[]; scoreSlotCount: number | null },
 ): void {
+  if (!storedRecord(statsMap) || Object.keys(statsMap).length === 0) throw new Error("Invalid player statistic payload.");
   const allowed = new Set(options.allowedStatKeys);
   for (const [playerId, rawPayload] of Object.entries(statsMap)) {
     if (!safeToken(playerId)) throw new Error("Invalid player statistic field.");

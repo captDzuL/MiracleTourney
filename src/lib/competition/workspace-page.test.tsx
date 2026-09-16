@@ -7,6 +7,9 @@ vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => boundary.enabled
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NOT_FOUND"); } }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale: (path: string) => { throw new Error(`REDIRECT:${path}`); } }));
 vi.mock("@/components/v3/competition/CompetitionWorkspace", () => ({ CompetitionWorkspace: () => null }));
+vi.mock("@/lib/auth/session", () => ({ requireAnyRole: async () => ({ id: "owner", role: "organizer" }) }));
+vi.mock("@/lib/platform/repository", () => ({ readEventMatchStatistics: async () => ({}) }));
+vi.mock("@/components/v3/organizer/matches/MatchResultStatisticsWorkspace", () => ({ MatchResultStatisticsWorkspace: () => null }));
 import CompetitionPage from "@/app/[locale]/organizer/events/[eventId]/competition/page";
 import SchedulePage from "@/app/[locale]/organizer/events/[eventId]/schedule/page";
 import MatchControlPage from "@/app/[locale]/organizer/events/[eventId]/match-control/page";
@@ -20,7 +23,7 @@ describe("organizer server routes", () => {
   beforeEach(() => { boundary.enabled = true; boundary.read.mockReset(); boundary.read.mockResolvedValue({ event: { id: "event", version: 7 }, matches: [{ id: "match" }], unavailableSections: [] }); });
   it.each([[CompetitionPage, "competition"], [SchedulePage, "schedule"], [MatchControlPage, "match-control"], [MatchPage, "match"]] as const)("loads async localized params for view %s", async (page, view) => {
     const element = await page({ params: Promise.resolve({ locale: "id", eventId: "event", matchId: "match" }) });
-    expect(element.props).toMatchObject({ locale: "id", view, initialState: { event: { id: "event", version: 7 } } });
+    expect(element.props).toMatchObject({ locale: "id", view: view === "match" ? "result" : view, initialState: { event: { id: "event", version: 7 } } });
   });
   it("rejects unsupported locale, rollout off and foreign match ids", async () => {
     await expect(CompetitionPage({ params: Promise.resolve({ locale: "fr", eventId: "event" }) })).rejects.toThrow("NOT_FOUND");

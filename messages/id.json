@@ -1,4 +1,183 @@
 {
+  "organizerMatch": {
+    "readiness": "Kesiapan",
+    "deadline": "Periksa batas kesiapan",
+    "start": "Mulai pertandingan",
+    "override": "Alasan pengecualian (bila perlu)",
+    "checked_in": "hadir",
+    "ready": "siap",
+    "not_ready": "belum siap",
+    "pendingReadiness": "menunggu",
+    "operations": "Operasi pertandingan",
+  "title": "Hasil & statistik pertandingan",
+  "description": "Catat skor gim resmi dan tinjau performa pemain dalam satu ruang kerja.",
+  "result": "Hasil",
+  "statistics": "Statistik pemain",
+  "history": "Riwayat",
+  "back": "Kembali ke Kontrol Pertandingan",
+  "refresh": "Muat ulang",
+  "version": "Versi hasil {version}",
+  "eventVersion": "Versi ruang kerja {version}",
+  "official": "Hasil resmi",
+  "noResult": "Belum ada hasil resmi",
+  "reopen": "Buka kembali untuk koreksi",
+  "cancel": "Batalkan koreksi",
+  "correctionGuide": "Hasil yang diterbitkan tetap berlaku sampai Anda meninjau dan mengonfirmasi koreksi.",
+  "guide": "Panduan ruang kerja",
+  "guideBody": "Catat setiap gim yang dimainkan terlebih dahulu. Skor pemain mengikuti urutan gim tersebut. Kiriman kapten tampil di papan peringkat setelah disetujui.",
+  "pendingGuide": "Kiriman kapten menunggu peninjauan. Statistik yang disimpan penyelenggara langsung diterbitkan.",
+  "scoreGuide": "Skor pemain antara 0,0 dan 10,0 dengan satu desimal. Kosongkan skor yang tidak tersedia. Statistik total berupa bilangan bulat antara 0 dan 9999.",
+  "save": "Simpan statistik pemain",
+  "player": "Pemain",
+  "score": "Skor gim {number}",
+  "goal": "Gol",
+  "assist": "Asis",
+  "passing": "Umpan",
+  "defense": "Pertahanan",
+  "points": "Poin",
+  "assists": "Asis",
+  "rebounds": "Rebound",
+  "steals": "Rebutan",
+  "blocks": "Blok",
+  "flb": "FLB",
+  "kills": "Eliminasi",
+  "deaths": "Kematian",
+  "gold": "Emas",
+  "damage": "Kerusakan",
+  "plants": "Pemasangan",
+  "defuses": "Penjinakan",
+  "gpm": "Emas per menit",
+  "xpm": "Pengalaman per menit",
+  "emptyRoster": "Belum ada pemain dalam roster ini.",
+  "captain": "Kiriman kapten",
+  "noSubmissions": "Belum ada kiriman kapten untuk pertandingan ini.",
+  "approve": "Setujui kiriman",
+  "reject": "Tolak kiriman",
+  "rejectionNote": "Alasan penolakan",
+  "pending": "Menunggu peninjauan",
+  "approved": "Disetujui",
+  "rejected": "Ditolak",
+  "unknown": "Status tidak tersedia",
+  "recordFirst": "Selesaikan hasil resmi pertandingan sebelum mengisi statistik pemain.",
+  "contextUnavailable": "Data gim yang dimainkan tidak tersedia. Muat ulang atau tinjau hasil resmi.",
+  "stale": "Statistik berubah. Muat ulang ruang kerja sebelum menyimpan.",
+  "saved": "Tersimpan. Memuat data terbaru.",
+  "saving": "Menyimpan…",
+  "failed": "Penyimpanan belum dapat dipastikan. Ulangi penyimpanan yang sama untuk memeriksa hasilnya.",
+  "retry": "Ulangi penyimpanan yang sama",
+  "invalid": "Periksa rentang skor, ketelitian desimal, dan bilangan bulat statistik.",
+  "unauthorized": "Akses tidak tersedia. Masuk dengan akun yang berwenang.",
+  "conflict": "Data berubah di sesi lain. Muat ulang dan tinjau nilai terbaru.",
+  "connection": "Koneksi terputus. Menampilkan data terakhir.",
+  "noHistory": "Belum ada riwayat pertandingan ini.",
+  "resultHistory": "Revisi hasil",
+  "reviewHistory": "Riwayat peninjauan statistik",
+  "audit": "Riwayat tindakan",
+  "latest": "100 entri terbaru",
+  "revision": "Revisi {version}",
+  "recordedBy": "Dicatat oleh {actor}",
+  "submitted": "Dikirim {time}",
+  "reviewed": "Ditinjau {time}",
+  "details": "Detail",
+  "actionResult": "Hasil resmi diperbarui",
+  "actionSave": "Statistik penyelenggara disimpan",
+  "actionApprove": "Statistik kapten disetujui",
+  "actionReject": "Statistik kapten ditolak",
+  "actionOther": "Tindakan pertandingan",
+  "controls": [
+    {"source":"Mark delayed and preview impact","label":"Tandai terlambat dan tinjau dampak"},
+    {"source":"Delay and schedule impact","label":"Keterlambatan dan dampak jadwal"},
+    {"source":"The revised estimate creates a draft. Review and publish it from Schedule.","label":"Perkiraan baru menghasilkan draf. Tinjau dan terbitkan melalui Jadwal."},
+    {"source":"Revised estimated end","label":"Perkiraan selesai terbaru"},
+    {"source":"Delay reason","label":"Alasan keterlambatan"},
+    {"source":"Enter a valid event-local time.","label":"Masukkan waktu yang valid sesuai zona acara."},
+    {"source":"Review schedule impact","label":"Tinjau dampak jadwal"},
+    {
+      "source": "Official result",
+      "label": "Hasil resmi"
+    },
+    {
+      "source": "Enter each played game. Leave unplayed games out.",
+      "label": "Isi setiap gim yang dimainkan. Jangan tambahkan gim yang belum dimainkan."
+    },
+    {
+      "source": "Official result changed. Your edits are preserved. Reload replaces your unsaved edits.",
+      "label": "Hasil resmi berubah. Isian Anda dipertahankan. Muat ulang mengganti isian yang belum disimpan."
+    },
+    {
+      "source": "Reload official result",
+      "label": "Muat ulang hasil resmi"
+    },
+    {
+      "source": "Game",
+      "label": "Gim"
+    },
+    {
+      "source": "Add played game",
+      "label": "Tambah gim yang dimainkan"
+    },
+    {
+      "source": "Remove last game",
+      "label": "Hapus gim terakhir"
+    },
+    {
+      "source": "Correction reason",
+      "label": "Alasan koreksi"
+    },
+    {
+      "source": "Preview correction",
+      "label": "Pratinjau koreksi"
+    },
+    {
+      "source": "Loading impact…",
+      "label": "Memuat dampak…"
+    },
+    {
+      "source": "Could not preview. Check scores and try again.",
+      "label": "Pratinjau gagal. Periksa skor dan coba lagi."
+    },
+    {
+      "source": "Correction impact",
+      "label": "Dampak koreksi"
+    },
+    {
+      "source": "Affected matches",
+      "label": "Pertandingan terdampak"
+    },
+    {
+      "source": "Blocked by live or completed matches",
+      "label": "Terhalang pertandingan berlangsung atau selesai"
+    },
+    {
+      "source": "State changed. Preview again.",
+      "label": "Data berubah. Buat pratinjau ulang."
+    },
+    {
+      "source": "points",
+      "label": "poin"
+    },
+    {
+      "source": "Schedule changes require a separate review and publication.",
+      "label": "Perubahan jadwal memerlukan peninjauan dan penerbitan tersendiri."
+    },
+    {
+      "source": "affected matches",
+      "label": "pertandingan terdampak"
+    },
+    {
+      "source": "Confirm correction",
+      "label": "Konfirmasi koreksi"
+    },
+    {
+      "source": "Submit official result",
+      "label": "Kirim hasil resmi"
+    },
+    {
+      "source": "To be decided",
+      "label": "Belum ditentukan"
+    }
+  ]
+},
   "organizerOperations": {
     "tiebreakDecision": "Klasemen memerlukan keputusan pemecah seri",
     "tiebreakQualificationBlocked": "Peringkat yang belum ditentukan tidak dapat lolos secara otomatis.",

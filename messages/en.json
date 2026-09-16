@@ -1,4 +1,183 @@
 {
+  "organizerMatch": {
+    "readiness": "Readiness",
+    "deadline": "Check readiness deadline",
+    "start": "Start match",
+    "override": "Override reason (if needed)",
+    "checked_in": "checked in",
+    "ready": "ready",
+    "not_ready": "not ready",
+    "pendingReadiness": "pending",
+    "operations": "Match operations",
+  "title": "Match results & statistics",
+  "description": "Record official game scores and review player performance in one place.",
+  "result": "Result",
+  "statistics": "Player statistics",
+  "history": "History",
+  "back": "Back to Match Control",
+  "refresh": "Refresh",
+  "version": "Result version {version}",
+  "eventVersion": "Workspace version {version}",
+  "official": "Official result",
+  "noResult": "No official result yet",
+  "reopen": "Reopen for correction",
+  "cancel": "Cancel correction",
+  "correctionGuide": "The published result remains unchanged until you preview and confirm the correction.",
+  "guide": "How this workspace works",
+  "guideBody": "Record each played game first. Player scores follow that game order. Captain submissions appear on leaderboards only after approval.",
+  "pendingGuide": "Captain submissions remain pending until reviewed. Saving organizer statistics publishes them immediately.",
+  "scoreGuide": "Player scores range from 0.0 to 10.0 with one decimal. Leave a score blank if unavailable. Aggregate statistics must be whole numbers from 0 to 9999.",
+  "save": "Save player statistics",
+  "player": "Player",
+  "score": "Game {number} score",
+  "goal": "Goals",
+  "assist": "Assists",
+  "passing": "Passing",
+  "defense": "Defense",
+  "points": "Points",
+  "assists": "Assists",
+  "rebounds": "Rebounds",
+  "steals": "Steals",
+  "blocks": "Blocks",
+  "flb": "FLB",
+  "kills": "Kills",
+  "deaths": "Deaths",
+  "gold": "Gold",
+  "damage": "Damage",
+  "plants": "Plants",
+  "defuses": "Defuses",
+  "gpm": "Gold per minute",
+  "xpm": "Experience per minute",
+  "emptyRoster": "No players on this roster.",
+  "captain": "Captain submissions",
+  "noSubmissions": "No captain submissions for this match.",
+  "approve": "Approve submission",
+  "reject": "Reject submission",
+  "rejectionNote": "Reason for rejection",
+  "pending": "Pending review",
+  "approved": "Approved",
+  "rejected": "Rejected",
+  "unknown": "Status unavailable",
+  "recordFirst": "Complete the official match result before entering player statistics.",
+  "contextUnavailable": "Played game data is unavailable. Refresh or review the official result.",
+  "stale": "Statistics changed. Refresh the workspace before saving.",
+  "saved": "Saved. Refreshing authoritative data.",
+  "saving": "Saving…",
+  "failed": "The save could not be confirmed. Retry the same save to check its result.",
+  "retry": "Retry same save",
+  "invalid": "Check the score range, decimal precision and whole-number statistics.",
+  "unauthorized": "Access is unavailable. Sign in with an authorized account.",
+  "conflict": "Data changed in another session. Refresh and review the latest values.",
+  "connection": "Connection lost. Showing the last received data.",
+  "noHistory": "No history for this match.",
+  "resultHistory": "Result revisions",
+  "reviewHistory": "Statistics review history",
+  "audit": "Operation history",
+  "latest": "Latest 100 entries",
+  "revision": "Revision {version}",
+  "recordedBy": "Recorded by {actor}",
+  "submitted": "Submitted {time}",
+  "reviewed": "Reviewed {time}",
+  "details": "Details",
+  "actionResult": "Official result updated",
+  "actionSave": "Organizer statistics saved",
+  "actionApprove": "Captain statistics approved",
+  "actionReject": "Captain statistics rejected",
+  "actionOther": "Match operation",
+  "controls": [
+    {"source":"Mark delayed and preview impact","label":"Mark delayed and preview impact"},
+    {"source":"Delay and schedule impact","label":"Delay and schedule impact"},
+    {"source":"The revised estimate creates a draft. Review and publish it from Schedule.","label":"The revised estimate creates a draft. Review and publish it from Schedule."},
+    {"source":"Revised estimated end","label":"Revised estimated end"},
+    {"source":"Delay reason","label":"Delay reason"},
+    {"source":"Enter a valid event-local time.","label":"Enter a valid event-local time."},
+    {"source":"Review schedule impact","label":"Review schedule impact"},
+    {
+      "source": "Official result",
+      "label": "Official result"
+    },
+    {
+      "source": "Enter each played game. Leave unplayed games out.",
+      "label": "Enter each played game. Leave unplayed games out."
+    },
+    {
+      "source": "Official result changed. Your edits are preserved. Reload replaces your unsaved edits.",
+      "label": "Official result changed. Your edits are preserved. Reload replaces your unsaved edits."
+    },
+    {
+      "source": "Reload official result",
+      "label": "Reload official result"
+    },
+    {
+      "source": "Game",
+      "label": "Game"
+    },
+    {
+      "source": "Add played game",
+      "label": "Add played game"
+    },
+    {
+      "source": "Remove last game",
+      "label": "Remove last game"
+    },
+    {
+      "source": "Correction reason",
+      "label": "Correction reason"
+    },
+    {
+      "source": "Preview correction",
+      "label": "Preview correction"
+    },
+    {
+      "source": "Loading impact…",
+      "label": "Loading impact…"
+    },
+    {
+      "source": "Could not preview. Check scores and try again.",
+      "label": "Could not preview. Check scores and try again."
+    },
+    {
+      "source": "Correction impact",
+      "label": "Correction impact"
+    },
+    {
+      "source": "Affected matches",
+      "label": "Affected matches"
+    },
+    {
+      "source": "Blocked by live or completed matches",
+      "label": "Blocked by live or completed matches"
+    },
+    {
+      "source": "State changed. Preview again.",
+      "label": "State changed. Preview again."
+    },
+    {
+      "source": "points",
+      "label": "points"
+    },
+    {
+      "source": "Schedule changes require a separate review and publication.",
+      "label": "Schedule changes require a separate review and publication."
+    },
+    {
+      "source": "affected matches",
+      "label": "affected matches"
+    },
+    {
+      "source": "Confirm correction",
+      "label": "Confirm correction"
+    },
+    {
+      "source": "Submit official result",
+      "label": "Submit official result"
+    },
+    {
+      "source": "To be decided",
+      "label": "To be decided"
+    }
+  ]
+},
   "organizerOperations": {
     "tiebreakDecision": "Standings require a tiebreak decision",
     "tiebreakQualificationBlocked": "Unresolved ranks cannot qualify automatically",

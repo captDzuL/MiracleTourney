@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 
@@ -3329,19 +3329,122 @@ async function awardSourceTransaction<T>(
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
-async function statSubmissionAwardSourceTransaction<T>(
-  submissionId: string,
-  work: (
-    tx: Prisma.TransactionClient,
-    submission: NonNullable<Awaited<ReturnType<Prisma.TransactionClient["statSubmission"]["findUnique"]>>>,
-  ) => Promise<T>,
-): Promise<T> {
-  return prisma.$transaction(async (tx) => {
-    const submission = await tx.statSubmission.findUnique({ where: { id: submissionId } });
-    if (!submission) throw new Error("Submission not found");
-    if (submission.status !== "pending") throw new Error("Submission is no longer pending.");
-    await assertAwardSourceWriteAllowed(tx, submission.eventId);
-    return work(tx, submission);
+export type PlayerStatWriteGuard = {
+  eventId: string; matchId: string; expectedVersion: number;
+  expectedResultVersion: number; operationId: string; submittedAt?: string;
+};
+
+export type EventMatchStatistics = Awaited<ReturnType<typeof readEventMatchStatistics>>;
+export async function readEventMatchStatistics(eventId:string,matchId:string,actorId:string) {
+  return prisma.$transaction(async tx => {
+    const [actor,event]=await Promise.all([
+      tx.user.findUnique({where:{id:actorId},select:{id:true,role:true,mustChangePassword:true}}),
+      tx.event.findUnique({where:{id:eventId},select:{organizerUserId:true,competitionVersion:true}}),
+    ]);
+    if(!actor||!event||!["admin","platform_admin","organizer"].includes(actor.role)||actor.role==="organizer"&&(actor.mustChangePassword||event.organizerUserId!==actor.id))throw new Error("Not authorized");
+    const match=await tx.match.findFirst({where:{id:matchId,eventId},select:{
+      id:true,status:true,homeTeamId:true,awayTeamId:true,resultVersion:true,roundLabel:true,resultSnapshot:true,
+      games:{select:{gameNumber:true,homeScore:true,awayScore:true},orderBy:{gameNumber:"asc"}},
+      event:{select:{gameId:true,gameModeId:true}},
+    }});
+    if(!match)throw new Error("Match not found");
+    const teamIds=[match.homeTeamId,match.awayTeamId].filter(Boolean);
+    const [teams,players,statRows,submissions,revisions,round]=await Promise.all([
+      tx.team.findMany({where:{eventId,id:{in:teamIds}},select:{id:true,name:true}}),
+      tx.player.findMany({where:{teamId:{in:teamIds}},select:{id:true,teamId:true,nickname:true,position:true},orderBy:{id:"asc"}}),
+      tx.playerStat.findMany({where:{matchId},select:{playerId:true,stats:true}}),
+      tx.statSubmission.findMany({where:{eventId,matchId},orderBy:{submittedAt:"desc"},take:20}),
+      tx.matchResultRevision.findMany({where:{eventId,matchId},orderBy:{version:"desc"},take:100,select:{id:true,version:true,homeScore:true,awayScore:true,reason:true,actorUserId:true,createdAt:true}}),
+      tx.eventRoundConfig.findUnique({where:{eventId_roundLabel:{eventId,roundLabel:match.roundLabel}},select:{bestOf:true}}),
+    ]);
+    const snapshot=match.resultSnapshot as {bestOf?:number;games?:{gameNumber:number;homeScore:number;awayScore:number}[]}|null;
+    const games=[...(match.games.length?match.games:snapshot?.games??[])].sort((a,b)=>a.gameNumber-b.gameNumber);
+    let scoreGameNumbers:number[]|null=null;
+    let scoreContextUnavailable=false;
+    if(match.status==="Completed"&&match.event.gameId==="game-flashpeak"){
+      try{scoreGameNumbers=resolvePlayerScoreGameNumbers({matchGames:match.games,resultSnapshot:match.resultSnapshot,roundBestOf:round?.bestOf??snapshot?.bestOf??1});}
+      catch{scoreContextUnavailable=true;}
+    }
+    return {
+      eventId,matchId,eventVersion:event.competitionVersion,resultVersion:match.resultVersion,games,
+      allowedStatKeys:getStatKeysForMode(match.event.gameModeId,match.event.gameId),scoreGameNumbers,scoreContextUnavailable,
+      teams:teamIds.map(id=>teams.find(team=>team.id===id)).filter((team):team is NonNullable<typeof team>=>!!team).map(team=>({...team,players:players.filter(player=>player.teamId===team.id)})),
+      stats:Object.fromEntries(statRows.map(row=>[row.playerId,row.stats])) as PlayerStatPayloadMap,
+      submissions:submissions.map(row=>({id:row.id,teamId:row.teamId,status:row.status,stats:row.stats as PlayerStatPayloadMap,submittedAt:row.submittedAt.toISOString(),reviewedAt:row.reviewedAt?.toISOString()??null,reviewedBy:row.reviewedBy,rejectionNote:row.rejectionNote})),
+      revisions:revisions.map(row=>({...row,createdAt:row.createdAt.toISOString()})),
+    };
+  },{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
+}
+
+function statFingerprint(value: unknown): string {
+  function ordered(input: unknown): unknown {
+    if (Array.isArray(input)) return input.map(ordered);
+    if (input && typeof input === "object") return Object.fromEntries(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, ordered(item)]));
+    return input;
+  }
+  return createHash("sha256").update(JSON.stringify(ordered(value))).digest("hex");
+}
+
+/** Every organizer entry point, including legacy adapters, shares this guarded transaction. */
+async function managePlayerStats(input: {
+  actorId: string; action: "save" | "approve" | "reject"; submissionId?: string;
+  eventId?: string; matchId?: string; teamId?: string; stats?: PlayerStatPayloadMap;
+  note?: string; guard?: PlayerStatWriteGuard;
+}): Promise<void> {
+  await prisma.$transaction(async tx => {
+    const submission = input.submissionId ? await tx.statSubmission.findUnique({ where: { id: input.submissionId } }) : null;
+    if (input.submissionId && !submission) throw new Error("Submission not found");
+    const eventId = submission?.eventId ?? input.eventId!;
+    const matchId = submission?.matchId ?? input.matchId!;
+    const teamId = submission?.teamId ?? input.teamId!;
+    const [actor, event, match] = await Promise.all([
+      tx.user.findUnique({ where: { id: input.actorId }, select: { id: true, role: true, mustChangePassword: true } }),
+      tx.event.findUnique({ where: { id: eventId }, select: { id: true, organizerUserId: true, competitionVersion: true } }),
+      tx.match.findFirst({ where: { id: matchId, eventId }, select: { id: true, eventId: true, resultVersion: true, homeTeamId: true, awayTeamId: true, status: true } }),
+    ]);
+    if (!actor || !event || !["admin", "platform_admin", "organizer"].includes(actor.role)
+      || actor.role === "organizer" && (actor.mustChangePassword || event.organizerUserId !== actor.id)) throw new Error("Not authorized");
+    if (!match || match.eventId !== eventId || ![match.homeTeamId, match.awayTeamId].includes(teamId)) throw new Error("Match, team, and event relationship is invalid.");
+    const guard = input.guard ?? {
+      eventId, matchId, expectedVersion: event.competitionVersion, expectedResultVersion: match.resultVersion,
+      operationId: randomUUID(), ...(submission ? { submittedAt: submission.submittedAt?.toISOString() } : {}),
+    };
+    if (guard.eventId !== eventId || guard.matchId !== matchId || !guard.operationId || guard.operationId.length > 200
+      || !Number.isSafeInteger(guard.expectedVersion) || guard.expectedVersion < 0
+      || !Number.isSafeInteger(guard.expectedResultVersion) || guard.expectedResultVersion < 0) throw new Error("Statistics conflict");
+    const reason = input.note?.trim() ?? "";
+    if (input.action === "reject" && (!reason || reason.length > 4000)) throw new Error("Rejection reason is required.");
+    const fingerprint = statFingerprint({ ...input, guard, note: reason });
+    const prior = await tx.competitionAuditLog.findFirst({ where: { eventId, idempotencyKey: guard.operationId } });
+    if (prior) {
+      if (prior.actorUserId !== actor.id || (prior.payload as { fingerprint?: string } | null)?.fingerprint !== fingerprint) throw new Error("Statistics conflict: operation reused.");
+      return;
+    }
+    if (event.competitionVersion !== guard.expectedVersion || match.resultVersion !== guard.expectedResultVersion) throw new Error("Statistics conflict: stale version.");
+    if (submission?.status !== undefined && submission.status !== "pending") throw new Error("Submission is no longer pending.");
+    if (submission && input.guard && (!guard.submittedAt || submission.submittedAt.toISOString() !== guard.submittedAt)) throw new Error("Statistics conflict: stale submission.");
+    if (match.status !== "Completed") throw new Error("Completed match required.");
+    const locked = await tx.event.updateMany({ where: { id: eventId, competitionVersion: guard.expectedVersion }, data: { competitionVersion: { increment: 1 } } });
+    if (locked.count !== 1) throw new Error("Statistics conflict: stale version.");
+    const completion = await tx.tournamentCompletion.findUnique({ where: { eventId }, select: { status: true } });
+    if (completion?.status === "completed") throw new Error("Tournament completion locks award-source writes");
+    const stats = (submission?.stats ?? input.stats) as PlayerStatPayloadMap;
+    const context = input.action !== "reject" ? await validatePlayerStatWriteContext(tx, { eventId, matchId, teamId, stats }) : null;
+    if (submission) {
+      const transitioned = await tx.statSubmission.updateMany({
+        where: { id: submission.id, status: "pending", ...(input.guard ? { submittedAt: new Date(guard.submittedAt!) } : {}) },
+        data: { status: input.action === "approve" ? "approved" : "rejected", reviewedBy: actor.id, reviewedAt: new Date(), rejectionNote: input.action === "reject" ? reason : null },
+      });
+      if (transitioned.count !== 1) throw new Error("Submission is no longer pending.");
+    }
+    if (context) await writePlayerStatsToDb(tx, matchId, teamId, context.gameSlug, stats, context.roster, {
+      source: submission ? "captain" : "admin", lastUpdatedBy: actor.id,
+    });
+    await tx.competitionAuditLog.create({ data: {
+      eventId, matchId, actorUserId: actor.id, action: `player_stats_${input.action}`,
+      reason: reason || null, idempotencyKey: guard.operationId,
+      payload: { fingerprint, teamId, submissionId: submission?.id ?? null, previousVersion: guard.expectedVersion, version: guard.expectedVersion + 1, resultVersion: guard.expectedResultVersion, source: submission ? "captain" : "organizer" },
+    } });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
@@ -3369,6 +3472,8 @@ export async function upsertStatSubmission(input: {
       update: {
         status: "pending",
         rejectionNote: null,
+        reviewedAt: null,
+        reviewedBy: null,
         stats: input.stats,
         submittedBy: input.submittedBy,
         submittedAt: new Date(),
@@ -3470,7 +3575,7 @@ export async function getPendingStatSubmissions(user?: AppUser): Promise<StatSub
 
 /**
  * Upserts PlayerStat rows for each playerId in `statsMap` within a transaction.
- * Players not found in the DB are skipped. Existing rows have their stats JSON replaced (not merged).
+ * Players must belong to the validated roster. Existing stats JSON is replaced, not merged.
  */
 async function writePlayerStatsToDb(
   tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
@@ -3576,25 +3681,10 @@ async function validatePlayerStatWriteContext(
 
 /**
  * Approves a stat submission: writes `PlayerStat` rows for each player and marks the
- * submission as "approved" in a single transaction. Skips players not found in the DB.
+ * submission as "approved" in one guarded transaction. Foreign players reject the entire write.
  */
-export async function approveStatSubmission(submissionId: string, adminId: string): Promise<void> {
-  await statSubmissionAwardSourceTransaction(submissionId, async (tx, submission) => {
-    const statsMap = submission.stats as PlayerStatPayloadMap;
-    const { gameSlug, roster } = await validatePlayerStatWriteContext(tx, {
-      matchId: submission.matchId,
-      teamId: submission.teamId,
-      eventId: submission.eventId,
-      stats: statsMap,
-    });
-
-    await writePlayerStatsToDb(tx, submission.matchId, submission.teamId, gameSlug, statsMap, roster, { source: "captain", lastUpdatedBy: submission.submittedBy });
-    const transitioned = await tx.statSubmission.updateMany({
-      where: { id: submissionId, status: "pending" },
-      data: { status: "approved", reviewedAt: new Date(), reviewedBy: adminId },
-    });
-    if (transitioned.count !== 1) throw new Error("Submission is no longer pending.");
-  });
+export async function approveStatSubmission(submissionId: string, adminId: string, guard?: PlayerStatWriteGuard): Promise<void> {
+  await managePlayerStats({ actorId: adminId, action: "approve", submissionId, guard });
 }
 
 /**
@@ -3644,15 +3734,9 @@ export async function adminWriteMatchPlayerStats(input: {
   eventId: string;
   adminId: string;
   stats: PlayerStatPayloadMap;
+  guard?: PlayerStatWriteGuard;
 }): Promise<void> {
-  await awardSourceTransaction(input.eventId, async (tx) => {
-    const { gameSlug, roster } = await validatePlayerStatWriteContext(tx, input);
-
-    await writePlayerStatsToDb(tx, input.matchId, input.teamId, gameSlug, input.stats, roster, {
-      source: "admin",
-      lastUpdatedBy: input.adminId,
-    });
-  });
+  await managePlayerStats({ actorId: input.adminId, action: "save", eventId: input.eventId, matchId: input.matchId, teamId: input.teamId, stats: input.stats, guard: input.guard });
 }
 
 /** Rejects a stat submission with a note shown to the captain. Does not delete PlayerStat rows. */
@@ -3660,19 +3744,9 @@ export async function rejectStatSubmission(
   submissionId: string,
   adminId: string,
   note: string,
+  guard?: PlayerStatWriteGuard,
 ): Promise<void> {
-  await statSubmissionAwardSourceTransaction(submissionId, async (tx) => {
-    const transitioned = await tx.statSubmission.updateMany({
-      where: { id: submissionId, status: "pending" },
-      data: {
-        status: "rejected",
-        rejectionNote: note,
-        reviewedAt: new Date(),
-        reviewedBy: adminId,
-      },
-    });
-    if (transitioned.count !== 1) throw new Error("Submission is no longer pending.");
-  });
+  await managePlayerStats({ actorId: adminId, action: "reject", submissionId, note, guard });
 }
 
 /**

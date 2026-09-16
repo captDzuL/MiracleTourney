@@ -67,6 +67,9 @@ describe("parsePlayerStatForm", () => {
 });
 
 describe("validatePlayerStatPayload", () => {
+  it("rejects an empty submission instead of approving no player data", () => {
+    expect(() => validatePlayerStatPayload({}, { allowedStatKeys: ["goal"], scoreSlotCount: 1 })).toThrow("payload");
+  });
   const options = {
     allowedStatKeys: ["goal", "assist", "passing", "defense"],
     scoreSlotCount: 3,
