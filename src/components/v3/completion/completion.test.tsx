@@ -223,6 +223,14 @@ describe("CompletionWorkspace", () => {
     expect(award.querySelector('[role="radiogroup"]')?.getAttribute("aria-label")).toContain("Top Assist");
   });
 
+  it.each([
+    ["en", ["MVP Tournament", "Top Scorer", "Top Defender", "Top Assist"]],
+    ["id", ["MVP Turnamen", "Top Scorer", "Top Defender", "Top Assist"]],
+  ] as const)("renders the four localized award labels for %s", (locale, labels) => {
+    const html = staticWorkspace("ready", locale);
+    for (const label of labels) expect(html).toContain(label);
+  });
+
   it("labels podium source and lock state in text instead of color alone", () => {
     expect(staticWorkspace("blocked")).toContain("Official Grand Final and third-place match");
     expect(staticWorkspace("blocked")).toContain("Draft podium");

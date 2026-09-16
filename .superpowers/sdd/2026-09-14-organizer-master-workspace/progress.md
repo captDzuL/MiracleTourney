@@ -59,3 +59,12 @@ Task 8: final self-check RED/GREEN — event-timezone regression 2 failed then r
 Task 8: legacy E2E readiness root cause — master-OFF pre-fix repetitions 8 passed / 1 failed; trace and inert-input reproduction prove ignored early fill; approved test-only readiness helper retains DB assertions, corrected master-ON repetitions 9/9 passed
 Task 8: final master-ON full specs 23/23 passed; chained master-OFF session 59639 still running at low-limit user handoff
 Task 8: latest full unit before final timezone regressions 179 files passed / 2 skipped, 2020 tests passed / 6 skipped; final committed-HEAD full rerun and independent review remain pending
+Task 8: continuation focused 322/322; serialized full 179 files passed / 2 skipped, 2022 passed / 6 skipped; typecheck, scoped lint, Prisma validate and diff check pass
+Task 8: local no-DB gates pass — Edge smoke 24 passed / 9 intentional skips; pressure p95 login 5290ms, api/me 669ms, admin 83ms; production build completed 46/46 static pages
+Task 8: smoke harness correction — measured `/id/events` cold compile 4.5s exceeded default 5s URL assertion; navigation wait raised to 15s inside the existing 30s test budget and full smoke rerun passed
+Task 8: complete / remote E2E pending — fresh Sol/high review approved with no findings; residual PostgreSQL interleaving/storage and dedicated axe coverage risks recorded
+Task 9: in progress (approved Task 8 base e2f7c289f25954780e4de8eff71a9cbc5121e00c plus documented continuation evidence)
+Task 9: RED/GREEN — canonical competition repair links, localized four-award labels, and explicit locale-aware Certificate Studio handoff implemented without a second completion/certificate engine
+Task 9: review fix round 1 — preserved dependency-only non-V3 generation and removed silent English fallback from V3 event/final-trigger handoffs; service RED reproduced both defects, then 62/62 passed
+Task 9: local verification — focused 6 files / 142 tests passed; typecheck, scoped ESLint, Prisma validate, diff check, Edge smoke 24 passed / 9 intentional skips, and production build 46/46 static pages completed
+Task 9: code complete / remote E2E pending — fresh Sol/high scoped re-review approved with zero findings; PostgreSQL persistence, authenticated ownership, durable idempotency/version selection, and atomic publication remain Task 11 CI gates

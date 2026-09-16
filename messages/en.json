@@ -1319,7 +1319,7 @@
     "awards": {
       "title":"Individual award review",
       "description":"Review the published source metric, every tied leader, and the reason recorded for a manual decision.",
-      "names":{"mvp":"MVP of Tournament","top_scorer":"Top Scorer","top_defender":"Top Defender","top_assist":"Top Assist"},
+      "names":{"mvp":"MVP Tournament","top_scorer":"Top Scorer","top_defender":"Top Defender","top_assist":"Top Assist"},
       "sourceMetric":"Source metric: {metric}",
       "candidatesLabel":"Candidates for {award}",
       "selected":"Selected",

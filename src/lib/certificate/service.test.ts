@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
+const { matchFindFirst } = vi.hoisted(() => ({ matchFindFirst: vi.fn() }));
+
+vi.mock("@/lib/platform/db", () => ({ prisma: { match: { findFirst: matchFindFirst } } }));
+
 import {
   CERTIFICATE_ASSET_LIMITS,
   createMiracleV3GenerationAdapter,
   generateCertificateForEvent,
+  generateCertificateIfFinal,
   publishCertificateSet,
   regenerateCertificate,
   validateCertificateAssetPlacement,
@@ -35,13 +40,36 @@ function createDependencies(
 }
 
 describe("generateCertificateForEvent", () => {
+  it("preserves dependency-only legacy generation for non-V3 events", async () => {
+    const dependencies = createDependencies();
+
+    await expect(
+      generateCertificateForEvent("event-mfl-s2", dependencies),
+    ).resolves.toEqual({
+      status: "generated",
+      imageUrl: "/uploads/certificates/mfl-s2.png",
+      matchId: "match-final",
+      winnerTeamId: "team-winner",
+    });
+  });
+
+  it("rejects dependency-only V3 handoff when the route locale is missing", async () => {
+    const dependencies = createDependencies({
+      findV3Completion: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(
+      generateCertificateForEvent("event-mfl-s2", dependencies),
+    ).rejects.toThrow("Route locale is required to build the Certificate Studio URL");
+  });
+
   it("returns not-ready when there is no completed Final", async () => {
     const dependencies = createDependencies({
       findCompletedFinal: vi.fn().mockResolvedValue(null),
     });
 
     await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
+      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
     ).resolves.toEqual({
       status: "not-ready",
       reason: "final-not-completed",
@@ -58,7 +86,7 @@ describe("generateCertificateForEvent", () => {
     });
 
     await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
+      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
     ).resolves.toEqual({
       status: "not-ready",
       reason: "winner-missing",
@@ -72,7 +100,7 @@ describe("generateCertificateForEvent", () => {
     const dependencies = createDependencies({ findWinnerTeamForEvent });
 
     await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
+      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
     ).resolves.toEqual({
       status: "not-ready",
       reason: "winner-not-in-event",
@@ -94,7 +122,7 @@ describe("generateCertificateForEvent", () => {
     });
 
     await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
+      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
     ).resolves.toEqual({
       status: "already-exists",
       imageUrl: "/uploads/certificates/existing.png",
@@ -109,7 +137,7 @@ describe("generateCertificateForEvent", () => {
     const dependencies = createDependencies({ generateCertificate });
 
     await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
+      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
     ).resolves.toEqual({
       status: "generated",
       imageUrl: "/uploads/certificates/generated.png",
@@ -124,11 +152,72 @@ describe("generateCertificateForEvent", () => {
       findV3Completion: vi.fn().mockResolvedValue(true),
     });
 
-    await expect(generateCertificateForEvent("event-mfl-s2", dependencies)).resolves.toEqual({
+    await expect(generateCertificateForEvent("event-mfl-s2", "en", dependencies)).resolves.toEqual({
       status: "studio-required",
-      studioHref: "/organizer/events/event-mfl-s2/certificates",
+      studioHref: "/en/organizer/events/event-mfl-s2/certificates",
     });
     expect(dependencies.generateCertificate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the legacy adapter link locale-aware when it hands off to Certificate Studio", async () => {
+    const dependencies = Object.assign(createDependencies(), {
+      findV3Completion: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(generateCertificateForEvent("event-mfl-s2", dependencies, "id")).resolves.toEqual({
+      status: "studio-required",
+      studioHref: "/id/organizer/events/event-mfl-s2/certificates",
+    });
+  });
+
+  it("uses the explicitly supplied route locale for the preferred API", async () => {
+    const dependencies = Object.assign(createDependencies(), {
+      findV3Completion: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(generateCertificateForEvent("event-mfl-s2", "id", dependencies)).resolves.toEqual({
+      status: "studio-required",
+      studioHref: "/id/organizer/events/event-mfl-s2/certificates",
+    });
+  });
+
+  it("passes the explicit Indonesian locale from the final trigger to Certificate Studio", async () => {
+    matchFindFirst.mockResolvedValue({ id: "match-final" });
+    const dependencies = Object.assign(createDependencies(), {
+      findV3Completion: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(
+      generateCertificateIfFinal("match-final", "event-mfl-s2", "id", dependencies),
+    ).resolves.toEqual({
+      status: "studio-required",
+      studioHref: "/id/organizer/events/event-mfl-s2/certificates",
+    });
+  });
+
+  it("preserves dependency-injected two-arg legacy final triggers for non-V3 events", async () => {
+    matchFindFirst.mockResolvedValue({ id: "match-final" });
+    const dependencies = createDependencies();
+
+    await expect(
+      generateCertificateIfFinal("match-final", "event-mfl-s2", dependencies),
+    ).resolves.toEqual({
+      status: "generated",
+      imageUrl: "/uploads/certificates/mfl-s2.png",
+      matchId: "match-final",
+      winnerTeamId: "team-winner",
+    });
+  });
+
+  it("rejects a V3 final trigger when the route locale is omitted", async () => {
+    matchFindFirst.mockResolvedValue({ id: "match-final" });
+    const dependencies = createDependencies({
+      findV3Completion: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(
+      generateCertificateIfFinal("match-final", "event-mfl-s2", undefined, dependencies),
+    ).rejects.toThrow("Route locale is required to build the Certificate Studio URL");
   });
 });
 

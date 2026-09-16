@@ -111,14 +111,46 @@ const defaultDependencies: CertificateGenerationDependencies = {
  * Resolve the completed Final winner on the server and generate its certificate.
  * This is the single entry point used by automatic generation and manual retries.
  */
+export function generateCertificateForEvent(
+  eventId: string,
+  locale: "id" | "en",
+  dependencies?: CertificateGenerationDependencies,
+): Promise<CertificateGenerationResult>;
+export function generateCertificateForEvent(
+  eventId: string,
+  dependencies: CertificateGenerationDependencies,
+): Promise<CertificateGenerationResult>;
+export function generateCertificateForEvent(
+  eventId: string,
+  dependencies: CertificateGenerationDependencies,
+  locale: "id" | "en",
+): Promise<CertificateGenerationResult>;
 export async function generateCertificateForEvent(
   eventId: string,
-  dependencies: CertificateGenerationDependencies = defaultDependencies,
+  localeOrDependencies: "id" | "en" | CertificateGenerationDependencies,
+  dependenciesOrLocale?: CertificateGenerationDependencies | "id" | "en",
 ): Promise<CertificateGenerationResult> {
+  let locale: "id" | "en" | undefined;
+  let dependencies: CertificateGenerationDependencies;
+  if (typeof localeOrDependencies === "string") {
+    locale = localeOrDependencies;
+    dependencies = typeof dependenciesOrLocale === "object"
+      ? dependenciesOrLocale
+      : defaultDependencies;
+  } else {
+    dependencies = localeOrDependencies;
+    locale = typeof dependenciesOrLocale === "string"
+      ? dependenciesOrLocale
+      : undefined;
+  }
+
   if (await dependencies.findV3Completion(eventId)) {
+    if (typeof locale !== "string") {
+      throw new Error("Route locale is required to build the Certificate Studio URL");
+    }
     return {
       status: "studio-required",
-      studioHref: `/organizer/events/${eventId}/certificates`,
+      studioHref: `/${locale}/organizer/events/${eventId}/certificates`,
     };
   }
   const finalMatch = await dependencies.findCompletedFinal(eventId);
@@ -179,10 +211,33 @@ export async function generateCertificateForEvent(
  * Automatic trigger guard: only a completed Final with a winner may start the
  * event-level service. Manual retries call generateCertificateForEvent directly.
  */
+export function generateCertificateIfFinal(
+  matchId: string,
+  eventId: string,
+): Promise<CertificateGenerationResult>;
+export function generateCertificateIfFinal(
+  matchId: string,
+  eventId: string,
+  dependencies: CertificateGenerationDependencies,
+): Promise<CertificateGenerationResult>;
+export function generateCertificateIfFinal(
+  matchId: string,
+  eventId: string,
+  locale: "id" | "en" | undefined,
+  dependencies?: CertificateGenerationDependencies,
+): Promise<CertificateGenerationResult>;
 export async function generateCertificateIfFinal(
   matchId: string,
   eventId: string,
+  localeOrDependencies?: "id" | "en" | CertificateGenerationDependencies,
+  dependencies?: CertificateGenerationDependencies,
 ): Promise<CertificateGenerationResult> {
+  const locale = typeof localeOrDependencies === "string"
+    ? localeOrDependencies
+    : undefined;
+  const generationDependencies = typeof localeOrDependencies === "object"
+    ? localeOrDependencies
+    : dependencies ?? defaultDependencies;
   const triggerMatch = await prisma.match.findFirst({
     where: {
       id: matchId,
@@ -201,7 +256,9 @@ export async function generateCertificateIfFinal(
     };
   }
 
-  return generateCertificateForEvent(eventId);
+  return locale
+    ? generateCertificateForEvent(eventId, locale, generationDependencies)
+    : generateCertificateForEvent(eventId, generationDependencies);
 }
 
 export const CERTIFICATE_ASSET_LIMITS = Object.freeze({

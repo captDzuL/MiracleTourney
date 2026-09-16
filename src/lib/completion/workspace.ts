@@ -172,7 +172,7 @@ function formatLabel(kind: string | undefined, locale: "id" | "en"): string {
 }
 
 const awardName = (award: CompletionAwardStatistic, locale: "id" | "en") => ({
-  mvp: "MVP",
+  mvp: locale === "id" ? "MVP Turnamen" : "MVP Tournament",
   top_scorer: locale === "id" ? "Top Scorer" : "Top Scorer",
   top_defender: locale === "id" ? "Top Defender" : "Top Defender",
   top_assist: locale === "id" ? "Top Assist" : "Top Assist",
@@ -194,7 +194,7 @@ function workspaceBlocker(
     case "UNRESOLVED_FINAL_TIE":
       return { code: blocker.code, subject: blocker.teamIds.join(", "), repairHref: `${eventRoot}/competition` };
     case "MISSING_VALIDATED_AWARD_STATISTICS":
-      return { code: blocker.code, subject: awardName(blocker.award, locale), repairHref: `${eventRoot}/legacy-match-day` };
+      return { code: blocker.code, subject: awardName(blocker.award, locale), repairHref: `${eventRoot}/competition` };
     case "INSUFFICIENT_PODIUM_STRUCTURE": {
       const details = [...blocker.missingStages ?? [], ...blocker.matchIds ?? [], ...blocker.teamIds ?? []];
       return { code: blocker.code, subject: details.join(", ") || (locale === "id" ? "Struktur podium" : "Podium structure"), repairHref: `${eventRoot}/competition` };
