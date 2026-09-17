@@ -2429,6 +2429,16 @@ describe("authoritative player-stat write boundary", () => {
     await expect(adminWriteMatchPlayerStats({ ...input, stats: { "player-1": { ...canonicalStats["player-1"], goal: 4 } } })).rejects.toThrow("conflict");
   });
 
+  it("allows the guarded player-stat transaction to finish under CI database load", async () => {
+    await adminWriteMatchPlayerStats({ matchId: "match-1", teamId: "team-1", eventId: "event-1", adminId: "admin-1", stats: canonicalStats, guard });
+
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+      maxWait: 5_000,
+      timeout: 20_000,
+    });
+  });
+
   it("rejects a captain payload containing a player from another team", async () => {
     await expect(upsertStatSubmission({
       matchId: "match-1",

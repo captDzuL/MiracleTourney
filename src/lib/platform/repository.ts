@@ -3445,7 +3445,11 @@ async function managePlayerStats(input: {
       reason: reason || null, idempotencyKey: guard.operationId,
       payload: { fingerprint, teamId, submissionId: submission?.id ?? null, previousVersion: guard.expectedVersion, version: guard.expectedVersion + 1, resultVersion: guard.expectedResultVersion, source: submission ? "captain" : "organizer" },
     } });
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, {
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    maxWait: 5_000,
+    timeout: 20_000,
+  });
 }
 
 /**
