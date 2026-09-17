@@ -33,18 +33,37 @@ export function runCommand(
 }
 
 const RELEASE_STEPS = [
-  ["pnpm", ["test:e2e:preflight"]],
-  ["pnpm", ["test:e2e:prepare"]],
-  ["pnpm", ["exec", "playwright", "test", "tests/e2e/v3-matchday.spec.ts", "--fail-on-flaky-tests"]],
-  ["pnpm", ["exec", "playwright", "test", "--shard=1/2", "--fail-on-flaky-tests"]],
-  ["pnpm", ["exec", "playwright", "test", "--shard=2/2", "--fail-on-flaky-tests"]],
-  ["pnpm", ["exec", "playwright", "test", "--config", "playwright.legacy.config.ts", "--fail-on-flaky-tests"]],
+  ["Database preflight", "pnpm", ["test:e2e:preflight"]],
+  ["Database reset and seed", "pnpm", ["test:e2e:prepare"]],
+  ["Match Day profile", "pnpm", ["exec", "playwright", "test", "tests/e2e/v3-matchday.spec.ts", "--fail-on-flaky-tests"]],
+  ["Default profile shard 1/2", "pnpm", ["exec", "playwright", "test", "--shard=1/2", "--fail-on-flaky-tests"]],
+  ["Default profile shard 2/2", "pnpm", ["exec", "playwright", "test", "--shard=2/2", "--fail-on-flaky-tests"]],
+  ["Legacy flags-off profile", "pnpm", ["exec", "playwright", "test", "--config", "playwright.legacy.config.ts", "--fail-on-flaky-tests"]],
 ];
 
-export async function runE2eCi({ runCommand: execute = runCommand } = {}) {
-  for (const [command, args] of RELEASE_STEPS) {
-    await execute(command, args);
+export async function runE2eCi({
+  runCommand: execute = runCommand,
+  now = Date.now,
+  logger = console,
+} = {}) {
+  const sequenceStartedAt = now();
+  try {
+    for (const [label, command, args] of RELEASE_STEPS) {
+      logger.log(`[e2e-ci] START ${label}`);
+      const phaseStartedAt = now();
+      try {
+        await execute(command, args);
+      } catch (error) {
+        logger.error(`[e2e-ci] FAIL ${label} (${now() - phaseStartedAt}ms)`);
+        throw error;
+      }
+      logger.log(`[e2e-ci] PASS ${label} (${now() - phaseStartedAt}ms)`);
+    }
+  } catch (error) {
+    logger.error(`[e2e-ci] FAIL All profiles (${now() - sequenceStartedAt}ms)`);
+    throw error;
   }
+  logger.log(`[e2e-ci] PASS All profiles (${now() - sequenceStartedAt}ms)`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -12,6 +12,8 @@ type CiModule = {
   ): Promise<void>;
   runE2eCi(options: {
     runCommand: (command: string, args: string[]) => Promise<void>;
+    now?: () => number;
+    logger?: { log(message: string): void; error(message: string): void };
   }): Promise<void>;
 };
 
@@ -20,10 +22,42 @@ const ciModulePath = "../scripts/e2e-ci.mjs";
 describe("CI E2E release sequence", () => {
   it("runs a real fail-closed ESLint gate on the pinned CI runtime", async () => {
     const workflow = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+    const e2eJob = workflow.match(/  e2e-tests:\r?\n([\s\S]*?)(?=\r?\n  [a-z][\w-]*:|$)/)?.[0];
     expect(workflow).toContain('node-version: "24"');
     expect(workflow).toContain("version: 10");
     expect(workflow).toContain("run: pnpm exec eslint . --quiet");
+    expect(e2eJob).toContain("timeout-minutes: 60");
+    expect(e2eJob).not.toContain("timeout-minutes: 30");
     expect(workflow).not.toMatch(/eslint[^\n]*\|\|\s*true/i);
+  });
+
+  it("records elapsed time for every release phase and the total sequence", async () => {
+    const { runE2eCi } = await import(ciModulePath) as CiModule;
+    const timestamps = [0, 100, 350, 400, 900, 950, 1_550, 1_600, 2_300, 2_350, 3_150, 3_200, 4_100, 4_200];
+    const logger = { log: vi.fn(), error: vi.fn() };
+
+    await runE2eCi({
+      runCommand: vi.fn(async () => undefined),
+      now: () => timestamps.shift()!,
+      logger,
+    });
+
+    expect(logger.log.mock.calls.map(([message]) => message)).toEqual([
+      "[e2e-ci] START Database preflight",
+      "[e2e-ci] PASS Database preflight (250ms)",
+      "[e2e-ci] START Database reset and seed",
+      "[e2e-ci] PASS Database reset and seed (500ms)",
+      "[e2e-ci] START Match Day profile",
+      "[e2e-ci] PASS Match Day profile (600ms)",
+      "[e2e-ci] START Default profile shard 1/2",
+      "[e2e-ci] PASS Default profile shard 1/2 (700ms)",
+      "[e2e-ci] START Default profile shard 2/2",
+      "[e2e-ci] PASS Default profile shard 2/2 (800ms)",
+      "[e2e-ci] START Legacy flags-off profile",
+      "[e2e-ci] PASS Legacy flags-off profile (900ms)",
+      "[e2e-ci] PASS All profiles (4200ms)",
+    ]);
+    expect(logger.error).not.toHaveBeenCalled();
   });
   it("guards the shared database, then runs Match Day, two fresh-server shards, and flags-off profiles serially", async () => {
     const { runE2eCi } = await import(ciModulePath) as CiModule;
@@ -47,16 +81,22 @@ describe("CI E2E release sequence", () => {
   it("stops before later profiles when a guarded step fails", async () => {
     const { runE2eCi } = await import(ciModulePath) as CiModule;
     const calls: string[] = [];
+    const logger = { log: vi.fn(), error: vi.fn() };
     const runCommand = vi.fn(async (command: string, args: string[]) => {
       const call = [command, ...args].join(" ");
       calls.push(call);
       if (call === "pnpm test:e2e:prepare") throw new Error("reset blocked");
     });
 
-    await expect(runE2eCi({ runCommand })).rejects.toThrow("reset blocked");
+    const timestamps = [100, 200, 300, 500, 800, 800];
+    await expect(runE2eCi({ runCommand, now: () => timestamps.shift()!, logger })).rejects.toThrow("reset blocked");
     expect(calls).toEqual([
       "pnpm test:e2e:preflight",
       "pnpm test:e2e:prepare",
+    ]);
+    expect(logger.error.mock.calls.map(([message]) => message)).toEqual([
+      "[e2e-ci] FAIL Database reset and seed (300ms)",
+      "[e2e-ci] FAIL All profiles (700ms)",
     ]);
   });
 
