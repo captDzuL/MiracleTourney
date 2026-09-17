@@ -162,6 +162,20 @@ describe("CertificateStudio", () => {
     expect((regenerate.mock.calls[1][0] as { idempotencyKey: string }).idempotencyKey).not.toBe((regenerate.mock.calls[0][0] as { idempotencyKey: string }).idempotencyKey);
   });
 
+  it("selects the generated certificate and publishes it after authoritative props refresh", async () => {
+    const regenerate = vi.fn().mockResolvedValue({ status: "generated", certificateId: "cert-champion-3", certificateType: "champion", version: 3, imageUrl: "/certificates/3.png" });
+    const publish = vi.fn().mockResolvedValue({ status: "published", publicationVersion: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
+    const props = { regenerateAction: regenerate, publishAction: publish, generationKeys: Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, `key-${type}`])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>, publicationKey: crypto.randomUUID() };
+    await act(async () => root.render(provider("en", <CertificateStudio {...props} state={available} />)));
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!.click());
+
+    const refreshed: CertificateStudioState = { ...available, certificateRevision: 3, records: available.records.map((record) => record.certificateType === "champion" ? { ...record, selectedCertificateId: "cert-champion-2", versions: [...record.versions!, { ...record.versions![1], id: "cert-champion-3", version: 3, imageUrl: "/certificates/3.png", status: "ready" as const }] } : record) };
+    await act(async () => root.render(provider("en", <CertificateStudio {...props} state={refreshed} />)));
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")!.click());
+
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ selection: expect.arrayContaining([{ certificateType: "champion", certificateId: "cert-champion-3" }]) }));
+  });
+
   it("returns localized upload validation failures to the file field and Studio live region", async () => {
     certificateActions.upload.mockResolvedValue({ status: "blocked", code: "invalid_dimensions" });
     await act(async () => root.render(provider("id", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
@@ -212,5 +226,27 @@ describe("CertificateStudio", () => {
     expect(html).toContain("min-w-0");
     expect(html).toContain("min-[1100px]:grid-cols");
     expect(html).not.toContain("min-w-[1080px]");
+  });
+
+  it("keeps the recipient/status/action surface visible while compacting the organizer layout", () => {
+    const html = renderToStaticMarkup(provider("en", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />));
+    expect(html).toContain("data-certificate-recipient-selection");
+    expect(html).toContain("data-certificate-preview-sticky");
+    expect(html).toContain("data-certificate-primary-actions");
+    expect(html).toContain("data-certificate-set-status");
+    expect(html).toContain("data-certificate-assets");
+    expect(html).toContain("data-certificate-history");
+    expect(html).not.toContain("data-certificate-event-banner");
+  });
+
+  it("keeps the compact studio controls keyboard reachable at the project target size", () => {
+    const html = renderToStaticMarkup(provider("en", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />));
+    expect((html.match(/min-h-11/g) ?? []).length).toBeGreaterThanOrEqual(9);
+    expect(html).toContain("miracle-focus-ring");
+    const document = new DOMParser().parseFromString(html, "text/html");
+    expect(document.querySelectorAll("details").length).toBeGreaterThan(0);
+    for (const summary of document.querySelectorAll("summary")) {
+      expect(summary.classList.contains("min-h-11")).toBe(true);
+    }
   });
 });

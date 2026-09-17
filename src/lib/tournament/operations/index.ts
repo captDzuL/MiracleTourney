@@ -57,7 +57,8 @@ export function createCompetitionOperations(
         where: { eventId },
         select: { status: true },
       });
-      if (completion?.status === "completed") {
+      const isAnnouncementUtility = ["announcement_save", "announcement_publish", "announcement_unpublish"].includes(command.kind);
+      if (completion?.status === "completed" && !isAnnouncementUtility) {
         throw new Error("Tournament completion locks competitive writes");
       }
       const updated = await tx.event.updateMany({

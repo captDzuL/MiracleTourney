@@ -141,6 +141,17 @@ describe("competition operation transactions", () => {
     expect(f.rows("competitionAuditLog")).toEqual([]);
   });
 
+  it("allows announcement utility writes after completion while retaining the competitive lock", async () => {
+    const f = fixture();
+    f.seed("tournamentCompletion", { id: "completion-1", eventId: "event", status: "completed" });
+
+    const saved = await f.run({ kind: "announcement_save", title: "Final update", body: "The tournament is complete." });
+
+    expect(saved.resourceId).toBeTruthy();
+    expect(f.rows("eventAnnouncement")).toHaveLength(1);
+    await expect(f.run(initialize)).rejects.toThrow("Tournament completion locks competitive writes");
+  });
+
   it("defaults legacy announcements to info and lets an organizer review urgency before publishing", async () => {
     const f = fixture();
     const draft = await f.run({ kind: "announcement_save", title: "Urgent title is just text", body: "Message" });

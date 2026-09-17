@@ -57,6 +57,66 @@ test("publishes all seven certificates and preserves superseded verification his
   await expect(page.getByText(scenario.eventName, { exact: true })).toBeVisible();
 });
 
+test("keeps the certificate studio reachable and usable at desktop and mobile geometry", async ({ page }) => {
+  test.slow();
+  const scenario = await prepareCertificateFixture();
+  fixture = scenario;
+  await loginAsOrganizer(page, "en");
+
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`/en/organizer/events/${scenario.id}/certificates`);
+    await expect(page.locator("[data-certificate-studio]")).toBeVisible();
+    await expect(page.locator("[data-certificate-studio] > header")).toBeVisible();
+    await expect(page.locator("[data-certificate-recipient-selection]")).toBeVisible();
+    await expect(page.locator("[data-regenerate-certificate]")).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const root = document.querySelector<HTMLElement>("[data-certificate-studio]")!;
+      const rect = (selector: string) => document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+      return {
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        document: { clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth },
+        root: { clientWidth: root.clientWidth, scrollWidth: root.scrollWidth },
+        header: rect("[data-certificate-studio] > header"),
+        recipient: rect("[data-certificate-recipient-selection]"),
+        actions: rect("[data-certificate-primary-actions]"),
+        preview: rect("[data-certificate-preview-sticky]"),
+        controls: [...root.querySelectorAll<HTMLElement>("button, a, input, textarea, select, summary")]
+          .map((control) => ({ label: control.textContent?.trim() || control.getAttribute("name") || control.tagName, height: control.getBoundingClientRect().height }))
+          .filter(({ height }) => height > 0),
+      };
+    });
+
+    expect(geometry.document.scrollWidth, `document overflow at ${viewport.width}px`).toBeLessThanOrEqual(geometry.document.clientWidth);
+    expect(geometry.root.scrollWidth, `studio overflow at ${viewport.width}px`).toBeLessThanOrEqual(geometry.root.clientWidth);
+    for (const [name, box] of Object.entries({ header: geometry.header, recipient: geometry.recipient, actions: geometry.actions })) {
+      expect(box.width, `${name} has no width at ${viewport.width}px`).toBeGreaterThan(0);
+      expect(box.height, `${name} has no height at ${viewport.width}px`).toBeGreaterThan(0);
+    }
+    expect(geometry.preview.width, `preview exceeds mobile viewport`).toBeLessThanOrEqual(viewport.width);
+    for (const control of geometry.controls) {
+      expect(control.height, `${control.label} is below the 44px target at ${viewport.width}px`).toBeGreaterThanOrEqual(44);
+    }
+
+    const preview = page.locator("[data-certificate-preview-sticky]");
+    const previewPosition = await preview.evaluate((element) => getComputedStyle(element).position);
+    if (viewport.width >= 1100) {
+      expect(previewPosition).toBe("sticky");
+      await preview.evaluate((element) => window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY - 96));
+      const topBeforeScroll = await preview.evaluate((element) => element.getBoundingClientRect().top);
+      await page.evaluate(() => window.scrollBy(0, 120));
+      const topAfterScroll = await preview.evaluate((element) => element.getBoundingClientRect().top);
+      expect(Math.abs(topAfterScroll - topBeforeScroll), "desktop preview does not remain sticky while scrolling").toBeLessThanOrEqual(2);
+    } else {
+      expect(previewPosition).toBe("static");
+    }
+    await page.locator("[data-certificate-primary-actions]").scrollIntoViewIfNeeded();
+    await expect(page.locator("[data-regenerate-certificate]")).toBeVisible();
+    await expect(page.locator("[data-publish-certificate-set]")).toBeVisible();
+  }
+});
+
 test("renders the 1080x1920 protected-zone certificate with fallback and immutable QR target", async ({ page }) => {
   const verificationCode = "e2e-rendered-fallback";
   const html = await buildMiracleV3CertificateHtml({

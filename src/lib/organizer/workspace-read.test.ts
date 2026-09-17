@@ -54,7 +54,13 @@ describe("readOrganizerWorkspaceSummary", () => {
     vi.stubEnv("FEATURE_FLAG_COMPETITION_OPERATIONS_V3", "false");
     vi.stubEnv("FEATURE_FLAG_COMPLETION_WORKSPACE_V3", "false");
     const view = await readOrganizerWorkspaceSummary("cup", { id: "owner", role: "organizer" });
-    expect(view?.capabilities).toEqual({ overview: true, registration: true, participants: false, competition: false, schedule: false, "match-control": false, completion: false, announcements: false, settings: false });
+    expect(view?.capabilities).toEqual({ overview: true, registration: true, participants: false, competition: false, schedule: false, "match-control": false, completion: false, announcements: true, settings: true });
     expect(view?.blockers.every(b => view.capabilities[b.section])).toBe(true);
+  });
+
+  it("exposes announcements and settings because their physical event routes exist", async () => {
+    const view = await readOrganizerWorkspaceSummary("cup", { id: "owner", role: "organizer" });
+    expect(view?.capabilities.announcements).toBe(true);
+    expect(view?.capabilities.settings).toBe(true);
   });
 });

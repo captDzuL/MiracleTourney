@@ -32,7 +32,7 @@ export async function readOrganizerWorkspaceSummary(eventId: string, actor: Pick
   const capabilities: OrganizerWorkspaceSummary["capabilities"] = {
     overview: true, registration: true,
     // These destinations are enabled by their owning migration tasks.
-    participants: isFeatureEnabled("registration_workspace_v3"), announcements: false, settings: false,
+    participants: isFeatureEnabled("registration_workspace_v3"), announcements: true, settings: true,
     competition: operations, schedule: operations, "match-control": operations, completion,
   };
   const counts = event._count;
