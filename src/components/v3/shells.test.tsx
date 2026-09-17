@@ -85,7 +85,7 @@ describe("V3 shell integration", () => {
   it.each(["true", "false"])("uses one event-owned rail when master shell flag is %s", async flag => {
     vi.stubEnv("FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3", flag);
     route.pathname = "/en/organizer/events/cup/overview";
-    await render(<AppShell><PanelShell><aside><nav aria-label="Event-owned rail"><a href="/en/organizer/events/cup/overview">Overview</a></nav></aside></PanelShell></AppShell>);
+    await render(<AppShell><PanelShell><aside><nav aria-label="Event-owned rail"><a href="#overview">Overview</a></nav></aside></PanelShell></AppShell>);
     expect(container.querySelectorAll("aside nav")).toHaveLength(flag === "true" ? 1 : 2);
     expect(container.querySelector(".panel-scope") === null).toBe(flag === "true");
     expect(container.querySelector('nav[aria-label="Operator navigation"]') === null).toBe(flag === "true");

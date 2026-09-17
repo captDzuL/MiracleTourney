@@ -14,6 +14,32 @@ type ContractState = {
   raceOnRequestClaim: boolean;
 };
 
+type MockWhereArgs = { where?: Record<string, unknown>; include?: Record<string, unknown> };
+type MockUpdateManyArgs = { where?: Record<string, unknown>; data: Record<string, unknown> };
+type MockUpdateArgs = { where: Record<string, unknown>; data: Record<string, unknown>; include?: Record<string, unknown> };
+type MockModel = {
+  findFirst: (args: MockWhereArgs) => Promise<Record<string, unknown> | null>;
+  findUnique: (args: MockWhereArgs) => Promise<Record<string, unknown> | null>;
+  findMany: (args: MockWhereArgs) => Promise<Array<Record<string, unknown>>>;
+  count: (args: MockWhereArgs) => Promise<number>;
+  updateMany?: (args: MockUpdateManyArgs) => Promise<{ count: number }>;
+  update?: (args: MockUpdateArgs) => Promise<Record<string, unknown>>;
+  create?: (args: { data: Record<string, unknown> }) => Promise<Record<string, unknown>>;
+};
+type MockPrisma = {
+  event: MockModel;
+  user: MockModel;
+  team: MockModel;
+  player: MockModel;
+  teamRegistrationRequest: MockModel;
+  registrationImportBatch: MockModel;
+  registrationImportItem: MockModel;
+  eventPaymentSettings: MockModel;
+  competitionPhase: MockModel;
+  match: MockModel;
+  $transaction: (callback: (transaction: MockPrisma) => Promise<unknown>) => Promise<unknown>;
+};
+
 const { state, prisma, resetState } = vi.hoisted(() => {
   const clone = <T>(value: T): T => {
     if (value instanceof Date) return new Date(value.getTime()) as T;
@@ -159,7 +185,7 @@ const { state, prisma, resetState } = vi.hoisted(() => {
     return result;
   };
 
-  const makePrisma = (target: ContractState): Record<string, any> => {
+  const makePrisma = (target: ContractState): MockPrisma => {
     const model = (name: string, rows: () => Array<Record<string, unknown>>) => ({
       findFirst: async (args: { where?: Record<string, unknown>; include?: Record<string, unknown> }) => {
         const row = rows().find((item) => matches(item, args?.where));
@@ -175,7 +201,7 @@ const { state, prisma, resetState } = vi.hoisted(() => {
       count: async (args: { where?: Record<string, unknown> }) => rows().filter((item) => matches(item, args?.where)).length,
     });
 
-    const db: Record<string, any> = {
+    const db: MockPrisma = {
       event: model("event", () => target.events),
       user: model("user", () => target.users),
       team: model("team", () => target.teams),
@@ -186,6 +212,15 @@ const { state, prisma, resetState } = vi.hoisted(() => {
       eventPaymentSettings: model("payment", () => target.paymentSettings),
       competitionPhase: model("phase", () => target.competitionPhases),
       match: model("match", () => target.matches),
+      $transaction: async (callback) => {
+        const snapshot = clone(target) as ContractState;
+        const transaction = makePrisma(snapshot);
+        const result = await callback(transaction);
+        for (const key of Object.keys(target) as Array<keyof ContractState>) {
+          (target[key] as never) = clone(snapshot[key]) as never;
+        }
+        return result;
+      },
     };
 
     db.event.updateMany = async (args: { where?: Record<string, unknown>; data: Record<string, unknown> }) => {
@@ -234,15 +269,6 @@ const { state, prisma, resetState } = vi.hoisted(() => {
       const found = target.players.filter((row) => matches(row, args.where));
       for (const row of found) Object.assign(row, args.data);
       return { count: found.length };
-    };
-    db.$transaction = async (callback: (transaction: Record<string, any>) => Promise<unknown>) => {
-      const snapshot = clone(target) as ContractState;
-      const transaction = makePrisma(snapshot);
-      const result = await callback(transaction);
-      for (const key of Object.keys(target) as Array<keyof ContractState>) {
-        (target[key] as never) = clone(snapshot[key]) as never;
-      }
-      return result;
     };
     return db;
   };
