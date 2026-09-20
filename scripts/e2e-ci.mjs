@@ -32,12 +32,14 @@ export function runCommand(
   });
 }
 
-const RELEASE_STEPS = [
+/** @type {readonly [label: string, command: "pnpm", args: readonly string[]][]} */
+export const RELEASE_STEPS = [
   ["Database preflight", "pnpm", ["test:e2e:preflight"]],
   ["Database reset and seed", "pnpm", ["test:e2e:prepare"]],
   ["Match Day profile", "pnpm", ["exec", "playwright", "test", "tests/e2e/v3-matchday.spec.ts", "--fail-on-flaky-tests"]],
-  ["Default profile shard 1/2", "pnpm", ["exec", "playwright", "test", "--shard=1/2", "--fail-on-flaky-tests"]],
-  ["Default profile shard 2/2", "pnpm", ["exec", "playwright", "test", "--shard=2/2", "--fail-on-flaky-tests"]],
+  ["Default profile shard 1/2", "pnpm", ["exec", "playwright", "test", "--config", "playwright.ci-default.config.ts", "--shard=1/2", "--fail-on-flaky-tests"]],
+  ["Default profile shard 2/2", "pnpm", ["exec", "playwright", "test", "--config", "playwright.ci-default.config.ts", "--shard=2/2", "--fail-on-flaky-tests"]],
+  ["Visual profile", "pnpm", ["exec", "playwright", "test", "--config", "playwright.smoke.config.ts", "--fail-on-flaky-tests"]],
   ["Legacy flags-off profile", "pnpm", ["exec", "playwright", "test", "--config", "playwright.legacy.config.ts", "--fail-on-flaky-tests"]],
 ];
 

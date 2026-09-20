@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readFile } from "node:fs/promises";
 
 type CiModule = {
+  RELEASE_STEPS: readonly [label: string, command: "pnpm", args: readonly string[]][];
   runCommand(
     command: string,
     args: string[],
@@ -26,14 +27,14 @@ describe("CI E2E release sequence", () => {
     expect(workflow).toContain('node-version: "24"');
     expect(workflow).toContain("version: 10");
     expect(workflow).toContain("run: pnpm exec eslint . --quiet");
-    expect(e2eJob).toContain("timeout-minutes: 60");
-    expect(e2eJob).not.toContain("timeout-minutes: 30");
+    expect(e2eJob).toContain("timeout-minutes: 90");
+    expect(e2eJob).not.toContain("timeout-minutes: 60");
     expect(workflow).not.toMatch(/eslint[^\n]*\|\|\s*true/i);
   });
 
   it("records elapsed time for every release phase and the total sequence", async () => {
     const { runE2eCi } = await import(ciModulePath) as CiModule;
-    const timestamps = [0, 100, 350, 400, 900, 950, 1_550, 1_600, 2_300, 2_350, 3_150, 3_200, 4_100, 4_200];
+    const timestamps = [0, 100, 350, 400, 900, 950, 1_550, 1_600, 2_300, 2_350, 3_150, 3_200, 4_000, 4_100, 4_200, 4_300];
     const logger = { log: vi.fn(), error: vi.fn() };
 
     await runE2eCi({
@@ -53,14 +54,16 @@ describe("CI E2E release sequence", () => {
       "[e2e-ci] PASS Default profile shard 1/2 (700ms)",
       "[e2e-ci] START Default profile shard 2/2",
       "[e2e-ci] PASS Default profile shard 2/2 (800ms)",
+      "[e2e-ci] START Visual profile",
+      "[e2e-ci] PASS Visual profile (800ms)",
       "[e2e-ci] START Legacy flags-off profile",
-      "[e2e-ci] PASS Legacy flags-off profile (900ms)",
-      "[e2e-ci] PASS All profiles (4200ms)",
+      "[e2e-ci] PASS Legacy flags-off profile (100ms)",
+      "[e2e-ci] PASS All profiles (4300ms)",
     ]);
     expect(logger.error).not.toHaveBeenCalled();
   });
   it("guards the shared database, then runs Match Day, two fresh-server shards, and flags-off profiles serially", async () => {
-    const { runE2eCi } = await import(ciModulePath) as CiModule;
+    const { RELEASE_STEPS, runE2eCi } = await import(ciModulePath) as CiModule;
     const calls: string[] = [];
     const runCommand = vi.fn(async (command: string, args: string[]) => {
       calls.push([command, ...args].join(" "));
@@ -72,9 +75,19 @@ describe("CI E2E release sequence", () => {
       "pnpm test:e2e:preflight",
       "pnpm test:e2e:prepare",
       "pnpm exec playwright test tests/e2e/v3-matchday.spec.ts --fail-on-flaky-tests",
-      "pnpm exec playwright test --shard=1/2 --fail-on-flaky-tests",
-      "pnpm exec playwright test --shard=2/2 --fail-on-flaky-tests",
+      "pnpm exec playwright test --config playwright.ci-default.config.ts --shard=1/2 --fail-on-flaky-tests",
+      "pnpm exec playwright test --config playwright.ci-default.config.ts --shard=2/2 --fail-on-flaky-tests",
+      "pnpm exec playwright test --config playwright.smoke.config.ts --fail-on-flaky-tests",
       "pnpm exec playwright test --config playwright.legacy.config.ts --fail-on-flaky-tests",
+    ]);
+    expect(RELEASE_STEPS.map(([label]) => label)).toEqual([
+      "Database preflight",
+      "Database reset and seed",
+      "Match Day profile",
+      "Default profile shard 1/2",
+      "Default profile shard 2/2",
+      "Visual profile",
+      "Legacy flags-off profile",
     ]);
   });
 
