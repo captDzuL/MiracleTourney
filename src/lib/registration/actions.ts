@@ -7,6 +7,7 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireRole } from "@/lib/auth/session";
 import {
   createTeamRegistrationRequest,
+  getEventBySlug,
   registerTeam,
 } from "@/lib/platform/repository";
 import { saveCaptainRegistrationDraft } from "@/lib/registration/captain-repository";
@@ -76,6 +77,11 @@ export async function captainRegisterEventTeamAction(formData: FormData) {
   });
 
   if (!parsed.success) {
+    return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
+  }
+
+  const event = await getEventBySlug(safeSlug);
+  if (!event || event.id !== parsed.data.eventId) {
     return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
   }
 

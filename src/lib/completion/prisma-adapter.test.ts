@@ -355,13 +355,13 @@ describe("Prisma completion transaction adapter", () => {
       .toEqual({ status: "blocked", code: "unauthorized" });
   });
 
-  it("denies manipulated nested event/player IDs before loading or writing completion state", async () => {
+  it("rejects a foreign nested player ID inside an authorized event before writing completion state", async () => {
     const db = new MemoryCompletionPrisma();
     const before = structuredClone(db.data);
     const forgedDecisions = decisions.map((decision) => ({ ...decision, playerId: "player-b" }));
 
-    await expect(completeTournament("event-b", forgedDecisions, 0, key1, createPrismaCompletionDependencies(actor, db as never)))
-      .resolves.toEqual({ status: "blocked", code: "unauthorized" });
+    await expect(completeTournament("event-1", forgedDecisions, 0, key1, createPrismaCompletionDependencies(actor, db as never)))
+      .resolves.toEqual({ status: "blocked", code: "invalid_decisions" });
     expect(db.data).toEqual(before);
   });
 
