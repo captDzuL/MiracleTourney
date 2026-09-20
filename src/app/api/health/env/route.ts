@@ -1,45 +1,17 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/session";
-
-const DEFAULT_JWT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32chars-min";
+import { requireSameOrigin } from "@/lib/security/request-guard";
 
 export const dynamic = "force-dynamic";
 
-function getJwtSecretStatus() {
-  const secret = process.env.JWT_SECRET?.trim() ?? "";
+export async function GET(request: Request = new Request("http://localhost/api/health/env")) {
+  const originFailure = requireSameOrigin(request);
+  if (originFailure) return originFailure;
 
-  if (!secret) {
-    return {
-      status: "missing",
-      isConfigured: false,
-      length: 0,
-    };
-  }
-
-  if (secret === DEFAULT_JWT_SECRET) {
-    return {
-      status: "default",
-      isConfigured: false,
-      length: secret.length,
-    };
-  }
-
-  return {
-    status: "set",
-    isConfigured: true,
-    length: secret.length,
-  };
-}
-
-export async function GET() {
   const user = await requireRole("platform_admin");
   if (!user) return NextResponse.json({ error: "forbidden" }, { status: 403, headers: { "Cache-Control": "no-store, max-age=0" } });
   return NextResponse.json(
-    {
-      jwtSecret: getJwtSecretStatus(),
-      nodeEnv: process.env.NODE_ENV ?? "unknown",
-      vercelEnv: process.env.VERCEL_ENV ?? "unknown",
-    },
+    { status: "ok" },
     {
       headers: {
         "Cache-Control": "no-store, max-age=0",

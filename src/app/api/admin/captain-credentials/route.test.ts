@@ -32,6 +32,7 @@ describe("captain credentials export API", () => {
     const response = await GET(new Request("http://localhost/api/admin/captain-credentials?eventId=../secrets"));
 
     expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "invalid_input" });
     expect(getCaptainCredentialsForEvent).not.toHaveBeenCalled();
   });
 
@@ -43,7 +44,22 @@ describe("captain credentials export API", () => {
     );
 
     expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "invalid_input" });
     expect(getCaptainCredentialsForEvent).not.toHaveBeenCalled();
+  });
+
+  it("maps repository failures to a generic internal error with a request id", async () => {
+    requireRole.mockResolvedValue({ id: "admin-1", role: "admin" });
+    getCaptainCredentialsForEvent.mockRejectedValue(new Error("Prisma P2028 secret stack"));
+
+    const response = await GET(new Request("https://app.example/api/admin/captain-credentials?eventId=event-safe", {
+      headers: { "x-vercel-id": "req-captain-1" },
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({ code: "internal_error", requestId: "req-captain-1" });
+    expect(JSON.stringify(body)).not.toMatch(/Prisma|P2028|secret|stack/i);
   });
 
   it("returns a generic denial for an organizer outside the requested event", async () => {
