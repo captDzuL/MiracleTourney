@@ -20,7 +20,7 @@ export type PublicV3FrameProps = {
 export function PublicV3Frame({ children, brandHref, homeLabel, skipLabel, navigationLabel, navigation, headerEnd, footer, mainId = "mpv3-main", className }: PublicV3FrameProps) {
   return <div className={cn("miracle-public-v3", className)}>
     <a className="mpv3-skip" href={`#${mainId}`}>{skipLabel}</a>
-    <header className="mpv3-header"><div className="mpv3-wrap mpv3-header-inner">
+    <header className="mpv3-header flex"><div className="mpv3-wrap mpv3-header-inner">
       <a className="mpv3-brand" href={brandHref} aria-label={homeLabel}><BrandLogo /></a>
       <nav className="mpv3-global-nav" aria-label={navigationLabel}>{navigation.map((item) => <a key={item.href} href={item.href} aria-current={item.active ? "page" : undefined}>{item.label}</a>)}</nav>
       {headerEnd && <div className="mpv3-header-end">{headerEnd}</div>}

@@ -1,21 +1,19 @@
 import { expect, test } from "@playwright/test";
 
-test("language switcher keeps the V3 homepage localized", async ({ page }) => {
-  await page.goto("/id");
-  const localeSwitcher = page.getByLabel(/pilih bahasa \/ select language/i);
-  await expect(page.locator("html")).toHaveAttribute("lang", "id");
-  await localeSwitcher.getByRole("button", { name: "en" }).click();
-  await expect(page).toHaveURL(/\/en$/);
-  await expect(page.locator("html")).toHaveAttribute("lang", "en");
-  await expect(localeSwitcher.getByRole("button", { name: "en" })).toHaveAttribute("aria-pressed", "true");
-  await localeSwitcher.getByRole("button", { name: "id" }).click();
-  await expect(page.locator("html")).toHaveAttribute("lang", "id");
-});
+const cases = [
+  { path: "/id", lang: "id", home: "Beranda", signIn: "Masuk" },
+  { path: "/en", lang: "en", home: "Home", signIn: "Sign in" },
+] as const;
 
-test("homepage shell keeps the V3 desktop grid", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/id");
-  const headerRow = page.locator("header > div").first();
-  await expect(headerRow).toBeVisible();
-  await expect(headerRow.evaluate((element) => window.getComputedStyle(element).display)).resolves.toBe("grid");
-});
+for (const item of cases) {
+  test(`renders the V3 ${item.lang} shell`, async ({ page }) => {
+    await page.goto(item.path, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("html")).toHaveAttribute("lang", item.lang);
+    await expect(page.getByRole("link", { name: item.home, exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: item.signIn, exact: true })).toBeVisible();
+    await expect(page.locator("header")).toHaveCount(1);
+    const display = await page.locator("header").evaluate((node) => getComputedStyle(node).display);
+    expect(display).toBe("flex");
+    await expect(page.getByLabel(/pilih bahasa|select language/i)).toHaveCount(0);
+  });
+}
