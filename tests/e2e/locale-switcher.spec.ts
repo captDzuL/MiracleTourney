@@ -5,15 +5,27 @@ const cases = [
   { path: "/en", lang: "en", home: "Home", signIn: "Sign in" },
 ] as const;
 
-for (const item of cases) {
-  test(`renders the V3 ${item.lang} shell`, async ({ page }) => {
-    await page.goto(item.path, { waitUntil: "domcontentloaded" });
-    await expect(page.locator("html")).toHaveAttribute("lang", item.lang);
-    await expect(page.getByRole("link", { name: item.home, exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: item.signIn, exact: true })).toBeVisible();
-    await expect(page.locator("header")).toHaveCount(1);
-    const display = await page.locator("header").evaluate((node) => getComputedStyle(node).display);
-    expect(display).toBe("flex");
-    await expect(page.getByLabel(/pilih bahasa|select language/i)).toHaveCount(0);
+const viewports = [
+  { name: "desktop", viewport: { width: 1440, height: 900 } },
+  { name: "mobile", viewport: { width: 390, height: 844 } },
+] as const;
+
+for (const viewport of viewports) {
+  test.describe(`${viewport.name} V3 shell`, () => {
+    test.use({ viewport: viewport.viewport });
+
+    for (const item of cases) {
+      test(`renders the V3 ${item.lang} shell`, async ({ page }) => {
+        await page.goto(item.path, { waitUntil: "domcontentloaded" });
+        await expect(page.locator("html")).toHaveAttribute("lang", item.lang);
+        const header = page.locator("header");
+        await expect(header.getByRole("navigation").getByRole("link", { name: item.home, exact: true })).toHaveAttribute("aria-current", "page");
+        await expect(header.getByRole("link", { name: item.signIn, exact: true })).toBeVisible();
+        await expect(header).toHaveCount(1);
+        const display = await header.evaluate((node) => getComputedStyle(node).display);
+        expect(display).toBe("flex");
+        await expect(page.getByLabel(/pilih bahasa|select language/i)).toHaveCount(0);
+      });
+    }
   });
 }
