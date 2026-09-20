@@ -201,6 +201,18 @@ describe("registration V3 actions", () => {
     expect(mocks.revalidatePath).not.toHaveBeenCalledWith("/admin");
   });
 
+  it("denies a manipulated import batch from another event without exposing batch metadata or committing", async () => {
+    mocks.getRegistrationImportBatchForAdmin.mockResolvedValue({ id: "batch-b", eventId: "event-other" });
+
+    const result = await commitEventRegistrationImportAction(form({
+      locale: "en", eventId: "event-1", batchId: "batch-b", itemId: "item-b",
+      returnTo: "/en/organizer/events/event-1/registration?view=import",
+    }));
+    expect(result).toMatchObject({ status: "blocked", code: "forbidden" });
+    expect(JSON.stringify(result)).not.toContain("event-other");
+    expect(mocks.commitRegistrationImportBatch).not.toHaveBeenCalled();
+  });
+
   it("returns a clean conflict when payment approval loses its pending/version precondition", async () => {
     mocks.approveTeamRegistrationRequest.mockRejectedValue(new Error("Stale payment review"));
 

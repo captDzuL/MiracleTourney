@@ -670,6 +670,15 @@ describe("captain actions", () => {
     });
   });
 
+  it("returns a generic denial for a cross-event registration without creating a payment request", async () => {
+    registerTeam.mockRejectedValueOnce(new Error("Not authorized"));
+
+    await expect(
+      captainRegisterTeamAction(fd({ eventId: "event-b", name: "Foreign United", tag: "FUT" })),
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-b&error=Not%20authorized");
+    expect(createTeamRegistrationRequest).not.toHaveBeenCalled();
+  });
+
 
   it("creates a pending payment request when the event requires a fee", async () => {
     registerTeam.mockRejectedValue(new Error("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif."));
@@ -716,6 +725,27 @@ describe("captain actions", () => {
       await expect(
         captainUploadPaymentProofAction(fd({ requestId: "foreign-request", eventId: "event-paid", paymentProof: validPngFile("proof.png") })),
       ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&error=Not%20authorized");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateTeamRegistrationProof).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
+
+  it.each([
+    ["missing", null, "No%20Payment%20proof%20file%20uploaded."],
+    ["oversized", new File(["x".repeat(2 * 1024 * 1024 + 1)], "proof.png", { type: "image/png" }), "Payment%20proof%20file%20is%20too%20large."],
+    ["invalid signature", new File(["not-an-image"], "proof.png", { type: "image/png" }), "Payment%20proof%20file%20content%20does%20not%20match%20its%20image%20type."],
+  ] as const)("preserves the payment proof validation message for %s files", async (_kind, paymentProof, encodedMessage) => {
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+
+    try {
+      const fields: Record<string, string | File> = { requestId: "request-1", eventId: "event-paid" };
+      if (paymentProof) fields.paymentProof = paymentProof;
+      await expect(captainUploadPaymentProofAction(fd(fields))).rejects.toThrow(
+        `REDIRECT:/captain?tab=registration&eventId=event-paid&error=${encodedMessage}`,
+      );
       expect(blobPut).not.toHaveBeenCalled();
       expect(updateTeamRegistrationProof).not.toHaveBeenCalled();
     } finally {
@@ -1117,7 +1147,7 @@ describe("organizer legacy match roundtrip", () => {
   it("rejects cross-event writes before reaching repository mutations", async () => {
     assertUserCanManageEvent.mockRejectedValue(new Error("Forbidden event"));
     for (const action of [adminUpdateMatchResultAction, adminSetRoundConfigAction, adminSetMatchGamesAction]) {
-      await expect(action(fd({ eventId: "other", matchEventId: "other", matchId: "m1", roundLabel: "Round 1", bestOf: "3", homeScore: "2", awayScore: "0" }))).rejects.toThrow("Forbidden event");
+      await expect(action(fd({ eventId: "other", matchEventId: "other", matchId: "match-b", roundLabel: "Round 1", bestOf: "3", homeScore: "2", awayScore: "0" }))).rejects.toThrow("Forbidden event");
     }
     expect(setMatchResult).not.toHaveBeenCalled(); expect(upsertRoundConfig).not.toHaveBeenCalled(); expect(setMatchGames).not.toHaveBeenCalled();
   });

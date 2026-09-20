@@ -456,6 +456,20 @@ const generationInput = (certificateType: "champion" | "mvp", idempotencyKey: st
     await expect(publishCertificateSet({ eventId: "event-1", expectedVersion: 4, expectedCertificateRevision: 2, idempotencyKey: "33333333-3333-4333-8333-333333333333", selection }, deps)).resolves.toEqual({ status: "blocked", code: "set_not_ready" });
   });
 
+  it("does not publish a manipulated certificate ID from another relationship", async () => {
+    const { tx, deps } = studioDependencies();
+    const selection = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => ({
+      certificateType,
+      certificateId: certificateType === "champion" ? "certificate-b" : `cert-${certificateType}-1`,
+    }));
+
+    await expect(publishCertificateSet({
+      eventId: "event-1", expectedVersion: 4, expectedCertificateRevision: 2,
+      idempotencyKey: "66666666-6666-4666-8666-666666666666", selection,
+    }, deps)).resolves.toEqual({ status: "blocked", code: "set_not_ready" });
+    expect(tx.commitPublication).not.toHaveBeenCalled();
+  });
+
   it.each([
     [{ authorize: vi.fn().mockResolvedValue(null) }, { status: "blocked", code: "unauthorized" }],
     [{ loadCompletion: vi.fn().mockResolvedValue(null) }, { status: "integration_required" }],

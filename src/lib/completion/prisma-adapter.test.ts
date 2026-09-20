@@ -355,6 +355,16 @@ describe("Prisma completion transaction adapter", () => {
       .toEqual({ status: "blocked", code: "unauthorized" });
   });
 
+  it("denies manipulated nested event/player IDs before loading or writing completion state", async () => {
+    const db = new MemoryCompletionPrisma();
+    const before = structuredClone(db.data);
+    const forgedDecisions = decisions.map((decision) => ({ ...decision, playerId: "player-b" }));
+
+    await expect(completeTournament("event-b", forgedDecisions, 0, key1, createPrismaCompletionDependencies(actor, db as never)))
+      .resolves.toEqual({ status: "blocked", code: "unauthorized" });
+    expect(db.data).toEqual(before);
+  });
+
   it("rechecks the actor role, activation and password gate inside the database transaction", async () => {
     const db = new MemoryCompletionPrisma();
     db.data.user.deactivatedAt = new Date("2026-09-13T00:00:00Z");

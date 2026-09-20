@@ -2382,8 +2382,20 @@ describe("authoritative player-stat write boundary", () => {
   });
   it("rejects foreign event readers before fetching sensitive statistics",async()=>{
     prisma.user.findUnique.mockResolvedValue({id:"stranger",role:"organizer"});
-    await expect(readEventMatchStatistics("event-1","match-1","stranger")).rejects.toThrow("authorized");
+    await expect(readEventMatchStatistics("event-1","match-b","stranger")).rejects.toThrow("authorized");
+    expect(prisma.match.findFirst).not.toHaveBeenCalled();
     expect(prisma.statSubmission.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns a generic missing result for a manipulated match ID before nested reads", async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: "admin-1", role: "admin", mustChangePassword: false });
+    prisma.event.findUnique.mockResolvedValue({ id: "event-1", organizerUserId: "owner-1", competitionVersion: 7 });
+    prisma.match.findFirst.mockResolvedValue(null);
+
+    await expect(readEventMatchStatistics("event-1", "match-b", "admin-1")).rejects.toThrow("Match not found");
+    expect(prisma.statSubmission.findMany).not.toHaveBeenCalled();
+    expect(prisma.player.findMany).not.toHaveBeenCalled();
+    expect(prisma.matchResultRevision.findMany).not.toHaveBeenCalled();
   });
 
   it("rejects a captain calling the organizer repository directly", async () => {
@@ -2407,6 +2419,15 @@ describe("authoritative player-stat write boundary", () => {
     await expect(approveStatSubmission("submission-1", "admin-1", { ...guard, ...change })).rejects.toThrow();
     expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
     expect(prisma.statSubmission.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("returns a generic missing denial for a manipulated submission ID before any write", async () => {
+    prisma.statSubmission.findUnique.mockResolvedValue(null);
+
+    await expect(approveStatSubmission("submission-b", "admin-1", guard)).rejects.toThrow("Submission not found");
+    expect(prisma.statSubmission.updateMany).not.toHaveBeenCalled();
+    expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
+    expect(prisma.competitionAuditLog.create).not.toHaveBeenCalled();
   });
 
   it("requires a nonblank rejection reason at the shared boundary", async () => {
@@ -2660,15 +2681,20 @@ describe("captain roster edits respect the event lifecycle", () => {
     },
   );
 
-  it("still enforces ownership before checking the event status", async () => {
+  it("still enforces ownership for a manipulated player ID before checking status or writing", async () => {
     prisma.player.findUnique.mockResolvedValue({
-      id: "player-1",
+      id: "player-b",
       team: { captainId: "other-captain", eventId: "event-1" },
     });
 
-    await expect(updatePlayer("player-1", "captain-1", { displayName: "Updated" })).rejects.toThrow(
+    await expect(updatePlayer("player-b", "captain-1", { displayName: "Updated" })).rejects.toThrow(
       "Not authorized to edit this player.",
     );
+    await expect(deletePlayer("player-b", "captain-1")).rejects.toThrow(
+      "Not authorized to delete this player.",
+    );
     expect(prisma.event.findUnique).not.toHaveBeenCalled();
+    expect(prisma.player.update).not.toHaveBeenCalled();
+    expect(prisma.player.delete).not.toHaveBeenCalled();
   });
 });

@@ -574,6 +574,7 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
       entityId: parsed.requestId,
       label: "Payment proof",
       maxBytes: MAX_PAYMENT_PROOF_BYTES,
+      validationMode: "throw",
       errorPath: registrationBase,
     });
     await updateTeamRegistrationProof(captain.id, parsed.requestId, proofAsset.url);

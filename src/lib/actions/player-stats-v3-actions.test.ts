@@ -22,10 +22,25 @@ describe("event-local player statistics actions", () => {
     expect(boundary.save).not.toHaveBeenCalled();
   });
   it("does not allow foreign team input",async()=>{const data=form();data.set("teamId","foreign");expect(await actions.saveEventPlayerStatsAction(data)).toEqual({status:"invalid"});expect(boundary.save).not.toHaveBeenCalled();});
+  it("denies a manipulated match ID before loading nested match data or saving",async()=>{
+    const data=form();data.set("matchId","match-b");
+    boundary.owner.mockRejectedValueOnce(new Error("Not authorized"));
+    expect(await actions.saveEventPlayerStatsAction(data)).toEqual({status:"unauthorized"});
+    expect(boundary.context).not.toHaveBeenCalled();
+    expect(boundary.save).not.toHaveBeenCalled();
+    expect(boundary.path).not.toHaveBeenCalled();
+  });
   it("rejects noncanonical defense aliases with the same parser as captain",async()=>{const data=form();data.set("stat_player1_blocks","1");expect(await actions.saveEventPlayerStatsAction(data)).toEqual({status:"invalid"});expect(boundary.save).not.toHaveBeenCalled();});
   it("retains guarded submission identity during approval",async()=>{
     expect(await actions.approveEventPlayerStatsAction(form())).toEqual({status:"saved"});
     expect(boundary.approve).toHaveBeenCalledWith("sub-1","owner-1",expect.objectContaining({eventId:"event-1",matchId:"match:1",submittedAt:"2026-09-16T00:00:00.000Z"}));
+  });
+  it("returns a generic denial for a manipulated submission ID without refreshing or approving",async()=>{
+    const data=form();data.set("submissionId","submission-b");
+    boundary.approve.mockRejectedValueOnce(new Error("Not authorized"));
+    expect(await actions.approveEventPlayerStatsAction(data)).toEqual({status:"unauthorized"});
+    expect(boundary.approve).toHaveBeenCalledWith("submission-b","owner-1",expect.objectContaining({eventId:"event-1",matchId:"match:1"}));
+    expect(boundary.path).not.toHaveBeenCalled();
   });
   it("requires a rejection note",async()=>{expect(await actions.rejectEventPlayerStatsAction(form())).toEqual({status:"invalid"});expect(boundary.reject).not.toHaveBeenCalled();});
   it("maps competing reviewer and serialization failures to conflict and refreshes canonical route",async()=>{boundary.approve.mockRejectedValue({code:"P2034"});expect(await actions.approveEventPlayerStatsAction(form())).toEqual({status:"conflict"});expect(boundary.path).toHaveBeenCalledWith("/id/organizer/events/event-1/matches/match%3A1");});

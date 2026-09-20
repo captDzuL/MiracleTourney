@@ -37,6 +37,8 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 import {
   applyPublishedEventRevisionAction,
   createPublishedRevisionPreviewAction,
+  discardPublishedEventRevisionAction,
+  revokePublishedRevisionPreviewAction,
   savePublishedEventRevisionAction,
   uploadPublishedRevisionVisualAction,
   updatePublishedEventSlugAction,
@@ -103,6 +105,22 @@ describe("published event revision actions", () => {
 
     await expect(applyPublishedEventRevisionAction({ revisionId: "revision-1" })).rejects.toThrow("Not authorized");
     expect(mocks.applyEventEditRevision).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["discard", () => discardPublishedEventRevisionAction({ revisionId: "revision-b" }), mocks.discardEventEditRevision],
+    ["preview create", () => createPublishedRevisionPreviewAction({ revisionId: "revision-b", locale: "en" }), mocks.createEventRevisionPreviewToken],
+    ["preview revoke", () => revokePublishedRevisionPreviewAction({ revisionId: "revision-b" }), mocks.revokeEventRevisionPreviewTokens],
+  ] as const)("denies a manipulated %s revision ID before the service can read or write", async (_label, call, service) => {
+    mocks.getEventEditRevision.mockResolvedValue({
+      ...ownedRevision,
+      id: "revision-b",
+      eventId: "event-other",
+      event: { organizerUserId: "organizer-other" },
+    });
+
+    await expect(call()).rejects.toThrow("Not authorized");
+    expect(service).not.toHaveBeenCalled();
   });
 
   it("blocks a new organizer until the temporary password has been replaced", async () => {
