@@ -7,6 +7,7 @@ const {
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
+  assertUserCanManageTeam,
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   blobPut,
@@ -52,6 +53,7 @@ const {
   updateTeamRegistrationProof,
   updateEventStream,
   updateCaptainTeamLogo,
+  updateTeamLogo,
   updatePlayer,
   updateEventCertificateAssets,
   updateEventPublicInfo,
@@ -61,6 +63,7 @@ const {
   setTeamCaptainDisplay,
   previewRegistrationImportForUser,
   commitRegistrationImportForUser,
+  prisma,
 } = vi.hoisted(() => ({
   addPlayer: vi.fn(),
   approveEventVisualAsset: vi.fn(),
@@ -68,6 +71,7 @@ const {
   approveTeamRegistrationRequest: vi.fn(),
   assertCaptainCanSubmitStats: vi.fn(),
   assertUserCanManageEvent: vi.fn(),
+  assertUserCanManageTeam: vi.fn(),
   assertUserCanReviewStatSubmission: vi.fn(),
   autoTransitionEventToOngoing: vi.fn(),
   blobPut: vi.fn(),
@@ -113,6 +117,7 @@ const {
   updateTeamRegistrationProof: vi.fn(),
   updateEventStream: vi.fn(),
   updateCaptainTeamLogo: vi.fn(),
+  updateTeamLogo: vi.fn(),
   updatePlayer: vi.fn(),
   updateEventCertificateAssets: vi.fn(),
   updateEventPublicInfo: vi.fn(),
@@ -122,6 +127,13 @@ const {
   setTeamCaptainDisplay: vi.fn(),
   previewRegistrationImportForUser: vi.fn(),
   commitRegistrationImportForUser: vi.fn(),
+  prisma: {
+    event: { findUnique: vi.fn() },
+    match: { findFirst: vi.fn() },
+    team: { findFirst: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
+    teamRegistrationRequest: { findFirst: vi.fn() },
+    user: { findUnique: vi.fn(), update: vi.fn() },
+  },
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
@@ -145,6 +157,7 @@ vi.mock("@/lib/platform/repository", () => ({
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
+  assertUserCanManageTeam,
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   createCaptainAccount,
@@ -177,6 +190,7 @@ vi.mock("@/lib/platform/repository", () => ({
   updatePaymentSettings,
   updateTeamRegistrationProof,
   updateCaptainTeamLogo,
+  updateTeamLogo,
   updateEventCertificateAssets,
   updateEventPublicInfo,
   updateEventStream,
@@ -186,6 +200,7 @@ vi.mock("@/lib/platform/repository", () => ({
   adminWriteMatchPlayerStats,
   setTeamCaptainDisplay,
 }));
+vi.mock("@/lib/platform/db", () => ({ prisma }));
 vi.mock("@/lib/certificate/generate", () => ({
   generateCertificateIfFinal,
 }));
@@ -214,6 +229,7 @@ import {
   adminImportTeamsCsvAction,
   adminPreviewRegistrationImportAction,
   adminCommitRegistrationImportAction,
+  adminDeleteTeamAction,
   adminRejectEventVisualAction,
   adminRejectStatAction,
   adminSetEventVisualFocalPointAction,
@@ -221,6 +237,8 @@ import {
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
   adminUploadCharacterArtAction,
+  adminUploadEventLogoAction,
+  adminUploadTeamLogoAction,
   organizerUploadEventLogoAction,
   organizerUploadEventVisualAction,
   adminUploadEventVisualAction,
@@ -233,6 +251,7 @@ import {
   captainDeletePlayerAction,
   captainRegisterTeamAction,
   captainUploadPaymentProofAction,
+  captainUploadTeamLogoAction,
   captainSetDisplayCaptainAction,
   captainSignUpAction,
   captainSubmitStatsAction,
@@ -672,6 +691,7 @@ describe("captain actions", () => {
 
   it("uploads a payment proof for the authenticated captain", async () => {
     updateTeamRegistrationProof.mockResolvedValue({ id: "request-1", status: "pending_review" });
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
     blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-proofs/request-1.png" });
 
@@ -686,6 +706,39 @@ describe("captain actions", () => {
       delete process.env.BLOB_READ_WRITE_TOKEN;
     }
   });
+
+  it("denies a foreign payment request before external upload or repository write", async () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(null);
+    blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-proofs/foreign.png" });
+
+    try {
+      await expect(
+        captainUploadPaymentProofAction(fd({ requestId: "foreign-request", eventId: "event-paid", paymentProof: validPngFile("proof.png") })),
+      ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&error=Not%20authorized");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateTeamRegistrationProof).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
+
+  it("denies a foreign team logo before external upload or repository write", async () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    prisma.team.findFirst.mockResolvedValue(null);
+    blobPut.mockResolvedValue({ url: "https://blob.example.com/team-logos/foreign.png" });
+
+    try {
+      await expect(
+        captainUploadTeamLogoAction(fd({ teamId: "foreign-team", teamLogo: validPngFile("logo.png") })),
+      ).rejects.toThrow("REDIRECT:/captain?tab=roster&error=Not%20authorized");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateCaptainTeamLogo).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
+
   it("requires a captain session before adding a player", async () => {
     requireRole.mockResolvedValue(null);
 
@@ -1862,6 +1915,45 @@ describe("adminUploadCharacterArtAction", () => {
   });
 });
 
+describe("admin team ownership boundaries", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    blobPut.mockResolvedValue({ url: "https://blob.example.com/team-logos/foreign.png" });
+  });
+
+  afterEach(() => {
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+  });
+
+  it("denies a foreign team logo before external upload or repository write", async () => {
+    assertUserCanManageTeam.mockRejectedValue(new Error("Not authorized"));
+
+    await expect(
+      adminUploadTeamLogoAction(fd({ teamId: "foreign-team", teamLogo: validPngFile("logo.png") })),
+    ).rejects.toThrow("REDIRECT:/admin?error=Not%20authorized");
+    expect(assertUserCanManageTeam).toHaveBeenCalledWith(adminSession(), "foreign-team");
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(updateTeamLogo).not.toHaveBeenCalled();
+  });
+
+  it("denies a foreign team before reading status or deleting", async () => {
+    assertUserCanManageTeam.mockRejectedValue(new Error("Not authorized"));
+    prisma.team.findFirst.mockResolvedValue({
+      eventId: "event-foreign",
+      event: { id: "event-foreign", status: "Ongoing" },
+    });
+
+    await expect(
+      adminDeleteTeamAction(fd({ teamId: "foreign-team" })),
+    ).rejects.toThrow("REDIRECT:/admin?error=Tim%20tidak%20ditemukan.");
+    expect(assertUserCanManageTeam).toHaveBeenCalledWith(adminSession(), "foreign-team");
+    expect(prisma.team.findFirst).not.toHaveBeenCalled();
+    expect(prisma.team.delete).not.toHaveBeenCalled();
+  });
+});
+
 // ────────────────────────────────────────────────────────────
 // Event visual revision actions (organizer upload + approval)
 // ────────────────────────────────────────────────────────────
@@ -1932,6 +2024,17 @@ describe("event visual revision actions", () => {
     ).rejects.toThrow("REDIRECT:/admin?error=");
     expect(createEventVisualAsset).not.toHaveBeenCalled();
     expect(blobPut).not.toHaveBeenCalled();
+  });
+
+  it("refuses an admin event logo upload before external storage for a foreign event", async () => {
+    requireRole.mockResolvedValue(organizerSession());
+    assertUserCanManageEvent.mockRejectedValue(new Error("Not authorized"));
+
+    await expect(
+      adminUploadEventLogoAction(fd({ eventId: "event-of-another-organizer", eventLogo: validPngFile("logo.png") })),
+    ).rejects.toThrow("Not authorized");
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(updateEventBrandAssets).not.toHaveBeenCalled();
   });
 
   it("refuses uploads without a confirmed rights attestation", async () => {

@@ -32,6 +32,7 @@ import {
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
+  assertUserCanManageTeam,
   assertUserCanReviewStatSubmission,
   createCaptainAccount,
   createOrUpdateCaptainDraftTeam,
@@ -557,16 +558,24 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
   const registrationBase = returnTo ?? (parsed.eventId && isSafeEntityId(parsed.eventId)
     ? `/captain?tab=registration&eventId=${encodeURIComponent(parsed.eventId)}`
     : "/captain?tab=registration");
-  const proofAsset = await uploadImageAsset({
-    file: formData.get("paymentProof"),
-    folder: "payment-proofs",
-    entityId: parsed.requestId,
-    label: "Payment proof",
-    maxBytes: MAX_PAYMENT_PROOF_BYTES,
-    errorPath: registrationBase,
-  });
 
   try {
+    const request = await prisma.teamRegistrationRequest.findFirst({
+      where: { id: parsed.requestId, captainId: captain.id },
+      select: { id: true, eventId: true },
+    });
+    if (!request || parsed.eventId && request.eventId !== parsed.eventId) {
+      throw new Error("Not authorized");
+    }
+
+    const proofAsset = await uploadImageAsset({
+      file: formData.get("paymentProof"),
+      folder: "payment-proofs",
+      entityId: parsed.requestId,
+      label: "Payment proof",
+      maxBytes: MAX_PAYMENT_PROOF_BYTES,
+      errorPath: registrationBase,
+    });
     await updateTeamRegistrationProof(captain.id, parsed.requestId, proofAsset.url);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal mengupload bukti pembayaran.";
@@ -692,6 +701,12 @@ export async function captainUploadTeamLogoAction(formData: FormData) {
 
   try {
     const teamId = z.string().min(1).parse(formData.get("teamId"));
+    const team = await prisma.team.findFirst({
+      where: { id: teamId, captainId: captain.id },
+      select: { id: true },
+    });
+    if (!team) throw new Error("Not authorized");
+
     const asset = await uploadImageAsset({
       file: formData.get("teamLogo"),
       folder: "team-logos",
@@ -977,8 +992,16 @@ export async function adminDeleteTeamAction(formData: FormData) {
   const user = await requireAdminSession();
   const teamId = z.string().min(1).parse(formData.get("teamId"));
 
-  const team = await prisma.team.findUnique({
-    where: { id: teamId },
+  let access: { eventId: string };
+  try {
+    access = await assertUserCanManageTeam(user, teamId);
+    assertWorkspaceEventAction(user, access.eventId);
+  } catch {
+    return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
+  }
+
+  const team = await prisma.team.findFirst({
+    where: { id: teamId, eventId: access.eventId },
     include: { event: { select: { id: true, status: true } } },
   });
   if (!team?.event || !team.eventId) {
@@ -989,8 +1012,6 @@ export async function adminDeleteTeamAction(formData: FormData) {
       `/admin?error=${encodeURIComponent("Tim hanya dapat dihapus dari event Draft.")}` as never
     );
   }
-  await assertUserCanManageEvent(user, team.eventId);
-  assertWorkspaceEventAction(user, team.eventId);
   await prisma.team.delete({ where: { id: teamId } });
   revalidatePath("/", "layout");
   return redirectToActiveLocale("/admin?success=team-deleted" as never);
@@ -1658,6 +1679,9 @@ export async function adminUploadTeamLogoAction(formData: FormData) {
   const teamId = z.string().min(1).parse(formData.get("teamId"));
 
   try {
+    const { eventId } = await assertUserCanManageTeam(user, teamId);
+    assertWorkspaceEventAction(user, eventId);
+
     const asset = await uploadImageAsset({
       file: formData.get("teamLogo"),
       folder: "team-logos",
