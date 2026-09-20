@@ -19,6 +19,9 @@ for (const viewport of viewports) {
         await page.goto(item.path, { waitUntil: "domcontentloaded" });
         await expect(page.locator("html")).toHaveAttribute("lang", item.lang);
         const header = page.locator("header");
+        const brandLink = header.locator("a.mpv3-brand");
+        await expect(brandLink).toHaveAccessibleName(item.home);
+        await expect(brandLink).toBeVisible();
         await expect(header.getByRole("navigation").getByRole("link", { name: item.home, exact: true })).toHaveAttribute("aria-current", "page");
         await expect(header.getByRole("link", { name: item.signIn, exact: true })).toBeVisible();
         await expect(header).toHaveCount(1);
