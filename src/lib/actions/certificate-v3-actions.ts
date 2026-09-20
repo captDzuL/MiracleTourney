@@ -10,6 +10,7 @@ import { assertUserCanManageEvent, createEventVisualAsset } from "@/lib/platform
 import type { AppUser } from "@/lib/platform/types";
 
 type GateResult = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" };
+type CertificatePublicationActionResult = PublishCertificateSetResult & { readonly revision?: number };
 async function gate(eventId: string): Promise<{ actor: CertificateStudioActor; user: AppUser } | GateResult> {
   if (!isFeatureEnabled("completion_workspace_v3")) return { status: "blocked", code: "feature_disabled" };
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
@@ -33,13 +34,16 @@ export async function regenerateCertificateAction(input: unknown): Promise<Regen
   return result;
 }
 
-export async function publishCertificateSetAction(input: unknown): Promise<PublishCertificateSetResult> {
+export async function publishCertificateSetAction(input: unknown): Promise<CertificatePublicationActionResult> {
   const parsed = publishCertificateSetInputSchema.safeParse(input);
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const access = await gate(parsed.data.eventId);
   if ("status" in access) return access;
   const result = await publishCertificateSet(parsed.data, createPrismaCertificateStudioDependencies(access.actor));
-  if (result.status === "published") revalidatePath(`/organizer/events/${parsed.data.eventId}/certificates`);
+  if (result.status === "published") {
+    revalidatePath(`/organizer/events/${parsed.data.eventId}/certificates`);
+    return { ...result, revision: result.publicationVersion };
+  }
   return result;
 }
 

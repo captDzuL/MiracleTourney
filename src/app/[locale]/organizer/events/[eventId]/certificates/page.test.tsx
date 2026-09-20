@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HydrationGate } from "@/components/HydrationGate";
 const mocks = vi.hoisted(() => ({ flag: vi.fn(), session: vi.fn(), event: vi.fn(), load: vi.fn(), redirect: vi.fn(), notFound: vi.fn(() => { throw new Error("not-found"); }) }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: mocks.flag }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.session }));
@@ -28,5 +29,9 @@ describe("Certificate Studio page", () => {
     expect(mocks.session).toHaveBeenCalledWith(["organizer", "platform_admin", "admin"]);
     expect(mocks.event).toHaveBeenCalledWith(expect.objectContaining({ id: "org-1" }), "event-1");
     expect(mocks.load).toHaveBeenCalledWith({ id: "event-1", name: "Miracle Open" }, "id");
+  });
+  it("keeps the Certificate Studio inert until its hydration gate is ready", async () => {
+    const result = await Page({ params: Promise.resolve({ locale: "en", eventId: "event-1" }) });
+    expect(result).toMatchObject({ type: HydrationGate, props: { children: expect.anything() } });
   });
 });

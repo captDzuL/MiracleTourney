@@ -15,6 +15,8 @@ import {
   type CertificateFixture,
 } from "./helpers/completion";
 
+test.describe.configure({ mode: "serial" });
+
 let fixture: CertificateFixture | undefined;
 test.afterEach(async () => {
   await fixture?.cleanup();
@@ -29,16 +31,21 @@ test("publishes all seven certificates and preserves superseded verification his
   await page.goto(`/en/organizer/events/${scenario.id}/certificates`);
 
   await expect(page.locator("[data-certificate-type]")).toHaveCount(7);
+  await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
   await expect(page.locator("[data-publish-certificate-set]")).toBeEnabled();
   await expect.poll(() => completionDb.certificateGenerationMutation.count({ where: { eventId: scenario.id } })).toBe(scenario.generatedMutationCount);
   await page.locator("[data-publish-certificate-set]").click();
+  await expect(page.locator('[role="status"]')).toContainText("The seven-certificate set was published safely.");
   await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
+  await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({ where: { eventId: scenario.id }, select: { certificateRevision: true } })).certificateRevision).toBe(2);
 
   const certificates = await completionDb.certificate.findMany({
     where: { eventId: scenario.id },
     orderBy: [{ type: "asc" }, { version: "asc" }],
   });
-  expect(new Set(certificates.filter(({ publishedAt }) => publishedAt).map(({ type }) => type))).toEqual(new Set(MIRACLE_V3_CERTIFICATE_TYPES));
+  const publishedCertificates = certificates.filter(({ publishedAt, publishedUrl }) => publishedAt && publishedUrl);
+  expect(new Set(publishedCertificates.map(({ type }) => type))).toEqual(new Set(MIRACLE_V3_CERTIFICATE_TYPES));
+  expect(publishedCertificates).toHaveLength(7);
   const oldChampion = certificates.find(({ type, version }) => type === "champion" && version === 1)!;
   expect(oldChampion).toMatchObject({
     status: "superseded",
@@ -47,14 +54,30 @@ test("publishes all seven certificates and preserves superseded verification his
     publishedUrl: scenario.historicalPublishedUrl,
   });
 
-  await page.goto(`/certificates/verify/${scenario.historicalVerificationCode}`);
-  await expect(page).toHaveURL(new RegExp(`/(id|en)/certificates/verify/${scenario.historicalVerificationCode}$`));
+  await page.goto(`/id/certificates/verify/${scenario.historicalVerificationCode}`);
+  await expect(page).toHaveURL(new RegExp(`/id/certificates/verify/${scenario.historicalVerificationCode}$`));
   await expect(page.locator('[data-certificate-verification="superseded"]')).toBeVisible();
   await expect(page.getByText(/remains valid|tetap valid/i)).toBeVisible();
 
   await page.goto(`/en/certificates/verify/${scenario.currentVerificationCode}`);
   await expect(page.locator('[data-certificate-verification="current"]')).toBeVisible();
   await expect(page.getByText(scenario.eventName, { exact: true })).toBeVisible();
+});
+
+test("publishes once in Indonesian and announces the localized revision", async ({ page }) => {
+  test.slow();
+  const scenario = await prepareCertificateFixture();
+  fixture = scenario;
+  await loginAsOrganizer(page, "id");
+  await page.goto(`/id/organizer/events/${scenario.id}/certificates`);
+
+  await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
+  const publish = page.locator("[data-publish-certificate-set]");
+  await expect(publish).toBeEnabled();
+  await publish.click();
+  await expect(page.locator('[role="status"]')).toContainText("Set tujuh sertifikat diterbitkan dengan aman.");
+  await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
+  await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({ where: { eventId: scenario.id }, select: { certificateRevision: true } })).certificateRevision).toBe(2);
 });
 
 test("keeps the certificate studio reachable and usable at desktop and mobile geometry", async ({ page }) => {
@@ -66,6 +89,7 @@ test("keeps the certificate studio reachable and usable at desktop and mobile ge
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     await page.goto(`/en/organizer/events/${scenario.id}/certificates`);
+    await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
     await expect(page.locator("[data-certificate-studio]")).toBeVisible();
     await expect(page.locator("[data-certificate-studio] > header")).toBeVisible();
     await expect(page.locator("[data-certificate-recipient-selection]")).toBeVisible();

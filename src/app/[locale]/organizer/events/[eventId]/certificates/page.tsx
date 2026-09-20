@@ -3,6 +3,7 @@ import React from "react";
 import { setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { CertificateStudio } from "@/components/v3/certificates/CertificateStudio";
+import { HydrationGate } from "@/components/HydrationGate";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
 import { loadCertificateStudioState } from "@/lib/certificate/studio-repository";
@@ -23,5 +24,9 @@ export default async function CertificateStudioPage({ params }: Props) {
   if (!manageable) notFound();
   const state = await loadCertificateStudioState({ id: manageable.id, name: manageable.name }, locale);
   const generationKeys = Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, randomUUID()])) as Record<MiracleV3CertificateType, string>;
-  return <CertificateStudio generationKeys={generationKeys} publicationKey={randomUUID()} state={state} />;
+  return (
+    <HydrationGate aria-label={locale === "id" ? "Studio Sertifikat" : "Certificate Studio"} id="certificate-studio">
+      <CertificateStudio generationKeys={generationKeys} publicationKey={randomUUID()} state={state} />
+    </HydrationGate>
+  );
 }

@@ -68,7 +68,7 @@ export function AssetPlacement({
     <form className="mt-4 grid gap-2" onSubmit={submitUpload}>
       <input name="eventId" type="hidden" value={eventId} />
       <input name="purpose" type="hidden" value={purpose} />
-      <label className="text-xs font-bold text-[var(--color-text-muted)]">{labels.uploadLabel}<input accept="image/png,image/jpeg,image/webp" aria-describedby={uploadError ? `${errorId}-upload-error` : undefined} aria-invalid={uploadError ? "true" : undefined} className="mt-1 block w-full text-xs" disabled={disabled || uploadPending} name="asset" onChange={() => setUploadError(null)} required type="file" /></label>
+      <label className="text-xs font-bold text-[var(--color-text-muted)]">{labels.uploadLabel}<input accept="image/png,image/jpeg,image/webp" aria-describedby={uploadError ? `${errorId}-upload-error` : undefined} aria-invalid={uploadError ? "true" : undefined} className="mt-1 block min-h-11 w-full text-xs" disabled={disabled || uploadPending} name="asset" onChange={() => setUploadError(null)} required type="file" /></label>
       {uploadError ? <p className="text-xs font-bold text-red-300" id={`${errorId}-upload-error`}>{uploadError}</p> : null}
       <button className="min-h-11 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-bold miracle-focus-ring" disabled={disabled || uploadPending} type="submit">{labels.upload}</button>
     </form>

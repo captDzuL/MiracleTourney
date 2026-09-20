@@ -138,6 +138,13 @@ describe("CertificateStudio", () => {
     await act(async () => container.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")!.click());
     expect(publish).toHaveBeenCalledWith(expect.objectContaining({ expectedCertificateRevision: 2, selection: expect.arrayContaining([expect.objectContaining({ certificateType: "champion", certificateId: "cert-champion-2" })]) }));
     expect(container.querySelector("[role=status]")?.textContent).toContain("published safely");
+    expect(container.querySelector("[data-certificate-publication-revision]")?.textContent).toBe("2");
+  });
+
+  it("renders publication disabled in pre-hydration markup", () => {
+    const html = renderToStaticMarkup(provider("en", <CertificateStudio publishAction={vi.fn()} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />));
+    const document = new DOMParser().parseFromString(html, "text/html");
+    expect(document.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")?.disabled).toBe(true);
   });
 
   it("refreshes persisted failure and rotates the idempotency key for a deliberate retry", async () => {
@@ -247,6 +254,14 @@ describe("CertificateStudio", () => {
     expect(document.querySelectorAll("details").length).toBeGreaterThan(0);
     for (const summary of document.querySelectorAll("summary")) {
       expect(summary.classList.contains("min-h-11")).toBe(true);
+    }
+  });
+
+  it("keeps every visible interactive control at the 44px target size", () => {
+    const html = renderToStaticMarkup(provider("en", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />));
+    const document = new DOMParser().parseFromString(html, "text/html");
+    for (const control of document.querySelectorAll("button, a, input:not([type=hidden]), select, summary")) {
+      expect(control.classList.contains("min-h-11"), `${control.tagName} ${control.textContent?.trim() || control.getAttribute("name") || "control"}`).toBe(true);
     }
   });
 });

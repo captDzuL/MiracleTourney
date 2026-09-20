@@ -33,6 +33,13 @@ const placementInsideZone = (placement: CertificateAssetPlacement) => {
     && placement.x + placement.width <= zone.x + zone.width
     && placement.y + placement.height <= zone.y + zone.height;
 };
+const publicationRevision = (result: PublishCertificateSetResult): number | null => {
+  if (result.status === "published") {
+    const returned = "revision" in result && typeof result.revision === "number" ? result.revision : result.publicationVersion;
+    return returned;
+  }
+  return result.status === "already_applied" ? publicationRevision(result.result) : null;
+};
 
 export function CertificateStudio({ state, generationKeys, publicationKey, regenerateAction = regenerateCertificateAction, publishAction = publishCertificateSetAction }: Props) {
   const t = useTranslations("certificateStudio");
@@ -45,13 +52,16 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   const [currentGenerationKeys, setCurrentGenerationKeys] = useState(generationKeys);
   const previousAuthoritativeSelections = useRef<Record<string, string | null>>(Object.fromEntries(state.records.map((record) => [record.certificateType, record.selectedCertificateId])));
   const [message, setMessage] = useState("");
+  const [publishedRevision, setPublishedRevision] = useState<number | null>(state.publication?.version ?? null);
   const [placementError, setPlacementError] = useState<string | null>(null);
   const [lockedRevision, setLockedRevision] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   const [pending, startTransition] = useTransition();
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const unavailable = state.status !== "available";
   const authoritativeRevision = state.status === "integration_required" ? "integration-required" : `${state.status}:${state.completionVersion}:${state.certificateRevision}`;
   const locked = lockedRevision === authoritativeRevision;
+  useEffect(() => setHydrated(true), []);
   useEffect(() => {
     if (lockedRevision && lockedRevision !== authoritativeRevision) setLockedRevision(null);
   }, [authoritativeRevision, lockedRevision]);
@@ -115,11 +125,13 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   };
   const selection = unavailable ? [] : state.records.flatMap((record) => selected[record.certificateType] ? [{ certificateType: record.certificateType, certificateId: selected[record.certificateType]! }] : []);
   const chosen = unavailable ? [] : state.records.flatMap((record) => record.versions?.find((version) => version.id === selected[record.certificateType]) ?? []);
-  const canPublish = !unavailable && !locked && selection.length === 7 && chosen.length === 7 && chosen.every((row) => row.status === "ready" || row.status === "published");
+  const canPublish = hydrated && !unavailable && !locked && selection.length === 7 && chosen.length === 7 && chosen.every((row) => row.status === "ready" || row.status === "published");
   const publish = () => {
     if (!canPublish || pending || unavailable) return;
     startTransition(async () => {
       const result = await publishAction({ eventId: state.event.id, expectedVersion: state.completionVersion, expectedCertificateRevision: state.certificateRevision, idempotencyKey: publicationKey, selection });
+      const revision = publicationRevision(result);
+      if (revision !== null) setPublishedRevision(revision);
       setMessage(feedback(result));
       if (result.status === "conflict" || result.status === "integration_required" || (result.status === "blocked" && result.code !== "set_not_ready")) setLockedRevision(authoritativeRevision);
       router.refresh();
@@ -148,7 +160,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
       <aside className="grid min-w-0 content-start gap-4">
         <div data-certificate-set-status><CertificateSetStatus labels={{ title: t("set.title"), ready: t("set.ready"), incomplete: t("set.incomplete"), published: t("set.published"), notPublished: t("set.notPublished") }} records={state.records.map((record) => ({ ...record, selectedCertificateId: selected[record.certificateType] ?? null }))} /></div>
           <details className="grid min-w-0 gap-4" data-certificate-assets open><summary className="miracle-focus-ring flex min-h-11 cursor-pointer items-center rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm font-bold">{t("assets.title")}</summary>{activeKinds.map((kind, index) => <AssetPlacement approvedAssets={state.approvedAssets} allowedKinds={[kind]} assetId={assetIds[kind]} disabled={unavailable || locked || pending} error={placementError} errorId={index === 0 ? "certificate-placement-error" : `certificate-placement-error-${kind}`} eventId={state.event.id} key={kind} labels={assetLabels} onAssetIdChange={(value) => setAssetIds((current) => ({ ...current, [kind]: value }))} onPlacementChange={(value) => setPlacements((current) => ({ ...current, [kind]: value }))} onUploadMessage={setMessage} placement={placements[kind]} />)}</details>
-        <section className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" data-certificate-primary-actions><FileBadge2 aria-hidden="true" className="size-5 text-[var(--color-accent-cyan-foreground)]" /><h2 className="mt-3 text-base font-extrabold">{t("actions.title")}</h2><button className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-4 text-sm font-extrabold miracle-focus-ring disabled:cursor-not-allowed disabled:bg-[var(--color-surface-selected)]" data-regenerate-certificate disabled={unavailable || locked || pending} onClick={regenerate} type="button"><RefreshCw aria-hidden="true" className="size-4" />{t("actions.regenerate")}</button><button className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand-violet)] px-4 text-sm font-extrabold text-[var(--color-on-accent)] miracle-focus-ring disabled:cursor-not-allowed disabled:bg-[var(--color-surface-selected)] disabled:text-[var(--color-text-muted)]" data-publish-certificate-set disabled={!canPublish || pending} onClick={publish} type="button"><ShieldCheck aria-hidden="true" className="size-4" />{t("actions.publish")}</button></section>
+        <section className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" data-certificate-primary-actions><FileBadge2 aria-hidden="true" className="size-5 text-[var(--color-accent-cyan-foreground)]" /><h2 className="mt-3 text-base font-extrabold">{t("actions.title")}</h2>{publishedRevision !== null ? <p className="mt-3 text-xs font-bold text-[var(--color-text-muted)]" data-certificate-publication-revision>{publishedRevision}</p> : null}<button className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-4 text-sm font-extrabold miracle-focus-ring disabled:cursor-not-allowed disabled:bg-[var(--color-surface-selected)]" data-regenerate-certificate disabled={unavailable || locked || pending} onClick={regenerate} type="button"><RefreshCw aria-hidden="true" className="size-4" />{t("actions.regenerate")}</button><button className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand-violet)] px-4 text-sm font-extrabold text-[var(--color-on-accent)] miracle-focus-ring disabled:cursor-not-allowed disabled:bg-[var(--color-surface-selected)] disabled:text-[var(--color-text-muted)]" data-publish-certificate-set disabled={!canPublish || pending} onClick={publish} type="button"><ShieldCheck aria-hidden="true" className="size-4" />{t("actions.publish")}</button></section>
       </aside>
     </div>
     <p aria-live="polite" className="sr-only" role="status">{message}</p>
