@@ -61,4 +61,13 @@ describe("captain registration event identity boundary", () => {
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
     expect(mocks.revalidateTag).not.toHaveBeenCalled();
   });
+
+  it("does not redirect arbitrary repository exception messages", async () => {
+    mocks.getEventBySlug.mockResolvedValue({ id: "event-1" });
+    mocks.saveCaptainRegistrationDraft.mockRejectedValue(new Error("Prisma P2028 db://secret stack"));
+
+    await expect(captainRegisterEventTeamAction(form(validFields))).rejects.toThrow(
+      "REDIRECT:/events/event-two/register?error=Pendaftaran%20gagal%20disimpan.",
+    );
+  });
 });

@@ -69,7 +69,7 @@ describe("captain credentials export API", () => {
     const response = await GET(new Request("http://localhost/api/admin/captain-credentials?eventId=event-b"));
 
     expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ error: "forbidden" });
+    expect(await response.json()).toMatchObject({ code: "forbidden", requestId: expect.any(String) });
     expect(getCaptainCredentialsForEvent).not.toHaveBeenCalled();
   });
 

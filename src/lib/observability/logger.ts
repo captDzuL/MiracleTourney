@@ -24,6 +24,18 @@ function safeCode(value: string): string {
   return safeText(value).toLowerCase().replace(/[^a-z0-9_:-]/g, "_");
 }
 
+const STATIC_ROUTE_SEGMENTS = new Set([
+  "api", "admin", "captain", "captain-credentials", "competition", "debug-locale", "en", "events",
+  "health", "id", "login", "me", "ongoing", "organizer", "overview", "registration", "settings",
+]);
+
+function redactRoute(value: string): string {
+  return safeText(value).split("/").map((segment) => {
+    if (!segment || STATIC_ROUTE_SEGMENTS.has(segment)) return segment;
+    return `:${redactIdentifier(segment)}`;
+  }).join("/");
+}
+
 /** Keeps identifiers useful for correlation without putting PII into logs. */
 export function redactIdentifier(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
@@ -33,7 +45,7 @@ function safeEvent(event: ServerLogEvent): ServerLogEvent {
   const result: ServerLogEvent = {
     phase: event.phase,
     operation: safeCode(event.operation),
-    route: safeText(event.route),
+    route: redactRoute(event.route),
     requestId: safeText(event.requestId),
     durationMs: Number.isFinite(event.durationMs) ? Math.max(0, Math.round(event.durationMs)) : 0,
     status: Number.isInteger(event.status) ? event.status : 500,

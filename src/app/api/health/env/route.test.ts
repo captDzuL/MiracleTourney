@@ -19,7 +19,7 @@ describe("environment health API", () => {
     const body = await response.json();
 
     expect(response.status).toBe(403);
-    expect(body).toEqual({ error: "forbidden" });
+    expect(body).toMatchObject({ code: "forbidden", requestId: expect.any(String) });
     expect(JSON.stringify(body)).not.toContain("JWT_SECRET");
   });
 

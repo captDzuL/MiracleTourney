@@ -12,6 +12,7 @@ import {
 } from "@/lib/platform/repository";
 import { saveCaptainRegistrationDraft } from "@/lib/registration/captain-repository";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { toSafeActionMessage } from "@/lib/security/public-error";
 
 const registrationSchema = z.object({
   eventId: z.string().trim().min(1),
@@ -148,7 +149,7 @@ export async function captainRegisterEventTeamAction(formData: FormData) {
     }
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Pendaftaran gagal disimpan.";
+    const message = toSafeActionMessage(error, "Pendaftaran gagal disimpan.");
     return redirectToActiveLocale(registrationErrorPath(safeSlug, message));
   }
 

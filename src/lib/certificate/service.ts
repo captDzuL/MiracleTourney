@@ -410,13 +410,13 @@ export type RegenerateCertificateResult =
   | { readonly status: "failed"; readonly code: "generation_failed"; readonly certificateId: string; readonly certificateType: MiracleV3CertificateType; readonly version: number }
   | { readonly status: "generation_in_progress"; readonly certificateId: string; readonly certificateType: MiracleV3CertificateType; readonly version: number }
   | { readonly status: "already_applied"; readonly result: RegenerateCertificateResult }
-  | { readonly status: "blocked"; readonly code: "invalid_input" | "unauthorized" | "password_change_required" | "forbidden" | "feature_disabled" | "completion_required" | "invalid_asset" | "required_logo_unavailable" }
+  | { readonly status: "blocked"; readonly code: "invalid_input" | "unauthorized" | "password_change_required" | "forbidden" | "feature_disabled" | "rate_limited" | "completion_required" | "invalid_asset" | "required_logo_unavailable" }
   | { readonly status: "conflict"; readonly code: "stale_version" | "idempotency_key_reused"; readonly version: number }
   | { readonly status: "integration_required" };
 export type PublishCertificateSetResult =
   | { readonly status: "published"; readonly publicationVersion: number; readonly publishedAt: string }
   | { readonly status: "already_applied"; readonly result: PublishCertificateSetResult }
-  | { readonly status: "blocked"; readonly code: "invalid_input" | "unauthorized" | "password_change_required" | "forbidden" | "feature_disabled" | "completion_required" | "set_not_ready" }
+  | { readonly status: "blocked"; readonly code: "invalid_input" | "unauthorized" | "password_change_required" | "forbidden" | "feature_disabled" | "rate_limited" | "completion_required" | "set_not_ready" }
   | { readonly status: "conflict"; readonly code: "stale_version" | "stale_certificate_revision" | "idempotency_key_reused"; readonly version: number }
   | { readonly status: "integration_required" };
 export type CertificatePublicationActionResult =

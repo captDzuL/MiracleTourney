@@ -6,11 +6,12 @@ import { uploadImageAsset } from "@/lib/actions";
 import { CERTIFICATE_ASSET_LIMITS, publishCertificateSet, publishCertificateSetInputSchema, regenerateCertificate, regenerateCertificateInputSchema, type CertificatePublicationActionResult, type CertificateStudioActor, type PublishCertificateSetResult, type RegenerateCertificateResult } from "@/lib/certificate/service";
 import { createPrismaCertificateStudioDependencies } from "@/lib/certificate/studio-repository";
 import { isFeatureEnabled } from "@/lib/feature-flags";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { assertUserCanManageEvent, createEventVisualAsset } from "@/lib/platform/repository";
 import type { AppUser } from "@/lib/platform/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 
-type GateResult = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" };
+type GateResult = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" | "rate_limited" };
 function normalizePublicationResult(result: PublishCertificateSetResult): CertificatePublicationActionResult {
   if (result.status === "published") return { status: "published", revision: result.publicationVersion, publishedAt: result.publishedAt };
   if (result.status === "already_applied") return { status: "already_applied", result: normalizePublicationResult(result.result) };
@@ -40,6 +41,9 @@ export async function regenerateCertificateAction(input: unknown): Promise<Regen
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const access = await gate(parsed.data.eventId);
   if ("status" in access) return access;
+  if (!checkRateLimit(`certificate-v3:regenerate:${access.actor.id}:${parsed.data.eventId}`, 3, 5 * 60 * 1000)) {
+    return { status: "blocked", code: "rate_limited" };
+  }
   const result = await regenerateCertificate(parsed.data, createPrismaCertificateStudioDependencies(access.actor));
   if (result.status === "generated") revalidatePath(`/organizer/events/${parsed.data.eventId}/certificates`);
   return result;
@@ -50,6 +54,9 @@ export async function publishCertificateSetAction(input: unknown): Promise<Certi
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const access = await gate(parsed.data.eventId);
   if ("status" in access) return access;
+  if (!checkRateLimit(`certificate-v3:publish:${access.actor.id}:${parsed.data.eventId}`, 5, 5 * 60 * 1000)) {
+    return { status: "blocked", code: "rate_limited" };
+  }
   const result = await publishCertificateSet(parsed.data, createPrismaCertificateStudioDependencies(access.actor));
   if (result.status === "published") revalidatePath(`/organizer/events/${parsed.data.eventId}/certificates`);
   return normalizePublicationResult(result);
@@ -83,7 +90,7 @@ export async function uploadCertificateAssetAction(formData: FormData) {
     const validationCodes = new Set(["invalid_entity_id", "missing_file", "file_too_large", "unsupported_type", "signature_mismatch", "decode_failed", "invalid_dimensions"]);
     const code = error instanceof Error && error.name === "ImageUploadValidationError" && "code" in error
       && typeof error.code === "string" && validationCodes.has(error.code) ? error.code : "upload_failed";
-    if (code === "upload_failed") console.error("Certificate asset upload failed", { eventId: parsed.data.eventId, error });
+    if (code === "upload_failed") console.error("Certificate asset upload failed", { code });
     return { status: "blocked" as const, code };
   }
   const created = await createEventVisualAsset(access.user, {

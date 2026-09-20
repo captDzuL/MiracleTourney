@@ -16,7 +16,12 @@ export function requireSameOrigin(request: Request): Response | null {
   if (!UNSAFE_METHODS.has(request.method.toUpperCase())) return null;
 
   const origin = request.headers.get("origin");
-  if (!origin) return null;
+  if (!origin) {
+    return Response.json(
+      { code: "forbidden", requestId: newRequestId(request) },
+      { status: 403, headers: { "Cache-Control": "no-store", "Vary": "Origin" } },
+    );
+  }
 
   let requestOrigin: string;
   let originValue: string;

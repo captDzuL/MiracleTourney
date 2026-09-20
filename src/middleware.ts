@@ -47,24 +47,16 @@ const intlMiddleware = createMiddleware(routing);
 function isCrossSiteUnsafeRequest(request: NextRequest) {
   if (!UNSAFE_METHODS.has(request.method)) return false;
 
-  // Sec-Fetch-Site is set by the browser itself and cannot be spoofed by a
-  // page's own script, so trust it whenever present instead of falling
-  // through to the Origin comparison below. Comparing Origin against
-  // request.nextUrl.origin is unreliable behind hostname aliases (e.g.
-  // "127.0.0.1" vs "localhost" both point at the same dev server but
-  // produce different origin strings), which previously rejected same-site
-  // requests as cross-site.
-  const fetchSite = request.headers.get("sec-fetch-site");
-  if (fetchSite) return fetchSite === "cross-site";
-
   const origin = request.headers.get("origin");
-  if (!origin) return false;
+  if (!origin) return true;
 
   try {
-    return new URL(origin).origin !== request.nextUrl.origin;
+    if (new URL(origin).origin !== request.nextUrl.origin) return true;
   } catch {
     return true;
   }
+
+  return request.headers.get("sec-fetch-site") === "cross-site";
 }
 
 export async function middleware(request: NextRequest) {
@@ -122,10 +114,7 @@ export async function middleware(request: NextRequest) {
 
   // Temporary debug endpoint
   if (process.env.NODE_ENV === "development" && normalizedPath === "/_debug_locale") {
-    return NextResponse.json({
-      cookie: request.cookies.get("NEXT_LOCALE")?.value ?? "(not set)",
-      allCookies: request.headers.get("cookie"),
-    });
+    return NextResponse.json({ locale: activeLocale });
   }
 
   // Locale detection + cookie management (sets NEXT_LOCALE cookie)

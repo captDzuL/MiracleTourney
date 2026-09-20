@@ -8,7 +8,7 @@ vi.mock("next-intl/middleware", () => ({
 function postLoginRequest(ip: string, headers: Record<string, string> = {}) {
   return new NextRequest("http://localhost/id/login", {
     method: "POST",
-    headers: { "x-forwarded-for": ip, ...headers },
+    headers: { "x-forwarded-for": ip, origin: "http://localhost", ...headers },
   });
 }
 
@@ -55,6 +55,28 @@ describe("middleware security controls", () => {
 
     expect(response.status).toBe(403);
     await expect(response.text()).resolves.toContain("Cross-site request blocked");
+  });
+
+  it("rejects same-site sibling origins before server actions run", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(postLoginRequest("203.0.113.32", {
+      origin: "http://sub.localhost",
+      "sec-fetch-site": "same-site",
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects unsafe requests with no Origin header", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://localhost/id/login", {
+      method: "POST",
+      headers: { "x-forwarded-for": "203.0.113.33", "sec-fetch-site": "same-site" },
+    }));
+
+    expect(response.status).toBe(403);
   });
 
   it("allows same-origin unsafe requests through the normal middleware flow", async () => {

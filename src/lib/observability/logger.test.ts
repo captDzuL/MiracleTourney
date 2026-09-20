@@ -60,4 +60,21 @@ describe("structured server logger", () => {
     expect(records[1]).toMatchObject({ status: 500, errorCode: "internal_error", requestId: "req-2" });
     expect(JSON.stringify(records)).not.toMatch(/Prisma|P2028|stack|secret/i);
   });
+
+  it("redacts dynamic path identifiers from route fields", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    writeServerLog({
+      phase: "start",
+      operation: "read_event",
+      route: "/api/events/event-secret-123/ongoing",
+      requestId: "req-route",
+      durationMs: 0,
+      status: 0,
+    });
+
+    const record = JSON.parse(String(info.mock.calls[0]?.[0]));
+    expect(record.route).not.toContain("event-secret-123");
+    expect(record.route).toContain("/api/events/");
+  });
 });

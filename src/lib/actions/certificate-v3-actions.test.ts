@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const external = vi.hoisted(() => ({ flag: vi.fn(), session: vi.fn(), manage: vi.fn(), deps: vi.fn(), regenerate: vi.fn(), publish: vi.fn(), revalidate: vi.fn(), upload: vi.fn(), createAsset: vi.fn() }));
+const external = vi.hoisted(() => ({ flag: vi.fn(), session: vi.fn(), manage: vi.fn(), deps: vi.fn(), regenerate: vi.fn(), publish: vi.fn(), revalidate: vi.fn(), upload: vi.fn(), createAsset: vi.fn(), rateLimit: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: external.revalidate }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: external.flag }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: external.session }));
 vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent: external.manage, createEventVisualAsset: external.createAsset, getCertificateByEvent: vi.fn() }));
 vi.mock("@/lib/actions", () => ({ uploadImageAsset: external.upload }));
 vi.mock("@/lib/certificate/studio-repository", () => ({ createPrismaCertificateStudioDependencies: external.deps }));
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: external.rateLimit }));
 vi.mock("@/lib/certificate/service", async (load) => {
   const actual = await load<typeof import("@/lib/certificate/service")>();
   return { ...actual, regenerateCertificate: external.regenerate, publishCertificateSet: external.publish };
@@ -21,6 +22,7 @@ describe("certificate v3 actions", () => {
     vi.clearAllMocks(); external.flag.mockReturnValue(true);
     external.session.mockResolvedValue({ id: "org-1", role: "organizer", mustChangePassword: false });
     external.manage.mockResolvedValue(undefined); external.deps.mockReturnValue({});
+    external.rateLimit.mockReturnValue(true);
     external.regenerate.mockResolvedValue({ status: "generated", certificateId: "cert-2", certificateType: "champion", version: 2, imageUrl: "/certificates/2.png" });
     external.publish.mockResolvedValue({ status: "published", publicationVersion: 3, publishedAt: "2026-09-12T00:00:00Z" });
     external.upload.mockResolvedValue({ url: "/certificate-assets/a.png", mimeType: "image/png", width: 512, height: 512, byteSize: 1024, storageProvider: "local", storageKey: "certificate-assets/a.png", contentSha256: "a".repeat(64) });
@@ -46,6 +48,15 @@ describe("certificate v3 actions", () => {
     expect(external.manage).toHaveBeenCalledWith(expect.objectContaining({ id: "org-1" }), "event-1");
     expect(external.publish).toHaveBeenCalledWith(publication, {});
     expect(external.revalidate).toHaveBeenCalledWith("/organizer/events/event-1/certificates");
+  });
+
+  it("rate-limits certificate regeneration and publication before expensive work", async () => {
+    external.rateLimit.mockReturnValue(false);
+
+    await expect(regenerateCertificateAction(regen)).resolves.toEqual({ status: "blocked", code: "rate_limited" });
+    await expect(publishCertificateSetAction(publication)).resolves.toEqual({ status: "blocked", code: "rate_limited" });
+    expect(external.regenerate).not.toHaveBeenCalled();
+    expect(external.publish).not.toHaveBeenCalled();
   });
   it("returns the committed certificate publication revision", async () => {
     await expect(publishCertificateSetAction(publication)).resolves.toEqual({ status: "published", revision: 3, publishedAt: "2026-09-12T00:00:00Z" });

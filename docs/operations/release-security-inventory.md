@@ -15,7 +15,7 @@ default response policy for authenticated data is `private, no-store`.
 | `GET /api/organizer/events/[eventId]/competition` | organizer/admin/platform admin via reader | reader resolves event ownership | safe event-id path | same-origin guard for unsafe methods | expensive reader policy | competition workspace projection; generic safe error code | `private, no-store`, `Vary: Cookie` |
 | `src/lib/actions.ts` legacy auth/import/payment/stat/visual actions | role-specific server session | event/team/match ownership before reads/writes | Zod schemas, safe entity IDs, bounded uploads/imports, HTTP(S) URLs, image signatures | middleware same-origin protection for unsafe server-action requests | login, registration, reset, import/upload and expensive mutation limiters | redirects contain stable codes/messages only; repository/Prisma errors are not returned | server-action mutations invalidate affected tags; no shared public cache |
 | `src/lib/actions/captain-event-login.ts` | captain session/login boundary | event membership and credential lookup | Zod email/password/event-id schema | same-origin server action | login rate limit | generic authentication failure | no-store mutation response |
-| `src/lib/actions/certificate-v3-actions.ts` | organizer/admin/platform admin | event workspace authorization | Zod IDs, versions, UUID idempotency keys, bounded asset form | same-origin server action | expensive certificate mutation policy | stable action result codes only | mutation invalidates workspace/public tags |
+| `src/lib/actions/certificate-v3-actions.ts` | organizer/admin/platform admin | event workspace authorization | Zod IDs, versions, UUID idempotency keys, bounded asset form | same-origin server action | shared `checkRateLimit` for regeneration/publication; upload validation boundary | stable action result codes only | mutation invalidates workspace/public tags |
 | `src/lib/actions/competition-v3-actions.ts` | organizer/admin/platform admin | event workspace authorization | Zod IDs, versions, enums, operation payloads | same-origin server action | expensive competition mutation policy | stable action result codes only | mutation invalidates competition tags |
 | `src/lib/actions/completion-v3-actions.ts` | organizer/admin/platform admin | event workspace authorization | Zod IDs, versions, UUID idempotency key, award decisions | same-origin server action | completion mutation policy | stable action result codes only | mutation invalidates completion/certificate tags |
 | `src/lib/actions/event-revision-actions.ts` | organizer/admin/platform admin | revision/event ownership | Zod IDs, versions, locales, slug, upload metadata | same-origin server action | upload/revision mutation policy | stable redirect/action codes; no storage or Prisma errors | mutation invalidates revision/event tags |
@@ -34,10 +34,10 @@ default response policy for authenticated data is `private, no-store`.
 | Input | Boundary | Expected result |
 | --- | --- | --- |
 | SQL-shaped ID (`' OR 1=1--`) | route/action ID schemas | rejected before repository/Prisma access |
-| HTML/script payload | names, descriptions, labels, preview data | bounded plain text; React escaping remains the rendering boundary |
+| HTML/script payload | team/captain names, descriptions, labels, preview data | markup rejected at team-field validation; React escaping remains the rendering boundary |
 | `javascript:` / `data:` URL | public/stream/registration URLs | rejected; only absolute HTTP(S) URLs accepted |
-| JSON-LD/script breakout | public text/JSON projections | serialized as data; no caller-controlled raw HTML/script insertion |
-| MIME spoof or traversal filename | image/import upload | signature and extension/filename checks reject before storage |
+| JSON-LD/script breakout | public text/JSON projections | `serializeJsonLd` escapes `<`; no caller-controlled raw HTML/script insertion |
+| MIME spoof or traversal filename | image/import upload | declared MIME/signature consistency and extension/filename checks reject before storage |
 | CSV/XLSX formula (`=`, `+`, `-`, `@`) | exported/imported cells | reject mapped formulas or prefix exported cells with `'` |
 | cross-origin unsafe request | middleware/API guard | generic JSON 403 with request ID |
 | permissive private CORS | authenticated route response | no `Access-Control-Allow-Origin: *`; private responses are no-store |

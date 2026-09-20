@@ -30,6 +30,8 @@ import { validateTeamData } from "@/lib/validation/team-data";
 import { parsePlayerStatForm } from "@/lib/player-stats/form";
 import type { AppUser } from "@/lib/platform/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { toSafeActionMessage } from "@/lib/security/public-error";
+import { isSafeHttpUrl } from "@/lib/security/request-guard";
 import {
   addPlayer,
   approveStatSubmission,
@@ -167,12 +169,7 @@ function hasImageSignature(buffer: Buffer, extension: "png" | "jpg" | "webp") {
 }
 
 function isHttpUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
+  return isSafeHttpUrl(value);
 }
 
 const optionalPublicLabelSchema = z.preprocess(
@@ -325,14 +322,9 @@ async function generateCertificateForFinalMatch(matchId: string, eventId: string
   try {
     const { generateCertificateIfFinal } = await import("@/lib/certificate/generate");
     await generateCertificateIfFinal(matchId, eventId);
-  } catch (err) {
-    console.error(`Certificate generation failed for event ${eventId}:`, err);
+  } catch {
+    console.error("Certificate generation failed", { eventIdHash: createHash("sha256").update(eventId).digest("hex").slice(0, 16) });
   }
-}
-
-function isSafeStatToken(value: string) {
-  if (!/^[a-zA-Z0-9_-]+$/.test(value)) return false;
-  return !["__proto__", "constructor", "prototype"].includes(value);
 }
 
 /**
@@ -385,7 +377,7 @@ export async function captainSignUpAction(formData: FormData) {
   try {
     await createCaptainAccount({ email, name: fullName, passwordHash });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Gagal membuat akun.";
+    const msg = toSafeActionMessage(err, "Gagal membuat akun.");
     await signUpError(msg);
   }
 
@@ -423,7 +415,7 @@ export async function loginAction(formData: FormData) {
       return await redirectToRequestedLocale(loginErrorPath("database"), requestedLocale);
     }
 
-    console.error("[loginAction] signIn failed", error);
+    console.error("[loginAction] signIn failed");
     return await redirectToRequestedLocale(loginErrorPath("invalid"), requestedLocale);
   }
 
@@ -494,12 +486,12 @@ export async function captainRegisterTeamAction(formData: FormData) {
   try {
     await registerTeam({ ...input, draftTeamId, captainId: captain.id });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Gagal mendaftarkan tim.";
+    const msg = toSafeActionMessage(err, "Gagal mendaftarkan tim.");
     if (msg === "Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.") {
       try {
         await createTeamRegistrationRequest({ ...input, draftTeamId, captainId: captain.id });
       } catch (paymentError) {
-        const paymentMsg = paymentError instanceof Error ? paymentError.message : "Gagal membuat pendaftaran pembayaran.";
+        const paymentMsg = toSafeActionMessage(paymentError, "Gagal membuat pendaftaran pembayaran.");
         return await registrationError(paymentMsg);
       }
       revalidateTag("teams");
@@ -540,7 +532,7 @@ export async function captainSaveDraftTeamAction(formData: FormData) {
   try {
     await createOrUpdateCaptainDraftTeam({ ...input, captainId: captain.id, captainName: captain.name });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Gagal menyimpan draft tim.";
+    const msg = toSafeActionMessage(err, "Gagal menyimpan draft tim.");
     return await draftError(msg);
   }
 
@@ -584,7 +576,7 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
     });
     await updateTeamRegistrationProof(captain.id, parsed.requestId, proofAsset.url);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Gagal mengupload bukti pembayaran.";
+    const message = toSafeActionMessage(error, "Gagal mengupload bukti pembayaran.");
     await redirectToActiveLocale(appendActionError(registrationBase, message) as never);
   }
 
@@ -632,7 +624,7 @@ export async function adminApprovePaymentAction(formData: FormData) {
   try {
     await approveTeamRegistrationRequest(user, requestId);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Gagal approve pembayaran.";
+    const message = toSafeActionMessage(error, "Gagal approve pembayaran.");
     await redirectToActiveLocale(`/admin?phase=payments&error=${encodeURIComponent(message)}` as never);
   }
 
@@ -656,7 +648,7 @@ export async function adminRejectPaymentAction(formData: FormData) {
   try {
     await rejectTeamRegistrationRequest(user, input.requestId, input.reason);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Gagal reject pembayaran.";
+    const message = toSafeActionMessage(error, "Gagal reject pembayaran.");
     await redirectToActiveLocale(`/admin?phase=payments&error=${encodeURIComponent(message)}` as never);
   }
 
@@ -723,7 +715,7 @@ export async function captainUploadTeamLogoAction(formData: FormData) {
     });
     await updateCaptainTeamLogo(captain.id, teamId, asset.url);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
+    const message = toSafeActionMessage(err, "Upload failed");
     return await redirectToActiveLocale(`/captain?tab=roster&error=${encodeURIComponent(message)}`);
   }
 
@@ -759,7 +751,7 @@ export async function captainAddPlayerAction(formData: FormData) {
   try {
     await addPlayer({ ...input, captainId: captain.id, position: input.position ?? "", jerseyNumber });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Tidak dapat menambahkan pemain.";
+    const msg = toSafeActionMessage(e, "Tidak dapat menambahkan pemain.");
     return await redirectToActiveLocale("/captain?error=" + encodeURIComponent(msg));
   }
   await redirectToActiveLocale("/captain?success=player-added");
@@ -1097,7 +1089,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   try {
     match = await setMatchResult(input);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to save match result.";
+    const message = toSafeActionMessage(error, "Unable to save match result.");
     await redirectToRequestedLocale(legacyMatchReturn(user, returnEventId, input.matchId, `error=${encodeURIComponent(message)}`), locale);
   }
 
@@ -1106,8 +1098,8 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   if (match?.roundLabel === "Final" && match.winnerTeamId) {
     try {
       await generateCertificateForFinalMatch(match.id, input.eventId);
-    } catch (err) {
-      console.error("[certificate] generation failed:", err);
+    } catch {
+      console.error("[certificate] generation failed");
     }
   }
   revalidateTag("teams");
@@ -1401,7 +1393,7 @@ export async function adminSetRoundConfigAction(formData: FormData) {
   try {
     await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to save round configuration.";
+    const message = toSafeActionMessage(error, "Unable to save round configuration.");
     await redirectToRequestedLocale(legacyMatchReturn(user, input.eventId, undefined, `error=${encodeURIComponent(message)}`), locale);
   }
   revalidateTag("teams");
@@ -1444,15 +1436,15 @@ export async function adminSetMatchGamesAction(formData: FormData) {
   try {
     await setMatchGames(matchId, matchEventId, games);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to save match games.";
+    const message = toSafeActionMessage(error, "Unable to save match games.");
     await redirectToRequestedLocale(legacyMatchReturn(user, matchEventId, matchId, `error=${encodeURIComponent(message)}`), locale);
   }
 
   await autoTransitionEventToOngoing(matchEventId);
   try {
     await generateCertificateForFinalMatch(matchId, matchEventId);
-  } catch (err) {
-    console.error("[certificate] generation failed:", err);
+  } catch {
+    console.error("[certificate] generation failed");
   }
   revalidateTag("teams");
   revalidateTag("events");
@@ -1477,7 +1469,7 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
     });
     await updateEventCertificateAssets(eventId, { characterArtUrl: asset.url });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
+    const message = toSafeActionMessage(err, "Upload failed");
     await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
   revalidatePath("/admin");
@@ -1501,7 +1493,7 @@ async function uploadEventLogo(formData: FormData, returnPath: string, returnSec
     });
     await updateEventBrandAssets(eventId, { logoUrl: asset.url });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
+    const message = toSafeActionMessage(err, "Upload failed");
     redirect(`${appendActionError(returnPath, message)}${returnSection === "public" ? "#section-public" : ""}` as never);
   }
 
@@ -1571,7 +1563,7 @@ async function uploadEventVisual(formData: FormData, returnPath: string, returnS
       dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
+    const message = toSafeActionMessage(err, "Upload failed");
     redirect(`${appendActionError(returnPath, message)}${returnSection === "public" ? "#section-public" : ""}` as never);
   }
 
@@ -1604,7 +1596,7 @@ export async function adminApproveEventVisualAction(formData: FormData) {
       dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Approval failed";
+    const message = toSafeActionMessage(err, "Approval failed");
     await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
@@ -1624,7 +1616,7 @@ export async function adminRejectEventVisualAction(formData: FormData) {
     assertWorkspaceEventAction(user, eventId);
     await rejectEventVisualAsset(user, eventId, assetId);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Rejection failed";
+    const message = toSafeActionMessage(err, "Rejection failed");
     await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
@@ -1646,7 +1638,7 @@ export async function adminActivateEventVisualAction(formData: FormData) {
       dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Activation failed";
+    const message = toSafeActionMessage(err, "Activation failed");
     await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
@@ -1671,7 +1663,7 @@ export async function adminSetEventVisualFocalPointAction(formData: FormData) {
     assertWorkspaceEventAction(user, eventId);
     await setEventVisualFocalPoint(user, eventId, assetId, { x: focalX, y: focalY });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Focal point update failed";
+    const message = toSafeActionMessage(err, "Focal point update failed");
     await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
@@ -1697,7 +1689,7 @@ export async function adminUploadTeamLogoAction(formData: FormData) {
     });
     await updateTeamLogo(user, teamId, asset.url);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
+    const message = toSafeActionMessage(err, "Upload failed");
     await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
@@ -1751,7 +1743,7 @@ export async function adminRegenerateCertificateAction(formData: FormData) {
     const { generateCertificate } = await import("@/lib/certificate/generate");
     await generateCertificate(eventId, winnerTeamId);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Certificate generation failed";
+    const message = toSafeActionMessage(err, "Certificate generation failed");
     revalidatePath("/admin");
     await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }

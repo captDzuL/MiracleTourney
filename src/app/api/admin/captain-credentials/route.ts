@@ -39,11 +39,11 @@ export async function GET(req: Request) {
     { eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
     user.role === "organizer" ? user.id : null,
   );
-  if (!access.ok) return Response.json({ error: "forbidden" }, { status: 403, headers: { "Cache-Control": "no-store, max-age=0" } });
+  if (!access.ok) return Response.json({ code: "forbidden", requestId }, { status: 403, headers: { "Cache-Control": "no-store, max-age=0" } });
   try {
     await assertUserCanManageEvent(user, eventId);
   } catch {
-    return Response.json({ error: "forbidden" }, { status: 403, headers: { "Cache-Control": "no-store, max-age=0" } });
+    return Response.json({ code: "forbidden", requestId }, { status: 403, headers: { "Cache-Control": "no-store, max-age=0" } });
   }
 
   let credentials;
