@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { z } from "zod";
 
 import { getLocalizedRedirectPath, redirectToActiveLocale } from "@/i18n/redirect";
@@ -1762,7 +1763,7 @@ export async function adminRegenerateCertificateAction(formData: FormData) {
 /**
  * Requests a password reset link for a captain account.
  * Always redirects to sent=1 regardless of whether the email exists (security best practice).
- * Sends the reset link via sendEmail(), which itself never throws on delivery failure.
+ * Queues the reset link through Next's post-response hook; sendEmail() itself never throws on delivery failure.
  */
 export async function requestPasswordResetAction(formData: FormData) {
   const emailRaw = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -1778,21 +1779,28 @@ export async function requestPasswordResetAction(formData: FormData) {
   }
 
   try {
-    await equalizePasswordResetResponse(async () => {
-      const user = await getUserByEmail(email.data);
-      if (user && user.role === "captain") {
-        const token = await createPasswordResetToken(user.id);
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-        const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
-        await sendEmail({
-          to: email.data,
-          subject: "Reset Password Miracle League",
-          html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 30 menit.</p>`,
+    const user = await getUserByEmail(email.data);
+    after(async () => {
+      try {
+        await equalizePasswordResetResponse(async () => {
+          if (!user || user.role !== "captain") return;
+
+          const token = await createPasswordResetToken(user.id);
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+          const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
+          await sendEmail({
+            to: email.data,
+            subject: "Reset Password Miracle League",
+            html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 30 menit.</p>`,
+          });
         });
+      } catch {
+        // Keep background delivery failures generic and free of user data.
+        console.error("[requestPasswordResetAction] reset delivery failed");
       }
     });
   } catch {
-    // Keep account enumeration and delivery failures indistinguishable to callers.
+    // Keep lookup/scheduling failures indistinguishable to callers.
     console.error("[requestPasswordResetAction] reset delivery failed");
   }
   // Always redirect to sent=1 regardless of whether email exists (security)

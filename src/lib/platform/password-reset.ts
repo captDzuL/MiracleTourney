@@ -11,7 +11,7 @@ export function digestPasswordResetToken(rawToken: string): string {
   return createHash("sha256").update(rawToken).digest("hex");
 }
 
-/** Gives known and unknown reset requests the same minimum observable work window. */
+/** Gives deferred known and unknown reset work the same minimum processing window. */
 export async function equalizePasswordResetResponse<T>(operation: () => Promise<T>): Promise<T> {
   const [result] = await Promise.all([
     operation(),

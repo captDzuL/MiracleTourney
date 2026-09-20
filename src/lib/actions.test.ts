@@ -48,6 +48,7 @@ const {
   signIn,
   signOut,
   headers,
+  after,
   checkRateLimit,
   updateCaptainPassword,
   updateEventBrandAssets,
@@ -114,6 +115,7 @@ const {
   signIn: vi.fn(),
   signOut: vi.fn(),
   headers: vi.fn(),
+  after: vi.fn(),
   checkRateLimit: vi.fn(),
   updateCaptainPassword: vi.fn(),
   updateEventBrandAssets: vi.fn(),
@@ -141,6 +143,7 @@ const {
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
+vi.mock("next/server", () => ({ after }));
 vi.mock("next/navigation", () => ({
   redirect: (url: string): never => {
     throw new Error(`REDIRECT:${url}`);
@@ -602,8 +605,14 @@ describe("changePasswordAction", () => {
 // ────────────────────────────────────────────────────────────
 
 describe("requestPasswordResetAction", () => {
+  const afterCallbacks: Array<() => unknown | Promise<unknown>> = [];
+
   beforeEach(() => {
     vi.clearAllMocks();
+    afterCallbacks.length = 0;
+    after.mockImplementation((callback: () => unknown | Promise<unknown>) => {
+      afterCallbacks.push(callback);
+    });
     checkRateLimit.mockReturnValue(true);
     createPasswordResetToken.mockResolvedValue("a".repeat(64));
   });
@@ -615,6 +624,7 @@ describe("requestPasswordResetAction", () => {
     await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
       "REDIRECT:/forgot-password?sent=1",
     );
+    await afterCallbacks[0]?.();
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: "cap@test.com" }),
     );
@@ -626,6 +636,7 @@ describe("requestPasswordResetAction", () => {
     await expect(requestPasswordResetAction(fd({ email: "nobody@test.com" }))).rejects.toThrow(
       "REDIRECT:/forgot-password?sent=1",
     );
+    await afterCallbacks[0]?.();
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
@@ -636,6 +647,7 @@ describe("requestPasswordResetAction", () => {
     await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
       "REDIRECT:/forgot-password?sent=1",
     );
+    await afterCallbacks[0]?.();
   });
 
   it("uses the exact 30-minute copy and keeps delivery logs redacted", async () => {
@@ -649,6 +661,7 @@ describe("requestPasswordResetAction", () => {
       "REDIRECT:/forgot-password?sent=1",
     );
 
+    await afterCallbacks[0]?.();
     expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({
       html: expect.stringContaining("30 menit"),
     }));
@@ -672,25 +685,58 @@ describe("requestPasswordResetAction", () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
-  it("runs the same injected response work for known and unknown emails", async () => {
-    const responseWork = vi.fn();
-    equalizePasswordResetResponse.mockImplementation(async (operation: () => Promise<unknown>) => {
-      responseWork();
-      return operation();
+  it("defers issuance and email while keeping known and unknown foreground work identical", async () => {
+    let resolveToken!: (token: string) => void;
+    const deferredToken = new Promise<string>((resolve) => {
+      resolveToken = resolve;
     });
-    getUserByEmail.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "captain-1", role: "captain" });
+    createPasswordResetToken.mockReturnValue(deferredToken);
+    getUserByEmail.mockResolvedValueOnce({ id: "captain-1", role: "captain" }).mockResolvedValueOnce(null);
     sendEmail.mockResolvedValue(undefined);
 
-    await expect(requestPasswordResetAction(fd({ email: "nobody@test.com" }))).rejects.toThrow(
-      "REDIRECT:/forgot-password?sent=1",
-    );
-    await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
-      "REDIRECT:/forgot-password?sent=1",
-    );
+    let knownRedirectError: unknown;
+    const knownResult = requestPasswordResetAction(fd({ email: "cap@test.com" })).catch((error: unknown) => {
+      knownRedirectError = error;
+      return error;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    let unknownRedirectError: unknown;
+    const unknownResult = requestPasswordResetAction(fd({ email: "nobody@test.com" })).catch((error: unknown) => {
+      unknownRedirectError = error;
+      return error;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 
-    expect(equalizePasswordResetResponse).toHaveBeenCalledTimes(2);
-    expect(responseWork).toHaveBeenCalledTimes(2);
+    expect(getUserByEmail).toHaveBeenCalledTimes(2);
+    expect(after).toHaveBeenCalledTimes(2);
+    expect(createPasswordResetToken).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(knownRedirectError).toMatchObject({ message: "REDIRECT:/forgot-password?sent=1" });
+    expect(unknownRedirectError).toMatchObject({ message: "REDIRECT:/forgot-password?sent=1" });
+
+    await afterCallbacks[1]?.();
+    expect(sendEmail).not.toHaveBeenCalled();
+    createPasswordResetToken.mockResolvedValue("a".repeat(64));
+    await afterCallbacks[0]?.();
     expect(sendEmail).toHaveBeenCalledTimes(1);
+
+    resolveToken("a".repeat(64));
+    await expect(knownResult).resolves.toMatchObject({ message: "REDIRECT:/forgot-password?sent=1" });
+    await expect(unknownResult).resolves.toMatchObject({ message: "REDIRECT:/forgot-password?sent=1" });
   });
 
   it("rejects an invalid email format", async () => {
