@@ -31,6 +31,8 @@ describe("certificate v3 actions", () => {
   it("rejects invalid client input before session or database access", async () => {
     await expect(regenerateCertificateAction({ ...regen, eventId: "" })).resolves.toEqual({ status: "blocked", code: "invalid_input" });
     expect(external.session).not.toHaveBeenCalled();
+    await expect(regenerateCertificateAction({ ...regen, eventId: "../secrets" })).resolves.toEqual({ status: "blocked", code: "invalid_input" });
+    expect(external.session).not.toHaveBeenCalled();
   });
   it("enforces flag, session, password gate, and event ownership", async () => {
     external.flag.mockReturnValue(false);

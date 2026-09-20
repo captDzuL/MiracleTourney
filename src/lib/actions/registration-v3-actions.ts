@@ -30,6 +30,7 @@ import {
   saveEventPaymentSettingsDraft,
 } from "@/lib/registration/event-payment-settings";
 import type { AppUser, TeamRegistrationRequestStatus } from "@/lib/platform/types";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 type Locale = "id" | "en";
 type BlockedCode =
@@ -38,7 +39,8 @@ type BlockedCode =
   | "password_change_required"
   | "forbidden"
   | "not_found"
-  | "operation_failed";
+  | "operation_failed"
+  | "rate_limited";
 
 export type RegistrationActionBlocked = {
   status: "blocked";
@@ -100,6 +102,7 @@ const copy: Record<Locale, Record<string, string>> = {
     forbidden: "Kamu tidak memiliki akses ke event ini.",
     not_found: "Data registrasi tidak ditemukan.",
     operation_failed: "Perubahan registrasi tidak dapat disimpan.",
+    rate_limited: "Terlalu banyak percobaan. Coba lagi nanti.",
     stale_mutation: "Data registrasi sudah berubah. Muat ulang lalu coba lagi.",
     preview_ready: "Preview import siap ditinjau.",
     imported: "Registrasi berhasil diimport.",
@@ -115,6 +118,7 @@ const copy: Record<Locale, Record<string, string>> = {
     forbidden: "You do not have access to this event.",
     not_found: "The registration data was not found.",
     operation_failed: "The registration change could not be saved.",
+    rate_limited: "Too many attempts. Try again later.",
     stale_mutation: "The registration changed. Reload and try again.",
     preview_ready: "The import preview is ready for review.",
     imported: "Registration import completed.",
@@ -255,6 +259,11 @@ export async function previewRegistrationImportForUser(
   if ("status" in input) return input;
   const { locale, eventId, file } = input;
   const redirectTo = canonicalRegistrationPath(locale, eventId, input.returnTo, "import");
+  if (!checkRateLimit(`registration-import:${user.id}:${eventId}`, 5, 15 * 60 * 1000)) {
+    return withLegacyFailure(blocked(locale, "rate_limited", redirectTo), options, {
+      phase: "import", message: localizedMessage(locale, "rate_limited"), behavior: "redirect",
+    });
+  }
   try {
     await assertUserCanManageEvent(user, eventId);
     if (file.size > MAX_REGISTRATION_INTAKE_BYTES) {
@@ -425,6 +434,11 @@ export async function commitRegistrationImportForUser(
   if (!parsed.input) return blocked(parsed.locale, "invalid_input");
   const { eventId, batchId, selectedItemIds, returnTo } = parsed.input;
   const redirectTo = canonicalRegistrationPath(parsed.locale, eventId, returnTo ?? "", "import");
+  if (!checkRateLimit(`registration-import:${user.id}:${eventId}`, 5, 15 * 60 * 1000)) {
+    return withLegacyFailure(blocked(parsed.locale, "rate_limited", redirectTo), options, {
+      phase: "registration", message: localizedMessage(parsed.locale, "rate_limited"), behavior: "redirect",
+    });
+  }
   if (selectedItemIds.length === 0) {
     return withLegacyFailure(blocked(parsed.locale, "invalid_input", redirectTo), options, {
       phase: "registration",
@@ -592,6 +606,9 @@ export async function saveEventQrisDraftAction(formData: FormData): Promise<Acti
   const access = await gate(input.eventId);
   if ("status" in access) return { ...access, message: localizedMessage(input.locale, access.code) };
   const redirectTo = canonicalRegistrationPath(input.locale, input.eventId, input.returnTo, "qris");
+  if (!checkRateLimit(`registration-qris:${access.id}:${input.eventId}`, 5, 15 * 60 * 1000)) {
+    return blocked(input.locale, "rate_limited", redirectTo);
+  }
   let uploaded: Awaited<ReturnType<typeof import("@/lib/actions").uploadImageAsset>> | undefined;
   let stored = false;
   try {

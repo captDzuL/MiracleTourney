@@ -22,9 +22,11 @@ const mocks = vi.hoisted(() => ({
   revalidateTag: vi.fn(),
   uploadImageAsset: vi.fn(),
   deleteBlob: vi.fn(),
+  checkRateLimit: vi.fn(),
 }));
 vi.mock("@vercel/blob", () => ({ del: mocks.deleteBlob }));
 vi.mock("@/lib/actions", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
 vi.mock("@/lib/platform/repository", () => ({
@@ -106,6 +108,7 @@ describe("registration V3 actions", () => {
     mocks.rejectTeamRegistrationRequest.mockResolvedValue({ id: "request-1", status: "rejected" });
     mocks.saveEventPaymentSettingsDraft.mockResolvedValue({ status: "saved", settings: { eventId: "event-1", version: 3, status: "draft" } });
     mocks.publishEventPaymentSettings.mockResolvedValue({ status: "published", settings: { eventId: "event-1", version: 4, status: "published" } });
+    mocks.checkRateLimit.mockReturnValue(true);
   });
 
   it("returns typed invalid input before opening a session", async () => {
@@ -199,6 +202,24 @@ describe("registration V3 actions", () => {
     expect(mocks.commitRegistrationImportBatch).toHaveBeenCalledWith(organizer, "batch-1", ["item-1"]);
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/id/organizer/events/event-1/registration");
     expect(mocks.revalidatePath).not.toHaveBeenCalledWith("/admin");
+  });
+
+  it("blocks a rate-limited import before parsing or creating a preview batch", async () => {
+    mocks.checkRateLimit.mockReturnValue(false);
+    await expect(previewEventRegistrationImportAction(form({ locale: "en", eventId: "event-1", registrationFile: new File(["x"], "a.csv") })))
+      .resolves.toMatchObject({ status: "blocked", code: "rate_limited" });
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith("registration-import:organizer-1:event-1", 5, 900000);
+    expect(mocks.parseRegistrationSource).not.toHaveBeenCalled();
+    expect(mocks.saveRegistrationImportPreviewBatch).not.toHaveBeenCalled();
+  });
+
+  it("blocks a rate-limited QRIS upload before storage or settings writes", async () => {
+    mocks.checkRateLimit.mockReturnValue(false);
+    await expect(saveEventQrisDraftAction(form({ locale: "en", eventId: "event-1", expectedVersion: "2", qrisImage: new File(["png"], "q.png", { type: "image/png" }) })))
+      .resolves.toMatchObject({ status: "blocked", code: "rate_limited" });
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith("registration-qris:organizer-1:event-1", 5, 900000);
+    expect(mocks.uploadImageAsset).not.toHaveBeenCalled();
+    expect(mocks.saveEventPaymentSettingsDraft).not.toHaveBeenCalled();
   });
 
   it("denies a manipulated import batch from another event without exposing batch metadata or committing", async () => {

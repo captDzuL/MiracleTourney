@@ -12,21 +12,22 @@ import { isFeatureEnabled } from "@/lib/feature-flags";
 import { assertUserCanManageEvent, createEvent, createOrganizerAndEventDraft, getOrganizerUserById, updateEventOrganizerContact } from "@/lib/platform/repository";
 import { getLegacyTournamentFormat, TOURNAMENT_FORMAT_PRESETS, tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { safeEntityIdSchema } from "@/lib/security/request-guard";
 
 const saveDraftActionSchema = z.object({
-  eventId: z.string().min(1),
+  eventId: safeEntityIdSchema,
   expectedRevision: z.number().int().nonnegative(),
   mutationId: z.string().uuid(),
   draft: eventDraftSchema,
 });
-const publishActionSchema = z.object({ eventId: z.string().min(1) });
+const publishActionSchema = z.object({ eventId: safeEntityIdSchema });
 const createPreviewActionSchema = z.object({
-  eventId: z.string().min(1),
+  eventId: safeEntityIdSchema,
   locale: z.enum(["id", "en"]),
 });
-const revokePreviewActionSchema = z.object({ eventId: z.string().min(1) });
+const revokePreviewActionSchema = z.object({ eventId: safeEntityIdSchema });
 const organizerContactActionSchema = z.object({
-  eventId: z.string().min(1),
+  eventId: safeEntityIdSchema,
   contactChannel: z.string().trim().min(1).max(40),
   contactValue: z.string().trim().min(1).max(200),
 });
@@ -34,13 +35,13 @@ const createEventActionSchema = z.object({
   locale: z.enum(["id", "en"]),
   name: z.string().trim().min(3),
   slug: z.string().trim().min(3).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-  gameModeId: z.string().min(1),
+  gameModeId: safeEntityIdSchema,
   formatKind: z.enum(["single_elimination", "double_elimination", "round_robin", "group_playoffs"]),
   participantCap: z.union([z.literal(8), z.literal(12), z.literal(16), z.literal(24), z.literal(32), z.literal(64), z.literal(128), z.literal(256)]),
   groupCount: z.coerce.number().int().min(2).max(16).optional(),
   qualifiersPerGroup: z.coerce.number().int().min(1).max(8).optional(),
   ownerKind: z.enum(["platform", "existing_organizer", "new_organizer"]).optional(),
-  organizerUserId: z.string().min(1).optional(),
+  organizerUserId: safeEntityIdSchema.optional(),
   organizerName: z.string().trim().min(2).optional(),
   organizerAccountName: z.string().trim().min(2).optional(),
   organizerEmail: z.string().email().optional(),
@@ -126,7 +127,7 @@ export async function createEventV3Action(formData: FormData) {
   }
 
   if (ownerKind === "existing_organizer") {
-    const organizerId = z.string().min(1).parse(parsed.organizerUserId);
+    const organizerId = safeEntityIdSchema.parse(parsed.organizerUserId);
     const organizer = await getOrganizerUserById(organizerId);
     if (!organizer) throw new Error("Organizer not found");
     const event = await createEventOrReturnToForm({ name: parsed.name, slug: parsed.slug, gameModeId: parsed.gameModeId, format: getLegacyTournamentFormat(formatConfig), formatConfig, participantCap: parsed.participantCap, organizerUserId: organizer.id, organizerName: organizer.name, organizerVerified: false }, parsed.locale, eventManagerRoleSchema.parse(user.role));

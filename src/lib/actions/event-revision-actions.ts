@@ -19,15 +19,17 @@ import {
 } from "@/lib/events/event-revision";
 import { createEventVisualAsset, updatePublishedEventSlugAsAdmin } from "@/lib/platform/repository";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { safeEntityIdSchema } from "@/lib/security/request-guard";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const managerRoleSchema = z.enum(["organizer", "platform_admin", "admin"]);
 const saveSchema = z.object({
-  eventId: z.string().min(1),
+  eventId: safeEntityIdSchema,
   expectedRevision: z.number().int().nonnegative(),
   mutationId: z.string().uuid(),
   draft: eventRevisionPatchSchema,
 });
-const revisionSchema = z.object({ revisionId: z.string().min(1) });
+const revisionSchema = z.object({ revisionId: safeEntityIdSchema });
 const previewSchema = revisionSchema.extend({ locale: z.enum(["id", "en"]) });
 
 async function requireRevisionManager() {
@@ -124,8 +126,8 @@ export async function revokePublishedRevisionPreviewAction(input: unknown) {
 export async function uploadPublishedRevisionVisualAction(formData: FormData) {
   const { user, actor } = await requireRevisionManager();
   const input = z.object({
-    eventId: z.string().min(1),
-    revisionId: z.string().min(1),
+    eventId: safeEntityIdSchema,
+    revisionId: safeEntityIdSchema,
     locale: z.enum(["id", "en"]),
     kind: z.enum(["logo", "poster"]),
   }).parse({
@@ -134,11 +136,14 @@ export async function uploadPublishedRevisionVisualAction(formData: FormData) {
     locale: formData.get("locale"),
     kind: formData.get("kind"),
   });
-  const revision = await resolveRevisionWorkspaceAccess(actor, input.revisionId);
-  if (revision.eventId !== input.eventId) throw new Error("Not authorized");
   const basePath = user.role === "organizer" ? "organizer" : "admin";
   const returnPath = `/${input.locale}/${basePath}/events/${input.eventId}/edit`;
   const returnTarget = `${returnPath}#section-public`;
+  if (!checkRateLimit(`revision-visual:${user.id}:${input.eventId}`, 3, 15 * 60 * 1000)) {
+    redirect(`${returnPath}?error=rate-limited#section-public`);
+  }
+  const revision = await resolveRevisionWorkspaceAccess(actor, input.revisionId);
+  if (revision.eventId !== input.eventId) throw new Error("Not authorized");
   if (input.kind === "poster" && formData.get("rightsAttestation") !== "confirmed") {
     redirect(`${returnPath}?error=${encodeURIComponent("Konfirmasi hak publikasi artwork terlebih dahulu.")}#section-public`);
   }
@@ -177,7 +182,7 @@ export async function updatePublishedEventSlugAction(formData: FormData) {
   const { user } = await requireRevisionManager();
   if (user.role !== "platform_admin" && user.role !== "admin") throw new Error("Not authorized");
   const input = z.object({
-    eventId: z.string().min(1),
+    eventId: safeEntityIdSchema,
     locale: z.enum(["id", "en"]),
     slug: z.string().trim().min(3).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   }).parse({ eventId: formData.get("eventId"), locale: formData.get("locale"), slug: formData.get("slug") });

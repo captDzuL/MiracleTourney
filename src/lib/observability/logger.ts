@@ -30,7 +30,10 @@ const STATIC_ROUTE_SEGMENTS = new Set([
 ]);
 
 function redactRoute(value: string): string {
-  return safeText(value).split("/").map((segment) => {
+  const route = safeText(value);
+  if (/^\/api\/events\/[^/]+\/ongoing\/?$/.test(route)) return "/api/events/:slug/ongoing";
+  if (/^\/api\/organizer\/events\/[^/]+\/competition\/?$/.test(route)) return "/api/organizer/events/:eventId/competition";
+  return route.split("/").map((segment) => {
     if (!segment || STATIC_ROUTE_SEGMENTS.has(segment)) return segment;
     return `:${redactIdentifier(segment)}`;
   }).join("/");

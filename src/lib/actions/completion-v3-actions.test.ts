@@ -39,6 +39,11 @@ describe("completion V3 server actions", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
+  it("rejects traversal event ids before authorization", async () => {
+    expect(await completeTournamentAction({ ...base, eventId: "../secrets" , decisions })).toEqual({ status: "blocked", code: "invalid_input" });
+    expect(external.requireAnyRole).not.toHaveBeenCalled();
+  });
+
   describe.each(cases)("$name", ({ action, input }) => {
     // These gates fail if the action forwards an unauthorized/invalid mutation.
     it("blocks the disabled completion flag without invoking the mutation", async () => {

@@ -77,4 +77,21 @@ describe("structured server logger", () => {
     expect(record.route).not.toContain("event-secret-123");
     expect(record.route).toContain("/api/events/");
   });
+
+  it("uses the canonical event route template when a dynamic slug equals a static segment", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    writeServerLog({
+      phase: "start",
+      operation: "read_event",
+      route: "/api/events/admin/ongoing",
+      requestId: "req-route-collision",
+      durationMs: 0,
+      status: 0,
+    });
+
+    const record = JSON.parse(String(info.mock.calls[0]?.[0]));
+    expect(record.route).toBe("/api/events/:slug/ongoing");
+    expect(record.route).not.toContain("admin");
+  });
 });

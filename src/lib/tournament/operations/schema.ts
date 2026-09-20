@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { safeEntityIdSchema } from "@/lib/security/request-guard";
 import { tournamentFormatConfigSchema } from "../formats/types";
 
 const id = z.string().trim().min(1).max(300);
+const entityId = safeEntityIdSchema;
 const reason = z.string().trim().max(4000).optional();
 const instant = z.iso.datetime({ offset: true });
 const urgency = z.enum(["info", "important", "urgent"]);
@@ -11,7 +13,7 @@ const drawingTeams = z.array(z.object({
   seed: z.number().int().positive(),
 }).strict()).min(2);
 export const resultGamesSchema = z.array(z.object({ gameNumber: z.number().int().positive(), homeScore: z.number().int().nonnegative().max(2147483647), awayScore: z.number().int().nonnegative().max(2147483647) }).strict()).max(999);
-export const correctionPreviewSchema = z.object({ eventId: id, matchId: id, games: resultGamesSchema }).strict();
+export const correctionPreviewSchema = z.object({ eventId: entityId, matchId: id, games: resultGamesSchema }).strict();
 const scheduling = z.object({
   timezone: id, eventWindow: z.object({ start: instant, end: instant }).strict(),
   matchDurationMinutes: z.number(), bufferMinutes: z.number(), minimumRestMinutes: z.number(),
@@ -45,6 +47,6 @@ export const operationCommandSchema = internalOperationCommandSchema.refine(
   (command) => command.kind !== "initialize",
   { message: "initialize is internal; use drawing_save then drawing_publish" },
 );
-export const operationRequestSchema = z.object({ eventId: id, expectedVersion: z.number().int().nonnegative(), idempotencyKey: id, command: operationCommandSchema }).strict();
-export const internalOperationRequestSchema = z.object({ eventId: id, expectedVersion: z.number().int().nonnegative(), idempotencyKey: id, command: internalOperationCommandSchema }).strict();
+export const operationRequestSchema = z.object({ eventId: entityId, expectedVersion: z.number().int().nonnegative(), idempotencyKey: entityId, command: operationCommandSchema }).strict();
+export const internalOperationRequestSchema = z.object({ eventId: entityId, expectedVersion: z.number().int().nonnegative(), idempotencyKey: entityId, command: internalOperationCommandSchema }).strict();
 export type ParsedCommand = z.infer<typeof internalOperationCommandSchema>;

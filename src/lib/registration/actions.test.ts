@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   saveCaptainRegistrationDraft: vi.fn(),
   registerTeam: vi.fn(),
   createTeamRegistrationRequest: vi.fn(),
+  checkRateLimit: vi.fn(),
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
   redirectToActiveLocale: vi.fn((path: string): never => { throw new Error(`REDIRECT:${path}`); }),
@@ -18,6 +19,7 @@ vi.mock("@/lib/platform/repository", () => ({
   createTeamRegistrationRequest: mocks.createTeamRegistrationRequest,
 }));
 vi.mock("@/lib/registration/captain-repository", () => ({ saveCaptainRegistrationDraft: mocks.saveCaptainRegistrationDraft }));
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale: mocks.redirectToActiveLocale }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath, revalidateTag: mocks.revalidateTag }));
 
@@ -47,6 +49,7 @@ describe("captain registration event identity boundary", () => {
     mocks.saveCaptainRegistrationDraft.mockResolvedValue("draft-b");
     mocks.registerTeam.mockResolvedValue({ id: "team-b" });
     mocks.createTeamRegistrationRequest.mockResolvedValue({ id: "request-b" });
+    mocks.checkRateLimit.mockReturnValue(true);
   });
 
   it("denies mismatched event slug and ID before draft, registration, or payment writes", async () => {
@@ -69,5 +72,32 @@ describe("captain registration event identity boundary", () => {
     await expect(captainRegisterEventTeamAction(form(validFields))).rejects.toThrow(
       "REDIRECT:/events/event-two/register?error=Pendaftaran%20gagal%20disimpan.",
     );
+  });
+
+  it("rejects markup before draft or registration writes", async () => {
+    mocks.getEventBySlug.mockResolvedValue({ id: "event-1" });
+
+    await expect(captainRegisterEventTeamAction(form({
+      ...validFields,
+      name: "<script>alert(1)</script>",
+    }))).rejects.toThrow("REDIRECT:/events/event-two/register?error=invalid-registration");
+
+    expect(mocks.saveCaptainRegistrationDraft).not.toHaveBeenCalled();
+    expect(mocks.registerTeam).not.toHaveBeenCalled();
+    expect(mocks.createTeamRegistrationRequest).not.toHaveBeenCalled();
+  });
+
+  it("blocks a rate-limited actor before event lookup or registration writes", async () => {
+    mocks.getEventBySlug.mockResolvedValue({ id: "event-1" });
+    mocks.checkRateLimit.mockReturnValue(false);
+
+    await expect(captainRegisterEventTeamAction(form(validFields))).rejects.toThrow(
+      "REDIRECT:/events/event-two/register?error=rate-limited",
+    );
+
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith("registration:captain-1:event-1", 5, 900000);
+    expect(mocks.getEventBySlug).not.toHaveBeenCalled();
+    expect(mocks.saveCaptainRegistrationDraft).not.toHaveBeenCalled();
+    expect(mocks.registerTeam).not.toHaveBeenCalled();
   });
 });

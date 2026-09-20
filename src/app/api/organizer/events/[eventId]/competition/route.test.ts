@@ -28,4 +28,15 @@ describe("competition workspace API boundary", () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ code: "internal_error", requestId: "req-competition-1" });
   });
+
+  it("does not expose a not-found code for reader availability failures", async () => {
+    readCompetitionWorkspace.mockRejectedValue(new Error("competition workspace unavailable"));
+
+    const response = await GET(new Request("https://app.example/api/organizer/events/event-safe/competition", {
+      headers: { "x-vercel-id": "req-competition-unavailable" },
+    }), { params: Promise.resolve({ eventId: "event-safe" }) });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ code: "internal_error", requestId: "req-competition-unavailable" });
+  });
 });

@@ -45,4 +45,14 @@ describe("/api/me scope and cache boundary", () => {
     await expect(response.json()).resolves.toEqual({ user: { name: "Captain", role: "captain", pendingCount: 0 } });
     expect(mocks.getPendingStatSubmissionCount).not.toHaveBeenCalled();
   });
+
+  it("maps session metadata failures to the uniform public error contract", async () => {
+    const user = { id: "organizer-1", name: "Organizer", email: "private@example.test", role: "organizer" };
+    mocks.getSessionUser.mockResolvedValue(user);
+    mocks.getPendingStatSubmissionCount.mockRejectedValue(new Error("Prisma P2028 private stack"));
+
+    const response = await GET(new Request("https://app.example/api/me", { headers: { "x-vercel-id": "req-me-failure" } }));
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ code: "internal_error", requestId: "req-me-failure" });
+  });
 });

@@ -31,7 +31,7 @@ import { parsePlayerStatForm } from "@/lib/player-stats/form";
 import type { AppUser } from "@/lib/platform/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { toSafeActionMessage } from "@/lib/security/public-error";
-import { isSafeHttpUrl } from "@/lib/security/request-guard";
+import { isSafeHttpUrl, safeEntityIdSchema } from "@/lib/security/request-guard";
 import {
   addPlayer,
   approveStatSubmission,
@@ -86,6 +86,7 @@ const MAX_LOGO_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_BACKGROUND_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024;
 const MAX_QRIS_IMAGE_BYTES = 2 * 1024 * 1024;
+const actionEntityId = safeEntityIdSchema;
 
 async function requireAdminSession(): Promise<AppUser> {
   const user =
@@ -455,9 +456,10 @@ export async function captainRegisterTeamAction(formData: FormData) {
     : "/captain?tab=registration";
   const registrationError = async (msg: string) =>
     redirectToActiveLocale(`${registrationBase}&error=${encodeURIComponent(msg)}` as never);
-  const draftTeamId = String(formData.get("draftTeamId") ?? "").trim() || undefined;
+  const draftTeamIdRaw = String(formData.get("draftTeamId") ?? "").trim();
+  const draftTeamId = draftTeamIdRaw ? actionEntityId.parse(draftTeamIdRaw) : undefined;
   const parsed = z.object({
-    eventId: z.string().trim().min(1),
+    eventId: actionEntityId,
     name: z.string().trim().optional(),
     tag: z.string().trim().optional(),
   }).safeParse({
@@ -546,8 +548,8 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
   const captain = await requireCaptainSession();
   const returnTo = getSafeReturnTo(formData.get("returnTo"));
   const parsed = z.object({
-    requestId: z.string().trim().min(1),
-    eventId: z.string().trim().optional(),
+    requestId: actionEntityId,
+    eventId: actionEntityId.optional(),
   }).parse({
     requestId: formData.get("requestId"),
     eventId: String(formData.get("eventId") ?? "").trim() || undefined,
@@ -619,7 +621,7 @@ export async function adminUpdatePaymentSettingsAction(formData: FormData) {
 
 export async function adminApprovePaymentAction(formData: FormData) {
   const user = await requireAdminSession();
-  const requestId = z.string().trim().min(1).parse(formData.get("requestId"));
+  const requestId = actionEntityId.parse(formData.get("requestId"));
 
   try {
     await approveTeamRegistrationRequest(user, requestId);
@@ -638,7 +640,7 @@ export async function adminApprovePaymentAction(formData: FormData) {
 export async function adminRejectPaymentAction(formData: FormData) {
   const user = await requireAdminSession();
   const input = z.object({
-    requestId: z.string().trim().min(1),
+    requestId: actionEntityId,
     reason: z.string().trim().min(3).max(240),
   }).parse({
     requestId: formData.get("requestId"),
@@ -698,7 +700,7 @@ export async function captainUploadTeamLogoAction(formData: FormData) {
   const captain = await requireCaptainSession();
 
   try {
-    const teamId = z.string().min(1).parse(formData.get("teamId"));
+    const teamId = actionEntityId.parse(formData.get("teamId"));
     const team = await prisma.team.findFirst({
       where: { id: teamId, captainId: captain.id },
       select: { id: true },
@@ -729,8 +731,8 @@ export async function captainAddPlayerAction(formData: FormData) {
   const captain = await requireCaptainSession();
 
   const input = z.object({
-    teamId: z.string().min(1),
-    eventId: z.string().trim().optional(),
+    teamId: actionEntityId,
+    eventId: actionEntityId.optional(),
     displayName: z.string().trim().min(2, "UID minimal 2 karakter."),
     nickname: z.string().trim().min(2, "IGN minimal 2 karakter."),
     position: z.string().trim().optional(),
@@ -764,7 +766,7 @@ export async function captainAddPlayerAction(formData: FormData) {
 export async function captainUpdatePlayerAction(formData: FormData) {
   const user = await requireCaptainSession();
 
-  const id = z.string().min(1).parse(formData.get("playerId"));
+  const id = actionEntityId.parse(formData.get("playerId"));
   const jerseyRaw = formData.get("jerseyNumber");
   const jerseyNumber =
     jerseyRaw && String(jerseyRaw).trim() !== ""
@@ -794,7 +796,7 @@ export async function captainUpdatePlayerAction(formData: FormData) {
  */
 export async function captainDeletePlayerAction(formData: FormData) {
   const user = await requireCaptainSession();
-  const id = z.string().min(1).parse(formData.get("playerId"));
+  const id = actionEntityId.parse(formData.get("playerId"));
 
   try {
     await deletePlayer(id, user.id);
@@ -808,8 +810,8 @@ export async function captainDeletePlayerAction(formData: FormData) {
 
 export async function captainSetDisplayCaptainAction(formData: FormData) {
   const user = await requireCaptainSession();
-  const teamId = z.string().min(1).parse(formData.get("teamId"));
-  const playerId = z.string().min(1).parse(formData.get("playerId"));
+  const teamId = actionEntityId.parse(formData.get("teamId"));
+  const playerId = actionEntityId.parse(formData.get("playerId"));
 
   try {
     await setTeamCaptainDisplay(teamId, user.id, playerId);
@@ -828,10 +830,10 @@ export async function adminCreateEventAction(formData: FormData) {
   const input = z.object({
     name: z.string().min(3),
     slug: z.string().min(3),
-    gameModeId: z.string().min(1),
+    gameModeId: actionEntityId,
     format: z.enum(["Single Elimination", "League"]),
     participantCap: z.union([z.literal(8), z.literal(12), z.literal(16), z.literal(24), z.literal(32), z.literal(64), z.literal(128), z.literal(256)]),
-    organizerUserId: z.string().min(1).optional(),
+    organizerUserId: actionEntityId.optional(),
   }).parse({
     name: formData.get("name"),
     slug: formData.get("slug"),
@@ -881,7 +883,7 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
   const user = await requireAdminSession();
 
   const input = z.object({
-    eventId: z.string().min(1),
+    eventId: actionEntityId,
     status: z.enum(["Draft", "Published", "Registration Closed", "Ongoing", "Finished"]),
   }).parse({
     eventId: formData.get("eventId"),
@@ -926,8 +928,9 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
 /** Assigns or clears the captain user for an imported team. */
 export async function adminAssignCaptainAction(formData: FormData) {
   const user = await requireAdminSession();
-  const teamId = z.string().min(1).parse(formData.get("teamId"));
-  const captainUserId = String(formData.get("captainUserId") ?? "").trim() || null;
+  const teamId = actionEntityId.parse(formData.get("teamId"));
+  const captainUserIdRaw = String(formData.get("captainUserId") ?? "").trim();
+  const captainUserId = captainUserIdRaw ? actionEntityId.parse(captainUserIdRaw) : null;
 
   const team = await prisma.team.findUnique({
     where: { id: teamId },
@@ -968,7 +971,7 @@ export async function adminDeactivateUserAction(formData: FormData) {
   if (!user) {
     return redirectToActiveLocale("/login" as never);
   }
-  const targetUserId = z.string().min(1).parse(formData.get("userId"));
+  const targetUserId = actionEntityId.parse(formData.get("userId"));
   if (targetUserId === user.id) {
     return redirectToActiveLocale(
       `/admin?error=${encodeURIComponent("Tidak dapat menonaktifkan akun sendiri.")}` as never
@@ -988,7 +991,7 @@ export async function adminDeactivateUserAction(formData: FormData) {
 /** Deletes a team from a Draft-status event. Blocks if event has started. */
 export async function adminDeleteTeamAction(formData: FormData) {
   const user = await requireAdminSession();
-  const teamId = z.string().min(1).parse(formData.get("teamId"));
+  const teamId = actionEntityId.parse(formData.get("teamId"));
 
   let access: { eventId: string };
   try {
@@ -1018,7 +1021,7 @@ export async function adminDeleteTeamAction(formData: FormData) {
 /** Archives event (sets to Finished) or hard-deletes Draft events with no teams. */
 export async function adminArchiveEventAction(formData: FormData) {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
   const action = z.enum(["archive", "delete"]).parse(formData.get("action"));
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
@@ -1067,10 +1070,10 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   const user = await requireAdminSession();
   const locale = formData.get("locale")?.toString();
 
-  const matchEventId = z.string().min(1).parse(formData.get("matchEventId"));
+  const matchEventId = actionEntityId.parse(formData.get("matchEventId"));
   const input = z.object({
-    eventId: z.string().min(1),
-    matchId: z.string().min(1),
+    eventId: actionEntityId,
+    matchId: actionEntityId,
     homeScore: z.coerce.number().int().min(0),
     awayScore: z.coerce.number().int().min(0),
   }).parse({
@@ -1141,7 +1144,7 @@ export async function adminImportTeamsCsvAction(formData: FormData) {
 
 export async function adminPreviewRegistrationImportAction(formData: FormData) {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
   const file = formData.get("registrationFile");
@@ -1185,8 +1188,8 @@ export async function adminPreviewRegistrationImportAction(formData: FormData) {
 
 export async function adminCommitRegistrationImportAction(formData: FormData) {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const batchId = z.string().min(1).parse(formData.get("batchId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
+  const batchId = actionEntityId.parse(formData.get("batchId"));
   const selectedItemIds = formData.getAll("itemId").map(String).filter(Boolean);
   if (selectedItemIds.length === 0) {
     return redirectToActiveLocale(
@@ -1217,7 +1220,7 @@ export async function adminUpdateStreamAction(formData: FormData) {
   const user = await requireAdminSession();
 
   const input = z.object({
-    eventId: z.string().min(1),
+    eventId: actionEntityId,
     url: z.string().refine(isHttpUrl, "Stream URL must use http or https."),
     label: z.string().min(2),
   }).parse({
@@ -1237,7 +1240,7 @@ export async function adminUpdateEventPublicInfoAction(formData: FormData) {
   const user = await requireAdminSession();
 
   const input = z.object({
-    eventId: z.string().min(1),
+    eventId: actionEntityId,
     description: z.string().trim().min(10).max(500),
     registrationWindow: z.string().trim().min(2).max(120),
     startsAt: z.string().trim().min(2).max(120),
@@ -1295,9 +1298,9 @@ export async function captainSubmitStatsAction(formData: FormData) {
   }
 
   const { matchId, teamId, eventId } = z.object({
-    matchId: z.string().min(1),
-    teamId: z.string().min(1),
-    eventId: z.string().min(1),
+    matchId: actionEntityId,
+    teamId: actionEntityId,
+    eventId: actionEntityId,
   }).parse({
     matchId: formData.get("matchId"),
     teamId: formData.get("teamId"),
@@ -1317,7 +1320,7 @@ export async function captainSubmitStatsAction(formData: FormData) {
 /** Approves a captain's stat submission, making it visible on the public leaderboard. */
 export async function adminApproveStatAction(formData: FormData) {
   const user = await requireAdminSession();
-  const submissionId = formData.get("submissionId") as string;
+  const submissionId = actionEntityId.parse(formData.get("submissionId"));
   await assertUserCanReviewStatSubmission(user, submissionId);
   await approveStatSubmission(submissionId, user.id);
   revalidatePath("/", "layout");
@@ -1327,7 +1330,7 @@ export async function adminApproveStatAction(formData: FormData) {
 /** Rejects a stat submission with an optional rejection note shown to the captain. Defaults to "Please review and resubmit." if no note is provided. */
 export async function adminRejectStatAction(formData: FormData) {
   const user = await requireAdminSession();
-  const submissionId = formData.get("submissionId") as string;
+  const submissionId = actionEntityId.parse(formData.get("submissionId"));
   const note =
     (formData.get("rejectionNote") as string)?.trim() || "Please review and resubmit.";
   await assertUserCanReviewStatSubmission(user, submissionId);
@@ -1345,9 +1348,9 @@ export async function adminSaveMatchPlayerStatsAction(formData: FormData) {
   const user = await requireAdminSession();
 
   const { matchId, teamId, eventId } = z.object({
-    matchId: z.string().min(1),
-    teamId: z.string().min(1),
-    eventId: z.string().min(1),
+    matchId: actionEntityId,
+    teamId: actionEntityId,
+    eventId: actionEntityId,
   }).parse({
     matchId: formData.get("matchId"),
     teamId: formData.get("teamId"),
@@ -1379,7 +1382,7 @@ export async function adminSetRoundConfigAction(formData: FormData) {
   const locale = formData.get("locale")?.toString();
 
   const input = z.object({
-    eventId: z.string().min(1),
+    eventId: actionEntityId,
     roundLabel: z.string().min(1),
     bestOf: z.coerce.number().int().refine((n) => [1, 3, 5].includes(n), { message: "bestOf must be 1, 3, or 5" }),
   }).parse({
@@ -1410,8 +1413,8 @@ export async function adminSetMatchGamesAction(formData: FormData) {
   const user = await requireAdminSession();
   const locale = formData.get("locale")?.toString();
 
-  const matchId = z.string().min(1).parse(formData.get("matchId"));
-  const matchEventId = z.string().min(1).parse(formData.get("matchEventId"));
+  const matchId = actionEntityId.parse(formData.get("matchId"));
+  const matchEventId = actionEntityId.parse(formData.get("matchEventId"));
   // The hidden value is only a render-integrity hint. The repository resolves
   // the authoritative rule from this match's event and round in one transaction.
   z.coerce.number().int().refine((n) => [1, 3, 5].includes(n), { message: "bestOf must be 1, 3, or 5" }).parse(formData.get("bestOf"));
@@ -1455,7 +1458,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
 /** Uploads a character art PNG for an event's certificate to Vercel Blob and stores the URL. */
 export async function adminUploadCharacterArtAction(formData: FormData) {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
 
@@ -1478,7 +1481,7 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
 
 async function uploadEventLogo(formData: FormData, returnPath: string, returnSection = "visuals") {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
 
@@ -1507,7 +1510,7 @@ export async function adminUploadEventLogoAction(formData: FormData) {
 }
 
 export async function organizerUploadEventLogoAction(formData: FormData) {
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
   const locale = z.enum(["id", "en"]).parse(formData.get("locale"));
   const master = isFeatureEnabled("organizer_master_shell_v3");
   return uploadEventLogo(formData, `/${locale}/organizer/events/${eventId}/${master ? "edit" : "overview"}`, master ? "public" : "visuals");
@@ -1528,7 +1531,7 @@ const DUAL_WRITE_LEGACY_EVENT_IMAGE = true;
  */
 async function uploadEventVisual(formData: FormData, returnPath: string, returnSection = "visuals") {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
 
   try {
     await assertUserCanManageEvent(user, eventId);
@@ -1577,7 +1580,7 @@ export async function adminUploadEventVisualAction(formData: FormData) {
 }
 
 export async function organizerUploadEventVisualAction(formData: FormData) {
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
   const locale = z.enum(["id", "en"]).parse(formData.get("locale"));
   const master = isFeatureEnabled("organizer_master_shell_v3");
   return uploadEventVisual(formData, `/${locale}/organizer/events/${eventId}/${master ? "edit" : "overview"}`, master ? "public" : "visuals");
@@ -1586,8 +1589,8 @@ export async function organizerUploadEventVisualAction(formData: FormData) {
 /** Approves a revision that is waiting for review and makes it the active one. */
 export async function adminApproveEventVisualAction(formData: FormData) {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const assetId = z.string().min(1).parse(formData.get("assetId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
+  const assetId = actionEntityId.parse(formData.get("assetId"));
 
   try {
     await assertUserCanManageEvent(user, eventId);
@@ -1608,8 +1611,8 @@ export async function adminApproveEventVisualAction(formData: FormData) {
 /** Rejects a revision. The repository refuses to reject the active one. */
 export async function adminRejectEventVisualAction(formData: FormData) {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const assetId = z.string().min(1).parse(formData.get("assetId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
+  const assetId = actionEntityId.parse(formData.get("assetId"));
 
   try {
     await assertUserCanManageEvent(user, eventId);
@@ -1628,8 +1631,8 @@ export async function adminRejectEventVisualAction(formData: FormData) {
 /** Rolls back to an already approved revision by re-activating it. */
 export async function adminActivateEventVisualAction(formData: FormData) {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const assetId = z.string().min(1).parse(formData.get("assetId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
+  const assetId = actionEntityId.parse(formData.get("assetId"));
 
   try {
     await assertUserCanManageEvent(user, eventId);
@@ -1653,8 +1656,8 @@ export async function adminActivateEventVisualAction(formData: FormData) {
  */
 export async function adminSetEventVisualFocalPointAction(formData: FormData) {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
-  const assetId = z.string().min(1).parse(formData.get("assetId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
+  const assetId = actionEntityId.parse(formData.get("assetId"));
   const focalX = z.coerce.number().finite().parse(formData.get("focalX"));
   const focalY = z.coerce.number().finite().parse(formData.get("focalY"));
 
@@ -1674,7 +1677,7 @@ export async function adminSetEventVisualFocalPointAction(formData: FormData) {
 
 export async function adminUploadTeamLogoAction(formData: FormData) {
   const user = await requireAdminSession();
-  const teamId = z.string().min(1).parse(formData.get("teamId"));
+  const teamId = actionEntityId.parse(formData.get("teamId"));
 
   try {
     const { eventId } = await assertUserCanManageTeam(user, teamId);
@@ -1701,7 +1704,7 @@ export async function adminUploadTeamLogoAction(formData: FormData) {
 /** Updates the accent color for an event's certificate. */
 export async function adminSetAccentColorAction(formData: FormData) {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
   const accentColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).parse(formData.get("accentColor"));
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
@@ -1718,7 +1721,7 @@ export async function adminSetAccentColorAction(formData: FormData) {
  */
 export async function adminRegenerateCertificateAction(formData: FormData) {
   const user = await requireAdminSession();
-  const eventId = z.string().min(1).parse(formData.get("eventId"));
+  const eventId = actionEntityId.parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
 

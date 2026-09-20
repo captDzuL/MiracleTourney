@@ -133,6 +133,13 @@ describe("CertificateStudio", () => {
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
   });
 
+  it("announces a localized regeneration rate limit", async () => {
+    const regenerate = vi.fn().mockResolvedValue({ status: "blocked", code: "rate_limited" });
+    await act(async () => root.render(provider("en", <CertificateStudio regenerateAction={regenerate} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!.click());
+    expect(container.querySelector("[role=status]")?.textContent).toContain("Too many attempts");
+  });
+
   it("publishes the selected ready seven-version set and announces success", async () => {
     const publish = vi.fn().mockResolvedValue({ status: "published", revision: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
     await act(async () => root.render(provider("en", <CertificateStudio publishAction={publish} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey="22222222-2222-4222-8222-222222222222" state={available} />)));
@@ -140,6 +147,13 @@ describe("CertificateStudio", () => {
     expect(publish).toHaveBeenCalledWith(expect.objectContaining({ expectedCertificateRevision: 2, selection: expect.arrayContaining([expect.objectContaining({ certificateType: "champion", certificateId: "cert-champion-2" })]) }));
     expect(container.querySelector("[role=status]")?.textContent).toContain("published safely");
     expect(container.querySelector("[data-certificate-publication-revision]")?.textContent).toBe("2");
+  });
+
+  it("announces a localized publication rate limit", async () => {
+    const publish = vi.fn().mockResolvedValue({ status: "blocked", code: "rate_limited" });
+    await act(async () => root.render(provider("id", <CertificateStudio publishAction={publish} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")!.click());
+    expect(container.querySelector("[role=status]")?.textContent).toContain("Terlalu banyak percobaan");
   });
 
   it("renders publication disabled in pre-hydration markup", () => {

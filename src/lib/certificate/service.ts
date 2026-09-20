@@ -5,6 +5,8 @@ import { MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3Cert
 import { prisma } from "@/lib/platform/db";
 import { getCertificateByEvent } from "@/lib/platform/repository";
 import { z } from "zod";
+import { safeEntityIdSchema } from "@/lib/security/request-guard";
+import { redactIdentifier, writeServerLog } from "@/lib/observability/logger";
 
 export type CertificateNotReadyReason =
   | "final-not-completed"
@@ -356,7 +358,7 @@ export function validateCertificateAssetPlacement(
   return within ? { success: true } : { success: false, code: "out_of_zone" };
 }
 
-const idSchema = z.string().trim().min(1).max(200);
+const idSchema = safeEntityIdSchema;
 const idempotencySchema = z.string().uuid();
 const placementSchema = z.object({
   assetKind: z.enum(["team_logo_hero", "team_logo_badge", "character_art"]),
@@ -446,6 +448,19 @@ export interface CertificateStudioDependencies {
 
 function mutationFingerprint(value: object): string { return JSON.stringify(value); }
 
+function logCertificateFailure(operation: string, errorCode: string, requestId: string, resourceId: string) {
+  writeServerLog({
+    phase: "failed",
+    operation,
+    route: "certificate-service",
+    requestId: redactIdentifier(requestId),
+    durationMs: 0,
+    status: 500,
+    errorCode,
+    resourceId: redactIdentifier(resourceId),
+  });
+}
+
 export async function regenerateCertificate(input: unknown, dependencies: CertificateStudioDependencies): Promise<RegenerateCertificateResult> {
   const parsed = regenerateCertificateInputSchema.safeParse(input);
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
@@ -509,8 +524,8 @@ export async function regenerateCertificate(input: unknown, dependencies: Certif
       return { status: "generation_in_progress", certificateId: prepared.record.id,
         certificateType: prepared.record.certificateType, version: prepared.record.version };
     }
-    catch (persistenceError) {
-      console.error("Certificate failure mutation persistence failed", { certificateId: prepared.record.id, leaseToken: prepared.leaseToken, primaryError: error, persistenceError });
+    catch {
+      logCertificateFailure("certificate_mutation_finalize", "certificate_failure_finalization_failed", value.idempotencyKey, prepared.record.id);
       return { status: "generation_in_progress", certificateId: prepared.record.id,
         certificateType: prepared.record.certificateType, version: prepared.record.version };
     }
@@ -521,8 +536,8 @@ export async function regenerateCertificate(input: unknown, dependencies: Certif
     const finalized = await dependencies.transaction(value.eventId, async (tx) => tx.finalizeMutation(value.idempotencyKey, prepared.leaseToken, result));
     if (finalized.status === "finalized") return result;
     if (finalized.result) return { status: "already_applied", result: finalized.result };
-  } catch (persistenceError) {
-    console.error("Certificate success mutation persistence failed", { certificateId: prepared.record.id, leaseToken: prepared.leaseToken, persistenceError });
+  } catch {
+    logCertificateFailure("certificate_mutation_finalize", "certificate_success_finalization_failed", value.idempotencyKey, prepared.record.id);
   }
   return { status: "generation_in_progress", certificateId: prepared.record.id,
     certificateType: prepared.record.certificateType, version: prepared.record.version };
@@ -589,7 +604,14 @@ export function createMiracleV3GenerationAdapter(
     recordSuccess: (result) => repository.recordSuccess(result),
     recordFailure: async (result) => {
       try { await repository.recordFailure(result); }
-      catch (error) { console.error("Certificate failure persistence failed", { ...result.identity, attemptId: result.attemptId, error }); }
+      catch {
+        logCertificateFailure(
+          "certificate_generation_failure_persist",
+          "certificate_failure_persistence_failed",
+          result.attemptId,
+          `${result.identity.eventId}:${result.identity.recipientId}:${result.identity.certificateType}`,
+        );
+      }
     },
   };
 }

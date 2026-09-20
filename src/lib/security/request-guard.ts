@@ -1,4 +1,7 @@
+import { z } from "zod";
+
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+export const safeEntityIdSchema = z.string().trim().min(1).max(128).regex(/^[a-zA-Z0-9_-]+$/);
 
 function newRequestId(request: Request): string {
   return request.headers.get("x-vercel-id")?.trim()
@@ -45,7 +48,7 @@ export function requireSameOrigin(request: Request): Response | null {
 
 /** IDs used in route paths must not contain delimiters, traversal, or SQL syntax. */
 export function isSafeEntityId(value: string): boolean {
-  return /^[a-zA-Z0-9_-]{1,128}$/.test(value);
+  return safeEntityIdSchema.safeParse(value).success;
 }
 
 /** Public URL fields accept only absolute HTTP(S) URLs, never scriptable schemes. */

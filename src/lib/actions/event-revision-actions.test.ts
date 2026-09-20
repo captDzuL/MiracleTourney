@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
   redirect: vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`); }),
+  checkRateLimit: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
@@ -33,6 +34,7 @@ vi.mock("@/lib/platform/repository", () => ({
 vi.mock("@/lib/actions", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath, revalidateTag: mocks.revalidateTag }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 
 import {
   applyPublishedEventRevisionAction,
@@ -54,11 +56,21 @@ const ownedRevision = {
   event: { organizerUserId: "organizer-1" },
 };
 
+describe("event revision identifier boundary", () => {
+  it("rejects traversal revision ids before loading a revision", async () => {
+    mocks.requireAnyRole.mockResolvedValue(organizer);
+
+    await expect(applyPublishedEventRevisionAction({ revisionId: "../secrets" })).rejects.toThrow();
+    expect(mocks.getEventEditRevision).not.toHaveBeenCalled();
+  });
+});
+
 describe("published event revision actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAnyRole.mockResolvedValue(organizer);
     mocks.getEventEditRevision.mockResolvedValue(ownedRevision);
+    mocks.checkRateLimit.mockReturnValue(true);
   });
 
   it("passes the authenticated organizer actor to the owner-scoped autosave service", async () => {
@@ -162,6 +174,23 @@ describe("published event revision actions", () => {
     await expect(uploadPublishedRevisionVisualAction(formData)).rejects.toThrow("Not authorized");
     expect(mocks.uploadImageAsset).not.toHaveBeenCalled();
     expect(mocks.createEventVisualAsset).not.toHaveBeenCalled();
+  });
+
+  it("blocks a rate-limited revision visual upload before storage or revision writes", async () => {
+    mocks.checkRateLimit.mockReturnValue(false);
+    const formData = new FormData();
+    formData.set("eventId", "event-1");
+    formData.set("revisionId", "revision-1");
+    formData.set("locale", "id");
+    formData.set("kind", "logo");
+    formData.set("revisionLogo", new File(["image"], "logo.png", { type: "image/png" }));
+
+    await expect(uploadPublishedRevisionVisualAction(formData)).rejects.toThrow(
+      "REDIRECT:/id/organizer/events/event-1/edit?error=rate-limited#section-public",
+    );
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith("revision-visual:organizer-1:event-1", 3, 900000);
+    expect(mocks.uploadImageAsset).not.toHaveBeenCalled();
+    expect(mocks.saveEventEditRevision).not.toHaveBeenCalled();
   });
 
   it("allows only Platform Admin to change a published slug", async () => {

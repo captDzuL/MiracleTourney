@@ -1,17 +1,18 @@
 import { z } from "zod";
 import { deriveAwardCandidates, type AwardCandidate, type CompletionStatistic } from "./awards";
+import { safeEntityIdSchema } from "@/lib/security/request-guard";
 import { evaluateCompletionReadiness, type CompletionAwardStatistic, type CompletionBlocker, type CompletionFacts } from "./readiness";
 
 const awardNames = ["mvp", "top_scorer", "top_defender", "top_assist"] as const;
 const mutationFields = {
-  eventId: z.string().trim().min(1).max(200),
+  eventId: safeEntityIdSchema,
   expectedVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER - 1),
   idempotencyKey: z.string().uuid(),
 };
 export const completeTournamentInputSchema = z.object({
   ...mutationFields,
   decisions: z.array(z.object({
-    award: z.enum(awardNames), playerId: z.string().trim().min(1).max(200),
+    award: z.enum(awardNames), playerId: safeEntityIdSchema,
     reason: z.string().trim().max(2000).optional(),
   }).strict()).length(4).refine((rows) => new Set(rows.map((row) => row.award)).size === 4),
 }).strict();

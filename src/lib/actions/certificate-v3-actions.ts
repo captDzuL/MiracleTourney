@@ -10,6 +10,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { assertUserCanManageEvent, createEventVisualAsset } from "@/lib/platform/repository";
 import type { AppUser } from "@/lib/platform/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { safeEntityIdSchema } from "@/lib/security/request-guard";
 
 type GateResult = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" | "rate_limited" };
 function normalizePublicationResult(result: PublishCertificateSetResult): CertificatePublicationActionResult {
@@ -63,7 +64,7 @@ export async function publishCertificateSetAction(input: unknown): Promise<Certi
 }
 
 const uploadCertificateAssetSchema = z.object({
-  eventId: z.string().trim().min(1).max(200),
+  eventId: safeEntityIdSchema,
   purpose: z.enum(["certificate_team_logo", "certificate_character_art"]),
 });
 

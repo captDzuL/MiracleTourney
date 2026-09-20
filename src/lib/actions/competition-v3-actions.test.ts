@@ -63,6 +63,11 @@ describe("authenticated competition actions", () => {
       command: { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.singleElimination, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] },
     })).rejects.toThrow("initialize is internal");
   });
+
+  it("rejects traversal event ids before opening an operation transaction", async () => {
+    await expect(executeCompetitionOperationAction({ ...request, eventId: "../secrets" })).rejects.toThrow();
+    expect(store.rows("competitionAuditLog")).toEqual([]);
+  });
   it("returns serializable conflict and authorization outcomes for production client rendering", async () => {
     expect(await mutateCompetitionWorkspaceAction(request)).toMatchObject({ status: "saved", receipt: { version: 1 } });
     expect(await mutateCompetitionWorkspaceAction({ ...request, idempotencyKey: "stale" })).toEqual({ status: "conflict" });

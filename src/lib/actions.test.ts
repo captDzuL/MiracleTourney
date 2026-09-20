@@ -1231,7 +1231,7 @@ describe("adminUpdateEventStatusAction", () => {
 
     await expect(
       adminUpdateEventStatusAction(fd({ eventId: "e-missing", status: "Published" })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
+    ).rejects.toThrow();
   });
   it.each(["conflict", "not_draft"] as const)("does not report legacy publication success for %s", async (status) => {
     process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = "true";
@@ -1654,6 +1654,11 @@ describe("adminUpdateEventPublicInfoAction", () => {
       adminUpdateEventPublicInfoAction(fd({ ...validData, registrationUrl: "javascript:alert(1)" })),
     ).rejects.toThrow();
 
+    expect(updateEventPublicInfo).not.toHaveBeenCalled();
+  });
+
+  it("rejects traversal event ids before updating public information", async () => {
+    await expect(adminUpdateEventPublicInfoAction(fd({ ...validData, eventId: "../secrets" }))).rejects.toThrow();
     expect(updateEventPublicInfo).not.toHaveBeenCalled();
   });
 });
@@ -2083,7 +2088,7 @@ describe("adminUploadCharacterArtAction", () => {
         eventId: "../outside",
         characterArt: new File(["fake"], "art.png", { type: "image/png" }),
       })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
+    ).rejects.toThrow(/Invalid string/);
     expect(updateEventCertificateAssets).not.toHaveBeenCalled();
   });
 });

@@ -7,11 +7,13 @@ import { isFeatureEnabled } from "@/lib/feature-flags";
 import { adminWriteMatchPlayerStats, approveStatSubmission, assertUserCanManageEvent, getPlayerStatFormContext, rejectStatSubmission } from "@/lib/platform/repository";
 import { parsePlayerStatForm, validatePlayerStatPayload } from "@/lib/player-stats/form";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { safeEntityIdSchema } from "@/lib/security/request-guard";
 
 export type PlayerStatsActionResult = { status: "saved" | "conflict" | "invalid" | "unauthorized" | "failed" };
 const identifier = z.string().trim().min(1).max(300);
+const entityId = safeEntityIdSchema;
 const version = z.string().regex(/^(0|[1-9][0-9]*)$/).transform(Number).refine(Number.isSafeInteger);
-const baseSchema = z.object({ locale:z.enum(["id","en"]),eventId:identifier,matchId:identifier,expectedVersion:version,expectedResultVersion:version,operationId:identifier.max(200) });
+const baseSchema = z.object({ locale:z.enum(["id","en"]),eventId:entityId,matchId:identifier,expectedVersion:version,expectedResultVersion:version,operationId:identifier.max(200) });
 async function mutate(formData:FormData, action:"save"|"approve"|"reject"):Promise<PlayerStatsActionResult> {
   const parsed=baseSchema.safeParse(Object.fromEntries(formData));
   if(!parsed.success)return {status:"invalid"};

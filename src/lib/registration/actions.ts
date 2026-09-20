@@ -13,11 +13,13 @@ import {
 import { saveCaptainRegistrationDraft } from "@/lib/registration/captain-repository";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { toSafeActionMessage } from "@/lib/security/public-error";
+import { safeEntityIdSchema } from "@/lib/security/request-guard";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const registrationSchema = z.object({
-  eventId: z.string().trim().min(1),
+  eventId: safeEntityIdSchema,
   eventSlug: z.string().trim().regex(/^[a-z0-9-]+$/),
-  draftTeamId: z.string().trim().min(1).optional(),
+  draftTeamId: safeEntityIdSchema.optional(),
   name: z.string().trim().min(2),
   tag: z.string().trim().min(2).max(5),
   captainIgn: z.string().trim().min(2),
@@ -66,6 +68,14 @@ export async function captainRegisterEventTeamAction(formData: FormData) {
     return redirectToActiveLocale(`/events?error=${encodeURIComponent("invalid-registration")}`);
   }
 
+  const eventId = safeEntityIdSchema.safeParse(formData.get("eventId"));
+  if (!eventId.success) {
+    return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
+  }
+  if (!checkRateLimit(`registration:${captainId}:${eventId.data}`, 5, 15 * 60 * 1000)) {
+    return redirectToActiveLocale(registrationErrorPath(safeSlug, "rate-limited"));
+  }
+
   const parsed = registrationSchema.safeParse({
     eventId: formData.get("eventId"),
     eventSlug: safeSlug,
@@ -78,6 +88,20 @@ export async function captainRegisterEventTeamAction(formData: FormData) {
   });
 
   if (!parsed.success) {
+    return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
+  }
+
+  const registrationText = [
+    parsed.data.name,
+    parsed.data.tag,
+    parsed.data.captainIgn,
+    parsed.data.captainUid,
+    parsed.data.captainContact,
+    ...getStringValues(formData, "playerIgn"),
+    ...getStringValues(formData, "playerUid"),
+    ...getStringValues(formData, "playerPosition"),
+  ];
+  if (registrationText.some((value) => /[<>]/.test(value))) {
     return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
   }
 

@@ -52,6 +52,12 @@ describe("event V3 actions", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
+  it("rejects traversal event ids before workspace access", async () => {
+    await expect(publishEventV3Action({ eventId: "../secrets" })).rejects.toThrow();
+    expect(assertUserCanManageEvent).not.toHaveBeenCalled();
+    expect(publishEvent).not.toHaveBeenCalled();
+  });
+
   it("creates an organizer-owned draft and opens its locale-aware workspace", async () => {
     createEvent.mockResolvedValue({ id: "event-new" });
     const formData = new FormData();

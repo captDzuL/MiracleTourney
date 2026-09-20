@@ -14,8 +14,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ even
   try { return Response.json(await readCompetitionWorkspace(eventId), { headers }); }
   catch (error) {
     const message = error instanceof Error ? error.message : "";
-    const status = message === "Unauthorized" ? 401 : /authorized|Password/.test(message) ? 403 : message.includes("unavailable") ? 404 : 503;
-    const code = status === 401 || status === 403 ? "forbidden" : status === 404 ? "not_found" : "internal_error";
+    const status = message === "Unauthorized" ? 401 : /authorized|Password/.test(message) ? 403 : 503;
+    const code = status === 401 || status === 403 ? "forbidden" : "internal_error";
     return Response.json({ code, requestId }, { status, headers });
   }
 }
