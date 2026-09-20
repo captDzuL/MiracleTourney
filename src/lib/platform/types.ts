@@ -5,6 +5,7 @@ export type AppUser = {
   email: string;
   name: string;
   role: Exclude<UserRole, "public">;
+  sessionVersion?: number;
   deactivatedAt?: Date | null;
   mustChangePassword?: boolean;
 };

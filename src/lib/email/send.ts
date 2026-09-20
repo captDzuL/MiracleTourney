@@ -13,13 +13,11 @@ export async function sendEmail({ to, subject, html }: EmailPayload): Promise<vo
     const from = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
     const { error } = await resend.emails.send({ from, to, subject, html });
     if (error) {
-      console.error(`[email] Resend failed to send to ${to}:`, error);
+      console.error("[email] Resend failed to send password reset email");
     }
     return;
   }
 
-  // Fallback: log to console so reset flow is not broken during development
-  console.log(`[email-stub] To: ${to}`);
-  console.log(`[email-stub] Subject: ${subject}`);
-  console.log(`[email-stub] Body: ${html}`);
+  // Fallback: record only that a reset email was suppressed during development.
+  console.log("[email-stub] Password reset email suppressed");
 }

@@ -18,6 +18,7 @@ const {
   createEvent,
   createEventVisualAsset,
   createPasswordResetToken,
+  consumePasswordResetToken,
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
@@ -82,6 +83,7 @@ const {
   createEvent: vi.fn(),
   createEventVisualAsset: vi.fn(),
   createPasswordResetToken: vi.fn(),
+  consumePasswordResetToken: vi.fn(),
   createTeamRegistrationRequest: vi.fn(),
   deletePlayer: vi.fn(),
   getImportSnapshot: vi.fn(),
@@ -206,6 +208,7 @@ vi.mock("@/lib/certificate/generate", () => ({
 }));
 vi.mock("@/lib/platform/password-reset", () => ({
   createPasswordResetToken,
+  consumePasswordResetToken,
 }));
 vi.mock("@/lib/events/publish-readiness", () => ({ publishEvent }));
 vi.mock("@/lib/email/send", () => ({
@@ -259,6 +262,7 @@ import {
   changePasswordAction,
   loginAction,
   requestPasswordResetAction,
+  resetPasswordAction,
 } from "./actions";
 import { logoutAction } from "./session-actions";
 
@@ -597,6 +601,7 @@ describe("changePasswordAction", () => {
 describe("requestPasswordResetAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    checkRateLimit.mockReturnValue(true);
     createPasswordResetToken.mockResolvedValue("a".repeat(64));
   });
 
@@ -630,11 +635,79 @@ describe("requestPasswordResetAction", () => {
     );
   });
 
+  it("uses the exact 30-minute copy and keeps delivery logs redacted", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const rawToken = "a".repeat(64);
+    getUserByEmail.mockResolvedValue({ id: "captain-1", role: "captain" });
+    createPasswordResetToken.mockResolvedValue(rawToken);
+    sendEmail.mockRejectedValue(new Error(`delivery failed for cap@test.com ${rawToken}`));
+
+    await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({
+      html: expect.stringContaining("30 menit"),
+    }));
+    expect(sendEmail.mock.calls[0]?.[0]?.html).not.toContain("1 jam");
+    const logs = errorSpy.mock.calls.flat().join(" ");
+    expect(logs).not.toContain("cap@test.com");
+    expect(logs).not.toContain(rawToken);
+    expect(logs).not.toContain("forgot-password/reset");
+    errorSpy.mockRestore();
+  });
+
+  it("keeps a rate-limited request indistinguishable and does not issue a token", async () => {
+    checkRateLimit.mockReturnValue(false);
+
+    await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+
+    expect(getUserByEmail).not.toHaveBeenCalled();
+    expect(createPasswordResetToken).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid email format", async () => {
     await expect(requestPasswordResetAction(fd({ email: "not-an-email" }))).rejects.toThrow(
       "REDIRECT:/forgot-password?error=",
     );
     expect(sendEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("resetPasswordAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    checkRateLimit.mockReturnValue(true);
+    consumePasswordResetToken.mockResolvedValue(undefined);
+    (bcrypt.hash as ReturnType<typeof vi.fn>).mockResolvedValue("$new-hash$");
+  });
+
+  it("rate-limits token consumption before hashing or consuming", async () => {
+    checkRateLimit.mockReturnValue(false);
+
+    await expect(resetPasswordAction(fd({
+      token: "a".repeat(64),
+      password: "new-password",
+      confirmPassword: "new-password",
+    }))).rejects.toThrow("REDIRECT:/forgot-password/reset?token=");
+
+    expect(bcrypt.hash).not.toHaveBeenCalled();
+    expect(consumePasswordResetToken).not.toHaveBeenCalled();
+  });
+
+  it("consumes a valid token and redirects without exposing the password", async () => {
+    const token = "a".repeat(64);
+
+    await expect(resetPasswordAction(fd({
+      token,
+      password: "new-password",
+      confirmPassword: "new-password",
+    }))).rejects.toThrow("REDIRECT:/login?message=");
+
+    expect(consumePasswordResetToken).toHaveBeenCalledWith(token, "$new-hash$");
   });
 });
 

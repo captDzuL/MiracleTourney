@@ -45,7 +45,11 @@ describe("sendEmail", () => {
     await expect(
       sendEmail({ to: "user@example.com", subject: "Reset", html: "<p>link</p>" }),
     ).resolves.toBeUndefined();
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("user@example.com"), resendError);
+    expect(errorSpy).toHaveBeenCalled();
+    const logs = errorSpy.mock.calls.flat().join(" ");
+    expect(logs).not.toContain("user@example.com");
+    expect(logs).not.toContain("<p>link</p>");
+    expect(logs).not.toContain("Reset");
     errorSpy.mockRestore();
   });
 
@@ -69,7 +73,10 @@ describe("sendEmail", () => {
     await sendEmail({ to: "user@example.com", subject: "Reset", html: "<p>link</p>" });
 
     expect(resendSend).not.toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("user@example.com"));
+    expect(logSpy).toHaveBeenCalled();
+    const logs = logSpy.mock.calls.flat().join(" ");
+    expect(logs).not.toContain("user@example.com");
+    expect(logs).not.toContain("<p>link</p>");
     logSpy.mockRestore();
   });
 
@@ -93,7 +100,10 @@ describe("sendEmail", () => {
     await sendEmail({ to: "user@example.com", subject: "Reset", html: "<p>link</p>" });
 
     expect(resendSend).not.toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("user@example.com"));
+    expect(logSpy).toHaveBeenCalled();
+    const logs = logSpy.mock.calls.flat().join(" ");
+    expect(logs).not.toContain("user@example.com");
+    expect(logs).not.toContain("<p>link</p>");
     logSpy.mockRestore();
   });
 });

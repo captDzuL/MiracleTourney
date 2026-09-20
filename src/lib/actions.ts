@@ -1768,21 +1768,26 @@ export async function requestPasswordResetAction(formData: FormData) {
       `/forgot-password?error=${encodeURIComponent("Format email tidak valid.")}` as never,
     );
   }
-  const user = await getUserByEmail(email.data);
-  if (user && user.role === "captain") {
-    const token = await createPasswordResetToken(user.id);
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-    const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
-    try {
+  const requestIp = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  if (!checkRateLimit(`password-reset-request:${requestIp}`, 5, 15 * 60 * 1000)) {
+    return redirectToActiveLocale("/forgot-password?sent=1" as never);
+  }
+
+  try {
+    const user = await getUserByEmail(email.data);
+    if (user && user.role === "captain") {
+      const token = await createPasswordResetToken(user.id);
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+      const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
       await sendEmail({
         to: email.data,
         subject: "Reset Password Miracle League",
-        html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 1 jam.</p>`,
+        html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 30 menit.</p>`,
       });
-    } catch (err) {
-      // Never let an email-delivery failure change the response the caller sees (security).
-      console.error(`[requestPasswordResetAction] sendEmail threw for ${email.data}:`, err);
     }
+  } catch {
+    // Keep account enumeration and delivery failures indistinguishable to callers.
+    console.error("[requestPasswordResetAction] reset delivery failed");
   }
   // Always redirect to sent=1 regardless of whether email exists (security)
   return redirectToActiveLocale("/forgot-password?sent=1" as never);
@@ -1796,6 +1801,13 @@ export async function resetPasswordAction(formData: FormData) {
   const token = String(formData.get("token") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirmPassword") ?? "");
+
+  const requestIp = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  if (!checkRateLimit(`password-reset-consume:${requestIp}`, 5, 15 * 60 * 1000)) {
+    return redirectToActiveLocale(
+      `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Token tidak valid atau sudah kadaluarsa.")}` as never,
+    );
+  }
 
   if (!token || token.length < 64) {
     return redirectToActiveLocale(

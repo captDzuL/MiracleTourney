@@ -205,4 +205,78 @@ describe("auth session hardening", () => {
 
     await expect(getSessionUser()).resolves.toBeNull();
   });
+
+  it("emits the current session version in the JWT", async () => {
+    const { signIn } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getUserWithPasswordByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      passwordHash: "$hash",
+      sessionVersion: 4,
+    });
+
+    await signIn("captain@test.com", "secret123");
+
+    const token = cookieStore.set.mock.calls[0][1] as string;
+    const payload = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString("utf8"));
+    expect(payload.sv).toBe(4);
+  });
+
+  it("rejects a JWT after the user session version is incremented", async () => {
+    const { getSessionUser, signIn } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getUserWithPasswordByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      passwordHash: "$hash",
+      sessionVersion: 4,
+    });
+    getCaptainById.mockResolvedValue(null);
+    getUserByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      sessionVersion: 5,
+    });
+
+    await signIn("captain@test.com", "secret123");
+    cookieStore.get.mockReturnValue({ value: cookieStore.set.mock.calls[0][1] });
+
+    await expect(getSessionUser()).resolves.toBeNull();
+  });
+
+  it("accepts a JWT whose session version matches the user row", async () => {
+    const { getSessionUser, signIn } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getUserWithPasswordByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      passwordHash: "$hash",
+      sessionVersion: 4,
+    });
+    getCaptainById.mockResolvedValue(null);
+    getUserByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      sessionVersion: 4,
+    });
+
+    await signIn("captain@test.com", "secret123");
+    cookieStore.get.mockReturnValue({ value: cookieStore.set.mock.calls[0][1] });
+
+    await expect(getSessionUser()).resolves.toMatchObject({ id: "captain-1", sessionVersion: 4 });
+  });
 });
