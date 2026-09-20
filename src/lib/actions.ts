@@ -24,6 +24,7 @@ import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 import { validateTeamData } from "@/lib/validation/team-data";
 import { parsePlayerStatForm } from "@/lib/player-stats/form";
 import type { AppUser } from "@/lib/platform/types";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import {
   addPlayer,
   approveStatSubmission,
@@ -99,6 +100,15 @@ async function requireCaptainSession(): Promise<AppUser> {
   }
 
   return user;
+}
+
+function assertWorkspaceEventAction(user: AppUser, eventId: string) {
+  const access = authorizeWorkspaceResource(
+    user as WorkspaceActor,
+    { eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
+    user.role === "organizer" ? user.id : null,
+  );
+  if (!access.ok) throw new Error("Not authorized");
 }
 
 async function redirectToRequestedLocale(path: string, locale?: string): Promise<never> {
@@ -866,6 +876,7 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
   });
 
   await assertUserCanManageEvent(user, input.eventId);
+  assertWorkspaceEventAction(user, input.eventId);
 
   if (input.status === "Published" && isFeatureEnabled("organizer_workspace_v3")) {
     const publication = await publishEvent(input.eventId, {
@@ -913,6 +924,7 @@ export async function adminAssignCaptainAction(formData: FormData) {
     return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
   }
   await assertUserCanManageEvent(user, team.eventId);
+  assertWorkspaceEventAction(user, team.eventId);
 
   if (captainUserId) {
     const captain = await prisma.user.findUnique({
@@ -978,6 +990,7 @@ export async function adminDeleteTeamAction(formData: FormData) {
     );
   }
   await assertUserCanManageEvent(user, team.eventId);
+  assertWorkspaceEventAction(user, team.eventId);
   await prisma.team.delete({ where: { id: teamId } });
   revalidatePath("/", "layout");
   return redirectToActiveLocale("/admin?success=team-deleted" as never);
@@ -989,6 +1002,7 @@ export async function adminArchiveEventAction(formData: FormData) {
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   const action = z.enum(["archive", "delete"]).parse(formData.get("action"));
   await assertUserCanManageEvent(user, eventId);
+  assertWorkspaceEventAction(user, eventId);
 
   const event = await prisma.event.findUnique({
     where: { id: eventId },
@@ -1048,6 +1062,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
   });
 
   await assertUserCanManageEvent(user, input.eventId);
+  assertWorkspaceEventAction(user, input.eventId);
 
   let match;
   const returnEventId = user.role === "organizer" ? input.eventId : matchEventId;
@@ -1109,6 +1124,7 @@ export async function adminPreviewRegistrationImportAction(formData: FormData) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
+  assertWorkspaceEventAction(user, eventId);
   const file = formData.get("registrationFile");
   if (!(file instanceof File) || file.size === 0) {
     return redirectToActiveLocale(
@@ -1192,6 +1208,7 @@ export async function adminUpdateStreamAction(formData: FormData) {
   });
 
   await assertUserCanManageEvent(user, input.eventId);
+  assertWorkspaceEventAction(user, input.eventId);
   await updateEventStream(input.eventId, input.url, input.label);
   revalidatePath("/", "layout");
   await redirectToActiveLocale("/admin?success=stream-updated");
@@ -1319,6 +1336,7 @@ export async function adminSaveMatchPlayerStatsAction(formData: FormData) {
   });
 
   await assertUserCanManageEvent(user, eventId);
+  assertWorkspaceEventAction(user, eventId);
 
   const context = await getPlayerStatFormContext(matchId, eventId);
   const match = context.match;
@@ -1352,6 +1370,7 @@ export async function adminSetRoundConfigAction(formData: FormData) {
   });
 
   await assertUserCanManageEvent(user, input.eventId);
+  assertWorkspaceEventAction(user, input.eventId);
   try {
     await upsertRoundConfig(input.eventId, input.roundLabel, input.bestOf);
   } catch (error) {
@@ -1378,6 +1397,7 @@ export async function adminSetMatchGamesAction(formData: FormData) {
   // the authoritative rule from this match's event and round in one transaction.
   z.coerce.number().int().refine((n) => [1, 3, 5].includes(n), { message: "bestOf must be 1, 3, or 5" }).parse(formData.get("bestOf"));
   await assertUserCanManageEvent(user, matchEventId);
+  assertWorkspaceEventAction(user, matchEventId);
 
   const games: { gameNumber: number; homeScore: number; awayScore: number }[] = [];
   for (let i = 1; i <= 5; i++) {
@@ -1418,6 +1438,7 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
+  assertWorkspaceEventAction(user, eventId);
 
   try {
     const asset = await uploadImageAsset({
@@ -1440,6 +1461,7 @@ async function uploadEventLogo(formData: FormData, returnPath: string, returnSec
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
+  assertWorkspaceEventAction(user, eventId);
 
   try {
     const asset = await uploadImageAsset({
@@ -1491,6 +1513,7 @@ async function uploadEventVisual(formData: FormData, returnPath: string, returnS
 
   try {
     await assertUserCanManageEvent(user, eventId);
+    assertWorkspaceEventAction(user, eventId);
 
     if (formData.get("rightsAttestation") !== "confirmed") {
       throw new Error("Konfirmasi hak publikasi artwork terlebih dahulu.");
@@ -1549,6 +1572,7 @@ export async function adminApproveEventVisualAction(formData: FormData) {
 
   try {
     await assertUserCanManageEvent(user, eventId);
+    assertWorkspaceEventAction(user, eventId);
     await approveEventVisualAsset(user, eventId, assetId, {
       dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
     });
@@ -1570,6 +1594,7 @@ export async function adminRejectEventVisualAction(formData: FormData) {
 
   try {
     await assertUserCanManageEvent(user, eventId);
+    assertWorkspaceEventAction(user, eventId);
     await rejectEventVisualAsset(user, eventId, assetId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Rejection failed";
@@ -1589,6 +1614,7 @@ export async function adminActivateEventVisualAction(formData: FormData) {
 
   try {
     await assertUserCanManageEvent(user, eventId);
+    assertWorkspaceEventAction(user, eventId);
     await approveEventVisualAsset(user, eventId, assetId, {
       dualWriteLegacyImage: DUAL_WRITE_LEGACY_EVENT_IMAGE,
     });
@@ -1615,6 +1641,7 @@ export async function adminSetEventVisualFocalPointAction(formData: FormData) {
 
   try {
     await assertUserCanManageEvent(user, eventId);
+    assertWorkspaceEventAction(user, eventId);
     await setEventVisualFocalPoint(user, eventId, assetId, { x: focalX, y: focalY });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Focal point update failed";
@@ -1655,6 +1682,7 @@ export async function adminSetAccentColorAction(formData: FormData) {
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   const accentColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).parse(formData.get("accentColor"));
   await assertUserCanManageEvent(user, eventId);
+  assertWorkspaceEventAction(user, eventId);
   await updateEventCertificateAssets(eventId, { accentColor });
   revalidatePath("/admin");
   await redirectToActiveLocale(`/admin?success=accent-color-saved`);
@@ -1670,6 +1698,7 @@ export async function adminRegenerateCertificateAction(formData: FormData) {
   const user = await requireAdminSession();
   const eventId = z.string().min(1).parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
+  assertWorkspaceEventAction(user, eventId);
 
   if (!checkRateLimit(`cert-regen:${eventId}`, 3, 5 * 60 * 1000)) {
     await redirectToActiveLocale(

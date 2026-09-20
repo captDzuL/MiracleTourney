@@ -11,6 +11,7 @@ import { publishEvent } from "@/lib/events/publish-readiness";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { assertUserCanManageEvent, createEvent, createOrganizerAndEventDraft, getOrganizerUserById, updateEventOrganizerContact } from "@/lib/platform/repository";
 import { getLegacyTournamentFormat, TOURNAMENT_FORMAT_PRESETS, tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 
 const saveDraftActionSchema = z.object({
   eventId: z.string().min(1),
@@ -57,6 +58,15 @@ async function requireEventManager() {
     user,
     actor: { id: user.id, role: eventManagerRoleSchema.parse(user.role) },
   };
+}
+
+function assertEventWorkspaceAccess(user: WorkspaceActor, eventId: string) {
+  const access = authorizeWorkspaceResource(
+    user as WorkspaceActor,
+    { eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
+    user.role === "organizer" ? user.id : null,
+  );
+  if (!access.ok) throw new Error("Not authorized");
 }
 
 function isUniqueConstraint(error: unknown) {
@@ -131,6 +141,7 @@ export async function createEventV3Action(formData: FormData) {
 export async function saveEventDraftAction(input: unknown) {
   const { actor } = await requireEventManager();
   const parsed = saveDraftActionSchema.parse(input);
+  assertEventWorkspaceAccess(actor, parsed.eventId);
   if (parsed.draft.formatConfig?.kind !== undefined && parsed.draft.formatConfig.kind !== "single_elimination" && !isFeatureEnabled("competition_operations_v3")) {
     throw new Error("Competition operations are unavailable");
   }
@@ -152,6 +163,7 @@ export async function saveEventDraftAction(input: unknown) {
 export async function publishEventV3Action(input: unknown) {
   const { user, actor } = await requireEventManager();
   const parsed = publishActionSchema.parse(input);
+  assertEventWorkspaceAccess(actor, parsed.eventId);
   await assertUserCanManageEvent(user, parsed.eventId);
   const result = await publishEvent(parsed.eventId, actor);
 
@@ -170,6 +182,7 @@ export async function updateEventOrganizerContactAction(formData: FormData) {
     contactChannel: formData.get("contactChannel"),
     contactValue: formData.get("contactValue"),
   });
+  assertEventWorkspaceAccess(user, parsed.eventId);
   await updateEventOrganizerContact(user, parsed);
   revalidatePath("/organizer/events/" + parsed.eventId);
 }
@@ -177,6 +190,7 @@ export async function updateEventOrganizerContactAction(formData: FormData) {
 export async function createEventPreviewAction(input: unknown) {
   const { user, actor } = await requireEventManager();
   const parsed = createPreviewActionSchema.parse(input);
+  assertEventWorkspaceAccess(actor, parsed.eventId);
   await assertUserCanManageEvent(user, parsed.eventId);
   const result = await createEventPreviewToken({ eventId: parsed.eventId, actor });
 
@@ -192,6 +206,7 @@ export async function createEventPreviewAction(input: unknown) {
 export async function revokeEventPreviewAction(input: unknown) {
   const { user, actor } = await requireEventManager();
   const parsed = revokePreviewActionSchema.parse(input);
+  assertEventWorkspaceAccess(actor, parsed.eventId);
   await assertUserCanManageEvent(user, parsed.eventId);
   const result = await revokeEventPreviewTokens({ eventId: parsed.eventId, actor });
 

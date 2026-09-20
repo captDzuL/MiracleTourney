@@ -6,6 +6,7 @@ import { requireAnyRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { adminWriteMatchPlayerStats, approveStatSubmission, assertUserCanManageEvent, getPlayerStatFormContext, rejectStatSubmission } from "@/lib/platform/repository";
 import { parsePlayerStatForm, validatePlayerStatPayload } from "@/lib/player-stats/form";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 
 export type PlayerStatsActionResult = { status: "saved" | "conflict" | "invalid" | "unauthorized" | "failed" };
 const identifier = z.string().trim().min(1).max(300);
@@ -19,6 +20,12 @@ async function mutate(formData:FormData, action:"save"|"approve"|"reject"):Promi
   try {
     const actor=await requireAnyRole(["organizer","admin","platform_admin"]);
     if(!actor || actor.role==="organizer"&&actor.mustChangePassword || !isFeatureEnabled("organizer_workspace_v3") || !isFeatureEnabled("competition_operations_v3"))return {status:"unauthorized"};
+    const access = authorizeWorkspaceResource(
+      actor as WorkspaceActor,
+      { eventId: guard.eventId, ownerUserId: actor.role === "organizer" ? actor.id : undefined },
+      actor.role === "organizer" ? actor.id : null,
+    );
+    if (!access.ok) return { status: "unauthorized" };
     await assertUserCanManageEvent(actor,guard.eventId);
     if(action==="save"){
       const team=identifier.safeParse(formData.get("teamId"));

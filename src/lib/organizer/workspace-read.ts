@@ -2,6 +2,7 @@ import type { AppUser } from "@/lib/platform/types";
 import { prisma } from "@/lib/platform/db";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { findGameConfig } from "@/lib/platform/config";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import type { OrganizerWorkspaceLifecycle, OrganizerWorkspaceSummary } from "./workspace-types";
 
 /** One ownership-scoped query: scalar facts and filtered counts, never route payloads. */
@@ -10,7 +11,7 @@ export async function readOrganizerWorkspaceSummary(eventId: string, actor: Pick
   const event = await prisma.event.findFirst({
     where: { id: eventId, ...(actor.role === "organizer" ? { organizerUserId: actor.id } : {}) },
     select: {
-      id: true, name: true, gameId: true, format: true, status: true, publishedAt: true,
+      id: true, organizerUserId: true, name: true, gameId: true, format: true, status: true, publishedAt: true,
       updatedAt: true, publishedScheduleVersion: true,
       completion: { select: { status: true } },
       _count: { select: {
@@ -23,6 +24,12 @@ export async function readOrganizerWorkspaceSummary(eventId: string, actor: Pick
     },
   });
   if (!event) return null;
+  const access = authorizeWorkspaceResource(
+    actor as WorkspaceActor,
+    { eventId: event.id, ownerUserId: event.organizerUserId },
+    event.organizerUserId,
+  );
+  if (!access.ok) return null;
   const lifecycles: Record<string, OrganizerWorkspaceLifecycle> = {
     Draft: "draft", Published: "registration", "Registration Closed": "drawing", Ongoing: "ongoing", Finished: "finished",
   };

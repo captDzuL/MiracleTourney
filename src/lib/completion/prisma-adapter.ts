@@ -6,6 +6,7 @@ import { applyEventLifecycleSideEffects } from "@/lib/events/event-lifecycle";
 import type { CompetitionGraph } from "@/lib/tournament/competition";
 import { tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { competitionProjection } from "@/lib/tournament/operations/result-projection";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import {
   CompletionVersionConflictError,
   type CompletionActor,
@@ -323,13 +324,15 @@ export function buildCompletionSource(rows: CompletionSourceRows): CompletionSou
   };
 }
 
-export async function loadPrismaCompletionWorkspaceData(eventId: string): Promise<PrismaCompletionWorkspaceData> {
+export async function loadPrismaCompletionWorkspaceData(eventId: string, actor: WorkspaceActor): Promise<PrismaCompletionWorkspaceData> {
   return prisma.$transaction(async (tx) => {
     const event = await tx.event.findUnique({
       where: { id: eventId },
-      select: { id: true, competitionVersion: true, formatConfig: true, gameId: true, gameModeId: true },
+      select: { id: true, organizerUserId: true, competitionVersion: true, formatConfig: true, gameId: true, gameModeId: true },
     });
     if (!event) throw new Error("Event not found");
+    const access = authorizeWorkspaceResource(actor, { eventId: event.id, ownerUserId: event.organizerUserId }, event.organizerUserId);
+    if (!access.ok) throw new Error("Not authorized");
     const [completion, certificates, publication, auditRows] = await Promise.all([
       tx.tournamentCompletion.findUnique({
         where: { eventId },
@@ -606,7 +609,13 @@ export function createPrismaCompletionDependencies(
             if (!row || !currentActor || currentActor.deactivatedAt
               || currentActor.role !== actor.role
               || !["organizer", "platform_admin", "admin"].includes(currentActor.role)
-              || currentActor.role === "organizer" && (currentActor.mustChangePassword || row.organizerUserId !== currentActor.id)) return null;
+              || currentActor.role === "organizer" && currentActor.mustChangePassword) return null;
+            const access = authorizeWorkspaceResource(
+              { id: currentActor.id, role: currentActor.role as WorkspaceActor["role"] },
+              { eventId: row.id, ownerUserId: row.organizerUserId },
+              row.organizerUserId,
+            );
+            if (!access.ok) return null;
             return structuredClone(actor);
           },
           loadState: async (): Promise<CompletionState> => {

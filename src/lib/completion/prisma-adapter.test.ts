@@ -91,7 +91,7 @@ describe("Prisma completion source adapter", () => {
   it("forwards the repeatable-read workspace options", async () => {
     const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("unit test transaction stub"));
     try {
-      await loadPrismaCompletionWorkspaceData("event-1").catch(() => undefined);
+      await loadPrismaCompletionWorkspaceData("event-1", { id: "organizer-1", role: "organizer" }).catch(() => undefined);
       expect(transaction.mock.calls.at(-1)?.[1]).toEqual({
         isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
         maxWait: 5_000,

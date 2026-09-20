@@ -10,6 +10,12 @@ const JWT_COOKIE = "mfl_token";
 const DEFAULT_JWT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32chars-min";
 const ADMIN_SESSION_MAX_AGE = 60 * 60 * 12;
 const CAPTAIN_SESSION_MAX_AGE = 60 * 60 * 24 * 7;
+type SessionRole = Exclude<UserRole, "public">;
+const SESSION_ROLES = new Set<SessionRole>(["captain", "organizer", "admin", "platform_admin"]);
+
+function isSessionRole(role: unknown): role is SessionRole {
+  return typeof role === "string" && SESSION_ROLES.has(role as SessionRole);
+}
 
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET?.trim();
@@ -33,10 +39,10 @@ async function signToken(payload: { sub: string; role: string }, maxAge: number)
     .sign(getJwtSecret());
 }
 
-async function verifyToken(token: string): Promise<{ sub: string; role: string } | null> {
+async function verifyToken(token: string): Promise<{ sub: string; role: SessionRole } | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret());
-    if (typeof payload.sub !== "string" || typeof payload.role !== "string") return null;
+    if (typeof payload.sub !== "string" || !isSessionRole(payload.role)) return null;
     return { sub: payload.sub, role: payload.role };
   } catch {
     return null;
@@ -53,10 +59,10 @@ export const getSessionUser = cache(async (): Promise<AppUser | null> => {
   if (!claims) return null;
 
   const captain = await getCaptainById(claims.sub);
-  if (captain) return captain.deactivatedAt ? null : captain;
+  if (captain) return captain.deactivatedAt || claims.role !== captain.role ? null : captain;
 
   const user = await getUserByEmail(claims.sub);
-  if (!user || user.deactivatedAt) return null;
+  if (!user || user.deactivatedAt || claims.role !== user.role) return null;
   return user;
 });
 

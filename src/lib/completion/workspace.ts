@@ -1,4 +1,5 @@
 import type { CompletionAwardStatistic } from "./readiness";
+import { getSessionUser } from "@/lib/auth/session";
 import { tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { deriveAwardCandidates } from "./awards";
 import { evaluateCompletionReadiness, type CompletionBlocker } from "./readiness";
@@ -6,6 +7,7 @@ import {
   loadPrismaCompletionWorkspaceData,
   type PrismaCompletionWorkspaceData,
 } from "./prisma-adapter";
+import type { WorkspaceActor } from "@/lib/security/authorization";
 
 export type CompletionWorkspaceStatus =
   | "integration_required"
@@ -151,8 +153,20 @@ const AWARDS: readonly CompletionAwardStatistic[] = [
 ];
 
 export interface CompletionWorkspaceDependencies {
-  load(eventId: string): Promise<PrismaCompletionWorkspaceData>;
+  load(eventId: string, actor?: WorkspaceActor): Promise<PrismaCompletionWorkspaceData>;
 }
+
+const defaultCompletionWorkspaceDependencies: CompletionWorkspaceDependencies = {
+  load: async (eventId) => {
+    const user = await getSessionUser();
+    if (!user || !["organizer", "platform_admin", "admin"].includes(user.role)
+      || user.role === "organizer" && user.mustChangePassword) throw new Error("Not authorized");
+    return loadPrismaCompletionWorkspaceData(eventId, {
+      id: user.id,
+      role: user.role as WorkspaceActor["role"],
+    });
+  },
+};
 
 function formatLabel(kind: string | undefined, locale: "id" | "en"): string {
   const labels = locale === "id"
@@ -264,7 +278,7 @@ function lockedCandidates(value: unknown): CompletionAwardCandidateSummary[] {
 export async function loadCompletionWorkspace(
   event: CompletionWorkspaceEvent,
   locale: "id" | "en",
-  dependencies: CompletionWorkspaceDependencies = { load: loadPrismaCompletionWorkspaceData },
+  dependencies: CompletionWorkspaceDependencies = defaultCompletionWorkspaceDependencies,
 ): Promise<CompletionWorkspaceState> {
   if (!tournamentFormatConfigSchema.safeParse(event.formatConfig).success) {
     return integrationState(event, locale);

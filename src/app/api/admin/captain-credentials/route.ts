@@ -1,5 +1,6 @@
 import { assertUserCanManageEvent, getCaptainCredentialsForEvent } from "@/lib/platform/repository";
 import { requireRole } from "@/lib/auth/session";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 
 function csvEscape(value: string): string {
   const safeValue = /^[=+\-@]/.test(value.trimStart()) ? `'${value}` : value;
@@ -25,7 +26,17 @@ export async function GET(req: Request) {
   const eventId = searchParams.get("eventId");
   if (!eventId) return new Response("Missing eventId", { status: 400 });
   if (!isSafeEventId(eventId)) return new Response("Invalid eventId", { status: 400 });
-  await assertUserCanManageEvent(user, eventId);
+  const access = authorizeWorkspaceResource(
+    user as WorkspaceActor,
+    { eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
+    user.role === "organizer" ? user.id : null,
+  );
+  if (!access.ok) return Response.json({ error: "forbidden" }, { status: 403, headers: { "Cache-Control": "no-store, max-age=0" } });
+  try {
+    await assertUserCanManageEvent(user, eventId);
+  } catch {
+    return Response.json({ error: "forbidden" }, { status: 403, headers: { "Cache-Control": "no-store, max-age=0" } });
+  }
 
   const credentials = await getCaptainCredentialsForEvent(eventId);
 

@@ -17,6 +17,7 @@ import {
   saveEventEditRevision,
 } from "@/lib/events/event-revision";
 import { createEventVisualAsset, updatePublishedEventSlugAsAdmin } from "@/lib/platform/repository";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 
 const managerRoleSchema = z.enum(["organizer", "platform_admin", "admin"]);
 const saveSchema = z.object({
@@ -35,6 +36,15 @@ async function requireRevisionManager() {
   return { user, actor: { id: user.id, role: managerRoleSchema.parse(user.role) } };
 }
 
+function assertRevisionWorkspaceAccess(user: WorkspaceActor, resourceId: string) {
+  const access = authorizeWorkspaceResource(
+    user as WorkspaceActor,
+    { eventId: resourceId, ownerUserId: user.role === "organizer" ? user.id : undefined },
+    user.role === "organizer" ? user.id : null,
+  );
+  if (!access.ok) throw new Error("Not authorized");
+}
+
 function refreshEventSurfaces(eventId?: string) {
   revalidateTag("events");
   revalidatePath("/", "layout");
@@ -47,6 +57,7 @@ function refreshEventSurfaces(eventId?: string) {
 export async function savePublishedEventRevisionAction(input: unknown) {
   const { actor } = await requireRevisionManager();
   const parsed = saveSchema.parse(input);
+  assertRevisionWorkspaceAccess(actor, parsed.eventId);
   const result = await saveEventEditRevision({
     revisionId: parsed.eventId,
     actor,
@@ -61,6 +72,7 @@ export async function savePublishedEventRevisionAction(input: unknown) {
 export async function applyPublishedEventRevisionAction(input: unknown) {
   const { actor } = await requireRevisionManager();
   const parsed = revisionSchema.parse(input);
+  assertRevisionWorkspaceAccess(actor, parsed.revisionId);
   const result = await applyEventEditRevision({ revisionId: parsed.revisionId, actor });
   if (result.status === "applied") refreshEventSurfaces(result.eventId);
   return result;
@@ -69,6 +81,7 @@ export async function applyPublishedEventRevisionAction(input: unknown) {
 export async function discardPublishedEventRevisionAction(input: unknown) {
   const { actor } = await requireRevisionManager();
   const parsed = revisionSchema.parse(input);
+  assertRevisionWorkspaceAccess(actor, parsed.revisionId);
   const result = await discardEventEditRevision({ revisionId: parsed.revisionId, actor });
   if (result.status === "discarded") refreshEventSurfaces(result.eventId);
   return result;
@@ -77,6 +90,7 @@ export async function discardPublishedEventRevisionAction(input: unknown) {
 export async function createPublishedRevisionPreviewAction(input: unknown) {
   const { actor } = await requireRevisionManager();
   const parsed = previewSchema.parse(input);
+  assertRevisionWorkspaceAccess(actor, parsed.revisionId);
   const result = await createEventRevisionPreviewToken({ revisionId: parsed.revisionId, actor });
   if (result.status !== "created") return result;
   return {
@@ -89,6 +103,7 @@ export async function createPublishedRevisionPreviewAction(input: unknown) {
 export async function revokePublishedRevisionPreviewAction(input: unknown) {
   const { actor } = await requireRevisionManager();
   const parsed = revisionSchema.parse(input);
+  assertRevisionWorkspaceAccess(actor, parsed.revisionId);
   return revokeEventRevisionPreviewTokens({ revisionId: parsed.revisionId, actor });
 }
 
@@ -106,6 +121,7 @@ export async function uploadPublishedRevisionVisualAction(formData: FormData) {
     locale: formData.get("locale"),
     kind: formData.get("kind"),
   });
+  assertRevisionWorkspaceAccess(actor, input.eventId);
   const basePath = user.role === "organizer" ? "organizer" : "admin";
   const returnPath = `/${input.locale}/${basePath}/events/${input.eventId}/edit`;
   const returnTarget = `${returnPath}#section-public`;
@@ -152,6 +168,7 @@ export async function updatePublishedEventSlugAction(formData: FormData) {
     locale: z.enum(["id", "en"]),
     slug: z.string().trim().min(3).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   }).parse({ eventId: formData.get("eventId"), locale: formData.get("locale"), slug: formData.get("slug") });
+  assertRevisionWorkspaceAccess(user, input.eventId);
   await updatePublishedEventSlugAsAdmin(user, input.eventId, input.slug);
   refreshEventSurfaces(input.eventId);
   redirect(`/${input.locale}/admin/events/${input.eventId}/edit#section-identity`);

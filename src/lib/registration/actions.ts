@@ -10,6 +10,7 @@ import {
   registerTeam,
 } from "@/lib/platform/repository";
 import { saveCaptainRegistrationDraft } from "@/lib/registration/captain-repository";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 
 const registrationSchema = z.object({
   eventId: z.string().trim().min(1),
@@ -77,6 +78,13 @@ export async function captainRegisterEventTeamAction(formData: FormData) {
   if (!parsed.success) {
     return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
   }
+
+  const access = authorizeWorkspaceResource(
+    { id: captainId, role: "captain" } satisfies WorkspaceActor,
+    { eventId: parsed.data.eventId, ownerUserId: captainId },
+    null,
+  );
+  if (!access.ok) return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
 
   const playerIgn = getStringValues(formData, "playerIgn");
   const playerUid = getStringValues(formData, "playerUid");

@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { requireRole } = vi.hoisted(() => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/auth/session", () => ({ requireRole }));
 
 import { GET } from "./route";
 
@@ -7,8 +10,24 @@ const DEFAULT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32chars-
 const TEST_SECRET = "unit-test-secret-with-32-characters!!";
 
 describe("environment health API", () => {
+  beforeEach(() => {
+    requireRole.mockResolvedValue({ id: "platform-1", role: "platform_admin" });
+  });
+
   afterEach(() => {
+    vi.clearAllMocks();
     process.env = { ...ORIGINAL_ENV };
+  });
+
+  it("denies non-platform actors without exposing environment details", async () => {
+    requireRole.mockResolvedValue(null);
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body).toEqual({ error: "forbidden" });
+    expect(JSON.stringify(body)).not.toContain("JWT_SECRET");
   });
 
   it("reports when JWT_SECRET is missing without exposing secret values", async () => {

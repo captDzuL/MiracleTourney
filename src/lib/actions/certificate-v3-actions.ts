@@ -8,6 +8,7 @@ import { createPrismaCertificateStudioDependencies } from "@/lib/certificate/stu
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { assertUserCanManageEvent, createEventVisualAsset } from "@/lib/platform/repository";
 import type { AppUser } from "@/lib/platform/types";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 
 type GateResult = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" };
 function normalizePublicationResult(result: PublishCertificateSetResult): CertificatePublicationActionResult {
@@ -20,6 +21,12 @@ async function gate(eventId: string): Promise<{ actor: CertificateStudioActor; u
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
   if (!user) return { status: "blocked", code: "unauthorized" };
   if (user.role === "organizer" && user.mustChangePassword) return { status: "blocked", code: "password_change_required" };
+  const access = authorizeWorkspaceResource(
+    user as WorkspaceActor,
+    { eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
+    user.role === "organizer" ? user.id : null,
+  );
+  if (!access.ok) return { status: "blocked", code: "forbidden" };
   try { await assertUserCanManageEvent(user, eventId); }
   catch (error) {
     if (error instanceof Error && error.message === "Not authorized") return { status: "blocked", code: "forbidden" };

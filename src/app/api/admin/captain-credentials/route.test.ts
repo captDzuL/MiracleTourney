@@ -46,6 +46,17 @@ describe("captain credentials export API", () => {
     expect(getCaptainCredentialsForEvent).not.toHaveBeenCalled();
   });
 
+  it("returns a generic denial for an organizer outside the requested event", async () => {
+    requireRole.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "organizer-a", role: "organizer" });
+    assertUserCanManageEvent.mockRejectedValue(new Error("Not authorized"));
+
+    const response = await GET(new Request("http://localhost/api/admin/captain-credentials?eventId=event-b"));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "forbidden" });
+    expect(getCaptainCredentialsForEvent).not.toHaveBeenCalled();
+  });
+
   it("neutralizes spreadsheet formulas in exported CSV cells", async () => {
     requireRole.mockResolvedValue({ id: "admin-1", role: "admin" });
     getCaptainCredentialsForEvent.mockResolvedValue([

@@ -8,6 +8,7 @@ import { competitionProjection } from "@/lib/tournament/operations/result-projec
 import type { StoredSchedule } from "@/lib/tournament/operations/state";
 import type { CompetitionWorkspaceState } from "./workspace-types";
 import { diagnoseLegacyCompetition } from "@/lib/tournament/operations/legacy-compatibility";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 
 export const COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS = {
   isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
@@ -22,7 +23,13 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
   if (!isFeatureEnabled("competition_operations_v3") || !isFeatureEnabled("organizer_workspace_v3")) throw new Error("Competition operations are unavailable");
   const authorized = <T>(read: (tx: Prisma.TransactionClient, event: NonNullable<Awaited<ReturnType<typeof prisma.event.findUnique>>>) => Promise<T>) => prisma.$transaction(async tx => {
     const event = await tx.event.findUnique({ where: { id: eventId } });
-    if (!event || user.role === "organizer" && event.organizerUserId !== user.id) throw new Error("Not authorized");
+    if (!event) throw new Error("Not authorized");
+    const access = authorizeWorkspaceResource(
+      user as WorkspaceActor,
+      { eventId: event.id, ownerUserId: event.organizerUserId },
+      event.organizerUserId,
+    );
+    if (!access.ok) throw new Error("Not authorized");
     return read(tx, event);
   }, COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS);
   const core = await authorized(async (tx, event) => {

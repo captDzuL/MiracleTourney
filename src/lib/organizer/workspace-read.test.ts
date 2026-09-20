@@ -4,7 +4,7 @@ vi.mock("@/lib/platform/db", () => ({ prisma: { event: { findFirst } } }));
 import { readOrganizerWorkspaceSummary } from "./workspace-read";
 
 const row = {
-  id: "cup", name: "Miracle Cup", gameId: "mlbb", format: "Single Elimination", status: "Ongoing",
+  id: "cup", organizerUserId: "owner", name: "Miracle Cup", gameId: "mlbb", format: "Single Elimination", status: "Ongoing",
   publishedAt: new Date("2026-09-01T00:00:00Z"), updatedAt: new Date("2026-09-14T10:00:00Z"),
   publishedScheduleVersion: null, completion: null,
   _count: { teams: 16, teamRegistrationRequests: 3, matches: 2, statSubmissions: 4, competitionActionItems: 1 },

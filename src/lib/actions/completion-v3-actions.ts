@@ -9,6 +9,7 @@ import {
 import { createPrismaCompletionDependencies } from "@/lib/completion/prisma-adapter";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { assertUserCanManageEvent } from "@/lib/platform/repository";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 
 type ActionBlocked = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" };
 export type CompletionActionResult = CompletionResult | ActionBlocked;
@@ -18,6 +19,12 @@ async function gateCompletion(eventId: string): Promise<ActionBlocked | { actor:
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
   if (!user) return { status: "blocked", code: "unauthorized" };
   if (user.role === "organizer" && user.mustChangePassword) return { status: "blocked", code: "password_change_required" };
+  const access = authorizeWorkspaceResource(
+    user as WorkspaceActor,
+    { eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
+    user.role === "organizer" ? user.id : null,
+  );
+  if (!access.ok) return { status: "blocked", code: "forbidden" };
   try {
     await assertUserCanManageEvent(user, eventId);
   } catch (error) {
