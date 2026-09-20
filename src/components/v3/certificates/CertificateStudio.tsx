@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useFormatter, useTranslations } from "next-intl";
 import { publishCertificateSetAction, regenerateCertificateAction } from "@/lib/actions/certificate-v3-actions";
-import type { CertificateAssetKind, CertificateAssetPlacement, CertificateStudioRecord, PublishCertificateSetResult, RegenerateCertificateResult } from "@/lib/certificate/service";
+import type { CertificateAssetKind, CertificateAssetPlacement, CertificatePublicationActionResult, CertificateStudioRecord, RegenerateCertificateResult } from "@/lib/certificate/service";
 import { MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3-contract";
 import { AssetPlacement, type ApprovedCertificateAsset } from "./AssetPlacement";
 import { CertificateSetStatus } from "./CertificateSetStatus";
@@ -17,7 +17,7 @@ export type CertificateStudioState =
   | StudioBase & { readonly status: "integration_required"; readonly completionVersion: null; readonly certificateRevision: null; readonly publication: null }
   | StudioBase & { readonly status: "completion_required"; readonly completionVersion: number; readonly certificateRevision: number; readonly publication: null; readonly completionHref: string }
   | StudioBase & { readonly status: "available"; readonly completionVersion: number; readonly certificateRevision: number; readonly publication: { readonly version: number; readonly publishedAt: string } | null };
-type Props = { state: CertificateStudioState; generationKeys: Record<MiracleV3CertificateType, string>; publicationKey: string; regenerateAction?: (input: unknown) => Promise<RegenerateCertificateResult>; publishAction?: (input: unknown) => Promise<PublishCertificateSetResult> };
+type Props = { state: CertificateStudioState; generationKeys: Record<MiracleV3CertificateType, string>; publicationKey: string; regenerateAction?: (input: unknown) => Promise<RegenerateCertificateResult>; publishAction?: (input: unknown) => Promise<CertificatePublicationActionResult> };
 
 const DEFAULT_PLACEMENTS: Record<CertificateAssetKind, CertificateAssetPlacement> = {
   team_logo_hero: { assetKind: "team_logo_hero", x: 360, y: 748, width: 560, height: 540 },
@@ -33,11 +33,8 @@ const placementInsideZone = (placement: CertificateAssetPlacement) => {
     && placement.x + placement.width <= zone.x + zone.width
     && placement.y + placement.height <= zone.y + zone.height;
 };
-const publicationRevision = (result: PublishCertificateSetResult): number | null => {
-  if (result.status === "published") {
-    const returned = "revision" in result && typeof result.revision === "number" ? result.revision : result.publicationVersion;
-    return returned;
-  }
+const publicationRevision = (result: CertificatePublicationActionResult): number | null => {
+  if (result.status === "published") return result.revision;
   return result.status === "already_applied" ? publicationRevision(result.result) : null;
 };
 
@@ -91,7 +88,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
     if (next === null) return;
     event.preventDefault(); chooseType(MIRACLE_V3_CERTIFICATE_TYPES[next]); refs.current[next]?.focus();
   };
-  const feedback = (result: RegenerateCertificateResult | PublishCertificateSetResult) => {
+  const feedback = (result: RegenerateCertificateResult | CertificatePublicationActionResult) => {
     if (result.status === "generated") return t("feedback.generated");
     if (result.status === "generation_in_progress") return t("feedback.generation_in_progress");
     if (result.status === "published") return t("feedback.published");

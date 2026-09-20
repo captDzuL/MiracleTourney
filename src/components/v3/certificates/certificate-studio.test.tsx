@@ -3,6 +3,7 @@
 import * as React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { flushSync } from "react-dom";
 import { renderToStaticMarkup } from "react-dom/server";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -133,7 +134,7 @@ describe("CertificateStudio", () => {
   });
 
   it("publishes the selected ready seven-version set and announces success", async () => {
-    const publish = vi.fn().mockResolvedValue({ status: "published", publicationVersion: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
+    const publish = vi.fn().mockResolvedValue({ status: "published", revision: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
     await act(async () => root.render(provider("en", <CertificateStudio publishAction={publish} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey="22222222-2222-4222-8222-222222222222" state={available} />)));
     await act(async () => container.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")!.click());
     expect(publish).toHaveBeenCalledWith(expect.objectContaining({ expectedCertificateRevision: 2, selection: expect.arrayContaining([expect.objectContaining({ certificateType: "champion", certificateId: "cert-champion-2" })]) }));
@@ -145,6 +146,22 @@ describe("CertificateStudio", () => {
     const html = renderToStaticMarkup(provider("en", <CertificateStudio publishAction={vi.fn()} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />));
     const document = new DOMParser().parseFromString(html, "text/html");
     expect(document.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")?.disabled).toBe(true);
+  });
+
+  it("does not submit publication when clicked before hydration readiness", async () => {
+    const publish = vi.fn().mockResolvedValue({ status: "published", revision: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
+    const hydrationState: CertificateStudioState = { ...available, publication: null, records: available.records.map((record) => ({ ...record, versions: [record.versions![1]], selectedCertificateId: record.versions![1].id })) };
+    const element = provider("en", <CertificateStudio publishAction={publish} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={hydrationState} />);
+    const hydrationContainer = document.createElement("div");
+    document.body.append(hydrationContainer);
+    const root = createRoot(hydrationContainer);
+    flushSync(() => root.render(element));
+    const button = hydrationContainer.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")!;
+    expect(button.disabled).toBe(true);
+    button.click();
+    expect(publish).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+    hydrationContainer.remove();
   });
 
   it("refreshes persisted failure and rotates the idempotency key for a deliberate retry", async () => {
@@ -171,7 +188,7 @@ describe("CertificateStudio", () => {
 
   it("selects the generated certificate and publishes it after authoritative props refresh", async () => {
     const regenerate = vi.fn().mockResolvedValue({ status: "generated", certificateId: "cert-champion-3", certificateType: "champion", version: 3, imageUrl: "/certificates/3.png" });
-    const publish = vi.fn().mockResolvedValue({ status: "published", publicationVersion: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
+    const publish = vi.fn().mockResolvedValue({ status: "published", revision: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
     const props = { regenerateAction: regenerate, publishAction: publish, generationKeys: Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, `key-${type}`])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>, publicationKey: crypto.randomUUID() };
     await act(async () => root.render(provider("en", <CertificateStudio {...props} state={available} />)));
     await act(async () => container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!.click());

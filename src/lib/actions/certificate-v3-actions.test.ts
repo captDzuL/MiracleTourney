@@ -48,7 +48,7 @@ describe("certificate v3 actions", () => {
     expect(external.revalidate).toHaveBeenCalledWith("/organizer/events/event-1/certificates");
   });
   it("returns the committed certificate publication revision", async () => {
-    await expect(publishCertificateSetAction(publication)).resolves.toMatchObject({ status: "published", revision: 3 });
+    await expect(publishCertificateSetAction(publication)).resolves.toEqual({ status: "published", revision: 3, publishedAt: "2026-09-12T00:00:00Z" });
   });
   it("stores an uploaded certificate asset with trusted provenance and an explicit role", async () => {
     const form = new FormData();

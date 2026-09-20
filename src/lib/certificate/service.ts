@@ -419,6 +419,10 @@ export type PublishCertificateSetResult =
   | { readonly status: "blocked"; readonly code: "invalid_input" | "unauthorized" | "password_change_required" | "forbidden" | "feature_disabled" | "completion_required" | "set_not_ready" }
   | { readonly status: "conflict"; readonly code: "stale_version" | "stale_certificate_revision" | "idempotency_key_reused"; readonly version: number }
   | { readonly status: "integration_required" };
+export type CertificatePublicationActionResult =
+  | { readonly status: "published"; readonly revision: number; readonly publishedAt: string }
+  | { readonly status: "already_applied"; readonly result: CertificatePublicationActionResult }
+  | Exclude<PublishCertificateSetResult, { readonly status: "published" | "already_applied" }>;
 export type CertificateStudioMutation =
   | { readonly status: "terminal"; readonly fingerprint: string; readonly actorId: string; readonly result: RegenerateCertificateResult | PublishCertificateSetResult }
   | { readonly status: "in_progress"; readonly fingerprint: string; readonly actorId: string; readonly stale: boolean; readonly updatedAt: string; readonly certificateId: string; readonly certificateType: MiracleV3CertificateType; readonly version: number };

@@ -41,3 +41,19 @@ Result: 6 files, 44 tests passed, exit 0, 2.16s.
 `pnpm test:e2e:preflight` was attempted once and exited 1 because the isolated worktree has no authorized `.env.test` (`.env.test was not found`). Database reset/seed and Playwright were not retried or fabricated. Therefore seven-certificate publication, revision persistence, localized browser feedback, historical verification, screenshots, and 1440×900 / 390×844 geometry remain **BLOCKED** pending the authorized shared-Neon runtime profile.
 
 No credentials, secrets, or PII were read or copied.
+
+## Fix Round 1
+
+Review findings addressed:
+
+1. Added a real `flushSync` component interaction test. It commits the actual Certificate Studio, attempts a button click before the readiness effect, and asserts the injected publication callback remains untouched. A controlled removal of the `hydrated` guard produced the expected RED result: `node node_modules/vitest/vitest.mjs run src/components/v3/certificates/certificate-studio.test.tsx -t "does not submit"` — 1 failed, 19 skipped, exit 1, 1.49s (React act warnings are emitted only by the deliberate mutation). Restoring the guard and running `... -t "returns the committed|does not submit"` produced 2 passed, 24 skipped, exit 0, 1.53s.
+
+2. Replaced the optional intersection result with the recursive discriminated `CertificatePublicationActionResult`: published results require `revision`, nested `already_applied` results are normalized, and non-published branches do not expose a false optional revision. `CertificateStudio` now consumes that exact callback result type. A controlled legacy-field mutation produced the expected RED: `node node_modules/vitest/vitest.mjs run src/lib/actions/certificate-v3-actions.test.ts` — 1 failed, 5 passed, exit 1, 0.99s. The final implementation returns the exact published shape `{ status: "published", revision, publishedAt }`.
+
+Fresh Fix Round 1 verification:
+
+- Focused certificate suite: 7 files, 107 tests passed, exit 0, 2.34s.
+- `pnpm lint` / TypeScript: exit 0, 9.7s.
+- Focused ESLint: exit 0, 8.9s, zero errors and the same existing `<img>` warning.
+- `git diff --check`: exit 0.
+- Serial Neon/Playwright acceptance remains **BLOCKED** by the missing authorized `.env.test`; no guarded runtime retry was made.

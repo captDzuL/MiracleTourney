@@ -3,14 +3,18 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAnyRole } from "@/lib/auth/session";
 import { uploadImageAsset } from "@/lib/actions";
-import { CERTIFICATE_ASSET_LIMITS, publishCertificateSet, publishCertificateSetInputSchema, regenerateCertificate, regenerateCertificateInputSchema, type CertificateStudioActor, type PublishCertificateSetResult, type RegenerateCertificateResult } from "@/lib/certificate/service";
+import { CERTIFICATE_ASSET_LIMITS, publishCertificateSet, publishCertificateSetInputSchema, regenerateCertificate, regenerateCertificateInputSchema, type CertificatePublicationActionResult, type CertificateStudioActor, type PublishCertificateSetResult, type RegenerateCertificateResult } from "@/lib/certificate/service";
 import { createPrismaCertificateStudioDependencies } from "@/lib/certificate/studio-repository";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { assertUserCanManageEvent, createEventVisualAsset } from "@/lib/platform/repository";
 import type { AppUser } from "@/lib/platform/types";
 
 type GateResult = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" };
-type CertificatePublicationActionResult = PublishCertificateSetResult & { readonly revision?: number };
+function normalizePublicationResult(result: PublishCertificateSetResult): CertificatePublicationActionResult {
+  if (result.status === "published") return { status: "published", revision: result.publicationVersion, publishedAt: result.publishedAt };
+  if (result.status === "already_applied") return { status: "already_applied", result: normalizePublicationResult(result.result) };
+  return result;
+}
 async function gate(eventId: string): Promise<{ actor: CertificateStudioActor; user: AppUser } | GateResult> {
   if (!isFeatureEnabled("completion_workspace_v3")) return { status: "blocked", code: "feature_disabled" };
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
@@ -40,11 +44,8 @@ export async function publishCertificateSetAction(input: unknown): Promise<Certi
   const access = await gate(parsed.data.eventId);
   if ("status" in access) return access;
   const result = await publishCertificateSet(parsed.data, createPrismaCertificateStudioDependencies(access.actor));
-  if (result.status === "published") {
-    revalidatePath(`/organizer/events/${parsed.data.eventId}/certificates`);
-    return { ...result, revision: result.publicationVersion };
-  }
-  return result;
+  if (result.status === "published") revalidatePath(`/organizer/events/${parsed.data.eventId}/certificates`);
+  return normalizePublicationResult(result);
 }
 
 const uploadCertificateAssetSchema = z.object({
