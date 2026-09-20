@@ -111,6 +111,14 @@ export interface PrismaCompletionWorkspaceData {
   }[];
 }
 
+type CompletionWorkspaceReadTransactionOptions = NonNullable<Parameters<PrismaClient["$transaction"]>[1]>;
+
+export const COMPLETION_WORKSPACE_READ_TRANSACTION_OPTIONS: CompletionWorkspaceReadTransactionOptions = {
+  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+  maxWait: 5_000,
+  timeout: 20_000,
+};
+
 const AWARDS = ["mvp", "top_scorer", "top_defender", "top_assist"] as const;
 
 function isCurrentOfficial(match: SourceMatch, revisions: readonly SourceRevision[]): boolean {
@@ -375,7 +383,7 @@ export async function loadPrismaCompletionWorkspaceData(eventId: string): Promis
         details,
       })),
     };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }, COMPLETION_WORKSPACE_READ_TRANSACTION_OPTIONS);
 }
 
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));

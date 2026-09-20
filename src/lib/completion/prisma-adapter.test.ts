@@ -1,10 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { Prisma } from "@prisma/client";
+import { describe, expect, it, vi } from "vitest";
 
+import { prisma } from "@/lib/platform/db";
 import type { CompetitionGraph } from "@/lib/tournament/competition";
 import type { TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { completeTournament, reopenTournament } from "./complete";
 import { derivePodium } from "./podium";
-import { buildCompletionSource, createPrismaCompletionDependencies, type CompletionSourceRows } from "./prisma-adapter";
+import {
+  buildCompletionSource,
+  createPrismaCompletionDependencies,
+  loadPrismaCompletionWorkspaceData,
+  type CompletionSourceRows,
+} from "./prisma-adapter";
 
 const revision = (matchId: string, version: number, winnerTeamId: string | null, homeScore = 2, awayScore = 0) => ({
   id: `revision-${matchId}-${version}`,
@@ -81,6 +88,20 @@ function eliminationRows(kind: "single_elimination" | "double_elimination" | "gr
 }
 
 describe("Prisma completion source adapter", () => {
+  it("forwards the repeatable-read workspace options", async () => {
+    const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("unit test transaction stub"));
+    try {
+      await loadPrismaCompletionWorkspaceData("event-1").catch(() => undefined);
+      expect(transaction.mock.calls.at(-1)?.[1]).toEqual({
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+        maxWait: 5_000,
+        timeout: 20_000,
+      });
+    } finally {
+      transaction.mockRestore();
+    }
+  });
+
   it.each([
     ["single_elimination", "final", "third_place"],
     ["double_elimination", "grand_final", "lower_final"],

@@ -8,6 +8,14 @@ import {
   type CompletionFixtureKind,
 } from "./helpers/completion";
 
+test.describe.configure({ mode: "serial" });
+
+function assertCompletionReadHealthy() {
+  const errors = test.info().errors;
+  expect(errors).toHaveLength(0);
+  expect(errors.some(({ message }) => /P2028/.test(message ?? ""))).toBe(false);
+}
+
 let fixture: CompletionFixture | undefined;
 test.afterEach(async () => {
   await fixture?.cleanup();
@@ -21,6 +29,7 @@ for (const kind of ["single_elimination", "double_elimination", "round_robin", "
     await page.goto(`/en/organizer/events/${fixture.id}/completion`);
 
     await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
+    assertCompletionReadHealthy();
     await page.getByRole("tab", { name: "Awards", exact: true }).click();
     for (const award of ["mvp", "top_scorer", "top_defender", "top_assist"]) {
       await page.locator(`[data-award="${award}"] input[type="radio"]`).first().check();
@@ -29,10 +38,12 @@ for (const kind of ["single_elimination", "double_elimination", "round_robin", "
     await page.locator("[data-complete-tournament]").click();
 
     await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "completed");
+    assertCompletionReadHealthy();
     const persisted = await completionDb.tournamentCompletion.findUniqueOrThrow({
       where: { eventId: fixture.id },
       include: { podiumPlacements: true, awards: { include: { decision: true } }, auditEntries: true },
     });
+    assertCompletionReadHealthy();
     expect(persisted.podiumPlacements).toHaveLength(3);
     const expectedSource = kind === "round_robin" ? "locked_standings" : "official_playoff";
     const titleMatchId = kind === "round_robin"
