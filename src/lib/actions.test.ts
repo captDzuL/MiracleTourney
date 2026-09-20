@@ -19,6 +19,7 @@ const {
   createEventVisualAsset,
   createPasswordResetToken,
   consumePasswordResetToken,
+  equalizePasswordResetResponse,
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
@@ -84,6 +85,7 @@ const {
   createEventVisualAsset: vi.fn(),
   createPasswordResetToken: vi.fn(),
   consumePasswordResetToken: vi.fn(),
+  equalizePasswordResetResponse: vi.fn(async (operation: () => Promise<unknown>) => operation()),
   createTeamRegistrationRequest: vi.fn(),
   deletePlayer: vi.fn(),
   getImportSnapshot: vi.fn(),
@@ -209,6 +211,7 @@ vi.mock("@/lib/certificate/generate", () => ({
 vi.mock("@/lib/platform/password-reset", () => ({
   createPasswordResetToken,
   consumePasswordResetToken,
+  equalizePasswordResetResponse,
 }));
 vi.mock("@/lib/events/publish-readiness", () => ({ publishEvent }));
 vi.mock("@/lib/email/send", () => ({
@@ -667,6 +670,27 @@ describe("requestPasswordResetAction", () => {
     expect(getUserByEmail).not.toHaveBeenCalled();
     expect(createPasswordResetToken).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("runs the same injected response work for known and unknown emails", async () => {
+    const responseWork = vi.fn();
+    equalizePasswordResetResponse.mockImplementation(async (operation: () => Promise<unknown>) => {
+      responseWork();
+      return operation();
+    });
+    getUserByEmail.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "captain-1", role: "captain" });
+    sendEmail.mockResolvedValue(undefined);
+
+    await expect(requestPasswordResetAction(fd({ email: "nobody@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+    await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+
+    expect(equalizePasswordResetResponse).toHaveBeenCalledTimes(2);
+    expect(responseWork).toHaveBeenCalledTimes(2);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 
   it("rejects an invalid email format", async () => {

@@ -11,7 +11,11 @@ import { getLocalizedRedirectPath, redirectToActiveLocale } from "@/i18n/redirec
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { publishEvent } from "@/lib/events/publish-readiness";
 import { prisma } from "@/lib/platform/db";
-import { createPasswordResetToken, consumePasswordResetToken } from "@/lib/platform/password-reset";
+import {
+  consumePasswordResetToken,
+  createPasswordResetToken,
+  equalizePasswordResetResponse,
+} from "@/lib/platform/password-reset";
 
 import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
@@ -1774,17 +1778,19 @@ export async function requestPasswordResetAction(formData: FormData) {
   }
 
   try {
-    const user = await getUserByEmail(email.data);
-    if (user && user.role === "captain") {
-      const token = await createPasswordResetToken(user.id);
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-      const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
-      await sendEmail({
-        to: email.data,
-        subject: "Reset Password Miracle League",
-        html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 30 menit.</p>`,
-      });
-    }
+    await equalizePasswordResetResponse(async () => {
+      const user = await getUserByEmail(email.data);
+      if (user && user.role === "captain") {
+        const token = await createPasswordResetToken(user.id);
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+        const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
+        await sendEmail({
+          to: email.data,
+          subject: "Reset Password Miracle League",
+          html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 30 menit.</p>`,
+        });
+      }
+    });
   } catch {
     // Keep account enumeration and delivery failures indistinguishable to callers.
     console.error("[requestPasswordResetAction] reset delivery failed");

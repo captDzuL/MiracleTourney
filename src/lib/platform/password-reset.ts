@@ -4,10 +4,20 @@ import { prisma } from "./db";
 
 export const PASSWORD_RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 export const INVALID_PASSWORD_RESET_TOKEN_MESSAGE = "Token tidak valid atau sudah kadaluarsa";
+const PASSWORD_RESET_RESPONSE_MIN_DELAY_MS = 250;
 
 /** Returns the one-way digest persisted for a password reset token. */
 export function digestPasswordResetToken(rawToken: string): string {
   return createHash("sha256").update(rawToken).digest("hex");
+}
+
+/** Gives known and unknown reset requests the same minimum observable work window. */
+export async function equalizePasswordResetResponse<T>(operation: () => Promise<T>): Promise<T> {
+  const [result] = await Promise.all([
+    operation(),
+    new Promise<void>((resolve) => setTimeout(resolve, PASSWORD_RESET_RESPONSE_MIN_DELAY_MS)),
+  ]);
+  return result;
 }
 
 export async function createPasswordResetToken(userId: string, now: Date = new Date()): Promise<string> {
@@ -15,9 +25,10 @@ export async function createPasswordResetToken(userId: string, now: Date = new D
   const token = digestPasswordResetToken(rawToken);
   const expiresAt = new Date(now.getTime() + PASSWORD_RESET_TOKEN_TTL_MS);
 
-  await prisma.$transaction(async (tx) => {
-    await tx.passwordResetToken.deleteMany({ where: { userId } });
-    await tx.passwordResetToken.create({ data: { userId, token, expiresAt } });
+  await prisma.passwordResetToken.upsert({
+    where: { userId },
+    update: { token, expiresAt, usedAt: null },
+    create: { userId, token, expiresAt },
   });
 
   return rawToken;

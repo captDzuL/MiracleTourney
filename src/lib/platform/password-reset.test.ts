@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 type TokenRow = {
   id: string;
@@ -17,6 +18,7 @@ type TestPrisma = {
   passwordResetToken: {
     deleteMany: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
+    upsert: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
   };
@@ -35,6 +37,22 @@ const prisma = vi.hoisted(() => {
       }),
       create: vi.fn(async ({ data }: { data: Omit<TokenRow, "id" | "usedAt"> }) => {
         const row: TokenRow = { ...data, id: `reset-${state.tokens.length + 1}`, usedAt: null };
+        state.tokens.push(row);
+        return row;
+      }),
+      upsert: vi.fn(async ({ where, update, create }: {
+        where: { userId: string };
+        update: { token: string; expiresAt: Date; usedAt: null };
+        create: Omit<TokenRow, "id" | "usedAt">;
+      }) => {
+        const existing = state.tokens.find((row) => row.userId === where.userId);
+        if (existing) {
+          existing.token = update.token;
+          existing.expiresAt = update.expiresAt;
+          existing.usedAt = update.usedAt;
+          return existing;
+        }
+        const row: TokenRow = { ...create, id: `reset-${state.tokens.length + 1}`, usedAt: null };
         state.tokens.push(row);
         return row;
       }),
@@ -118,7 +136,20 @@ describe("password reset token hardening", () => {
     expect(second).not.toBe(first);
     expect(state.tokens).toHaveLength(1);
     expect(state.tokens[0]?.token).toBe(digestPasswordResetToken(second));
-    expect(prisma.passwordResetToken.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
+    expect(prisma.passwordResetToken.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: "user-1" },
+    }));
+  });
+
+  it("keeps exactly one usable token when issuance races concurrently", async () => {
+    const rawTokens = await Promise.all([
+      createPasswordResetToken("user-1", new Date("2026-09-21T00:00:00.000Z")),
+      createPasswordResetToken("user-1", new Date("2026-09-21T00:00:00.000Z")),
+    ]);
+
+    expect(state.tokens).toHaveLength(1);
+    expect(rawTokens.filter((rawToken) => state.tokens[0]?.token === digestPasswordResetToken(rawToken))).toHaveLength(1);
+    expect(state.tokens[0]?.usedAt).toBeNull();
   });
 
   it("rejects an expired token at the exact expiry boundary", async () => {
@@ -178,5 +209,19 @@ describe("password reset token hardening", () => {
     expect(outcomes.filter((outcome) => outcome.status === "rejected")).toHaveLength(1);
     expect(state.users.get("user-1")?.sessionVersion).toBe(8);
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("reviews the migration's destructive legacy-token cleanup before unique constraints", () => {
+    const migrationSql = readFileSync(new URL(
+      "../../../prisma/migrations/20260921000000_add_user_session_version/migration.sql",
+      import.meta.url,
+    ), "utf8");
+    const deleteIndex = migrationSql.indexOf('DELETE FROM "PasswordResetToken"');
+    const uniqueIndex = migrationSql.indexOf('PasswordResetToken_userId_key');
+    const sessionVersionIndex = migrationSql.indexOf('"sessionVersion"');
+
+    expect(deleteIndex).toBeGreaterThanOrEqual(0);
+    expect(uniqueIndex).toBeGreaterThan(deleteIndex);
+    expect(sessionVersionIndex).toBeGreaterThan(deleteIndex);
   });
 });
