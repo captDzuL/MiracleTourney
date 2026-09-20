@@ -12,14 +12,26 @@ export function runCommand(
   },
 ) {
   return new Promise((resolve, reject) => {
-    if (runtime.platform === "win32" && command === "pnpm" && !runtime.npmExecPath) {
-      reject(new Error("Windows E2E CI runner must be launched through a pnpm package script."));
+    if (
+      runtime.platform === "win32" &&
+      command === "pnpm" &&
+      !runtime.npmExecPath
+    ) {
+      reject(
+        new Error(
+          "Windows E2E CI runner must be launched through a pnpm package script.",
+        ),
+      );
       return;
     }
-    const executable = runtime.platform === "win32" && command === "pnpm" ? runtime.nodePath : command;
-    const executableArgs = runtime.platform === "win32" && command === "pnpm"
-      ? [runtime.npmExecPath, ...args]
-      : args;
+    const executable =
+      runtime.platform === "win32" && command === "pnpm"
+        ? runtime.nodePath
+        : command;
+    const executableArgs =
+      runtime.platform === "win32" && command === "pnpm"
+        ? [runtime.npmExecPath, ...args]
+        : args;
     const child = spawnImpl(executable, executableArgs, {
       shell: false,
       stdio: "inherit",
@@ -27,7 +39,12 @@ export function runCommand(
     child.once("error", (error) => reject(error));
     child.once("close", (exitCode) => {
       if (exitCode === 0) resolve();
-      else reject(new Error(`${command} ${args.join(" ")} exited with code ${exitCode}.`));
+      else
+        reject(
+          new Error(
+            `${command} ${args.join(" ")} exited with code ${exitCode}.`,
+          ),
+        );
     });
   });
 }
@@ -36,11 +53,67 @@ export function runCommand(
 export const RELEASE_STEPS = [
   ["Database preflight", "pnpm", ["test:e2e:preflight"]],
   ["Database reset and seed", "pnpm", ["test:e2e:prepare"]],
-  ["Match Day profile", "pnpm", ["exec", "playwright", "test", "tests/e2e/v3-matchday.spec.ts", "--fail-on-flaky-tests"]],
-  ["Default profile shard 1/2", "pnpm", ["exec", "playwright", "test", "--config", "playwright.ci-default.config.ts", "--shard=1/2", "--fail-on-flaky-tests"]],
-  ["Default profile shard 2/2", "pnpm", ["exec", "playwright", "test", "--config", "playwright.ci-default.config.ts", "--shard=2/2", "--fail-on-flaky-tests"]],
-  ["Visual profile", "pnpm", ["exec", "playwright", "test", "--config", "playwright.smoke.config.ts", "--fail-on-flaky-tests"]],
-  ["Legacy flags-off profile", "pnpm", ["exec", "playwright", "test", "--config", "playwright.legacy.config.ts", "--fail-on-flaky-tests"]],
+  [
+    "Match Day profile",
+    "pnpm",
+    [
+      "exec",
+      "playwright",
+      "test",
+      "tests/e2e/v3-matchday.spec.ts",
+      "--fail-on-flaky-tests",
+    ],
+  ],
+  [
+    "Default profile shard 1/2",
+    "pnpm",
+    [
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.ci-default.config.ts",
+      "--shard=1/2",
+      "--fail-on-flaky-tests",
+    ],
+  ],
+  [
+    "Default profile shard 2/2",
+    "pnpm",
+    [
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.ci-default.config.ts",
+      "--shard=2/2",
+      "--fail-on-flaky-tests",
+    ],
+  ],
+  [
+    "Visual profile",
+    "pnpm",
+    [
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.smoke.config.ts",
+      "--fail-on-flaky-tests",
+    ],
+  ],
+  [
+    "Legacy flags-off profile",
+    "pnpm",
+    [
+      "exec",
+      "playwright",
+      "test",
+      "--config",
+      "playwright.legacy.config.ts",
+      "--fail-on-flaky-tests",
+    ],
+  ],
 ];
 
 export async function runE2eCi({
@@ -72,7 +145,9 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     await runE2eCi();
   } catch (error) {
-    console.error(error instanceof Error ? error.message : "CI E2E sequence failed.");
+    console.error(
+      error instanceof Error ? error.message : "CI E2E sequence failed.",
+    );
     process.exitCode = 1;
   }
 }
