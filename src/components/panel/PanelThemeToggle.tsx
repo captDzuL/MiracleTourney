@@ -77,7 +77,7 @@ export function PanelThemeToggle({ variant = "legacy" }: { variant?: "legacy" | 
             title={t(option)}
             className={cn(
               v3
-                ? "miracle-focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors"
+                ? "miracle-focus-ring inline-flex min-h-11 min-w-11 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors"
                 : "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
               v3
                 ? active
