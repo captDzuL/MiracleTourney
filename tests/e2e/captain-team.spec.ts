@@ -14,15 +14,13 @@ test.describe("captain team management", () => {
   });
 
   test("captain can add a player to their team", async ({ page }) => {
+    await page.goto("/id/captain?tab=roster", { waitUntil: "domcontentloaded" });
     const playerName = `E2E Test Player ${Date.now()}`;
     const addPlayerForm = page.locator("form").filter({
       has: page.getByRole("button", { name: /add player|tambah pemain/i }),
     }).first();
 
-    if (await addPlayerForm.count() === 0) {
-      test.skip();
-      return;
-    }
+    await expect(addPlayerForm, "Expected roster management to expose the add-player form").toBeVisible();
 
     await addPlayerForm.getByLabel(/display name|nama/i).fill(playerName);
     await addPlayerForm.getByLabel(/nickname/i).fill("E2EPL");

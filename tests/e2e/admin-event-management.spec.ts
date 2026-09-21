@@ -146,19 +146,16 @@ test.describe("admin event management", () => {
   });
 
   test("admin can update live stream URL", async ({ page }) => {
-    // Stream form: hidden eventId, label "Stream label", label "Stream URL"
+    await page.goto("/en/admin?phase=prepare", { waitUntil: "domcontentloaded" });
     const streamForm = page.locator("form").filter({
-      has: page.getByRole("button", { name: /Update stream metadata/i }),
+      has: page.locator('input[name="url"]'),
     });
 
-    if (await streamForm.count() === 0) {
-      test.skip();
-      return;
-    }
+    await expect(streamForm, "Expected the active event stream form to be available").toBeVisible();
 
     await streamForm.getByLabel(/stream url/i).fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     await streamForm.getByLabel(/stream label/i).fill("Day 1 Stream");
-    await streamForm.getByRole("button", { name: /Update stream metadata/i }).click();
+    await streamForm.getByRole("button", { name: /save|simpan/i }).click();
 
     await expect(page).toHaveURL(/success=stream-updated/);
   });

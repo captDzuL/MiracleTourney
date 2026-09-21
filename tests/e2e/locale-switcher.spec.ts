@@ -22,7 +22,7 @@ for (const viewport of viewports) {
         const brandLink = header.locator("a.mpv3-brand");
         await expect(brandLink).toHaveAccessibleName(item.home);
         await expect(brandLink).toBeVisible();
-        await expect(header.getByRole("navigation").getByRole("link", { name: item.home, exact: true })).toHaveAttribute("aria-current", "page");
+        await expect(brandLink).toHaveAttribute("aria-current", "page");
         await expect(header.getByRole("link", { name: item.signIn, exact: true })).toBeVisible();
         await expect(header).toHaveCount(1);
         const display = await header.evaluate((node) => getComputedStyle(node).display);

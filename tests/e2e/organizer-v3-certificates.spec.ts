@@ -44,9 +44,9 @@ test("publishes all seven certificates and preserves superseded verification his
     where: { eventId: scenario.id },
     orderBy: [{ type: "asc" }, { version: "asc" }],
   });
-  const publishedCertificates = certificates.filter(({ publishedAt, publishedUrl }) => publishedAt && publishedUrl);
-  expect(new Set(publishedCertificates.map(({ type }) => type))).toEqual(new Set(MIRACLE_V3_CERTIFICATE_TYPES));
-  expect(publishedCertificates).toHaveLength(7);
+  const currentPublishedCertificates = certificates.filter(({ publishedAt, publishedUrl, supersededByVersion }) => publishedAt && publishedUrl && supersededByVersion === null);
+  expect(new Set(currentPublishedCertificates.map(({ type }) => type))).toEqual(new Set(MIRACLE_V3_CERTIFICATE_TYPES));
+  expect(currentPublishedCertificates).toHaveLength(7);
   const oldChampion = certificates.find(({ type, version }) => type === "champion" && version === 1)!;
   expect(oldChampion).toMatchObject({
     status: "superseded",
