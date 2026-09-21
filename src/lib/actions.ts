@@ -32,6 +32,7 @@ import type { AppUser } from "@/lib/platform/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { toSafeActionMessage } from "@/lib/security/public-error";
 import { isSafeHttpUrl, safeEntityIdSchema } from "@/lib/security/request-guard";
+import { withServerActionLog } from "@/lib/observability/logger";
 import {
   addPlayer,
   approveStatSubmission,
@@ -229,17 +230,7 @@ function rejectImageUpload(code: ImageUploadValidationCode, message: string, val
  * magic bytes, and finally real decodability through `sharp` (which also gives
  * the dimensions we persist on a visual revision).
  */
-export async function uploadImageAsset({
-  file,
-  folder,
-  entityId,
-  label,
-  maxBytes,
-  minDimension,
-  maxDimension,
-  validationMode = "redirect",
-  errorPath = "/admin",
-}: {
+type UploadImageAssetInput = {
   file: FormDataEntryValue | null;
   folder: string;
   entityId: string;
@@ -249,7 +240,19 @@ export async function uploadImageAsset({
   maxDimension?: number;
   validationMode?: "redirect" | "throw";
   errorPath?: string;
-}): Promise<UploadedImageAsset> {
+};
+
+async function uploadImageAssetImpl({
+  file,
+  folder,
+  entityId,
+  label,
+  maxBytes,
+  minDimension,
+  maxDimension,
+  validationMode = "redirect",
+  errorPath = "/admin",
+}: UploadImageAssetInput): Promise<UploadedImageAsset> {
   if (!isSafeEntityId(entityId)) {
     rejectImageUpload("invalid_entity_id", `Invalid ${label} ID.`, validationMode, errorPath);
   }
@@ -298,6 +301,10 @@ export async function uploadImageAsset({
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, filename), buffer, { flag: "wx" });
   return { url: "/" + storageKey, mimeType, ...dimensions, byteSize: file.size, storageProvider: "local", storageKey, contentSha256 };
+}
+
+export async function uploadImageAsset(input: UploadImageAssetInput): Promise<UploadedImageAsset> {
+  return withServerActionLog("image_upload", "/server-actions/image-upload", () => uploadImageAssetImpl(input));
 }
 
 /** Returns real pixel dimensions, or null when the bytes are not a decodable image. */

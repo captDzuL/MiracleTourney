@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth/session";
-import { getRequestId } from "@/lib/observability/logger";
+import { getRequestId, withRouteLog } from "@/lib/observability/logger";
 import { getPendingStatSubmissionCount } from "@/lib/platform/repository";
 import { requireSameOrigin } from "@/lib/security/request-guard";
 import { toPublicError } from "@/lib/security/public-error";
 
 /** Returns the current session user for client-side nav rendering. */
-export async function GET(request: Request = new Request("http://localhost/api/me")) {
+export function GET(): Promise<Response>;
+export function GET(request: Request): Promise<Response>;
+export async function GET(request?: Request) {
+  const resolvedRequest = request ?? new Request("http://localhost/api/me");
+  return withRouteLog(resolvedRequest, "api_me", () => handleGet(resolvedRequest));
+}
+
+async function handleGet(request: Request) {
   const headers = { "Cache-Control": "private, no-store, max-age=0", Vary: "Cookie" };
   const originFailure = requireSameOrigin(request);
   if (originFailure) return originFailure;

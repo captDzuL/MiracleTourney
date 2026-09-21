@@ -8,6 +8,7 @@ import {
   type PrismaCompletionWorkspaceData,
 } from "./prisma-adapter";
 import type { WorkspaceActor } from "@/lib/security/authorization";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 export type CompletionWorkspaceStatus =
   | "integration_required"
@@ -275,7 +276,7 @@ function lockedCandidates(value: unknown): CompletionAwardCandidateSummary[] {
   });
 }
 
-export async function loadCompletionWorkspace(
+async function loadCompletionWorkspaceImpl(
   event: CompletionWorkspaceEvent,
   locale: "id" | "en",
   dependencies: CompletionWorkspaceDependencies = defaultCompletionWorkspaceDependencies,
@@ -428,4 +429,12 @@ export async function loadCompletionWorkspace(
       history: auditHistory,
     },
   };
+}
+
+export function loadCompletionWorkspace(
+  event: CompletionWorkspaceEvent,
+  locale: "id" | "en",
+  dependencies: CompletionWorkspaceDependencies = defaultCompletionWorkspaceDependencies,
+): Promise<CompletionWorkspaceState> {
+  return withServerActionLog("completion_workspace_read", "/server-readers/completion-workspace", () => loadCompletionWorkspaceImpl(event, locale, dependencies));
 }

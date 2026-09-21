@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { requireSameOrigin } from "@/lib/security/request-guard";
-import { getRequestId } from "@/lib/observability/logger";
+import { getRequestId, withRouteLog } from "@/lib/observability/logger";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request = new Request("http://localhost/api/health/env")) {
+export function GET(): Promise<Response>;
+export function GET(request: Request): Promise<Response>;
+export async function GET(request?: Request) {
+  const resolvedRequest = request ?? new Request("http://localhost/api/health/env");
+  return withRouteLog(resolvedRequest, "api_health_env", () => handleGet(resolvedRequest));
+}
+
+async function handleGet(request: Request) {
   const originFailure = requireSameOrigin(request);
   if (originFailure) return originFailure;
   const requestId = getRequestId(request);

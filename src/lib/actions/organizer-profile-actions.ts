@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { requireAnyRole } from "@/lib/auth/session";
 import { getUserPasswordHashById, updateOrganizerProfileForUser, updateUserPassword } from "@/lib/platform/repository";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 const organizerProfileSchema = z.object({
   locale: z.enum(["id", "en"]),
@@ -16,7 +17,7 @@ const organizerProfileSchema = z.object({
 });
 
 /** Saves the organizer identity used on every event that they own. */
-export async function updateOrganizerProfileAction(formData: FormData) {
+async function updateOrganizerProfileActionImpl(formData: FormData) {
   const user = await requireAnyRole(["organizer"]);
   if (!user) throw new Error("Unauthorized");
   if (user.mustChangePassword) throw new Error("Password change required");
@@ -36,7 +37,7 @@ export async function updateOrganizerProfileAction(formData: FormData) {
   redirect(`/${locale}/organizer/profile?saved=1`);
 }
 /** Completes the required first-login password change for a newly provisioned organizer. */
-export async function completeOrganizerPasswordChangeAction(formData: FormData) {
+async function completeOrganizerPasswordChangeActionImpl(formData: FormData) {
   const user = await requireAnyRole(["organizer"]);
   if (!user) throw new Error("Unauthorized");
   const input = z.object({
@@ -50,4 +51,12 @@ export async function completeOrganizerPasswordChangeAction(formData: FormData) 
   await updateUserPassword(user.id, await bcrypt.hash(input.newPassword, 10));
   revalidatePath("/organizer");
   redirect(`/${input.locale}/organizer?password=changed`);
+}
+
+export async function updateOrganizerProfileAction(formData: FormData) {
+  return withServerActionLog("organizer_profile_update", "/server-actions/organizer-profile/update", () => updateOrganizerProfileActionImpl(formData));
+}
+
+export async function completeOrganizerPasswordChangeAction(formData: FormData) {
+  return withServerActionLog("organizer_password_change", "/server-actions/organizer-profile/password", () => completeOrganizerPasswordChangeActionImpl(formData));
 }

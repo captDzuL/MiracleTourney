@@ -11,6 +11,7 @@ import { assertUserCanManageEvent, createEventVisualAsset } from "@/lib/platform
 import type { AppUser } from "@/lib/platform/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { safeEntityIdSchema } from "@/lib/security/request-guard";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 type GateResult = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" | "rate_limited" };
 function normalizePublicationResult(result: PublishCertificateSetResult): CertificatePublicationActionResult {
@@ -38,6 +39,10 @@ async function gate(eventId: string): Promise<{ actor: CertificateStudioActor; u
 }
 
 export async function regenerateCertificateAction(input: unknown): Promise<RegenerateCertificateResult> {
+  return withServerActionLog("certificate_regenerate", "/server-actions/certificate/regenerate", () => regenerateCertificateActionImpl(input));
+}
+
+async function regenerateCertificateActionImpl(input: unknown): Promise<RegenerateCertificateResult> {
   const parsed = regenerateCertificateInputSchema.safeParse(input);
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const access = await gate(parsed.data.eventId);
@@ -51,6 +56,10 @@ export async function regenerateCertificateAction(input: unknown): Promise<Regen
 }
 
 export async function publishCertificateSetAction(input: unknown): Promise<CertificatePublicationActionResult> {
+  return withServerActionLog("certificate_publish", "/server-actions/certificate/publish", () => publishCertificateSetActionImpl(input));
+}
+
+async function publishCertificateSetActionImpl(input: unknown): Promise<CertificatePublicationActionResult> {
   const parsed = publishCertificateSetInputSchema.safeParse(input);
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const access = await gate(parsed.data.eventId);
@@ -69,6 +78,10 @@ const uploadCertificateAssetSchema = z.object({
 });
 
 export async function uploadCertificateAssetAction(formData: FormData) {
+  return withServerActionLog("certificate_asset_upload", "/server-actions/certificate/upload", () => uploadCertificateAssetActionImpl(formData));
+}
+
+async function uploadCertificateAssetActionImpl(formData: FormData) {
   const parsed = uploadCertificateAssetSchema.safeParse({
     eventId: formData.get("eventId"),
     purpose: formData.get("purpose"),

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { headers } from "next/headers";
 
 import { toPublicError } from "@/lib/security/public-error";
 
@@ -65,9 +66,7 @@ export function writeServerLog(event: ServerLogEvent): void {
 }
 
 export function getRequestId(request: Request): string {
-  return request.headers.get("x-vercel-id")?.trim()
-    || globalThis.crypto?.randomUUID?.()
-    || "request-unknown";
+  return request.headers.get("x-vercel-id") ?? globalThis.crypto.randomUUID();
 }
 
 export async function withServerLog<T>(
@@ -106,4 +105,35 @@ export async function withServerLog<T>(
     });
     throw error;
   }
+}
+
+/** Wraps a route that returns a Response while preserving the exact logger contract. */
+export async function withRouteLog(
+  request: Request,
+  operation: string,
+  work: () => Promise<Response>,
+): Promise<Response> {
+  return withServerLog(request, operation, async () => {
+    const value = await work();
+    return { status: value.status, value };
+  });
+}
+
+/** Wraps a server action or reader that does not receive a Request object. */
+export async function withServerActionLog<T>(
+  operation: string,
+  route: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  let vercelId: string | null = null;
+  try {
+    vercelId = (await headers()).get("x-vercel-id");
+  } catch {
+    // Unit tests and non-request jobs have no Next request context; correlation
+    // falls back to the generated request ID required by withServerLog.
+  }
+  const request = new Request(`https://internal.invalid${route}`, vercelId === null ? undefined : {
+    headers: { "x-vercel-id": vercelId },
+  });
+  return withServerLog(request, operation, async () => ({ status: 200, value: await work() }));
 }

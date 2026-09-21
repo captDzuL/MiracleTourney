@@ -21,6 +21,7 @@ import { createEventVisualAsset, updatePublishedEventSlugAsAdmin } from "@/lib/p
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { safeEntityIdSchema } from "@/lib/security/request-guard";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 const managerRoleSchema = z.enum(["organizer", "platform_admin", "admin"]);
 const saveSchema = z.object({
@@ -69,7 +70,7 @@ function refreshEventSurfaces(eventId?: string) {
   }
 }
 
-export async function savePublishedEventRevisionAction(input: unknown) {
+async function savePublishedEventRevisionActionImpl(input: unknown) {
   const { actor } = await requireRevisionManager();
   const parsed = saveSchema.parse(input);
   await resolveRevisionWorkspaceAccess(actor, parsed.eventId);
@@ -84,7 +85,7 @@ export async function savePublishedEventRevisionAction(input: unknown) {
   return result;
 }
 
-export async function applyPublishedEventRevisionAction(input: unknown) {
+async function applyPublishedEventRevisionActionImpl(input: unknown) {
   const { actor } = await requireRevisionManager();
   const parsed = revisionSchema.parse(input);
   await resolveRevisionWorkspaceAccess(actor, parsed.revisionId);
@@ -93,7 +94,7 @@ export async function applyPublishedEventRevisionAction(input: unknown) {
   return result;
 }
 
-export async function discardPublishedEventRevisionAction(input: unknown) {
+async function discardPublishedEventRevisionActionImpl(input: unknown) {
   const { actor } = await requireRevisionManager();
   const parsed = revisionSchema.parse(input);
   await resolveRevisionWorkspaceAccess(actor, parsed.revisionId);
@@ -102,7 +103,7 @@ export async function discardPublishedEventRevisionAction(input: unknown) {
   return result;
 }
 
-export async function createPublishedRevisionPreviewAction(input: unknown) {
+async function createPublishedRevisionPreviewActionImpl(input: unknown) {
   const { actor } = await requireRevisionManager();
   const parsed = previewSchema.parse(input);
   await resolveRevisionWorkspaceAccess(actor, parsed.revisionId);
@@ -115,7 +116,7 @@ export async function createPublishedRevisionPreviewAction(input: unknown) {
   };
 }
 
-export async function revokePublishedRevisionPreviewAction(input: unknown) {
+async function revokePublishedRevisionPreviewActionImpl(input: unknown) {
   const { actor } = await requireRevisionManager();
   const parsed = revisionSchema.parse(input);
   await resolveRevisionWorkspaceAccess(actor, parsed.revisionId);
@@ -123,7 +124,7 @@ export async function revokePublishedRevisionPreviewAction(input: unknown) {
 }
 
 
-export async function uploadPublishedRevisionVisualAction(formData: FormData) {
+async function uploadPublishedRevisionVisualActionImpl(formData: FormData) {
   const { user, actor } = await requireRevisionManager();
   const input = z.object({
     eventId: safeEntityIdSchema,
@@ -178,7 +179,7 @@ export async function uploadPublishedRevisionVisualAction(formData: FormData) {
 }
 
 
-export async function updatePublishedEventSlugAction(formData: FormData) {
+async function updatePublishedEventSlugActionImpl(formData: FormData) {
   const { user } = await requireRevisionManager();
   if (user.role !== "platform_admin" && user.role !== "admin") throw new Error("Not authorized");
   const input = z.object({
@@ -190,4 +191,32 @@ export async function updatePublishedEventSlugAction(formData: FormData) {
   await updatePublishedEventSlugAsAdmin(user, input.eventId, input.slug);
   refreshEventSurfaces(input.eventId);
   redirect(`/${input.locale}/admin/events/${input.eventId}/edit#section-identity`);
+}
+
+export async function savePublishedEventRevisionAction(input: unknown) {
+  return withServerActionLog("event_revision_save", "/server-actions/event-revision/save", () => savePublishedEventRevisionActionImpl(input));
+}
+
+export async function applyPublishedEventRevisionAction(input: unknown) {
+  return withServerActionLog("event_revision_apply", "/server-actions/event-revision/apply", () => applyPublishedEventRevisionActionImpl(input));
+}
+
+export async function discardPublishedEventRevisionAction(input: unknown) {
+  return withServerActionLog("event_revision_discard", "/server-actions/event-revision/discard", () => discardPublishedEventRevisionActionImpl(input));
+}
+
+export async function createPublishedRevisionPreviewAction(input: unknown) {
+  return withServerActionLog("event_revision_preview_create", "/server-actions/event-revision/preview", () => createPublishedRevisionPreviewActionImpl(input));
+}
+
+export async function revokePublishedRevisionPreviewAction(input: unknown) {
+  return withServerActionLog("event_revision_preview_revoke", "/server-actions/event-revision/preview/revoke", () => revokePublishedRevisionPreviewActionImpl(input));
+}
+
+export async function uploadPublishedRevisionVisualAction(formData: FormData) {
+  return withServerActionLog("event_revision_visual_upload", "/server-actions/event-revision/visual", () => uploadPublishedRevisionVisualActionImpl(formData));
+}
+
+export async function updatePublishedEventSlugAction(formData: FormData) {
+  return withServerActionLog("event_revision_slug_update", "/server-actions/event-revision/slug", () => updatePublishedEventSlugActionImpl(formData));
 }

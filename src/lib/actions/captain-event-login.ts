@@ -7,6 +7,7 @@ import { z } from "zod";
 import { signIn, signOut } from "@/lib/auth/session";
 import { prisma } from "@/lib/platform/db";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 import {
   buildCaptainEventDestination,
@@ -24,6 +25,17 @@ const loginInputSchema = z.object({
 
 
 export async function captainEventLoginAction(
+  _previousState: CaptainEventLoginState,
+  formData: FormData,
+): Promise<CaptainEventLoginState> {
+  return withServerActionLog(
+    "captain_event_login",
+    "/server-actions/captain-event-login",
+    () => captainEventLoginActionImpl(_previousState, formData),
+  );
+}
+
+async function captainEventLoginActionImpl(
   _previousState: CaptainEventLoginState,
   formData: FormData,
 ): Promise<CaptainEventLoginState> {

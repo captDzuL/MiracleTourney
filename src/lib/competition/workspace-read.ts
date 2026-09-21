@@ -10,6 +10,7 @@ import type { CompetitionWorkspaceState } from "./workspace-types";
 import { diagnoseLegacyCompetition } from "@/lib/tournament/operations/legacy-compatibility";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 export const COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS = {
   isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
@@ -20,7 +21,7 @@ export const COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS = {
 const COMPETITION_READER_ROW_LIMIT = 1_000;
 const COMPETITION_READER_HISTORY_LIMIT = 100;
 
-export async function readCompetitionWorkspace(eventId: string): Promise<CompetitionWorkspaceState> {
+async function readCompetitionWorkspaceImpl(eventId: string): Promise<CompetitionWorkspaceState> {
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
   if (!user) throw new Error("Unauthorized");
   if (user.role === "organizer" && user.mustChangePassword) throw new Error("Password change required");
@@ -109,4 +110,8 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
     }
   }
   return { ...core, incidents: incidents.status === "fulfilled" ? incidents.value : [], announcements: announcements.status === "fulfilled" ? announcements.value : [], audit: audit.status === "fulfilled" ? audit.value : [], unavailableSections: [incidents.status === "rejected" ? "incidents" : "", announcements.status === "rejected" ? "announcements" : "", audit.status === "rejected" ? "audit" : ""].filter(Boolean) };
+}
+
+export function readCompetitionWorkspace(eventId: string): Promise<CompetitionWorkspaceState> {
+  return withServerActionLog("competition_workspace_read", "/server-readers/competition-workspace", () => readCompetitionWorkspaceImpl(eventId));
 }

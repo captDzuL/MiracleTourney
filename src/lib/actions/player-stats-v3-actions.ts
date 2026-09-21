@@ -8,6 +8,7 @@ import { adminWriteMatchPlayerStats, approveStatSubmission, assertUserCanManageE
 import { parsePlayerStatForm, validatePlayerStatPayload } from "@/lib/player-stats/form";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { safeEntityIdSchema } from "@/lib/security/request-guard";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 export type PlayerStatsActionResult = { status: "saved" | "conflict" | "invalid" | "unauthorized" | "failed" };
 const identifier = z.string().trim().min(1).max(300);
@@ -23,7 +24,7 @@ const baseSchema = z.object({
   expectedResultVersion:version,
   operationId:identifier.max(200),
 });
-async function mutate(formData:FormData, action:"save"|"approve"|"reject"):Promise<PlayerStatsActionResult> {
+async function mutateImpl(formData:FormData, action:"save"|"approve"|"reject"):Promise<PlayerStatsActionResult> {
   const parsed=baseSchema.safeParse(Object.fromEntries(formData));
   if(!parsed.success)return {status:"invalid"};
   const {locale,...guard}=parsed.data;
@@ -68,6 +69,9 @@ async function mutate(formData:FormData, action:"save"|"approve"|"reject"):Promi
     if(/invalid|Completed|not found|reason|required|relationship|locks/i.test(message))return {status:"invalid"};
     return {status:"failed"};
   }
+}
+async function mutate(formData:FormData, action:"save"|"approve"|"reject"):Promise<PlayerStatsActionResult> {
+  return withServerActionLog(`player_stats_${action}`, "/server-actions/player-stats", () => mutateImpl(formData, action));
 }
 export async function saveEventPlayerStatsAction(formData:FormData):Promise<PlayerStatsActionResult>{return mutate(formData,"save");}
 export async function approveEventPlayerStatsAction(formData:FormData):Promise<PlayerStatsActionResult>{return mutate(formData,"approve");}

@@ -1,7 +1,7 @@
 import { assertUserCanManageEvent, getCaptainCredentialsForEvent } from "@/lib/platform/repository";
 import { requireRole } from "@/lib/auth/session";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
-import { getRequestId } from "@/lib/observability/logger";
+import { getRequestId, withRouteLog } from "@/lib/observability/logger";
 import { requireSameOrigin, neutralizeSpreadsheetFormula, isSafeEntityId } from "@/lib/security/request-guard";
 import { toPublicError } from "@/lib/security/public-error";
 
@@ -15,6 +15,10 @@ function csvEscape(value: string): string {
 }
 
 export async function GET(req: Request) {
+  return withRouteLog(req, "api_admin_captain_credentials", () => handleGet(req));
+}
+
+async function handleGet(req: Request) {
   const originFailure = requireSameOrigin(req);
   if (originFailure) return originFailure;
 

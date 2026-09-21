@@ -29,6 +29,13 @@ describe("structured server logger", () => {
     expect(JSON.stringify(record)).not.toContain("event-secret");
   });
 
+  it("generates a request ID when Vercel did not provide one", () => {
+    const randomUUID = vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("generated-request-id");
+
+    expect(getRequestId(new Request("https://app.example/api/me"))).toBe("generated-request-id");
+    expect(randomUUID).toHaveBeenCalledTimes(1);
+  });
+
   it("emits start and done records without logging work payloads", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const payload = { email: "private@example.test", token: "secret-token", paymentProofUrl: "https://blob.example/private" };
@@ -76,6 +83,38 @@ describe("structured server logger", () => {
     const record = JSON.parse(String(info.mock.calls[0]?.[0]));
     expect(record.route).not.toContain("event-secret-123");
     expect(record.route).toContain("/api/events/");
+  });
+
+  it("serializes only the allowlisted fields", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    writeServerLog({
+      phase: "done",
+      operation: "safe_operation",
+      route: "/api/me",
+      requestId: "req-safe",
+      durationMs: 4,
+      status: 200,
+      errorCode: "safe_code",
+      actorId: "actor-1",
+      resourceId: "resource-1",
+      payload: { email: "private@example.test", token: "secret-token" },
+      error: new Error("stack secret"),
+    } as Parameters<typeof writeServerLog>[0]);
+
+    const record = JSON.parse(String(info.mock.calls[0]?.[0]));
+    expect(record).toEqual({
+      phase: "done",
+      operation: "safe_operation",
+      route: "/api/me",
+      requestId: "req-safe",
+      durationMs: 4,
+      status: 200,
+      errorCode: "safe_code",
+      actorId: redactIdentifier("actor-1"),
+      resourceId: redactIdentifier("resource-1"),
+    });
+    expect(JSON.stringify(record)).not.toMatch(/private@example\.test|secret-token|stack secret/);
   });
 
   it("uses the canonical event route template when a dynamic slug equals a static segment", () => {

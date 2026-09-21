@@ -15,6 +15,7 @@ import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/
 import { toSafeActionMessage } from "@/lib/security/public-error";
 import { safeEntityIdSchema } from "@/lib/security/request-guard";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 const registrationSchema = z.object({
   eventId: safeEntityIdSchema,
@@ -50,7 +51,7 @@ function registrationErrorPath(eventSlug: string, error: string) {
   return `/events/${eventSlug}/register?error=${encodeURIComponent(error)}`;
 }
 
-export async function captainRegisterEventTeamAction(formData: FormData) {
+async function captainRegisterEventTeamActionImpl(formData: FormData) {
   const captain = await requireRole("captain");
 
   if (!captain) {
@@ -184,4 +185,8 @@ export async function captainRegisterEventTeamAction(formData: FormData) {
   redirectToActiveLocale(
     `/events/${safeSlug}/register?${successPath}`,
   );
+}
+
+export async function captainRegisterEventTeamAction(formData: FormData) {
+  return withServerActionLog("captain_registration", "/server-actions/registration/captain", () => captainRegisterEventTeamActionImpl(formData));
 }

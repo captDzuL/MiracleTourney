@@ -1,10 +1,14 @@
 import { getPublicOngoingEvent } from "@/lib/events/public-ongoing";
-import { getRequestId } from "@/lib/observability/logger";
+import { getRequestId, withRouteLog } from "@/lib/observability/logger";
 import { isSafeEntityId, requireSameOrigin } from "@/lib/security/request-guard";
 import { toPublicError } from "@/lib/security/public-error";
 
 export const dynamic = "force-dynamic";
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
+  return withRouteLog(request, "api_events_ongoing", () => handleGet(request, { params }));
+}
+
+async function handleGet(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const originFailure = requireSameOrigin(request);
   if (originFailure) return originFailure;
 

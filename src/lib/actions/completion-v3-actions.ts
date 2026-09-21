@@ -10,6 +10,7 @@ import { createPrismaCompletionDependencies } from "@/lib/completion/prisma-adap
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { assertUserCanManageEvent } from "@/lib/platform/repository";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 type ActionBlocked = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" };
 export type CompletionActionResult = CompletionResult | ActionBlocked;
@@ -35,6 +36,10 @@ async function gateCompletion(eventId: string): Promise<ActionBlocked | { actor:
 }
 
 export async function completeTournamentAction(input: unknown): Promise<CompletionActionResult> {
+  return withServerActionLog("completion_complete", "/server-actions/completion/complete", () => completeTournamentActionImpl(input));
+}
+
+async function completeTournamentActionImpl(input: unknown): Promise<CompletionActionResult> {
   const parsed = completeTournamentInputSchema.safeParse(input);
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const { eventId, decisions, expectedVersion, idempotencyKey } = parsed.data;
@@ -46,6 +51,10 @@ export async function completeTournamentAction(input: unknown): Promise<Completi
 }
 
 export async function reopenTournamentAction(input: unknown): Promise<CompletionActionResult> {
+  return withServerActionLog("completion_reopen", "/server-actions/completion/reopen", () => reopenTournamentActionImpl(input));
+}
+
+async function reopenTournamentActionImpl(input: unknown): Promise<CompletionActionResult> {
   const parsed = reopenTournamentInputSchema.safeParse(input);
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const { eventId, reason, expectedVersion, idempotencyKey } = parsed.data;

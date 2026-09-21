@@ -3,10 +3,11 @@ import { prisma } from "@/lib/platform/db";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { findGameConfig } from "@/lib/platform/config";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { withServerActionLog } from "@/lib/observability/logger";
 import type { OrganizerWorkspaceLifecycle, OrganizerWorkspaceSummary } from "./workspace-types";
 
 /** One ownership-scoped query: scalar facts and filtered counts, never route payloads. */
-export async function readOrganizerWorkspaceSummary(eventId: string, actor: Pick<AppUser, "id" | "role">): Promise<OrganizerWorkspaceSummary | null> {
+async function readOrganizerWorkspaceSummaryImpl(eventId: string, actor: Pick<AppUser, "id" | "role">): Promise<OrganizerWorkspaceSummary | null> {
   if (!["organizer", "admin", "platform_admin"].includes(actor.role)) return null;
   const event = await prisma.event.findFirst({
     where: { id: eventId, ...(actor.role === "organizer" ? { organizerUserId: actor.id } : {}) },
@@ -59,4 +60,8 @@ export async function readOrganizerWorkspaceSummary(eventId: string, actor: Pick
     badges: { participants: counts.teams, registration: counts.teamRegistrationRequests, "match-control": counts.competitionActionItems, completion: counts.matches + counts.statSubmissions },
     blockers, updatedAt: event.updatedAt.toISOString(),
   };
+}
+
+export function readOrganizerWorkspaceSummary(eventId: string, actor: Pick<AppUser, "id" | "role">): Promise<OrganizerWorkspaceSummary | null> {
+  return withServerActionLog("organizer_workspace_read", "/server-readers/organizer-workspace", () => readOrganizerWorkspaceSummaryImpl(eventId, actor));
 }

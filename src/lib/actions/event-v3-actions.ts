@@ -13,6 +13,7 @@ import { assertUserCanManageEvent, createEvent, createOrganizerAndEventDraft, ge
 import { getLegacyTournamentFormat, TOURNAMENT_FORMAT_PRESETS, tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { safeEntityIdSchema } from "@/lib/security/request-guard";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 const saveDraftActionSchema = z.object({
   eventId: safeEntityIdSchema,
@@ -85,7 +86,7 @@ async function createEventOrReturnToForm(input: Parameters<typeof createEvent>[0
     throw error;
   }
 }
-export async function createEventV3Action(formData: FormData) {
+async function createEventV3ActionImpl(formData: FormData) {
   const { user } = await requireEventManager();
   const parsed = createEventActionSchema.parse({
     locale: formData.get("locale"), name: formData.get("name"), slug: formData.get("slug"), gameModeId: formData.get("gameModeId"),
@@ -139,7 +140,7 @@ export async function createEventV3Action(formData: FormData) {
   revalidateTag("events");
   redirect(`/${parsed.locale}/admin/events/${event.id}/overview`);
 }
-export async function saveEventDraftAction(input: unknown) {
+async function saveEventDraftActionImpl(input: unknown) {
   const { actor } = await requireEventManager();
   const parsed = saveDraftActionSchema.parse(input);
   assertEventWorkspaceAccess(actor, parsed.eventId);
@@ -161,7 +162,7 @@ export async function saveEventDraftAction(input: unknown) {
   return result;
 }
 
-export async function publishEventV3Action(input: unknown) {
+async function publishEventV3ActionImpl(input: unknown) {
   const { user, actor } = await requireEventManager();
   const parsed = publishActionSchema.parse(input);
   assertEventWorkspaceAccess(actor, parsed.eventId);
@@ -176,7 +177,7 @@ export async function publishEventV3Action(input: unknown) {
   return result;
 }
 
-export async function updateEventOrganizerContactAction(formData: FormData) {
+async function updateEventOrganizerContactActionImpl(formData: FormData) {
   const { user } = await requireEventManager();
   const parsed = organizerContactActionSchema.parse({
     eventId: formData.get("eventId"),
@@ -188,7 +189,7 @@ export async function updateEventOrganizerContactAction(formData: FormData) {
   revalidatePath("/organizer/events/" + parsed.eventId);
 }
 
-export async function createEventPreviewAction(input: unknown) {
+async function createEventPreviewActionImpl(input: unknown) {
   const { user, actor } = await requireEventManager();
   const parsed = createPreviewActionSchema.parse(input);
   assertEventWorkspaceAccess(actor, parsed.eventId);
@@ -204,7 +205,7 @@ export async function createEventPreviewAction(input: unknown) {
   };
 }
 
-export async function revokeEventPreviewAction(input: unknown) {
+async function revokeEventPreviewActionImpl(input: unknown) {
   const { user, actor } = await requireEventManager();
   const parsed = revokePreviewActionSchema.parse(input);
   assertEventWorkspaceAccess(actor, parsed.eventId);
@@ -213,6 +214,30 @@ export async function revokeEventPreviewAction(input: unknown) {
 
   if (result.status === "revoked") revalidatePath("/organizer/events/" + parsed.eventId);
   return result;
+}
+
+export async function createEventV3Action(formData: FormData) {
+  return withServerActionLog("event_create", "/server-actions/event/create", () => createEventV3ActionImpl(formData));
+}
+
+export async function saveEventDraftAction(input: unknown) {
+  return withServerActionLog("event_draft_save", "/server-actions/event/draft", () => saveEventDraftActionImpl(input));
+}
+
+export async function publishEventV3Action(input: unknown) {
+  return withServerActionLog("event_publish", "/server-actions/event/publish", () => publishEventV3ActionImpl(input));
+}
+
+export async function updateEventOrganizerContactAction(formData: FormData) {
+  return withServerActionLog("event_contact_update", "/server-actions/event/contact", () => updateEventOrganizerContactActionImpl(formData));
+}
+
+export async function createEventPreviewAction(input: unknown) {
+  return withServerActionLog("event_preview_create", "/server-actions/event/preview", () => createEventPreviewActionImpl(input));
+}
+
+export async function revokeEventPreviewAction(input: unknown) {
+  return withServerActionLog("event_preview_revoke", "/server-actions/event/preview/revoke", () => revokeEventPreviewActionImpl(input));
 }
 
 

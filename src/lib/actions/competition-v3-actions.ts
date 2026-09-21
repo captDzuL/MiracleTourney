@@ -7,8 +7,13 @@ import { prisma } from "@/lib/platform/db";
 import { createCompetitionOperations } from "@/lib/tournament/operations";
 import { correctionPreviewSchema, operationRequestSchema } from "@/lib/tournament/operations/schema";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 export async function executeCompetitionOperationAction(input: unknown) {
+  return withServerActionLog("competition_execute", "/server-actions/competition/execute", () => executeCompetitionOperationActionImpl(input));
+}
+
+async function executeCompetitionOperationActionImpl(input: unknown) {
   const request = operationRequestSchema.parse(input);
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
   if (!user) throw new Error("Unauthorized");
@@ -27,6 +32,10 @@ export async function executeCompetitionOperationAction(input: unknown) {
 }
 
 export async function previewCompetitionResultCorrectionAction(input: unknown) {
+  return withServerActionLog("competition_preview_correction", "/server-actions/competition/preview", () => previewCompetitionResultCorrectionActionImpl(input));
+}
+
+async function previewCompetitionResultCorrectionActionImpl(input: unknown) {
   const request = correctionPreviewSchema.parse(input);
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
   if (!user) throw new Error("Unauthorized");
@@ -44,6 +53,10 @@ export async function previewCompetitionResultCorrectionAction(input: unknown) {
 /** Expected failures must cross the production Server Action boundary as data;
  * Next.js intentionally masks thrown server exception messages in production. */
 export async function mutateCompetitionWorkspaceAction(input: unknown) {
+  return withServerActionLog("competition_mutate_workspace", "/server-actions/competition/mutate", () => mutateCompetitionWorkspaceActionImpl(input));
+}
+
+async function mutateCompetitionWorkspaceActionImpl(input: unknown) {
   try { return { status: "saved" as const, receipt: await executeCompetitionOperationAction(input) }; }
   catch (error) {
     const message = error instanceof Error ? error.message : "";

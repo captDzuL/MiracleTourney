@@ -9,6 +9,7 @@ import { readPublicDrawing } from "./public-drawing";
 import { readPublicFinished } from "./public-finished";
 import { readFlashpeakStatPayload } from "@/lib/player-stats/flashpeak";
 import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
+import { withServerActionLog } from "@/lib/observability/logger";
 import { publicV3LocalizedHref, publicV3RouteTargets, publicV3RouteTarget } from "./public-v3-types";
 import type {
   CompatiblePublicCertificate,
@@ -1076,7 +1077,7 @@ async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now
   };
 }
 
-export async function readPublicV3Event(slug: string, viewer: PublicViewer, now = new Date()): Promise<PublicV3EventViewModel | null> {
+async function readPublicV3EventImpl(slug: string, viewer: PublicViewer, now = new Date()): Promise<PublicV3EventViewModel | null> {
   let event = await callOptional("event", "findUnique", { where: { slug } });
   if (!event) event = await callOptional("event", "findFirst", { where: { slug } });
   if (!event) return null;
@@ -1099,4 +1100,8 @@ export async function readPublicV3Event(slug: string, viewer: PublicViewer, now 
   const normalized = normalizeAuthoritative(row, authoritative, "authoritative", snapshotTeams);
   if (normalized) return normalized;
   return projectCompatiblePublicV3Event(await compatibilitySnapshot(row, viewer, now));
+}
+
+export function readPublicV3Event(slug: string, viewer: PublicViewer, now = new Date()): Promise<PublicV3EventViewModel | null> {
+  return withServerActionLog("public_event_read", "/server-readers/public-event", () => readPublicV3EventImpl(slug, viewer, now));
 }

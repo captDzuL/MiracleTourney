@@ -3,10 +3,17 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/session";
-import { getRequestId } from "@/lib/observability/logger";
+import { getRequestId, withRouteLog } from "@/lib/observability/logger";
 import { requireSameOrigin } from "@/lib/security/request-guard";
 
-export async function GET(request: Request = new Request("http://localhost/api/debug-locale")) {
+export function GET(): Promise<Response>;
+export function GET(request: Request): Promise<Response>;
+export async function GET(request?: Request) {
+  const resolvedRequest = request ?? new Request("http://localhost/api/debug-locale");
+  return withRouteLog(resolvedRequest, "api_debug_locale", () => handleGet(resolvedRequest));
+}
+
+async function handleGet(request: Request) {
   if (process.env.NODE_ENV !== "development") {
     notFound();
   }

@@ -1,8 +1,12 @@
 import { readCompetitionWorkspace } from "@/lib/competition/workspace-read";
-import { getRequestId } from "@/lib/observability/logger";
+import { getRequestId, withRouteLog } from "@/lib/observability/logger";
 import { isSafeEntityId, requireSameOrigin } from "@/lib/security/request-guard";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request, { params }: { params: Promise<{ eventId: string }> }) {
+  return withRouteLog(request, "api_organizer_competition", () => handleGet(request, { params }));
+}
+
+async function handleGet(request: Request, { params }: { params: Promise<{ eventId: string }> }) {
   const headers = { "Cache-Control": "private, no-store, max-age=0", Vary: "Cookie" };
   const requestId = getRequestId(request);
   const originFailure = requireSameOrigin(request);
