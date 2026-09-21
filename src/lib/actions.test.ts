@@ -789,6 +789,7 @@ describe("captain actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireRole.mockResolvedValue(captainSession());
+    checkRateLimit.mockReturnValue(true);
     assertCaptainCanSubmitStats.mockResolvedValue(undefined);
   });
 
@@ -859,6 +860,22 @@ describe("captain actions", () => {
     }
   });
 
+  it("rate-limits payment proof before reading, storing, or updating the request", async () => {
+    checkRateLimit.mockReturnValue(false);
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    const paymentProof = validPngFile("proof.png");
+    try {
+      await expect(
+        captainUploadPaymentProofAction(fd({ requestId: "request-1", eventId: "event-paid", paymentProof })),
+      ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&error=rate-limited");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateTeamRegistrationProof).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
+
   it("denies a foreign payment request before external upload or repository write", async () => {
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
     prisma.teamRegistrationRequest.findFirst.mockResolvedValue(null);
@@ -905,6 +922,21 @@ describe("captain actions", () => {
       await expect(
         captainUploadTeamLogoAction(fd({ teamId: "foreign-team", teamLogo: validPngFile("logo.png") })),
       ).rejects.toThrow("REDIRECT:/captain?tab=roster&error=Not%20authorized");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateCaptainTeamLogo).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
+
+  it("rate-limits captain team logos after ownership and before file processing", async () => {
+    checkRateLimit.mockReturnValue(false);
+    prisma.team.findFirst.mockResolvedValue({ id: "team-1", eventId: "event-safe" });
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    try {
+      await expect(
+        captainUploadTeamLogoAction(fd({ teamId: "team-1", teamLogo: validPngFile("logo.png") })),
+      ).rejects.toThrow("REDIRECT:/captain?tab=roster&error=rate-limited");
       expect(blobPut).not.toHaveBeenCalled();
       expect(updateCaptainTeamLogo).not.toHaveBeenCalled();
     } finally {
@@ -1359,6 +1391,7 @@ describe("adminImportTeamsCsvAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireRole.mockResolvedValue(adminSession());
+    checkRateLimit.mockReturnValue(true);
     getImportSnapshot.mockResolvedValue({ events: [], teams: [] });
   });
 
@@ -1655,6 +1688,17 @@ describe("adminUpdateEventPublicInfoAction", () => {
     ).rejects.toThrow();
 
     expect(updateEventPublicInfo).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits CSV import before reading or parsing the file", async () => {
+    checkRateLimit.mockReturnValue(false);
+    const file = new File(["team,data"], "teams.csv", { type: "text/csv" });
+    const text = vi.fn().mockResolvedValue("team,data");
+    Object.defineProperty(file, "text", { value: text });
+    await expect(adminImportTeamsCsvAction(fd({ csv: file }))).rejects.toThrow("REDIRECT:/admin?error=rate-limited");
+    expect(text).not.toHaveBeenCalled();
+    expect(parseAndValidateTeamImport).not.toHaveBeenCalled();
+    expect(importTeams).not.toHaveBeenCalled();
   });
 
   it("rejects traversal event ids before updating public information", async () => {
@@ -2048,6 +2092,7 @@ describe("adminUploadCharacterArtAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireRole.mockResolvedValue(adminSession());
+    checkRateLimit.mockReturnValue(true);
   });
 
   it("requires an admin session", async () => {
@@ -2091,12 +2136,27 @@ describe("adminUploadCharacterArtAction", () => {
     ).rejects.toThrow(/Invalid string/);
     expect(updateEventCertificateAssets).not.toHaveBeenCalled();
   });
+
+  it("rate-limits character art before reading or storing the file", async () => {
+    checkRateLimit.mockReturnValue(false);
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    try {
+      await expect(
+        adminUploadCharacterArtAction(fd({ eventId: "event-safe", characterArt: validPngFile("art.png") })),
+      ).rejects.toThrow("REDIRECT:/admin?error=rate-limited");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateEventCertificateAssets).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
 });
 
 describe("admin team ownership boundaries", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireRole.mockResolvedValue(adminSession());
+    checkRateLimit.mockReturnValue(true);
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
     blobPut.mockResolvedValue({ url: "https://blob.example.com/team-logos/foreign.png" });
   });
@@ -2129,6 +2189,16 @@ describe("admin team ownership boundaries", () => {
     expect(assertUserCanManageTeam).toHaveBeenCalledWith(adminSession(), "foreign-team");
     expect(prisma.team.findFirst).not.toHaveBeenCalled();
     expect(prisma.team.delete).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits admin team logos after authoritative event lookup", async () => {
+    checkRateLimit.mockReturnValue(false);
+    assertUserCanManageTeam.mockResolvedValue({ eventId: "event-safe" });
+    await expect(
+      adminUploadTeamLogoAction(fd({ teamId: "team-safe", teamLogo: validPngFile("logo.png") })),
+    ).rejects.toThrow("REDIRECT:/admin?error=rate-limited");
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(updateTeamLogo).not.toHaveBeenCalled();
   });
 });
 
@@ -2164,6 +2234,7 @@ describe("event visual revision actions", () => {
     vi.clearAllMocks();
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
     requireRole.mockResolvedValue(organizerSession());
+    checkRateLimit.mockReturnValue(true);
     blobPut.mockResolvedValue({ url: "https://blob.example.com/event-visuals/event-safe.png" });
     createEventVisualAsset.mockResolvedValue(visualAsset());
     approveEventVisualAsset.mockResolvedValue(visualAsset());
@@ -2215,6 +2286,16 @@ describe("event visual revision actions", () => {
     expect(updateEventBrandAssets).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["admin", adminUploadEventLogoAction, "eventLogo"],
+    ["organizer", organizerUploadEventLogoAction, "eventLogo"],
+  ] as const)("rate-limits %s event logos before blob storage or repository writes", async (_label, action, field) => {
+    checkRateLimit.mockReturnValue(false);
+    await expect(action(fd({ eventId: "event-safe", locale: "en", [field]: validPngFile("logo.png") }))).rejects.toThrow(/rate-limited/);
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(updateEventBrandAssets).not.toHaveBeenCalled();
+  });
+
   it("refuses uploads without a confirmed rights attestation", async () => {
     await expect(
       adminUploadEventVisualAction(fd({
@@ -2224,6 +2305,17 @@ describe("event visual revision actions", () => {
     ).rejects.toThrow("REDIRECT:/admin?error=");
     expect(createEventVisualAsset).not.toHaveBeenCalled();
     expect(blobPut).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["admin", adminUploadEventVisualAction],
+    ["organizer", organizerUploadEventVisualAction],
+  ] as const)("rate-limits %s event visuals before file parsing or revision writes", async (_label, action) => {
+    checkRateLimit.mockReturnValue(false);
+    await expect(action(fd({ eventId: "event-safe", locale: "en", rightsAttestation: "confirmed", eventVisual: validPngFile() }))).rejects.toThrow(/rate-limited/);
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(createEventVisualAsset).not.toHaveBeenCalled();
+    expect(approveEventVisualAsset).not.toHaveBeenCalled();
   });
 
   it("rejects spoofed image bytes before anything reaches blob storage", async () => {

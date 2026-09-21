@@ -558,8 +558,9 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
     ? `/captain?tab=registration&eventId=${encodeURIComponent(parsed.eventId)}`
     : "/captain?tab=registration");
 
+  let request: { id: string; eventId: string } | null = null;
   try {
-    const request = await prisma.teamRegistrationRequest.findFirst({
+    request = await prisma.teamRegistrationRequest.findFirst({
       where: { id: parsed.requestId, captainId: captain.id },
       select: { id: true, eventId: true },
     });
@@ -567,6 +568,16 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
       throw new Error("Not authorized");
     }
 
+  } catch (error) {
+    const message = toSafeActionMessage(error, "Gagal mengupload bukti pembayaran.");
+    await redirectToActiveLocale(appendActionError(registrationBase, message) as never);
+  }
+
+  if (!request || !checkRateLimit(`payment-proof:${captain.id}:${request.eventId}:${request.id}`, 5, 15 * 60 * 1000)) {
+    await redirectToActiveLocale(appendActionError(registrationBase, "rate-limited") as never);
+  }
+
+  try {
     const proofAsset = await uploadImageAsset({
       file: formData.get("paymentProof"),
       folder: "payment-proofs",
@@ -699,14 +710,25 @@ export async function changePasswordAction(formData: FormData) {
 export async function captainUploadTeamLogoAction(formData: FormData) {
   const captain = await requireCaptainSession();
 
+  let team: { id: string; eventId: string | null } | null = null;
+  let teamId = "";
   try {
-    const teamId = actionEntityId.parse(formData.get("teamId"));
-    const team = await prisma.team.findFirst({
+    teamId = actionEntityId.parse(formData.get("teamId"));
+    team = await prisma.team.findFirst({
       where: { id: teamId, captainId: captain.id },
-      select: { id: true },
+      select: { id: true, eventId: true },
     });
-    if (!team) throw new Error("Not authorized");
+    if (!team || !team.eventId) throw new Error("Not authorized");
+  } catch (err) {
+    const message = toSafeActionMessage(err, "Upload failed");
+    return await redirectToActiveLocale(`/captain?tab=roster&error=${encodeURIComponent(message)}`);
+  }
 
+  if (!checkRateLimit(`team-logo:${captain.id}:${team.eventId}:${team.id}`, 5, 15 * 60 * 1000)) {
+    await redirectToActiveLocale("/captain?tab=roster&error=rate-limited");
+  }
+
+  try {
     const asset = await uploadImageAsset({
       file: formData.get("teamLogo"),
       folder: "team-logos",
@@ -1119,6 +1141,10 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
 export async function adminImportTeamsCsvAction(formData: FormData) {
   const user = await requireAdminSession();
 
+  if (!checkRateLimit(`team-import:${user.id}`, 5, 15 * 60 * 1000)) {
+    return redirectToActiveLocale("/admin?error=rate-limited");
+  }
+
   const file = formData.get("csv");
 
   if (!(file instanceof File) || file.size === 0) {
@@ -1462,6 +1488,10 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
 
+  if (!checkRateLimit(`character-art:${user.id}:${eventId}`, 5, 15 * 60 * 1000)) {
+    return redirectToActiveLocale("/admin?error=rate-limited");
+  }
+
   try {
     const asset = await uploadImageAsset({
       file: formData.get("characterArt"),
@@ -1484,6 +1514,10 @@ async function uploadEventLogo(formData: FormData, returnPath: string, returnSec
   const eventId = actionEntityId.parse(formData.get("eventId"));
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
+
+  if (!checkRateLimit(`event-logo:${user.id}:${eventId}`, 5, 15 * 60 * 1000)) {
+    return redirectToActiveLocale(`${returnPath}?error=rate-limited` as never);
+  }
 
   try {
     const asset = await uploadImageAsset({
@@ -1536,7 +1570,16 @@ async function uploadEventVisual(formData: FormData, returnPath: string, returnS
   try {
     await assertUserCanManageEvent(user, eventId);
     assertWorkspaceEventAction(user, eventId);
+  } catch (err) {
+    const message = toSafeActionMessage(err, "Upload failed");
+    redirect(`${appendActionError(returnPath, message)}${returnSection === "public" ? "#section-public" : ""}` as never);
+  }
 
+  if (!checkRateLimit(`event-visual:${user.id}:${eventId}`, 5, 15 * 60 * 1000)) {
+    return redirect(`${returnPath}?error=rate-limited${returnSection === "public" ? "#section-public" : ""}` as never);
+  }
+
+  try {
     if (formData.get("rightsAttestation") !== "confirmed") {
       throw new Error("Konfirmasi hak publikasi artwork terlebih dahulu.");
     }
@@ -1679,10 +1722,20 @@ export async function adminUploadTeamLogoAction(formData: FormData) {
   const user = await requireAdminSession();
   const teamId = actionEntityId.parse(formData.get("teamId"));
 
+  let eventId = "";
   try {
-    const { eventId } = await assertUserCanManageTeam(user, teamId);
+    ({ eventId } = await assertUserCanManageTeam(user, teamId));
     assertWorkspaceEventAction(user, eventId);
+  } catch (err) {
+    const message = toSafeActionMessage(err, "Upload failed");
+    await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
+  }
 
+  if (!checkRateLimit(`team-logo:${user.id}:${eventId}:${teamId}`, 5, 15 * 60 * 1000)) {
+    await redirectToActiveLocale("/admin?error=rate-limited");
+  }
+
+  try {
     const asset = await uploadImageAsset({
       file: formData.get("teamLogo"),
       folder: "team-logos",

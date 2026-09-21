@@ -13,11 +13,21 @@ export async function GET(request: Request = new Request("http://localhost/api/d
   const originFailure = requireSameOrigin(request);
   if (originFailure) return originFailure;
   const requestId = getRequestId(request);
-  const user = await requireRole("platform_admin");
-  if (!user) return NextResponse.json({ code: "forbidden", requestId }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  const privateHeaders = { "Cache-Control": "no-store, max-age=0", "Vary": "Cookie" };
+  let user;
+  try {
+    user = await requireRole("platform_admin");
+  } catch {
+    return NextResponse.json({ code: "internal_error", requestId }, { status: 500, headers: privateHeaders });
+  }
+  if (!user) return NextResponse.json({ code: "forbidden", requestId }, { status: 403, headers: privateHeaders });
 
-  const locale = await getLocale();
-  const hdrs = await headers();
-  const intlHeader = hdrs.get("x-next-intl-locale");
-  return NextResponse.json({ locale, intlHeader });
+  try {
+    const locale = await getLocale();
+    const hdrs = await headers();
+    const intlHeader = hdrs.get("x-next-intl-locale");
+    return NextResponse.json({ locale, intlHeader }, { headers: privateHeaders });
+  } catch {
+    return NextResponse.json({ code: "internal_error", requestId }, { status: 500, headers: privateHeaders });
+  }
 }

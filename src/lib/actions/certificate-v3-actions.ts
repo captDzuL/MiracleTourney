@@ -76,6 +76,9 @@ export async function uploadCertificateAssetAction(formData: FormData) {
   if (!parsed.success) return { status: "blocked" as const, code: "invalid_input" as const };
   const access = await gate(parsed.data.eventId);
   if ("status" in access) return access;
+  if (!checkRateLimit(`certificate-asset:${access.actor.id}:${parsed.data.eventId}`, 5, 15 * 60 * 1000)) {
+    return { status: "blocked" as const, code: "rate_limited" as const };
+  }
   let asset: Awaited<ReturnType<typeof uploadImageAsset>>;
   try { asset = await uploadImageAsset({
     file: formData.get("asset"),

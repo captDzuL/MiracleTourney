@@ -1,13 +1,13 @@
 # Task 8 report — injection, XSS, API exposure, and safe errors
 
-Status: bounded coherent slice complete through Task 8 fix round 2; full runtime/browser/live-database gate remains BLOCKED.
+Status: bounded coherent slice complete through Task 8 fix round 3; full runtime/browser/live-database gate remains BLOCKED.
 
 ## Scope and inventory
 
 - Isolated worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`
 - Branch/base: `codex/organizer-release-readiness` at `4bb12d8` before this task.
-- Inventory: 6 API route rows + 15 listed action/validation/import boundaries = 21 base rows in `docs/operations/release-security-inventory.md`, with the explicit round-2 actor/ID and uncovered-action lists below. This is a bounded inventory, not an exhaustive action sweep.
-- Implemented production slice: reusable same-origin guard with fail-closed unsafe-request policy, public error mapper, structured redacted logger, minimal health response, uniform route error envelopes, competition path validation, credential-export safe errors/formula neutralization, ongoing-event slug/error validation, safe action/registration errors, certificate mutation rate limits, plain-text team-field validation, and CSV/XLSX/image filename/formula/signature validation.
+- Inventory: 6 API route rows + 15 listed action/validation/import boundaries = 21 base rows in `docs/operations/release-security-inventory.md`, with explicit round-2 and round-3 coverage tables below. This is a bounded inventory, not an exhaustive action sweep.
+- Implemented production slice: reusable same-origin guard with fail-closed unsafe-request policy, public error mapper, structured redacted logger, minimal health response, uniform route error envelopes, competition path validation, credential-export safe errors/formula neutralization, ongoing-event slug/error validation, safe action/registration errors, actor-scoped upload/import/certificate throttles before downstream work, strict nested player-stats/tournament IDs, private auth/provider failure responses, plain-text team-field validation, and CSV/XLSX/image filename/formula/signature validation.
 
 Round-2 finding matrix:
 
@@ -20,6 +20,14 @@ Round-2 finding matrix:
 | P1 six-route error contract | captain credentials, ongoing, health, `/api/me`, debug locale, and competition tests | GREEN, 6 files/19 tests |
 | P2 dynamic logger collision | canonical positional templates for dynamic event routes; `/api/events/admin/ongoing` regression | GREEN, 5/5 logger tests |
 | P2 localized certificate throttling | ID/EN `certificateStudio.feedback.rate_limited`; regenerate and publish UI regressions | GREEN, 22/22 component tests |
+
+Round-3 finding matrix:
+
+| Finding | Covered code/tests | Result |
+| --- | --- | --- |
+| P1 upload/import limiter placement | `src/lib/actions.ts`, `src/lib/actions/certificate-v3-actions.ts`; blocked-path tests for payment proof, captain/admin/team/event logo, event visual, character art, CSV import, and certificate asset | GREEN; exact named boundaries covered, zero blob/parser/repository calls on blocked paths |
+| P1 strict nested entity IDs | `src/lib/actions/player-stats-v3-actions.ts`, `src/lib/tournament/operations/schema.ts`, `src/lib/tournament/operations/index.ts`; SQL/traversal tests for match/team/submission and match/team/revision/incident/action/announcement | GREEN; player 17/17 and competition 14/14 action suites |
+| P2 auth/provider failure and private headers | captain-credentials, health/env, debug-locale routes and tests | GREEN; 15 route tests including auth/locale-provider rejection and success/forbidden `no-store` + `Vary: Cookie` assertions |
 
 ## RED → GREEN evidence
 
@@ -39,6 +47,9 @@ Each production behavior was preceded by a focused failing test. The initial RED
 | Certificate mutation limiter | V3 regeneration/publication had no shared limiter call | `certificate-v3-actions.test.ts` covers both blocked paths; P1 suite 35 passed |
 | P2 XSS/JSON-LD/MIME/route redaction matrix | logger route and team markup regressions failed before production changes | logger/security/upload/JSON-LD suite: 4 files, 24 tests passed |
 | Round-2 negative matrix | 4 rate-limit, 2 certificate-log, 2 route-contract, 1 logger-collision, and 2 CertificateStudio locale regressions failed before their corresponding changes | all GREEN in the final focused suite |
+| Round-3 limiter placement | payment-proof regression: 1 failure/1 before the check; current action test expected rate-limited but received upload fallback | GREEN; blocked-path upload/import suite covers 14 selected rate-limit cases |
+| Round-3 nested IDs | six competition action cases reached one `$transaction` each before schema tightening | GREEN; 6/6 reject before transaction, plus player-stats 3/3 nested cases |
+| Round-3 route dependency/cache | 9 failures across 14 route tests: uncaught auth rejection and missing `Vary: Cookie`/success cache headers | GREEN; 15/15 route tests |
 
 ## Verification commands
 
@@ -54,6 +65,11 @@ Commands were run from the isolated worktree. The repository's `pnpm exec vitest
 | `node node_modules/typescript/bin/tsc --noEmit` | exit 0 | no diagnostics |
 | final focused suite over all touched security/action/API tests | exit 0; 3.99s | 15 files, 231 tests passed, 0 skipped, 0 failed |
 | final round-2 focused suite over the reviewed action, route, logger, certificate, and UI surfaces | exit 0; 3.70s | 18 files, 404 tests passed, 0 skipped, 0 failed |
+| round-3 focused action/route suite | exit 0 | 7 files, 226 tests passed, 0 skipped, 0 failed |
+| round-3 TypeScript | exit 0 | `node node_modules/typescript/bin/tsc --noEmit`; no diagnostics |
+| round-3 focused ESLint | exit 0 | all changed round-3 source/tests; no errors or warnings |
+| round-3 `git diff --check` | exit 0 | no whitespace errors; Git emitted only CRLF normalization warnings |
+| round-3 raw scan | exit 1 with no matches | no runtime `$queryRawUnsafe`, `$executeRawUnsafe`, or wildcard authenticated CORS header |
 | focused ESLint over all changed source/tests | exit 0 | no errors or warnings |
 | `git diff --check` | exit 0 | no whitespace errors |
 | `rg -n --glob '!**/*.test.ts' --glob '!**/*.test.tsx' '\$queryRawUnsafe|\$executeRawUnsafe|Access-Control-Allow-Origin.*\*' src` | exit 0 | no runtime raw-SQL escape hatch or wildcard CORS matches |
@@ -63,10 +79,12 @@ Commands were run from the isolated worktree. The repository's `pnpm exec vitest
 - `requireSameOrigin` gates unsafe methods by comparing parsed `Origin` and request URL origins, rejects missing/malformed origins, and returns only `{ code: "forbidden", requestId }` with `403` for a mismatch. Middleware applies the same fail-closed policy and no longer trusts `Sec-Fetch-Site: same-site` over an origin mismatch.
 - `toPublicError` maps validation/authorization/internal failures to the three allowed codes and never returns stack, Prisma, secret, token, environment, email, payment URL, or PII details.
 - `writeServerLog` emits an allowlisted JSON event; actor/resource/request identifiers are hashed before certificate failure records, and canonical positional templates prevent dynamic values such as an `admin` slug from colliding with static route segments. `withServerLog` emits `start`, `done`, and safe `failed` records.
-- Health now returns `{ status: "ok" }` only to a platform-admin session and `no-store` headers.
+- Health now returns `{ status: "ok" }` only to a platform-admin session and `no-store, max-age=0` + `Vary: Cookie` headers; auth failures are generic.
 - Credential CSV cells beginning with `=`, `+`, `-`, or `@` are prefixed with `'`; invalid event IDs and repository failures are generic, non-cacheable JSON.
 - Action and registration redirects preserve only an explicit safe-message allowlist or bounded image-validation messages; arbitrary repository errors are replaced with stable fallbacks and raw exception objects are not logged.
-- Certificate V3 regeneration/publication and the bounded registration/import/upload paths use the shared in-process limiter; browser/load behavior still needs authorized runtime evidence.
+- Certificate V3 regeneration/publication/upload and every exact round-3 registration/import/upload boundary use the shared in-process limiter before downstream work; browser/load behavior still needs authorized runtime evidence.
+- Public player-stats and tournament operation boundaries reject unsafe nested IDs before repository/transaction calls while preserving bounded server-issued graph match IDs and separate opaque/descriptive values.
+- Captain-credentials and debug-locale success/forbidden/provider-failure responses are private and non-cacheable with `Vary: Cookie`.
 - Development locale diagnostics return locale data only; JSON-LD uses `<` escaping, team names/captain names reject markup, and image tests cover declared-MIME/signature mismatches.
 - Registration CSV formula-leading cells are marked before mapping; mapped formulas remain rejected by preview. Upload filenames reject traversal/separators before parsing.
 
@@ -75,7 +93,7 @@ Commands were run from the isolated worktree. The repository's `pnpm exec vitest
 - Browser/live-DB runtime, preview deployment, rate-limit service behavior under load, and credentialed E2E evidence were not run; no authorized `.env.test` or non-production DB action was available.
 - Broad action instrumentation and exhaustive message allowlisting remain out of scope; only direct repository-error redirect/log paths identified in this review round were hardened.
 - Explicit strict-ID coverage is limited to the listed boundaries: V3 event/revision/completion/certificate/competition/player-stats actions, the reviewed legacy event/payment/stat/visual action IDs in `src/lib/actions.ts`, and registration/certificate service IDs. Other legacy action inputs remain outside this round's direct-call matrix.
-- Explicit rate-limit gaps for a follow-up round: `adminImportTeamsCsvAction`, `adminUploadCharacterArtAction`, `adminUploadEventLogoAction`, `organizerUploadEventLogoAction`, `adminUploadEventVisualAction`, `organizerUploadEventVisualAction`, `adminUploadTeamLogoAction`, `captainUploadTeamLogoAction`, and `captainUploadPaymentProofAction` retain existing auth/upload validation but do not receive a new actor+event `checkRateLimit` in this bounded slice. The inventory no longer claims exhaustive upload throttling.
+- The exact round-3 limiter list is covered; other legacy action boundaries remain outside this direct-call matrix and are not claimed exhaustive.
 - Middleware's existing server-action CSRF behavior remains in place; the reusable guard is applied to the touched API routes. The Next middleware matcher still intentionally excludes `/api`, so future unsafe API handlers must call the guard at their route boundary.
 - Logger helpers are tested and available but not instrumented across every listed route/action; broad instrumentation is part of the later observability task.
 - No Sentry or external log drain was added.
@@ -103,5 +121,6 @@ Commands were run from the isolated worktree. The repository's `pnpm exec vitest
 - `src/lib/upload-image-asset.test.ts`
 - `src/lib/imports/registration-intake.ts` and test
 - Round-2 additions: `src/app/api/me/route.ts` and test, `src/app/api/debug-locale/route.test.ts`, competition route contract test, registration/revision rate-limit tests, certificate structured-log tests, CertificateStudio throttling tests, and ID/EN `certificateStudio.feedback.rate_limited` copy.
+- Round-3 additions: exact upload/import limiter guards and blocked-path tests in `src/lib/actions.ts`/certificate actions, strict nested player-stats/tournament operation schemas/tests, and auth/provider/cache contract tests for captain credentials, health/env, and debug locale.
 
-Initial Task 8 commit: `796668207d9607fa39c198ea0dc201f84fe6987e` (`fix: harden API inputs and public errors`). Round-1 fix commit: `976141ec530acbe8a1ba3b443fe6ab632abe3a7b` (`fix: close task 8 security review findings`). Round-2 fix commit is the final commit containing this report (`fix: close task 8 round 2 security findings`).
+Initial Task 8 commit: `796668207d9607fa39c198ea0dc201f84fe6987e` (`fix: harden API inputs and public errors`). Round-1 fix commit: `976141ec530acbe8a1ba3b443fe6ab632abe3a7b` (`fix: close task 8 security review findings`). Round-2 baseline: `66b2412b189644a6c523110336c30b9aed01067b` (`fix: close task 8 round 2 security findings`). Round-3 commit contains the final bounded changes and this evidence report.

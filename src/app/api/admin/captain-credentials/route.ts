@@ -19,31 +19,34 @@ export async function GET(req: Request) {
   if (originFailure) return originFailure;
 
   const requestId = getRequestId(req);
-  const user =
-    await requireRole("platform_admin")
-    ?? await requireRole("organizer")
-    ?? await requireRole("admin");
-  if (!user) return Response.json(
-    { code: "forbidden", requestId },
-    { status: 401, headers: { "Cache-Control": "no-store", "Vary": "Cookie" } },
-  );
+  const privateHeaders = { "Cache-Control": "no-store, max-age=0", "Vary": "Cookie" };
+  let user;
+  try {
+    user =
+      await requireRole("platform_admin")
+      ?? await requireRole("organizer")
+      ?? await requireRole("admin");
+  } catch {
+    return Response.json({ code: "internal_error", requestId }, { status: 500, headers: privateHeaders });
+  }
+  if (!user) return Response.json({ code: "forbidden", requestId }, { status: 401, headers: privateHeaders });
 
   const { searchParams } = new URL(req.url);
   const eventId = searchParams.get("eventId");
   if (!eventId || !isSafeEntityId(eventId)) {
     const error = toPublicError({ code: "invalid_input" }, requestId);
-    return Response.json(error.body, { status: error.status, headers: { "Cache-Control": "no-store" } });
+    return Response.json(error.body, { status: error.status, headers: privateHeaders });
   }
   const access = authorizeWorkspaceResource(
     user as WorkspaceActor,
     { eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
     user.role === "organizer" ? user.id : null,
   );
-  if (!access.ok) return Response.json({ code: "forbidden", requestId }, { status: 403, headers: { "Cache-Control": "no-store, max-age=0" } });
+  if (!access.ok) return Response.json({ code: "forbidden", requestId }, { status: 403, headers: privateHeaders });
   try {
     await assertUserCanManageEvent(user, eventId);
   } catch {
-    return Response.json({ code: "forbidden", requestId }, { status: 403, headers: { "Cache-Control": "no-store, max-age=0" } });
+    return Response.json({ code: "forbidden", requestId }, { status: 403, headers: privateHeaders });
   }
 
   let credentials;
@@ -51,7 +54,7 @@ export async function GET(req: Request) {
     credentials = await getCaptainCredentialsForEvent(eventId);
   } catch (error) {
     const publicError = toPublicError(error, requestId);
-    return Response.json(publicError.body, { status: publicError.status, headers: { "Cache-Control": "no-store" } });
+    return Response.json(publicError.body, { status: publicError.status, headers: privateHeaders });
   }
 
   const lines = [
@@ -66,6 +69,7 @@ export async function GET(req: Request) {
   return new Response(lines.join("\n"), {
     headers: {
       "Cache-Control": "no-store, max-age=0",
+      "Vary": "Cookie",
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="captain-credentials-${eventId}.csv"`,
       "X-Robots-Tag": "noindex, nofollow, noarchive",

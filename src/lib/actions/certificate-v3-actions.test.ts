@@ -76,6 +76,17 @@ describe("certificate v3 actions", () => {
     }));
     expect(external.revalidate).toHaveBeenCalledWith("/organizer/events/event-1/certificates");
   });
+  it("rate-limits certificate assets before upload or repository creation", async () => {
+    external.rateLimit.mockReturnValue(false);
+    const form = new FormData();
+    form.set("eventId", "event-1");
+    form.set("purpose", "certificate_character_art");
+    form.set("asset", new File(["png"], "hero.png", { type: "image/png" }));
+
+    await expect(uploadCertificateAssetAction(form)).resolves.toEqual({ status: "blocked", code: "rate_limited" });
+    expect(external.upload).not.toHaveBeenCalled();
+    expect(external.createAsset).not.toHaveBeenCalled();
+  });
   it("returns upload validation errors instead of redirecting or creating an asset row", async () => {
     external.upload.mockRejectedValue(Object.assign(new Error("invalid dimensions"), { name: "ImageUploadValidationError", code: "invalid_dimensions" }));
     const form = new FormData();

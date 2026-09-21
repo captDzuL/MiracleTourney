@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { ScheduleDraft } from "../scheduling";
-import { correctionPreviewSchema, internalOperationRequestSchema, operationRequestSchema } from "./schema";
+import { correctionPreviewSchema, internalCorrectionPreviewSchema, internalOperationRequestSchema, operationRequestSchema } from "./schema";
 import type { ParsedCommand } from "./schema";
 import { applyCommand } from "./commands";
 import { correctionPreview, type ResultGame } from "./results";
@@ -116,7 +116,8 @@ export function createCompetitionOperations(
   }
   async function previewResultCorrection(input: { eventId: string; matchId: string; games: ResultGame[]; actor: OperationInput["actor"] }) {
     const { actor } = input;
-    const request = correctionPreviewSchema.parse({ eventId: input.eventId, matchId: input.matchId, games: input.games });
+    const request = (options.allowInternalInitialize ? internalCorrectionPreviewSchema : correctionPreviewSchema)
+      .parse({ eventId: input.eventId, matchId: input.matchId, games: input.games });
     if (!actor?.id || !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new Error("Not authorized");
     return db.$transaction(async tx => {
       const event = await tx.event.findUnique({ where: { id: request.eventId } });

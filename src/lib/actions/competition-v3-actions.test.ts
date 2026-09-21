@@ -68,6 +68,19 @@ describe("authenticated competition actions", () => {
     await expect(executeCompetitionOperationAction({ ...request, eventId: "../secrets" })).rejects.toThrow();
     expect(store.rows("competitionAuditLog")).toEqual([]);
   });
+  it.each([
+    ["matchId", { kind: "result_submit", matchId: "../secrets", games: [{ gameNumber: 1, homeScore: 1, awayScore: 0 }] }],
+    ["teamId", { kind: "readiness_update", matchId: "match-1", teamId: "team' OR 1=1--", status: "ready" }],
+    ["revisionId", { kind: "schedule_publish", revisionId: "../../revision" }],
+    ["incidentId", { kind: "incident_resolve", incidentId: "incident%2Fsecret", reason: "resolved" }],
+    ["actionId", { kind: "action_resolve", actionId: "action;DROP", reason: "resolved" }],
+    ["announcementId", { kind: "announcement_publish", announcementId: "announcement<script>", urgency: "info" }],
+  ] as const)("rejects unsafe nested %s before opening a transaction", async (_field, command) => {
+    const transaction = vi.spyOn(store.db, "$transaction");
+    await expect(executeCompetitionOperationAction({ ...request, command })).rejects.toThrow();
+    expect(transaction).not.toHaveBeenCalled();
+    transaction.mockRestore();
+  });
   it("returns serializable conflict and authorization outcomes for production client rendering", async () => {
     expect(await mutateCompetitionWorkspaceAction(request)).toMatchObject({ status: "saved", receipt: { version: 1 } });
     expect(await mutateCompetitionWorkspaceAction({ ...request, idempotencyKey: "stale" })).toEqual({ status: "conflict" });
