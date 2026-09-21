@@ -8,6 +8,7 @@ import { readPublicRegistration } from "./public-registration";
 import { readPublicDrawing } from "./public-drawing";
 import { readPublicFinished } from "./public-finished";
 import { readFlashpeakStatPayload } from "@/lib/player-stats/flashpeak";
+import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
 import { publicV3LocalizedHref, publicV3RouteTargets, publicV3RouteTarget } from "./public-v3-types";
 import type {
   CompatiblePublicCertificate,
@@ -986,6 +987,11 @@ async function callOptional(modelName: string, methodName: string, args: unknown
   return (method as (input: unknown) => Promise<unknown>).call(model, args);
 }
 
+function publicReaderRows(resource: string, value: unknown): unknown[] {
+  if (!Array.isArray(value)) return [];
+  return assertReaderResultWithinLimit(resource, value, PUBLIC_READER_ROW_LIMIT) as unknown[];
+}
+
 function compatibleMatch(value: unknown): CompatiblePublicMatch {
   const row = record(value);
   return {
@@ -1019,30 +1025,36 @@ function compatibleRegistration(value: unknown): NonNullable<CompatiblePublicEve
 async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now: Date): Promise<CompatiblePublicEventInput> {
   const eventId = text(event.id);
   const [teams, matches, registrations, completion, publication] = await Promise.all([
-    callOptional("team", "findMany", { where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: PUBLIC_READER_ROW_LIMIT }),
-    callOptional("match", "findMany", { where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }], take: PUBLIC_READER_ROW_LIMIT }),
-    callOptional("teamRegistrationRequest", "findMany", { where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: PUBLIC_READER_ROW_LIMIT }),
+    callOptional("team", "findMany", { where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) }),
+    callOptional("match", "findMany", { where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }], take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) }),
+    callOptional("teamRegistrationRequest", "findMany", { where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) }),
     callOptional("tournamentCompletion", "findUnique", { where: { eventId }, include: { podiumPlacements: { orderBy: { rank: "asc" }, take: 3 }, awards: { include: { decision: true }, orderBy: { type: "asc" }, take: AWARD_ORDER.length } } }),
     callOptional("certificatePublication", "findFirst", { where: { eventId }, orderBy: { version: "desc" } }),
   ]);
   const publicationRecord = record(publication);
   const rawCertificateIds = publicationRecord.certificateIds;
-  const ids = Array.isArray(rawCertificateIds)
-    ? rawCertificateIds.filter((id: unknown): id is string => typeof id === "string").slice(0, PUBLIC_READER_ROW_LIMIT)
+  const certificateIds = Array.isArray(rawCertificateIds)
+    ? rawCertificateIds.filter((id: unknown): id is string => typeof id === "string")
     : [];
+  assertReaderResultWithinLimit("public.compatibility.certificateIds", certificateIds, PUBLIC_READER_ROW_LIMIT);
+  const ids = certificateIds;
   const certificates = ids.length
-    ? await callOptional("certificate", "findMany", { where: { eventId, id: { in: ids } }, take: PUBLIC_READER_ROW_LIMIT })
+    ? await callOptional("certificate", "findMany", { where: { eventId, id: { in: ids } }, take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) })
     : null;
+  const teamRows = publicReaderRows("public.compatibility.teams", teams);
+  const matchRows = publicReaderRows("public.compatibility.matches", matches);
+  const registrationRows = publicReaderRows("public.compatibility.registrations", registrations);
+  const certificateRows = publicReaderRows("public.compatibility.certificates", certificates);
   return {
     event: identityEvent(event),
     viewer,
     now,
-    teams: teamsFromRaw(teams),
-    matches: Array.isArray(matches) ? matches.map(compatibleMatch) : [],
-    registrations: Array.isArray(registrations) ? registrations.map(compatibleRegistration) : [],
+    teams: teamsFromRaw(teamRows),
+    matches: matchRows.map(compatibleMatch),
+    registrations: registrationRows.map(compatibleRegistration),
     completion: completion && typeof completion === "object" ? completion as CompatiblePublicEventInput["completion"] : null,
     publication: publication && typeof publication === "object" ? publication as CompatiblePublicEventInput["publication"] : null,
-    certificates: Array.isArray(certificates) ? certificates.flatMap((value) => {
+    certificates: certificateRows.flatMap((value) => {
       const row = record(value);
       const id = text(row.id);
       const type = text(row.type);
@@ -1060,7 +1072,7 @@ async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now
         completionId: typeof row.completionId === "string" ? row.completionId : null,
         completionVersion: publicScore(row.completionVersion),
       }];
-    }) : [],
+    }),
   };
 }
 
@@ -1082,7 +1094,7 @@ export async function readPublicV3Event(slug: string, viewer: PublicViewer, now 
   }
   const authoritativeMode = text(record(authoritative).mode);
   const snapshotTeams = ["registration", "drawing", "ongoing", "finished"].includes(authoritativeMode)
-    ? teamsFromRaw(await callOptional("team", "findMany", { where: { eventId: text(row.id) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: PUBLIC_READER_ROW_LIMIT }))
+    ? teamsFromRaw(publicReaderRows("public.snapshot.teams", await callOptional("team", "findMany", { where: { eventId: text(row.id) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) })))
     : [];
   const normalized = normalizeAuthoritative(row, authoritative, "authoritative", snapshotTeams);
   if (normalized) return normalized;

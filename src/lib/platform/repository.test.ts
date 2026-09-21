@@ -931,6 +931,40 @@ describe("event-local registration workspace repository", () => {
     }));
   });
 
+  it("rejects registration-reader overflow even when the delegate ignores take", async () => {
+    prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
+    prisma.event.findUnique.mockResolvedValue({ id: "event-1" });
+    const teams = Array.from({ length: 501 }, (_, index) => ({
+      id: `team-${index + 1}`,
+      eventId: "event-1",
+      name: `Team ${index + 1}`,
+      tag: `T${index + 1}`,
+      source: "registration-intake",
+      captainId: "captain-1",
+      captainName: "Captain",
+      captainContact: "081",
+      captainIgn: null,
+      captainUid: null,
+      captainIsPlayer: true,
+      createdAt: new Date("2026-09-10T00:00:00.000Z"),
+      players: [],
+      captain: { id: "captain-1", name: "Captain", email: "captain@example.com" },
+    }));
+    prisma.team.findMany.mockResolvedValue(teams);
+    prisma.teamRegistrationRequest.findMany.mockResolvedValue([]);
+    prisma.registrationImportItem.findMany.mockResolvedValue([]);
+
+    await expect(getRegistrationRecordsForEvent(organizer, "event-1"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 500 });
+    expect(prisma.team.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      take: 501,
+      include: expect.objectContaining({ players: expect.objectContaining({ take: 501 }) }),
+    }));
+
+    prisma.team.findMany.mockResolvedValue(teams.slice(0, 500));
+    await expect(getRegistrationRecordsForEvent(organizer, "event-1")).resolves.toHaveLength(500);
+  });
+
   it("detects payment-review overflow instead of silently truncating the capped list", async () => {
     prisma.teamRegistrationRequest.updateMany.mockResolvedValue({ count: 0 });
     prisma.teamRegistrationRequest.findMany.mockResolvedValue(Array.from({ length: 101 }, (_, index) => ({

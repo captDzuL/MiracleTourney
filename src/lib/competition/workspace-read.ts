@@ -9,6 +9,7 @@ import type { StoredSchedule } from "@/lib/tournament/operations/state";
 import type { CompetitionWorkspaceState } from "./workspace-types";
 import { diagnoseLegacyCompetition } from "@/lib/tournament/operations/legacy-compatibility";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
 
 export const COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS = {
   isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
@@ -37,17 +38,24 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
   }, COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS);
   const core = await authorized(async (tx, event) => {
     const [matches, phases, teams, readiness, actions, revisions, published, roundConfigs, matchGames, resultRevisionCount] = await Promise.all([
-      tx.match.findMany({ where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }], take: COMPETITION_READER_ROW_LIMIT }),
-      tx.competitionPhase.findMany({ where: { eventId }, orderBy: { sequence: "asc" }, take: COMPETITION_READER_HISTORY_LIMIT }),
-      tx.team.findMany({ where: { eventId }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: COMPETITION_READER_ROW_LIMIT }),
-      tx.matchReadiness.findMany({ where: { eventId }, take: COMPETITION_READER_ROW_LIMIT }),
-      tx.competitionActionItem.findMany({ where: { eventId, resolvedAt: null }, orderBy: { createdAt: "asc" }, take: COMPETITION_READER_HISTORY_LIMIT }),
+      tx.match.findMany({ where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }], take: readerProbeLimit(COMPETITION_READER_ROW_LIMIT) }),
+      tx.competitionPhase.findMany({ where: { eventId }, orderBy: { sequence: "asc" }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) }),
+      tx.team.findMany({ where: { eventId }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(COMPETITION_READER_ROW_LIMIT) }),
+      tx.matchReadiness.findMany({ where: { eventId }, take: readerProbeLimit(COMPETITION_READER_ROW_LIMIT) }),
+      tx.competitionActionItem.findMany({ where: { eventId, resolvedAt: null }, orderBy: { createdAt: "asc" }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) }),
       tx.scheduleRevision.findMany({ where: { eventId, status: "draft", version: { gt: event.publishedScheduleVersion ?? -1 } }, orderBy: { version: "desc" }, take: 1 }),
       event.publishedScheduleVersion == null ? Promise.resolve(null) : tx.scheduleRevision.findFirst({ where: { eventId, version: event.publishedScheduleVersion, status: "published" } }),
-      tx.eventRoundConfig.findMany({ where: { eventId }, select: { eventId: true, roundLabel: true, bestOf: true }, take: COMPETITION_READER_HISTORY_LIMIT }),
-      tx.matchGame.findMany({ where: { match: { eventId } }, select: { matchId: true }, take: COMPETITION_READER_ROW_LIMIT }),
+      tx.eventRoundConfig.findMany({ where: { eventId }, select: { eventId: true, roundLabel: true, bestOf: true }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) }),
+      tx.matchGame.findMany({ where: { match: { eventId } }, select: { matchId: true }, take: readerProbeLimit(COMPETITION_READER_ROW_LIMIT) }),
       tx.matchResultRevision.count({ where: { eventId } }),
     ]);
+    assertReaderResultWithinLimit("competition.matches", matches, COMPETITION_READER_ROW_LIMIT);
+    assertReaderResultWithinLimit("competition.phases", phases, COMPETITION_READER_HISTORY_LIMIT);
+    assertReaderResultWithinLimit("competition.teams", teams, COMPETITION_READER_ROW_LIMIT);
+    assertReaderResultWithinLimit("competition.readiness", readiness, COMPETITION_READER_ROW_LIMIT);
+    assertReaderResultWithinLimit("competition.actions", actions, COMPETITION_READER_HISTORY_LIMIT);
+    assertReaderResultWithinLimit("competition.roundConfigs", roundConfigs, COMPETITION_READER_HISTORY_LIMIT);
+    assertReaderResultWithinLimit("competition.matchGames", matchGames, COMPETITION_READER_ROW_LIMIT);
     const firstPhase = phases.find(p => p.sequence === 1);
     const drawingConfiguration = firstPhase?.configuration as unknown as {
       graph?: CompetitionGraph;
@@ -82,9 +90,18 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
   });
   // Auxiliary transactions recheck ownership and isolate partial failures.
   const [incidents, announcements, audit] = await Promise.allSettled([
-    authorized(async tx => (await tx.competitionIncident.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: COMPETITION_READER_HISTORY_LIMIT })).map(i => ({ id: i.id, matchId: i.matchId ?? null, kind: i.kind, description: i.description, resolvedAt: i.resolvedAt?.toISOString() ?? null }))),
-    authorized(async tx => (await tx.eventAnnouncement.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: COMPETITION_READER_HISTORY_LIMIT })).map(a => ({ id: a.id, title: a.title, body: a.body, status: a.status, urgency: a.urgency ?? "info" }))),
-    authorized(async tx => (await tx.competitionAuditLog.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: COMPETITION_READER_HISTORY_LIMIT })).map(a => ({ id: a.id, matchId: a.matchId ?? null, action: a.action, reason: a.reason ?? null, actor: a.actorUserId ?? null, at: a.createdAt?.toISOString() ?? null }))),
+    authorized(async tx => {
+      const rows = await tx.competitionIncident.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) });
+      return assertReaderResultWithinLimit("competition.incidents", rows, COMPETITION_READER_HISTORY_LIMIT).map(i => ({ id: i.id, matchId: i.matchId ?? null, kind: i.kind, description: i.description, resolvedAt: i.resolvedAt?.toISOString() ?? null }));
+    }),
+    authorized(async tx => {
+      const rows = await tx.eventAnnouncement.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) });
+      return assertReaderResultWithinLimit("competition.announcements", rows, COMPETITION_READER_HISTORY_LIMIT).map(a => ({ id: a.id, title: a.title, body: a.body, status: a.status, urgency: a.urgency ?? "info" }));
+    }),
+    authorized(async tx => {
+      const rows = await tx.competitionAuditLog.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) });
+      return assertReaderResultWithinLimit("competition.audit", rows, COMPETITION_READER_HISTORY_LIMIT).map(a => ({ id: a.id, matchId: a.matchId ?? null, action: a.action, reason: a.reason ?? null, actor: a.actorUserId ?? null, at: a.createdAt?.toISOString() ?? null }));
+    }),
   ]);
   for (const result of [incidents, announcements, audit]) if (result.status === "rejected" && result.reason instanceof Error && result.reason.message === "Not authorized") throw result.reason;
   return { ...core, incidents: incidents.status === "fulfilled" ? incidents.value : [], announcements: announcements.status === "fulfilled" ? announcements.value : [], audit: audit.status === "fulfilled" ? audit.value : [], unavailableSections: [incidents.status === "rejected" ? "incidents" : "", announcements.status === "rejected" ? "announcements" : "", audit.status === "rejected" ? "audit" : ""].filter(Boolean) };

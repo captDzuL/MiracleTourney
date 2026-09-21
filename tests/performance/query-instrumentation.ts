@@ -9,5 +9,6 @@ export async function countQueries<T>(
   calls: readonly OrganizerReaderQuery[],
 ): Promise<Readonly<{ value: T; count: number; calls: readonly OrganizerReaderQuery[] }>> {
   const value = await work();
-  return { value, count: calls.length, calls };
+  const snapshot = [...calls];
+  return { value, count: snapshot.length, calls: snapshot };
 }

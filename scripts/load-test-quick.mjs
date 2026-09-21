@@ -4,7 +4,7 @@
 import autocannon from "autocannon";
 
 const BASE = process.env.BASE_URL;
-const P95_BUDGET_MS = 3_000;
+const P97_5_BUDGET_MS = 3_000;
 
 if (!BASE) {
   console.error("[load-test-quick] BLOCKED: set BASE_URL to the credentialed preview or explicitly approved load-test target.");
@@ -43,7 +43,7 @@ async function measure(label, path) {
     label,
     rps: Math.round(result.requests.mean),
     p50: result.latency.p50,
-    p95: result.latency.p95,
+    p97_5: result.latency.p97_5,
     p99: result.latency.p99,
     "2xx": result["2xx"],
     non2xx: result.non2xx,
@@ -53,7 +53,7 @@ async function measure(label, path) {
 }
 
 console.log(`\nLoad test target: ${BASE}`);
-console.log(`Config: 50 concurrent connections × 5s per route; p95 < ${P95_BUDGET_MS}ms\n`);
+console.log(`Config: 50 concurrent connections × 5s per route; p97.5 < ${P97_5_BUDGET_MS}ms\n`);
 
 const results = [];
 for (const route of routes) {
@@ -66,28 +66,28 @@ console.log("\n" + "=".repeat(65));
 console.log("RESULTS SUMMARY");
 console.log("=".repeat(65));
 console.log(
-  `${"Route".padEnd(35)} ${"Req/s".padStart(6)} ${"p50".padStart(7)} ${"p95".padStart(7)} ${"2xx".padStart(6)} ${"Err".padStart(5)}`,
+  `${"Route".padEnd(35)} ${"Req/s".padStart(6)} ${"p50".padStart(7)} ${"p97.5".padStart(8)} ${"2xx".padStart(6)} ${"Err".padStart(5)}`,
 );
 console.log("-".repeat(65));
 for (const r of results) {
   const label = r.label.length > 34 ? r.label.slice(0, 31) + "..." : r.label;
   const flag = r.errors > 0 || r.non2xx > 0 ? " ⚠️" : "";
   console.log(
-    `${label.padEnd(35)} ${String(r.rps).padStart(6)} ${String(r.p50 + "ms").padStart(7)} ${String(r.p95 + "ms").padStart(7)} ${String(r["2xx"]).padStart(6)} ${String(r.errors + r.non2xx).padStart(5)}${flag}`,
+    `${label.padEnd(35)} ${String(r.rps).padStart(6)} ${String(r.p50 + "ms").padStart(7)} ${String(r.p97_5 + "ms").padStart(8)} ${String(r["2xx"]).padStart(6)} ${String(r.errors + r.non2xx).padStart(5)}${flag}`,
   );
   if ((r.errors > 0 || r.non2xx > 0) && r.statusCodes)
     console.log(`        Status codes: ${JSON.stringify(r.statusCodes)}`);
 }
 
-const allPass = results.length === routes.length && results.every((r) => r.errors === 0 && r.non2xx === 0 && r.p95 < P95_BUDGET_MS);
+const allPass = results.length === routes.length && results.every((r) => r.errors === 0 && r.non2xx === 0 && r.p97_5 < P97_5_BUDGET_MS);
 console.log("\nCONCLUSION:");
 if (allPass) {
   console.log(`✅ Web dapat menangani 50 concurrent users tanpa error.`);
-  console.log(`   Worst-case p95: ${Math.max(...results.map((r) => r.p95))}ms`);
+  console.log(`   Worst-case p97.5: ${Math.max(...results.map((r) => r.p97_5))}ms`);
 } else {
-  const slow = results.filter((r) => r.p95 >= P95_BUDGET_MS);
+  const slow = results.filter((r) => r.p97_5 >= P97_5_BUDGET_MS);
   const errored = results.filter((r) => r.errors > 0 || r.non2xx > 0);
-  if (slow.length) console.log(`⚠️  Slow routes (p95 ≥ ${P95_BUDGET_MS}ms): ${slow.map((r) => r.label).join(", ")}`);
+  if (slow.length) console.log(`⚠️  Slow routes (p97.5 ≥ ${P97_5_BUDGET_MS}ms): ${slow.map((r) => r.label).join(", ")}`);
   if (errored.length) console.log(`❌ Routes with errors/non-2xx: ${errored.map((r) => r.label).join(", ")}`);
   process.exitCode = 1;
 }

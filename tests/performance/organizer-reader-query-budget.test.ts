@@ -5,6 +5,8 @@ type QueryCall = Readonly<{ model: string; method: string; args: Record<string, 
 const harness = vi.hoisted(() => {
   const calls: QueryCall[] = [];
   let teamCount = 1;
+  let forcedOverflow: { model: string; limit: number } | null = null;
+  let forcedExact: { model: string; count: number } | null = null;
   const now = new Date("2026-09-21T00:00:00.000Z");
   const event = {
     id: "event-1",
@@ -37,7 +39,11 @@ const harness = vi.hoisted(() => {
 
   const response = (model: string, method: string, args: Record<string, unknown>) => {
     const requestedTake = typeof args.take === "number" ? args.take : teamCount;
-    const boundedLength = Math.min(teamCount, requestedTake);
+    const boundedLength = forcedOverflow?.model === model
+      ? forcedOverflow.limit + 1
+      : forcedExact?.model === model
+        ? forcedExact.count
+      : Math.min(teamCount, requestedTake);
     if (model === "event" && method === "findFirst") return structuredClone(event);
     if (model === "event" && method === "findUnique") return structuredClone(event);
     if (model === "competitionPhase" && method === "findFirst") return null;
@@ -150,7 +156,9 @@ const harness = vi.hoisted(() => {
     calls,
     prisma,
     setTeamCount(value: number) { teamCount = value; },
-    reset() { calls.length = 0; },
+    setOverflow(model: string, limit: number) { forcedOverflow = { model, limit }; },
+    setExact(model: string, count: number) { forcedExact = { model, count }; },
+    reset() { calls.length = 0; forcedOverflow = null; forcedExact = null; },
   };
 });
 
@@ -173,14 +181,24 @@ import { countQueries } from "./query-instrumentation";
 
 const organizer = { id: "organizer-1", role: "organizer" as const, email: "organizer@example.test", name: "Organizer" };
 
-async function measure<T>(work: () => Promise<T>, teamCount: number) {
+async function measure<T>(work: () => Promise<T>, teamCount: number, override?: { model: string; limit: number; mode?: "overflow" | "exact" }) {
   harness.reset();
   harness.setTeamCount(teamCount);
+  if (override?.mode === "exact") harness.setExact(override.model, override.limit);
+  else if (override) harness.setOverflow(override.model, override.limit);
   return countQueries(work, harness.calls);
 }
 
 describe("instrumented organizer reader query budgets", () => {
   beforeEach(() => harness.reset());
+
+  it("snapshots query calls independently from the mutable delegate trace", async () => {
+    const trace: QueryCall[] = [];
+    const first = await countQueries(async () => "first", trace);
+    trace.push({ model: "event", method: "findUnique", args: { where: { id: "later" } } });
+    expect(first.calls).toEqual([]);
+    expect(first.calls).not.toBe(trace);
+  });
 
   it("invokes the organizer summary reader with one query at both cardinalities", async () => {
     const small = await measure(() => readOrganizerWorkspaceSummary("event-1", organizer), 1);
@@ -190,6 +208,10 @@ describe("instrumented organizer reader query budgets", () => {
     expect(scale.value).not.toBeNull();
     expect(small.calls).toHaveLength(1);
     expect(scale.calls).toHaveLength(1);
+    expect(small.count).toBe(scale.count);
+    expect(small.calls).not.toBe(scale.calls);
+    expect(small.calls[0]).toMatchObject({ model: "event", method: "findFirst" });
+    expect(small.calls[0].args).toMatchObject({ where: { id: "event-1", organizerUserId: "organizer-1" } });
     expect(scale.calls[0]).toMatchObject({ model: "event", method: "findFirst" });
     expect(scale.calls[0].args).toMatchObject({ where: { id: "event-1", organizerUserId: "organizer-1" } });
   });
@@ -202,14 +224,19 @@ describe("instrumented organizer reader query budgets", () => {
     expect(scale.value).toHaveLength(64);
     expect(small.calls).toHaveLength(5);
     expect(scale.calls).toHaveLength(5);
+    expect(small.count).toBe(scale.count);
+    expect(small.calls).not.toBe(scale.calls);
     expect(scale.calls.filter(({ method }) => method === "findMany")).toHaveLength(3);
 
+    const smallTeamRead = small.calls.find(({ model, method }) => model === "team" && method === "findMany");
     const teamRead = scale.calls.find(({ model, method }) => model === "team" && method === "findMany");
+    const smallRequestRead = small.calls.find(({ model, method }) => model === "teamRegistrationRequest" && method === "findMany");
     const requestRead = scale.calls.find(({ model, method }) => model === "teamRegistrationRequest" && method === "findMany");
+    const smallImportRead = small.calls.find(({ model, method }) => model === "registrationImportItem" && method === "findMany");
     const importRead = scale.calls.find(({ model, method }) => model === "registrationImportItem" && method === "findMany");
-    expect(teamRead?.args).toMatchObject({ take: 500, include: { players: { take: 500 } } });
-    expect(requestRead?.args).toMatchObject({ take: 500 });
-    expect(importRead?.args).toMatchObject({ take: 500 });
+    for (const read of [smallTeamRead, teamRead]) expect(read?.args).toMatchObject({ take: 501, include: { players: { take: 501 } } });
+    for (const read of [smallRequestRead, requestRead]) expect(read?.args).toMatchObject({ take: 501 });
+    for (const read of [smallImportRead, importRead]) expect(read?.args).toMatchObject({ take: 501 });
   });
 
   it("invokes competition workspace reads with stable query count and exact row/history caps", async () => {
@@ -219,10 +246,14 @@ describe("instrumented organizer reader query budgets", () => {
     expect(small.value).toMatchObject({ event: { id: "event-1" } });
     expect(scale.value.teams).toHaveLength(64);
     expect(small.calls).toHaveLength(scale.calls.length);
+    expect(small.count).toBe(scale.count);
+    expect(small.calls).not.toBe(scale.calls);
     expect(scale.calls).toHaveLength(16);
-    expect(scale.calls.find(({ model, method }) => model === "match" && method === "findMany")?.args).toMatchObject({ take: 1_000 });
-    expect(scale.calls.find(({ model, method }) => model === "competitionPhase" && method === "findMany")?.args).toMatchObject({ take: 100 });
-    expect(scale.calls.find(({ model, method }) => model === "competitionAuditLog" && method === "findMany")?.args).toMatchObject({ take: 100 });
+    for (const calls of [small.calls, scale.calls]) {
+      expect(calls.find(({ model, method }) => model === "match" && method === "findMany")?.args).toMatchObject({ take: 1_001 });
+      expect(calls.find(({ model, method }) => model === "competitionPhase" && method === "findMany")?.args).toMatchObject({ take: 101 });
+      expect(calls.find(({ model, method }) => model === "competitionAuditLog" && method === "findMany")?.args).toMatchObject({ take: 101 });
+    }
   });
 
   it("invokes completion workspace reads with stable query count and exact source/history caps", async () => {
@@ -232,40 +263,48 @@ describe("instrumented organizer reader query budgets", () => {
     expect(small.value.version).toBe(0);
     expect(scale.value.source.teams).toHaveLength(64);
     expect(small.calls).toHaveLength(scale.calls.length);
+    expect(small.count).toBe(scale.count);
+    expect(small.calls).not.toBe(scale.calls);
     expect(scale.calls).toHaveLength(13);
-    expect(scale.calls.find(({ model, method }) => model === "match" && method === "findMany")?.args).toMatchObject({ take: 1_000 });
-    expect(scale.calls.find(({ model, method }) => model === "certificate" && method === "findMany")?.args).toMatchObject({ take: 100 });
-    expect(scale.calls.find(({ model, method }) => model === "completionAuditEntry" && method === "findMany")?.args).toMatchObject({ take: 100 });
+    for (const calls of [small.calls, scale.calls]) {
+      expect(calls.find(({ model, method }) => model === "match" && method === "findMany")?.args).toMatchObject({ take: 1_001 });
+      expect(calls.find(({ model, method }) => model === "certificate" && method === "findMany")?.args).toMatchObject({ take: 101 });
+      expect(calls.find(({ model, method }) => model === "completionAuditEntry" && method === "findMany")?.args).toMatchObject({ take: 101 });
+    }
   });
 
-  it("caps competition rows and history when an instrumented delegate returns more than the limit", async () => {
-    const result = await measure(() => readCompetitionWorkspace("event-1"), 1_201);
+  it("rejects competition overflow even when the delegate ignores take", async () => {
+    const result = measure(() => readCompetitionWorkspace("event-1"), 1, { model: "match", limit: 1_000 });
 
-    expect(result.value.teams).toHaveLength(1_000);
-    expect(result.value.matches).toHaveLength(1_000);
-    expect(result.value.audit).toHaveLength(100);
-    expect(result.calls.find(({ model, method }) => model === "team" && method === "findMany")?.args).toMatchObject({ take: 1_000 });
-    expect(result.calls.find(({ model, method }) => model === "competitionAuditLog" && method === "findMany")?.args).toMatchObject({ take: 100 });
+    await expect(result).rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 1_000 });
+    expect(harness.calls.find(({ model, method }) => model === "match" && method === "findMany")?.args).toMatchObject({ take: 1_001 });
   });
 
-  it("caps completion source, certificate, and audit rows when an instrumented delegate overflows", async () => {
-    const result = await measure(() => loadPrismaCompletionWorkspaceData("event-1", organizer), 1_201);
+  it("rejects completion source overflow even when the delegate ignores take", async () => {
+    const result = measure(() => loadPrismaCompletionWorkspaceData("event-1", organizer), 1, { model: "match", limit: 1_000 });
 
-    expect(result.value.source.teams).toHaveLength(1_000);
-    expect(result.value.certificates).toHaveLength(100);
-    expect(result.value.audit).toHaveLength(100);
-    expect(result.calls.find(({ model, method }) => model === "certificate" && method === "findMany")?.args).toMatchObject({ take: 100 });
-    expect(result.calls.find(({ model, method }) => model === "completionAuditEntry" && method === "findMany")?.args).toMatchObject({ take: 100 });
+    await expect(result).rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 1_000 });
+    expect(harness.calls.find(({ model, method }) => model === "match" && method === "findMany")?.args).toMatchObject({ take: 1_001 });
   });
 
-  it("caps public compatibility collections when an instrumented delegate overflows", async () => {
+  it("rejects public compatibility overflow even when the delegate ignores take", async () => {
     const viewer = { id: "captain-1", email: "captain@example.test", name: "Captain", role: "captain" as const };
-    const result = await measure(() => readPublicV3Event("scale-cup", viewer, new Date("2026-09-21T00:00:00.000Z")), 1_201);
+    const result = measure(() => readPublicV3Event("scale-cup", viewer, new Date("2026-09-21T00:00:00.000Z")), 1, { model: "team", limit: 500 });
 
-    expect(result.value).not.toBeNull();
-    expect(result.calls.find(({ model, method }) => model === "team" && method === "findMany")?.args).toMatchObject({ take: 500 });
-    expect(result.calls.find(({ model, method }) => model === "match" && method === "findMany")?.args).toMatchObject({ take: 500 });
-    expect(result.calls.find(({ model, method }) => model === "certificate" && method === "findMany")?.args).toMatchObject({ take: 500 });
+    await expect(result).rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 500 });
+    expect(harness.calls.find(({ model, method }) => model === "team" && method === "findMany")?.args).toMatchObject({ take: 501 });
+  });
+
+  it("supports exactly the configured maximum rows without overflow", async () => {
+    const competition = await measure(() => readCompetitionWorkspace("event-1"), 1, { model: "match", limit: 1_000, mode: "exact" });
+    expect(competition.value.matches).toHaveLength(1_000);
+
+    const completion = await measure(() => loadPrismaCompletionWorkspaceData("event-1", organizer), 1, { model: "team", limit: 1_000, mode: "exact" });
+    expect(completion.value.source.teams).toHaveLength(1_000);
+
+    const viewer = { id: "captain-1", email: "captain@example.test", name: "Captain", role: "captain" as const };
+    const publicSnapshot = await measure(() => readPublicV3Event("scale-cup", viewer, new Date("2026-09-21T00:00:00.000Z")), 1, { model: "team", limit: 500, mode: "exact" });
+    expect(publicSnapshot.value?.teams).toHaveLength(500);
   });
 
   it("invokes the public compatibility reader with stable query count and exact collection caps", async () => {
@@ -276,9 +315,13 @@ describe("instrumented organizer reader query budgets", () => {
     expect(small.value).not.toBeNull();
     expect(scale.value).not.toBeNull();
     expect(small.calls).toHaveLength(scale.calls.length);
+    expect(small.count).toBe(scale.count);
+    expect(small.calls).not.toBe(scale.calls);
     expect(scale.calls).toHaveLength(7);
-    expect(scale.calls.find(({ model, method }) => model === "team" && method === "findMany")?.args).toMatchObject({ take: 500 });
-    expect(scale.calls.find(({ model, method }) => model === "match" && method === "findMany")?.args).toMatchObject({ take: 500 });
-    expect(scale.calls.find(({ model, method }) => model === "certificate" && method === "findMany")?.args).toMatchObject({ take: 500 });
+    for (const calls of [small.calls, scale.calls]) {
+      expect(calls.find(({ model, method }) => model === "team" && method === "findMany")?.args).toMatchObject({ take: 501 });
+      expect(calls.find(({ model, method }) => model === "match" && method === "findMany")?.args).toMatchObject({ take: 501 });
+      expect(calls.find(({ model, method }) => model === "certificate" && method === "findMany")?.args).toMatchObject({ take: 501 });
+    }
   });
 });

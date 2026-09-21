@@ -3,7 +3,7 @@
 Date: 2026-09-21 Asia/Jakarta
 Branch: `codex/organizer-release-readiness`
 Worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`
-Commit: `perf: bound organizer workspace readers` (final SHA returned in handoff)
+Commit: `perf: bound organizer workspace readers` (round-2 SHA recorded before handoff)
 
 ## Outcome
 
@@ -74,12 +74,12 @@ Instrumented delegate calls are bounded, credential-independent evidence; they a
 | Reader/surface | Instrumented query calls (small / 64 teams) | Test budget | Row/history/page bounds |
 | --- | ---: | ---: | --- |
 | Organizer summary (`src/lib/organizer/workspace-read.ts`) | 1 / 1 | 4 | one event query with filtered `_count`; no event-sized list payload |
-| Registration queue + participants (`src/lib/platform/repository.ts`) | 5 / 5 total, 3 / 3 list reads | 12 overall helper budget | teams, requests, import items, roster players capped by `ORGANIZER_READER_ROW_LIMIT = 500`; existing `filterRegistrationRecords` page output remains capped by requested/default page size (25) |
+| Registration queue + participants (`src/lib/platform/repository.ts`) | 5 / 5 total, 3 / 3 list reads | 12 overall helper budget | teams, requests, import items, roster players probe `501`, reject `ReaderResultOverflowError` above `ORGANIZER_READER_ROW_LIMIT = 500`; existing `filterRegistrationRecords` page output remains capped by requested/default page size (25) |
 | Import history/batches/context | included above | — | history batches `ORGANIZER_READER_HISTORY_LIMIT = 100`; nested items/participant teams/players capped at 500 |
 | Payment review | 1 list read | — | deterministic order; probes 101 rows and throws `PaymentReviewOverflowError` when more than `ORGANIZER_READER_HISTORY_LIMIT = 100` are present |
-| Competition workspace (`src/lib/competition/workspace-read.ts`) | 16 / 16 | 20 | core rows capped at 1,000; phases/actions/round configs and incidents/announcements/audit history capped at 100; latest draft revision `take: 1`; >cap delegate test passes |
-| Completion workspace (`src/lib/completion/prisma-adapter.ts`) | 13 / 13 | 20 | source matches/revisions/teams/player stats/submissions capped at 1,000; certificates, incidents, and completion audit history capped at 100; >cap delegate test passes |
-| Public compatibility snapshot (`src/lib/events/public-v3-read.ts`) | 7 / 7 | 12 | teams/matches/registrations/certificates capped at 500; podium `take: 3`; awards `take: 4`; certificate IDs sliced to 500; >cap delegate test passes |
+| Competition workspace (`src/lib/competition/workspace-read.ts`) | 16 / 16 | 20 | core rows probe `1,001`; phases/actions/round configs and incidents/announcements/audit history probe `101`; latest draft revision `take: 1`; >cap delegate test throws `ReaderResultOverflowError` |
+| Completion workspace (`src/lib/completion/prisma-adapter.ts`) | 13 / 13 | 20 | source matches/revisions/teams/player stats/submissions probe `1,001`; certificates, incidents, and completion audit history probe `101`; >cap delegate test throws `ReaderResultOverflowError` |
+| Public compatibility snapshot (`src/lib/events/public-v3-read.ts`) | 7 / 7 | 12 | teams/matches/registrations/certificates probe `501`; podium `take: 3`; awards `take: 4`; certificate IDs reject above 500 rather than slice; >cap delegate test throws `ReaderResultOverflowError` |
 
 The page contract asserts a requested page of 25 never returns more than 25 items. The tests invoke each named reader through instrumented mocked delegates, compare one-team and 64-team traces, assert exact `take` args, and exercise overflow delegates above the configured caps.
 
@@ -87,7 +87,7 @@ The page contract asserts a requested page of 25 never returns more than 25 item
 
 - `scripts/run-smoke-pressure.mjs` now declares a p95 budget of `< 3,000 ms` and zero fetch/status failures for its local pressure contract.
 - `scripts/run-dashboard-performance.mjs` installs buffered LCP/INP/CLS observers with `addInitScript` before each measured navigation, records one deterministic safe body interaction for INP, and rejects unavailable or non-finite LCP/INP/CLS/TTFB values against `<2.5s/<200ms/<0.1/<800ms` budgets.
-- `scripts/load-test.mjs` and `scripts/load-test-quick.mjs` now report actual p95 (not p97.5 mislabeled as p95), enforce `<3,000 ms`, and require an explicit `BASE_URL` instead of defaulting to a remote production URL.
+- `scripts/load-test.mjs` and `scripts/load-test-quick.mjs` use autocannon's supported conservative `latency.p97_5`, label the output/budget `p97.5 < 3,000 ms`, and require an explicit `BASE_URL` instead of defaulting to a remote production URL.
 - Missing dashboard/load inputs return exit `2` with `BLOCKED` text rather than a successful skip.
 
 ## Verification commands
@@ -105,7 +105,7 @@ Pre-existing ESLint warnings are in `src/lib/events/public-v3-read.ts` (`publicV
 
 ## Review fix round 1 evidence
 
-- Load-script RED: the supplied-target failure contract failed because neither load script contained an exit-1 path. GREEN: both scripts now set `process.exitCode = 1` when a supplied target has missing routes, errors, non-2xx responses, or a p95 budget failure; missing `BASE_URL` remains exit 2.
+- Load-script RED: the supplied-target failure contract failed because neither load script contained an exit-1 path. GREEN: both scripts now set `process.exitCode = 1` when a supplied target has missing routes, errors, non-2xx responses, or a p97.5 budget failure; missing `BASE_URL` remains exit 2.
 - Fixture RED: passing a Prisma-compatible client to the synthetic helper raised `TypeError: object is not a function`. GREEN: the helper now performs the scoped 64-team/320-player/63-match/320-stat/100-audit/1-completion/7-certificate writes in a transaction and returns idempotent event/user cleanup. The live test is intentionally blocked without credentials.
 - Query RED: the previous tests only counted a test hook and source regexes. GREEN: `tests/performance/organizer-reader-query-budget.test.ts` invokes all four named readers through instrumented mocked delegates, compares small and 64-team traces, checks exact `take` arguments, and covers >cap delegate responses.
 - Payment RED: 101 mocked payment rows resolved through the old capped reader. GREEN: the reader probes 101 rows and throws `PaymentReviewOverflowError` instead of silently truncating.
@@ -121,6 +121,29 @@ Fix-round focused verification:
 | `node node_modules/eslint/bin/eslint.js` on the five changed TypeScript/test files | 0 | 3.97 s; 0 errors, 4 existing warnings |
 | `node --check` on all four changed `.mjs` scripts | 0 | all syntax checks passed |
 | `git diff --check 11f1fcc..HEAD` | 0 | exact committed Task 9 range; no whitespace errors |
+
+## Review fix round 2 evidence
+
+- Percentile/exit RED: the healthy autocannon fixture exited `1` because both scripts read unsupported `latency.p95`; the query snapshot RED showed `first.calls` aliasing the later mutable trace. GREEN: both scripts use supported `latency.p97_5`, label/budget p97.5, and executable local fixtures pass healthy/failing/missing as `0/1/2`; `countQueries` returns an independent `[...]` call snapshot.
+- Overflow RED: mocked delegates returned over-limit arrays independently of requested `take`, and the capped readers returned partial data. GREEN: competition, completion, public compatibility, and organizer registration readers request cap+1 and throw the shared `ReaderResultOverflowError` before mapping; exactly-at-cap rows remain valid.
+
+Round-2 focused evidence:
+
+| Contract | Test/evidence | Result |
+| --- | --- | --- |
+| Load exits | `runs scripts/load-test.mjs with executable 0/1/2 contracts`; `runs scripts/load-test-quick.mjs with executable 0/1/2 contracts` | both pass healthy `0`, failing `1`, missing `2` |
+| Overflow bounds | `rejects competition overflow even when the delegate ignores take`; `rejects completion source overflow even when the delegate ignores take`; `rejects public compatibility overflow even when the delegate ignores take`; `rejects registration-reader overflow even when the delegate ignores take` | all reject `ReaderResultOverflowError`; probe args are `1001`/`101`/`501` as applicable |
+| Query traces | `snapshots query calls independently from the mutable delegate trace`; all small/64 reader budget cases | snapshots are distinct; `small.count === scale.count`; representative args asserted in both snapshots |
+
+Round-2 final verification:
+
+| Command | Exit | Result |
+| --- | ---: | --- |
+| `node node_modules/vitest/vitest.mjs run` focused performance/query/named-reader set | 0 | 1.99 s; 9 files / 220 tests passed |
+| `npm run lint` (`tsc --noEmit`) | 0 | completed; no TypeScript errors |
+| scoped ESLint command | 0 | 3.82 s; 0 errors, 6 pre-existing warnings |
+| `node --check` on four scripts plus autocannon fixture loader | 0 | all five syntax checks passed |
+| `git diff --check 11f1fcc..HEAD` | pending commit | rerun after commit with final SHA |
 
 ## Blocker matrix
 

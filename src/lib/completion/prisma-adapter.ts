@@ -7,6 +7,7 @@ import type { CompetitionGraph } from "@/lib/tournament/competition";
 import { tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { competitionProjection } from "@/lib/tournament/operations/result-projection";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
 import {
   CompletionVersionConflictError,
   type CompletionActor,
@@ -358,7 +359,7 @@ export async function loadPrismaCompletionWorkspaceData(eventId: string, actor: 
         where: { eventId },
         select: { id: true, type: true, version: true, completionId: true, completionVersion: true, status: true, publishedAt: true },
         orderBy: [{ type: "asc" }, { version: "asc" }],
-        take: COMPLETION_READER_HISTORY_LIMIT,
+        take: readerProbeLimit(COMPLETION_READER_HISTORY_LIMIT),
       }),
       tx.certificatePublication.findFirst({
         where: { eventId },
@@ -369,9 +370,11 @@ export async function loadPrismaCompletionWorkspaceData(eventId: string, actor: 
         where: { completion: { eventId } },
         select: { action: true, actorUserId: true, createdAt: true, details: true },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: COMPLETION_READER_HISTORY_LIMIT,
+        take: readerProbeLimit(COMPLETION_READER_HISTORY_LIMIT),
       }),
     ]);
+    assertReaderResultWithinLimit("completion.certificates", certificates, COMPLETION_READER_HISTORY_LIMIT);
+    assertReaderResultWithinLimit("completion.audit", auditRows, COMPLETION_READER_HISTORY_LIMIT);
     const actorIds = [...new Set(auditRows.map(({ actorUserId }) => actorUserId))];
     const actors = actorIds.length
       ? await tx.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })
@@ -403,10 +406,10 @@ async function loadSourceRows(
   if (!format.success) throw new Error("Competition format is unavailable");
   const [phase, matches, revisions, incidents, teams, playerStats, approvedSubmissions] = await Promise.all([
     tx.competitionPhase.findFirst({ where: { eventId: event.id, sequence: 1 }, select: { configuration: true } }),
-    tx.match.findMany({ where: { eventId: event.id }, take: COMPLETION_READER_ROW_LIMIT }),
-    tx.matchResultRevision.findMany({ where: { eventId: event.id }, orderBy: [{ matchId: "asc" }, { version: "desc" }], take: COMPLETION_READER_ROW_LIMIT }),
-    tx.competitionIncident.findMany({ where: { eventId: event.id, resolvedAt: null }, select: { id: true, matchId: true, resolvedAt: true }, take: COMPLETION_READER_HISTORY_LIMIT }),
-    tx.team.findMany({ where: { eventId: event.id }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: COMPLETION_READER_ROW_LIMIT }),
+    tx.match.findMany({ where: { eventId: event.id }, take: readerProbeLimit(COMPLETION_READER_ROW_LIMIT) }),
+    tx.matchResultRevision.findMany({ where: { eventId: event.id }, orderBy: [{ matchId: "asc" }, { version: "desc" }], take: readerProbeLimit(COMPLETION_READER_ROW_LIMIT) }),
+    tx.competitionIncident.findMany({ where: { eventId: event.id, resolvedAt: null }, select: { id: true, matchId: true, resolvedAt: true }, take: readerProbeLimit(COMPLETION_READER_HISTORY_LIMIT) }),
+    tx.team.findMany({ where: { eventId: event.id }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(COMPLETION_READER_ROW_LIMIT) }),
     tx.playerStat.findMany({
       where: { match: { eventId: event.id } },
       select: {
@@ -418,10 +421,16 @@ async function loadSourceRows(
         stats: true,
         player: { select: { id: true, teamId: true, eventId: true, displayName: true, nickname: true } },
       },
-      take: COMPLETION_READER_ROW_LIMIT,
+      take: readerProbeLimit(COMPLETION_READER_ROW_LIMIT),
     }),
-    tx.statSubmission.findMany({ where: { eventId: event.id, status: "approved" }, select: { matchId: true, teamId: true }, take: COMPLETION_READER_ROW_LIMIT }),
+    tx.statSubmission.findMany({ where: { eventId: event.id, status: "approved" }, select: { matchId: true, teamId: true }, take: readerProbeLimit(COMPLETION_READER_ROW_LIMIT) }),
   ]);
+  assertReaderResultWithinLimit("completion.matches", matches, COMPLETION_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("completion.revisions", revisions, COMPLETION_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("completion.incidents", incidents, COMPLETION_READER_HISTORY_LIMIT);
+  assertReaderResultWithinLimit("completion.teams", teams, COMPLETION_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("completion.playerStats", playerStats, COMPLETION_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("completion.approvedSubmissions", approvedSubmissions, COMPLETION_READER_ROW_LIMIT);
   const graph = (phase?.configuration as unknown as { graph?: CompetitionGraph } | null)?.graph ?? null;
   if (graph && graph.eventId !== event.id) throw new Error("Invalid competition state");
   return {

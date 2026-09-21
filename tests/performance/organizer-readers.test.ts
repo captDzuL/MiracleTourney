@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
+import { createServer } from "node:http";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
@@ -262,6 +265,35 @@ function source(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(`../../${relativePath}`, import.meta.url)), "utf8");
 }
 
+async function runLoadScript(scriptName: string, mode: "healthy" | "failing" | "missing"): Promise<number> {
+  const environment = { ...process.env };
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/plain" });
+    response.end("fixture");
+  });
+  let args: string[];
+  if (mode === "missing") {
+    delete environment.BASE_URL;
+    args = [fileURLToPath(new URL(`../../${scriptName}`, import.meta.url))];
+  } else {
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Fixture server did not expose a port");
+    environment.BASE_URL = `http://127.0.0.1:${address.port}`;
+    environment.LOAD_FIXTURE_MODE = mode;
+    args = [
+      "--experimental-loader",
+      pathToFileURL(fileURLToPath(new URL("./autocannon-fixture-loader.mjs", import.meta.url))).href,
+      fileURLToPath(new URL(`../../${scriptName}`, import.meta.url)),
+    ];
+  }
+  const child = spawn(process.execPath, args, { env: environment, stdio: ["ignore", "pipe", "pipe"] });
+  const [exitCode] = await once(child, "close") as [number | null, string | null];
+  if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+  return exitCode ?? -1;
+}
+
 describe("organizer reader release-scale contracts", () => {
   it("creates the exact 64-team fixture cardinalities without database credentials", async () => {
     const fixture = buildOrganizerScalePlan("manifest");
@@ -316,6 +348,12 @@ describe("organizer reader release-scale contracts", () => {
     for (const scriptName of ["scripts/load-test.mjs", "scripts/load-test-quick.mjs"]) {
       expect(source(scriptName), scriptName).toMatch(/process\.exitCode\s*=\s*1/);
     }
+  });
+
+  it.each(["scripts/load-test.mjs", "scripts/load-test-quick.mjs"])("runs %s with executable 0/1/2 contracts", async (scriptName) => {
+    await expect(runLoadScript(scriptName, "healthy")).resolves.toBe(0);
+    await expect(runLoadScript(scriptName, "failing")).resolves.toBe(1);
+    await expect(runLoadScript(scriptName, "missing")).resolves.toBe(2);
   });
 
   it("requires buffered browser observers before navigation and a deterministic INP interaction", () => {

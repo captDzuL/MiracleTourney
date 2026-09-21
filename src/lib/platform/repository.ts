@@ -45,6 +45,7 @@ import type { BracketMatch, MatchResultInput, PlayerMatchStatInput } from "@/lib
 import { Prisma } from "@prisma/client";
 import * as demoStore from "./demo-store";
 import { prisma } from "./db";
+import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
 
 const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration Closed", "Ongoing", "Finished"]);
 
@@ -2472,10 +2473,11 @@ export type PaymentReviewEntry = {
   captain?: { id: string; name: string; email?: string } | null;
 };
 
-export class PaymentReviewOverflowError extends Error {
+export class PaymentReviewOverflowError extends ReaderResultOverflowError {
   constructor() {
-    super(`Payment review contains more than ${ORGANIZER_READER_HISTORY_LIMIT} entries; use a paginated review reader.`);
+    super("payment review", ORGANIZER_READER_HISTORY_LIMIT);
     this.name = "PaymentReviewOverflowError";
+    this.message = `Payment review contains more than ${ORGANIZER_READER_HISTORY_LIMIT} entries; use a paginated review reader.`;
   }
 }
 
@@ -2519,11 +2521,11 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
     prisma.team.findMany({
       where: { eventId },
       include: {
-        players: { select: { id: true }, take: ORGANIZER_READER_ROW_LIMIT },
+        players: { select: { id: true }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) },
         captain: { select: { id: true, name: true, email: true } },
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: ORGANIZER_READER_ROW_LIMIT,
+      take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT),
     }),
     prisma.teamRegistrationRequest.findMany({
       where: {
@@ -2532,7 +2534,7 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
       },
       include: { captain: { select: { id: true, name: true, email: true } } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: ORGANIZER_READER_ROW_LIMIT,
+      take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT),
     }),
   ]);
 
@@ -2543,8 +2545,12 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
         where: { teamId: { in: teamIds } },
         select: { teamId: true, batch: { select: { sourceKind: true } } },
         orderBy: { createdAt: "desc" },
-        take: ORGANIZER_READER_ROW_LIMIT,
+        take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT),
       });
+  assertReaderResultWithinLimit("organizer.registration.teams", teams, ORGANIZER_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("organizer.registration.requests", requests, ORGANIZER_READER_ROW_LIMIT);
+  for (const team of teams) assertReaderResultWithinLimit("organizer.registration.players", team.players, ORGANIZER_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("organizer.registration.importItems", importedItems, ORGANIZER_READER_ROW_LIMIT);
   const importKindByTeam = new Map<string, string>();
   for (const item of importedItems) {
     if (item.teamId && !importKindByTeam.has(item.teamId)) importKindByTeam.set(item.teamId, item.batch.sourceKind);
