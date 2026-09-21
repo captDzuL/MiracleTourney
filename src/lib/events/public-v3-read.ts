@@ -33,6 +33,7 @@ const PUBLIC_STATUSES = new Set(["Published", "Registration Closed", "Ongoing", 
 const AWARD_ORDER = ["mvp", "top_scorer", "top_defender", "top_assist"] as const;
 const CERTIFICATE_TYPES = new Set(["champion", "runner_up", "third_place", ...AWARD_ORDER]);
 const EXPECTED_CERTIFICATE_COUNT = 7;
+const PUBLIC_READER_ROW_LIMIT = 500;
 
 type AnyRecord = Record<string, unknown>;
 
@@ -1018,17 +1019,19 @@ function compatibleRegistration(value: unknown): NonNullable<CompatiblePublicEve
 async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now: Date): Promise<CompatiblePublicEventInput> {
   const eventId = text(event.id);
   const [teams, matches, registrations, completion, publication] = await Promise.all([
-    callOptional("team", "findMany", { where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
-    callOptional("match", "findMany", { where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }] }),
-    callOptional("teamRegistrationRequest", "findMany", { where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
-    callOptional("tournamentCompletion", "findUnique", { where: { eventId }, include: { podiumPlacements: { orderBy: { rank: "asc" } }, awards: { include: { decision: true } } } }),
+    callOptional("team", "findMany", { where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: PUBLIC_READER_ROW_LIMIT }),
+    callOptional("match", "findMany", { where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }], take: PUBLIC_READER_ROW_LIMIT }),
+    callOptional("teamRegistrationRequest", "findMany", { where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: PUBLIC_READER_ROW_LIMIT }),
+    callOptional("tournamentCompletion", "findUnique", { where: { eventId }, include: { podiumPlacements: { orderBy: { rank: "asc" }, take: 3 }, awards: { include: { decision: true }, orderBy: { type: "asc" }, take: AWARD_ORDER.length } } }),
     callOptional("certificatePublication", "findFirst", { where: { eventId }, orderBy: { version: "desc" } }),
   ]);
   const publicationRecord = record(publication);
   const rawCertificateIds = publicationRecord.certificateIds;
-  const ids = Array.isArray(rawCertificateIds) ? rawCertificateIds.filter((id: unknown): id is string => typeof id === "string") : [];
+  const ids = Array.isArray(rawCertificateIds)
+    ? rawCertificateIds.filter((id: unknown): id is string => typeof id === "string").slice(0, PUBLIC_READER_ROW_LIMIT)
+    : [];
   const certificates = ids.length
-    ? await callOptional("certificate", "findMany", { where: { eventId, id: { in: ids } } })
+    ? await callOptional("certificate", "findMany", { where: { eventId, id: { in: ids } }, take: PUBLIC_READER_ROW_LIMIT })
     : null;
   return {
     event: identityEvent(event),
@@ -1079,7 +1082,7 @@ export async function readPublicV3Event(slug: string, viewer: PublicViewer, now 
   }
   const authoritativeMode = text(record(authoritative).mode);
   const snapshotTeams = ["registration", "drawing", "ongoing", "finished"].includes(authoritativeMode)
-    ? teamsFromRaw(await callOptional("team", "findMany", { where: { eventId: text(row.id) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }))
+    ? teamsFromRaw(await callOptional("team", "findMany", { where: { eventId: text(row.id) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: PUBLIC_READER_ROW_LIMIT }))
     : [];
   const normalized = normalizeAuthoritative(row, authoritative, "authoritative", snapshotTeams);
   if (normalized) return normalized;

@@ -48,6 +48,11 @@ import { prisma } from "./db";
 
 const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration Closed", "Ongoing", "Finished"]);
 
+// Organizer list readers keep the existing response shapes while preventing an
+// event-sized request from turning into an unbounded database read.
+const ORGANIZER_READER_ROW_LIMIT = 500;
+const ORGANIZER_READER_HISTORY_LIMIT = 100;
+
 
 type RegistrationWindowEvent = {
   status: string;
@@ -2430,7 +2435,7 @@ export async function getRegistrationImportBatchesForEvent(user: AppUser, eventI
     where: { eventId },
     orderBy: { createdAt: "desc" },
     take: 8,
-    include: { items: { select: { id: true, status: true, teamId: true } } },
+    include: { items: { select: { id: true, status: true, teamId: true }, take: ORGANIZER_READER_ROW_LIMIT } },
   });
 }
 
@@ -2506,10 +2511,11 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
     prisma.team.findMany({
       where: { eventId },
       include: {
-        players: { select: { id: true } },
+        players: { select: { id: true }, take: ORGANIZER_READER_ROW_LIMIT },
         captain: { select: { id: true, name: true, email: true } },
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: ORGANIZER_READER_ROW_LIMIT,
     }),
     prisma.teamRegistrationRequest.findMany({
       where: {
@@ -2518,6 +2524,7 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
       },
       include: { captain: { select: { id: true, name: true, email: true } } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: ORGANIZER_READER_ROW_LIMIT,
     }),
   ]);
 
@@ -2528,6 +2535,7 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
         where: { teamId: { in: teamIds } },
         select: { teamId: true, batch: { select: { sourceKind: true } } },
         orderBy: { createdAt: "desc" },
+        take: ORGANIZER_READER_ROW_LIMIT,
       });
   const importKindByTeam = new Map<string, string>();
   for (const item of importedItems) {
@@ -2577,8 +2585,8 @@ export async function getRegistrationImportHistoryForEvent(user: AppUser, eventI
   const rows = await prisma.registrationImportBatch.findMany({
     where: { eventId },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 50,
-    include: { items: { select: { id: true, status: true, teamId: true }, orderBy: { sourceRow: "asc" } } },
+    take: ORGANIZER_READER_HISTORY_LIMIT,
+    include: { items: { select: { id: true, status: true, teamId: true }, orderBy: { sourceRow: "asc" }, take: ORGANIZER_READER_ROW_LIMIT } },
   });
   return rows.map((row) => ({
     id: row.id,
@@ -2608,6 +2616,7 @@ export async function getPaymentReviewForEvent(user: AppUser, eventId: string, s
     },
     include: { captain: { select: { id: true, name: true, email: true } } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: ORGANIZER_READER_HISTORY_LIMIT,
   });
   return rows.map((row) => ({
     id: row.id,
@@ -2634,9 +2643,10 @@ export async function getRegistrationImportEventContext(user: AppUser, eventId: 
       id: true, slug: true, name: true, gameModeId: true, participantCap: true, format: true,
       teams: {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: ORGANIZER_READER_ROW_LIMIT,
         select: {
           id: true, name: true, tag: true, captainName: true, captainContact: true,
-          players: { select: { nickname: true, displayName: true, position: true }, orderBy: { createdAt: "asc" } },
+          players: { select: { nickname: true, displayName: true, position: true }, orderBy: { createdAt: "asc" }, take: ORGANIZER_READER_ROW_LIMIT },
         },
       },
     },

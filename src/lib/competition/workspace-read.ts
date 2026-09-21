@@ -16,6 +16,9 @@ export const COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS = {
   timeout: 20_000,
 };
 
+const COMPETITION_READER_ROW_LIMIT = 1_000;
+const COMPETITION_READER_HISTORY_LIMIT = 100;
+
 export async function readCompetitionWorkspace(eventId: string): Promise<CompetitionWorkspaceState> {
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
   if (!user) throw new Error("Unauthorized");
@@ -34,15 +37,15 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
   }, COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS);
   const core = await authorized(async (tx, event) => {
     const [matches, phases, teams, readiness, actions, revisions, published, roundConfigs, matchGames, resultRevisionCount] = await Promise.all([
-      tx.match.findMany({ where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }] }),
-      tx.competitionPhase.findMany({ where: { eventId }, orderBy: { sequence: "asc" } }),
-      tx.team.findMany({ where: { eventId }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
-      tx.matchReadiness.findMany({ where: { eventId } }),
-      tx.competitionActionItem.findMany({ where: { eventId, resolvedAt: null }, orderBy: { createdAt: "asc" } }),
+      tx.match.findMany({ where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }], take: COMPETITION_READER_ROW_LIMIT }),
+      tx.competitionPhase.findMany({ where: { eventId }, orderBy: { sequence: "asc" }, take: COMPETITION_READER_HISTORY_LIMIT }),
+      tx.team.findMany({ where: { eventId }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: COMPETITION_READER_ROW_LIMIT }),
+      tx.matchReadiness.findMany({ where: { eventId }, take: COMPETITION_READER_ROW_LIMIT }),
+      tx.competitionActionItem.findMany({ where: { eventId, resolvedAt: null }, orderBy: { createdAt: "asc" }, take: COMPETITION_READER_HISTORY_LIMIT }),
       tx.scheduleRevision.findMany({ where: { eventId, status: "draft", version: { gt: event.publishedScheduleVersion ?? -1 } }, orderBy: { version: "desc" }, take: 1 }),
       event.publishedScheduleVersion == null ? Promise.resolve(null) : tx.scheduleRevision.findFirst({ where: { eventId, version: event.publishedScheduleVersion, status: "published" } }),
-      tx.eventRoundConfig.findMany({ where: { eventId }, select: { eventId: true, roundLabel: true, bestOf: true } }),
-      tx.matchGame.findMany({ where: { match: { eventId } }, select: { matchId: true } }),
+      tx.eventRoundConfig.findMany({ where: { eventId }, select: { eventId: true, roundLabel: true, bestOf: true }, take: COMPETITION_READER_HISTORY_LIMIT }),
+      tx.matchGame.findMany({ where: { match: { eventId } }, select: { matchId: true }, take: COMPETITION_READER_ROW_LIMIT }),
       tx.matchResultRevision.count({ where: { eventId } }),
     ]);
     const firstPhase = phases.find(p => p.sequence === 1);
@@ -79,9 +82,9 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
   });
   // Auxiliary transactions recheck ownership and isolate partial failures.
   const [incidents, announcements, audit] = await Promise.allSettled([
-    authorized(async tx => (await tx.competitionIncident.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: 100 })).map(i => ({ id: i.id, matchId: i.matchId ?? null, kind: i.kind, description: i.description, resolvedAt: i.resolvedAt?.toISOString() ?? null }))),
-    authorized(async tx => (await tx.eventAnnouncement.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: 100 })).map(a => ({ id: a.id, title: a.title, body: a.body, status: a.status, urgency: a.urgency ?? "info" }))),
-    authorized(async tx => (await tx.competitionAuditLog.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: 100 })).map(a => ({ id: a.id, matchId: a.matchId ?? null, action: a.action, reason: a.reason ?? null, actor: a.actorUserId ?? null, at: a.createdAt?.toISOString() ?? null }))),
+    authorized(async tx => (await tx.competitionIncident.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: COMPETITION_READER_HISTORY_LIMIT })).map(i => ({ id: i.id, matchId: i.matchId ?? null, kind: i.kind, description: i.description, resolvedAt: i.resolvedAt?.toISOString() ?? null }))),
+    authorized(async tx => (await tx.eventAnnouncement.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: COMPETITION_READER_HISTORY_LIMIT })).map(a => ({ id: a.id, title: a.title, body: a.body, status: a.status, urgency: a.urgency ?? "info" }))),
+    authorized(async tx => (await tx.competitionAuditLog.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: COMPETITION_READER_HISTORY_LIMIT })).map(a => ({ id: a.id, matchId: a.matchId ?? null, action: a.action, reason: a.reason ?? null, actor: a.actorUserId ?? null, at: a.createdAt?.toISOString() ?? null }))),
   ]);
   for (const result of [incidents, announcements, audit]) if (result.status === "rejected" && result.reason instanceof Error && result.reason.message === "Not authorized") throw result.reason;
   return { ...core, incidents: incidents.status === "fulfilled" ? incidents.value : [], announcements: announcements.status === "fulfilled" ? announcements.value : [], audit: audit.status === "fulfilled" ? audit.value : [], unavailableSections: [incidents.status === "rejected" ? "incidents" : "", announcements.status === "rejected" ? "announcements" : "", audit.status === "rejected" ? "audit" : ""].filter(Boolean) };
