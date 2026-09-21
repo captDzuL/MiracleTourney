@@ -14,30 +14,29 @@ export async function normalizeReleasePage(page: Page) {
   if (normalizedPages.has(page)) return;
   await page.clock.install({ time: RELEASE_CLOCK });
   await page.addInitScript(() => {
-    const install = () => {
-      document.documentElement.dataset.e2eReducedMotion = "true";
-      const style = document.createElement("style");
-      style.setAttribute("data-e2e-normalization", "true");
-      style.textContent = `
-        *, *::before, *::after {
-          animation-duration: 0ms !important;
-          animation-iteration-count: 1 !important;
-          animation-play-state: paused !important;
-          transition: none !important;
-          scroll-behavior: auto !important;
-          caret-color: transparent !important;
-        }
-      `;
-      document.head.appendChild(style);
-    };
-    if (document.head) install();
-    else document.addEventListener("DOMContentLoaded", install, { once: true });
+    document.documentElement.dataset.e2eReducedMotion = "true";
   });
   normalizedPages.add(page);
 }
 
 export async function waitForReleaseFonts(page: Page) {
   await page.evaluate(() => document.fonts.ready);
+}
+
+/** Apply visual-only suppression after the product reduced-motion contract has been checked. */
+export async function suppressAnimationsForScreenshot(page: Page) {
+  await page.addStyleTag({
+    content: `
+      *, *::before, *::after {
+        animation-duration: 0ms !important;
+        animation-iteration-count: 1 !important;
+        animation-play-state: paused !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+        caret-color: transparent !important;
+      }
+    `,
+  });
 }
 
 export async function loginWithCredentials(

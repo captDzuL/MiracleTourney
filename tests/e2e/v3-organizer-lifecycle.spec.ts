@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { loginAsOrganizer, loginWithCredentials, waitForReleaseFonts } from "./helpers/auth";
+import { loginAsOrganizer, loginWithCredentials, suppressAnimationsForScreenshot, waitForReleaseFonts } from "./helpers/auth";
 import { prepareOrganizerReleaseFixture } from "./helpers/fixtures";
 
 export const VIEWPORTS = [
@@ -17,6 +17,84 @@ export const RELEASE_BASELINE_CASE_COUNT = VIEWPORTS.length * LOCALES.length * F
 const VALID_ARIA_SORT_VALUES = new Set(["ascending", "descending", "none", "other"]);
 const FOCUSABLE_SELECTOR = 'main button, main a[href], main input, main select, main textarea, main summary';
 const EXPECTED_CERTIFICATE_TYPES = ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"] as const;
+
+const LOCALE_COPY = {
+  id: {
+    registrationHeading: "Registrasi peserta",
+    queueHeading: "Pendaftaran tim",
+    importHeading: "Impor peserta",
+    paymentHeading: "Antrean pembayaran",
+    qrisHeading: "QRIS pembayaran acara",
+    qrisDialog: "Pratinjau QRIS pembayaran acara",
+    competitionHeading: "Kompetisi",
+    scheduleHeading: "Jadwal",
+    matchControlHeading: "Kontrol Pertandingan",
+    matchWorkspaceHeading: "Hasil & statistik pertandingan",
+    officialResultHeading: "Hasil resmi",
+    statisticsHeading: "Statistik pemain",
+    historyHeading: "Riwayat",
+    history: "Riwayat",
+    submitResult: "Kirim hasil resmi",
+    saveStatistics: "Simpan statistik pemain",
+    approveSubmission: "Setujui kiriman",
+    awardsTab: "Penghargaan",
+    decisionReason: "Alasan keputusan audit",
+    decisionSaved: "Keputusan pemeriksaan disimpan.",
+    qrisDraftSaved: "Draf QRIS disimpan.",
+    qrisPublished: "QRIS diterbitkan.",
+    statisticsSaved: "Tersimpan. Memuat data terbaru.",
+    reviewDecisionSaved: "Statistik kapten disetujui",
+    completionHeading: "Penyelesaian Turnamen",
+    completionStatus: "completed",
+    completionFeedback: "Turnamen berhasil diselesaikan. Muat ulang untuk melihat versi yang tercatat.",
+    certificatePublished: "Set tujuh sertifikat diterbitkan dengan aman.",
+    certificateHeading: "Studio Sertifikat",
+    certificateGenerated: "Versi sertifikat baru berhasil dibuat.",
+    verificationTitle: "Sertifikat terverifikasi",
+    supersededStatus: "Valid · Versi terdahulu",
+    currentStatus: "Valid · Versi terkini",
+    historyFeedback: "Riwayat peninjauan statistik",
+    oppositeSentinel: "Participant registration",
+  },
+  en: {
+    registrationHeading: "Participant registration",
+    queueHeading: "Team registration",
+    importHeading: "Import participants",
+    paymentHeading: "Payment queue",
+    qrisHeading: "Event payment QRIS",
+    qrisDialog: "Event payment QRIS preview",
+    competitionHeading: "Competition",
+    scheduleHeading: "Schedule",
+    matchControlHeading: "Match Control",
+    matchWorkspaceHeading: "Match results & statistics",
+    officialResultHeading: "Official result",
+    statisticsHeading: "Player statistics",
+    historyHeading: "History",
+    history: "History",
+    submitResult: "Submit official result",
+    saveStatistics: "Save player statistics",
+    approveSubmission: "Approve submission",
+    awardsTab: "Awards",
+    decisionReason: "Decision reason",
+    decisionSaved: "Review decision saved.",
+    qrisDraftSaved: "QRIS draft saved.",
+    qrisPublished: "QRIS published.",
+    statisticsSaved: "Saved. Refreshing authoritative data.",
+    reviewDecisionSaved: "Captain statistics approved",
+    completionHeading: "Tournament Completion",
+    completionStatus: "completed",
+    completionFeedback: "Tournament completed successfully. Refresh to view the committed version.",
+    certificatePublished: "The seven-certificate set was published safely.",
+    certificateHeading: "Certificate Studio",
+    certificateGenerated: "A new certificate version was generated.",
+    verificationTitle: "Certificate verified",
+    supersededStatus: "Valid · Superseded version",
+    currentStatus: "Valid · Current version",
+    historyFeedback: "Statistics review history",
+    oppositeSentinel: "Registrasi peserta",
+  },
+} as const;
+type ReleaseLocale = (typeof LOCALES)[number];
 
 /**
  * Shared release contract: keep the assertions in one place so every locale and
@@ -115,11 +193,12 @@ export async function expectReleaseAccessibilityContract(page: Page) {
   expect(contract.runningAnimations, "reduced-motion mode must not leave animations running").toBe(0);
 }
 
-export async function expectNavigationEscapeRestoresFocus(page: Page) {
-  await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: /open navigation|buka navigasi/i }));
+export async function expectNavigationEscapeRestoresFocus(page: Page, locale: ReleaseLocale) {
+  const copy = LOCALE_COPY[locale];
+  await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: locale === "id" ? "Buka navigasi" : "Open navigation", exact: true }), copy.qrisDialog);
 }
 
-export async function expectDialogEscapeRestoresFocus(page: Page, trigger: ReturnType<Page["getByRole"]>) {
+export async function expectDialogEscapeRestoresFocus(page: Page, trigger: ReturnType<Page["getByRole"]>, accessibleName: string) {
   await expect(trigger, "release surface must expose a dialog trigger").toBeVisible();
   await trigger.focus();
   await trigger.press("Enter");
@@ -127,6 +206,7 @@ export async function expectDialogEscapeRestoresFocus(page: Page, trigger: Retur
   await expect(dialog).toHaveCount(1);
   await expect(dialog).toBeVisible();
   await expect(dialog).toHaveAttribute("aria-modal", "true");
+  await expect(dialog).toHaveAccessibleName(accessibleName);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();
@@ -150,123 +230,264 @@ export async function expectAriaSortTransition(page: Page) {
 type ReleaseFixture = Awaited<ReturnType<typeof prepareOrganizerReleaseFixture>>;
 
 async function expectLocalizedRegistrationSurface(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number], view: "queue" | "import" | "payments" | "qris") {
+  const copy = LOCALE_COPY[locale];
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/registration?view=${view}`);
   await expect(page.locator(`[data-view="${view}"]`)).toHaveAttribute("aria-current", "page");
   await expect(page.locator("main")).toBeVisible();
+  await expect(page.getByRole("heading", { name: copy.registrationHeading, exact: true })).toBeVisible();
+  await expect(page.locator("main")).not.toContainText(copy.oppositeSentinel);
   if (view === "import") {
+    await expect(page.getByRole("heading", { name: copy.importHeading, exact: true })).toBeVisible();
     await expect(page.locator('input[type="file"][accept*=".csv"]')).toBeVisible();
     await expect(page.locator("[data-preview]")).toBeVisible();
   }
   if (view === "payments") {
-    await expect(page.getByRole("heading", { name: /payment queue|antrian pembayaran/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: copy.paymentHeading, exact: true })).toBeVisible();
     await expect(page.locator("[data-approve], [data-reject]").first()).toBeVisible();
   }
   if (view === "qris") {
-    await expect(page.getByRole("heading", { name: /QRIS/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: copy.qrisHeading, exact: true })).toBeVisible();
     await expect(page.locator("[data-save]")).toBeVisible();
     await expect(page.locator("[data-publish]")).toBeVisible();
     await expect(page.locator('img[alt*="QRIS" i]')).toBeVisible();
   }
+  if (view === "queue") await expect(page.getByRole("heading", { name: copy.queueHeading, exact: true })).toBeVisible();
 }
 
 async function expectFlagSpecificMatchSurface(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number], mode: (typeof FEATURE_FLAG_MODES)[number]) {
+  const copy = LOCALE_COPY[locale];
   const matchId = fixture.releaseMatchId;
   expect(matchId, "release fixture must expose a deterministic match").toBeTruthy();
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}`);
   if (mode === "on") {
     await expect(page.locator("[data-match-workspace]")).toHaveCount(1);
   } else {
-    await expect(page.getByRole("heading", { name: "Official result", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: copy.officialResultHeading, exact: true })).toBeVisible();
     await expect(page.locator("[data-match-workspace]")).toHaveCount(0);
   }
   return matchId!;
 }
 
-async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number], publishOnce: boolean, mode: (typeof FEATURE_FLAG_MODES)[number]) {
+async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number], mode: (typeof FEATURE_FLAG_MODES)[number]) {
+  const copy = LOCALE_COPY[locale];
   const initialState = await fixture.readState();
   expect(initialState.paymentRequest).toMatchObject({ eventId: fixture.id, status: "pending_review" });
   expect(initialState.paymentRequest?.id).toBe(fixture.paymentRequestId);
-  expect(initialState.importBatch).toMatchObject({ eventId: fixture.id, status: "committed" });
-  expect(initialState.importBatch?.id).toBe(fixture.importBatchId);
-  expect(initialState.qris).toMatchObject({ eventId: fixture.id, version: fixture.qrisVersion, status: "published" });
-  expect(initialState.match?.resultVersion).toBe(1);
-  expect(initialState.match?.homeScore).toBeGreaterThanOrEqual(0);
-  expect(initialState.match?.awayScore).toBeGreaterThanOrEqual(0);
-  expect(initialState.match?.resultRevisions.length).toBeGreaterThan(0);
-  expect(initialState.match?.playerStats.length).toBeGreaterThan(0);
+  expect(initialState.importBatch).toBeNull();
+  expect(initialState.qris).toMatchObject({ eventId: fixture.id, version: fixture.qrisVersion, status: "draft" });
+  expect(initialState.match).toMatchObject({ id: fixture.releaseMatchId, eventId: fixture.id, resultVersion: 0, status: "Scheduled" });
+  expect(initialState.match?.resultRevisions).toHaveLength(0);
+  expect(initialState.match?.playerStats).toHaveLength(0);
   expect(initialState.match?.statSubmissions.some(({ id, status }) => id === fixture.statSubmissionId && status === "pending")).toBe(true);
+  expect(initialState.completion).toBeNull();
 
   await expectLocalizedRegistrationSurface(page, fixture, locale, "queue");
+  const csv = [
+    "teamName,teamTag,captainName,captainContact,captainEmail,captainIgn,captainUid,captainIsPlayer",
+    `Release Import Team ${fixture.id},RIMP,Release Import Captain,,release-import-${fixture.id}@example.test,ReleaseImport,UID-${fixture.id},true`,
+  ].join("\n");
   await expectLocalizedRegistrationSurface(page, fixture, locale, "import");
+  await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({ name: fixture.importSourceLabel, mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await page.locator("[data-preview]").click();
+  await expect(page.locator("[data-commit]")).toBeEnabled();
+  await page.locator("[data-commit]").click();
+  await expect(page.getByRole("status")).toContainText(locale === "id" ? "Impor selesai: 1 peserta." : "Import completed: 1 participants.");
+  await fixture.captureImportBatchId();
+  expect(fixture.importBatchId).toBeTruthy();
+  let receipt = await fixture.readState();
+  expect(receipt.importBatch).toMatchObject({ id: fixture.importBatchId, eventId: fixture.id, status: "committed" });
+
   await expectLocalizedRegistrationSurface(page, fixture, locale, "payments");
+  const paymentRow = page.getByRole("button").filter({ hasText: "Release Fixture Team" }).first();
+  await expect(paymentRow).toBeVisible();
+  await paymentRow.click();
+  await page.locator("[data-approve]").click();
+  await expect(page.getByRole("status")).toContainText(copy.decisionSaved);
+  await expect.poll(async () => (await fixture.readState()).paymentRequest?.status).toBe("approved");
+  receipt = await fixture.readState();
+  expect(receipt.paymentRequest).toMatchObject({ id: fixture.paymentRequestId, eventId: fixture.id, status: "approved" });
+
   await expectLocalizedRegistrationSurface(page, fixture, locale, "qris");
-  await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: /enlarge qris|perbesar qris/i }));
+  await page.locator("textarea").fill(locale === "id" ? "Gunakan QRIS rilis deterministik." : "Use the deterministic release QRIS.");
+  await page.locator("[data-save]").click();
+  await expect(page.getByRole("status")).toContainText(copy.qrisDraftSaved);
+  await expect.poll(async () => (await fixture.readState()).qris?.status).toBe("draft");
+  const savedQris = await fixture.readState();
+  expect(savedQris.qris?.version).toBe(fixture.qrisVersion + 1);
+  await page.locator("[data-publish]").click();
+  await expect(page.getByRole("status")).toContainText(copy.qrisPublished);
+  await expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");
+  receipt = await fixture.readState();
+  expect(receipt.qris).toMatchObject({ eventId: fixture.id, status: "published", version: fixture.qrisVersion + 2 });
+  await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: locale === "id" ? "Perbesar QRIS" : "Enlarge QRIS", exact: true }), copy.qrisDialog);
 
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/competition`);
   await expect(page.locator("[data-operations]")).toBeVisible();
-  await expect(page.getByRole("heading", { name: /competition|kompetisi/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: copy.competitionHeading, exact: true })).toBeVisible();
+  await expect(page.locator("main")).not.toContainText(copy.oppositeSentinel);
   await expectReleaseAccessibilityContract(page);
-
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/schedule`);
-  await expect(page.getByRole("heading", { name: /schedule generation|pembuatan jadwal/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: copy.scheduleHeading, exact: true })).toBeVisible();
   await expect(page.locator("[data-operations]")).toBeVisible();
 
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/match-control`);
-  if (mode === "on") {
-    await expect(page.getByRole("heading", { name: /match control|kontrol pertandingan/i })).toBeVisible();
-  } else {
-    await expect(page.getByRole("heading", { name: "Official result", exact: true })).toBeVisible();
-  }
+  await expect(page.getByRole("heading", { name: copy.matchControlHeading, exact: true })).toBeVisible();
   const matchId = fixture.releaseMatchId;
   expect(matchId, "release fixture must expose a deterministic match").toBeTruthy();
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}`);
-  if (mode === "on") await expect(page.locator("[data-match-workspace]")).toBeVisible();
+  if (mode === "on") {
+    await expect(page.locator("[data-match-workspace]")).toBeVisible();
+    const resultForm = page.getByRole("form", { name: copy.officialResultHeading, exact: true });
+    await resultForm.locator('input[name="home-1"]').fill("2");
+    await resultForm.locator('input[name="away-1"]').fill("1");
+    await resultForm.getByRole("button", { name: copy.submitResult, exact: true }).click();
+    await expect.poll(async () => (await fixture.readState()).match?.resultVersion).toBe(1);
+    receipt = await fixture.readState();
+    expect(receipt.match).toMatchObject({ id: matchId, eventId: fixture.id, resultVersion: 1, status: "Completed", homeScore: 2, awayScore: 1 });
+    expect(receipt.match?.resultRevisions.map(({ version }) => version)).toContain(1);
+  } else {
+    await expect(page.getByRole("heading", { name: copy.officialResultHeading, exact: true })).toBeVisible();
+  }
+
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}?view=statistics`);
   if (mode === "on") {
     await expect(page.locator("[data-match-workspace]")).toBeVisible();
-    await expect(page.getByRole("heading", { name: /statistics|statistik/i }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: copy.statisticsHeading, exact: true })).toBeVisible();
+    const playerForm = page.locator(`[data-player-form="${fixture.releasePlayerTeamId}"]`);
+    await playerForm.locator(`input[name="score_${fixture.releasePlayerId}_1"]`).fill("8.7");
+    await playerForm.locator(`input[name="stat_${fixture.releasePlayerId}_goal"]`).fill("4");
+    await playerForm.getByRole("button", { name: copy.saveStatistics, exact: true }).click();
+    await expect(page.getByRole("status")).toContainText(copy.statisticsSaved);
+    await expect.poll(async () => (await fixture.readState()).match?.playerStats.length).toBeGreaterThan(0);
+    receipt = await fixture.readState();
+    expect(receipt.match?.playerStats.some(({ id, source }) => Boolean(id) && source === "admin")).toBe(true);
+    const submission = page.locator(`[data-submission="${fixture.statSubmissionId}"]`);
+    await submission.getByRole("button", { name: copy.approveSubmission, exact: true }).click();
+    await expect.poll(async () => (await fixture.readState()).match?.statSubmissions.find(({ id }) => id === fixture.statSubmissionId)?.status).toBe("approved");
+    receipt = await fixture.readState();
+    expect(receipt.match?.statSubmissions.find(({ id }) => id === fixture.statSubmissionId)).toMatchObject({ id: fixture.statSubmissionId, status: "approved" });
   } else {
-    await expect(page.getByRole("heading", { name: "Official result", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: copy.officialResultHeading, exact: true })).toBeVisible();
   }
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}?view=history`);
-  if (mode === "on") await expect(page.getByRole("heading", { name: /history|riwayat/i }).first()).toBeVisible();
-  const persistedMatch = await fixture.readState();
-  expect(persistedMatch.match).toMatchObject({ id: matchId, resultVersion: 1 });
-  expect(persistedMatch.match?.resultRevisions.map(({ version }) => version)).toContain(1);
-  expect(persistedMatch.match?.playerStats.length).toBeGreaterThan(0);
-  expect(persistedMatch.match?.statSubmissions.some(({ id }) => id === fixture.statSubmissionId)).toBe(true);
+  if (mode === "on") {
+    await expect(page.getByRole("link", { name: copy.history, exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("heading", { name: copy.matchWorkspaceHeading, exact: true })).toBeVisible();
+    await expect(page.getByText(copy.historyFeedback, { exact: true })).toBeVisible();
+  }
 
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/completion`);
-  await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "completed");
-  await expectReleaseAccessibilityContract(page);
+  await expect(page.getByRole("heading", { name: copy.completionHeading, exact: true })).toBeVisible();
+  await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
+  await page.getByRole("tab", { name: copy.awardsTab, exact: true }).click();
+  for (const award of ["mvp", "top_scorer", "top_defender", "top_assist"]) {
+    await page.locator(`[data-award="${award}"] input[type="radio"]`).first().check();
+  }
+  await page.getByLabel(copy.decisionReason, { exact: true }).fill(locale === "id" ? "Kontribusi final menentukan pilihan penghargaan." : "Decisive final contribution selected for the award.");
+  await page.locator("[data-complete-tournament]").click();
+  await expect(page.getByRole("status")).toContainText(copy.completionFeedback);
+  await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", copy.completionStatus);
+  await expect.poll(async () => (await fixture.readState()).completion?.status).toBe("completed");
+  receipt = await fixture.readState();
+  expect(receipt.completion).toMatchObject({ status: "completed" });
 
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/certificates`);
-  await expect(page.locator('[data-certificate-type]')).toHaveCount(EXPECTED_CERTIFICATE_TYPES.length);
+  await expect(page.getByRole("heading", { name: copy.certificateHeading, exact: true })).toBeVisible();
+  await expect(page.locator("[data-certificate-type]")).toHaveCount(EXPECTED_CERTIFICATE_TYPES.length);
+  await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
   const certificateTypes = await page.locator("[data-certificate-type]").evaluateAll((elements) => elements.map((element) => element.getAttribute("data-certificate-type")));
   expect(certificateTypes.sort()).toEqual([...EXPECTED_CERTIFICATE_TYPES].sort());
-  await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
-  const revision = page.locator("[data-certificate-publication-revision], [data-publication-revision]").first();
-  await expect(revision).toHaveText(/\d+/);
-  if (publishOnce) {
-    const publish = page.locator("[data-publish-certificate-set]");
-    const revisionBefore = (await fixture.readState()).publicationVersion;
-    expect(revisionBefore).toBe(fixture.initialPublicationVersion);
-    await expect(publish).toBeEnabled();
-    await publish.click();
-    await expect(page.getByRole("status")).toContainText(/published|diterbitkan/i);
-    const revisionAfter = (await fixture.readState()).publicationVersion;
-    expect(revisionAfter).toBe(revisionBefore + 1);
+  for (const certificateType of EXPECTED_CERTIFICATE_TYPES) {
+    await page.locator(`[data-certificate-type="${certificateType}"]`).click();
+    if (["champion", "runner_up", "third_place"].includes(certificateType)) {
+      await page.locator("[data-certificate-assets] select").first().selectOption(fixture.certificateLogoAssetId);
+    }
+    await page.locator("[data-regenerate-certificate]").click();
+    await expect(page.getByRole("status")).toContainText(copy.certificateGenerated);
+    await expect.poll(async () => (await fixture.readState()).certificates.filter(({ type }) => type === certificateType).length).toBeGreaterThan(0);
   }
-  await page.goto(`/${locale}/certificates/verify/${encodeURIComponent(fixture.historicalVerificationCode!)}`);
+  const firstPublication = await fixture.readState();
+  const revisionBefore = firstPublication.publicationVersion;
+  expect(revisionBefore).toBe(0);
+  const publish = page.locator("[data-publish-certificate-set]");
+  await expect(publish).toBeEnabled();
+  await publish.click();
+  await expect(page.getByRole("status")).toContainText(copy.certificatePublished);
+  await expect.poll(async () => (await fixture.readState()).publicationVersion).toBe(revisionBefore + 1);
+  await page.locator('[data-certificate-type="champion"]').click();
+  await page.locator("[data-certificate-assets] select").first().selectOption(fixture.certificateLogoAssetId);
+  await page.locator("[data-regenerate-certificate]").click();
+  await expect(page.getByRole("status")).toContainText(copy.certificateGenerated);
+  await expect.poll(async () => (await fixture.readState()).certificates.filter(({ type, version }) => type === "champion" && version === 2).length).toBe(1);
+  await expect(publish).toBeEnabled();
+  await publish.click();
+  await expect(page.getByRole("status")).toContainText(copy.certificatePublished);
+  const revisionAfter = (await fixture.readState()).publicationVersion;
+  expect(revisionAfter).toBe(revisionBefore + 2);
+  receipt = await fixture.readState();
+  const historicalVerificationCode = receipt.certificates.find(({ type, version }) => type === "champion" && version === 1)?.verificationCode;
+  const currentVerificationCode = receipt.certificates.find(({ type, version }) => type === "champion" && version === 2)?.verificationCode;
+  expect(historicalVerificationCode).toBeTruthy();
+  expect(currentVerificationCode).toBeTruthy();
+  await page.goto(`/${locale}/certificates/verify/${encodeURIComponent(historicalVerificationCode!)}`);
   await expect(page.locator("html")).toHaveAttribute("lang", locale);
-  await expect(page.locator('[data-certificate-verification="superseded"]')).toBeVisible();
-  await page.goto(`/${locale}/certificates/verify/${encodeURIComponent(fixture.currentVerificationCode!)}`);
+  await expect(page.getByRole("heading", { name: copy.verificationTitle, exact: true })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText(copy.supersededStatus);
+  await expect(page.getByRole("status")).not.toContainText(copy.currentStatus);
+  await page.goto(`/${locale}/certificates/verify/${encodeURIComponent(currentVerificationCode!)}`);
   await expect(page.locator("html")).toHaveAttribute("lang", locale);
-  await expect(page.locator('[data-certificate-verification="current"]')).toBeVisible();
+  await expect(page.getByRole("heading", { name: copy.verificationTitle, exact: true })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText(copy.currentStatus);
+  await expect(page.getByRole("status")).not.toContainText(copy.supersededStatus);
   await page.goto(`/${locale}/events/flashpeak-champions-32/leaderboards`);
   await expectAriaSortTransition(page);
   const artifactText = await page.locator("body").innerText();
   expect(artifactText).not.toMatch(/Miracle2026!|organizer-a@miraclefc\.gg|captain@miraclefc\.gg/i);
+}
+
+async function expectReleaseLocaleReadback(page: Page, fixture: ReleaseFixture, locale: ReleaseLocale) {
+  const copy = LOCALE_COPY[locale];
+  for (const view of ["queue", "import", "payments", "qris"] as const) {
+    await expectLocalizedRegistrationSurface(page, fixture, locale, view);
+    await expect(page.locator("main")).not.toContainText(copy.oppositeSentinel);
+  }
+  await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: locale === "id" ? "Perbesar QRIS" : "Enlarge QRIS", exact: true }), copy.qrisDialog);
+  await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/competition`);
+  await expect(page.getByRole("heading", { name: copy.competitionHeading, exact: true })).toBeVisible();
+  await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/schedule`);
+  await expect(page.getByRole("heading", { name: copy.scheduleHeading, exact: true })).toBeVisible();
+  await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/match-control`);
+  await expect(page.getByRole("heading", { name: copy.matchControlHeading, exact: true })).toBeVisible();
+  const matchId = fixture.releaseMatchId;
+  await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}`);
+  await expect(page.locator("[data-match-workspace]")).toBeVisible();
+  await expect(page.getByRole("heading", { name: copy.matchWorkspaceHeading, exact: true })).toBeVisible();
+  await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}?view=statistics`);
+  await expect(page.getByRole("heading", { name: copy.statisticsHeading, exact: true })).toBeVisible();
+  await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}?view=history`);
+  await expect(page.getByRole("link", { name: copy.history, exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByText(copy.historyFeedback, { exact: true })).toBeVisible();
+  await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/completion`);
+  await expect(page.getByRole("heading", { name: copy.completionHeading, exact: true })).toBeVisible();
+  await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", copy.completionStatus);
+  await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/certificates`);
+  await expect(page.getByRole("heading", { name: copy.certificateHeading, exact: true })).toBeVisible();
+  await expect(page.locator("[data-certificate-type]")).toHaveCount(EXPECTED_CERTIFICATE_TYPES.length);
+  const state = await fixture.readState();
+  const historicalVerificationCode = state.certificates.find(({ type, version }) => type === "champion" && version === 1)?.verificationCode;
+  const currentVerificationCode = state.certificates.find(({ type, version }) => type === "champion" && version === 2)?.verificationCode;
+  expect(historicalVerificationCode).toBeTruthy();
+  expect(currentVerificationCode).toBeTruthy();
+  await page.goto(`/${locale}/certificates/verify/${encodeURIComponent(historicalVerificationCode!)}`);
+  await expect(page.locator("html")).toHaveAttribute("lang", locale);
+  await expect(page.getByRole("heading", { name: copy.verificationTitle, exact: true })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText(copy.supersededStatus);
+  await expect(page.getByRole("status")).not.toContainText(copy.currentStatus);
+  await page.goto(`/${locale}/certificates/verify/${encodeURIComponent(currentVerificationCode!)}`);
+  await expect(page.locator("html")).toHaveAttribute("lang", locale);
+  await expect(page.getByRole("heading", { name: copy.verificationTitle, exact: true })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText(copy.currentStatus);
+  await expect(page.getByRole("status")).not.toContainText(copy.supersededStatus);
 }
 
 function eventIdentity() {
@@ -299,7 +520,11 @@ for (const locale of LOCALES) {
         await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/registration?view=qris`);
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
         await expectReleaseAccessibilityContract(page);
-        await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: /enlarge qris|perbesar qris/i }));
+        const copy = LOCALE_COPY[locale];
+        await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: locale === "id" ? "Perbesar QRIS" : "Enlarge QRIS", exact: true }), copy.qrisDialog);
+        expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+        await waitForReleaseFonts(page);
+        await suppressAnimationsForScreenshot(page);
         await page.screenshot({
           path: test.info().outputPath(`release-accessibility-${mode}-${locale}-${viewport.name}.png`),
           animations: "disabled",
@@ -315,7 +540,7 @@ for (const locale of LOCALES) {
   }
 }
 
-test("organizer release journey covers registration through publication in ID and EN", async ({ page }) => {
+test("@task11-release-journey organizer release journey covers registration through publication in ID and EN", async ({ page }) => {
   test.setTimeout(180_000);
   const fixture = await prepareOrganizerReleaseFixture("release-journey");
   try {
@@ -327,7 +552,8 @@ test("organizer release journey covers registration through publication in ID an
         destination: /organizer/,
       });
       const mode = (test.info().project.metadata.releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number] | undefined) ?? "on";
-      await runOrganizerReleaseJourney(page, fixture, locale, index === 0, mode);
+      if (index === 0) await runOrganizerReleaseJourney(page, fixture, locale, mode);
+      else await expectReleaseLocaleReadback(page, fixture, locale);
     }
   } finally {
     await fixture.cleanup();

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
-import { prepareCertificateFixture } from "./completion";
+import { prepareCompletionFixture } from "./completion";
 
 const prisma = new PrismaClient();
 export const RELEASE_FIXTURE_NOW = new Date("2026-09-13T04:00:00.000Z");
@@ -15,8 +15,9 @@ export const RELEASE_FIXTURE_NOW = new Date("2026-09-13T04:00:00.000Z");
  */
 export async function prepareOrganizerReleaseFixture(namespace = randomUUID().slice(0, 12)) {
   if (!/^[a-z0-9-]{1,48}$/.test(namespace)) throw new Error("Invalid fixture namespace");
-  const base = await prepareCertificateFixture(namespace);
+  const base = await prepareCompletionFixture("single_elimination", namespace);
   const expiresAt = new Date(RELEASE_FIXTURE_NOW.getTime() + 9 * 24 * 60 * 60 * 1000);
+  const importSourceLabel = `release-${namespace}-ui.csv`;
   let createdCaptainId: string | undefined;
   let statSubmissionId: string | undefined;
   try {
@@ -33,11 +34,11 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
     if (captain.id !== (await prisma.user.findUnique({ where: { email: "captain@miraclefc.gg" }, select: { id: true } }))?.id) {
       createdCaptainId = captain.id;
     }
-    const team = base.teams[0];
     await prisma.event.update({
       where: { id: base.id },
       data: {
-        status: "Finished",
+        status: "Ongoing",
+        participantCap: 8,
         registrationFeeRequired: true,
         registrationFeeAmount: 25000,
         registrationFeeLabel: "Rp25.000 / team",
@@ -49,18 +50,18 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
       update: {
         qrisImageUrl: "/e2e/release-qris.png",
         instructions: "Scan the deterministic release QRIS fixture.",
-        status: "published",
-        version: 2,
-        publishedAt: RELEASE_FIXTURE_NOW,
+        status: "draft",
+        version: 1,
+        publishedAt: null,
         updatedById: base.actor.id,
       },
       create: {
         eventId: base.id,
         qrisImageUrl: "/e2e/release-qris.png",
         instructions: "Scan the deterministic release QRIS fixture.",
-        status: "published",
-        version: 2,
-        publishedAt: RELEASE_FIXTURE_NOW,
+        status: "draft",
+        version: 1,
+        publishedAt: null,
         updatedById: base.actor.id,
       },
     });
@@ -76,47 +77,40 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         expiresAt,
       },
     });
-    const profile = await prisma.registrationImportProfile.create({
+    await prisma.registrationImportProfile.create({
       data: {
         eventId: base.id,
         createdById: base.actor.id,
         sourceKind: "csv",
-        sourceLabel: `release-${namespace}.csv`,
+        sourceLabel: importSourceLabel,
         worksheetName: null,
         headerSignature: `release-${namespace}`,
         mapping: { columns: { teamName: 0, teamTag: 1 }, players: [] } satisfies Prisma.InputJsonValue,
       },
     });
-    const importBatch = await prisma.registrationImportBatch.create({
-      data: {
-        eventId: base.id,
-        profileId: profile.id,
-        createdById: base.actor.id,
-        sourceKind: "csv",
-        sourceLabel: `release-${namespace}.csv`,
-        status: "committed",
-        summary: { total: 1, imported: 1, errors: 0 } satisfies Prisma.InputJsonValue,
-        expiresAt,
-        committedAt: RELEASE_FIXTURE_NOW,
-        items: {
-          create: {
-            sourceRow: 2,
-            status: "new",
-            selected: true,
-            normalizedData: { teamName: team.name, teamTag: team.tag } satisfies Prisma.InputJsonValue,
-            teamId: team.id,
-            committedAt: RELEASE_FIXTURE_NOW,
-          },
-        },
-      },
-      select: { id: true },
-    });
     const firstPlayer = base.players[0];
     const firstMatch = await prisma.match.findFirst({
       where: { eventId: base.id, OR: [{ homeTeamId: firstPlayer.teamId }, { awayTeamId: firstPlayer.teamId }] },
-      select: { id: true },
+      select: { id: true, homeTeamId: true, awayTeamId: true },
     });
     if (!firstMatch) throw new Error("Release fixture requires a match for the first player");
+    await prisma.matchResultRevision.deleteMany({ where: { matchId: firstMatch.id } });
+    await prisma.playerStat.deleteMany({ where: { matchId: firstMatch.id } });
+    await prisma.match.update({
+      where: { id: firstMatch.id },
+      data: {
+        homeScore: 0,
+        awayScore: 0,
+        status: "Scheduled",
+        scheduleStatus: "confirmed",
+        winnerTeamId: null,
+        resultVersion: 0,
+        resultSnapshot: Prisma.JsonNull,
+        resultConfirmedAt: null,
+        actualStartedAt: null,
+        actualEndedAt: null,
+      },
+    });
     const statSubmission = await prisma.statSubmission.create({
       data: {
         matchId: firstMatch.id,
@@ -130,45 +124,86 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
       select: { id: true },
     });
     statSubmissionId = statSubmission.id;
-    return {
+    const logoAsset = await prisma.eventVisualAsset.create({
+      data: {
+        eventId: base.id,
+        createdByUserId: base.actor.id,
+        source: "organizer_upload",
+        status: "approved",
+        purpose: "certificate_team_logo",
+        url: `/certificate-assets/${base.id}-logo.png`,
+        mimeType: "image/png",
+        width: 512,
+        height: 512,
+        byteSize: 128,
+        storageProvider: "local",
+        storageKey: `certificate-assets/${base.id}-logo.png`,
+        contentSha256: "b".repeat(64),
+        rightsAttestedAt: RELEASE_FIXTURE_NOW,
+        approvedAt: RELEASE_FIXTURE_NOW,
+      },
+    });
+    const releaseFixture = {
       ...base,
       paymentRequestId: paymentRequest.id,
-      importBatchId: importBatch.id,
-      qrisVersion: 2,
+      importBatchId: undefined as string | undefined,
+      importSourceLabel,
+      qrisVersion: 1,
       statSubmissionId,
       releaseMatchId: firstMatch.id,
+      releasePlayerId: firstPlayer.id,
+      releasePlayerTeamId: firstPlayer.teamId,
+      certificateLogoAssetId: logoAsset.id,
       fixtureNow: RELEASE_FIXTURE_NOW.toISOString(),
+      captureImportBatchId: async () => {
+        const batch = await prisma.registrationImportBatch.findFirst({
+          where: { eventId: base.id, sourceLabel: importSourceLabel },
+          orderBy: { createdAt: "desc" },
+          select: { id: true },
+        });
+        releaseFixture.importBatchId = batch?.id;
+        return releaseFixture.importBatchId;
+      },
       readState: async () => {
-        const [event, paymentRequestState, importBatchState, qris, match] = await Promise.all([
+        const [event, paymentRequestState, importBatchState, qris, match, completion, certificates] = await Promise.all([
           prisma.event.findUnique({ where: { id: base.id }, select: { status: true, publishedRevision: true } }),
           prisma.teamRegistrationRequest.findUnique({ where: { id: paymentRequest.id }, select: { id: true, eventId: true, status: true, proofImageUrl: true } }),
-          prisma.registrationImportBatch.findUnique({ where: { id: importBatch.id }, select: { id: true, eventId: true, status: true, committedAt: true } }),
+          releaseFixture.importBatchId
+            ? prisma.registrationImportBatch.findUnique({ where: { id: releaseFixture.importBatchId }, select: { id: true, eventId: true, status: true, committedAt: true } })
+            : prisma.registrationImportBatch.findFirst({ where: { eventId: base.id, sourceLabel: importSourceLabel }, orderBy: { createdAt: "desc" }, select: { id: true, eventId: true, status: true, committedAt: true } }),
           prisma.eventPaymentSettings.findUnique({ where: { eventId: base.id }, select: { eventId: true, version: true, status: true } }),
           prisma.match.findUnique({
             where: { id: firstMatch.id },
             select: {
               id: true,
+              eventId: true,
+              homeTeamId: true,
+              awayTeamId: true,
               homeScore: true,
               awayScore: true,
+              status: true,
               resultVersion: true,
               resultRevisions: { select: { id: true, version: true } },
               playerStats: { select: { id: true, source: true } },
               statSubmissions: { select: { id: true, status: true, reviewedAt: true } },
             },
           }),
+          prisma.tournamentCompletion.findUnique({ where: { eventId: base.id }, select: { id: true, status: true, certificateRevision: true, completedAt: true } }),
+          prisma.certificate.findMany({ where: { eventId: base.id }, orderBy: [{ type: "asc" }, { version: "asc" }], select: { id: true, type: true, version: true, status: true, verificationCode: true } }),
         ]);
         const [certificateCount, publicationCount, latestPublication] = await Promise.all([
           prisma.certificate.count({ where: { eventId: base.id } }),
           prisma.certificatePublication.count({ where: { eventId: base.id } }),
           prisma.certificatePublication.findFirst({ where: { eventId: base.id }, orderBy: { version: "desc" }, select: { version: true } }),
         ]);
-        return { event, paymentRequest: paymentRequestState, importBatch: importBatchState, qris, match, certificateCount, publicationCount, publicationVersion: latestPublication?.version ?? 0 };
+        return { event, paymentRequest: paymentRequestState, importBatch: importBatchState, qris, match, completion, certificates, certificateCount, publicationCount, publicationVersion: latestPublication?.version ?? 0 };
       },
       cleanup: async () => {
         await base.cleanup();
         if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
       },
     };
+    return releaseFixture;
   } catch (error) {
     await base.cleanup();
     if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);

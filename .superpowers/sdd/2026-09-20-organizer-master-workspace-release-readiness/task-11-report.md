@@ -4,6 +4,29 @@
 
 The deterministic Playwright collection, fixture seams, accessibility contract, and release journey are implemented in the seven requested source files plus `playwright.config.ts`, with a focused static contract test. Static verification is GREEN; runtime browser/visual verification is **BLOCKED** at environment loading because this isolated worktree has no authorized `.env.test`/Neon credentials. No credentials were copied, guessed, or written, and no required test was converted to a skip.
 
+## Round 2 fix disposition
+
+The five confirmed round-2 findings are addressed in the working-tree fix wave:
+
+| Finding | Evidence in the fix wave | Result |
+| --- | --- | --- |
+| Shared event transitions and receipts | The shared serial journey now starts from draft/pending state, performs CSV preview/commit, payment approval, QRIS save/publish, official result, statistics save/review, completion, seven certificate generations, and two publications; each step reads back IDs/status/version from the same event and match. | Addressed |
+| Base config isolation and flag servers | `playwright.config.ts` is restored to one default server/project. `playwright.release.config.ts` owns the explicit `organizer-release-on`/`organizer-release-off` servers and projects; the full tagged journey runs on the true/on server and the off server runs the matrix. | Addressed |
+| Exact locale copy and absence | `LOCALE_COPY` supplies exact ID/EN headings, controls, feedback, dialog names, and verification statuses; assertions use exact names and reject the opposite-locale sentinel. | Addressed |
+| Named dialog | Escape coverage requires exactly one modal dialog with `aria-modal="true"` and the expected localized accessible name, then verifies Escape closure and trigger focus restoration. | Addressed |
+| Reduced motion before screenshot suppression | Navigation first uses `prefers-reduced-motion: reduce` and verifies the application has zero running animations; font readiness is checked next, and screenshot-only CSS suppression is injected afterward. | Addressed |
+
+The fix wave is static/configuration-complete. Credentialed browser, database, and screenshot evidence remain **BLOCKED** at the existing `.env.test` boundary; no runtime result is represented as a pass.
+
+## Round 2 verification evidence
+
+- Focused static contract: `vitest` — **4/4 passed**, exit 0, 332 ms test duration.
+- Base configuration comparison: `git diff --quiet 7868462 -- playwright.config.ts` — **matched**, exit 0, 106 ms.
+- TypeScript: `node node_modules/typescript/bin/tsc --noEmit --incremental false` — exit 0, 21,331 ms.
+- ESLint: direct ESLint over the modified config/helpers/fixture/lifecycle/static-contract files — exit 0, zero errors/warnings, 4,757 ms.
+- Secret scan: modified Task 11 files/report contained 0 private-key/API-key/database-URL/Neon-URL matches, exit 0, 124 ms.
+- Diff hygiene: `git diff --check` — exit 0, 89 ms (only Git's normal LF→CRLF notices).
+
 ## Coverage matrix
 
 | Dimension | Implemented matrix | Runtime result |
