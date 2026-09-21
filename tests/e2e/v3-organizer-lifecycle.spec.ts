@@ -552,7 +552,7 @@ for (const locale of LOCALES) {
     test(`@task11-release-matrix organizer release accessibility matrix ${locale} ${viewport.name}px`, async ({ page }) => {
       test.setTimeout(90_000);
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      const mode = test.info().project.metadata.releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number];
+      const mode = (test.info().project.metadata.releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number] | undefined) ?? "on";
       expect(FEATURE_FLAG_MODES).toContain(mode);
       const fixture = await prepareOrganizerReleaseFixture(`release-a11y-${mode}-${locale}-${viewport.name}`);
       try {

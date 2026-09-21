@@ -32,6 +32,15 @@ describe("Task 11 release verification contracts", () => {
     expect(lifecycle).toMatch(/VIEWPORTS\.length \* LOCALES\.length \* FEATURE_FLAG_MODES\.length/);
   });
 
+  it("defaults the release matrix to the enabled profile under the ordinary CI config", () => {
+    const matrixTest = lifecycle.match(
+      /test\(`@task11-release-matrix[\s\S]*?\n\s*}\);/,
+    )?.[0] ?? "";
+
+    expect(matrixTest).toContain('releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number] | undefined) ?? "on"');
+    expect(matrixTest).toContain("expect(FEATURE_FLAG_MODES).toContain(mode)");
+  });
+
   it("drives non-vacuous keyboard, dialog, aria-sort, and deterministic journey contracts", () => {
     expect(lifecycle).toMatch(/page\.keyboard\.press\("Tab"\)/);
     expect(lifecycle).toMatch(/page\.keyboard\.press\("Shift\+Tab"\)/);
