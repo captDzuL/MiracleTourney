@@ -53,6 +53,7 @@ const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration C
 // event-sized request from turning into an unbounded database read.
 const ORGANIZER_READER_ROW_LIMIT = 500;
 const ORGANIZER_READER_HISTORY_LIMIT = 100;
+const ORGANIZER_READER_IMPORT_BATCH_LIMIT = 8;
 const ORGANIZER_READER_PAYMENT_PROBE_LIMIT = ORGANIZER_READER_HISTORY_LIMIT + 1;
 
 
@@ -2436,9 +2437,10 @@ export async function getRegistrationImportBatchesForEvent(user: AppUser, eventI
   const rows = await prisma.registrationImportBatch.findMany({
     where: { eventId },
     orderBy: { createdAt: "desc" },
-    take: 8,
+    take: readerProbeLimit(ORGANIZER_READER_IMPORT_BATCH_LIMIT),
     include: { items: { select: { id: true, status: true, teamId: true }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) } },
   });
+  assertReaderResultWithinLimit("organizer.importBatches.batches", rows, ORGANIZER_READER_IMPORT_BATCH_LIMIT);
   for (const row of rows) assertReaderResultWithinLimit("organizer.importBatches.items", row.items, ORGANIZER_READER_ROW_LIMIT);
   return rows;
 }
