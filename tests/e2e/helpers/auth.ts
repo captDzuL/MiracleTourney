@@ -1,7 +1,8 @@
 import { expect, type Page } from "@playwright/test";
 
 let loginClientSequence = 0;
-const normalizedPages = new WeakSet<Page>();
+const initializedPages = new WeakSet<Page>();
+const clockInstalledPages = new WeakSet<Page>();
 export const RELEASE_CLOCK = new Date("2026-09-21T00:00:00.000Z");
 
 /**
@@ -11,12 +12,26 @@ export const RELEASE_CLOCK = new Date("2026-09-21T00:00:00.000Z");
  */
 export async function normalizeReleasePage(page: Page) {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  if (normalizedPages.has(page)) return;
-  await page.clock.install({ time: RELEASE_CLOCK });
+  if (initializedPages.has(page)) return;
   await page.addInitScript(() => {
     document.documentElement.dataset.e2eReducedMotion = "true";
   });
-  normalizedPages.add(page);
+  initializedPages.add(page);
+}
+
+export async function probeReleaseReducedMotion(page: Page) {
+  const state = await page.evaluate(() => ({
+    matches: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    runningAnimations: document.getAnimations().filter((animation) => animation.playState === "running").length,
+  }));
+  expect(state.matches).toBe(true);
+  expect(state.runningAnimations, "reduced-motion mode must not leave animations running").toBe(0);
+}
+
+export async function installReleaseClock(page: Page) {
+  if (clockInstalledPages.has(page)) return;
+  await page.clock.install({ time: RELEASE_CLOCK });
+  clockInstalledPages.add(page);
 }
 
 export async function waitForReleaseFonts(page: Page) {
@@ -63,6 +78,8 @@ export async function loginWithCredentials(
     "x-e2e-clock": "2026-09-21T00:00:00.000Z",
   });
   await page.goto(`/${locale}/login`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await probeReleaseReducedMotion(page);
+  await installReleaseClock(page);
   const emailField = page.getByLabel(/email/i);
   const passwordField = page.getByLabel(/password/i);
   const submit = page.getByRole("button", { name: /masuk|sign in/i });

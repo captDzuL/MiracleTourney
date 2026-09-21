@@ -9,7 +9,10 @@ const lifecycle = readFileSync(resolve(root, "tests/e2e/v3-organizer-lifecycle.s
 const auth = readFileSync(resolve(root, "tests/e2e/helpers/auth.ts"), "utf8");
 const fixtures = readFileSync(resolve(root, "tests/e2e/helpers/fixtures.ts"), "utf8");
 const releaseJourney = lifecycle.match(
-  /async function runOrganizerReleaseJourney[\s\S]*?async function expectReleaseLocaleReadback/,
+  /async function runOrganizerReleaseJourney[\s\S]*?function eventIdentity/,
+)?.[0] ?? "";
+const journeyTest = lifecycle.match(
+  /test\("@task11-release-journey[\s\S]*?\n\}\);\n\ntest\("admin can use/,
 )?.[0] ?? "";
 
 describe("Task 11 release verification contracts", () => {
@@ -82,5 +85,32 @@ describe("Task 11 release verification contracts", () => {
     expect(releaseJourney).toMatch(/not\.toContainText/);
     expect(releaseJourney).not.toMatch(/name:\s*\/.*\|.*\//);
     expect(releaseJourney).toContain("copy.oppositeSentinel");
+  });
+
+  it("requires a runnable Live match receipt and a full transition journey for both locales", () => {
+    expect(fixtures).toMatch(/status:\s*"Live"/);
+    expect(fixtures).toMatch(/scheduleStatus:\s*"live"/);
+    expect(fixtures).toContain("actualStartedAt: RELEASE_FIXTURE_NOW");
+    expect(journeyTest).toContain("prepareOrganizerReleaseFixture");
+    expect(journeyTest).toContain("runOrganizerReleaseJourney(page, fixture, locale, mode)");
+    expect(journeyTest).not.toContain("expectReleaseLocaleReadback");
+    expect(releaseJourney).toMatch(/receipt\.match[\s\S]*resultVersion/);
+  });
+
+  it("uses an exact localized import feedback locator", () => {
+    expect(releaseJourney).toContain("copy.importCompleted");
+    expect(releaseJourney).not.toMatch(/getByRole\("status"\)\.toContainText\(locale === "id"/);
+  });
+
+  it("probes reduced motion on the loaded surface before clock, fonts, and screenshot CSS", () => {
+    expect(auth).toContain("probeReleaseReducedMotion");
+    expect(auth).toContain("installReleaseClock");
+    const loginBody = auth.match(/export async function loginWithCredentials[\s\S]*?export async function loginAsAdmin/)?.[0] ?? "";
+    expect(loginBody.indexOf("page.goto")).toBeGreaterThanOrEqual(0);
+    expect(loginBody.indexOf("probeReleaseReducedMotion")).toBeGreaterThan(loginBody.indexOf("page.goto"));
+    expect(loginBody.indexOf("installReleaseClock")).toBeGreaterThan(loginBody.indexOf("probeReleaseReducedMotion"));
+    const contractBody = lifecycle.match(/export async function expectReleaseAccessibilityContract[\s\S]*?export async function expectNavigationEscapeRestoresFocus/)?.[0] ?? "";
+    expect(contractBody.indexOf("probeReleaseReducedMotion")).toBeGreaterThanOrEqual(0);
+    expect(contractBody.indexOf("waitForReleaseFonts")).toBeGreaterThan(contractBody.indexOf("probeReleaseReducedMotion"));
   });
 });

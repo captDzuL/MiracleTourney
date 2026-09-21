@@ -14,13 +14,24 @@ The five confirmed round-2 findings are addressed in the working-tree fix wave:
 | Base config isolation and flag servers | `playwright.config.ts` is restored to one default server/project. `playwright.release.config.ts` owns the explicit `organizer-release-on`/`organizer-release-off` servers and projects; the full tagged journey runs on the true/on server and the off server runs the matrix. | Addressed |
 | Exact locale copy and absence | `LOCALE_COPY` supplies exact ID/EN headings, controls, feedback, dialog names, and verification statuses; assertions use exact names and reject the opposite-locale sentinel. | Addressed |
 | Named dialog | Escape coverage requires exactly one modal dialog with `aria-modal="true"` and the expected localized accessible name, then verifies Escape closure and trigger focus restoration. | Addressed |
-| Reduced motion before screenshot suppression | Navigation first uses `prefers-reduced-motion: reduce` and verifies the application has zero running animations; font readiness is checked next, and screenshot-only CSS suppression is injected afterward. | Addressed |
+| Reduced motion before screenshot suppression | The loaded surface is probed for `prefers-reduced-motion: reduce` and zero running animations before the frozen clock, font readiness, and screenshot-only CSS phases. | Addressed |
 
 The fix wave is static/configuration-complete. Credentialed browser, database, and screenshot evidence remain **BLOCKED** at the existing `.env.test` boundary; no runtime result is represented as a pass.
 
+## Round 3 rereview disposition
+
+The four rereview2 findings are addressed in the final static fix wave. Runtime browser/database evidence remains **BLOCKED** at the existing `.env.test` boundary.
+
+| Finding | Static disposition | Runtime status |
+| --- | --- | --- |
+| Executable official result and both locales transition | Each locale gets a fresh fixture; the journey resets its match to `Live` with `scheduleStatus: "live"`, `actualStartedAt`, and a valid schedule, then submits the result and asserts the persisted receipt. | BLOCKED before browser startup |
+| Exact localized import feedback | Import completion now uses the exact locale-table copy with an exact text locator and opposite-language absence assertion. | BLOCKED before browser startup |
+| Expected/opposite locale values per asserted surface | Registration, schedule, Match Control, result, statistics, history, Completion, certificate, and verification surfaces now carry expected/opposite values and use exact current-locale plus absence assertions. | BLOCKED before browser startup |
+| Reduced-motion probe ordering | The loaded-surface probe precedes clock installation and font waits; screenshot-only suppression remains after the accessibility contract. | BLOCKED before browser startup |
+
 ## Round 2 verification evidence
 
-- Focused static contract: `vitest` — **4/4 passed**, exit 0, 332 ms test duration.
+- Focused static contract: `vitest` — **7/7 passed**, exit 0, 267 ms test duration.
 - Base configuration comparison: `git diff --quiet 7868462 -- playwright.config.ts` — **matched**, exit 0, 106 ms.
 - TypeScript: `node node_modules/typescript/bin/tsc --noEmit --incremental false` — exit 0, 21,331 ms.
 - ESLint: direct ESLint over the modified config/helpers/fixture/lifecycle/static-contract files — exit 0, zero errors/warnings, 4,757 ms.
@@ -56,18 +67,18 @@ Implemented in one shared helper and reused by the lifecycle journey:
 9. focused control inside the viewport;
 10. focused control not obscured at its center point by sticky UI.
 
-The Escape helper requires a visible trigger, exactly one named `role="dialog"` with `aria-modal="true"`, Escape closure, and focus restoration. Login setup installs Playwright’s frozen clock at `2026-09-21T00:00:00.000Z`, normalizes reduced motion, waits for `document.fonts.ready`, sets the deterministic clock header, timezone, locale, and test-client address. Screenshots explicitly disable animations only after reduced-motion and font assertions. Fixture dates derive from a fixed `RELEASE_FIXTURE_NOW`; payment/import/QRIS/match/stat/review/history state is read back by the same event ID. Artifact text checks reject the test password and fixture email strings before an attachment can be produced.
+The Escape helper requires a visible trigger, exactly one named `role="dialog"` with `aria-modal="true"`, Escape closure, and focus restoration. Login setup normalizes reduced motion, probes the loaded login surface, then installs Playwright’s frozen clock at `2026-09-21T00:00:00.000Z`; later accessibility checks probe each loaded surface before waiting for `document.fonts.ready`. Screenshots explicitly disable animations only after reduced-motion and font assertions. Fixture dates derive from a fixed `RELEASE_FIXTURE_NOW`; payment/import/QRIS/match/stat/review/history state is read back by the same event ID. Artifact text checks reject the test password and fixture email strings before an attachment can be produced.
 
 Completion parity covers ID at 390px and EN at 1440px. Certificate parity covers ID and EN at 768px, seven certificate cards, hydration, publication revision, and historical/current verification. Match Control parity covers ID at 390px and EN at 1440px, operations visibility, overflow, control sizing, `aria-sort`, and visible keyboard focus.
 
 ## TDD and static evidence
 
-- **RED (fix round):** `node node_modules/vitest/vitest.mjs run tests/competition/task11-release-static-contract.test.ts` — 2/2 expected failures: missing separate flag projects/ports and missing real Tab/Shift+Tab/dialog/fonts/fixture/revision contracts.
-- **GREEN:** the same focused static contract — 2/2 tests passed.
+- **RED (round 3):** `npx vitest run tests/competition/task11-release-static-contract.test.ts` — 3/3 new ordering/executability/import contracts failed while the four prior contracts remained green.
+- **GREEN (round 3):** the same focused static contract — **7/7 tests passed**, exit 0.
 - **GREEN:** `node node_modules/typescript/bin/tsc --noEmit --incremental false` — exit **0** (17.3s).
 - **GREEN:** direct ESLint over the config, helpers, four named specs, and focused contract — exit **0**, zero errors/warnings.
 - **GREEN:** unstaged and staged `git diff --check` are clean (no whitespace errors).
-- Source scan found no private keys, live API-key prefixes, `DATABASE_URL=`, or Neon secret values. The only credential-like strings are the pre-existing synthetic E2E login values and the new fixture-only bcrypt input required to build deterministic test data; they are never rendered into screenshots or report output.
+- Source-file scan found no private keys, live API-key prefixes, `DATABASE_URL=`, or Neon secret values. The report repeats the literal `DATABASE_URL=` only when naming the scan rule. The only credential-like strings in source are the pre-existing synthetic E2E login values and the fixture-only bcrypt input required to build deterministic test data; they are never rendered into screenshots or report output.
 
 ## Runtime blocker (exact commands and inputs)
 

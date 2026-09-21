@@ -182,6 +182,11 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
               homeScore: true,
               awayScore: true,
               status: true,
+              scheduleStatus: true,
+              scheduledAt: true,
+              scheduledEndsAt: true,
+              scheduleRoom: true,
+              actualStartedAt: true,
               resultVersion: true,
               resultRevisions: { select: { id: true, version: true } },
               playerStats: { select: { id: true, source: true } },
@@ -197,6 +202,20 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
           prisma.certificatePublication.findFirst({ where: { eventId: base.id }, orderBy: { version: "desc" }, select: { version: true } }),
         ]);
         return { event, paymentRequest: paymentRequestState, importBatch: importBatchState, qris, match, completion, certificates, certificateCount, publicationCount, publicationVersion: latestPublication?.version ?? 0 };
+      },
+      resetMatchForReleaseJourney: async () => {
+        await prisma.match.update({
+          where: { id: firstMatch.id },
+          data: {
+            status: "Live",
+            scheduleStatus: "live",
+            scheduledAt: RELEASE_FIXTURE_NOW,
+            scheduledEndsAt: new Date(RELEASE_FIXTURE_NOW.getTime() + 30 * 60 * 1000),
+            scheduleRoom: "Release Arena",
+            actualStartedAt: RELEASE_FIXTURE_NOW,
+            actualEndedAt: null,
+          },
+        });
       },
       cleanup: async () => {
         await base.cleanup();
