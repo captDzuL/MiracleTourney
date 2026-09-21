@@ -6,6 +6,7 @@ const root = resolve(import.meta.dirname, "../..");
 const config = readFileSync(resolve(root, "playwright.config.ts"), "utf8");
 const releaseConfig = readFileSync(resolve(root, "playwright.release.config.ts"), "utf8");
 const lifecycle = readFileSync(resolve(root, "tests/e2e/v3-organizer-lifecycle.spec.ts"), "utf8");
+const matchday = readFileSync(resolve(root, "tests/e2e/v3-matchday.spec.ts"), "utf8");
 const auth = readFileSync(resolve(root, "tests/e2e/helpers/auth.ts"), "utf8");
 const fixtures = readFileSync(resolve(root, "tests/e2e/helpers/fixtures.ts"), "utf8");
 const releaseJourney = lifecycle.match(
@@ -164,5 +165,13 @@ describe("Task 11 release verification contracts", () => {
     const contractBody = lifecycle.match(/export async function expectReleaseAccessibilityContract[\s\S]*?export async function expectNavigationEscapeRestoresFocus/)?.[0] ?? "";
     expect(contractBody.indexOf("probeReleaseReducedMotion")).toBeGreaterThanOrEqual(0);
     expect(contractBody.indexOf("waitForReleaseFonts")).toBeGreaterThan(contractBody.indexOf("probeReleaseReducedMotion"));
+  });
+
+  it("selects the Match Day parity root for both master-shell flag modes", () => {
+    expect(matchday).toContain('process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true"');
+    expect(matchday).toContain('page.locator("[data-operations]")');
+    expect(matchday).toContain('locale === "id" ? "Ruang kerja Match Day" : "Match Day workspace"');
+    expect(matchday).toContain("await expect(operationsRoot).toBeVisible()");
+    expect(matchday).toContain("operationsRoot.evaluate");
   });
 });

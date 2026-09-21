@@ -326,8 +326,11 @@ test("match control preserves ID/EN parity, visible focus, aria-sort values, and
     await loginAsOrganizer(page, locale);
     await page.goto(`/${locale}/organizer/events/${fixture.id}/match-control`);
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
-    await expect(page.locator("[data-operations]")).toBeVisible();
-    const contract = await page.locator("[data-operations]").evaluate((root) => ({
+    const operationsRoot = process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true"
+      ? page.locator("[data-operations]")
+      : page.getByRole("region", { name: locale === "id" ? "Ruang kerja Match Day" : "Match Day workspace" });
+    await expect(operationsRoot).toBeVisible();
+    const contract = await operationsRoot.evaluate((root) => ({
       overflow: (root as HTMLElement).scrollWidth > (root as HTMLElement).clientWidth,
       controls: Array.from(root.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, summary'))
         .filter((element) => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0)
