@@ -5,6 +5,26 @@ Branch: feature/ui/release/1.0
 Product implementation anchor: a3624c60186fefa2f6e5474cf423e1af7a7639d8
 Release decision at this point: BLOCKED. No READY claim is permitted.
 
+## Release-readiness continuation — 2026-09-21
+
+- Assigned isolated worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`.
+- Working branch: `codex/organizer-release-readiness`.
+- Source/product HEAD before the evidence-doc commit: `79e62cddc77beae4913529d471b493c6e56335b3`.
+- Release target: `feature/ui/release/1.0`; no PR was created.
+- Tasks 1–11 have credential-independent implementation/static evidence and task review artifacts. Their guarded shared-Neon/browser, preview, CI-final-SHA, Vercel, Neon recovery, and deployed-RUM gates remain incomplete as recorded in the new release verification report.
+- Task 12 created `2026-09-14-release-1.0-verification.md` only after fresh evidence was available. The report is explicitly `BLOCKED`; no production deployment, migration, restore, flag activation, force-push, or PR was performed.
+- The ignored `.superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/progress.md` ledger remains orchestrator-owned and was not edited in this pass.
+
+### Task 12 external blockers
+
+1. Authorized `.env.test` with guarded Delicate/preview `DATABASE_URL` and `DIRECT_URL` is absent, so shared-Neon E2E, reset/completion/certificate persistence, manipulated-ID runtime checks, 64-team live query/pressure checks, and migration/shadow-database review cannot run.
+2. No authorized Vercel project/session, known-good preview deployment ID, preview URL, Runtime Logs export, deployment-failure notification proof, saved-view/PIC access proof, or deployed Speed Insights/RUM sample is available.
+3. No final-SHA GitHub Actions run URL/result or fresh whole-branch Sol/high verdict is available.
+4. Neon snapshot/PITR/retention/RPO/RTO/PIC/switchover details and a fresh non-production restore rehearsal with integrity queries are unavailable.
+
+The release decision remains `BLOCKED` until every required security, recovery,
+CI, preview, monitoring, performance, review, and evidence gate is green.
+
 ## Task ledger
 
 | Status | Task | Stable commit/evidence | Review state |

@@ -3,6 +3,29 @@
 Tanggal snapshot: 2026-09-16, Asia/Jakarta
 Status kandidat: BLOCKED untuk release/deploy; implementasi Organizer Master Workspace sudah sampai Task 8, tetapi verifikasi dan review belum selesai.
 
+## Release-readiness snapshot — 2026-09-21
+
+This continuation supersedes the stale “Task 8 in progress” status below for
+release coordination while preserving the historical handoff details.
+
+- Isolated worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`.
+- Branch: `codex/organizer-release-readiness`.
+- Source/product SHA before evidence-doc commit: `79e62cddc77beae4913529d471b493c6e56335b3`.
+- Release target: `feature/ui/release/1.0`; no PR, push, deploy, migration, restore, or production flag activation was performed.
+- Verification report: [`2026-09-14-release-1.0-verification.md`](../../../2026-09-14-release-1.0-verification.md).
+- Task 12 report: `.superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/task-12-report.md` (ignored SDD artifact; no ledger edit was made).
+- Current decision: `BLOCKED`.
+
+### Required external evidence still absent
+
+The report and progress handoff are authoritative for the exact blockers:
+guarded `.env.test`/Neon Delicate or preview access; live shared-Neon E2E and
+performance results; Delicate/preview migration diff and restore rehearsal;
+final-SHA GitHub Actions result; Vercel preview URL/deployment ID and Runtime
+Logs scan; saved-view/PIC/notification access; deployed Speed Insights/RUM;
+Neon snapshot/PITR/retention/RPO/RTO/PIC/switchover/integrity-query evidence;
+and a fresh whole-branch Sol/high review with no P0/P1/P2.
+
 ## Repo dan worktree
 
 - Repository root: E:\dev\MiracleTourney-gitnative
