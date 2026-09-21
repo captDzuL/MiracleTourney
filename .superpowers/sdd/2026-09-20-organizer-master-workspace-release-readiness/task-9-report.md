@@ -4,6 +4,7 @@ Date: 2026-09-21 Asia/Jakarta
 Branch: `codex/organizer-release-readiness`
 Worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`
 Implementation commit: `d3bc602 perf: bound organizer workspace readers`
+Round-3 implementation commit: `37c10a1 fix: preserve organizer reader overflow bounds`
 
 ## Outcome
 
@@ -75,9 +76,9 @@ Instrumented delegate calls are bounded, credential-independent evidence; they a
 | --- | ---: | ---: | --- |
 | Organizer summary (`src/lib/organizer/workspace-read.ts`) | 1 / 1 | 4 | one event query with filtered `_count`; no event-sized list payload |
 | Registration queue + participants (`src/lib/platform/repository.ts`) | 5 / 5 total, 3 / 3 list reads | 12 overall helper budget | teams, requests, import items, roster players probe `501`, reject `ReaderResultOverflowError` above `ORGANIZER_READER_ROW_LIMIT = 500`; existing `filterRegistrationRecords` page output remains capped by requested/default page size (25) |
-| Import history/batches/context | included above | — | history batches `ORGANIZER_READER_HISTORY_LIMIT = 100`; nested items/participant teams/players capped at 500 |
+| Import history/batches/context | included above | — | batch items request/probe `501`; history batches request/probe `101` and nested items `501`; context teams/players request/probe `501`; exact caps succeed and over-cap outer/nested delegates throw `ReaderResultOverflowError` |
 | Payment review | 1 list read | — | deterministic order; probes 101 rows and throws `PaymentReviewOverflowError` when more than `ORGANIZER_READER_HISTORY_LIMIT = 100` are present |
-| Competition workspace (`src/lib/competition/workspace-read.ts`) | 16 / 16 | 20 | core rows probe `1,001`; phases/actions/round configs and incidents/announcements/audit history probe `101`; latest draft revision `take: 1`; >cap delegate test throws `ReaderResultOverflowError` |
+| Competition workspace (`src/lib/competition/workspace-read.ts`) | 16 / 16 | 20 | core rows probe `1,001`; phases/actions/round configs and incidents/announcements/audit history probe `101`; latest draft revision `take: 1`; auxiliary history `ReaderResultOverflowError` is rethrown before the `Promise.allSettled` partial-failure fallback; exact 100-row auxiliary history remains supported |
 | Completion workspace (`src/lib/completion/prisma-adapter.ts`) | 13 / 13 | 20 | source matches/revisions/teams/player stats/submissions probe `1,001`; certificates, incidents, and completion audit history probe `101`; >cap delegate test throws `ReaderResultOverflowError` |
 | Public compatibility snapshot (`src/lib/events/public-v3-read.ts`) | 7 / 7 | 12 | teams/matches/registrations/certificates probe `501`; podium `take: 3`; awards `take: 4`; certificate IDs reject above 500 rather than slice; >cap delegate test throws `ReaderResultOverflowError` |
 
@@ -144,6 +145,23 @@ Round-2 final verification:
 | scoped ESLint command | 0 | 3.82 s; 0 errors, 6 pre-existing warnings |
 | `node --check` on four scripts plus autocannon fixture loader | 0 | all five syntax checks passed |
 | `git diff --check 11f1fcc..HEAD` | 0 | rerun after final report commit; no whitespace errors |
+
+## Review fix round 3 evidence
+
+- Competition auxiliary-history RED: the 101-row incident delegate resolved the workspace with `unavailableSections: ["incidents"]` because the `Promise.allSettled` fallback treated `ReaderResultOverflowError` like an ordinary partial failure. GREEN: auxiliary overflow is rethrown before that fallback; the exact 100-row history remains supported.
+- Platform import-cap RED: mocked delegates returned over-limit results independently of their requested `take`, and the readers returned partial data or used the cap rather than cap+1. GREEN: import-batch nested items request `501`; import-history outer batches request `101` and nested items `501`; import-context teams and players request `501`; shared bound assertions reject outer and nested overflow while exact-cap results remain supported.
+
+Round-3 focused verification:
+
+| Command | Exit | Result |
+| --- | ---: | --- |
+| `node node_modules/vitest/vitest.mjs run src/lib/competition/workspace-read.test.ts src/lib/platform/repository.test.ts -t "(auxiliary history|import-batch|import-history|import-context)"` (RED) | 1 | 897 ms; 2 files / 5 failed, 1 passed, 144 skipped; overflow was swallowed and cap+1 args/assertions were absent |
+| same focused command after implementation (GREEN) | 0 | 936 ms; 2 files / 6 selected tests passed, 144 skipped |
+| `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts tests/performance/organizer-reader-query-budget.test.ts src/lib/platform/repository.test.ts src/lib/organizer/workspace-read.test.ts src/lib/competition/workspace-read.test.ts src/lib/completion/prisma-adapter.test.ts src/lib/completion/workspace.test.ts src/lib/events/public-v3-read.test.ts src/lib/registration/organizer-workspace-read.test.ts` | 0 | 2.27 s; 9 files / 226 tests passed |
+| `npm run lint` (`tsc --noEmit`) | 0 | TypeScript check passed |
+| scoped ESLint on the four changed source/test files | 0 | 0 errors; 4 pre-existing unused-symbol warnings |
+| `node --check` on `scripts/load-test.mjs`, `scripts/load-test-quick.mjs`, `scripts/run-dashboard-performance.mjs`, and `tests/performance/autocannon-fixture-loader.mjs` | 0 | all syntax checks passed |
+| `git diff --check 11f1fcc..HEAD` | 0 | no whitespace errors after the final report commit |
 
 ## Blocker matrix
 
