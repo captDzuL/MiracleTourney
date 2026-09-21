@@ -43,7 +43,6 @@ const LOCALE_COPY = {
     qrisDraftSaved: "Draf QRIS disimpan.",
     qrisPublished: "QRIS diterbitkan.",
     statisticsSaved: "Tersimpan. Memuat data terbaru.",
-    reviewDecisionSaved: "Statistik kapten disetujui",
     completionHeading: "Penyelesaian Turnamen",
     completionStatus: "completed",
     completionFeedback: "Turnamen berhasil diselesaikan. Muat ulang untuk melihat versi yang tercatat.",
@@ -80,7 +79,6 @@ const LOCALE_COPY = {
       qrisDraftSaved: "QRIS draft saved.",
       qrisPublished: "QRIS published.",
       statisticsSaved: "Saved. Refreshing authoritative data.",
-      reviewDecisionSaved: "Captain statistics approved",
       completionHeading: "Tournament Completion",
       completionStatus: "ready",
       completionFeedback: "Tournament completed successfully. Refresh to view the committed version.",
@@ -118,7 +116,6 @@ const LOCALE_COPY = {
     qrisDraftSaved: "QRIS draft saved.",
     qrisPublished: "QRIS published.",
     statisticsSaved: "Saved. Refreshing authoritative data.",
-    reviewDecisionSaved: "Captain statistics approved",
     completionHeading: "Tournament Completion",
     completionStatus: "completed",
     completionFeedback: "Tournament completed successfully. Refresh to view the committed version.",
@@ -155,7 +152,6 @@ const LOCALE_COPY = {
       qrisDraftSaved: "Draf QRIS disimpan.",
       qrisPublished: "QRIS diterbitkan.",
       statisticsSaved: "Tersimpan. Memuat data terbaru.",
-      reviewDecisionSaved: "Statistik kapten disetujui",
       completionHeading: "Penyelesaian Turnamen",
       completionStatus: "ready",
       completionFeedback: "Turnamen berhasil diselesaikan. Muat ulang untuk melihat versi yang tercatat.",
@@ -458,7 +454,7 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
     expect(receipt.match?.playerStats.some(({ id, source }) => Boolean(id) && source === "admin")).toBe(true);
     const submission = page.locator(`[data-submission="${fixture.statSubmissionId}"]`);
     await submission.getByRole("button", { name: copy.approveSubmission, exact: true }).click();
-    await expectLocalizedText(page, copy.reviewDecisionSaved, copy.opposite.reviewDecisionSaved);
+    await expectLocalizedText(page, copy.statisticsSaved, copy.opposite.statisticsSaved);
     await expect.poll(async () => (await fixture.readState()).match?.statSubmissions.find(({ id }) => id === fixture.statSubmissionId)?.status).toBe("approved");
     receipt = await fixture.readState();
     expect(receipt.match?.statSubmissions.find(({ id }) => id === fixture.statSubmissionId)).toMatchObject({ id: fixture.statSubmissionId, status: "approved" });

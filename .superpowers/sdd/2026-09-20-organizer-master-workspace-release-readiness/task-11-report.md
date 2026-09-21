@@ -31,10 +31,18 @@ The four rereview2 findings are addressed in the final static fix wave. Runtime 
 
 ## Round 4 escalation disposition
 
-The remaining locale-parity P1 is closed statically without runtime or credential access. In the shared on-mode journey, the result surface now asserts the exact localized workspace heading and official-result form while rejecting the opposite-locale heading/form; the statistics surface asserts the exact localized heading and rejects the opposite-locale heading; and captain-stat approval asserts exact localized `reviewDecisionSaved` feedback with the opposite value absent before checking the persisted approval receipt. The existing `for (const locale of LOCALES)` journey invokes this same path for both ID and EN.
+The remaining locale-parity P1 is closed statically without runtime or credential access. In the shared on-mode journey, the result surface now asserts the exact localized workspace heading and official-result form while rejecting the opposite-locale heading/form; the statistics surface asserts the exact localized heading and rejects the opposite-locale heading. The existing `for (const locale of LOCALES)` journey invokes this same path for both ID and EN.
 
 - **RED (round 4):** `node node_modules/vitest/vitest.mjs run tests/competition/task11-release-static-contract.test.ts` — **3 failed, 8 passed**, exit 1: the three failures were the missing on-mode result locale assertion, statistics opposite-locale assertion, and captain-stat approval feedback assertion.
 - **GREEN (round 4):** the same focused static contract — **11/11 passed**, exit 0, 255 ms total duration.
+- Browser/database/visual evidence remains **BLOCKED** at the documented missing `.env.test` boundary; no runtime command or credential access was attempted in this round.
+
+## Round 5 escalation disposition
+
+The captain-stat approval assertion now matches the feedback actually rendered by the statistics workspace: both save and approval actions return the `saved` status, which the live region localizes as `Saved. Refreshing authoritative data.` / `Tersimpan. Memuat data terbaru.`. The journey asserts that exact current-locale message, asserts the opposite-locale message is absent, and only then checks the persisted approval receipt. The audit-history-only `actionApprove` copy is no longer treated as immediate action feedback.
+
+- **RED (round 5):** `node node_modules/vitest/vitest.mjs run tests/competition/task11-release-static-contract.test.ts` — **1 failed, 10 passed**, exit 1: the approval block still asserted `reviewDecisionSaved` instead of the rendered localized `saved` feedback.
+- **GREEN (round 5):** the same focused static contract — **11/11 passed**, exit 0.
 - Browser/database/visual evidence remains **BLOCKED** at the documented missing `.env.test` boundary; no runtime command or credential access was attempted in this round.
 
 ## Round 2 verification evidence

@@ -131,19 +131,20 @@ describe("Task 11 release verification contracts", () => {
     );
   });
 
-  it("asserts localized captain-stat approval feedback before the persisted receipt", () => {
+  it("asserts the rendered localized saved feedback before the captain-stat approval receipt", () => {
     const approval = releaseJourney.indexOf(
       'getByRole("button", { name: copy.approveSubmission, exact: true }).click()',
-    );
-    const localizedFeedback = releaseJourney.indexOf(
-      "expectLocalizedText(page, copy.reviewDecisionSaved, copy.opposite.reviewDecisionSaved)",
     );
     const persistedReceipt = releaseJourney.indexOf(
       "expect(receipt.match?.statSubmissions.find",
     );
     expect(approval).toBeGreaterThanOrEqual(0);
-    expect(localizedFeedback).toBeGreaterThan(approval);
-    expect(persistedReceipt).toBeGreaterThan(localizedFeedback);
+    expect(persistedReceipt).toBeGreaterThan(approval);
+    const approvalBlock = releaseJourney.slice(approval, persistedReceipt);
+    expect(approvalBlock).toContain(
+      "expectLocalizedText(page, copy.statisticsSaved, copy.opposite.statisticsSaved)",
+    );
+    expect(approvalBlock).not.toContain("reviewDecisionSaved");
   });
 
   it("runs the strict localized on-mode journey for both declared locales", () => {
