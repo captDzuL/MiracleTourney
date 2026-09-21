@@ -33,12 +33,15 @@ describe("Task 11 release verification contracts", () => {
     expect(lifecycle).toMatch(/VIEWPORTS\.length \* LOCALES\.length \* FEATURE_FLAG_MODES\.length/);
   });
 
-  it("defaults the release matrix to the enabled profile under the ordinary CI config", () => {
+  it("uses explicit release metadata and derives the ordinary CI profile from the actual flag", () => {
     const matrixTest = lifecycle.match(
       /test\(`@task11-release-matrix[\s\S]*?\n\s*}\);/,
     )?.[0] ?? "";
 
-    expect(matrixTest).toContain('releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number] | undefined) ?? "on"');
+    expect(matrixTest).toContain("const configuredMode = test.info().project.metadata.releaseFlagMode");
+    expect(matrixTest).toContain(
+      'configuredMode ?? (process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true" ? "on" : "off")',
+    );
     expect(matrixTest).toContain("expect(FEATURE_FLAG_MODES).toContain(mode)");
   });
 
