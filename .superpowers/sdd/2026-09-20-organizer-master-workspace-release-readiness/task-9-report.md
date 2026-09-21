@@ -5,6 +5,7 @@ Branch: `codex/organizer-release-readiness`
 Worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`
 Implementation commit: `d3bc602 perf: bound organizer workspace readers`
 Round-3 implementation commit: `37c10a1 fix: preserve organizer reader overflow bounds`
+Round-4 implementation commit: `8f76d5a fix: complete organizer reader boundary coverage`
 
 ## Outcome
 
@@ -76,8 +77,8 @@ Instrumented delegate calls are bounded, credential-independent evidence; they a
 | --- | ---: | ---: | --- |
 | Organizer summary (`src/lib/organizer/workspace-read.ts`) | 1 / 1 | 4 | one event query with filtered `_count`; no event-sized list payload |
 | Registration queue + participants (`src/lib/platform/repository.ts`) | 5 / 5 total, 3 / 3 list reads | 12 overall helper budget | teams, requests, import items, roster players probe `501`, reject `ReaderResultOverflowError` above `ORGANIZER_READER_ROW_LIMIT = 500`; existing `filterRegistrationRecords` page output remains capped by requested/default page size (25) |
-| Import history/batches/context | included above | — | batch items request/probe `501`; history batches request/probe `101` and nested items `501`; context teams/players request/probe `501`; exact caps succeed and over-cap outer/nested delegates throw `ReaderResultOverflowError` |
-| Payment review | 1 list read | — | deterministic order; probes 101 rows and throws `PaymentReviewOverflowError` when more than `ORGANIZER_READER_HISTORY_LIMIT = 100` are present |
+| Import history/batches/context | not separately instrumented | — | batch outer rows probe `9` with limit `8`, and items probe `501`; history batches probe `101` and nested items `501`; context teams/players probe `501`; independent exact-cap and over-cap repository tests cover every outer/nested boundary |
+| Payment review | not separately instrumented | — | deterministic order; probes 101 rows and throws `PaymentReviewOverflowError` when more than `ORGANIZER_READER_HISTORY_LIMIT = 100` are present |
 | Competition workspace (`src/lib/competition/workspace-read.ts`) | 16 / 16 | 20 | core rows probe `1,001`; phases/actions/round configs and incidents/announcements/audit history probe `101`; latest draft revision `take: 1`; auxiliary history `ReaderResultOverflowError` is rethrown before the `Promise.allSettled` partial-failure fallback; exact 100-row auxiliary history remains supported |
 | Completion workspace (`src/lib/completion/prisma-adapter.ts`) | 13 / 13 | 20 | source matches/revisions/teams/player stats/submissions probe `1,001`; certificates, incidents, and completion audit history probe `101`; >cap delegate test throws `ReaderResultOverflowError` |
 | Public compatibility snapshot (`src/lib/events/public-v3-read.ts`) | 7 / 7 | 12 | teams/matches/registrations/certificates probe `501`; podium `take: 3`; awards `take: 4`; certificate IDs reject above 500 rather than slice; >cap delegate test throws `ReaderResultOverflowError` |
@@ -162,6 +163,24 @@ Round-3 focused verification:
 | scoped ESLint on the four changed source/test files | 0 | 0 errors; 4 pre-existing unused-symbol warnings |
 | `node --check` on `scripts/load-test.mjs`, `scripts/load-test-quick.mjs`, `scripts/run-dashboard-performance.mjs`, and `tests/performance/autocannon-fixture-loader.mjs` | 0 | all syntax checks passed |
 | `git diff --check 11f1fcc..HEAD` | 0 | no whitespace errors after the final report commit |
+
+## Review fix round 4 evidence
+
+- Import-batch outer RED: the overflow-9 delegate response resolved instead of rejecting, while the exact-8 test observed `take: 8` rather than the required cap+1 probe. GREEN: `ORGANIZER_READER_IMPORT_BATCH_LIMIT = 8`, query `take: 9`, and `assertReaderResultWithinLimit` enforce the outer boundary independently of the nested item cap.
+- Competition auxiliary coverage now parameterizes both exact 100 and overflow 101 for incidents, announcements, and audit. The existing generic production overflow path passed all six cases without a production change.
+- Import history exact 100 outer batches and exact 500 nested items, plus import context exact 500 teams and exact 500 players, are exercised in independent tests. Import-batch outer exact 8 and overflow 9 are also independent from nested items.
+- Query-count wording now reports numeric counts only for readers directly exercised by `organizer-reader-query-budget.test.ts`; import history/batches/context and payment review are explicitly marked not separately instrumented.
+
+Round-4 focused verification:
+
+| Command | Exit | Result |
+| --- | ---: | --- |
+| `node node_modules/vitest/vitest.mjs run src/lib/platform/repository.test.ts -t "import-batch outer"` (RED) | 1 | 1 file; 2 failed, 137 skipped; overflow resolved and exact-cap query used `take: 8` |
+| same focused command after implementation (GREEN) | 0 | 1 file; 2 passed, 137 skipped |
+| `node node_modules/vitest/vitest.mjs run src/lib/competition/workspace-read.test.ts src/lib/platform/repository.test.ts -t "(incidents|announcements|audit|import-batch|import-history|import-context)"` | 0 | 2 files; 17 passed, 143 skipped |
+| `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts tests/performance/organizer-reader-query-budget.test.ts src/lib/platform/repository.test.ts src/lib/organizer/workspace-read.test.ts src/lib/competition/workspace-read.test.ts src/lib/completion/prisma-adapter.test.ts src/lib/completion/workspace.test.ts src/lib/events/public-v3-read.test.ts src/lib/registration/organizer-workspace-read.test.ts` | 0 | 9 files; 236 tests passed |
+| `npm run lint` (`tsc --noEmit`) | 0 | TypeScript check passed |
+| scoped ESLint on the three changed source/test files | 0 | 0 errors; 4 pre-existing unused-symbol warnings |
 
 ## Blocker matrix
 
