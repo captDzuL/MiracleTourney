@@ -757,6 +757,61 @@ describe("requestPasswordResetAction", () => {
     expect(operations).toContain("password_reset_request");
     info.mockRestore();
   });
+
+  it("emits safe failed signals for rate limits and deferred delivery failures before the generic redirect", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    checkRateLimit.mockReturnValueOnce(false);
+    await expect(requestPasswordResetAction(fd({ email: "private@example.test" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+    const rateLimitRecord = info.mock.calls
+      .map(([line]) => JSON.parse(String(line)))
+      .find((record) => record.operation === "password_reset_request" && record.phase === "failed");
+    expect(rateLimitRecord).toMatchObject({ status: 429, errorCode: "rate_limited" });
+
+    info.mockClear();
+    checkRateLimit.mockReturnValue(true);
+    getUserByEmail.mockResolvedValue({ id: "captain-private", role: "captain" });
+    const rawToken = "private-reset-token".padEnd(64, "x");
+    createPasswordResetToken.mockResolvedValue(rawToken);
+    sendEmail.mockRejectedValue(new Error(`delivery failed for private@example.test ${rawToken}`));
+    await expect(requestPasswordResetAction(fd({ email: "private@example.test" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+    await afterCallbacks.at(-1)?.();
+
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(records).toContainEqual(expect.objectContaining({
+      operation: "password_reset_request",
+      phase: "failed",
+      status: 500,
+      errorCode: "delivery_failed",
+    }));
+    expect(JSON.stringify(records)).not.toContain("private@example.test");
+    expect(JSON.stringify(records)).not.toContain(rawToken);
+  });
+
+  it("emits a safe failed consume signal for invalid, reused, or expired tokens before the generic redirect", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const rawToken = "private-reset-token".padEnd(64, "x");
+    consumePasswordResetToken.mockRejectedValue(new Error("Token tidak valid atau sudah kadaluarsa"));
+
+    await expect(resetPasswordAction(fd({
+      token: rawToken,
+      password: "new-password",
+      confirmPassword: "new-password",
+    }))).rejects.toThrow("REDIRECT:/forgot-password/reset?token=");
+
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(records).toContainEqual(expect.objectContaining({
+      operation: "password_reset_consume",
+      phase: "failed",
+      status: 400,
+      errorCode: "token_invalid",
+    }));
+    expect(JSON.stringify(records)).not.toContain(rawToken);
+  });
 });
 
 describe("resetPasswordAction", () => {

@@ -1820,78 +1820,101 @@ export async function adminRegenerateCertificateAction(formData: FormData) {
  * Always redirects to sent=1 regardless of whether the email exists (security best practice).
  * Queues the reset link through Next's post-response hook; sendEmail() itself never throws on delivery failure.
  */
-async function requestPasswordResetActionImpl(formData: FormData) {
+type PasswordResetActionResult =
+  | { status: "ok"; redirectPath: string }
+  | { status: "rate_limited"; redirectPath: string }
+  | { status: "failed"; code: "delivery_failed" | "token_invalid"; statusCode: 400 | 500; redirectPath: string };
+
+async function requestPasswordResetActionImpl(formData: FormData): Promise<PasswordResetActionResult> {
   const emailRaw = String(formData.get("email") ?? "").trim().toLowerCase();
   const email = z.string().email().safeParse(emailRaw);
   if (!email.success) {
-    return redirectToActiveLocale(
-      `/forgot-password?error=${encodeURIComponent("Format email tidak valid.")}` as never,
-    );
+    return {
+      status: "ok",
+      redirectPath: `/forgot-password?error=${encodeURIComponent("Format email tidak valid.")}`,
+    };
   }
   const requestIp = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   if (!checkRateLimit(`password-reset-request:${requestIp}`, 5, 15 * 60 * 1000)) {
-    return redirectToActiveLocale("/forgot-password?sent=1" as never);
+    return { status: "rate_limited", redirectPath: "/forgot-password?sent=1" };
   }
 
   try {
     const user = await getUserByEmail(email.data);
     after(async () => {
-      try {
-        await equalizePasswordResetResponse(async () => {
-          if (!user || user.role !== "captain") return;
+      await withServerActionLog(
+        "password_reset_request",
+        "/server-actions/password-reset/request",
+        async () => {
+          try {
+            await equalizePasswordResetResponse(async () => {
+              if (!user || user.role !== "captain") return;
 
-          const token = await createPasswordResetToken(user.id);
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-          const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
-          await sendEmail({
-            to: email.data,
-            subject: "Reset Password Miracle League",
-            html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 30 menit.</p>`,
-          });
-        });
-      } catch {
-        // Keep background delivery failures generic and free of user data.
-        console.error("[requestPasswordResetAction] reset delivery failed");
-      }
+              const token = await createPasswordResetToken(user.id);
+              const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+              const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
+              await sendEmail({
+                to: email.data,
+                subject: "Reset Password Miracle League",
+                html: `<p>Klik link berikut untuk reset password kamu: <a href="${resetUrl}">${resetUrl}</a></p><p>Link berlaku 30 menit.</p>`,
+              });
+            });
+            return { status: "ok" as const };
+          } catch {
+            return { status: "failed" as const, code: "delivery_failed" as const, statusCode: 500 as const };
+          }
+        },
+      );
     });
   } catch {
-    // Keep lookup/scheduling failures indistinguishable to callers.
-    console.error("[requestPasswordResetAction] reset delivery failed");
+    // Keep lookup/scheduling failures indistinguishable to callers while emitting only a safe code.
+    return {
+      status: "failed",
+      code: "delivery_failed",
+      statusCode: 500,
+      redirectPath: "/forgot-password?sent=1",
+    };
   }
   // Always redirect to sent=1 regardless of whether email exists (security)
-  return redirectToActiveLocale("/forgot-password?sent=1" as never);
+  return { status: "ok", redirectPath: "/forgot-password?sent=1" };
 }
 
 /**
  * Resets a captain's password using a one-time token.
  * Validates token length, password length, and confirmation match before consuming the token.
  */
-async function resetPasswordActionImpl(formData: FormData) {
+async function resetPasswordActionImpl(formData: FormData): Promise<PasswordResetActionResult> {
   const token = String(formData.get("token") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirmPassword") ?? "");
 
   const requestIp = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   if (!checkRateLimit(`password-reset-consume:${requestIp}`, 5, 15 * 60 * 1000)) {
-    return redirectToActiveLocale(
-      `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Token tidak valid atau sudah kadaluarsa.")}` as never,
-    );
+    return {
+      status: "rate_limited",
+      redirectPath: `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Token tidak valid atau sudah kadaluarsa.")}`,
+    };
   }
 
   if (!token || token.length < 64) {
-    return redirectToActiveLocale(
-      `/forgot-password/reset?error=${encodeURIComponent("Token tidak valid.")}` as never,
-    );
+    return {
+      status: "failed",
+      code: "token_invalid",
+      statusCode: 400,
+      redirectPath: `/forgot-password/reset?error=${encodeURIComponent("Token tidak valid.")}`,
+    };
   }
   if (password.length < 8) {
-    return redirectToActiveLocale(
-      `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Password minimal 8 karakter.")}` as never,
-    );
+    return {
+      status: "ok",
+      redirectPath: `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Password minimal 8 karakter.")}`,
+    };
   }
   if (password !== confirm) {
-    return redirectToActiveLocale(
-      `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Password tidak sama.")}` as never,
-    );
+    return {
+      status: "ok",
+      redirectPath: `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Password tidak sama.")}`,
+    };
   }
 
   const newHash = await bcrypt.hash(password, 10);
@@ -1899,30 +1922,36 @@ async function resetPasswordActionImpl(formData: FormData) {
   try {
     await consumePasswordResetToken(token, newHash);
   } catch {
-    return redirectToActiveLocale(
-      `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Token tidak valid atau sudah kadaluarsa.")}` as never,
-    );
+    return {
+      status: "failed",
+      code: "token_invalid",
+      statusCode: 400,
+      redirectPath: `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Token tidak valid atau sudah kadaluarsa.")}`,
+    };
   }
 
-  return redirectToActiveLocale(
-    `/login?message=${encodeURIComponent("Password berhasil direset. Silakan login.")}` as never,
-  );
+  return {
+    status: "ok",
+    redirectPath: `/login?message=${encodeURIComponent("Password berhasil direset. Silakan login.")}`,
+  };
 }
 
 export async function requestPasswordResetAction(formData: FormData) {
-  return withServerActionLog(
+  const result = await withServerActionLog(
     "password_reset_request",
     "/server-actions/password-reset/request",
     () => requestPasswordResetActionImpl(formData),
   );
+  return redirectToActiveLocale(result.redirectPath as never);
 }
 
 export async function resetPasswordAction(formData: FormData) {
-  return withServerActionLog(
+  const result = await withServerActionLog(
     "password_reset_consume",
     "/server-actions/password-reset/consume",
     () => resetPasswordActionImpl(formData),
   );
+  return redirectToActiveLocale(result.redirectPath as never);
 }
 
 // Next's server-action compiler requires explicit async function exports.

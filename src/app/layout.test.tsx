@@ -15,10 +15,10 @@ describe("root production layout", () => {
     expect(html).toContain('data-speed-insights="true"');
   });
 
-  it("renders one stable root signal with exactly one Speed Insights mount", () => {
+  it("renders one stable DOM root boundary with exactly one Speed Insights mount", () => {
     const html = renderToStaticMarkup(RootLayout({ children: <main>content</main> }));
 
-    expect(html.match(/data-speed-insights-root="true"/g)).toHaveLength(1);
+    expect(html).toContain('<div data-observability-root-layout="true">');
     expect(html.match(/data-speed-insights="true"/g)).toHaveLength(1);
   });
 });

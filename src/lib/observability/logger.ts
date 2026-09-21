@@ -170,13 +170,24 @@ export async function withRouteLog(
 
 function actionResultStatus(value: unknown): Pick<ServerLogResult<unknown>, "status" | "errorCode"> {
   if (!value || typeof value !== "object") return { status: 200 };
-  const result = value as { status?: unknown; code?: unknown };
+  const result = value as { status?: unknown; code?: unknown; statusCode?: unknown };
   const status = result.status;
   const code = result.code;
-  if (status === "failed") return { status: 500, errorCode: "failed" };
+  const safeActionCodes = new Set([
+    "failed", "forbidden", "unauthorized", "rate_limited", "delivery_failed", "token_invalid",
+  ]);
+  const safeCodeValue = typeof code === "string" && safeActionCodes.has(code) ? code : undefined;
+  const explicitStatus = typeof result.statusCode === "number"
+    && Number.isInteger(result.statusCode)
+    && result.statusCode >= 400
+    && result.statusCode <= 599
+    ? result.statusCode
+    : undefined;
+  if (status === "failed") return { status: explicitStatus ?? 500, errorCode: safeCodeValue ?? "failed" };
   if (status === "unauthorized" || (status === "blocked" && code === "unauthorized")) {
     return { status: 401, errorCode: "unauthorized" };
   }
+  if (status === "blocked" && code === "forbidden") return { status: 403, errorCode: "forbidden" };
   if (status === "rate_limited" || ((status === "blocked" || status === "error") && code === "rate_limited")) {
     return { status: 429, errorCode: "rate_limited" };
   }

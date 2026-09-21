@@ -104,6 +104,19 @@ describe("structured server logger", () => {
     expect(records[1]).toMatchObject({ status: expectedStatus, errorCode: status });
   });
 
+  it("classifies a blocked forbidden action result as a safe failed record", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    await withServerActionLog("completion_complete", "/server-actions/completion/complete", async () => ({
+      status: "blocked",
+      code: "forbidden",
+    }));
+
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(records.map((record) => record.phase)).toEqual(["start", "failed"]);
+    expect(records[1]).toMatchObject({ status: 403, errorCode: "forbidden" });
+  });
+
   it("logs NEXT_REDIRECT as done and rethrows the original redirect error", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const redirectError = Object.assign(new Error("redirect"), {
