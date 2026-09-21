@@ -89,45 +89,42 @@ function parseForwardedProtocol(value: string | null): string | null {
   return null;
 }
 
+function isLoopbackHostname(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "[::1]" || normalized === "::1";
+}
+
 /**
- * Effective-origin precedence is protocol (single trusted forwarded value,
- * otherwise the framework URL) plus forwarded Host only for the trusted proxy
- * shape (upstream Host is the framework authority and forwarded protocol is
- * present); otherwise Host wins. Missing or conflicting metadata fails closed.
+ * Production trusts only the framework-normalized URL authority. Next dev can
+ * expose an internal framework authority while the browser uses a loopback
+ * port, so non-production permits that one loopback shape. Forwarded metadata
+ * is never authoritative; when present in the loopback fallback it must agree
+ * with the browser-visible Host and Origin or the request fails closed.
  */
 function getEffectiveOrigin(request: NextRequest): string | null {
   const origin = parseOrigin(request.headers.get("origin"));
   if (!origin) return null;
 
-  const frameworkUrl = new URL(request.nextUrl.origin);
-  const forwardedProtocolHeader = request.headers.get("x-forwarded-proto");
-  const protocol = forwardedProtocolHeader
-    ? parseForwardedProtocol(forwardedProtocolHeader)
-    : HTTP_PROTOCOLS.has(frameworkUrl.protocol) ? frameworkUrl.protocol : null;
-  if (!protocol) return null;
+  if (origin === request.nextUrl.origin) return origin;
+  if (process.env.NODE_ENV === "production") return null;
+
+  const originUrl = new URL(origin);
+  if (!isLoopbackHostname(originUrl.hostname)) return null;
 
   const hostHeader = request.headers.get("host");
+  const host = parseAuthority(hostHeader, originUrl.protocol);
+  if (!hostHeader || !host || host !== originUrl.host) return null;
+
   const forwardedHostHeader = request.headers.get("x-forwarded-host");
-  const host = parseAuthority(hostHeader, protocol);
-  const forwardedHost = parseAuthority(forwardedHostHeader, protocol);
-  if ((hostHeader && !host) || (forwardedHostHeader && !forwardedHost)) return null;
-  if (!host && !forwardedHost && forwardedProtocolHeader) return null;
-  if (forwardedHost && !host && !forwardedProtocolHeader) return null;
-
-  const frameworkHost = parseAuthority(frameworkUrl.host, protocol);
-  if (!frameworkHost) return null;
-
-  let effectiveHost = frameworkHost;
-  if (host && forwardedHost && host !== forwardedHost) {
-    if (host !== frameworkHost || !forwardedProtocolHeader) return null;
-    effectiveHost = forwardedHost;
-  } else if (forwardedHost) {
-    effectiveHost = forwardedHost;
-  } else if (host) {
-    effectiveHost = host;
+  const forwardedProtocolHeader = request.headers.get("x-forwarded-proto");
+  if (Boolean(forwardedHostHeader) !== Boolean(forwardedProtocolHeader)) return null;
+  if (forwardedHostHeader && forwardedProtocolHeader) {
+    const forwardedHost = parseAuthority(forwardedHostHeader, originUrl.protocol);
+    const forwardedProtocol = parseForwardedProtocol(forwardedProtocolHeader);
+    if (forwardedHost !== originUrl.host || forwardedProtocol !== originUrl.protocol) return null;
   }
 
-  return `${protocol}//${effectiveHost}` === origin ? origin : null;
+  return origin;
 }
 
 function isCrossSiteUnsafeRequest(request: NextRequest) {

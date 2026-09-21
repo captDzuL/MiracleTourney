@@ -14,6 +14,7 @@ function postLoginRequest(ip: string, headers: Record<string, string> = {}) {
 
 describe("middleware security controls", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     vi.resetModules();
   });
 
@@ -108,7 +109,60 @@ describe("middleware security controls", () => {
     expect(response.status).toBe(200);
   });
 
-  it("uses the forwarded browser authority when Host is the trusted framework authority", async () => {
+  it("keeps the loopback authority fallback disabled in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.44",
+        host: "127.0.0.1:3100",
+        "x-forwarded-host": "127.0.0.1:3100",
+        "x-forwarded-proto": "http",
+        origin: "http://127.0.0.1:3100",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("preserves normalized default ports on the strict framework authority path", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("https://release.example/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.45",
+        host: "release.example",
+        origin: "https://release.example:443",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(200);
+  });
+
+  it("allows the non-production loopback fallback for IPv6", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.46",
+        host: "[::1]:3100",
+        "x-forwarded-host": "[::1]:3100",
+        "x-forwarded-proto": "http",
+        origin: "http://[::1]:3100",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects forwarded browser authority when Host remains the framework authority", async () => {
     const { middleware } = await import("./middleware");
 
     const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
@@ -123,7 +177,7 @@ describe("middleware security controls", () => {
       },
     }));
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(403);
   });
 
   it("rejects disagreeing Host and forwarded authorities even when Origin matches one", async () => {
@@ -134,6 +188,59 @@ describe("middleware security controls", () => {
       headers: {
         "x-forwarded-for": "203.0.113.36",
         host: "miracle-league.fun",
+        "x-forwarded-host": "evil.example",
+        "x-forwarded-proto": "https",
+        origin: "https://evil.example",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects forged forwarded authority when Host matches the framework authority", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.41",
+        host: "framework.internal:3000",
+        "x-forwarded-host": "evil.example",
+        "x-forwarded-proto": "https",
+        origin: "https://evil.example",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects matching forged Host, forwarded authority and Origin", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.42",
+        host: "evil.example",
+        "x-forwarded-host": "evil.example",
+        "x-forwarded-proto": "https",
+        origin: "https://evil.example",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects forwarded authority when Host is missing", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.43",
         "x-forwarded-host": "evil.example",
         "x-forwarded-proto": "https",
         origin: "https://evil.example",
