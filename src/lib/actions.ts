@@ -1820,7 +1820,7 @@ export async function adminRegenerateCertificateAction(formData: FormData) {
  * Always redirects to sent=1 regardless of whether the email exists (security best practice).
  * Queues the reset link through Next's post-response hook; sendEmail() itself never throws on delivery failure.
  */
-export async function requestPasswordResetAction(formData: FormData) {
+async function requestPasswordResetActionImpl(formData: FormData) {
   const emailRaw = String(formData.get("email") ?? "").trim().toLowerCase();
   const email = z.string().email().safeParse(emailRaw);
   if (!email.success) {
@@ -1866,7 +1866,7 @@ export async function requestPasswordResetAction(formData: FormData) {
  * Resets a captain's password using a one-time token.
  * Validates token length, password length, and confirmation match before consuming the token.
  */
-export async function resetPasswordAction(formData: FormData) {
+async function resetPasswordActionImpl(formData: FormData) {
   const token = String(formData.get("token") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirmPassword") ?? "");
@@ -1906,6 +1906,22 @@ export async function resetPasswordAction(formData: FormData) {
 
   return redirectToActiveLocale(
     `/login?message=${encodeURIComponent("Password berhasil direset. Silakan login.")}` as never,
+  );
+}
+
+export async function requestPasswordResetAction(formData: FormData) {
+  return withServerActionLog(
+    "password_reset_request",
+    "/server-actions/password-reset/request",
+    () => requestPasswordResetActionImpl(formData),
+  );
+}
+
+export async function resetPasswordAction(formData: FormData) {
+  return withServerActionLog(
+    "password_reset_consume",
+    "/server-actions/password-reset/consume",
+    () => resetPasswordActionImpl(formData),
   );
 }
 

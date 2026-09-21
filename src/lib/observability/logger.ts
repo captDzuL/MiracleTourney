@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { headers } from "next/headers";
 
 import { toPublicError } from "@/lib/security/public-error";
 
@@ -15,6 +14,12 @@ export type ServerLogEvent = Readonly<{
   errorCode?: string;
   actorId?: string;
   resourceId?: string;
+}>;
+
+type ServerLogResult<T> = Readonly<{
+  status: number;
+  value: T;
+  errorCode?: string;
 }>;
 
 function safeText(value: string, maxLength = 160): string {
@@ -60,6 +65,23 @@ function safeEvent(event: ServerLogEvent): ServerLogEvent {
   return result;
 }
 
+function statusErrorCode(status: number): string | undefined {
+  if (status >= 500) return "internal_error";
+  if (status === 401 || status === 403) return "forbidden";
+  if (status === 429) return "rate_limited";
+  return undefined;
+}
+
+function redirectStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const digest = (error as { digest?: unknown }).digest;
+  if (typeof digest !== "string") return undefined;
+  const parts = digest.split(";");
+  if (parts[0] !== "NEXT_REDIRECT") return undefined;
+  const status = Number(parts.at(-2));
+  return Number.isInteger(status) && status >= 300 && status < 400 ? status : undefined;
+}
+
 /** Emits only the allowlisted structured event fields to the platform logger. */
 export function writeServerLog(event: ServerLogEvent): void {
   console.info(JSON.stringify(safeEvent(event)));
@@ -72,7 +94,7 @@ export function getRequestId(request: Request): string {
 export async function withServerLog<T>(
   request: Request,
   operation: string,
-  work: () => Promise<{ status: number; value: T }>,
+  work: () => Promise<ServerLogResult<T>>,
 ): Promise<T> {
   const requestId = getRequestId(request);
   const route = (() => {
@@ -83,16 +105,39 @@ export async function withServerLog<T>(
 
   try {
     const result = await work();
-    writeServerLog({
-      phase: "done",
-      operation,
-      route,
-      requestId,
-      durationMs: Date.now() - startedAt,
-      status: result.status,
-    });
+    const errorCode = result.errorCode ?? statusErrorCode(result.status);
+    writeServerLog(errorCode
+      ? {
+        phase: "failed",
+        operation,
+        route,
+        requestId,
+        durationMs: Date.now() - startedAt,
+        status: result.status,
+        errorCode,
+      }
+      : {
+        phase: "done",
+        operation,
+        route,
+        requestId,
+        durationMs: Date.now() - startedAt,
+        status: result.status,
+      });
     return result.value;
   } catch (error) {
+    const redirect = redirectStatus(error);
+    if (redirect !== undefined) {
+      writeServerLog({
+        phase: "done",
+        operation,
+        route,
+        requestId,
+        durationMs: Date.now() - startedAt,
+        status: redirect,
+      });
+      throw error;
+    }
     const publicError = toPublicError(error, requestId);
     writeServerLog({
       phase: "failed",
@@ -111,29 +156,107 @@ export async function withServerLog<T>(
 export async function withRouteLog(
   request: Request,
   operation: string,
-  work: () => Promise<Response>,
+  work: (request: Request) => Promise<Response>,
 ): Promise<Response> {
-  return withServerLog(request, operation, async () => {
-    const value = await work();
+  const requestId = getRequestId(request);
+  const tracedRequest = request.headers.has("x-vercel-id")
+    ? request
+    : new Request(request, { headers: new Headers({ ...Object.fromEntries(request.headers), "x-vercel-id": requestId }) });
+  return withServerLog(tracedRequest, operation, async () => {
+    const value = await work(tracedRequest);
     return { status: value.status, value };
   });
 }
 
-/** Wraps a server action or reader that does not receive a Request object. */
-export async function withServerActionLog<T>(
+function actionResultStatus(value: unknown): Pick<ServerLogResult<unknown>, "status" | "errorCode"> {
+  if (!value || typeof value !== "object") return { status: 200 };
+  const result = value as { status?: unknown; code?: unknown };
+  const status = result.status;
+  const code = result.code;
+  if (status === "failed") return { status: 500, errorCode: "failed" };
+  if (status === "unauthorized" || (status === "blocked" && code === "unauthorized")) {
+    return { status: 401, errorCode: "unauthorized" };
+  }
+  if (status === "rate_limited" || ((status === "blocked" || status === "error") && code === "rate_limited")) {
+    return { status: 429, errorCode: "rate_limited" };
+  }
+  return { status: 200 };
+}
+
+function logServerActionFailure(
+  operation: string,
+  route: string,
+  requestId: string,
+  startedAt: number,
+  error: unknown,
+): void {
+  const redirect = redirectStatus(error);
+  if (redirect !== undefined) {
+    writeServerLog({
+      phase: "done",
+      operation,
+      route,
+      requestId,
+      durationMs: Date.now() - startedAt,
+      status: redirect,
+    });
+    return;
+  }
+  const publicError = toPublicError(error, requestId);
+  writeServerLog({
+    phase: "failed",
+    operation,
+    route,
+    requestId,
+    durationMs: Date.now() - startedAt,
+    status: publicError.status,
+    errorCode: publicError.body.code,
+  });
+}
+
+/** Wraps a server action or reader without adding an extra foreground await. */
+export function withServerActionLog<T>(
   operation: string,
   route: string,
   work: () => Promise<T>,
 ): Promise<T> {
-  let vercelId: string | null = null;
+  const request = new Request(`https://internal.invalid${route}`);
+  const requestId = getRequestId(request);
+  const startedAt = Date.now();
+  writeServerLog({ phase: "start", operation, route, requestId, durationMs: 0, status: 0 });
+
+  let result: Promise<T>;
   try {
-    vercelId = (await headers()).get("x-vercel-id");
-  } catch {
-    // Unit tests and non-request jobs have no Next request context; correlation
-    // falls back to the generated request ID required by withServerLog.
+    result = work();
+  } catch (error) {
+    logServerActionFailure(operation, route, requestId, startedAt, error);
+    return Promise.reject(error);
   }
-  const request = new Request(`https://internal.invalid${route}`, vercelId === null ? undefined : {
-    headers: { "x-vercel-id": vercelId },
-  });
-  return withServerLog(request, operation, async () => ({ status: 200, value: await work() }));
+
+  void result.then(
+    (value) => {
+      const outcome = actionResultStatus(value);
+      const errorCode = outcome.errorCode ?? statusErrorCode(outcome.status);
+      writeServerLog(errorCode
+        ? {
+          phase: "failed",
+          operation,
+          route,
+          requestId,
+          durationMs: Date.now() - startedAt,
+          status: outcome.status,
+          errorCode,
+        }
+        : {
+          phase: "done",
+          operation,
+          route,
+          requestId,
+          durationMs: Date.now() - startedAt,
+          status: outcome.status,
+        });
+    },
+    (error: unknown) => logServerActionFailure(operation, route, requestId, startedAt, error),
+  );
+  return result;
 }

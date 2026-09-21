@@ -5,7 +5,7 @@ import { toPublicError } from "@/lib/security/public-error";
 
 export const dynamic = "force-dynamic";
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
-  return withRouteLog(request, "api_events_ongoing", () => handleGet(request, { params }));
+  return withRouteLog(request, "api_events_ongoing", (tracedRequest) => handleGet(tracedRequest, { params }));
 }
 
 async function handleGet(request: Request, { params }: { params: Promise<{ slug: string }> }) {

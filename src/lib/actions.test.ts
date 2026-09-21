@@ -745,6 +745,18 @@ describe("requestPasswordResetAction", () => {
     );
     expect(sendEmail).not.toHaveBeenCalled();
   });
+
+  it("emits the password-reset request operation signal", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+
+    const operations = info.mock.calls.map(([line]) => JSON.parse(String(line)).operation);
+    expect(operations).toContain("password_reset_request");
+    info.mockRestore();
+  });
 });
 
 describe("resetPasswordAction", () => {
@@ -778,6 +790,21 @@ describe("resetPasswordAction", () => {
     }))).rejects.toThrow("REDIRECT:/login?message=");
 
     expect(consumePasswordResetToken).toHaveBeenCalledWith(token, "$new-hash$");
+  });
+
+  it("emits the password-reset consume operation signal", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const token = "a".repeat(64);
+
+    await expect(resetPasswordAction(fd({
+      token,
+      password: "new-password",
+      confirmPassword: "new-password",
+    }))).rejects.toThrow("REDIRECT:/login?message=");
+
+    const operations = info.mock.calls.map(([line]) => JSON.parse(String(line)).operation);
+    expect(operations).toContain("password_reset_consume");
+    info.mockRestore();
   });
 });
 

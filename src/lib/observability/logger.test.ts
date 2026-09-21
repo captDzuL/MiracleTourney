@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getRequestId, redactIdentifier, withServerLog, writeServerLog } from "@/lib/observability/logger";
+import {
+  getRequestId,
+  redactIdentifier,
+  withRouteLog,
+  withServerActionLog,
+  withServerLog,
+  writeServerLog,
+} from "@/lib/observability/logger";
 
 describe("structured server logger", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -66,6 +73,72 @@ describe("structured server logger", () => {
     expect(records.map((record) => record.phase)).toEqual(["start", "failed"]);
     expect(records[1]).toMatchObject({ status: 500, errorCode: "internal_error", requestId: "req-2" });
     expect(JSON.stringify(records)).not.toMatch(/Prisma|P2028|stack|secret/i);
+  });
+
+  it("classifies a returned route 500 as failed while preserving the response", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const response = await withRouteLog(
+      new Request("https://app.example/api/failure"),
+      "api_failure",
+      async () => new Response(JSON.stringify({ code: "internal_error" }), { status: 500 }),
+    );
+
+    expect(response.status).toBe(500);
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(records.map((record) => record.phase)).toEqual(["start", "failed"]);
+    expect(records[1]).toMatchObject({ status: 500, errorCode: "internal_error" });
+  });
+
+  it.each([
+    ["failed", 500],
+    ["unauthorized", 401],
+    ["rate_limited", 429],
+  ] as const)("classifies an action result with status %s as failed", async (status, expectedStatus) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    await withServerActionLog(`action_${status}`, "/server-actions/test", async () => ({ status }));
+
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(records.map((record) => record.phase)).toEqual(["start", "failed"]);
+    expect(records[1]).toMatchObject({ status: expectedStatus, errorCode: status });
+  });
+
+  it("logs NEXT_REDIRECT as done and rethrows the original redirect error", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const redirectError = Object.assign(new Error("redirect"), {
+      digest: "NEXT_REDIRECT;replace;/login;303;",
+    });
+
+    await expect(withServerLog(
+      new Request("https://app.example/server-action"),
+      "redirecting_action",
+      async () => { throw redirectError; },
+    )).rejects.toBe(redirectError);
+
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(records.map((record) => record.phase)).toEqual(["start", "done"]);
+    expect(records[1]).toMatchObject({ status: 303 });
+    expect(records[1]).not.toHaveProperty("errorCode");
+  });
+
+  it("uses one generated request ID for a route response and both log records", async () => {
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("generated-route-id");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const response = await withRouteLog(
+      new Request("https://app.example/api/me"),
+      "api_me",
+      async (request) => {
+        const requestId = getRequestId(request);
+        return Response.json({ requestId });
+      },
+    );
+
+    expect(await response.json()).toEqual({ requestId: "generated-route-id" });
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(records).toHaveLength(2);
+    expect(records.map((record) => record.requestId)).toEqual(["generated-route-id", "generated-route-id"]);
   });
 
   it("redacts dynamic path identifiers from route fields", () => {

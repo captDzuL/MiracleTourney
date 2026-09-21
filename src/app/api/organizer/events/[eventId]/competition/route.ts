@@ -3,7 +3,7 @@ import { getRequestId, withRouteLog } from "@/lib/observability/logger";
 import { isSafeEntityId, requireSameOrigin } from "@/lib/security/request-guard";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request, { params }: { params: Promise<{ eventId: string }> }) {
-  return withRouteLog(request, "api_organizer_competition", () => handleGet(request, { params }));
+  return withRouteLog(request, "api_organizer_competition", (tracedRequest) => handleGet(tracedRequest, { params }));
 }
 
 async function handleGet(request: Request, { params }: { params: Promise<{ eventId: string }> }) {

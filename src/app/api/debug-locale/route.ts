@@ -10,7 +10,7 @@ export function GET(): Promise<Response>;
 export function GET(request: Request): Promise<Response>;
 export async function GET(request?: Request) {
   const resolvedRequest = request ?? new Request("http://localhost/api/debug-locale");
-  return withRouteLog(resolvedRequest, "api_debug_locale", () => handleGet(resolvedRequest));
+  return withRouteLog(resolvedRequest, "api_debug_locale", (tracedRequest) => handleGet(tracedRequest));
 }
 
 async function handleGet(request: Request) {

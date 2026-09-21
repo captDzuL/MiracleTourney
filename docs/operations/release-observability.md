@@ -25,6 +25,16 @@ URLs, environment values, secret values, Prisma details, and stack traces are
 not log fields. Vercel Runtime Logs are the only server-log destination; this
 change adds no Sentry SDK and no external drain.
 
+The fix-round adapter behavior is explicit: returned route responses with
+status 500 or greater, and action results classified as `failed`,
+`unauthorized`, or `rate_limited`, emit `phase="failed"` with a safe error
+code. A Next `NEXT_REDIRECT` is a successful control-flow outcome: it emits
+`phase="done"` with its redirect status and is rethrown unchanged. Route
+adapters inject one generated request ID into the traced request before the
+handler runs, so the response body and both log records share the same ID.
+Password-reset request and consume actions emit the stable operation codes
+`password_reset_request` and `password_reset_consume`.
+
 ## Required saved views
 
 The following five views are the release baseline. The filter recipes are

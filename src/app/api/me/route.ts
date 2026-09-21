@@ -11,7 +11,7 @@ export function GET(): Promise<Response>;
 export function GET(request: Request): Promise<Response>;
 export async function GET(request?: Request) {
   const resolvedRequest = request ?? new Request("http://localhost/api/me");
-  return withRouteLog(resolvedRequest, "api_me", () => handleGet(resolvedRequest));
+  return withRouteLog(resolvedRequest, "api_me", (tracedRequest) => handleGet(tracedRequest));
 }
 
 async function handleGet(request: Request) {

@@ -15,7 +15,7 @@ function csvEscape(value: string): string {
 }
 
 export async function GET(req: Request) {
-  return withRouteLog(req, "api_admin_captain_credentials", () => handleGet(req));
+  return withRouteLog(req, "api_admin_captain_credentials", (request) => handleGet(request));
 }
 
 async function handleGet(req: Request) {
