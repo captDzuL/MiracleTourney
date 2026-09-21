@@ -426,10 +426,13 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}`);
   if (mode === "on") {
     await expect(page.locator("[data-match-workspace]")).toBeVisible();
+    await expectLocalizedHeading(page, copy.matchWorkspaceHeading, copy.opposite.matchWorkspaceHeading);
     const liveReceipt = await fixture.readState();
     expect(liveReceipt.match).toMatchObject({ status: "Live", scheduleStatus: "live" });
     expect(liveReceipt.match?.actualStartedAt).toBeTruthy();
     const resultForm = page.getByRole("form", { name: copy.officialResultHeading, exact: true });
+    await expect(resultForm).toBeVisible();
+    await expect(page.getByRole("form", { name: copy.opposite.officialResultHeading, exact: true })).toHaveCount(0);
     await resultForm.locator('input[name="home-1"]').fill("2");
     await resultForm.locator('input[name="away-1"]').fill("1");
     await resultForm.getByRole("button", { name: copy.submitResult, exact: true }).click();
@@ -444,7 +447,7 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}?view=statistics`);
   if (mode === "on") {
     await expect(page.locator("[data-match-workspace]")).toBeVisible();
-    await expect(page.getByRole("heading", { name: copy.statisticsHeading, exact: true })).toBeVisible();
+    await expectLocalizedHeading(page, copy.statisticsHeading, copy.opposite.statisticsHeading);
     const playerForm = page.locator(`[data-player-form="${fixture.releasePlayerTeamId}"]`);
     await playerForm.locator(`input[name="score_${fixture.releasePlayerId}_1"]`).fill("8.7");
     await playerForm.locator(`input[name="stat_${fixture.releasePlayerId}_goal"]`).fill("4");
@@ -455,6 +458,7 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
     expect(receipt.match?.playerStats.some(({ id, source }) => Boolean(id) && source === "admin")).toBe(true);
     const submission = page.locator(`[data-submission="${fixture.statSubmissionId}"]`);
     await submission.getByRole("button", { name: copy.approveSubmission, exact: true }).click();
+    await expectLocalizedText(page, copy.reviewDecisionSaved, copy.opposite.reviewDecisionSaved);
     await expect.poll(async () => (await fixture.readState()).match?.statSubmissions.find(({ id }) => id === fixture.statSubmissionId)?.status).toBe("approved");
     receipt = await fixture.readState();
     expect(receipt.match?.statSubmissions.find(({ id }) => id === fixture.statSubmissionId)).toMatchObject({ id: fixture.statSubmissionId, status: "approved" });

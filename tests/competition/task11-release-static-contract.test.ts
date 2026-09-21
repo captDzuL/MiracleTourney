@@ -102,6 +102,57 @@ describe("Task 11 release verification contracts", () => {
     expect(releaseJourney).not.toMatch(/getByRole\("status"\)\.toContainText\(locale === "id"/);
   });
 
+  it("asserts exact current and absent opposite result forms in the on-mode journey", () => {
+    const resultSurface = releaseJourney.slice(
+      releaseJourney.indexOf("const matchId = fixture.releaseMatchId"),
+      releaseJourney.indexOf("?view=statistics"),
+    );
+    const localizedHeading = resultSurface.indexOf(
+      "expectLocalizedHeading(page, copy.matchWorkspaceHeading, copy.opposite.matchWorkspaceHeading)",
+    );
+    const currentForm = resultSurface.indexOf("await expect(resultForm).toBeVisible()");
+    const oppositeForm = resultSurface.indexOf(
+      'page.getByRole("form", { name: copy.opposite.officialResultHeading, exact: true })',
+    );
+    const submit = resultSurface.indexOf("copy.submitResult");
+    expect(localizedHeading).toBeGreaterThanOrEqual(0);
+    expect(currentForm).toBeGreaterThan(localizedHeading);
+    expect(oppositeForm).toBeGreaterThan(currentForm);
+    expect(submit).toBeGreaterThan(oppositeForm);
+  });
+
+  it("asserts exact current and absent opposite statistics headings in the on-mode journey", () => {
+    const statisticsSurface = releaseJourney.slice(
+      releaseJourney.indexOf("?view=statistics"),
+      releaseJourney.indexOf("?view=history"),
+    );
+    expect(statisticsSurface).toContain(
+      "expectLocalizedHeading(page, copy.statisticsHeading, copy.opposite.statisticsHeading)",
+    );
+  });
+
+  it("asserts localized captain-stat approval feedback before the persisted receipt", () => {
+    const approval = releaseJourney.indexOf(
+      'getByRole("button", { name: copy.approveSubmission, exact: true }).click()',
+    );
+    const localizedFeedback = releaseJourney.indexOf(
+      "expectLocalizedText(page, copy.reviewDecisionSaved, copy.opposite.reviewDecisionSaved)",
+    );
+    const persistedReceipt = releaseJourney.indexOf(
+      "expect(receipt.match?.statSubmissions.find",
+    );
+    expect(approval).toBeGreaterThanOrEqual(0);
+    expect(localizedFeedback).toBeGreaterThan(approval);
+    expect(persistedReceipt).toBeGreaterThan(localizedFeedback);
+  });
+
+  it("runs the strict localized on-mode journey for both declared locales", () => {
+    expect(lifecycle).toContain('export const LOCALES = ["id", "en"] as const');
+    expect(journeyTest).toContain("for (const locale of LOCALES)");
+    expect(journeyTest).toContain("runOrganizerReleaseJourney(page, fixture, locale, mode)");
+    expect(releaseConfig).toMatch(/name:\s*"organizer-release-on"[\s\S]*releaseJourneyGrep[\s\S]*releaseFlagMode:\s*"on"/);
+  });
+
   it("probes reduced motion on the loaded surface before clock, fonts, and screenshot CSS", () => {
     expect(auth).toContain("probeReleaseReducedMotion");
     expect(auth).toContain("installReleaseClock");
