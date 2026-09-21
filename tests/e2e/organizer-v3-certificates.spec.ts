@@ -169,6 +169,17 @@ test("certificate studio preserves ID/EN publication and verification parity", a
     await expect(page.locator('[data-certificate-type]')).toHaveCount(7);
     await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
     await expect(page.locator("[data-certificate-publication-revision], [data-publication-revision]").first()).toHaveText(/\d+/);
+    if (locale === "id") {
+      const publish = page.locator("[data-publish-certificate-set]");
+      await expect(publish).toBeEnabled();
+      await publish.click();
+      await expect(page.locator('[role="status"]')).toContainText("Set tujuh sertifikat diterbitkan dengan aman.");
+      await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
+      await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({
+        where: { eventId: scenario.id },
+        select: { certificateRevision: true },
+      })).certificateRevision).toBe(2);
+    }
     await page.goto(`/${locale}/certificates/verify/${scenario.historicalVerificationCode}`);
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
     await expect(page.locator('[data-certificate-verification="superseded"]')).toBeVisible();

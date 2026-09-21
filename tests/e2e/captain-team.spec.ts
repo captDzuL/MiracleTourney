@@ -22,8 +22,12 @@ test.describe("captain team management", () => {
 
     await expect(addPlayerForm, "Expected roster management to expose the add-player form").toBeVisible();
 
-    await addPlayerForm.getByLabel(/display name|nama/i).fill(playerName);
-    await addPlayerForm.getByLabel(/nickname/i).fill("E2EPL");
+    const uidField = addPlayerForm.locator('input[name="displayName"]');
+    const ignField = addPlayerForm.locator('input[name="nickname"]');
+    await expect(uidField).toHaveAccessibleName(/uid/i);
+    await expect(ignField).toHaveAccessibleName(/ign/i);
+    await uidField.fill(playerName);
+    await ignField.fill("E2EPL");
     const positionField = addPlayerForm.getByLabel(/position|posisi/i);
     const positionTag = await positionField.evaluate((el) => el.tagName.toLowerCase());
     if (positionTag === "select") {
