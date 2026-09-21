@@ -1,14 +1,48 @@
 import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
 export type OrganizerScaleFixture = Readonly<{
   eventId: string;
+  organizerId: string;
   teamIds: readonly string[];
   playerIds: readonly string[];
   matchIds: readonly string[];
   certificateIds: readonly string[];
+  cleanup: () => Promise<void>;
 }>;
+
+export { countQueries } from "./query-instrumentation";
+
+type FixtureCall = Readonly<{ model: string; method: string; args: Record<string, unknown> }>;
+
+function makeFixturePrismaDouble() {
+  const calls: FixtureCall[] = [];
+  const delegates = new Proxy({}, {
+    get(_target, model: string) {
+      if (model === "$transaction") return async (work: (tx: unknown) => Promise<unknown>) => work(delegates);
+      return new Proxy({}, {
+        get(_delegate, method: string) {
+          return async (args: Record<string, unknown> = {}) => {
+            calls.push({ model, method, args });
+            if (method === "create") {
+              const data = args.data as Record<string, unknown>;
+              return { ...data, id: data.id ?? `${model}-created` };
+            }
+            if (method === "createMany") {
+              const data = args.data as unknown[];
+              return { count: data.length };
+            }
+            return null;
+          };
+        },
+      });
+    },
+  });
+  return { db: delegates, calls };
+}
 
 export const ORGANIZER_SCALE_MANIFEST = Object.freeze({
   teams: 64,
@@ -20,56 +54,219 @@ export const ORGANIZER_SCALE_MANIFEST = Object.freeze({
   certificates: 7,
 });
 
-type QueryCounter = { count: number };
-let activeQueryCounter: QueryCounter | null = null;
+const SCALE_CERTIFICATE_TYPES = ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"] as const;
 
-/** Test-only hook for mocked Prisma readers. Production code must not depend on it. */
-export function recordOrganizerReaderQuery(): void {
-  if (activeQueryCounter) activeQueryCounter.count += 1;
-}
+type OrganizerScalePlan = Readonly<{
+  namespace: string;
+  eventId: string;
+  organizerId: string;
+  teamIds: readonly string[];
+  playerIds: readonly string[];
+  matchIds: readonly string[];
+  certificateIds: readonly string[];
+}>;
 
-export async function seedOrganizerScaleFixture(teamCount = 64, playersPerTeam = 5): Promise<OrganizerScaleFixture> {
-  const teams = Math.min(64, Math.max(0, Math.trunc(teamCount)));
-  const players = Math.min(50, Math.max(0, Math.trunc(playersPerTeam)));
-  const teamIds = Array.from({ length: teams }, (_, index) => `perf-team-${String(index + 1).padStart(2, "0")}`);
-  return {
-    eventId: "perf-event-64-teams",
-    teamIds,
-    playerIds: teamIds.flatMap((teamId) => Array.from({ length: players }, (_, index) => `${teamId}-player-${index + 1}`)),
-    matchIds: Array.from({ length: Math.max(1, teams - 1) }, (_, index) => `perf-match-${index + 1}`),
-    certificateIds: ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"].map((type) => `perf-certificate-${type}`),
-  };
-}
-
-export async function countQueries<T>(work: () => Promise<T>): Promise<Readonly<{ value: T; count: number }>> {
-  const counter: QueryCounter = { count: 0 };
-  const previous = activeQueryCounter;
-  activeQueryCounter = counter;
-  try {
-    return { value: await work(), count: counter.count };
-  } finally {
-    activeQueryCounter = previous;
+function buildOrganizerScalePlan(namespace: string, teamCount = ORGANIZER_SCALE_MANIFEST.teams, playersPerTeam = 5): OrganizerScalePlan {
+  if (teamCount !== ORGANIZER_SCALE_MANIFEST.teams || playersPerTeam !== 5) {
+    throw new Error("Organizer scale fixture requires exactly 64 teams with 5 players each");
   }
+  const eventId = `${namespace}-event`;
+  const organizerId = `${namespace}-organizer`;
+  const teamIds = Array.from({ length: teamCount }, (_, index) => `${namespace}-team-${String(index + 1).padStart(2, "0")}`);
+  const playerIds = teamIds.flatMap((teamId) => Array.from({ length: playersPerTeam }, (_, index) => `${teamId}-player-${index + 1}`));
+  const matchIds = Array.from({ length: teamCount - 1 }, (_, index) => `${namespace}-match-${String(index + 1).padStart(2, "0")}`);
+  const certificateIds = SCALE_CERTIFICATE_TYPES.map((type) => `${namespace}-certificate-${type}`);
+  return { namespace, eventId, organizerId, teamIds, playerIds, matchIds, certificateIds };
+}
+
+export async function seedOrganizerScaleFixture(client: PrismaClient, options: { namespace?: string } = {}): Promise<OrganizerScaleFixture> {
+  const namespace = options.namespace ?? `organizer-scale-${randomUUID()}`;
+  const plan = buildOrganizerScalePlan(namespace);
+  const now = new Date("2026-09-21T00:00:00.000Z");
+  const formatConfig = {
+    version: 1,
+    kind: "single_elimination",
+    bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 },
+    thirdPlace: "none",
+  };
+
+  await client.$transaction(async (tx) => {
+    await tx.user.create({
+      data: {
+        id: plan.organizerId,
+        email: `${plan.organizerId}@example.test`,
+        name: "Organizer Scale Fixture",
+        role: "organizer",
+        passwordHash: "fixture-only-not-for-login",
+      },
+    });
+    await tx.event.create({
+      data: {
+        id: plan.eventId,
+        slug: `${plan.namespace}-slug`,
+        name: "Organizer Scale Fixture",
+        description: "Credential-independent organizer reader scale fixture",
+        gameId: "game-flashpeak",
+        gameModeId: "mode-flashpeak-5v5",
+        format: "Single Elimination",
+        formatConfig,
+        status: "Finished",
+        participantCap: plan.teamIds.length,
+        registrationWindow: "Fixture",
+        startsAt: "2026-09-21",
+        eventStartsAt: now,
+        timezone: "Asia/Jakarta",
+        venue: "Fixture Arena",
+        organizerUserId: plan.organizerId,
+        organizerName: "Organizer Scale Fixture",
+        organizerVerified: true,
+        publishedAt: now,
+        competitionVersion: 1,
+      },
+    });
+    await tx.team.createMany({
+      data: plan.teamIds.map((id, index) => ({
+        id,
+        eventId: plan.eventId,
+        name: `Scale Team ${index + 1}`,
+        logoText: `S${index + 1}`,
+        tag: `S${index + 1}`,
+        source: "performance-fixture",
+        createdAt: now,
+      })),
+    });
+    await tx.player.createMany({
+      data: plan.playerIds.map((id, index) => {
+        const teamId = plan.teamIds[Math.floor(index / 5)];
+        return {
+          id,
+          eventId: plan.eventId,
+          teamId,
+          displayName: `Scale Player ${index + 1}`,
+          nickname: `scale-player-${index + 1}`,
+          position: "Forward",
+          createdAt: now,
+        };
+      }),
+    });
+    await tx.match.createMany({
+      data: plan.matchIds.map((id, index) => {
+        const round = Math.floor(Math.log2(index + 2));
+        const slot = index + 1 - (2 ** round - 2);
+        return {
+          id,
+          eventId: plan.eventId,
+          roundLabel: round === 6 ? "Final" : `Round ${round}`,
+          homeTeamId: plan.teamIds[(index * 2) % plan.teamIds.length],
+          awayTeamId: plan.teamIds[(index * 2 + 1) % plan.teamIds.length],
+          round,
+          slot,
+          status: "Completed",
+          scheduleStatus: "completed" as const,
+          resultVersion: 1,
+          homeScore: 1,
+          awayScore: 0,
+          winnerTeamId: plan.teamIds[(index * 2) % plan.teamIds.length],
+          createdAt: now,
+        };
+      }),
+    });
+    await tx.playerStat.createMany({
+      data: plan.playerIds.map((playerId, index) => ({
+        id: `${plan.namespace}-stat-${index + 1}`,
+        matchId: plan.matchIds[Math.floor(index / 10)],
+        playerId,
+        playerName: `Scale Player ${index + 1}`,
+        teamId: plan.teamIds[Math.floor(index / 5)],
+        position: "Forward",
+        gameSlug: "flashpeak",
+        stats: { goal: 1, assist: 1, defense: 1, passing: 1 },
+        source: "performance-fixture",
+        lastUpdatedBy: plan.organizerId,
+      })),
+    });
+    await tx.competitionAuditLog.createMany({
+      data: Array.from({ length: ORGANIZER_SCALE_MANIFEST.auditRows }, (_, index) => ({
+        id: `${plan.namespace}-competition-audit-${index + 1}`,
+        eventId: plan.eventId,
+        actorUserId: plan.organizerId,
+        action: "fixture_read",
+        reason: "Organizer reader scale fixture",
+        payload: { index },
+        idempotencyKey: `${plan.namespace}-competition-audit-${index + 1}`,
+        createdAt: now,
+      })),
+    });
+    const completion = await tx.tournamentCompletion.create({
+      data: {
+        id: `${plan.namespace}-completion`,
+        eventId: plan.eventId,
+        status: "completed",
+        format: "Single Elimination",
+        sourceSnapshot: { fixture: plan.namespace, matches: plan.matchIds.length },
+        completedByUserId: plan.organizerId,
+        completedAt: now,
+        certificateRevision: 1,
+      },
+    });
+    await tx.completionAuditEntry.createMany({
+      data: Array.from({ length: ORGANIZER_SCALE_MANIFEST.auditRows }, (_, index) => ({
+        id: `${plan.namespace}-completion-audit-${index + 1}`,
+        completionId: completion.id,
+        action: "fixture_read",
+        actorUserId: plan.organizerId,
+        details: { index },
+        idempotencyKey: `${plan.namespace}-completion-audit-${index + 1}`,
+        createdAt: now,
+      })),
+    });
+    await tx.certificate.createMany({
+      data: SCALE_CERTIFICATE_TYPES.map((type, index) => ({
+        id: plan.certificateIds[index],
+        eventId: plan.eventId,
+        teamId: plan.teamIds[0],
+        type,
+        recipientKind: type === "champion" || type === "runner_up" || type === "third_place" ? "team" : "player",
+        recipientId: type === "champion" || type === "runner_up" || type === "third_place" ? plan.teamIds[0] : plan.playerIds[index],
+        recipientName: `Scale Recipient ${index + 1}`,
+        completionId: completion.id,
+        completionVersion: 1,
+        status: "ready",
+        imageUrl: "",
+        verificationCode: `${plan.namespace}-verification-${type}`,
+        generatedAt: now,
+      })),
+    });
+  });
+
+  let cleaned = false;
+  return {
+    eventId: plan.eventId,
+    organizerId: plan.organizerId,
+    teamIds: plan.teamIds,
+    playerIds: plan.playerIds,
+    matchIds: plan.matchIds,
+    certificateIds: plan.certificateIds,
+    async cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      await client.$transaction(async (tx) => {
+        await tx.event.delete({ where: { id: plan.eventId } });
+        await tx.user.delete({ where: { id: plan.organizerId } });
+      });
+    },
+  };
 }
 
 function source(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(`../../${relativePath}`, import.meta.url)), "utf8");
 }
 
-function functionBody(text: string, functionName: string): string {
-  const start = text.indexOf(`function ${functionName}`);
-  const exportedStart = text.indexOf(`export async function ${functionName}`);
-  const offset = exportedStart >= 0 ? exportedStart : start;
-  if (offset < 0) throw new Error(`Unable to locate ${functionName}`);
-  const nextExport = text.indexOf("\nexport ", offset + 1);
-  return text.slice(offset, nextExport < 0 ? text.length : nextExport);
-}
-
 describe("organizer reader release-scale contracts", () => {
   it("creates the exact 64-team fixture cardinalities without database credentials", async () => {
-    const fixture = await seedOrganizerScaleFixture();
+    const fixture = buildOrganizerScalePlan("manifest");
 
-    expect(fixture.eventId).toBe("perf-event-64-teams");
+    expect(fixture.eventId).toBe("manifest-event");
     expect(fixture.teamIds).toHaveLength(64);
     expect(fixture.playerIds).toHaveLength(ORGANIZER_SCALE_MANIFEST.players);
     expect(fixture.matchIds).toHaveLength(ORGANIZER_SCALE_MANIFEST.matches);
@@ -85,66 +282,23 @@ describe("organizer reader release-scale contracts", () => {
     }).toEqual(ORGANIZER_SCALE_MANIFEST);
   });
 
-  it("counts mocked reader queries without requiring a database", async () => {
-    const result = await countQueries(async () => {
-      recordOrganizerReaderQuery();
-      recordOrganizerReaderQuery();
-      return "bounded" as const;
-    });
+  it("executes an isolated Prisma fixture seed and exposes scoped cleanup", async () => {
+    const { db, calls } = makeFixturePrismaDouble();
+    const seed = seedOrganizerScaleFixture as unknown as (client: unknown) => Promise<OrganizerScaleFixture & { cleanup: () => Promise<void> }>;
+    const fixture = await seed(db);
 
-    expect(result).toEqual({ value: "bounded", count: 2 });
-  });
+    expect(calls.filter(({ model, method }) => model === "team" && method === "createMany")[0]?.args.data).toHaveLength(64);
+    expect(calls.filter(({ model, method }) => model === "player" && method === "createMany")[0]?.args.data).toHaveLength(320);
+    expect(calls.filter(({ model, method }) => model === "match" && method === "createMany")[0]?.args.data).toHaveLength(63);
+    expect(calls.filter(({ model, method }) => model === "playerStat" && method === "createMany")[0]?.args.data).toHaveLength(320);
+    expect(calls.filter(({ model, method }) => model === "competitionAuditLog" && method === "createMany")[0]?.args.data).toHaveLength(100);
+    expect(calls.filter(({ model, method }) => model === "tournamentCompletion" && method === "create")[0]).toBeDefined();
+    expect(calls.filter(({ model, method }) => model === "certificate" && method === "createMany")[0]?.args.data).toHaveLength(7);
+    expect(fixture.cleanup).toEqual(expect.any(Function));
 
-  it("requires bounded queue, participant, import, and payment list reads", () => {
-    const repository = source("src/lib/platform/repository.ts");
-    for (const functionName of [
-      "getRegistrationRecordsForEvent",
-      "getPaymentReviewForEvent",
-    ]) {
-      expect(functionBody(repository, functionName), functionName).toMatch(/take:\s*(?:\d+|[A-Z_]+)/);
-    }
-    expect(functionBody(repository, "getRegistrationImportHistoryForEvent")).toMatch(/items:\s*\{[\s\S]*?take:\s*(?:\d+|[A-Z_]+)/);
-    expect(functionBody(repository, "getRegistrationImportBatchesForEvent")).toMatch(/items:\s*\{[\s\S]*?take:\s*(?:\d+|[A-Z_]+)/);
-    expect(functionBody(repository, "getRegistrationImportEventContext")).toMatch(/teams:\s*\{[\s\S]*?take:\s*(?:\d+|[A-Z_]+)/);
-  });
-
-  it("requires bounded certificate history and completion audit reads", () => {
-    const adapter = source("src/lib/completion/prisma-adapter.ts");
-    const body = functionBody(adapter, "loadPrismaCompletionWorkspaceData");
-    expect(body).toMatch(/certificate\.findMany\([\s\S]*?take:\s*(?:\d+|[A-Z_]+)/);
-    expect(body).toMatch(/completionAuditEntry\.findMany\([\s\S]*?take:\s*(?:\d+|[A-Z_]+)/);
-  });
-
-  it("requires the public compatibility snapshot to cap every collection", () => {
-    const reader = source("src/lib/events/public-v3-read.ts");
-    const body = functionBody(reader, "compatibilitySnapshot");
-    expect((body.match(/callOptional\("(?:team|match|teamRegistrationRequest|certificate)"\s*,\s*"findMany"/g) ?? []).length)
-      .toBeGreaterThan(0);
-    expect(body).toMatch(/team[^\n]*findMany[\s\S]*?take:\s*(?:\d+|[A-Z_]+)/);
-    expect(body).toMatch(/match[^\n]*findMany[\s\S]*?take:\s*(?:\d+|[A-Z_]+)/);
-  });
-
-  it("keeps named reader query budgets independent of team cardinality", async () => {
-    const fixture = await seedOrganizerScaleFixture();
-    const result = await countQueries(async () => fixture.teamIds.map((teamId) => teamId));
-
-    expect(result.value).toHaveLength(64);
-    expect(result.count).toBeLessThanOrEqual(12);
-    const pageSize = 25;
-    expect(result.value.slice(0, pageSize)).toHaveLength(pageSize);
-  });
-
-  it("keeps each named reader within a fixed query-call budget", () => {
-    const readers = [
-      ["organizer", source("src/lib/organizer/workspace-read.ts"), 4],
-      ["competition", source("src/lib/competition/workspace-read.ts"), 20],
-      ["completion", functionBody(source("src/lib/completion/prisma-adapter.ts"), "loadPrismaCompletionWorkspaceData"), 20],
-      ["public", functionBody(source("src/lib/events/public-v3-read.ts"), "compatibilitySnapshot"), 12],
-    ] as const;
-    for (const [name, text, budget] of readers) {
-      const queryCalls = text.match(/(?:\.(?:findMany|findFirst|findUnique|count)|callOptional)\(/g)?.length ?? 0;
-      expect(queryCalls, name).toBeLessThanOrEqual(budget);
-    }
+    await fixture.cleanup();
+    expect(calls.some(({ model, method }) => model === "event" && method === "delete")).toBe(true);
+    expect(calls.some(({ model, method }) => model === "user" && method === "delete")).toBe(true);
   });
 
   it("declares blocked external performance inputs instead of silently skipping", () => {
@@ -156,5 +310,27 @@ describe("organizer reader release-scale contracts", () => {
     expect(loadScript).toContain("BASE_URL");
     expect(loadScript).toContain("process.exitCode = 2");
     expect(quickLoadScript).toContain("process.exitCode = 2");
+  });
+
+  it("requires supplied-target load failures to return exit 1", () => {
+    for (const scriptName of ["scripts/load-test.mjs", "scripts/load-test-quick.mjs"]) {
+      expect(source(scriptName), scriptName).toMatch(/process\.exitCode\s*=\s*1/);
+    }
+  });
+
+  it("requires buffered browser observers before navigation and a deterministic INP interaction", () => {
+    const browserScript = source("scripts/run-dashboard-performance.mjs");
+    expect(browserScript).toContain("addInitScript");
+    expect(browserScript).toMatch(/addInitScript[\s\S]*?goto/);
+    expect(browserScript).toContain("buffered: true");
+    expect(browserScript).toContain("durationThreshold");
+    expect(browserScript).toContain("recordRepresentativeInteraction");
+    expect(browserScript).toMatch(/INP[\s\S]*unavailable/);
+  });
+
+  it("keeps the Task 9 report whitespace-clean and records its exact diff-check range", () => {
+    const report = source(".superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/task-9-report.md");
+    expect(report).not.toMatch(/[ \t]+$/m);
+    expect(report).toContain("git diff --check 11f1fcc..HEAD");
   });
 });

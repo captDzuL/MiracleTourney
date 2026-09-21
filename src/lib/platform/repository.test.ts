@@ -931,6 +931,32 @@ describe("event-local registration workspace repository", () => {
     }));
   });
 
+  it("detects payment-review overflow instead of silently truncating the capped list", async () => {
+    prisma.teamRegistrationRequest.updateMany.mockResolvedValue({ count: 0 });
+    prisma.teamRegistrationRequest.findMany.mockResolvedValue(Array.from({ length: 101 }, (_, index) => ({
+      id: `request-${index + 1}`,
+      eventId: "event-1",
+      captainId: "captain-1",
+      teamId: null,
+      teamName: `Proof Team ${index + 1}`,
+      teamTag: `PR${index + 1}`,
+      status: "pending_review",
+      proofImageUrl: null,
+      rejectReason: null,
+      expiresAt: new Date("2026-09-20T00:00:00.000Z"),
+      createdAt: new Date(2026, 0, index + 1),
+      updatedAt: new Date(2026, 0, index + 1),
+      captain: { id: "captain-1", name: "Captain", email: "captain@example.com" },
+    })));
+
+    await expect(getPaymentReviewForEvent(organizer, "event-1", "pending_review"))
+      .rejects.toThrow(/payment review.*more than|overflow/i);
+    expect(prisma.teamRegistrationRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: expect.any(Number),
+    }));
+  });
+
   it("returns event QRIS draft state without falling back to global settings", async () => {
     prisma.eventPaymentSettings.findUnique.mockResolvedValue({
       id: "event-payment-1",

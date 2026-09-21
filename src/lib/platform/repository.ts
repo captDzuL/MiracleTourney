@@ -52,6 +52,7 @@ const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration C
 // event-sized request from turning into an unbounded database read.
 const ORGANIZER_READER_ROW_LIMIT = 500;
 const ORGANIZER_READER_HISTORY_LIMIT = 100;
+const ORGANIZER_READER_PAYMENT_PROBE_LIMIT = ORGANIZER_READER_HISTORY_LIMIT + 1;
 
 
 type RegistrationWindowEvent = {
@@ -2471,6 +2472,13 @@ export type PaymentReviewEntry = {
   captain?: { id: string; name: string; email?: string } | null;
 };
 
+export class PaymentReviewOverflowError extends Error {
+  constructor() {
+    super(`Payment review contains more than ${ORGANIZER_READER_HISTORY_LIMIT} entries; use a paginated review reader.`);
+    this.name = "PaymentReviewOverflowError";
+  }
+}
+
 export type RegistrationImportEventContext = {
   id: string;
   slug: string;
@@ -2616,8 +2624,9 @@ export async function getPaymentReviewForEvent(user: AppUser, eventId: string, s
     },
     include: { captain: { select: { id: true, name: true, email: true } } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: ORGANIZER_READER_HISTORY_LIMIT,
+    take: ORGANIZER_READER_PAYMENT_PROBE_LIMIT,
   });
+  if (rows.length > ORGANIZER_READER_HISTORY_LIMIT) throw new PaymentReviewOverflowError();
   return rows.map((row) => ({
     id: row.id,
     eventId: row.eventId,

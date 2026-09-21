@@ -11,6 +11,31 @@ const eventId = process.env.DASHBOARD_PERF_EVENT_ID;
 const publicEventSlug = process.env.DASHBOARD_PERF_PUBLIC_EVENT_SLUG;
 const thresholdMs = Number(process.env.DASHBOARD_PERF_THRESHOLD_MS ?? "3000");
 const browserBudgets = { lcpMs: 2_500, inpMs: 200, cls: 0.1, ttfbMs: 800 };
+const PERFORMANCE_OBSERVER_INIT = `
+(() => {
+  const state = { lcp: null, inp: null, cls: 0, clsAvailable: false };
+  window.__miracleDashboardPerformance = state;
+  if (typeof PerformanceObserver !== "function") return;
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) state.lcp = Number(entry.startTime);
+    }).observe({ type: "largest-contentful-paint", buffered: true });
+  } catch {}
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) state.inp = Math.max(state.inp ?? 0, Number(entry.duration) || 0);
+    }).observe({ type: "event", buffered: true, durationThreshold: 16 });
+  } catch {}
+  try {
+    new PerformanceObserver((list) => {
+      state.clsAvailable = true;
+      for (const entry of list.getEntries()) {
+        if (!entry.hadRecentInput) state.cls += Number(entry.value) || 0;
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+    state.clsAvailable = true;
+  } catch {}
+})();`;
 
 const missingInputs = [
   ["DASHBOARD_PERF_BASE_URL", baseUrl],
@@ -36,24 +61,33 @@ async function signIn(page, email, password) {
   await page.waitForLoadState("networkidle");
 }
 
+const observedPages = new WeakSet();
+async function preparePerformanceObservers(page) {
+  if (observedPages.has(page)) return;
+  await page.addInitScript({ content: PERFORMANCE_OBSERVER_INIT });
+  observedPages.add(page);
+}
+
+async function recordRepresentativeInteraction(page) {
+  await page.locator("body").click({ position: { x: 4, y: 4 }, force: true });
+  await page.waitForTimeout(50);
+}
+
 async function measure(page, path) {
   const startedAt = performance.now();
+  await preparePerformanceObservers(page);
   await page.goto(new URL(path, baseUrl).toString(), { waitUntil: "networkidle" });
+  await recordRepresentativeInteraction(page);
   const duration = Math.round(performance.now() - startedAt);
   const metrics = await page.evaluate(() => {
     const navigation = performance.getEntriesByType("navigation")[0];
-    const lcpEntries = performance.getEntriesByType("largest-contentful-paint");
-    const eventEntries = performance.getEntriesByType("event");
-    const layoutShifts = performance.getEntriesByType("layout-shift");
+    const observed = window.__miracleDashboardPerformance;
     const ttfb = navigation && "responseStart" in navigation && "requestStart" in navigation
       ? Number(navigation.responseStart) - Number(navigation.requestStart)
       : null;
-    const lcp = lcpEntries.length ? Number(lcpEntries.at(-1)?.startTime ?? 0) : null;
-    const inp = eventEntries.length ? Math.max(...eventEntries.map((entry) => Number(entry.duration) || 0)) : null;
-    const cls = layoutShifts.reduce((total, entry) => {
-      const shift = entry;
-      return total + (shift.hadRecentInput ? 0 : Number(shift.value) || 0);
-    }, 0);
+    const lcp = typeof observed?.lcp === "number" && Number.isFinite(observed.lcp) ? observed.lcp : null;
+    const inp = typeof observed?.inp === "number" && Number.isFinite(observed.inp) ? observed.inp : null;
+    const cls = observed?.clsAvailable && typeof observed.cls === "number" && Number.isFinite(observed.cls) ? observed.cls : null;
     return { lcp, inp, cls, ttfb };
   });
   console.log(`${path}: ${duration}ms metrics=${JSON.stringify(metrics)}`);
@@ -65,7 +99,7 @@ async function measure(page, path) {
     ["INP", metrics.inp, browserBudgets.inpMs],
     ["CLS", metrics.cls, browserBudgets.cls],
     ["TTFB", metrics.ttfb, browserBudgets.ttfbMs],
-  ].flatMap(([name, value, budget]) => value === null || value >= budget ? [`${name}=${value ?? "unavailable"} (budget < ${budget})`] : []);
+  ].flatMap(([name, value, budget]) => typeof value !== "number" || !Number.isFinite(value) || value >= budget ? [`${name}=${value ?? "unavailable"} (budget < ${budget})`] : []);
   if (metricFailures.length > 0) {
     throw new Error(`${path} browser budget failed: ${metricFailures.join(", ")}`);
   }

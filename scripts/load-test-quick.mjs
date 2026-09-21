@@ -89,4 +89,5 @@ if (allPass) {
   const errored = results.filter((r) => r.errors > 0 || r.non2xx > 0);
   if (slow.length) console.log(`⚠️  Slow routes (p95 ≥ ${P95_BUDGET_MS}ms): ${slow.map((r) => r.label).join(", ")}`);
   if (errored.length) console.log(`❌ Routes with errors/non-2xx: ${errored.map((r) => r.label).join(", ")}`);
+  process.exitCode = 1;
 }
