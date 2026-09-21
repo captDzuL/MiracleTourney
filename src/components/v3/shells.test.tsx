@@ -65,6 +65,22 @@ afterEach(() => {
 });
 
 describe("V3 shell integration", () => {
+  it("keeps focused operator descendants below the sticky header", async () => {
+    await render(
+      <OperatorShell
+        footer={<footer>Footer</footer>}
+        homeHref="/organizer"
+        navigation={[]}
+      >
+        <button type="button">Match Day</button>
+      </OperatorShell>,
+    );
+
+    const main = container.querySelector("main")!;
+    expect(main.className).toContain("scroll-mt-24");
+    expect(main.className).toContain("[&_:focus-visible]:scroll-m-24");
+  });
+
   it("localizes the Indonesian setup competition action", async () => {
     route.locale = "id";
     route.pathname = "/id/organizer/events/cup/edit";
