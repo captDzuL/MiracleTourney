@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 import {
   getRequestId,
@@ -152,6 +153,30 @@ describe("structured server logger", () => {
     const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
     expect(records).toHaveLength(2);
     expect(records.map((record) => record.requestId)).toEqual(["generated-route-id", "generated-route-id"]);
+  });
+
+  it("preserves a NextRequest while sharing its generated correlation ID with the handler", async () => {
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("generated-next-request-id");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const request = new NextRequest("https://app.example/api/me");
+
+    const response = await withRouteLog(
+      request,
+      "api_me",
+      async (tracedRequest) => {
+        expect(tracedRequest).toBe(request);
+        expect(tracedRequest).toBeInstanceOf(NextRequest);
+        expect(tracedRequest.headers.get("x-vercel-id")).toBe("generated-next-request-id");
+        return Response.json({ requestId: getRequestId(tracedRequest) });
+      },
+    );
+
+    expect(await response.json()).toEqual({ requestId: "generated-next-request-id" });
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(records.map((record) => record.requestId)).toEqual([
+      "generated-next-request-id",
+      "generated-next-request-id",
+    ]);
   });
 
   it("redacts dynamic path identifiers from route fields", () => {

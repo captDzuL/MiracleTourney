@@ -160,11 +160,9 @@ export async function withRouteLog(
   work: (request: Request) => Promise<Response>,
 ): Promise<Response> {
   const requestId = getRequestId(request);
-  const tracedRequest = request.headers.has("x-vercel-id")
-    ? request
-    : new Request(request, { headers: new Headers({ ...Object.fromEntries(request.headers), "x-vercel-id": requestId }) });
-  return withServerLog(tracedRequest, operation, async () => {
-    const value = await work(tracedRequest);
+  if (!request.headers.has("x-vercel-id")) request.headers.set("x-vercel-id", requestId);
+  return withServerLog(request, operation, async () => {
+    const value = await work(request);
     return { status: value.status, value };
   });
 }
