@@ -10,6 +10,7 @@ const matchday = readFileSync(resolve(root, "tests/e2e/v3-matchday.spec.ts"), "u
 const auth = readFileSync(resolve(root, "tests/e2e/helpers/auth.ts"), "utf8");
 const fixtures = readFileSync(resolve(root, "tests/e2e/helpers/fixtures.ts"), "utf8");
 const completionFixtures = readFileSync(resolve(root, "tests/e2e/helpers/completion.ts"), "utf8");
+const registrationIntake = readFileSync(resolve(root, "src/lib/imports/registration-intake.ts"), "utf8");
 const releaseJourney = lifecycle.match(
   /async function runOrganizerReleaseJourney[\s\S]*?function eventIdentity/,
 )?.[0] ?? "";
@@ -128,6 +129,24 @@ describe("Task 11 release verification contracts", () => {
   it("uses an exact localized import feedback locator", () => {
     expect(releaseJourney).toContain("copy.importCompleted");
     expect(releaseJourney).not.toMatch(/getByRole\("status"\)\.toContainText\(locale === "id"/);
+  });
+
+  it("uses importer-supported human-readable headers for the release journey CSV", () => {
+    const csvFixture = releaseJourney.match(/const csv = \[[\s\S]*?\]\.join\("\\n"\);/)?.[0] ?? "";
+    const supportedHeaders = [
+      "team name",
+      "team tag",
+      "captain name",
+      "captain contact",
+      "captain email",
+      "captain ign",
+      "captain uid",
+      "captain is player",
+    ];
+
+    expect(csvFixture).toContain(`"${supportedHeaders.join(",")}"`);
+    expect(csvFixture).not.toMatch(/\b(?:teamName|teamTag|captainName|captainContact|captainEmail|captainIgn|captainUid|captainIsPlayer)\b/);
+    for (const header of supportedHeaders) expect(registrationIntake).toContain(`"${header}"`);
   });
 
   it("asserts exact current and absent opposite result forms in the on-mode journey", () => {
