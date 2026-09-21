@@ -89,4 +89,130 @@ describe("middleware security controls", () => {
 
     expect(response.status).toBe(200);
   });
+
+  it("allows same-origin requests when the framework URL uses an internal authority", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.34",
+        host: "127.0.0.1:3100",
+        "x-forwarded-host": "127.0.0.1:3100",
+        "x-forwarded-proto": "http",
+        origin: "http://127.0.0.1:3100",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(200);
+  });
+
+  it("uses the forwarded browser authority when Host is the trusted framework authority", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.35",
+        host: "framework.internal:3000",
+        "x-forwarded-host": "127.0.0.1:3100",
+        "x-forwarded-proto": "http",
+        origin: "http://127.0.0.1:3100",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects disagreeing Host and forwarded authorities even when Origin matches one", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.36",
+        host: "miracle-league.fun",
+        "x-forwarded-host": "evil.example",
+        "x-forwarded-proto": "https",
+        origin: "https://evil.example",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects malformed forwarded authorities", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.37",
+        host: "127.0.0.1:3100/path",
+        "x-forwarded-host": "127.0.0.1:3100/path",
+        "x-forwarded-proto": "http",
+        origin: "http://127.0.0.1:3100",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects malformed Origin values", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.39",
+        host: "127.0.0.1:3100",
+        "x-forwarded-host": "127.0.0.1:3100",
+        "x-forwarded-proto": "http",
+        origin: "http:\\127.0.0.1:3100",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects ambiguous forwarded protocol metadata", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.40",
+        host: "127.0.0.1:3100",
+        "x-forwarded-host": "127.0.0.1:3100",
+        "x-forwarded-proto": "http,https",
+        origin: "http://127.0.0.1:3100",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects cross-site fetch metadata even when Origin matches the effective authority", async () => {
+    const { middleware } = await import("./middleware");
+
+    const response = await middleware(new NextRequest("http://framework.internal:3000/id/login", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.38",
+        host: "127.0.0.1:3100",
+        "x-forwarded-host": "127.0.0.1:3100",
+        "x-forwarded-proto": "http",
+        origin: "http://127.0.0.1:3100",
+        "sec-fetch-site": "cross-site",
+      },
+    }));
+
+    expect(response.status).toBe(403);
+  });
 });

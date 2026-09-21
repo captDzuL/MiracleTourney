@@ -14,6 +14,7 @@ const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 10;
 const LOCALE_SEGMENT = /^\/(id|en)(?=\/|$)/;
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const HTTP_PROTOCOLS = new Set(["http:", "https:"]);
 
 function checkLoginRateLimit(ip: string): boolean {
   const now = Date.now();
@@ -44,18 +45,95 @@ async function getRole(request: NextRequest): Promise<string | null> {
 
 const intlMiddleware = createMiddleware(routing);
 
+function parseOrigin(value: string | null): string | null {
+  if (!value) return null;
+
+  const candidate = value.trim();
+  if (!candidate || /[\\\u0000-\u001f\u007f]/.test(candidate)) return null;
+
+  try {
+    const url = new URL(candidate);
+    if (!HTTP_PROTOCOLS.has(url.protocol) || !url.hostname || url.hostname === "." || url.hostname === ".."
+      || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function parseAuthority(value: string | null, protocol: string): string | null {
+  if (!value) return null;
+
+  const authority = value.trim();
+  if (!authority || /[,\\/?#@\u0000-\u001f\u007f]/.test(authority)) return null;
+
+  try {
+    const url = new URL(`${protocol}//${authority}`);
+    if (!HTTP_PROTOCOLS.has(url.protocol) || !url.hostname || url.hostname === "." || url.hostname === ".."
+      || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+      return null;
+    }
+    return url.host;
+  } catch {
+    return null;
+  }
+}
+
+function parseForwardedProtocol(value: string | null): string | null {
+  if (!value) return null;
+
+  const protocol = value.trim().toLowerCase();
+  if (protocol === "http" || protocol === "https") return `${protocol}:`;
+  return null;
+}
+
+/**
+ * Effective-origin precedence is protocol (single trusted forwarded value,
+ * otherwise the framework URL) plus forwarded Host only for the trusted proxy
+ * shape (upstream Host is the framework authority and forwarded protocol is
+ * present); otherwise Host wins. Missing or conflicting metadata fails closed.
+ */
+function getEffectiveOrigin(request: NextRequest): string | null {
+  const origin = parseOrigin(request.headers.get("origin"));
+  if (!origin) return null;
+
+  const frameworkUrl = new URL(request.nextUrl.origin);
+  const forwardedProtocolHeader = request.headers.get("x-forwarded-proto");
+  const protocol = forwardedProtocolHeader
+    ? parseForwardedProtocol(forwardedProtocolHeader)
+    : HTTP_PROTOCOLS.has(frameworkUrl.protocol) ? frameworkUrl.protocol : null;
+  if (!protocol) return null;
+
+  const hostHeader = request.headers.get("host");
+  const forwardedHostHeader = request.headers.get("x-forwarded-host");
+  const host = parseAuthority(hostHeader, protocol);
+  const forwardedHost = parseAuthority(forwardedHostHeader, protocol);
+  if ((hostHeader && !host) || (forwardedHostHeader && !forwardedHost)) return null;
+  if (!host && !forwardedHost && forwardedProtocolHeader) return null;
+  if (forwardedHost && !host && !forwardedProtocolHeader) return null;
+
+  const frameworkHost = parseAuthority(frameworkUrl.host, protocol);
+  if (!frameworkHost) return null;
+
+  let effectiveHost = frameworkHost;
+  if (host && forwardedHost && host !== forwardedHost) {
+    if (host !== frameworkHost || !forwardedProtocolHeader) return null;
+    effectiveHost = forwardedHost;
+  } else if (forwardedHost) {
+    effectiveHost = forwardedHost;
+  } else if (host) {
+    effectiveHost = host;
+  }
+
+  return `${protocol}//${effectiveHost}` === origin ? origin : null;
+}
+
 function isCrossSiteUnsafeRequest(request: NextRequest) {
   if (!UNSAFE_METHODS.has(request.method)) return false;
 
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-
-  try {
-    if (new URL(origin).origin !== request.nextUrl.origin) return true;
-  } catch {
-    return true;
-  }
-
+  if (!getEffectiveOrigin(request)) return true;
   return request.headers.get("sec-fetch-site") === "cross-site";
 }
 
