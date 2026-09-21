@@ -1,8 +1,8 @@
 # Task 11 — Organizer release journey verification
 
-## Outcome
+## Outcome: PARTIAL
 
-The deterministic Playwright collection, fixture seams, accessibility contract, and release journey are implemented in the seven requested source files plus `playwright.config.ts`. Runtime browser verification is **BLOCKED** at environment loading because this isolated worktree has no authorized `.env.test`/Neon credentials. No credentials were copied, guessed, or written, and no required test was converted to a skip.
+The deterministic Playwright collection, fixture seams, accessibility contract, and release journey are implemented in the seven requested source files plus `playwright.config.ts`, with a focused static contract test. Static verification is GREEN; runtime browser/visual verification is **BLOCKED** at environment loading because this isolated worktree has no authorized `.env.test`/Neon credentials. No credentials were copied, guessed, or written, and no required test was converted to a skip.
 
 ## Coverage matrix
 
@@ -10,21 +10,21 @@ The deterministic Playwright collection, fixture seams, accessibility contract, 
 | --- | --- | --- |
 | Locale | ID (`id`) and EN (`en`) | BLOCKED before browser startup |
 | Viewport | 360×800, 390×844, 768×900, 1024×900, 1440×900 | BLOCKED before browser startup |
-| Feature flag | `FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3=true` (on) and unset/false (off); config records mode and the matchday contract covers both branches | BLOCKED before browser startup |
+| Feature flag | Separate `organizer-release-on` and `organizer-release-off` Playwright projects, servers on 3101/3102, explicit `true`/`false` server env, project `baseURL` mapping, and mode-specific Match Control assertions | BLOCKED before browser startup |
 | Owner role | Organizer owner completes the shared serial journey in both locales | BLOCKED before browser startup |
 | Shared workspace role | Admin can open the organizer registration queue | BLOCKED before browser startup |
 | Non-owner role | Organizer B receives an error and cannot see the fixture event or ID | BLOCKED before browser startup |
-| Baseline screenshots | 2 locales × 5 viewports × 2 flag modes = 20 requested combinations; lifecycle source emits 10 locale/viewport paths, with targeted parity paths in completion, certificates, and Match Control | 0 captured; credentials are required |
+| Baseline screenshots | 2 locales × 5 viewports × 2 flag modes = **20** named `release-accessibility-{on|off}-{locale}-{viewport}.png` baselines | 0 captured; credentials are required |
 
-The primary accessibility matrix is 2 × 5 = **10 serial locale/viewport cases**. The full release test is one serial test that traverses **17 logical milestones** in each locale: login, registration queue, import, payment review, QRIS, competition, schedule, Match Control, score/result, statistics, history, Completion, the seven-certificate set, publication revision, publication, historical verification, and current verification.
+The release profile accessibility matrix is 2 × 5 × 2 = **20 serial locale/viewport/flag cases**. The full release test is one serial test that traverses **17 logical milestones** in each locale: login, registration queue, import, payment review, QRIS, competition, schedule, Match Control, score/result, statistics, history, Completion, the seven-certificate set, publication revision, publication, historical verification, and current verification.
 
 ## Accessibility and deterministic contracts
 
 Implemented in one shared helper and reused by the lifecycle journey:
 
 1. bounded horizontal overflow;
-2. keyboard tab order matching visual top/left order;
-3. valid `aria-sort` values;
+2. actual `Tab` and `Shift+Tab` sequence matching visual top/left order;
+3. valid `aria-sort` values plus one required sortable target and two state transitions;
 4. visible main controls at least 44px high;
 5. `prefers-reduced-motion: reduce`;
 6. zero running animations in reduced-motion mode;
@@ -33,16 +33,17 @@ Implemented in one shared helper and reused by the lifecycle journey:
 9. focused control inside the viewport;
 10. focused control not obscured at its center point by sticky UI.
 
-The Escape helper adds three assertions: dialog opens, Escape closes it, and focus returns to the trigger. Login setup normalizes reduced motion, the browser clock header, timezone, locale, and test-client address. Screenshots explicitly disable animations. Artifact text checks reject the test password and fixture email strings before an attachment can be produced.
+The Escape helper requires a visible trigger, exactly one named `role="dialog"` with `aria-modal="true"`, Escape closure, and focus restoration. Login setup installs Playwright’s frozen clock at `2026-09-21T00:00:00.000Z`, normalizes reduced motion, waits for `document.fonts.ready`, sets the deterministic clock header, timezone, locale, and test-client address. Screenshots explicitly disable animations only after reduced-motion and font assertions. Fixture dates derive from a fixed `RELEASE_FIXTURE_NOW`; payment/import/QRIS/match/stat/review/history state is read back by the same event ID. Artifact text checks reject the test password and fixture email strings before an attachment can be produced.
 
 Completion parity covers ID at 390px and EN at 1440px. Certificate parity covers ID and EN at 768px, seven certificate cards, hydration, publication revision, and historical/current verification. Match Control parity covers ID at 390px and EN at 1440px, operations visibility, overflow, control sizing, `aria-sort`, and visible keyboard focus.
 
 ## TDD and static evidence
 
-- **RED:** the first lifecycle contract import failed collection/type checking because `normalizeReleasePage` was not yet exported from `tests/e2e/helpers/auth.ts` (`TS2305`). The helper and deterministic fixture seam were then added.
-- **GREEN:** `node node_modules/typescript/bin/tsc --noEmit --incremental false` — exit **0** (17.4s).
-- **GREEN:** direct ESLint over the config, helpers, and four named specs — exit **0**, zero errors/warnings.
-- **GREEN:** `git diff --check` — exit **0** (Git only reported normal LF→CRLF conversion warnings).
+- **RED (fix round):** `node node_modules/vitest/vitest.mjs run tests/competition/task11-release-static-contract.test.ts` — 2/2 expected failures: missing separate flag projects/ports and missing real Tab/Shift+Tab/dialog/fonts/fixture/revision contracts.
+- **GREEN:** the same focused static contract — 2/2 tests passed.
+- **GREEN:** `node node_modules/typescript/bin/tsc --noEmit --incremental false` — exit **0** (17.3s).
+- **GREEN:** direct ESLint over the config, helpers, four named specs, and focused contract — exit **0**, zero errors/warnings.
+- **GREEN:** unstaged and staged `git diff --check` are clean (no whitespace errors).
 - Source scan found no private keys, live API-key prefixes, `DATABASE_URL=`, or Neon secret values. The only credential-like strings are the pre-existing synthetic E2E login values and the new fixture-only bcrypt input required to build deterministic test data; they are never rendered into screenshots or report output.
 
 ## Runtime blocker (exact commands and inputs)

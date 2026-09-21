@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { prepareCertificateFixture } from "./completion";
 
 const prisma = new PrismaClient();
+export const RELEASE_FIXTURE_NOW = new Date("2026-09-13T04:00:00.000Z");
 
 /**
  * One guarded event carries every organizer release surface. Completion and
@@ -15,8 +16,9 @@ const prisma = new PrismaClient();
 export async function prepareOrganizerReleaseFixture(namespace = randomUUID().slice(0, 12)) {
   if (!/^[a-z0-9-]{1,48}$/.test(namespace)) throw new Error("Invalid fixture namespace");
   const base = await prepareCertificateFixture(namespace);
-  const expiresAt = new Date("2026-09-22T00:00:00.000Z");
+  const expiresAt = new Date(RELEASE_FIXTURE_NOW.getTime() + 9 * 24 * 60 * 60 * 1000);
   let createdCaptainId: string | undefined;
+  let statSubmissionId: string | undefined;
   try {
     const captain = await prisma.user.findUnique({ where: { email: "captain@miraclefc.gg" }, select: { id: true } })
       ?? await prisma.user.create({
@@ -49,7 +51,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         instructions: "Scan the deterministic release QRIS fixture.",
         status: "published",
         version: 2,
-        publishedAt: new Date("2026-09-13T04:00:00.000Z"),
+        publishedAt: RELEASE_FIXTURE_NOW,
         updatedById: base.actor.id,
       },
       create: {
@@ -58,7 +60,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         instructions: "Scan the deterministic release QRIS fixture.",
         status: "published",
         version: 2,
-        publishedAt: new Date("2026-09-13T04:00:00.000Z"),
+        publishedAt: RELEASE_FIXTURE_NOW,
         updatedById: base.actor.id,
       },
     });
@@ -95,7 +97,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         status: "committed",
         summary: { total: 1, imported: 1, errors: 0 } satisfies Prisma.InputJsonValue,
         expiresAt,
-        committedAt: new Date("2026-09-13T04:00:00.000Z"),
+        committedAt: RELEASE_FIXTURE_NOW,
         items: {
           create: {
             sourceRow: 2,
@@ -103,17 +105,65 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
             selected: true,
             normalizedData: { teamName: team.name, teamTag: team.tag } satisfies Prisma.InputJsonValue,
             teamId: team.id,
-            committedAt: new Date("2026-09-13T04:00:00.000Z"),
+            committedAt: RELEASE_FIXTURE_NOW,
           },
         },
       },
       select: { id: true },
     });
+    const firstPlayer = base.players[0];
+    const firstMatch = await prisma.match.findFirst({
+      where: { eventId: base.id, OR: [{ homeTeamId: firstPlayer.teamId }, { awayTeamId: firstPlayer.teamId }] },
+      select: { id: true },
+    });
+    if (!firstMatch) throw new Error("Release fixture requires a match for the first player");
+    const statSubmission = await prisma.statSubmission.create({
+      data: {
+        matchId: firstMatch.id,
+        eventId: base.id,
+        teamId: firstPlayer.teamId,
+        submittedBy: `release-captain-${namespace}`,
+        status: "pending",
+        stats: { [firstPlayer.id]: { scores: [8.5], goal: 2, assist: 1, passing: 3, defense: 2 } } satisfies Prisma.InputJsonValue,
+        submittedAt: RELEASE_FIXTURE_NOW,
+      },
+      select: { id: true },
+    });
+    statSubmissionId = statSubmission.id;
     return {
       ...base,
       paymentRequestId: paymentRequest.id,
       importBatchId: importBatch.id,
       qrisVersion: 2,
+      statSubmissionId,
+      releaseMatchId: firstMatch.id,
+      fixtureNow: RELEASE_FIXTURE_NOW.toISOString(),
+      readState: async () => {
+        const [event, paymentRequestState, importBatchState, qris, match] = await Promise.all([
+          prisma.event.findUnique({ where: { id: base.id }, select: { status: true, publishedRevision: true } }),
+          prisma.teamRegistrationRequest.findUnique({ where: { id: paymentRequest.id }, select: { id: true, eventId: true, status: true, proofImageUrl: true } }),
+          prisma.registrationImportBatch.findUnique({ where: { id: importBatch.id }, select: { id: true, eventId: true, status: true, committedAt: true } }),
+          prisma.eventPaymentSettings.findUnique({ where: { eventId: base.id }, select: { eventId: true, version: true, status: true } }),
+          prisma.match.findUnique({
+            where: { id: firstMatch.id },
+            select: {
+              id: true,
+              homeScore: true,
+              awayScore: true,
+              resultVersion: true,
+              resultRevisions: { select: { id: true, version: true } },
+              playerStats: { select: { id: true, source: true } },
+              statSubmissions: { select: { id: true, status: true, reviewedAt: true } },
+            },
+          }),
+        ]);
+        const [certificateCount, publicationCount, latestPublication] = await Promise.all([
+          prisma.certificate.count({ where: { eventId: base.id } }),
+          prisma.certificatePublication.count({ where: { eventId: base.id } }),
+          prisma.certificatePublication.findFirst({ where: { eventId: base.id }, orderBy: { version: "desc" }, select: { version: true } }),
+        ]);
+        return { event, paymentRequest: paymentRequestState, importBatch: importBatchState, qris, match, certificateCount, publicationCount, publicationVersion: latestPublication?.version ?? 0 };
+      },
       cleanup: async () => {
         await base.cleanup();
         if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);

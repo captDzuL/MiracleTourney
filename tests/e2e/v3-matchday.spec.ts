@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { loginAsOrganizer } from "./helpers/auth";
+import { loginAsOrganizer, normalizeReleasePage, waitForReleaseFonts } from "./helpers/auth";
 import { matchdayDb, prepareMatchdayFixture, type MatchdayKind } from "./helpers/matchday";
 import type { CompetitionWorkspaceState } from "../../src/lib/competition/workspace-types";
 import type { PublicOngoingEventViewModel } from "../../src/lib/events/public-ongoing-types";
@@ -321,6 +321,7 @@ test("match control preserves ID/EN parity, visible focus, aria-sort values, and
   test.slow();
   fixture = await prepareMatchdayFixture("single_elimination", "published", "release-matchday-parity");
   for (const [locale, viewport] of [["id", { width: 390, height: 844 }], ["en", { width: 1440, height: 900 }]] as const) {
+    await normalizeReleasePage(page);
     await page.setViewportSize(viewport);
     await loginAsOrganizer(page, locale);
     await page.goto(`/${locale}/organizer/events/${fixture.id}/match-control`);
@@ -340,6 +341,8 @@ test("match control preserves ID/EN parity, visible focus, aria-sort values, and
     const focused = page.locator(":focus");
     await expect(focused).toBeVisible();
     expect(await focused.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+    expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+    await waitForReleaseFonts(page);
     await page.screenshot({
       path: test.info().outputPath(`match-control-${locale}-${viewport.width}.png`),
       animations: "disabled",

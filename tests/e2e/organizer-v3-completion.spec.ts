@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { loginAsOrganizer, normalizeReleasePage } from "./helpers/auth";
+import { loginAsOrganizer, normalizeReleasePage, waitForReleaseFonts } from "./helpers/auth";
 import {
   completionDb,
   prepareCompletionFixture,
@@ -99,6 +99,8 @@ test("completion workspace keeps localized parity and bounded mobile controls", 
     await tabs.first().focus();
     await page.keyboard.press("ArrowRight");
     await expect(tabs.nth(1)).toBeFocused();
+    expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+    await waitForReleaseFonts(page);
     await page.screenshot({
       path: test.info().outputPath(`completion-${locale}-${locale === "id" ? "390" : "1440"}.png`),
       animations: "disabled",

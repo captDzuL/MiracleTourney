@@ -1,6 +1,8 @@
 import { expect, type Page } from "@playwright/test";
 
 let loginClientSequence = 0;
+const normalizedPages = new WeakSet<Page>();
+export const RELEASE_CLOCK = new Date("2026-09-21T00:00:00.000Z");
 
 /**
  * Make release screenshots and keyboard checks reproducible without changing
@@ -9,6 +11,8 @@ let loginClientSequence = 0;
  */
 export async function normalizeReleasePage(page: Page) {
   await page.emulateMedia({ reducedMotion: "reduce" });
+  if (normalizedPages.has(page)) return;
+  await page.clock.install({ time: RELEASE_CLOCK });
   await page.addInitScript(() => {
     const install = () => {
       document.documentElement.dataset.e2eReducedMotion = "true";
@@ -29,6 +33,11 @@ export async function normalizeReleasePage(page: Page) {
     if (document.head) install();
     else document.addEventListener("DOMContentLoaded", install, { once: true });
   });
+  normalizedPages.add(page);
+}
+
+export async function waitForReleaseFonts(page: Page) {
+  await page.evaluate(() => document.fonts.ready);
 }
 
 export async function loginWithCredentials(

@@ -8,7 +8,7 @@ import {
   MIRACLE_V3_SAFE_ZONES,
   MIRACLE_V3_CERTIFICATE_TYPES,
 } from "../../src/lib/certificate/templates/miracle-v3-contract";
-import { loginAsOrganizer, normalizeReleasePage } from "./helpers/auth";
+import { loginAsOrganizer, normalizeReleasePage, waitForReleaseFonts } from "./helpers/auth";
 import {
   completionDb,
   prepareCertificateFixture,
@@ -131,6 +131,8 @@ test("keeps the certificate studio reachable and usable at desktop and mobile ge
       expect(control.height, `${control.label} is below the 44px target at ${viewport.width}px`).toBeGreaterThanOrEqual(44);
     }
     expect(await page.locator("body").innerText()).not.toMatch(/Miracle2026!|organizer-a@miraclefc\.gg/i);
+    expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+    await waitForReleaseFonts(page);
     await page.screenshot({
       path: test.info().outputPath(`certificate-studio-en-${viewport.width}.png`),
       animations: "disabled",
@@ -167,11 +169,15 @@ test("certificate studio preserves ID/EN publication and verification parity", a
     await expect(page.locator('[data-certificate-type]')).toHaveCount(7);
     await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
     await expect(page.locator("[data-certificate-publication-revision], [data-publication-revision]").first()).toHaveText(/\d+/);
-    await page.goto(`/id/certificates/verify/${scenario.historicalVerificationCode}`);
+    await page.goto(`/${locale}/certificates/verify/${scenario.historicalVerificationCode}`);
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
     await expect(page.locator('[data-certificate-verification="superseded"]')).toBeVisible();
     await page.goto(`/${locale}/certificates/verify/${scenario.currentVerificationCode}`);
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
     await expect(page.locator('[data-certificate-verification="current"]')).toBeVisible();
     await expect(page.locator("body")).not.toContainText("Miracle2026!");
+    expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+    await waitForReleaseFonts(page);
     await page.screenshot({
       path: test.info().outputPath(`certificate-studio-${locale}-768.png`),
       animations: "disabled",
