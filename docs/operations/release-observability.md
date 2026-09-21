@@ -27,7 +27,7 @@ change adds no Sentry SDK and no external drain.
 
 The fix-round adapter behavior is explicit: returned route responses with
 status 500 or greater, and action results classified as `failed`,
-`unauthorized`, `rate_limited`, or blocked `forbidden`, emit `phase="failed"`
+`unauthorized`, `rate_limited`, blocked `forbidden`, or blocked `upload_failed`, emit `phase="failed"`
 with a safe error code. A Next `NEXT_REDIRECT` is a successful control-flow
 outcome: it emits `phase="done"` with its redirect status and is rethrown
 unchanged. Route adapters inject one generated request ID into the traced
@@ -50,7 +50,7 @@ depends on the connected Vercel project and must be confirmed by the PIC.
 | 2. Auth denials and rate spikes | `errorCode="forbidden" OR errorCode="rate_limited" OR status IN (401,403,429)`; group by `operation`, `route`, `requestId` | check abuse/rate-limit volume and authorization changes; do not expose actor/resource hashes |
 | 3. Function timeout and high duration | `phase="done" AND durationMs >= 5000`, plus Vercel timeout/runtime events | correlate the slow operation and deployment; protect the route before increasing limits |
 | 4. Password-reset failure/reuse | `operation IN ("password_reset_request","password_reset_consume") AND phase="failed" AND errorCode IN ("rate_limited","delivery_failed","token_invalid")`; group by `operation`, `errorCode` | verify generic response, token reuse/expiry handling, and rate-limit state; never log email/token/reset URL |
-| 5. Completion/certificate transaction failures | `operation IN ("completion_complete","completion_reopen","certificate_publish","certificate_regenerate","certificate_asset_upload") AND phase="failed"` | correlate the request and transaction code, then preserve idempotency and inspect the preview artifact |
+| 5. Completion/certificate transaction failures | `operation IN ("completion_complete","completion_reopen","certificate_publish","certificate_regenerate","certificate_asset_upload") AND phase="failed"`; group by `operation`, `errorCode` | correlate the request and transaction code, then preserve idempotency and inspect the preview artifact |
 
 Saved-view names and filters above are definitions only. The existence of
 these views in a Vercel project is `BLOCKED` until a PIC with project access

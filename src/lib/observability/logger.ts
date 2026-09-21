@@ -174,7 +174,7 @@ function actionResultStatus(value: unknown): Pick<ServerLogResult<unknown>, "sta
   const status = result.status;
   const code = result.code;
   const safeActionCodes = new Set([
-    "failed", "forbidden", "unauthorized", "rate_limited", "delivery_failed", "token_invalid",
+    "failed", "forbidden", "unauthorized", "rate_limited", "delivery_failed", "token_invalid", "upload_failed",
   ]);
   const safeCodeValue = typeof code === "string" && safeActionCodes.has(code) ? code : undefined;
   const explicitStatus = typeof result.statusCode === "number"
@@ -188,6 +188,7 @@ function actionResultStatus(value: unknown): Pick<ServerLogResult<unknown>, "sta
     return { status: 401, errorCode: "unauthorized" };
   }
   if (status === "blocked" && code === "forbidden") return { status: 403, errorCode: "forbidden" };
+  if (status === "blocked" && code === "upload_failed") return { status: 500, errorCode: "upload_failed" };
   if (status === "rate_limited" || ((status === "blocked" || status === "error") && code === "rate_limited")) {
     return { status: 429, errorCode: "rate_limited" };
   }

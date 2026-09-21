@@ -1818,7 +1818,8 @@ export async function adminRegenerateCertificateAction(formData: FormData) {
 /**
  * Requests a password reset link for a captain account.
  * Always redirects to sent=1 regardless of whether the email exists (security best practice).
- * Queues the reset link through Next's post-response hook; sendEmail() itself never throws on delivery failure.
+ * Queues the reset link through Next's post-response hook; delivery failures are
+ * converted into a safe structured signal by the deferred logger boundary.
  */
 type PasswordResetActionResult =
   | { status: "ok"; redirectPath: string }

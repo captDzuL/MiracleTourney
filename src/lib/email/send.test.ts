@@ -35,21 +35,17 @@ describe("sendEmail", () => {
     });
   });
 
-  it("logs and swallows Resend errors instead of throwing", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("throws a safe delivery error when Resend returns its { error } adapter shape", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     process.env.FEATURE_FLAG_EMAIL_PASSWORD_RESET = "true";
     process.env.RESEND_API_KEY = "test-key";
-    const resendError = { message: "invalid from address" };
+    const resendError = { message: "invalid from address", providerRequestId: "provider-secret" };
     resendSend.mockResolvedValue({ data: null, error: resendError });
 
     await expect(
       sendEmail({ to: "user@example.com", subject: "Reset", html: "<p>link</p>" }),
-    ).resolves.toBeUndefined();
-    expect(errorSpy).toHaveBeenCalled();
-    const logs = errorSpy.mock.calls.flat().join(" ");
-    expect(logs).not.toContain("user@example.com");
-    expect(logs).not.toContain("<p>link</p>");
-    expect(logs).not.toContain("Reset");
+    ).rejects.toThrow("Email delivery failed");
+    expect(errorSpy).not.toHaveBeenCalled();
     errorSpy.mockRestore();
   });
 

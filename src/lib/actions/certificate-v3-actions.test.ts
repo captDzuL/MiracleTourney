@@ -98,4 +98,24 @@ describe("certificate v3 actions", () => {
     expect(external.revalidate).not.toHaveBeenCalled();
   });
 
+  it("logs upload_failed when the certificate asset action returns its blocked failure shape", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    external.upload.mockRejectedValue(new Error("storage provider detail must not be logged"));
+    const form = new FormData();
+    form.set("eventId", "event-1");
+    form.set("purpose", "certificate_team_logo");
+    form.set("asset", new File(["png"], "logo.png", { type: "image/png" }));
+
+    await expect(uploadCertificateAssetAction(form)).resolves.toEqual({ status: "blocked", code: "upload_failed" });
+
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(records).toContainEqual(expect.objectContaining({
+      operation: "certificate_asset_upload",
+      phase: "failed",
+      status: 500,
+      errorCode: "upload_failed",
+    }));
+    expect(JSON.stringify(records)).not.toContain("storage provider detail");
+  });
+
 });
