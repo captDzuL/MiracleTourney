@@ -212,14 +212,19 @@ export async function expectReleaseAccessibilityContract(page: Page) {
       if (!active) return null;
       const box = active.getBoundingClientRect();
       const style = getComputedStyle(active);
-      const x = Math.max(box.left + 1, Math.min(box.right - 1, window.innerWidth / 2));
-      const y = Math.max(box.top + 1, Math.min(box.bottom - 1, window.innerHeight / 2));
-      const hit = document.elementFromPoint(x, y);
+      const visibleLeft = Math.max(box.left, 0);
+      const visibleRight = Math.min(box.right, window.innerWidth);
+      const visibleTop = Math.max(box.top, 0);
+      const visibleBottom = Math.min(box.bottom, window.innerHeight);
+      const intersectsViewport = visibleRight > visibleLeft && visibleBottom > visibleTop;
+      const hit = intersectsViewport
+        ? document.elementFromPoint((visibleLeft + visibleRight) / 2, (visibleTop + visibleBottom) / 2)
+        : null;
       return {
         marker: active.dataset.task11Focus,
         focusVisible: active.matches(":focus-visible"),
         visible: box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none",
-        inViewport: box.bottom > 0 && box.right > 0 && box.top < window.innerHeight && box.left < window.innerWidth,
+        inViewport: intersectsViewport,
         unobscured: hit === active || Boolean(hit && active.contains(hit)),
       };
     });

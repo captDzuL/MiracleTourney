@@ -194,6 +194,22 @@ describe("Task 11 release verification contracts", () => {
     expect(contractBody.indexOf("waitForReleaseFonts")).toBeGreaterThan(contractBody.indexOf("probeReleaseReducedMotion"));
   });
 
+  it("checks focus occlusion at the midpoint of the visible element intersection", () => {
+    const contractBody = lifecycle.match(
+      /export async function expectReleaseAccessibilityContract[\s\S]*?const contract = await page\.evaluate/,
+    )?.[0] ?? "";
+
+    expect(contractBody).toContain("const visibleLeft = Math.max(box.left, 0)");
+    expect(contractBody).toContain("const visibleRight = Math.min(box.right, window.innerWidth)");
+    expect(contractBody).toContain("const visibleTop = Math.max(box.top, 0)");
+    expect(contractBody).toContain("const visibleBottom = Math.min(box.bottom, window.innerHeight)");
+    expect(contractBody).toContain("const intersectsViewport = visibleRight > visibleLeft && visibleBottom > visibleTop");
+    expect(contractBody).toContain("const hit = intersectsViewport");
+    expect(contractBody).toContain("active.contains(hit)");
+    expect(contractBody).not.toContain("window.innerWidth / 2");
+    expect(contractBody).not.toContain("window.innerHeight / 2");
+  });
+
   it("selects the Match Day parity root for both master-shell flag modes", () => {
     expect(matchday).toContain('process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true"');
     expect(matchday).toContain('page.locator("[data-operations]")');
