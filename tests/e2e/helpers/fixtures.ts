@@ -2,7 +2,129 @@ import { randomUUID } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
+import { prepareCertificateFixture } from "./completion";
+
 const prisma = new PrismaClient();
+
+/**
+ * One guarded event carries every organizer release surface. Completion and
+ * certificates are prepared through their existing authoritative fixture; the
+ * registration records below are deliberately deterministic and safe to clean
+ * up through the event cascade.
+ */
+export async function prepareOrganizerReleaseFixture(namespace = randomUUID().slice(0, 12)) {
+  if (!/^[a-z0-9-]{1,48}$/.test(namespace)) throw new Error("Invalid fixture namespace");
+  const base = await prepareCertificateFixture(namespace);
+  const expiresAt = new Date("2026-09-22T00:00:00.000Z");
+  let createdCaptainId: string | undefined;
+  try {
+    const captain = await prisma.user.findUnique({ where: { email: "captain@miraclefc.gg" }, select: { id: true } })
+      ?? await prisma.user.create({
+        data: {
+          email: `release-captain-${namespace}@example.test`,
+          name: "Release Fixture Captain",
+          role: "captain",
+          passwordHash: await bcrypt.hash("FixtureOnly2026!", 10),
+        },
+        select: { id: true },
+      });
+    if (captain.id !== (await prisma.user.findUnique({ where: { email: "captain@miraclefc.gg" }, select: { id: true } }))?.id) {
+      createdCaptainId = captain.id;
+    }
+    const team = base.teams[0];
+    await prisma.event.update({
+      where: { id: base.id },
+      data: {
+        status: "Finished",
+        registrationFeeRequired: true,
+        registrationFeeAmount: 25000,
+        registrationFeeLabel: "Rp25.000 / team",
+        publishedRevision: 3,
+      },
+    });
+    await prisma.eventPaymentSettings.upsert({
+      where: { eventId: base.id },
+      update: {
+        qrisImageUrl: "/e2e/release-qris.png",
+        instructions: "Scan the deterministic release QRIS fixture.",
+        status: "published",
+        version: 2,
+        publishedAt: new Date("2026-09-13T04:00:00.000Z"),
+        updatedById: base.actor.id,
+      },
+      create: {
+        eventId: base.id,
+        qrisImageUrl: "/e2e/release-qris.png",
+        instructions: "Scan the deterministic release QRIS fixture.",
+        status: "published",
+        version: 2,
+        publishedAt: new Date("2026-09-13T04:00:00.000Z"),
+        updatedById: base.actor.id,
+      },
+    });
+    const paymentRequest = await prisma.teamRegistrationRequest.create({
+      data: {
+        eventId: base.id,
+        captainId: captain.id,
+        teamId: null,
+        teamName: "Release Fixture Team",
+        teamTag: "RFT",
+        status: "pending_review",
+        proofImageUrl: "/e2e/release-payment-proof.png",
+        expiresAt,
+      },
+    });
+    const profile = await prisma.registrationImportProfile.create({
+      data: {
+        eventId: base.id,
+        createdById: base.actor.id,
+        sourceKind: "csv",
+        sourceLabel: `release-${namespace}.csv`,
+        worksheetName: null,
+        headerSignature: `release-${namespace}`,
+        mapping: { columns: { teamName: 0, teamTag: 1 }, players: [] } satisfies Prisma.InputJsonValue,
+      },
+    });
+    const importBatch = await prisma.registrationImportBatch.create({
+      data: {
+        eventId: base.id,
+        profileId: profile.id,
+        createdById: base.actor.id,
+        sourceKind: "csv",
+        sourceLabel: `release-${namespace}.csv`,
+        status: "committed",
+        summary: { total: 1, imported: 1, errors: 0 } satisfies Prisma.InputJsonValue,
+        expiresAt,
+        committedAt: new Date("2026-09-13T04:00:00.000Z"),
+        items: {
+          create: {
+            sourceRow: 2,
+            status: "new",
+            selected: true,
+            normalizedData: { teamName: team.name, teamTag: team.tag } satisfies Prisma.InputJsonValue,
+            teamId: team.id,
+            committedAt: new Date("2026-09-13T04:00:00.000Z"),
+          },
+        },
+      },
+      select: { id: true },
+    });
+    return {
+      ...base,
+      paymentRequestId: paymentRequest.id,
+      importBatchId: importBatch.id,
+      qrisVersion: 2,
+      cleanup: async () => {
+        await base.cleanup();
+        if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
+      },
+    };
+  } catch (error) {
+    await base.cleanup();
+    if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
+    throw error;
+  }
+}
 
 export async function preparePublishedEventRevisionFixture() {
   const suffix = randomUUID().slice(0, 8);

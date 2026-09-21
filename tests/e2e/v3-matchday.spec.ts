@@ -284,9 +284,15 @@ test("allows a reviewed correction, then rejects correction once its downstream 
 });
 
 test("canonical match statistics saves organizer values and reviews a pending captain submission",async({page})=>{
-  test.skip(process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3!=="true","Master statistics composition is disabled");
   fixture=await prepareMatchdayFixture();
   const matchId=(await fixture.graph()).matches[0].id;
+  if(process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3!=="true"){
+    await loginAsOrganizer(page,"en");
+    await page.goto(`/en/organizer/events/${fixture.id}/matches/${encodeURIComponent(matchId)}?view=statistics`);
+    await expect(page.getByRole("heading",{name:"Official result",exact:true})).toBeVisible();
+    await expect(page.locator("[data-match-workspace]")).toHaveCount(0);
+    return;
+  }
   await fixture.run({kind:"match_start",matchId,reason:"Captains ready"});
   await fixture.run({kind:"result_submit",matchId,games:[{gameNumber:1,homeScore:2,awayScore:0}]});
   const match=await matchdayDb.match.findUniqueOrThrow({where:{id:matchId}});
@@ -309,6 +315,36 @@ test("canonical match statistics saves organizer values and reviews a pending ca
   expect((await matchdayDb.playerStat.findUniqueOrThrow({where:{matchId_playerId:{matchId,playerId:player.id}}}))).toMatchObject({source:"captain",stats:{scores:[8.1],goal:4}});
   await page.getByRole("link",{name:"History",exact:true}).click();
   await expect(page.getByText("Captain statistics approved",{exact:true})).toBeVisible();
+});
+
+test("match control preserves ID/EN parity, visible focus, aria-sort values, and bounded overflow", async ({ page }) => {
+  test.slow();
+  fixture = await prepareMatchdayFixture("single_elimination", "published", "release-matchday-parity");
+  for (const [locale, viewport] of [["id", { width: 390, height: 844 }], ["en", { width: 1440, height: 900 }]] as const) {
+    await page.setViewportSize(viewport);
+    await loginAsOrganizer(page, locale);
+    await page.goto(`/${locale}/organizer/events/${fixture.id}/match-control`);
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    await expect(page.locator("[data-operations]")).toBeVisible();
+    const contract = await page.locator("[data-operations]").evaluate((root) => ({
+      overflow: (root as HTMLElement).scrollWidth > (root as HTMLElement).clientWidth,
+      controls: Array.from(root.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, summary'))
+        .filter((element) => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0)
+        .map((element) => ({ label: element.textContent?.trim() || element.getAttribute("aria-label") || element.tagName, height: element.getBoundingClientRect().height })),
+      ariaSort: Array.from(root.querySelectorAll<HTMLElement>("[aria-sort]"), (element) => element.getAttribute("aria-sort")),
+    }));
+    expect(contract.overflow, `${locale} Match Control overflows`).toBe(false);
+    expect(contract.controls.filter(({ height }) => height < 44), `${locale} Match Control control below 44px`).toEqual([]);
+    expect(contract.ariaSort.every((value) => ["ascending", "descending", "none", "other"].includes(value ?? ""))).toBe(true);
+    await page.keyboard.press("Tab");
+    const focused = page.locator(":focus");
+    await expect(focused).toBeVisible();
+    expect(await focused.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+    await page.screenshot({
+      path: test.info().outputPath(`match-control-${locale}-${viewport.width}.png`),
+      animations: "disabled",
+    });
+  }
 });
 
 test("public ongoing hides draft/expired announcements and draft schedule on mobile", async ({ page }) => {

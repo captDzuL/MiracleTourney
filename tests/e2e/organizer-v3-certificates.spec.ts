@@ -8,7 +8,7 @@ import {
   MIRACLE_V3_SAFE_ZONES,
   MIRACLE_V3_CERTIFICATE_TYPES,
 } from "../../src/lib/certificate/templates/miracle-v3-contract";
-import { loginAsOrganizer } from "./helpers/auth";
+import { loginAsOrganizer, normalizeReleasePage } from "./helpers/auth";
 import {
   completionDb,
   prepareCertificateFixture,
@@ -38,6 +38,7 @@ test("publishes all seven certificates and preserves superseded verification his
   await expect(page.locator('[role="status"]')).toContainText("The seven-certificate set was published safely.");
   await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
   await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({ where: { eventId: scenario.id }, select: { certificateRevision: true } })).certificateRevision).toBe(2);
+  await expect(page.locator("[data-certificate-publication-revision], [data-publication-revision]").first()).toHaveText(/\d+/);
 
   const certificates = await completionDb.certificate.findMany({
     where: { eventId: scenario.id },
@@ -86,7 +87,14 @@ test("keeps the certificate studio reachable and usable at desktop and mobile ge
   fixture = scenario;
   await loginAsOrganizer(page, "en");
 
-  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+  for (const viewport of [
+    { width: 360, height: 800 },
+    { width: 390, height: 844 },
+    { width: 768, height: 900 },
+    { width: 1024, height: 900 },
+    { width: 1440, height: 900 },
+  ]) {
+    await normalizeReleasePage(page);
     await page.setViewportSize(viewport);
     await page.goto(`/en/organizer/events/${scenario.id}/certificates`);
     await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
@@ -122,6 +130,11 @@ test("keeps the certificate studio reachable and usable at desktop and mobile ge
     for (const control of geometry.controls) {
       expect(control.height, `${control.label} is below the 44px target at ${viewport.width}px`).toBeGreaterThanOrEqual(44);
     }
+    expect(await page.locator("body").innerText()).not.toMatch(/Miracle2026!|organizer-a@miraclefc\.gg/i);
+    await page.screenshot({
+      path: test.info().outputPath(`certificate-studio-en-${viewport.width}.png`),
+      animations: "disabled",
+    });
 
     const preview = page.locator("[data-certificate-preview-sticky]");
     const previewPosition = await preview.evaluate((element) => getComputedStyle(element).position);
@@ -138,6 +151,31 @@ test("keeps the certificate studio reachable and usable at desktop and mobile ge
     await page.locator("[data-certificate-primary-actions]").scrollIntoViewIfNeeded();
     await expect(page.locator("[data-regenerate-certificate]")).toBeVisible();
     await expect(page.locator("[data-publish-certificate-set]")).toBeVisible();
+  }
+});
+
+test("certificate studio preserves ID/EN publication and verification parity", async ({ page }) => {
+  test.slow();
+  const scenario = await prepareCertificateFixture("release-certificate-parity");
+  fixture = scenario;
+  for (const locale of ["id", "en"] as const) {
+    await normalizeReleasePage(page);
+    await page.setViewportSize({ width: 768, height: 900 });
+    await loginAsOrganizer(page, locale);
+    await page.goto(`/${locale}/organizer/events/${scenario.id}/certificates`);
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    await expect(page.locator('[data-certificate-type]')).toHaveCount(7);
+    await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
+    await expect(page.locator("[data-certificate-publication-revision], [data-publication-revision]").first()).toHaveText(/\d+/);
+    await page.goto(`/id/certificates/verify/${scenario.historicalVerificationCode}`);
+    await expect(page.locator('[data-certificate-verification="superseded"]')).toBeVisible();
+    await page.goto(`/${locale}/certificates/verify/${scenario.currentVerificationCode}`);
+    await expect(page.locator('[data-certificate-verification="current"]')).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("Miracle2026!");
+    await page.screenshot({
+      path: test.info().outputPath(`certificate-studio-${locale}-768.png`),
+      animations: "disabled",
+    });
   }
 });
 

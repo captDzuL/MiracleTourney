@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { loginAsOrganizer } from "./helpers/auth";
+import { loginAsOrganizer, normalizeReleasePage } from "./helpers/auth";
 import {
   completionDb,
   prepareCompletionFixture,
@@ -73,3 +73,35 @@ for (const kind of ["single_elimination", "double_elimination", "round_robin", "
     expect(persisted.auditEntries).toHaveLength(1);
   });
 }
+
+test("completion workspace keeps localized parity and bounded mobile controls", async ({ page }) => {
+  test.slow();
+  fixture = await prepareCompletionFixture("single_elimination", "release-completion-parity");
+  for (const locale of ["id", "en"] as const) {
+    await normalizeReleasePage(page);
+    await page.setViewportSize({ width: locale === "id" ? 390 : 1440, height: locale === "id" ? 844 : 900 });
+    await loginAsOrganizer(page, locale);
+    await page.goto(`/${locale}/organizer/events/${fixture.id}/completion`);
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    await expect(page.locator("[data-completion-workspace]")).toBeVisible();
+    await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
+    const geometry = await page.locator("[data-completion-workspace]").evaluate((root) => ({
+      clientWidth: (root as HTMLElement).clientWidth,
+      scrollWidth: (root as HTMLElement).scrollWidth,
+      controls: Array.from(root.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, summary'))
+        .filter((element) => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0)
+        .map((element) => ({ label: element.textContent?.trim() || element.getAttribute("aria-label") || element.tagName, height: element.getBoundingClientRect().height })),
+    }));
+    expect(geometry.scrollWidth, `${locale} completion workspace overflows`).toBeLessThanOrEqual(geometry.clientWidth);
+    expect(geometry.controls.filter(({ height }) => height < 44), `${locale} completion control below 44px`).toEqual([]);
+    const tabs = page.getByRole("tab");
+    await expect(tabs).toHaveCount(4);
+    await tabs.first().focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(tabs.nth(1)).toBeFocused();
+    await page.screenshot({
+      path: test.info().outputPath(`completion-${locale}-${locale === "id" ? "390" : "1440"}.png`),
+      animations: "disabled",
+    });
+  }
+});
