@@ -19,7 +19,7 @@ describe("public ongoing-event API", () => {
     expect(getPublicOngoingEvent).not.toHaveBeenCalled();
   });
 
-  it("maps reader failures to an opaque internal error", async () => {
+  it("maps reader failures to a retriable opaque service-unavailable error", async () => {
     getPublicOngoingEvent.mockRejectedValue(new Error("Prisma P2028 secret stack"));
 
     const response = await GET(
@@ -27,7 +27,8 @@ describe("public ongoing-event API", () => {
       { params: Promise.resolve({ slug: "event-safe" }) },
     );
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("30");
     expect(await response.json()).toEqual({ code: "internal_error", requestId: "req-ongoing-1" });
   });
 });

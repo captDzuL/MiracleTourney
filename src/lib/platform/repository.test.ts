@@ -897,44 +897,47 @@ describe("event-local registration workspace repository", () => {
       committedAt: new Date("2026-09-10T00:00:00.000Z"),
       createdAt: new Date("2026-09-10T00:00:00.000Z"),
       updatedAt: new Date("2026-09-10T00:00:00.000Z"),
-      items: [{ id: "item-1", status: "imported", teamId: "team-1" }],
+      _count: { items: 1 },
     }]);
 
     await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1")).resolves.toEqual([
       expect.objectContaining({ id: "batch-1", eventId: "event-1", itemCount: 1 }),
     ]);
-    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: "event-1" } }));
-  });
-
-  it("rejects import-batch item overflow even when the nested delegate ignores take", async () => {
-    prisma.registrationImportBatch.findMany.mockResolvedValue([{
-      id: "batch-1",
-      eventId: "event-1",
-      items: Array.from({ length: 501 }, (_, index) => ({ id: `item-${index + 1}`, status: "new", teamId: null })),
-    }]);
-
-    await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
-      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 500 });
     expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      include: expect.objectContaining({ items: expect.objectContaining({ take: 501 }) }),
+      where: { eventId: "event-1" },
+      select: expect.objectContaining({ _count: { select: { items: true } } }),
     }));
   });
 
-  it("supports exactly the import-batch item cap", async () => {
+  it("rejects import-batch item overflow above the accepted 512-row import cap", async () => {
     prisma.registrationImportBatch.findMany.mockResolvedValue([{
       id: "batch-1",
       eventId: "event-1",
-      items: Array.from({ length: 500 }, (_, index) => ({ id: `item-${index + 1}`, status: "new", teamId: null })),
+      items: Array.from({ length: 513 }, (_, index) => ({ id: `item-${index + 1}`, status: "new", teamId: null })),
+    }]);
+
+    await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 512 });
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ items: expect.objectContaining({ take: 513 }) }),
+    }));
+  });
+
+  it("supports exactly 512 stored import-batch items", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue([{
+      id: "batch-1",
+      eventId: "event-1",
+      items: Array.from({ length: 512 }, (_, index) => ({ id: `item-${index + 1}`, status: "new", teamId: null })),
     }]);
 
     await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
       .resolves.toHaveLength(1);
     expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      include: expect.objectContaining({ items: expect.objectContaining({ take: 501 }) }),
+      include: expect.objectContaining({ items: expect.objectContaining({ take: 513 }) }),
     }));
   });
 
-  it("rejects import-batch outer overflow independently of nested items", async () => {
+  it("returns the latest eight import batches when a ninth historical batch exists", async () => {
     prisma.registrationImportBatch.findMany.mockResolvedValue(Array.from({ length: 9 }, (_, index) => ({
       id: `batch-${index + 1}`,
       eventId: "event-1",
@@ -942,10 +945,15 @@ describe("event-local registration workspace repository", () => {
     })));
 
     await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
-      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 8 });
+      .resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: "batch-1" }),
+        expect.objectContaining({ id: "batch-8" }),
+      ]));
+    await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
+      .resolves.toHaveLength(8);
     expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
       take: 9,
-      include: expect.objectContaining({ items: expect.objectContaining({ take: 501 }) }),
+      include: expect.objectContaining({ items: expect.objectContaining({ take: 513 }) }),
     }));
   });
 
@@ -961,7 +969,7 @@ describe("event-local registration workspace repository", () => {
     expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 9 }));
   });
 
-  it("rejects import-history outer overflow and independently rejects nested item overflow", async () => {
+  it("returns the latest 100 import-history batches when older history exists", async () => {
     prisma.registrationImportBatch.findMany.mockResolvedValue(Array.from({ length: 101 }, (_, index) => ({
       id: `batch-${index + 1}`,
       eventId: "event-1",
@@ -974,31 +982,14 @@ describe("event-local registration workspace repository", () => {
       committedAt: null,
       createdAt: new Date("2026-09-10T00:00:00.000Z"),
       updatedAt: new Date("2026-09-10T00:00:00.000Z"),
-      items: [],
+      _count: { items: 0 },
     })));
     await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1"))
-      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 100 });
+      .resolves.toHaveLength(100);
     expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
       take: 101,
-      include: expect.objectContaining({ items: expect.objectContaining({ take: 501 }) }),
+      select: expect.objectContaining({ _count: { select: { items: true } } }),
     }));
-
-    prisma.registrationImportBatch.findMany.mockResolvedValue([{
-      id: "batch-1",
-      eventId: "event-1",
-      sourceKind: "xlsx",
-      sourceLabel: "teams.xlsx",
-      worksheetName: "Sheet1",
-      status: "committed",
-      summary: {},
-      expiresAt: new Date("2026-09-20T00:00:00.000Z"),
-      committedAt: null,
-      createdAt: new Date("2026-09-10T00:00:00.000Z"),
-      updatedAt: new Date("2026-09-10T00:00:00.000Z"),
-      items: Array.from({ length: 501 }, (_, index) => ({ id: `item-${index + 1}`, status: "new", teamId: null })),
-    }]);
-    await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1"))
-      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 500 });
   });
 
   it("supports exactly 100 import-history batches independently of nested items", async () => {
@@ -1014,14 +1005,14 @@ describe("event-local registration workspace repository", () => {
       committedAt: null,
       createdAt: new Date("2026-09-10T00:00:00.000Z"),
       updatedAt: new Date("2026-09-10T00:00:00.000Z"),
-      items: [],
+      _count: { items: 0 },
     })));
 
     await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1"))
       .resolves.toHaveLength(100);
   });
 
-  it("supports exactly 500 nested import-history items independently of outer batches", async () => {
+  it("uses the stored item count without loading nested import-history items", async () => {
     prisma.registrationImportBatch.findMany.mockResolvedValue([{
       id: "batch-1",
       eventId: "event-1",
@@ -1034,11 +1025,14 @@ describe("event-local registration workspace repository", () => {
       committedAt: null,
       createdAt: new Date("2026-09-10T00:00:00.000Z"),
       updatedAt: new Date("2026-09-10T00:00:00.000Z"),
-      items: Array.from({ length: 500 }, (_, index) => ({ id: `item-${index + 1}`, status: "new", teamId: null })),
+      _count: { items: 512 },
     }]);
 
     await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1"))
-      .resolves.toEqual([expect.objectContaining({ itemCount: 500 })]);
+      .resolves.toEqual([expect.objectContaining({ itemCount: 512, items: [] })]);
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ _count: { select: { items: true } } }),
+    }));
   });
 
   it("rejects import-context team and nested player overflow independently", async () => {

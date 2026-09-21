@@ -32,7 +32,8 @@ function safeCode(value: string): string {
 
 const STATIC_ROUTE_SEGMENTS = new Set([
   "api", "admin", "captain", "captain-credentials", "competition", "debug-locale", "en", "events",
-  "health", "id", "login", "me", "ongoing", "organizer", "overview", "registration", "settings",
+  "health", "id", "login", "me", "ongoing", "organizer", "overview", "registration", "server", "settings",
+  "authorization",
 ]);
 
 function redactRoute(value: string): string {

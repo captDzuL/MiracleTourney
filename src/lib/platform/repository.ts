@@ -54,6 +54,7 @@ const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration C
 const ORGANIZER_READER_ROW_LIMIT = 500;
 const ORGANIZER_READER_HISTORY_LIMIT = 100;
 const ORGANIZER_READER_IMPORT_BATCH_LIMIT = 8;
+const ORGANIZER_READER_IMPORT_ITEM_LIMIT = 512;
 const ORGANIZER_READER_PAYMENT_PROBE_LIMIT = ORGANIZER_READER_HISTORY_LIMIT + 1;
 
 
@@ -2438,11 +2439,11 @@ export async function getRegistrationImportBatchesForEvent(user: AppUser, eventI
     where: { eventId },
     orderBy: { createdAt: "desc" },
     take: readerProbeLimit(ORGANIZER_READER_IMPORT_BATCH_LIMIT),
-    include: { items: { select: { id: true, status: true, teamId: true }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) } },
+    include: { items: { select: { id: true, status: true, teamId: true }, take: readerProbeLimit(ORGANIZER_READER_IMPORT_ITEM_LIMIT) } },
   });
-  assertReaderResultWithinLimit("organizer.importBatches.batches", rows, ORGANIZER_READER_IMPORT_BATCH_LIMIT);
-  for (const row of rows) assertReaderResultWithinLimit("organizer.importBatches.items", row.items, ORGANIZER_READER_ROW_LIMIT);
-  return rows;
+  const latestRows = rows.slice(0, ORGANIZER_READER_IMPORT_BATCH_LIMIT);
+  for (const row of latestRows) assertReaderResultWithinLimit("organizer.importBatches.items", row.items, ORGANIZER_READER_IMPORT_ITEM_LIMIT);
+  return latestRows;
 }
 
 export type RegistrationImportHistoryEntry = {
@@ -2604,11 +2605,22 @@ export async function getRegistrationImportHistoryForEvent(user: AppUser, eventI
     where: { eventId },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: readerProbeLimit(ORGANIZER_READER_HISTORY_LIMIT),
-    include: { items: { select: { id: true, status: true, teamId: true }, orderBy: { sourceRow: "asc" }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) } },
+    select: {
+      id: true,
+      eventId: true,
+      sourceKind: true,
+      sourceLabel: true,
+      worksheetName: true,
+      status: true,
+      summary: true,
+      expiresAt: true,
+      committedAt: true,
+      createdAt: true,
+      updatedAt: true,
+      _count: { select: { items: true } },
+    },
   });
-  assertReaderResultWithinLimit("organizer.importHistory.batches", rows, ORGANIZER_READER_HISTORY_LIMIT);
-  for (const row of rows) assertReaderResultWithinLimit("organizer.importHistory.items", row.items, ORGANIZER_READER_ROW_LIMIT);
-  return rows.map((row) => ({
+  return rows.slice(0, ORGANIZER_READER_HISTORY_LIMIT).map((row) => ({
     id: row.id,
     eventId: row.eventId,
     sourceKind: row.sourceKind,
@@ -2620,8 +2632,8 @@ export async function getRegistrationImportHistoryForEvent(user: AppUser, eventI
     committedAt: row.committedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    itemCount: row.items.length,
-    items: row.items.map((item) => ({ id: item.id, status: item.status, teamId: item.teamId })),
+    itemCount: row._count.items,
+    items: [],
   }));
 }
 

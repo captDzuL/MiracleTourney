@@ -1,3 +1,5 @@
+import { writeServerLog } from "@/lib/observability/logger";
+
 export type WorkspaceActor = Readonly<{
   id: string;
   role: "captain" | "organizer" | "admin" | "platform_admin";
@@ -20,15 +22,24 @@ export type AuthorizationAuditRecord = Readonly<{
 
 type AuthorizationAuditSink = (record: AuthorizationAuditRecord) => void;
 
-let authorizationAuditSink: AuthorizationAuditSink = (record) => {
-  console.info("[authorization.audit]", record);
+const defaultAuthorizationAuditSink: AuthorizationAuditSink = (record) => {
+  writeServerLog({
+    phase: "done",
+    operation: "authorization_platform_admin_exception",
+    route: "/server/authorization",
+    requestId: globalThis.crypto.randomUUID(),
+    durationMs: 0,
+    status: 200,
+    actorId: record.actorUserId,
+    resourceId: record.eventId,
+  });
 };
+
+let authorizationAuditSink: AuthorizationAuditSink = defaultAuthorizationAuditSink;
 
 /** Installs a narrow audit sink for tests or structured application logging. */
 export function setAuthorizationAuditSink(sink: AuthorizationAuditSink | null) {
-  authorizationAuditSink = sink ?? ((record) => {
-    console.info("[authorization.audit]", record);
-  });
+  authorizationAuditSink = sink ?? defaultAuthorizationAuditSink;
 }
 
 function forbidden(status: 403 | 404 = 403): AuthorizationDecision {

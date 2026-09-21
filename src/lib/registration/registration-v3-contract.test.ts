@@ -14,7 +14,13 @@ type ContractState = {
   raceOnRequestClaim: boolean;
 };
 
-type MockWhereArgs = { where?: Record<string, unknown>; include?: Record<string, unknown> };
+type MockWhereArgs = {
+  where?: Record<string, unknown>;
+  include?: Record<string, unknown>;
+  select?: Record<string, unknown>;
+  take?: number;
+  orderBy?: unknown;
+};
 type MockUpdateManyArgs = { where?: Record<string, unknown>; data: Record<string, unknown> };
 type MockUpdateArgs = { where: Record<string, unknown>; data: Record<string, unknown>; include?: Record<string, unknown> };
 type MockModel = {
@@ -154,50 +160,74 @@ const { state, prisma, resetState } = vi.hoisted(() => {
     return true;
   };
 
-  const withRelations = (model: string, row: Record<string, unknown>, include: Record<string, unknown> | undefined) => {
-    const result = clone(row);
-    if (model === "team" && include?.players) {
-      result.players = state.players.filter((player) => player.teamId === row.id);
+  const selectFields = (row: Record<string, unknown>, select: Record<string, unknown> | undefined) => {
+    if (!select) return clone(row);
+    return Object.fromEntries(Object.entries(select)
+      .filter(([key, value]) => value === true && Object.prototype.hasOwnProperty.call(row, key))
+      .map(([key]) => [key, clone(row[key])]));
+  };
+
+  const withRelations = (
+    model: string,
+    row: Record<string, unknown>,
+    include: Record<string, unknown> | undefined,
+    select: Record<string, unknown> | undefined,
+  ) => {
+    const result = selectFields(row, select);
+    const relations = select ?? include;
+    if (model === "team" && relations?.players) {
+      const config = relations.players as Record<string, unknown>;
+      const playerSelect = config.select as Record<string, unknown> | undefined;
+      const players = state.players.filter((player) => player.teamId === row.id);
+      result.players = players.map((player) => selectFields(player, playerSelect));
     }
-    if (model === "team" && include?.captain) {
+    if (model === "team" && relations?.captain) {
       const captain = state.users.find((user) => user.id === row.captainId);
       result.captain = captain ? { id: captain.id, name: captain.name, email: captain.email } : null;
     }
-    if (model === "request" && include?.captain) {
+    if (model === "request" && relations?.captain) {
       const captain = state.users.find((user) => user.id === row.captainId);
       result.captain = captain ? { id: captain.id, name: captain.name, email: captain.email } : null;
     }
-    if (model === "request" && include?.event) {
+    if (model === "request" && relations?.event) {
       const event = state.events.find((item) => item.id === row.eventId);
       result.event = event ? { ...clone(event), stream: null } : null;
     }
-    if (model === "batch" && include?.items) {
+    if (model === "batch" && relations?.items) {
       result.items = state.items.filter((item) => item.batchId === row.id).map((item) => clone(item));
     }
-    if (model === "event" && include?.teams) {
-      result.teams = state.teams.filter((team) => team.eventId === row.id).map((team) => ({
-        ...clone(team),
-        players: state.players.filter((player) => player.teamId === team.id).map((player) => ({
-          nickname: player.nickname, displayName: player.displayName, position: player.position,
-        })),
-      }));
+    if (model === "batch" && relations?._count) {
+      result._count = { items: state.items.filter((item) => item.batchId === row.id).length };
+    }
+    if (model === "event" && relations?.teams) {
+      const teamConfig = relations.teams as Record<string, unknown>;
+      const teamSelect = teamConfig.select as Record<string, unknown> | undefined;
+      const playerConfig = teamSelect?.players as Record<string, unknown> | undefined;
+      const playerSelect = playerConfig?.select as Record<string, unknown> | undefined;
+      result.teams = state.teams.filter((team) => team.eventId === row.id).map((team) => {
+        const selectedTeam = selectFields(team, teamSelect);
+        selectedTeam.players = state.players
+          .filter((player) => player.teamId === team.id)
+          .map((player) => selectFields(player, playerSelect));
+        return selectedTeam;
+      });
     }
     return result;
   };
 
   const makePrisma = (target: ContractState): MockPrisma => {
     const model = (name: string, rows: () => Array<Record<string, unknown>>) => ({
-      findFirst: async (args: { where?: Record<string, unknown>; include?: Record<string, unknown> }) => {
+      findFirst: async (args: MockWhereArgs) => {
         const row = rows().find((item) => matches(item, args?.where));
-        return row ? withRelations(name, row, args?.include) : null;
+        return row ? withRelations(name, row, args?.include, args?.select) : null;
       },
-      findUnique: async (args: { where?: Record<string, unknown>; include?: Record<string, unknown> }) => {
+      findUnique: async (args: MockWhereArgs) => {
         const row = rows().find((item) => matches(item, args?.where));
-        return row ? withRelations(name, row, args?.include) : null;
+        return row ? withRelations(name, row, args?.include, args?.select) : null;
       },
-      findMany: async (args: { where?: Record<string, unknown>; include?: Record<string, unknown> }) => rows()
+      findMany: async (args: MockWhereArgs) => rows()
         .filter((item) => matches(item, args?.where))
-        .map((item) => withRelations(name, item, args?.include)),
+        .map((item) => withRelations(name, item, args?.include, args?.select)),
       count: async (args: { where?: Record<string, unknown> }) => rows().filter((item) => matches(item, args?.where)).length,
     });
 
@@ -247,7 +277,7 @@ const { state, prisma, resetState } = vi.hoisted(() => {
       const row = target.requests.find((item) => matches(item, args.where));
       if (!row) throw new Error("Request not found");
       Object.assign(row, args.data);
-      return withRelations("request", row, args.include);
+      return withRelations("request", row, args.include, undefined);
     };
     db.team.create = async (args: { data: Record<string, unknown> }) => {
       const row = {

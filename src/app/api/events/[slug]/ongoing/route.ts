@@ -32,6 +32,9 @@ async function handleGet(request: Request, { params }: { params: Promise<{ slug:
     return Response.json(view, { headers });
   } catch (error) {
     const publicError = toPublicError(error, requestId);
-    return Response.json(publicError.body, { status: publicError.status, headers: { "Cache-Control": "no-store" } });
+    return Response.json(publicError.body, {
+      status: 503,
+      headers: { "Cache-Control": "no-store", "Retry-After": "30" },
+    });
   }
 }
