@@ -15,7 +15,7 @@ export const RELEASE_FIXTURE_NOW = new Date("2026-09-13T04:00:00.000Z");
  */
 export async function prepareOrganizerReleaseFixture(namespace = randomUUID().slice(0, 12)) {
   if (!/^[a-z0-9-]{1,48}$/.test(namespace)) throw new Error("Invalid fixture namespace");
-  const base = await prepareCompletionFixture("single_elimination", namespace);
+  const base = await prepareCompletionFixture("single_elimination", namespace, { pendingFirstPlayerMatch: true });
   const expiresAt = new Date(RELEASE_FIXTURE_NOW.getTime() + 9 * 24 * 60 * 60 * 1000);
   const importSourceLabel = `release-${namespace}-ui.csv`;
   let createdCaptainId: string | undefined;
@@ -94,7 +94,6 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
       select: { id: true, homeTeamId: true, awayTeamId: true },
     });
     if (!firstMatch) throw new Error("Release fixture requires a match for the first player");
-    await prisma.matchResultRevision.deleteMany({ where: { matchId: firstMatch.id } });
     await prisma.playerStat.deleteMany({ where: { matchId: firstMatch.id } });
     await prisma.match.update({
       where: { id: firstMatch.id },

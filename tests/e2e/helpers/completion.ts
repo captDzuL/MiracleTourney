@@ -264,6 +264,7 @@ function assertGuardedTestDatabase() {
 export async function prepareCompletionFixture(
   kind: CompletionFixtureKind = "single_elimination",
   namespace = randomUUID().slice(0, 12),
+  options: { pendingFirstPlayerMatch?: boolean } = {},
 ) {
   assertGuardedTestDatabase();
   if (!/^[a-z0-9-]{1,48}$/.test(namespace)) throw new Error("Invalid fixture namespace");
@@ -287,6 +288,12 @@ export async function prepareCompletionFixture(
       createdAt: new Date(1700000000000 + index),
     }));
     const { graph, matches } = fixtureGraph(id, phaseId, kind, teams.map(({ id: teamId }) => teamId));
+    const pendingFirstPlayerMatchId = options.pendingFirstPlayerMatch
+      ? matches.find((match) => [match.homeTeamId, match.awayTeamId].includes(teams[0].id))?.id
+      : undefined;
+    if (options.pendingFirstPlayerMatch && !pendingFirstPlayerMatchId) {
+      throw new Error("Unable to prepare a pending match for the first Completion player");
+    }
     await completionDb.event.create({
       data: {
         id,
@@ -334,6 +341,7 @@ export async function prepareCompletionFixture(
       });
     }
     for (const match of matches) {
+      const isPendingFirstPlayerMatch = match.id === pendingFirstPlayerMatchId;
       await completionDb.match.create({
         data: {
           id: match.id,
@@ -345,31 +353,35 @@ export async function prepareCompletionFixture(
           slot: match.slot,
           homeTeamId: match.homeTeamId,
           awayTeamId: match.awayTeamId,
-          homeScore: match.homeScore,
-          awayScore: match.awayScore,
-          winnerTeamId: match.winnerTeamId,
-          resultVersion: 1,
-          resultSnapshot: { games: [{ gameNumber: 1, homeScore: match.homeScore, awayScore: match.awayScore }] },
-          status: "Completed",
-          scheduleStatus: "completed",
-          resultConfirmedAt: new Date("2026-09-13T03:00:00.000Z"),
+          homeScore: isPendingFirstPlayerMatch ? 0 : match.homeScore,
+          awayScore: isPendingFirstPlayerMatch ? 0 : match.awayScore,
+          winnerTeamId: isPendingFirstPlayerMatch ? null : match.winnerTeamId,
+          resultVersion: isPendingFirstPlayerMatch ? 0 : 1,
+          resultSnapshot: isPendingFirstPlayerMatch
+            ? Prisma.JsonNull
+            : { games: [{ gameNumber: 1, homeScore: match.homeScore, awayScore: match.awayScore }] },
+          status: isPendingFirstPlayerMatch ? "Scheduled" : "Completed",
+          scheduleStatus: isPendingFirstPlayerMatch ? "confirmed" : "completed",
+          resultConfirmedAt: isPendingFirstPlayerMatch ? null : new Date("2026-09-13T03:00:00.000Z"),
         },
       });
-      await completionDb.matchResultRevision.create({
-        data: {
-          id: `${match.id}-revision-1`,
-          eventId: id,
-          matchId: match.id,
-          version: 1,
-          homeScore: match.homeScore,
-          awayScore: match.awayScore,
-          winnerTeamId: match.winnerTeamId,
-          scoreSnapshot: { games: [{ gameNumber: 1, homeScore: match.homeScore, awayScore: match.awayScore }] },
-          actorUserId: actor.id,
-          reason: "Completion E2E official result",
-          idempotencyKey: `${match.id}-official-1`,
-        },
-      });
+      if (!isPendingFirstPlayerMatch) {
+        await completionDb.matchResultRevision.create({
+          data: {
+            id: `${match.id}-revision-1`,
+            eventId: id,
+            matchId: match.id,
+            version: 1,
+            homeScore: match.homeScore,
+            awayScore: match.awayScore,
+            winnerTeamId: match.winnerTeamId,
+            scoreSnapshot: { games: [{ gameNumber: 1, homeScore: match.homeScore, awayScore: match.awayScore }] },
+            actorUserId: actor.id,
+            reason: "Completion E2E official result",
+            idempotencyKey: `${match.id}-official-1`,
+          },
+        });
+      }
     }
     const players = [
       {

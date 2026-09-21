@@ -9,6 +9,7 @@ const lifecycle = readFileSync(resolve(root, "tests/e2e/v3-organizer-lifecycle.s
 const matchday = readFileSync(resolve(root, "tests/e2e/v3-matchday.spec.ts"), "utf8");
 const auth = readFileSync(resolve(root, "tests/e2e/helpers/auth.ts"), "utf8");
 const fixtures = readFileSync(resolve(root, "tests/e2e/helpers/fixtures.ts"), "utf8");
+const completionFixtures = readFileSync(resolve(root, "tests/e2e/helpers/completion.ts"), "utf8");
 const releaseJourney = lifecycle.match(
   /async function runOrganizerReleaseJourney[\s\S]*?function eventIdentity/,
 )?.[0] ?? "";
@@ -87,6 +88,17 @@ describe("Task 11 release verification contracts", () => {
     expect(fixtures).toContain("importBatchId: undefined as string | undefined");
     expect(fixtures).toContain("qrisVersion: 1");
     expect(fixtures).toMatch(/importBatchState[\s\S]*paymentRequestState[\s\S]*qris/);
+  });
+
+  it("creates the release-journey match pending without deleting append-only result history", () => {
+    expect(fixtures).toContain(
+      'prepareCompletionFixture("single_elimination", namespace, { pendingFirstPlayerMatch: true })',
+    );
+    expect(fixtures).not.toContain("matchResultRevision.deleteMany");
+    expect(completionFixtures).toContain("pendingFirstPlayerMatch?: boolean");
+    expect(completionFixtures).toContain('status: isPendingFirstPlayerMatch ? "Scheduled" : "Completed"');
+    expect(completionFixtures).toContain("resultVersion: isPendingFirstPlayerMatch ? 0 : 1");
+    expect(completionFixtures).toContain("if (!isPendingFirstPlayerMatch)");
   });
 
   it("uses an exact per-locale copy table and rejects opposite-language sentinels", () => {
