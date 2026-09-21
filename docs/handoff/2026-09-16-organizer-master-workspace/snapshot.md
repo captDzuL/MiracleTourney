@@ -11,6 +11,7 @@ release coordination while preserving the historical handoff details.
 - Isolated worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`.
 - Branch: `codex/organizer-release-readiness`.
 - Source/product SHA before evidence-doc commit: `79e62cddc77beae4913529d471b493c6e56335b3`.
+- Evidence-doc commit: `7cdb39df8810045ebdddf8384a55d9f147608fb9` (`docs: finalize organizer release readiness evidence`); this docs SHA is intentionally separate from the source/product SHA.
 - Release target: `feature/ui/release/1.0`; no PR, push, deploy, migration, restore, or production flag activation was performed.
 - Verification report: [`2026-09-14-release-1.0-verification.md`](../../../2026-09-14-release-1.0-verification.md).
 - Task 12 report: `.superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/task-12-report.md` (ignored SDD artifact; no ledger edit was made).
@@ -26,7 +27,17 @@ Logs scan; saved-view/PIC/notification access; deployed Speed Insights/RUM;
 Neon snapshot/PITR/retention/RPO/RTO/PIC/switchover/integrity-query evidence;
 and a fresh whole-branch Sol/high review with no P0/P1/P2.
 
-## Repo dan worktree
+## Historical handoff details — 2026-09-16 (non-operative)
+
+The repository/worktree, commit-map, resume-command, and release-gate text
+below is preserved for audit history only. It is not current operating
+guidance. The old `E:\dev\MiracleTourney-gitnative` paths, stale Task 8–12
+status, and the historical instruction not to touch the report are
+non-operative; current work is restricted to the isolated worktree named in
+the release-readiness snapshot above, whose evidence report is already
+committed.
+
+## Repo dan worktree (historical, non-operative)
 
 - Repository root: E:\dev\MiracleTourney-gitnative
 - Worktree yang wajib dipakai: E:\dev\MiracleTourney-gitnative\.worktrees\miracle-ui-release-1.0-full
