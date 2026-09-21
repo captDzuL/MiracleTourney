@@ -38,7 +38,8 @@ test.describe("captain team management", () => {
     await addPlayerForm.getByRole("button", { name: /add player|tambah pemain/i }).click();
 
     await expect(page).toHaveURL(/success=player-added/);
-    await expect(page.getByText(playerName, { exact: true })).toBeVisible();
+    await expect(page.getByText("E2EPL", { exact: true })).toBeVisible();
+    await expect(page.getByText(`UID: ${playerName}`, { exact: true })).toBeVisible();
   });
 
   test("captain cannot access admin dashboard", async ({ page }) => {
