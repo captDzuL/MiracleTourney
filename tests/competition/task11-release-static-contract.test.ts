@@ -210,6 +210,23 @@ describe("Task 11 release verification contracts", () => {
     expect(contractBody).not.toContain("window.innerHeight / 2");
   });
 
+  it("assigns accessibility focus markers in filtered DOM order", () => {
+    const contractBody = lifecycle.match(
+      /export async function expectReleaseAccessibilityContract[\s\S]*?export async function expectNavigationEscapeRestoresFocus/,
+    )?.[0] ?? "";
+    const markerAssignment = contractBody.slice(
+      contractBody.indexOf("const focusables ="),
+      contractBody.indexOf("return focusables.map"),
+    );
+
+    expect(markerAssignment).toContain("Array.from(document.querySelectorAll<HTMLElement>(selector))");
+    expect(markerAssignment).toContain(".filter((element) => visible(element)");
+    expect(markerAssignment).not.toContain(".sort(");
+    expect(contractBody).toContain("return focusables.map((element, index) =>");
+    expect(contractBody).toContain('page.keyboard.press("Tab")');
+    expect(contractBody).toContain('page.keyboard.press("Shift+Tab")');
+  });
+
   it("selects the Match Day parity root for both master-shell flag modes", () => {
     expect(matchday).toContain('process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true"');
     expect(matchday).toContain('page.locator("[data-operations]")');

@@ -192,12 +192,7 @@ export async function expectReleaseAccessibilityContract(page: Page) {
       return box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none";
     };
     const focusables = Array.from(document.querySelectorAll<HTMLElement>(selector))
-      .filter((element) => visible(element) && !element.hasAttribute("disabled") && element.tabIndex >= 0)
-      .sort((left, right) => {
-        const leftBox = left.getBoundingClientRect();
-        const rightBox = right.getBoundingClientRect();
-        return leftBox.top - rightBox.top || leftBox.left - rightBox.left;
-      });
+      .filter((element) => visible(element) && !element.hasAttribute("disabled") && element.tabIndex >= 0);
     return focusables.map((element, index) => {
       const marker = `task11-focus-${index}`;
       element.dataset.task11Focus = marker;
