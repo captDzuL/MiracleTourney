@@ -165,6 +165,7 @@ import {
   getPublicVisibleBracketPreview,
   commitRegistrationImportBatch,
   getRegistrationRecordsForEvent,
+  getRegistrationImportBatchesForEvent,
   getRegistrationImportHistoryForEvent,
   getPaymentReviewForEvent,
   getRegistrationImportEventContext,
@@ -903,6 +904,110 @@ describe("event-local registration workspace repository", () => {
       expect.objectContaining({ id: "batch-1", eventId: "event-1", itemCount: 1 }),
     ]);
     expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: "event-1" } }));
+  });
+
+  it("rejects import-batch item overflow even when the nested delegate ignores take", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue([{
+      id: "batch-1",
+      eventId: "event-1",
+      items: Array.from({ length: 501 }, (_, index) => ({ id: `item-${index + 1}`, status: "new", teamId: null })),
+    }]);
+
+    await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 500 });
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ items: expect.objectContaining({ take: 501 }) }),
+    }));
+  });
+
+  it("supports exactly the import-batch item cap", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue([{
+      id: "batch-1",
+      eventId: "event-1",
+      items: Array.from({ length: 500 }, (_, index) => ({ id: `item-${index + 1}`, status: "new", teamId: null })),
+    }]);
+
+    await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
+      .resolves.toHaveLength(1);
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ items: expect.objectContaining({ take: 501 }) }),
+    }));
+  });
+
+  it("rejects import-history outer overflow and independently rejects nested item overflow", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue(Array.from({ length: 101 }, (_, index) => ({
+      id: `batch-${index + 1}`,
+      eventId: "event-1",
+      sourceKind: "xlsx",
+      sourceLabel: "teams.xlsx",
+      worksheetName: "Sheet1",
+      status: "committed",
+      summary: {},
+      expiresAt: new Date("2026-09-20T00:00:00.000Z"),
+      committedAt: null,
+      createdAt: new Date("2026-09-10T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-10T00:00:00.000Z"),
+      items: [],
+    })));
+    await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 100 });
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      take: 101,
+      include: expect.objectContaining({ items: expect.objectContaining({ take: 501 }) }),
+    }));
+
+    prisma.registrationImportBatch.findMany.mockResolvedValue([{
+      id: "batch-1",
+      eventId: "event-1",
+      sourceKind: "xlsx",
+      sourceLabel: "teams.xlsx",
+      worksheetName: "Sheet1",
+      status: "committed",
+      summary: {},
+      expiresAt: new Date("2026-09-20T00:00:00.000Z"),
+      committedAt: null,
+      createdAt: new Date("2026-09-10T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-10T00:00:00.000Z"),
+      items: Array.from({ length: 501 }, (_, index) => ({ id: `item-${index + 1}`, status: "new", teamId: null })),
+    }]);
+    await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 500 });
+  });
+
+  it("rejects import-context team and nested player overflow while allowing exact caps", async () => {
+    const team = (index: number, players: number) => ({
+      id: `team-${index}`,
+      name: `Team ${index}`,
+      tag: `T${index}`,
+      captainName: "Captain",
+      captainContact: "081",
+      players: Array.from({ length: players }, (_, playerIndex) => ({ nickname: `p-${playerIndex}`, displayName: `Player ${playerIndex}`, position: "Forward" })),
+    });
+    prisma.event.findUnique.mockResolvedValue({
+      id: "event-1", slug: "event", name: "Event", gameModeId: "mode", participantCap: 500, format: "Single Elimination",
+      teams: Array.from({ length: 501 }, (_, index) => team(index + 1, 0)),
+    });
+    await expect(getRegistrationImportEventContext(platformAdmin, "event-1"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 500 });
+    expect(prisma.event.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ teams: expect.objectContaining({ take: 501, select: expect.objectContaining({ players: expect.objectContaining({ take: 501 }) }) }) }),
+    }));
+
+    prisma.event.findUnique.mockResolvedValue({
+      id: "event-1", slug: "event", name: "Event", gameModeId: "mode", participantCap: 1, format: "Single Elimination",
+      teams: [team(1, 501)],
+    });
+    await expect(getRegistrationImportEventContext(platformAdmin, "event-1"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 500 });
+
+    prisma.event.findUnique.mockResolvedValue({
+      id: "event-1", slug: "event", name: "Event", gameModeId: "mode", participantCap: 500, format: "Single Elimination",
+      teams: Array.from({ length: 500 }, (_, index) => team(index + 1, 500)),
+    });
+    await expect(getRegistrationImportEventContext(platformAdmin, "event-1"))
+      .resolves.toMatchObject({ teams: expect.any(Array) });
+    expect((await getRegistrationImportEventContext(platformAdmin, "event-1"))?.teams).toHaveLength(500);
+    expect((await getRegistrationImportEventContext(platformAdmin, "event-1"))?.teams[0]?.players).toHaveLength(500);
   });
 
   it("reads payment proofs only for the event and requested review status", async () => {

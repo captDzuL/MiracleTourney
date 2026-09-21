@@ -2433,12 +2433,14 @@ export async function saveRegistrationImportPreviewBatch(input: {
 
 export async function getRegistrationImportBatchesForEvent(user: AppUser, eventId: string) {
   await assertUserCanManageEvent(user, eventId);
-  return prisma.registrationImportBatch.findMany({
+  const rows = await prisma.registrationImportBatch.findMany({
     where: { eventId },
     orderBy: { createdAt: "desc" },
     take: 8,
-    include: { items: { select: { id: true, status: true, teamId: true }, take: ORGANIZER_READER_ROW_LIMIT } },
+    include: { items: { select: { id: true, status: true, teamId: true }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) } },
   });
+  for (const row of rows) assertReaderResultWithinLimit("organizer.importBatches.items", row.items, ORGANIZER_READER_ROW_LIMIT);
+  return rows;
 }
 
 export type RegistrationImportHistoryEntry = {
@@ -2599,9 +2601,11 @@ export async function getRegistrationImportHistoryForEvent(user: AppUser, eventI
   const rows = await prisma.registrationImportBatch.findMany({
     where: { eventId },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: ORGANIZER_READER_HISTORY_LIMIT,
-    include: { items: { select: { id: true, status: true, teamId: true }, orderBy: { sourceRow: "asc" }, take: ORGANIZER_READER_ROW_LIMIT } },
+    take: readerProbeLimit(ORGANIZER_READER_HISTORY_LIMIT),
+    include: { items: { select: { id: true, status: true, teamId: true }, orderBy: { sourceRow: "asc" }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) } },
   });
+  assertReaderResultWithinLimit("organizer.importHistory.batches", rows, ORGANIZER_READER_HISTORY_LIMIT);
+  for (const row of rows) assertReaderResultWithinLimit("organizer.importHistory.items", row.items, ORGANIZER_READER_ROW_LIMIT);
   return rows.map((row) => ({
     id: row.id,
     eventId: row.eventId,
@@ -2658,15 +2662,17 @@ export async function getRegistrationImportEventContext(user: AppUser, eventId: 
       id: true, slug: true, name: true, gameModeId: true, participantCap: true, format: true,
       teams: {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        take: ORGANIZER_READER_ROW_LIMIT,
+        take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT),
         select: {
           id: true, name: true, tag: true, captainName: true, captainContact: true,
-          players: { select: { nickname: true, displayName: true, position: true }, orderBy: { createdAt: "asc" }, take: ORGANIZER_READER_ROW_LIMIT },
+          players: { select: { nickname: true, displayName: true, position: true }, orderBy: { createdAt: "asc" }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) },
         },
       },
     },
   });
   if (!row) return null;
+  assertReaderResultWithinLimit("organizer.importContext.teams", row.teams, ORGANIZER_READER_ROW_LIMIT);
+  for (const team of row.teams) assertReaderResultWithinLimit("organizer.importContext.players", team.players, ORGANIZER_READER_ROW_LIMIT);
   return row;
 }
 

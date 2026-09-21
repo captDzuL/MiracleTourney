@@ -130,6 +130,38 @@ describe("private organizer read state", () => {
     expect(state.unavailableSections).toEqual(["incidents"]);
     expect(state.matches).toEqual([]);
   });
+  it("rejects auxiliary history overflow instead of treating it as an unavailable section", async () => {
+    for (let index = 0; index < 101; index += 1) {
+      store.seed("competitionIncident", {
+        id: `incident-${index + 1}`,
+        eventId: "event",
+        matchId: null,
+        kind: "fixture",
+        description: `Incident ${index + 1}`,
+        resolvedAt: null,
+        createdAt: new Date(2026, 0, index + 1),
+      });
+    }
+
+    await expect(readCompetitionWorkspace("event"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 100 });
+  });
+  it("supports exactly the auxiliary history cap", async () => {
+    for (let index = 0; index < 100; index += 1) {
+      store.seed("competitionIncident", {
+        id: `incident-${index + 1}`,
+        eventId: "event",
+        matchId: null,
+        kind: "fixture",
+        description: `Incident ${index + 1}`,
+        resolvedAt: null,
+        createdAt: new Date(2026, 0, index + 1),
+      });
+    }
+
+    await expect(readCompetitionWorkspace("event")).resolves.toMatchObject({ incidents: expect.any(Array) });
+    expect((await readCompetitionWorkspace("event")).incidents).toHaveLength(100);
+  });
   it.each([false, true])("reopens published constraints without resurrecting superseded drafts (earlier draft: %s)", async earlierDraft => {
     const operations = createCompetitionOperations(store.db, undefined, { allowInternalInitialize: true });
     let version = 0;

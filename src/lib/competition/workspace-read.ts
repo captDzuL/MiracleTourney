@@ -9,7 +9,7 @@ import type { StoredSchedule } from "@/lib/tournament/operations/state";
 import type { CompetitionWorkspaceState } from "./workspace-types";
 import { diagnoseLegacyCompetition } from "@/lib/tournament/operations/legacy-compatibility";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
-import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
+import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
 
 export const COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS = {
   isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
@@ -103,6 +103,10 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
       return assertReaderResultWithinLimit("competition.audit", rows, COMPETITION_READER_HISTORY_LIMIT).map(a => ({ id: a.id, matchId: a.matchId ?? null, action: a.action, reason: a.reason ?? null, actor: a.actorUserId ?? null, at: a.createdAt?.toISOString() ?? null }));
     }),
   ]);
-  for (const result of [incidents, announcements, audit]) if (result.status === "rejected" && result.reason instanceof Error && result.reason.message === "Not authorized") throw result.reason;
+  for (const result of [incidents, announcements, audit]) {
+    if (result.status === "rejected" && result.reason instanceof Error && (result.reason.message === "Not authorized" || result.reason instanceof ReaderResultOverflowError)) {
+      throw result.reason;
+    }
+  }
   return { ...core, incidents: incidents.status === "fulfilled" ? incidents.value : [], announcements: announcements.status === "fulfilled" ? announcements.value : [], audit: audit.status === "fulfilled" ? audit.value : [], unavailableSections: [incidents.status === "rejected" ? "incidents" : "", announcements.status === "rejected" ? "announcements" : "", audit.status === "rejected" ? "audit" : ""].filter(Boolean) };
 }
