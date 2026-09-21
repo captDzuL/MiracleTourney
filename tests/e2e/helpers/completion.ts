@@ -441,6 +441,7 @@ export async function prepareCompletionFixture(
       players,
       actor,
       graph,
+      pendingFirstPlayerMatchId,
       cleanup: async () => {
         await completionDb.event.deleteMany({ where: { id, slug: id } });
       },

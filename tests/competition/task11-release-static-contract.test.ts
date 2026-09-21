@@ -99,6 +99,9 @@ describe("Task 11 release verification contracts", () => {
     expect(completionFixtures).toContain('status: isPendingFirstPlayerMatch ? "Scheduled" : "Completed"');
     expect(completionFixtures).toContain("resultVersion: isPendingFirstPlayerMatch ? 0 : 1");
     expect(completionFixtures).toContain("if (!isPendingFirstPlayerMatch)");
+    expect(completionFixtures).toContain("pendingFirstPlayerMatchId,");
+    expect(fixtures).toContain("const releaseMatchId = base.pendingFirstPlayerMatchId");
+    expect(fixtures).not.toContain("prisma.match.findFirst");
   });
 
   it("uses an exact per-locale copy table and rejects opposite-language sentinels", () => {

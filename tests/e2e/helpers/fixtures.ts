@@ -89,14 +89,11 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
       },
     });
     const firstPlayer = base.players[0];
-    const firstMatch = await prisma.match.findFirst({
-      where: { eventId: base.id, OR: [{ homeTeamId: firstPlayer.teamId }, { awayTeamId: firstPlayer.teamId }] },
-      select: { id: true, homeTeamId: true, awayTeamId: true },
-    });
-    if (!firstMatch) throw new Error("Release fixture requires a match for the first player");
-    await prisma.playerStat.deleteMany({ where: { matchId: firstMatch.id } });
+    const releaseMatchId = base.pendingFirstPlayerMatchId;
+    if (!releaseMatchId) throw new Error("Release fixture requires a pending match for the first player");
+    await prisma.playerStat.deleteMany({ where: { matchId: releaseMatchId } });
     await prisma.match.update({
-      where: { id: firstMatch.id },
+      where: { id: releaseMatchId },
       data: {
         homeScore: 0,
         awayScore: 0,
@@ -112,7 +109,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
     });
     const statSubmission = await prisma.statSubmission.create({
       data: {
-        matchId: firstMatch.id,
+        matchId: releaseMatchId,
         eventId: base.id,
         teamId: firstPlayer.teamId,
         submittedBy: `release-captain-${namespace}`,
@@ -149,7 +146,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
       importSourceLabel,
       qrisVersion: 1,
       statSubmissionId,
-      releaseMatchId: firstMatch.id,
+      releaseMatchId,
       releasePlayerId: firstPlayer.id,
       releasePlayerTeamId: firstPlayer.teamId,
       certificateLogoAssetId: logoAsset.id,
@@ -172,7 +169,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
             : prisma.registrationImportBatch.findFirst({ where: { eventId: base.id, sourceLabel: importSourceLabel }, orderBy: { createdAt: "desc" }, select: { id: true, eventId: true, status: true, committedAt: true } }),
           prisma.eventPaymentSettings.findUnique({ where: { eventId: base.id }, select: { eventId: true, version: true, status: true } }),
           prisma.match.findUnique({
-            where: { id: firstMatch.id },
+            where: { id: releaseMatchId },
             select: {
               id: true,
               eventId: true,
@@ -204,7 +201,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
       },
       resetMatchForReleaseJourney: async () => {
         await prisma.match.update({
-          where: { id: firstMatch.id },
+          where: { id: releaseMatchId },
           data: {
             status: "Live",
             scheduleStatus: "live",
