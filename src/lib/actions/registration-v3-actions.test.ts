@@ -250,6 +250,19 @@ describe("registration V3 actions", () => {
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
+  it("returns the approved payment receipt and invalidates tags without revalidating the active route", async () => {
+    await expect(approveEventPaymentAction(form({
+      locale: "en", eventId: "event-1", requestId: "request-1", version: "2026-09-14T10:00:00.000Z",
+      returnTo: "/en/organizer/events/event-1/registration?view=payments",
+    }))).resolves.toMatchObject({
+      status: "approved", team: { id: "team-1" },
+      redirectTo: "/en/organizer/events/event-1/registration?view=payments",
+    });
+    expect(mocks.revalidateTag).toHaveBeenCalledWith("teams");
+    expect(mocks.revalidateTag).toHaveBeenCalledWith("events");
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
   it("rejects payment only after checking event identity and returns localized feedback", async () => {
     await expect(rejectEventPaymentAction(form({
       locale: "id", eventId: "event-1", requestId: "request-1", reason: "Bukti tidak sesuai", version: "2026-09-14T10:00:00.000Z",
@@ -262,6 +275,8 @@ describe("registration V3 actions", () => {
       expect.objectContaining({ expectedUpdatedAt: new Date("2026-09-14T10:00:00.000Z") }),
     );
     expect(mocks.revalidateTag).toHaveBeenCalledWith("teams");
+    expect(mocks.revalidateTag).toHaveBeenCalledWith("events");
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("saves and publishes event QRIS through EventPaymentSettings CAS writes", async () => {

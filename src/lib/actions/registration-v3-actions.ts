@@ -534,7 +534,6 @@ export async function approveEventPaymentAction(formData: FormData): Promise<Act
     });
     revalidateTag("teams");
     revalidateTag("events");
-    revalidatePath(registrationPath(input.locale, input.eventId));
     return { status: "approved", team, redirectTo };
   } catch (error) {
     const result = asErrorResult(input.locale, error);
@@ -557,7 +556,6 @@ export async function rejectEventPaymentAction(formData: FormData): Promise<Acti
     });
     revalidateTag("teams");
     revalidateTag("events");
-    revalidatePath(registrationPath(input.locale, input.eventId));
     return { status: "rejected", request, redirectTo };
   } catch (error) {
     const result = asErrorResult(input.locale, error);

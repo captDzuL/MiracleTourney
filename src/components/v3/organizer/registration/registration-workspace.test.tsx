@@ -84,6 +84,26 @@ describe("registration workspace behavior", () => {
     await click('[data-approve]'); expect(host.querySelector<HTMLButtonElement>('[data-approve]')?.disabled).toBe(true);
     expect(host.textContent).toContain("Approved");
   });
+  it.each([
+    ["en", "approve", "Review decision saved.", "Approved"],
+    ["en", "reject", "Review decision saved.", "Rejected"],
+    ["id", "approve", "Keputusan pemeriksaan disimpan.", "Disetujui"],
+    ["id", "reject", "Keputusan pemeriksaan disimpan.", "Ditolak"],
+  ] as const)("keeps %s payment %s success feedback and status without a refresh", async (locale, decision, feedback, status) => {
+    (decision === "approve" ? actions.approve : actions.reject).mockResolvedValue({ status: decision === "approve" ? "approved" : "rejected" });
+    await render({ locale, query: { ...base.query, view: "payments" }, payments: [payment] });
+    if (decision === "reject") {
+      const reason = host.querySelector<HTMLTextAreaElement>("textarea")!;
+      act(() => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(reason, "Unreadable receipt"); reason.dispatchEvent(new Event("input", { bubbles: true })); });
+      await click("[data-reject]");
+    } else {
+      await click("[data-approve]");
+    }
+
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(feedback);
+    expect(host.querySelector("aside")?.textContent).toContain(status);
+    expect(actions.refresh).not.toHaveBeenCalled();
+  });
   it("does not render unsafe proof URLs", async () => { await render({ query: { ...base.query, view: "payments" }, payments: [{ ...payment, proofImageUrl: "javascript:alert(1)" }] }); expect(host.querySelector("img")).toBeNull(); });
   it("prevents QRIS publication until the edited draft is saved and then uses the new version", async () => {
     actions.save.mockResolvedValue({ status: "saved", version: 3 }); actions.publish.mockResolvedValue({ status: "published", version: 4 });

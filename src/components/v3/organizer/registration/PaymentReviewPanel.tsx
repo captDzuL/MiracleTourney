@@ -29,7 +29,7 @@ function PaymentDetail({ locale, eventId, returnTo, entry, refresh }: { locale: 
   setBusy(true); setFeedback({ message: "" });
   const data = actionForm(locale, eventId, returnTo); data.set("requestId", entry.id); data.set("version", new Date(entry.updatedAt).toISOString()); if (reject) data.set("reason", reason.trim());
   try { const result = await (reject ? rejectEventPaymentAction(data) : approveEventPaymentAction(data));
-    if (result.status === "approved" || result.status === "rejected") { setStatus(result.status); setFeedback({ message: t("decisionSaved") }); refresh(); }
+    if (result.status === "approved" || result.status === "rejected") { setStatus(result.status); setFeedback({ message: t("decisionSaved") }); }
     else { setFeedback({ message: t(result.status === "conflict" ? "conflict" : "operationFailed"), error: true }); if (result.status === "conflict") { setStale(true); refresh(); } }
   } catch { setFeedback({ message: t("operationFailed"), error: true }); } finally { setBusy(false); }
  }
