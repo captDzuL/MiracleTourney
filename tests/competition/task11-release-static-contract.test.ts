@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { buildRegistrationPreview, suggestRegistrationMapping } from "../../src/lib/imports/registration-intake";
+
 const root = resolve(import.meta.dirname, "../..");
 const config = readFileSync(resolve(root, "playwright.config.ts"), "utf8");
 const releaseConfig = readFileSync(resolve(root, "playwright.release.config.ts"), "utf8");
@@ -143,10 +145,41 @@ describe("Task 11 release verification contracts", () => {
       "captain uid",
       "captain is player",
     ];
+    const playerHeaders = Array.from({ length: 4 }, (_, index) => [
+      `Player ${index + 1} IGN`,
+      `Player ${index + 1} UID`,
+    ]).flat();
 
-    expect(csvFixture).toContain(`"${supportedHeaders.join(",")}"`);
+    expect(csvFixture).toContain(`"${[...supportedHeaders, ...playerHeaders].join(",")}"`);
     expect(csvFixture).not.toMatch(/\b(?:teamName|teamTag|captainName|captainContact|captainEmail|captainIgn|captainUid|captainIsPlayer)\b/);
     for (const header of supportedHeaders) expect(registrationIntake).toContain(`"${header}"`);
+
+    const headers = [...supportedHeaders, ...playerHeaders];
+    const mapping = suggestRegistrationMapping(headers, { maxRosterSize: 8 });
+    const preview = buildRegistrationPreview({
+      event: { id: "event-release", name: "Release", slug: "release", participantCap: 16, bracketLocked: false, maxRosterSize: 8, minRosterSize: 5 },
+      existingTeams: [],
+      existingUsers: [],
+      rows: [{
+        sourceRow: 2,
+        cells: [
+          "Release Import Team",
+          "RIMP",
+          "Release Import Captain",
+          "",
+          "release-import@example.test",
+          "ReleaseImport",
+          "UID-CAPTAIN",
+          "true",
+          ...Array.from({ length: 4 }, (_, index) => [`ReleaseImport${index + 1}`, `UID-PLAYER-${index + 1}`]).flat(),
+        ],
+      }],
+      mapping,
+    });
+
+    expect(mapping.unmappedColumns).toEqual([]);
+    expect(preview.items).toMatchObject([{ status: "new", selected: true, normalized: { players: [{}, {}, {}, {}, {}] } }]);
+    expect(preview.summary).toMatchObject({ new: 1, error: 0 });
   });
 
   it("asserts exact current and absent opposite result forms in the on-mode journey", () => {

@@ -368,8 +368,11 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
 
   await expectLocalizedRegistrationSurface(page, fixture, locale, "queue");
   const csv = [
-    "team name,team tag,captain name,captain contact,captain email,captain ign,captain uid,captain is player",
-    `Release Import Team ${fixture.id},RIMP,Release Import Captain,,release-import-${fixture.id}@example.test,ReleaseImport,UID-${fixture.id},true`,
+    "team name,team tag,captain name,captain contact,captain email,captain ign,captain uid,captain is player,Player 1 IGN,Player 1 UID,Player 2 IGN,Player 2 UID,Player 3 IGN,Player 3 UID,Player 4 IGN,Player 4 UID",
+    `Release Import Team ${fixture.id},RIMP,Release Import Captain,,release-import-${fixture.id}@example.test,ReleaseImport,UID-${fixture.id},true,${Array.from(
+      { length: 4 },
+      (_, index) => `ReleaseImport${index + 1},UID-${fixture.id}-P${index + 1}`,
+    ).join(",")}`,
   ].join("\n");
   await expectLocalizedRegistrationSurface(page, fixture, locale, "import");
   await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({ name: fixture.importSourceLabel, mimeType: "text/csv", buffer: Buffer.from(csv) });
