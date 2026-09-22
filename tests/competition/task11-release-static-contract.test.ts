@@ -182,6 +182,27 @@ describe("Task 11 release verification contracts", () => {
     expect(fixtures).not.toContain("prisma.match.findFirst");
   });
 
+  it("reactivates the exact phase linked to the release match during reset", () => {
+    const releaseMatchSetup = releaseFixture.slice(
+      releaseFixture.indexOf("const releaseMatchId = base.pendingFirstPlayerMatchId"),
+      releaseFixture.indexOf('if (mode === "on")', releaseFixture.indexOf("const releaseMatchId = base.pendingFirstPlayerMatchId")),
+    );
+    const resetMatch = releaseFixture.slice(
+      releaseFixture.indexOf("resetMatchForReleaseJourney: async"),
+      releaseFixture.indexOf("cleanup: async", releaseFixture.indexOf("resetMatchForReleaseJourney: async")),
+    );
+
+    expect(releaseMatchSetup).toMatch(
+      /const releaseMatchPhaseId = base\.graph\.matches\.find\(\(match\) => match\.id === releaseMatchId\)\?\.phaseId;/,
+    );
+    expect(releaseMatchSetup).toMatch(/if \(!releaseMatchPhaseId\) throw new Error\(/);
+    expect(resetMatch).toContain("await prisma.competitionPhase.update({");
+    expect(resetMatch).toContain("where: { id: releaseMatchPhaseId, eventId: base.id }");
+    expect(resetMatch).toContain('data: { status: "active" }');
+    expect(resetMatch.indexOf("prisma.competitionPhase.update")).toBeLessThan(resetMatch.indexOf("prisma.match.update"));
+    expect(resetMatch).not.toMatch(/prisma\.competitionPhase\.find(?:First|Many)/);
+  });
+
   it("keeps release statistics setup mode-aware and passes the active mode into release fixtures", () => {
     const statsSetup = releaseFixture.slice(
       releaseFixture.indexOf("const releaseMatchId = base.pendingFirstPlayerMatchId"),

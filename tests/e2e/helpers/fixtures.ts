@@ -119,6 +119,8 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
     const firstPlayer = base.players[0];
     const releaseMatchId = base.pendingFirstPlayerMatchId;
     if (!releaseMatchId) throw new Error("Release fixture requires a pending match for the first player");
+    const releaseMatchPhaseId = base.graph.matches.find((match) => match.id === releaseMatchId)?.phaseId;
+    if (!releaseMatchPhaseId) throw new Error("Release fixture requires the exact phase for the pending match");
     if (mode === "on") {
       await prisma.playerStat.deleteMany({ where: { matchId: releaseMatchId } });
     }
@@ -235,6 +237,10 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         return { event, registrationEvent: registrationEventState, paymentRequest: paymentRequestState, importBatch: importBatchState, qris, match, completion, certificates, certificateCount, publicationCount, publicationVersion: latestPublication?.version ?? 0 };
       },
       resetMatchForReleaseJourney: async () => {
+        await prisma.competitionPhase.update({
+          where: { id: releaseMatchPhaseId, eventId: base.id },
+          data: { status: "active" },
+        });
         await prisma.match.update({
           where: { id: releaseMatchId },
           data: {
