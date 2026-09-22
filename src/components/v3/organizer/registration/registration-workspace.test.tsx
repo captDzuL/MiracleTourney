@@ -92,6 +92,33 @@ describe("registration workspace behavior", () => {
     expect(host.querySelector<HTMLButtonElement>('[data-publish]')!.disabled).toBe(true); await click('[data-save]'); expect(host.querySelector<HTMLButtonElement>('[data-publish]')!.disabled).toBe(false); await click('[data-publish]');
     expect((actions.publish.mock.calls[0][0] as FormData).get("expectedVersion")).toBe("3"); expect(host.textContent).toContain("Visible to captains");
   });
+  it.each([
+    ["en", "QRIS draft saved.", "QRIS published.", "Version 3 · Draft", "Version 4 · Published"],
+    ["id", "Draf QRIS disimpan.", "QRIS diterbitkan.", "Versi 3 · Draf", "Versi 4 · Diterbitkan"],
+  ] as const)("keeps authoritative QRIS success feedback observable without redundant refreshes in %s", async (locale, draftFeedback, publishFeedback, draftState, publishedState) => {
+    actions.save.mockResolvedValue({ status: "saved", version: 3 });
+    actions.publish.mockResolvedValue({ status: "published", version: 4 });
+    await render({ locale, query: { ...base.query, view: "qris" }, qris: { id: "qris", eventId: "cup", source: "event", version: 2, status: "draft", qrisImageUrl: "/event-payment-qris/q.png", instructions: "Pay here" } });
+
+    await click('[data-save]');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(draftFeedback);
+    expect(host.textContent).toContain(draftState);
+
+    await click('[data-publish]');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(publishFeedback);
+    expect(host.textContent).toContain(publishedState);
+    expect(host.querySelector<HTMLButtonElement>('[data-publish]')?.disabled).toBe(true);
+    expect(actions.refresh).not.toHaveBeenCalled();
+  });
+  it("refreshes authoritative QRIS data after a version conflict", async () => {
+    actions.save.mockResolvedValue({ status: "conflict", code: "stale_mutation", version: 3 });
+    await render({ query: { ...base.query, view: "qris" }, qris: { id: "qris", eventId: "cup", source: "event", version: 2, status: "draft", qrisImageUrl: "/event-payment-qris/q.png", instructions: "Pay here" } });
+
+    await click('[data-save]');
+
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("This data has changed. Reload the latest version before trying again.");
+    expect(actions.refresh).toHaveBeenCalledOnce();
+  });
   it("uploads a file, previews row selection, commits only valid selected rows and retains history", async () => {
     actions.preview.mockResolvedValue({ status: "preview_ready", batchId: "batch-1", headers: ["Team"], mapping: { columns: { teamName: 0 }, players: [] }, maxRosterSize: 1, expiresAt: "2099-01-01T00:00:00Z", items: [{ id: "valid", sourceRow: 2, teamName: "Alpha", status: "new", selected: true, issueCount: 0 }, { id: "bad", sourceRow: 3, teamName: "Beta", status: "error", selected: false, issueCount: 1 }] });
     actions.commit.mockResolvedValue({ status: "imported", importedCount: 1, credentials: [{ tempPassword: "private-do-not-render" }] });
