@@ -204,7 +204,7 @@ describe("Task 11 release verification contracts", () => {
     const importTeamNames = registrationIds.map((id) => `Release Import ${id.slice(-48)}`);
 
     expect(registrationCreate, "the release fixture must create an unlocked registration event").not.toBe("");
-    expect(registrationCreate).toContain('id: `e2e-release-registration-${namespace}`');
+    expect(registrationCreate).toContain("id: deterministicRegistrationEventId");
     expect(registrationCreate).toContain('status: "Published"');
     expect(registrationCreate).toContain('gameModeId: "mode-flashpeak-5v5"');
     expect(registrationCreate).toContain("organizerUserId: base.actor.id");
@@ -222,6 +222,27 @@ describe("Task 11 release verification contracts", () => {
     expect(releaseJourney).toContain('const importTeamName = `Release Import ${fixture.registrationEventId.slice(-48)}`;');
     expect(importTeamNames.every((name) => name.length <= 64)).toBe(true);
     expect(new Set(importTeamNames).size).toBe(importTeamNames.length);
+  });
+
+  it("cleans up only the deterministic captain user created by registration import", () => {
+    const cleanup = releaseFixture.match(/cleanup: async \(\) => \{[\s\S]*?\n\s+\},/)?.[0] ?? "";
+    const setupRollback = releaseFixture.slice(releaseFixture.indexOf("} catch (error) {"));
+
+    expect(releaseFixture).toContain("const deterministicRegistrationEventId = `e2e-release-registration-${namespace}`;");
+    expect(releaseFixture).toContain("const importCaptainEmail = `release-import-${deterministicRegistrationEventId}@example.test`;");
+    expect(releaseJourney).toContain("${fixture.importCaptainEmail}");
+    const eventCleanup = cleanup.indexOf("prisma.event.deleteMany({ where: { id: registrationEvent.id, slug: registrationEvent.slug } })");
+    const importCaptainCleanup = cleanup.indexOf("prisma.user.deleteMany({ where: { email: importCaptainEmail } })");
+    expect(eventCleanup).toBeGreaterThanOrEqual(0);
+    expect(importCaptainCleanup).toBeGreaterThan(eventCleanup);
+    expect(cleanup.indexOf("await base.cleanup()")).toBeGreaterThan(importCaptainCleanup);
+    expect(cleanup).toContain("if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);");
+
+    const rollbackEventCleanup = setupRollback.indexOf("prisma.event.deleteMany({ where: { id: registrationEventId } })");
+    const rollbackImportCaptainCleanup = setupRollback.indexOf("prisma.user.deleteMany({ where: { email: importCaptainEmail } })");
+    expect(rollbackEventCleanup).toBeGreaterThanOrEqual(0);
+    expect(rollbackImportCaptainCleanup).toBeGreaterThan(rollbackEventCleanup);
+    expect(setupRollback).toContain("if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);");
   });
 
   it("asserts exact current and absent opposite result forms in the on-mode journey", () => {

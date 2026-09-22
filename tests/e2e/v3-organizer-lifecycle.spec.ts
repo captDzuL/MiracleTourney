@@ -374,7 +374,7 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   expect(importTeamName.length).toBeLessThanOrEqual(64);
   const csv = [
     "team name,team tag,captain name,captain contact,captain email,captain ign,captain uid,captain is player,Player 1 IGN,Player 1 UID,Player 2 IGN,Player 2 UID,Player 3 IGN,Player 3 UID,Player 4 IGN,Player 4 UID",
-    `${importTeamName},RIMP,Release Import Captain,,release-import-${fixture.registrationEventId}@example.test,ReleaseImport,UID-${fixture.registrationEventId},true,${Array.from(
+    `${importTeamName},RIMP,Release Import Captain,,${fixture.importCaptainEmail},ReleaseImport,UID-${fixture.registrationEventId},true,${Array.from(
       { length: 4 },
       (_, index) => `ReleaseImport${index + 1},UID-${fixture.registrationEventId}-P${index + 1}`,
     ).join(",")}`,

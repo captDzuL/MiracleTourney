@@ -17,14 +17,16 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
   const base = await prepareCompletionFixture("single_elimination", namespace, { pendingFirstPlayerMatch: true });
   const expiresAt = new Date(RELEASE_FIXTURE_NOW.getTime() + 9 * 24 * 60 * 60 * 1000);
   const importSourceLabel = `release-${namespace}-ui.csv`;
+  const deterministicRegistrationEventId = `e2e-release-registration-${namespace}`;
+  const importCaptainEmail = `release-import-${deterministicRegistrationEventId}@example.test`;
   let registrationEventId: string | undefined;
   let createdCaptainId: string | undefined;
   let statSubmissionId: string | undefined;
   try {
     const registrationEvent = await prisma.event.create({
       data: {
-        id: `e2e-release-registration-${namespace}`,
-        slug: `e2e-release-registration-${namespace}`,
+        id: deterministicRegistrationEventId,
+        slug: deterministicRegistrationEventId,
         name: "Release Registration Fixture",
         description: "Deterministic organizer release registration fixture",
         gameId: "game-flashpeak",
@@ -168,6 +170,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
     const releaseFixture = {
       ...base,
       registrationEventId: registrationEvent.id,
+      importCaptainEmail,
       paymentRequestId: paymentRequest.id,
       importBatchId: undefined as string | undefined,
       importSourceLabel,
@@ -243,6 +246,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
       },
       cleanup: async () => {
         await prisma.event.deleteMany({ where: { id: registrationEvent.id, slug: registrationEvent.slug } });
+        await prisma.user.deleteMany({ where: { email: importCaptainEmail } });
         await base.cleanup();
         if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
       },
@@ -251,6 +255,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
   } catch (error) {
     if (registrationEventId) {
       await prisma.event.deleteMany({ where: { id: registrationEventId } });
+      await prisma.user.deleteMany({ where: { email: importCaptainEmail } });
     }
     await base.cleanup();
     if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
