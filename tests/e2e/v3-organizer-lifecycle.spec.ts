@@ -350,17 +350,18 @@ async function expectFlagSpecificOperationsRoot(page: Page, locale: ReleaseLocal
   await expect(operationsRoot).toBeVisible();
 }
 
-async function expectFlagSpecificCompetitionHeading(
+async function expectFlagSpecificRouteHeading(
   page: Page,
-  copy: (typeof LOCALE_COPY)[ReleaseLocale],
   mode: (typeof FEATURE_FLAG_MODES)[number],
+  currentV3Heading: string,
+  oppositeV3Heading: string,
 ) {
   if (mode === "off") {
-    await expect(page.getByRole("heading", { name: "Match Day", exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: copy.opposite.competitionHeading, exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Match Day", exact: true, level: 2 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: oppositeV3Heading, exact: true })).toHaveCount(0);
     return;
   }
-  await expectLocalizedHeading(page, copy.competitionHeading, copy.opposite.competitionHeading);
+  await expectLocalizedHeading(page, currentV3Heading, oppositeV3Heading);
 }
 
 async function expectFlagSpecificMatchSurface(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number], mode: (typeof FEATURE_FLAG_MODES)[number]) {
@@ -441,16 +442,16 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
 
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/competition`);
   await expectFlagSpecificOperationsRoot(page, locale, mode);
-  await expectFlagSpecificCompetitionHeading(page, copy, mode);
+  await expectFlagSpecificRouteHeading(page, mode, copy.competitionHeading, copy.opposite.competitionHeading);
   await expect(page.locator("main")).not.toContainText(copy.oppositeSentinel);
   await expectReleaseAccessibilityContract(page);
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/schedule`);
-  await expectLocalizedHeading(page, copy.scheduleHeading, copy.opposite.scheduleHeading);
+  await expectFlagSpecificRouteHeading(page, mode, copy.scheduleHeading, copy.opposite.scheduleHeading);
   await expectFlagSpecificOperationsRoot(page, locale, mode);
 
   await fixture.resetMatchForReleaseJourney();
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/match-control`);
-  await expectLocalizedHeading(page, copy.matchControlHeading, copy.opposite.matchControlHeading);
+  await expectFlagSpecificRouteHeading(page, mode, copy.matchControlHeading, copy.opposite.matchControlHeading);
   const matchId = fixture.releaseMatchId;
   expect(matchId, "release fixture must expose a deterministic match").toBeTruthy();
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}`);
