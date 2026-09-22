@@ -182,6 +182,33 @@ describe("Task 11 release verification contracts", () => {
     expect(fixtures).not.toContain("prisma.match.findFirst");
   });
 
+  it("keeps release statistics setup mode-aware and passes the active mode into release fixtures", () => {
+    const statsSetup = releaseFixture.slice(
+      releaseFixture.indexOf("const releaseMatchId = base.pendingFirstPlayerMatchId"),
+      releaseFixture.indexOf("const logoAsset = await prisma.eventVisualAsset.create"),
+    );
+    const matrixTest = lifecycle.match(
+      /test\(`@task11-release-matrix[\s\S]*?\n\s*}\);/,
+    )?.[0] ?? "";
+    const deleteStats = statsSetup.indexOf("playerStat.deleteMany");
+    const createSubmission = statsSetup.indexOf("statSubmission.create");
+    const deleteModeGuard = statsSetup.lastIndexOf('if (mode === "on")', deleteStats);
+    const createModeGuard = statsSetup.lastIndexOf('if (mode === "on")', createSubmission);
+
+    expect(releaseFixture).toMatch(
+      /prepareOrganizerReleaseFixture\(namespace = randomUUID\(\)\.slice\(0, 12\), mode: "on" \| "off" = "on"\)/,
+    );
+    expect(deleteModeGuard).toBeGreaterThanOrEqual(0);
+    expect(statsSetup.slice(deleteModeGuard, deleteStats)).not.toContain("}");
+    expect(createModeGuard).toBeGreaterThan(deleteStats);
+    expect(statsSetup.slice(createModeGuard, createSubmission)).not.toContain("}");
+    expect(matrixTest).toContain("prepareOrganizerReleaseFixture(`release-a11y-${mode}-${locale}-${viewport.name}`, mode)");
+    expect(journeyTest).toContain("prepareOrganizerReleaseFixture(`release-journey-${locale}`, mode)");
+    expect(releaseJourney).toContain('if (mode === "on") {\n    expect(initialState.match?.playerStats).toHaveLength(0);');
+    expect(releaseJourney).toContain('source === "admin"');
+    expect(releaseJourney).toContain("expect(initialState.match?.statSubmissions).toHaveLength(0)");
+  });
+
   it("uses an exact per-locale copy table and rejects opposite-language sentinels", () => {
     expect(lifecycle).toMatch(/LOCALE_COPY/);
     expect(releaseJourney).toMatch(/name:.*exact: true/);
@@ -334,23 +361,36 @@ describe("Task 11 release verification contracts", () => {
     expect(persistedReceipt).toBeGreaterThan(captureBatch);
   });
 
-  it("asserts exact current and absent opposite result forms in the on-mode journey", () => {
+  it("submits the exact localized official-result form through the UI in both modes", () => {
     const resultSurface = releaseJourney.slice(
       releaseJourney.indexOf("const matchId = fixture.releaseMatchId"),
       releaseJourney.indexOf("?view=statistics"),
     );
-    const localizedHeading = resultSurface.indexOf(
+    const v3Heading = resultSurface.indexOf(
       "expectLocalizedHeading(page, copy.matchWorkspaceHeading, copy.opposite.matchWorkspaceHeading)",
+    );
+    const legacyHeading = resultSurface.indexOf(
+      "expectLocalizedHeading(page, copy.officialResultHeading, copy.opposite.officialResultHeading)",
     );
     const currentForm = resultSurface.indexOf("await expect(resultForm).toBeVisible()");
     const oppositeForm = resultSurface.indexOf(
       'page.getByRole("form", { name: copy.opposite.officialResultHeading, exact: true })',
     );
     const submit = resultSurface.indexOf("copy.submitResult");
-    expect(localizedHeading).toBeGreaterThanOrEqual(0);
-    expect(currentForm).toBeGreaterThan(localizedHeading);
+    const persistedReceipt = resultSurface.indexOf(
+      'expect(receipt.match).toMatchObject({ id: matchId, eventId: fixture.id, resultVersion: 1, status: "Completed", homeScore: 2, awayScore: 1 })',
+    );
+    expect(v3Heading).toBeGreaterThanOrEqual(0);
+    expect(legacyHeading).toBeGreaterThan(v3Heading);
+    expect(currentForm).toBeGreaterThan(legacyHeading);
     expect(oppositeForm).toBeGreaterThan(currentForm);
     expect(submit).toBeGreaterThan(oppositeForm);
+    expect(resultSurface).toContain('input[name="home-1"]');
+    expect(resultSurface).toContain('input[name="away-1"]');
+    expect(persistedReceipt).toBeGreaterThan(submit);
+    expect(resultSurface).toContain("resultRevisions.map(({ version }) => version)).toContain(1)");
+    expect(resultSurface).not.toMatch(/(?:prisma|completionDb)\./);
+    expect(resultSurface).not.toMatch(/fixture\.(?!readState\b)[A-Za-z]\w*\(/);
   });
 
   it("asserts exact current and absent opposite statistics headings in the on-mode journey", () => {

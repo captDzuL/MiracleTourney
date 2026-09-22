@@ -12,7 +12,7 @@ export const RELEASE_FIXTURE_NOW = new Date("2026-09-13T04:00:00.000Z");
  * certificates. Registration, import, payment, and QRIS use a separate fresh
  * event so its roster remains mutable through the intake journey.
  */
-export async function prepareOrganizerReleaseFixture(namespace = randomUUID().slice(0, 12)) {
+export async function prepareOrganizerReleaseFixture(namespace = randomUUID().slice(0, 12), mode: "on" | "off" = "on") {
   if (!/^[a-z0-9-]{1,48}$/.test(namespace)) throw new Error("Invalid fixture namespace");
   const base = await prepareCompletionFixture("single_elimination", namespace, { pendingFirstPlayerMatch: true });
   const expiresAt = new Date(RELEASE_FIXTURE_NOW.getTime() + 9 * 24 * 60 * 60 * 1000);
@@ -119,7 +119,9 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
     const firstPlayer = base.players[0];
     const releaseMatchId = base.pendingFirstPlayerMatchId;
     if (!releaseMatchId) throw new Error("Release fixture requires a pending match for the first player");
-    await prisma.playerStat.deleteMany({ where: { matchId: releaseMatchId } });
+    if (mode === "on") {
+      await prisma.playerStat.deleteMany({ where: { matchId: releaseMatchId } });
+    }
     await prisma.match.update({
       where: { id: releaseMatchId },
       data: {
@@ -135,19 +137,21 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         actualEndedAt: null,
       },
     });
-    const statSubmission = await prisma.statSubmission.create({
-      data: {
-        matchId: releaseMatchId,
-        eventId: base.id,
-        teamId: firstPlayer.teamId,
-        submittedBy: `release-captain-${namespace}`,
-        status: "pending",
-        stats: { [firstPlayer.id]: { scores: [8.5], goal: 2, assist: 1, passing: 3, defense: 2 } } satisfies Prisma.InputJsonValue,
-        submittedAt: RELEASE_FIXTURE_NOW,
-      },
-      select: { id: true },
-    });
-    statSubmissionId = statSubmission.id;
+    if (mode === "on") {
+      const statSubmission = await prisma.statSubmission.create({
+        data: {
+          matchId: releaseMatchId,
+          eventId: base.id,
+          teamId: firstPlayer.teamId,
+          submittedBy: `release-captain-${namespace}`,
+          status: "pending",
+          stats: { [firstPlayer.id]: { scores: [8.5], goal: 2, assist: 1, passing: 3, defense: 2 } } satisfies Prisma.InputJsonValue,
+          submittedAt: RELEASE_FIXTURE_NOW,
+        },
+        select: { id: true },
+      });
+      statSubmissionId = statSubmission.id;
+    }
     const logoAsset = await prisma.eventVisualAsset.create({
       data: {
         eventId: base.id,

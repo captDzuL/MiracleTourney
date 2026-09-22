@@ -390,8 +390,14 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   expect(initialState.qris).toMatchObject({ eventId: fixture.registrationEventId, version: fixture.qrisVersion, status: "draft" });
   expect(initialState.match).toMatchObject({ id: fixture.releaseMatchId, eventId: fixture.id, resultVersion: 0, status: "Scheduled" });
   expect(initialState.match?.resultRevisions).toHaveLength(0);
-  expect(initialState.match?.playerStats).toHaveLength(0);
-  expect(initialState.match?.statSubmissions.some(({ id, status }) => id === fixture.statSubmissionId && status === "pending")).toBe(true);
+  if (mode === "on") {
+    expect(initialState.match?.playerStats).toHaveLength(0);
+    expect(initialState.match?.statSubmissions.some(({ id, status }) => id === fixture.statSubmissionId && status === "pending")).toBe(true);
+  } else {
+    expect(initialState.match?.playerStats.some(({ id, source }) => Boolean(id) && source === "admin")).toBe(true);
+    expect(initialState.match?.statSubmissions).toHaveLength(0);
+    expect(fixture.statSubmissionId).toBeUndefined();
+  }
   expect(initialState.completion).toBeNull();
   const registrationFixture = { ...fixture, id: fixture.registrationEventId };
 
@@ -458,22 +464,22 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   if (mode === "on") {
     await expect(page.locator("[data-match-workspace]")).toBeVisible();
     await expectLocalizedHeading(page, copy.matchWorkspaceHeading, copy.opposite.matchWorkspaceHeading);
-    const liveReceipt = await fixture.readState();
-    expect(liveReceipt.match).toMatchObject({ status: "Live", scheduleStatus: "live" });
-    expect(liveReceipt.match?.actualStartedAt).toBeTruthy();
-    const resultForm = page.getByRole("form", { name: copy.officialResultHeading, exact: true });
-    await expect(resultForm).toBeVisible();
-    await expect(page.getByRole("form", { name: copy.opposite.officialResultHeading, exact: true })).toHaveCount(0);
-    await resultForm.locator('input[name="home-1"]').fill("2");
-    await resultForm.locator('input[name="away-1"]').fill("1");
-    await resultForm.getByRole("button", { name: copy.submitResult, exact: true }).click();
-    await expect.poll(async () => (await fixture.readState()).match?.resultVersion).toBe(1);
-    receipt = await fixture.readState();
-    expect(receipt.match).toMatchObject({ id: matchId, eventId: fixture.id, resultVersion: 1, status: "Completed", homeScore: 2, awayScore: 1 });
-    expect(receipt.match?.resultRevisions.map(({ version }) => version)).toContain(1);
   } else {
     await expectLocalizedHeading(page, copy.officialResultHeading, copy.opposite.officialResultHeading);
   }
+  const liveReceipt = await fixture.readState();
+  expect(liveReceipt.match).toMatchObject({ status: "Live", scheduleStatus: "live" });
+  expect(liveReceipt.match?.actualStartedAt).toBeTruthy();
+  const resultForm = page.getByRole("form", { name: copy.officialResultHeading, exact: true });
+  await expect(resultForm).toBeVisible();
+  await expect(page.getByRole("form", { name: copy.opposite.officialResultHeading, exact: true })).toHaveCount(0);
+  await resultForm.locator('input[name="home-1"]').fill("2");
+  await resultForm.locator('input[name="away-1"]').fill("1");
+  await resultForm.getByRole("button", { name: copy.submitResult, exact: true }).click();
+  await expect.poll(async () => (await fixture.readState()).match?.resultVersion).toBe(1);
+  receipt = await fixture.readState();
+  expect(receipt.match).toMatchObject({ id: matchId, eventId: fixture.id, resultVersion: 1, status: "Completed", homeScore: 2, awayScore: 1 });
+  expect(receipt.match?.resultRevisions.map(({ version }) => version)).toContain(1);
 
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}?view=statistics`);
   if (mode === "on") {
@@ -495,6 +501,9 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
     expect(receipt.match?.statSubmissions.find(({ id }) => id === fixture.statSubmissionId)).toMatchObject({ id: fixture.statSubmissionId, status: "approved" });
   } else {
     await expectLocalizedHeading(page, copy.officialResultHeading, copy.opposite.officialResultHeading);
+    receipt = await fixture.readState();
+    expect(receipt.match?.playerStats.some(({ id, source }) => Boolean(id) && source === "admin")).toBe(true);
+    expect(receipt.match?.statSubmissions).toHaveLength(0);
   }
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}?view=history`);
   if (mode === "on") {
@@ -590,7 +599,7 @@ for (const locale of LOCALES) {
       const configuredMode = test.info().project.metadata.releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number] | undefined;
       const mode = configuredMode ?? (process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true" ? "on" : "off");
       expect(FEATURE_FLAG_MODES).toContain(mode);
-      const fixture = await prepareOrganizerReleaseFixture(`release-a11y-${mode}-${locale}-${viewport.name}`);
+      const fixture = await prepareOrganizerReleaseFixture(`release-a11y-${mode}-${locale}-${viewport.name}`, mode);
       try {
         await loginWithCredentials(page, {
           locale,
@@ -629,7 +638,7 @@ test("@task11-release-journey organizer release journey covers registration thro
   const mode = configuredMode ?? (process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true" ? "on" : "off");
   expect(FEATURE_FLAG_MODES).toContain(mode);
   for (const locale of LOCALES) {
-    const fixture = await prepareOrganizerReleaseFixture(`release-journey-${locale}`);
+    const fixture = await prepareOrganizerReleaseFixture(`release-journey-${locale}`, mode);
     try {
       await loginWithCredentials(page, {
         locale,
