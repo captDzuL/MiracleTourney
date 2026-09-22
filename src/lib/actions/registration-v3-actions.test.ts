@@ -277,7 +277,24 @@ describe("registration V3 actions", () => {
       locale: "en", eventId: "event-1", expectedVersion: "3", returnTo: "/en/organizer/events/event-1/registration?view=qris",
     }))).resolves.toMatchObject({ status: "published", version: 4 });
     expect(mocks.publishEventPaymentSettings).toHaveBeenCalledWith({ eventId: "event-1", actor: organizer, expectedVersion: 3 });
-    expect(mocks.revalidatePath).toHaveBeenCalledWith("/en/organizer/events/event-1/registration");
+  });
+
+  it("returns authoritative QRIS success results and navigation targets without eager path revalidation", async () => {
+    await expect(saveEventQrisDraftAction(form({
+      locale: "id", eventId: "event-1", expectedVersion: "2", qrisImageUrl: "/payment-qris/event-1.png",
+      instructions: "Pindai QRIS", returnTo: "/id/organizer/events/event-1/registration?view=qris",
+    }))).resolves.toMatchObject({
+      status: "saved", version: 3, settings: { version: 3, status: "draft" },
+      redirectTo: "/id/organizer/events/event-1/registration?view=qris",
+    });
+    await expect(publishEventQrisAction(form({
+      locale: "id", eventId: "event-1", expectedVersion: "3", returnTo: "/id/organizer/events/event-1/registration?view=qris",
+    }))).resolves.toMatchObject({
+      status: "published", version: 4, settings: { version: 4, status: "published" },
+      redirectTo: "/id/organizer/events/event-1/registration?view=qris",
+    });
+
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("denies a non-owner without touching payment or import repositories", async () => {

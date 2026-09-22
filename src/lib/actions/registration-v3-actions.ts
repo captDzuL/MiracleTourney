@@ -631,7 +631,6 @@ export async function saveEventQrisDraftAction(formData: FormData): Promise<Acti
     });
     if (result.status === "conflict") return { status: "conflict", code: "stale_mutation", version: result.version, message: localizedMessage(input.locale, "stale_mutation"), redirectTo };
     stored = true;
-    revalidatePath(registrationPath(input.locale, input.eventId));
     return { status: "saved", version: result.settings.version ?? input.expectedVersion + 1, settings: result.settings, redirectTo };
   } catch (error) {
     const result = asErrorResult(input.locale, error);
@@ -663,7 +662,6 @@ export async function publishEventQrisAction(formData: FormData): Promise<Action
     if (current.eventId !== input.eventId) return blocked(input.locale, "forbidden", redirectTo);
     const result = await publishEventPaymentSettings({ eventId: input.eventId, actor: access, expectedVersion: input.expectedVersion });
     if (result.status === "conflict") return { status: "conflict", code: "stale_mutation", version: result.version, message: localizedMessage(input.locale, "stale_mutation"), redirectTo };
-    revalidatePath(registrationPath(input.locale, input.eventId));
     return { status: "published", version: result.settings.version ?? input.expectedVersion + 1, settings: result.settings, redirectTo };
   } catch (error) {
     const result = asErrorResult(input.locale, error);

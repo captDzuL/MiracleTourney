@@ -93,16 +93,22 @@ describe("registration workspace behavior", () => {
     expect((actions.publish.mock.calls[0][0] as FormData).get("expectedVersion")).toBe("3"); expect(host.textContent).toContain("Visible to captains");
   });
   it.each([
-    ["en", "QRIS draft saved.", "QRIS published.", "Version 3 · Draft", "Version 4 · Published"],
-    ["id", "Draf QRIS disimpan.", "QRIS diterbitkan.", "Versi 3 · Draf", "Versi 4 · Diterbitkan"],
-  ] as const)("keeps authoritative QRIS success feedback observable without redundant refreshes in %s", async (locale, draftFeedback, publishFeedback, draftState, publishedState) => {
+    ["en", "QRIS draft saved.", "QRIS published.", "Unsaved changes", "Version 3 · Draft", "Version 4 · Published"],
+    ["id", "Draf QRIS disimpan.", "QRIS diterbitkan.", "Perubahan belum disimpan", "Versi 3 · Draf", "Versi 4 · Diterbitkan"],
+  ] as const)("keeps authoritative QRIS success feedback observable without redundant refreshes in %s", async (locale, draftFeedback, publishFeedback, unsaved, draftState, publishedState) => {
     actions.save.mockResolvedValue({ status: "saved", version: 3 });
     actions.publish.mockResolvedValue({ status: "published", version: 4 });
     await render({ locale, query: { ...base.query, view: "qris" }, qris: { id: "qris", eventId: "cup", source: "event", version: 2, status: "draft", qrisImageUrl: "/event-payment-qris/q.png", instructions: "Pay here" } });
+    const text = host.querySelector<HTMLTextAreaElement>("textarea")!;
+    act(() => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(text, "Updated"); text.dispatchEvent(new Event("input", { bubbles: true })); });
+    expect(host.textContent).toContain(unsaved);
+    expect(host.querySelector<HTMLButtonElement>('[data-publish]')?.disabled).toBe(true);
 
     await click('[data-save]');
     expect(host.querySelector('[role="status"]')?.textContent).toBe(draftFeedback);
     expect(host.textContent).toContain(draftState);
+    expect(host.textContent).not.toContain(unsaved);
+    expect(host.querySelector<HTMLButtonElement>('[data-publish]')?.disabled).toBe(false);
 
     await click('[data-publish]');
     expect(host.querySelector('[role="status"]')?.textContent).toBe(publishFeedback);
