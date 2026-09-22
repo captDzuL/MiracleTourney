@@ -355,26 +355,31 @@ async function expectFlagSpecificMatchSurface(page: Page, fixture: ReleaseFixtur
 async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number], mode: (typeof FEATURE_FLAG_MODES)[number]) {
   const copy = LOCALE_COPY[locale];
   const initialState = await fixture.readState();
-  expect(initialState.paymentRequest).toMatchObject({ eventId: fixture.id, status: "pending_review" });
+  expect(initialState.event).toMatchObject({ id: fixture.id, status: "Ongoing" });
+  expect(initialState.registrationEvent).toMatchObject({ id: fixture.registrationEventId, status: "Published" });
+  expect(initialState.registrationEvent?.organizerUserId).toBe(initialState.event?.organizerUserId);
+  expect(initialState.paymentRequest).toMatchObject({ eventId: fixture.registrationEventId, status: "pending_review" });
   expect(initialState.paymentRequest?.id).toBe(fixture.paymentRequestId);
   expect(initialState.importBatch).toBeNull();
-  expect(initialState.qris).toMatchObject({ eventId: fixture.id, version: fixture.qrisVersion, status: "draft" });
+  expect(initialState.qris).toMatchObject({ eventId: fixture.registrationEventId, version: fixture.qrisVersion, status: "draft" });
   expect(initialState.match).toMatchObject({ id: fixture.releaseMatchId, eventId: fixture.id, resultVersion: 0, status: "Scheduled" });
   expect(initialState.match?.resultRevisions).toHaveLength(0);
   expect(initialState.match?.playerStats).toHaveLength(0);
   expect(initialState.match?.statSubmissions.some(({ id, status }) => id === fixture.statSubmissionId && status === "pending")).toBe(true);
   expect(initialState.completion).toBeNull();
-  await fixture.resetMatchForReleaseJourney();
+  const registrationFixture = { ...fixture, id: fixture.registrationEventId };
 
-  await expectLocalizedRegistrationSurface(page, fixture, locale, "queue");
+  await expectLocalizedRegistrationSurface(page, registrationFixture, locale, "queue");
+  const importTeamName = `Release Import ${fixture.registrationEventId.slice(-48)}`;
+  expect(importTeamName.length).toBeLessThanOrEqual(64);
   const csv = [
     "team name,team tag,captain name,captain contact,captain email,captain ign,captain uid,captain is player,Player 1 IGN,Player 1 UID,Player 2 IGN,Player 2 UID,Player 3 IGN,Player 3 UID,Player 4 IGN,Player 4 UID",
-    `Release Import Team ${fixture.id},RIMP,Release Import Captain,,release-import-${fixture.id}@example.test,ReleaseImport,UID-${fixture.id},true,${Array.from(
+    `${importTeamName},RIMP,Release Import Captain,,release-import-${fixture.registrationEventId}@example.test,ReleaseImport,UID-${fixture.registrationEventId},true,${Array.from(
       { length: 4 },
-      (_, index) => `ReleaseImport${index + 1},UID-${fixture.id}-P${index + 1}`,
+      (_, index) => `ReleaseImport${index + 1},UID-${fixture.registrationEventId}-P${index + 1}`,
     ).join(",")}`,
   ].join("\n");
-  await expectLocalizedRegistrationSurface(page, fixture, locale, "import");
+  await expectLocalizedRegistrationSurface(page, registrationFixture, locale, "import");
   await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({ name: fixture.importSourceLabel, mimeType: "text/csv", buffer: Buffer.from(csv) });
   await page.locator("[data-preview]").click();
   await expect(page.locator("[data-commit]")).toBeEnabled();
@@ -383,9 +388,9 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await fixture.captureImportBatchId();
   expect(fixture.importBatchId).toBeTruthy();
   let receipt = await fixture.readState();
-  expect(receipt.importBatch).toMatchObject({ id: fixture.importBatchId, eventId: fixture.id, status: "committed" });
+  expect(receipt.importBatch).toMatchObject({ id: fixture.importBatchId, eventId: fixture.registrationEventId, status: "committed" });
 
-  await expectLocalizedRegistrationSurface(page, fixture, locale, "payments");
+  await expectLocalizedRegistrationSurface(page, registrationFixture, locale, "payments");
   const paymentRow = page.getByRole("button").filter({ hasText: "Release Fixture Team" }).first();
   await expect(paymentRow).toBeVisible();
   await paymentRow.click();
@@ -393,9 +398,9 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await expectLocalizedText(page, copy.decisionSaved, copy.opposite.decisionSaved);
   await expect.poll(async () => (await fixture.readState()).paymentRequest?.status).toBe("approved");
   receipt = await fixture.readState();
-  expect(receipt.paymentRequest).toMatchObject({ id: fixture.paymentRequestId, eventId: fixture.id, status: "approved" });
+  expect(receipt.paymentRequest).toMatchObject({ id: fixture.paymentRequestId, eventId: fixture.registrationEventId, status: "approved" });
 
-  await expectLocalizedRegistrationSurface(page, fixture, locale, "qris");
+  await expectLocalizedRegistrationSurface(page, registrationFixture, locale, "qris");
   await page.locator("textarea").fill(locale === "id" ? "Gunakan QRIS rilis deterministik." : "Use the deterministic release QRIS.");
   await page.locator("[data-save]").click();
   await expectLocalizedText(page, copy.qrisDraftSaved, copy.opposite.qrisDraftSaved);
@@ -406,7 +411,7 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await expectLocalizedText(page, copy.qrisPublished, copy.opposite.qrisPublished);
   await expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");
   receipt = await fixture.readState();
-  expect(receipt.qris).toMatchObject({ eventId: fixture.id, status: "published", version: fixture.qrisVersion + 2 });
+  expect(receipt.qris).toMatchObject({ eventId: fixture.registrationEventId, status: "published", version: fixture.qrisVersion + 2 });
   await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: locale === "id" ? "Perbesar QRIS" : "Enlarge QRIS", exact: true }), copy.qrisDialog, copy.opposite.qrisDialog);
 
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/competition`);
@@ -418,6 +423,7 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await expectLocalizedHeading(page, copy.scheduleHeading, copy.opposite.scheduleHeading);
   await expect(page.locator("[data-operations]")).toBeVisible();
 
+  await fixture.resetMatchForReleaseJourney();
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/match-control`);
   await expectLocalizedHeading(page, copy.matchControlHeading, copy.opposite.matchControlHeading);
   const matchId = fixture.releaseMatchId;

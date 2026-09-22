@@ -11,6 +11,9 @@ const lifecycle = readFileSync(resolve(root, "tests/e2e/v3-organizer-lifecycle.s
 const matchday = readFileSync(resolve(root, "tests/e2e/v3-matchday.spec.ts"), "utf8");
 const auth = readFileSync(resolve(root, "tests/e2e/helpers/auth.ts"), "utf8");
 const fixtures = readFileSync(resolve(root, "tests/e2e/helpers/fixtures.ts"), "utf8");
+const releaseFixture = fixtures.match(
+  /export async function prepareOrganizerReleaseFixture[\s\S]*?export async function preparePublishedEventRevisionFixture/,
+)?.[0] ?? "";
 const completionFixtures = readFileSync(resolve(root, "tests/e2e/helpers/completion.ts"), "utf8");
 const registrationIntake = readFileSync(resolve(root, "src/lib/imports/registration-intake.ts"), "utf8");
 const releaseJourney = lifecycle.match(
@@ -180,6 +183,45 @@ describe("Task 11 release verification contracts", () => {
     expect(mapping.unmappedColumns).toEqual([]);
     expect(preview.items).toMatchObject([{ status: "new", selected: true, normalized: { players: [{}, {}, {}, {}, {}] } }]);
     expect(preview.summary).toMatchObject({ new: 1, error: 0 });
+  });
+
+  it("isolates registration from the locked lifecycle event and keeps both receipts explicit", () => {
+    const registrationCreate = releaseFixture.match(
+      /const registrationEvent = await prisma\.event\.create\([\s\S]*?\n\s+\}\);/,
+    )?.[0] ?? "";
+    const cleanup = releaseFixture.match(/cleanup: async \(\) => \{[\s\S]*?\n\s+\},/)?.[0] ?? "";
+    const importSurface = releaseJourney.slice(
+      releaseJourney.indexOf('expectLocalizedRegistrationSurface(page, registrationFixture, locale, "queue")'),
+      releaseJourney.indexOf('/competition`'),
+    );
+    const schedule = releaseJourney.indexOf('/schedule`');
+    const resetMatch = releaseJourney.indexOf("await fixture.resetMatchForReleaseJourney()");
+    const matchControl = releaseJourney.indexOf('/match-control`');
+    const registrationIds = [
+      "e2e-release-registration-release-journey-id",
+      "e2e-release-registration-release-journey-en",
+    ];
+    const importTeamNames = registrationIds.map((id) => `Release Import ${id.slice(-48)}`);
+
+    expect(registrationCreate, "the release fixture must create an unlocked registration event").not.toBe("");
+    expect(registrationCreate).toContain('id: `e2e-release-registration-${namespace}`');
+    expect(registrationCreate).toContain('status: "Published"');
+    expect(registrationCreate).toContain('gameModeId: "mode-flashpeak-5v5"');
+    expect(registrationCreate).toContain("organizerUserId: base.actor.id");
+    expect(releaseFixture).toContain("registrationEventId: registrationEvent.id");
+    expect(cleanup.indexOf("prisma.event.deleteMany({ where: { id: registrationEvent.id, slug: registrationEvent.slug } })")).toBeGreaterThanOrEqual(0);
+    expect(releaseJourney).toContain("const registrationFixture = { ...fixture, id: fixture.registrationEventId }");
+    for (const view of ["queue", "import", "payments", "qris"]) {
+      expect(importSurface).toContain(`registrationFixture, locale, "${view}"`);
+    }
+    expect(releaseJourney).toContain("eventId: fixture.registrationEventId");
+    expect(releaseJourney).toContain('expect(receipt.match).toMatchObject({ id: matchId, eventId: fixture.id');
+    expect(schedule).toBeGreaterThan(0);
+    expect(resetMatch).toBeGreaterThan(schedule);
+    expect(resetMatch).toBeLessThan(matchControl);
+    expect(releaseJourney).toContain('const importTeamName = `Release Import ${fixture.registrationEventId.slice(-48)}`;');
+    expect(importTeamNames.every((name) => name.length <= 64)).toBe(true);
+    expect(new Set(importTeamNames).size).toBe(importTeamNames.length);
   });
 
   it("asserts exact current and absent opposite result forms in the on-mode journey", () => {

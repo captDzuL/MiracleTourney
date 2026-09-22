@@ -8,19 +8,45 @@ const prisma = new PrismaClient();
 export const RELEASE_FIXTURE_NOW = new Date("2026-09-13T04:00:00.000Z");
 
 /**
- * One guarded event carries every organizer release surface. Completion and
- * certificates are prepared through their existing authoritative fixture; the
- * registration records below are deliberately deterministic and safe to clean
- * up through the event cascade.
+ * The completed lifecycle fixture stays authoritative for competition and
+ * certificates. Registration, import, payment, and QRIS use a separate fresh
+ * event so its roster remains mutable through the intake journey.
  */
 export async function prepareOrganizerReleaseFixture(namespace = randomUUID().slice(0, 12)) {
   if (!/^[a-z0-9-]{1,48}$/.test(namespace)) throw new Error("Invalid fixture namespace");
   const base = await prepareCompletionFixture("single_elimination", namespace, { pendingFirstPlayerMatch: true });
   const expiresAt = new Date(RELEASE_FIXTURE_NOW.getTime() + 9 * 24 * 60 * 60 * 1000);
   const importSourceLabel = `release-${namespace}-ui.csv`;
+  let registrationEventId: string | undefined;
   let createdCaptainId: string | undefined;
   let statSubmissionId: string | undefined;
   try {
+    const registrationEvent = await prisma.event.create({
+      data: {
+        id: `e2e-release-registration-${namespace}`,
+        slug: `e2e-release-registration-${namespace}`,
+        name: "Release Registration Fixture",
+        description: "Deterministic organizer release registration fixture",
+        gameId: "game-flashpeak",
+        gameModeId: "mode-flashpeak-5v5",
+        organizerUserId: base.actor.id,
+        organizerName: "Completion Organizer",
+        status: "Published",
+        format: "Single Elimination",
+        participantCap: 8,
+        registrationWindow: "Open",
+        registrationOpensAt: new Date(RELEASE_FIXTURE_NOW.getTime() - 24 * 60 * 60 * 1000),
+        registrationClosesAt: expiresAt,
+        startsAt: "2026-09-22",
+        eventStartsAt: new Date(RELEASE_FIXTURE_NOW.getTime() + 10 * 24 * 60 * 60 * 1000),
+        timezone: "Asia/Jakarta",
+        venue: "Release Registration Arena",
+        publishedAt: RELEASE_FIXTURE_NOW,
+        publishedRevision: 1,
+      },
+      select: { id: true, slug: true },
+    });
+    registrationEventId = registrationEvent.id;
     const captain = await prisma.user.findUnique({ where: { email: "captain@miraclefc.gg" }, select: { id: true } })
       ?? await prisma.user.create({
         data: {
@@ -46,7 +72,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
       },
     });
     await prisma.eventPaymentSettings.upsert({
-      where: { eventId: base.id },
+      where: { eventId: registrationEvent.id },
       update: {
         qrisImageUrl: "/e2e/release-qris.png",
         instructions: "Scan the deterministic release QRIS fixture.",
@@ -56,7 +82,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         updatedById: base.actor.id,
       },
       create: {
-        eventId: base.id,
+        eventId: registrationEvent.id,
         qrisImageUrl: "/e2e/release-qris.png",
         instructions: "Scan the deterministic release QRIS fixture.",
         status: "draft",
@@ -67,7 +93,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
     });
     const paymentRequest = await prisma.teamRegistrationRequest.create({
       data: {
-        eventId: base.id,
+        eventId: registrationEvent.id,
         captainId: captain.id,
         teamId: null,
         teamName: "Release Fixture Team",
@@ -79,7 +105,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
     });
     await prisma.registrationImportProfile.create({
       data: {
-        eventId: base.id,
+        eventId: registrationEvent.id,
         createdById: base.actor.id,
         sourceKind: "csv",
         sourceLabel: importSourceLabel,
@@ -141,6 +167,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
     });
     const releaseFixture = {
       ...base,
+      registrationEventId: registrationEvent.id,
       paymentRequestId: paymentRequest.id,
       importBatchId: undefined as string | undefined,
       importSourceLabel,
@@ -153,7 +180,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
       fixtureNow: RELEASE_FIXTURE_NOW.toISOString(),
       captureImportBatchId: async () => {
         const batch = await prisma.registrationImportBatch.findFirst({
-          where: { eventId: base.id, sourceLabel: importSourceLabel },
+          where: { eventId: registrationEvent.id, sourceLabel: importSourceLabel },
           orderBy: { createdAt: "desc" },
           select: { id: true },
         });
@@ -161,13 +188,14 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         return releaseFixture.importBatchId;
       },
       readState: async () => {
-        const [event, paymentRequestState, importBatchState, qris, match, completion, certificates] = await Promise.all([
-          prisma.event.findUnique({ where: { id: base.id }, select: { status: true, publishedRevision: true } }),
+        const [event, registrationEventState, paymentRequestState, importBatchState, qris, match, completion, certificates] = await Promise.all([
+          prisma.event.findUnique({ where: { id: base.id }, select: { id: true, status: true, publishedRevision: true, organizerUserId: true } }),
+          prisma.event.findUnique({ where: { id: registrationEvent.id }, select: { id: true, status: true, organizerUserId: true } }),
           prisma.teamRegistrationRequest.findUnique({ where: { id: paymentRequest.id }, select: { id: true, eventId: true, status: true, proofImageUrl: true } }),
           releaseFixture.importBatchId
             ? prisma.registrationImportBatch.findUnique({ where: { id: releaseFixture.importBatchId }, select: { id: true, eventId: true, status: true, committedAt: true } })
-            : prisma.registrationImportBatch.findFirst({ where: { eventId: base.id, sourceLabel: importSourceLabel }, orderBy: { createdAt: "desc" }, select: { id: true, eventId: true, status: true, committedAt: true } }),
-          prisma.eventPaymentSettings.findUnique({ where: { eventId: base.id }, select: { eventId: true, version: true, status: true } }),
+            : prisma.registrationImportBatch.findFirst({ where: { eventId: registrationEvent.id, sourceLabel: importSourceLabel }, orderBy: { createdAt: "desc" }, select: { id: true, eventId: true, status: true, committedAt: true } }),
+          prisma.eventPaymentSettings.findUnique({ where: { eventId: registrationEvent.id }, select: { eventId: true, version: true, status: true } }),
           prisma.match.findUnique({
             where: { id: releaseMatchId },
             select: {
@@ -197,7 +225,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
           prisma.certificatePublication.count({ where: { eventId: base.id } }),
           prisma.certificatePublication.findFirst({ where: { eventId: base.id }, orderBy: { version: "desc" }, select: { version: true } }),
         ]);
-        return { event, paymentRequest: paymentRequestState, importBatch: importBatchState, qris, match, completion, certificates, certificateCount, publicationCount, publicationVersion: latestPublication?.version ?? 0 };
+        return { event, registrationEvent: registrationEventState, paymentRequest: paymentRequestState, importBatch: importBatchState, qris, match, completion, certificates, certificateCount, publicationCount, publicationVersion: latestPublication?.version ?? 0 };
       },
       resetMatchForReleaseJourney: async () => {
         await prisma.match.update({
@@ -214,12 +242,16 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         });
       },
       cleanup: async () => {
+        await prisma.event.deleteMany({ where: { id: registrationEvent.id, slug: registrationEvent.slug } });
         await base.cleanup();
         if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
       },
     };
     return releaseFixture;
   } catch (error) {
+    if (registrationEventId) {
+      await prisma.event.deleteMany({ where: { id: registrationEventId } });
+    }
     await base.cleanup();
     if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
     throw error;
