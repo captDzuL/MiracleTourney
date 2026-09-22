@@ -51,6 +51,36 @@ describe("Task 11 release verification contracts", () => {
     expect(matrixTest).toContain("expect(FEATURE_FLAG_MODES).toContain(mode)");
   });
 
+  it("derives the ordinary CI release journey mode from the actual flag without a hardcoded-on fallback", () => {
+    expect(journeyTest).toContain("const configuredMode = test.info().project.metadata.releaseFlagMode");
+    expect(journeyTest).toContain(
+      'configuredMode ?? (process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true" ? "on" : "off")',
+    );
+    expect(journeyTest).toContain("expect(FEATURE_FLAG_MODES).toContain(mode)");
+    expect(journeyTest).not.toContain('?? "on"');
+  });
+
+  it("asserts the V3 and localized legacy Match Day roots on competition and schedule", () => {
+    const rootHelper = lifecycle.match(
+      /async function expectFlagSpecificOperationsRoot[\s\S]*?async function expectFlagSpecificMatchSurface/,
+    )?.[0] ?? "";
+    const competitionSurface = releaseJourney.slice(
+      releaseJourney.indexOf('/competition`'),
+      releaseJourney.indexOf('/schedule`'),
+    );
+    const scheduleSurface = releaseJourney.slice(
+      releaseJourney.indexOf('/schedule`'),
+      releaseJourney.indexOf("await fixture.resetMatchForReleaseJourney()"),
+    );
+
+    expect(rootHelper).toContain('mode === "on"');
+    expect(rootHelper).toContain('page.locator("[data-operations]")');
+    expect(rootHelper).toContain('locale === "id" ? "Ruang kerja Match Day" : "Match Day workspace"');
+    expect(rootHelper).toContain("await expect(operationsRoot).toBeVisible()");
+    expect(competitionSurface).toContain("expectFlagSpecificOperationsRoot(page, locale, mode)");
+    expect(scheduleSurface).toContain("expectFlagSpecificOperationsRoot(page, locale, mode)");
+  });
+
   it("drives non-vacuous keyboard, dialog, aria-sort, and deterministic journey contracts", () => {
     expect(lifecycle).toMatch(/page\.keyboard\.press\("Tab"\)/);
     expect(lifecycle).toMatch(/page\.keyboard\.press\("Shift\+Tab"\)/);

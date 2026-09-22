@@ -343,6 +343,13 @@ async function expectLocalizedRegistrationSurface(page: Page, fixture: ReleaseFi
   if (view === "queue") await expectLocalizedHeading(page, copy.queueHeading, copy.opposite.queueHeading);
 }
 
+async function expectFlagSpecificOperationsRoot(page: Page, locale: ReleaseLocale, mode: (typeof FEATURE_FLAG_MODES)[number]) {
+  const operationsRoot = mode === "on"
+    ? page.locator("[data-operations]")
+    : page.getByRole("region", { name: locale === "id" ? "Ruang kerja Match Day" : "Match Day workspace" });
+  await expect(operationsRoot).toBeVisible();
+}
+
 async function expectFlagSpecificMatchSurface(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number], mode: (typeof FEATURE_FLAG_MODES)[number]) {
   const copy = LOCALE_COPY[locale];
   const matchId = fixture.releaseMatchId;
@@ -420,13 +427,13 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: locale === "id" ? "Perbesar QRIS" : "Enlarge QRIS", exact: true }), copy.qrisDialog, copy.opposite.qrisDialog);
 
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/competition`);
-  await expect(page.locator("[data-operations]")).toBeVisible();
+  await expectFlagSpecificOperationsRoot(page, locale, mode);
   await expectLocalizedHeading(page, copy.competitionHeading, copy.opposite.competitionHeading);
   await expect(page.locator("main")).not.toContainText(copy.oppositeSentinel);
   await expectReleaseAccessibilityContract(page);
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/schedule`);
   await expectLocalizedHeading(page, copy.scheduleHeading, copy.opposite.scheduleHeading);
-  await expect(page.locator("[data-operations]")).toBeVisible();
+  await expectFlagSpecificOperationsRoot(page, locale, mode);
 
   await fixture.resetMatchForReleaseJourney();
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/match-control`);
@@ -604,7 +611,9 @@ for (const locale of LOCALES) {
 
 test("@task11-release-journey organizer release journey covers registration through publication in ID and EN", async ({ page }) => {
   test.setTimeout(180_000);
-  const mode = (test.info().project.metadata.releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number] | undefined) ?? "on";
+  const configuredMode = test.info().project.metadata.releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number] | undefined;
+  const mode = configuredMode ?? (process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true" ? "on" : "off");
+  expect(FEATURE_FLAG_MODES).toContain(mode);
   for (const locale of LOCALES) {
     const fixture = await prepareOrganizerReleaseFixture(`release-journey-${locale}`);
     try {
