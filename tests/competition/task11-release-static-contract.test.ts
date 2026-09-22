@@ -83,6 +83,27 @@ describe("Task 11 release verification contracts", () => {
     expect(scheduleSurface).toContain("expectFlagSpecificOperationsRoot(page, locale, mode)");
   });
 
+  it("uses the shared Match Day heading off-mode and localized competition heading on-mode", () => {
+    const headingHelper = lifecycle.match(
+      /async function expectFlagSpecificCompetitionHeading[\s\S]*?async function expectFlagSpecificMatchSurface/,
+    )?.[0] ?? "";
+    const competitionSurface = releaseJourney.slice(
+      releaseJourney.indexOf('/competition`'),
+      releaseJourney.indexOf('/schedule`'),
+    );
+
+    expect(headingHelper).toContain('mode === "off"');
+    expect(headingHelper).toContain('name: "Match Day", exact: true');
+    expect(headingHelper).toContain("copy.opposite.competitionHeading");
+    expect(headingHelper).toContain(
+      "expectLocalizedHeading(page, copy.competitionHeading, copy.opposite.competitionHeading)",
+    );
+    expect(competitionSurface).toContain("expectFlagSpecificCompetitionHeading(page, copy, mode)");
+    expect(competitionSurface).not.toContain(
+      "expectLocalizedHeading(page, copy.competitionHeading, copy.opposite.competitionHeading)",
+    );
+  });
+
   it("drives non-vacuous keyboard, dialog, aria-sort, and deterministic journey contracts", () => {
     expect(lifecycle).toMatch(/page\.keyboard\.press\("Tab"\)/);
     expect(lifecycle).toMatch(/page\.keyboard\.press\("Shift\+Tab"\)/);

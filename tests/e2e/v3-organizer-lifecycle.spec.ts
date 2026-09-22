@@ -350,6 +350,19 @@ async function expectFlagSpecificOperationsRoot(page: Page, locale: ReleaseLocal
   await expect(operationsRoot).toBeVisible();
 }
 
+async function expectFlagSpecificCompetitionHeading(
+  page: Page,
+  copy: (typeof LOCALE_COPY)[ReleaseLocale],
+  mode: (typeof FEATURE_FLAG_MODES)[number],
+) {
+  if (mode === "off") {
+    await expect(page.getByRole("heading", { name: "Match Day", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: copy.opposite.competitionHeading, exact: true })).toHaveCount(0);
+    return;
+  }
+  await expectLocalizedHeading(page, copy.competitionHeading, copy.opposite.competitionHeading);
+}
+
 async function expectFlagSpecificMatchSurface(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number], mode: (typeof FEATURE_FLAG_MODES)[number]) {
   const copy = LOCALE_COPY[locale];
   const matchId = fixture.releaseMatchId;
@@ -428,7 +441,7 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
 
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/competition`);
   await expectFlagSpecificOperationsRoot(page, locale, mode);
-  await expectLocalizedHeading(page, copy.competitionHeading, copy.opposite.competitionHeading);
+  await expectFlagSpecificCompetitionHeading(page, copy, mode);
   await expect(page.locator("main")).not.toContainText(copy.oppositeSentinel);
   await expectReleaseAccessibilityContract(page);
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/schedule`);
