@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -12,6 +12,91 @@ const RELEASE_CERTIFICATE_LOGO_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAARElEQVRYhe3XMREAUQxCQfwbw0pc8F3cNVukz0wIPJLefp1YoE5wRDhvGEZUVnzCaOI4gKSQ7EDpYHkUk6pmp5zuax08ZFa4l4EKcmAAAAAASUVORK5CYII=",
   "base64",
 );
+
+type ReleaseAssetFileHandle = Readonly<{
+  writeFile: (bytes: Uint8Array) => Promise<void>;
+  close: () => Promise<void>;
+}>;
+
+export type ReleaseAssetFileSystem = Readonly<{
+  open: (filePath: string, flags: "wx") => Promise<ReleaseAssetFileHandle>;
+  readFile: (filePath: string) => Promise<Uint8Array>;
+  unlink: (filePath: string) => Promise<void>;
+}>;
+
+export type MaterializedReleaseCertificateAsset = Readonly<{
+  byteSize: number;
+  contentSha256: string;
+  cleanup: () => Promise<void>;
+}>;
+
+const releaseAssetFileSystem: ReleaseAssetFileSystem = {
+  open: async (filePath, flags) => open(filePath, flags),
+  readFile,
+  unlink,
+};
+
+function errorCode(error: unknown): string | undefined {
+  return error && typeof error === "object" && "code" in error && typeof error.code === "string"
+    ? error.code
+    : undefined;
+}
+
+/** Test-only owner for one deterministic release certificate asset path. */
+export async function materializeReleaseCertificateAsset(
+  filePath: string,
+  bytes: Uint8Array,
+  fileSystem: ReleaseAssetFileSystem = releaseAssetFileSystem,
+): Promise<MaterializedReleaseCertificateAsset> {
+  const handle = await fileSystem.open(filePath, "wx");
+  let ownsFile = true;
+  const cleanup = async () => {
+    if (!ownsFile) return;
+    try {
+      await fileSystem.unlink(filePath);
+      ownsFile = false;
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") {
+        ownsFile = false;
+        return;
+      }
+      throw error;
+    }
+  };
+
+  try {
+    try {
+      await handle.writeFile(bytes);
+    } finally {
+      await handle.close();
+    }
+    const persistedBytes = await fileSystem.readFile(filePath);
+    return {
+      byteSize: persistedBytes.byteLength,
+      contentSha256: createHash("sha256").update(persistedBytes).digest("hex"),
+      cleanup,
+    };
+  } catch (error) {
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Release certificate asset setup failed");
+    }
+    throw error;
+  }
+}
+
+export async function runReleaseFixtureCleanup(steps: ReadonlyArray<() => Promise<void>>): Promise<void> {
+  const errors: unknown[] = [];
+  for (const step of steps) {
+    try {
+      await step();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length > 0) throw new AggregateError(errors, "Release fixture cleanup failed");
+}
 
 /**
  * The completed lifecycle fixture stays authoritative for competition and
@@ -27,12 +112,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
   const importCaptainEmail = `release-import-${deterministicRegistrationEventId}@example.test`;
   const certificateLogoStorageKey = `certificate-assets/${base.id}-logo.png`;
   const certificateLogoPath = path.resolve(process.cwd(), "public", certificateLogoStorageKey);
-  let certificateLogoFileCreated = false;
-  const cleanupCertificateLogo = async () => {
-    if (!certificateLogoFileCreated) return;
-    await unlink(certificateLogoPath).catch(() => undefined);
-    certificateLogoFileCreated = false;
-  };
+  let cleanupCertificateLogo: () => Promise<void> = async () => undefined;
   let registrationEventId: string | undefined;
   let createdCaptainId: string | undefined;
   let statSubmissionId: string | undefined;
@@ -169,10 +249,10 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
       statSubmissionId = statSubmission.id;
     }
     await mkdir(path.dirname(certificateLogoPath), { recursive: true });
-    await writeFile(certificateLogoPath, RELEASE_CERTIFICATE_LOGO_PNG);
-    certificateLogoFileCreated = true;
-    const certificateLogoStats = await stat(certificateLogoPath);
-    const certificateLogoSha256 = createHash("sha256").update(RELEASE_CERTIFICATE_LOGO_PNG).digest("hex");
+    const certificateLogo = await materializeReleaseCertificateAsset(certificateLogoPath, RELEASE_CERTIFICATE_LOGO_PNG);
+    cleanupCertificateLogo = certificateLogo.cleanup;
+    const certificateLogoStats = { size: certificateLogo.byteSize };
+    const certificateLogoSha256 = certificateLogo.contentSha256;
     const logoAsset = await prisma.eventVisualAsset.create({
       data: {
         eventId: base.id,
@@ -274,22 +354,34 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         });
       },
       cleanup: async () => {
-        await cleanupCertificateLogo();
-        await prisma.event.deleteMany({ where: { id: registrationEvent.id, slug: registrationEvent.slug } });
-        await prisma.user.deleteMany({ where: { email: importCaptainEmail } });
-        await base.cleanup();
-        if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
+        await runReleaseFixtureCleanup([
+          async () => { await prisma.event.deleteMany({ where: { id: registrationEvent.id, slug: registrationEvent.slug } }); },
+          async () => { await prisma.user.deleteMany({ where: { email: importCaptainEmail } }); },
+          async () => { await base.cleanup(); },
+          async () => {
+            if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
+          },
+          cleanupCertificateLogo,
+        ]);
       },
     };
     return releaseFixture;
   } catch (error) {
-    await cleanupCertificateLogo();
-    if (registrationEventId) {
-      await prisma.event.deleteMany({ where: { id: registrationEventId } });
-      await prisma.user.deleteMany({ where: { email: importCaptainEmail } });
+    try {
+      await runReleaseFixtureCleanup([
+        cleanupCertificateLogo,
+        async () => {
+          if (registrationEventId) {
+            await prisma.event.deleteMany({ where: { id: registrationEventId } });
+            await prisma.user.deleteMany({ where: { email: importCaptainEmail } });
+          }
+          await base.cleanup();
+          if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
+        },
+      ]);
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Release fixture setup failed and cleanup also failed");
     }
-    await base.cleanup();
-    if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
     throw error;
   }
 }
