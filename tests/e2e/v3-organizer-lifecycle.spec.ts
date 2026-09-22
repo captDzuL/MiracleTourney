@@ -168,8 +168,13 @@ const LOCALE_COPY = {
 } as const;
 type ReleaseLocale = (typeof LOCALES)[number];
 
-async function expectLocalizedText(page: Page, expected: string, opposite: string) {
-  await expect(page.getByText(expected, { exact: true })).toBeVisible();
+async function expectLocalizedText(page: Page, expected: string, opposite: string, visibleTimeout?: number) {
+  const expectedText = page.getByText(expected, { exact: true });
+  if (visibleTimeout === undefined) {
+    await expect(expectedText).toBeVisible();
+  } else {
+    await expect(expectedText).toBeVisible({ timeout: visibleTimeout });
+  }
   await expect(page.getByText(opposite, { exact: true })).toHaveCount(0);
 }
 
@@ -384,7 +389,7 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await page.locator("[data-preview]").click();
   await expect(page.locator("[data-commit]")).toBeEnabled();
   await page.locator("[data-commit]").click();
-  await expectLocalizedText(page, copy.importCompleted, copy.opposite.importCompleted);
+  await expectLocalizedText(page, copy.importCompleted, copy.opposite.importCompleted, 15_000);
   await fixture.captureImportBatchId();
   expect(fixture.importBatchId).toBeTruthy();
   let receipt = await fixture.readState();

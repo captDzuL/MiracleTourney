@@ -245,6 +245,26 @@ describe("Task 11 release verification contracts", () => {
     expect(setupRollback).toContain("if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);");
   });
 
+  it("allows import completion to settle before checking its committed batch receipt", () => {
+    const localizedTextHelper = lifecycle.slice(
+      lifecycle.indexOf("async function expectLocalizedText"),
+      lifecycle.indexOf("async function expectLocalizedHeading"),
+    );
+    const completed = releaseJourney.indexOf(
+      "await expectLocalizedText(page, copy.importCompleted, copy.opposite.importCompleted, 15_000);",
+    );
+    const captureBatch = releaseJourney.indexOf("await fixture.captureImportBatchId();");
+    const persistedReceipt = releaseJourney.indexOf(
+      'expect(receipt.importBatch).toMatchObject({ id: fixture.importBatchId, eventId: fixture.registrationEventId, status: "committed" });',
+    );
+
+    expect(localizedTextHelper).toContain("visibleTimeout?: number");
+    expect(localizedTextHelper).toContain("toBeVisible({ timeout: visibleTimeout })");
+    expect(completed).toBeGreaterThan(0);
+    expect(captureBatch).toBeGreaterThan(completed);
+    expect(persistedReceipt).toBeGreaterThan(captureBatch);
+  });
+
   it("asserts exact current and absent opposite result forms in the on-mode journey", () => {
     const resultSurface = releaseJourney.slice(
       releaseJourney.indexOf("const matchId = fixture.releaseMatchId"),
