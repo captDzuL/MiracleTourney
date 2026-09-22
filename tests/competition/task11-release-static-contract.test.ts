@@ -75,7 +75,9 @@ describe("Task 11 release verification contracts", () => {
 
     expect(rootHelper).toContain('mode === "on"');
     expect(rootHelper).toContain('page.locator("[data-operations]")');
-    expect(rootHelper).toContain('locale === "id" ? "Ruang kerja Match Day" : "Match Day workspace"');
+    expect(rootHelper).toContain(
+      'page.getByRole("region", { name: locale === "id" ? "Ruang kerja Match Day" : "Match Day workspace", exact: true })',
+    );
     expect(rootHelper).toContain("await expect(operationsRoot).toBeVisible()");
     expect(competitionSurface).toContain("expectFlagSpecificOperationsRoot(page, locale, mode)");
     expect(scheduleSurface).toContain("expectFlagSpecificOperationsRoot(page, locale, mode)");

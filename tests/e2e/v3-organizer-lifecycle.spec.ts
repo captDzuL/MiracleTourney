@@ -346,7 +346,7 @@ async function expectLocalizedRegistrationSurface(page: Page, fixture: ReleaseFi
 async function expectFlagSpecificOperationsRoot(page: Page, locale: ReleaseLocale, mode: (typeof FEATURE_FLAG_MODES)[number]) {
   const operationsRoot = mode === "on"
     ? page.locator("[data-operations]")
-    : page.getByRole("region", { name: locale === "id" ? "Ruang kerja Match Day" : "Match Day workspace" });
+    : page.getByRole("region", { name: locale === "id" ? "Ruang kerja Match Day" : "Match Day workspace", exact: true });
   await expect(operationsRoot).toBeVisible();
 }
 
