@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, stat, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -6,6 +8,10 @@ import { prepareCompletionFixture } from "./completion";
 
 const prisma = new PrismaClient();
 export const RELEASE_FIXTURE_NOW = new Date("2026-09-13T04:00:00.000Z");
+const RELEASE_CERTIFICATE_LOGO_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAARElEQVRYhe3XMREAUQxCQfwbw0pc8F3cNVukz0wIPJLefp1YoE5wRDhvGEZUVnzCaOI4gKSQ7EDpYHkUk6pmp5zuax08ZFa4l4EKcmAAAAAASUVORK5CYII=",
+  "base64",
+);
 
 /**
  * The completed lifecycle fixture stays authoritative for competition and
@@ -19,6 +25,14 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
   const importSourceLabel = `release-${namespace}-ui.csv`;
   const deterministicRegistrationEventId = `e2e-release-registration-${namespace}`;
   const importCaptainEmail = `release-import-${deterministicRegistrationEventId}@example.test`;
+  const certificateLogoStorageKey = `certificate-assets/${base.id}-logo.png`;
+  const certificateLogoPath = path.resolve(process.cwd(), "public", certificateLogoStorageKey);
+  let certificateLogoFileCreated = false;
+  const cleanupCertificateLogo = async () => {
+    if (!certificateLogoFileCreated) return;
+    await unlink(certificateLogoPath).catch(() => undefined);
+    certificateLogoFileCreated = false;
+  };
   let registrationEventId: string | undefined;
   let createdCaptainId: string | undefined;
   let statSubmissionId: string | undefined;
@@ -154,6 +168,11 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
       });
       statSubmissionId = statSubmission.id;
     }
+    await mkdir(path.dirname(certificateLogoPath), { recursive: true });
+    await writeFile(certificateLogoPath, RELEASE_CERTIFICATE_LOGO_PNG);
+    certificateLogoFileCreated = true;
+    const certificateLogoStats = await stat(certificateLogoPath);
+    const certificateLogoSha256 = createHash("sha256").update(RELEASE_CERTIFICATE_LOGO_PNG).digest("hex");
     const logoAsset = await prisma.eventVisualAsset.create({
       data: {
         eventId: base.id,
@@ -163,12 +182,12 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         purpose: "certificate_team_logo",
         url: `/certificate-assets/${base.id}-logo.png`,
         mimeType: "image/png",
-        width: 512,
-        height: 512,
-        byteSize: 128,
+        width: 32,
+        height: 32,
+        byteSize: certificateLogoStats.size,
         storageProvider: "local",
-        storageKey: `certificate-assets/${base.id}-logo.png`,
-        contentSha256: "b".repeat(64),
+        storageKey: certificateLogoStorageKey,
+        contentSha256: certificateLogoSha256,
         rightsAttestedAt: RELEASE_FIXTURE_NOW,
         approvedAt: RELEASE_FIXTURE_NOW,
       },
@@ -255,6 +274,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
         });
       },
       cleanup: async () => {
+        await cleanupCertificateLogo();
         await prisma.event.deleteMany({ where: { id: registrationEvent.id, slug: registrationEvent.slug } });
         await prisma.user.deleteMany({ where: { email: importCaptainEmail } });
         await base.cleanup();
@@ -263,6 +283,7 @@ export async function prepareOrganizerReleaseFixture(namespace = randomUUID().sl
     };
     return releaseFixture;
   } catch (error) {
+    await cleanupCertificateLogo();
     if (registrationEventId) {
       await prisma.event.deleteMany({ where: { id: registrationEventId } });
       await prisma.user.deleteMany({ where: { email: importCaptainEmail } });

@@ -499,4 +499,34 @@ describe("Task 11 release verification contracts", () => {
     expect(matchday).toContain("await expect(operationsRoot).toBeVisible()");
     expect(matchday).toContain("operationsRoot.evaluate");
   });
+
+  it("requires release certificate asset materialization metadata and exact cleanup", () => {
+    const source = fixtures.match(
+      /export async function prepareOrganizerReleaseFixture[\s\S]*?export async function preparePublishedEventRevisionFixture/,
+    )?.[0] ?? "";
+    const logoBytes = fixtures.match(/RELEASE_CERTIFICATE_LOGO_PNG[\s\S]*?"([A-Za-z0-9+/=]{100,})"\s*,\s*"base64"/)?.[1];
+    expect(logoBytes, "release fixture must use an inline deterministic PNG").toBeTruthy();
+    const bytes = Buffer.from(logoBytes!, "base64");
+    expect(bytes.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+    expect(bytes.readUInt32BE(16)).toBe(32);
+    expect(bytes.readUInt32BE(20)).toBe(32);
+    expect(source).toContain("const certificateLogoStorageKey = `certificate-assets/${base.id}-logo.png`;");
+    expect(source).toContain('const certificateLogoPath = path.resolve(process.cwd(), "public", certificateLogoStorageKey);');
+    expect(source).toMatch(/createHash/);
+    expect(source).toMatch(/writeFile/);
+    expect(source).toMatch(/mkdir/);
+    expect(source).toMatch(/stat/);
+    expect(source).toMatch(/byteSize: certificateLogoStats\.size/);
+    expect(source).toMatch(/contentSha256: certificateLogoSha256/);
+    expect(source).toMatch(/width: 32/);
+    expect(source).toMatch(/height: 32/);
+    expect(source).toMatch(/unlink\(certificateLogoPath\)/);
+    expect(source).toMatch(/await unlink\(certificateLogoPath\)\.catch/);
+    expect(source).not.toContain("byteSize: 128");
+    expect(source).not.toContain('contentSha256: "b".repeat(64)');
+    expect(source).not.toMatch(/rm\([^)]*certificate-assets/);
+    expect(source.indexOf("await writeFile(certificateLogoPath")).toBeGreaterThanOrEqual(0);
+    expect(source.indexOf("await prisma.eventVisualAsset.create")).toBeGreaterThan(source.indexOf("await writeFile(certificateLogoPath"));
+    expect((source.match(/cleanupCertificateLogo\(\)/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
 });
