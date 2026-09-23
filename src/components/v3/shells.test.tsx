@@ -98,6 +98,18 @@ describe("V3 shell integration", () => {
     click(link); expect(prevented).toBe(false);
     expect(link.getAttribute("href")).toBe("/en/organizer/events/other/edit#section-identity");
   });
+  it("applies an intercepted same-route setup hash", async () => {
+    route.pathname = "/en/organizer/events/cup/edit";
+    window.history.replaceState(null, "", "/en/organizer/events/cup/edit");
+    await render(<EventWorkspaceShell eventTitle="Cup" organizerLabel="Owner" navigation={[
+      { href: "/organizer/events/cup/overview#section-identity", label: "Identity", active: true },
+      { href: "/organizer/events/cup/overview#section-review", label: "Review" },
+    ]}><p>Content</p></EventWorkspaceShell>);
+    const review = container.querySelector<HTMLAnchorElement>('nav a[href$="#section-review"]')!;
+    review.addEventListener("click", event => event.preventDefault(), { once: true });
+    click(review);
+    expect(window.location.hash).toBe("#section-review");
+  });
   it.each(["true", "false"])("uses one event-owned rail when master shell flag is %s", async flag => {
     vi.stubEnv("FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3", flag);
     route.pathname = "/en/organizer/events/cup/overview";

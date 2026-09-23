@@ -57,7 +57,16 @@ export function EventWorkspaceShell({ children, eventTitle, navigation, nextActi
     {setupRoute && <nav aria-label={t("eventNavigation")} className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 min-[700px]:p-3">
       <ol className="grid min-w-0 grid-cols-[repeat(var(--setup-step-count),minmax(0,1fr))] gap-1 min-[700px]:gap-2" style={{ "--setup-step-count": effectiveNavigation.length } as React.CSSProperties}>
         {effectiveNavigation.map((item, index) => <li key={item.href}>
-          <Link aria-current={index === activeIndex ? "step" : undefined} className="miracle-focus-ring group flex min-h-11 min-w-0 items-center justify-center rounded-[var(--radius-control)] px-1 text-sm font-bold text-[var(--color-text-subtle)] transition hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)] aria-[current=step]:bg-[var(--color-surface-strong)] aria-[current=step]:text-[var(--color-text)] min-[900px]:min-h-12 min-[900px]:justify-start min-[900px]:gap-3 min-[900px]:px-3" href={item.href} onClick={() => setActiveIndex(index)}>
+          <Link aria-current={index === activeIndex ? "step" : undefined} className="miracle-focus-ring group flex min-h-11 min-w-0 items-center justify-center rounded-[var(--radius-control)] px-1 text-sm font-bold text-[var(--color-text-subtle)] transition hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)] aria-[current=step]:bg-[var(--color-surface-strong)] aria-[current=step]:text-[var(--color-text)] min-[900px]:min-h-12 min-[900px]:justify-start min-[900px]:gap-3 min-[900px]:px-3" href={item.href} onClick={(event) => {
+            setActiveIndex(index);
+            const target = new URL(event.currentTarget.href, window.location.href);
+            if (target.origin !== window.location.origin || target.pathname !== window.location.pathname || !target.hash) return;
+            event.preventDefault();
+            if (window.location.hash !== target.hash) {
+              window.history.replaceState(null, "", `${target.pathname}${target.search}${target.hash}`);
+              window.dispatchEvent(new HashChangeEvent("hashchange"));
+            }
+          }}>
             <span className="grid size-7 shrink-0 place-items-center rounded-full border border-[var(--color-border-strong)] text-xs group-aria-[current=step]:border-[var(--color-brand-cyan)] group-aria-[current=step]:bg-[var(--color-brand-cyan)] group-aria-[current=step]:text-slate-950">{index + 1}</span>
             <span className="sr-only min-w-0 min-[900px]:not-sr-only min-[900px]:break-words">{item.label}</span>
           </Link>

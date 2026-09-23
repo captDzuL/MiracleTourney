@@ -40,8 +40,8 @@ test.describe.serial("Published Event Revision V3", () => {
     await expect(publicContent.getByText(updatedDescription)).toHaveCount(0);
 
     await page.getByRole("link", { name: "Tinjau & Terbitkan" }).click();
-    await page.getByRole("button", { name: "Buat preview privat" }).click();
-    const previewLink = page.getByRole("link", { name: "Buka preview" });
+    await page.getByRole("button", { name: "Buat pratinjau privat" }).click();
+    const previewLink = page.getByRole("link", { name: "Buka pratinjau" });
     await expect(previewLink).toBeVisible({ timeout: 20_000 });
     const previewUrl = await previewLink.getAttribute("href");
     expect(previewUrl).toMatch(/^\/id\/preview\/events\//);
@@ -81,7 +81,7 @@ test.describe.serial("Published Event Revision V3", () => {
       const workspaceHref = await card.getByRole("link", { name: "Buka workspace" }).getAttribute("href");
       const eventId = workspaceHref!.split("/").at(-2);
       await page.goto(`/id/organizer/events/${eventId}/edit`);
-      await expect(page.getByRole("heading", { name: "Informasi event tidak dapat diedit." })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Informasi acara tidak dapat diedit." })).toBeVisible();
     }
   });
 
@@ -91,12 +91,12 @@ test.describe.serial("Published Event Revision V3", () => {
     const row = page.locator("tr").filter({ hasText: fixture.name }).last();
     await row.getByRole("link", { name: /Edit event|Lanjutkan revisi/ }).click();
     const slug = `flashpeak-revision-${Date.now()}`;
-    const input = page.getByLabel("URL publik khusus Platform Admin");
+    const input = page.getByLabel("URL publik khusus admin platform");
     await input.fill(slug);
     const mutationResponse = page.waitForResponse((response) =>
       response.request().method() === "POST" && response.url().includes("/id/admin/events/"),
     );
-    await page.getByRole("button", { name: "Ganti URL dan buat redirect" }).click();
+    await page.getByRole("button", { name: "Ganti URL dan buat pengalihan" }).click();
     await expect((await mutationResponse).status()).toBeLessThan(400);
     await page.goto(`/id/events/${fixture.originalSlug}`);
     await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`), { timeout: 30_000 });
