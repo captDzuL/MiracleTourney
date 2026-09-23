@@ -52,6 +52,22 @@ describe("Task 11 release verification contracts", () => {
     expect(matrixTest).toContain("expect(FEATURE_FLAG_MODES).toContain(mode)");
   });
 
+  it("navigates the QRIS matrix through the mutable registration event", () => {
+    const matrixStart = lifecycle.indexOf("test(`@task11-release-matrix");
+    const journeyStart = lifecycle.indexOf('for (const locale of ["id", "en"] as const)');
+    expect(matrixStart).toBeGreaterThanOrEqual(0);
+    expect(journeyStart).toBeGreaterThan(matrixStart);
+    const matrixTest = lifecycle.slice(matrixStart, journeyStart);
+
+    expect(fixtures).toContain("registrationEventId: registrationEvent.id");
+    expect(matrixTest).toContain(
+      "encodeURIComponent(fixture.registrationEventId)}/registration?view=qris",
+    );
+    expect(matrixTest).not.toContain(
+      "encodeURIComponent(fixture.id)}/registration?view=qris",
+    );
+  });
+
   it("derives the ordinary CI release journey mode from the actual flag without a hardcoded-on fallback", () => {
     expect(journeyTest).toContain("const configuredMode = test.info().project.metadata.releaseFlagMode");
     expect(journeyTest).toContain(

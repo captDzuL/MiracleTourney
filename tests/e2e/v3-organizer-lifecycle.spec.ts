@@ -626,7 +626,7 @@ for (const locale of LOCALES) {
         });
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
         await expectFlagSpecificMatchSurface(page, fixture, locale, mode);
-        await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/registration?view=qris`);
+        await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration?view=qris`);
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
         await expectReleaseAccessibilityContract(page);
         const copy = LOCALE_COPY[locale];
