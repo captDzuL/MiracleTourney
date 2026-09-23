@@ -8,6 +8,7 @@ const root = resolve(import.meta.dirname, "../..");
 const config = readFileSync(resolve(root, "playwright.config.ts"), "utf8");
 const releaseConfig = readFileSync(resolve(root, "playwright.release.config.ts"), "utf8");
 const lifecycle = readFileSync(resolve(root, "tests/e2e/v3-organizer-lifecycle.spec.ts"), "utf8");
+const englishMessages = readFileSync(resolve(root, "messages/en.json"), "utf8");
 const matchday = readFileSync(resolve(root, "tests/e2e/v3-matchday.spec.ts"), "utf8");
 const auth = readFileSync(resolve(root, "tests/e2e/helpers/auth.ts"), "utf8");
 const fixtures = readFileSync(resolve(root, "tests/e2e/helpers/fixtures.ts"), "utf8");
@@ -20,7 +21,7 @@ const releaseJourney = lifecycle.match(
   /async function runOrganizerReleaseJourney[\s\S]*?function eventIdentity/,
 )?.[0] ?? "";
 const journeyTest = lifecycle.match(
-  /test\("@task11-release-journey[\s\S]*?\n\}\);\n\ntest\("admin can use/,
+  /for \(const locale of \["id", "en"\] as const\) \{[\s\S]*?\n\}\n\ntest\("admin can use/,
 )?.[0] ?? "";
 
 describe("Task 11 release verification contracts", () => {
@@ -440,11 +441,36 @@ describe("Task 11 release verification contracts", () => {
     expect(approvalBlock).not.toContain("reviewDecisionSaved");
   });
 
-  it("runs the strict localized on-mode journey for both declared locales", () => {
+  it("runs the strict localized on-mode journey as two serial locale cases", () => {
     expect(lifecycle).toContain('export const LOCALES = ["id", "en"] as const');
-    expect(journeyTest).toContain("for (const locale of LOCALES)");
+    expect(journeyTest).toContain('for (const locale of ["id", "en"] as const)');
+    expect(journeyTest).not.toContain("for (const locale of LOCALES)");
+    expect(journeyTest).toContain('test(`@task11-release-journey organizer release journey ${locale}');
+    expect(journeyTest).toContain("test.setTimeout(180_000);");
     expect(journeyTest).toContain("runOrganizerReleaseJourney(page, fixture, locale, mode)");
     expect(releaseConfig).toMatch(/name:\s*"organizer-release-on"[\s\S]*releaseJourneyGrep[\s\S]*releaseFlagMode:\s*"on"/);
+  });
+
+  it("isolates each release journey locale and uses the exact EN audit decision label", () => {
+    const journeyParameterization = lifecycle.slice(
+      lifecycle.indexOf('for (const locale of ["id", "en"] as const) {'),
+      lifecycle.indexOf('test("admin can use'),
+    );
+
+    expect(englishMessages).toContain('"reasonLabel":"Audit decision reason"');
+    expect(lifecycle).toMatch(/en:\s*\{[\s\S]*?decisionReason: "Audit decision reason"/);
+    expect(lifecycle).toMatch(/id:\s*\{[\s\S]*?opposite:\s*\{[\s\S]*?decisionReason: "Audit decision reason"/);
+    expect(lifecycle).not.toContain('decisionReason: "Decision reason"');
+
+    expect(journeyParameterization).toContain('for (const locale of ["id", "en"] as const) {');
+    expect(journeyParameterization).toContain('test(`@task11-release-journey organizer release journey ${locale}');
+    expect(lifecycle).toContain('test.describe.configure({ mode: "serial" });');
+    expect(journeyParameterization).not.toContain("for (const locale of LOCALES)");
+    expect(journeyParameterization.match(/test\.setTimeout\([^)]*\)/g)).toEqual(["test.setTimeout(180_000)"]);
+    expect(journeyParameterization).not.toContain("test.setTimeout(360_000)");
+    expect(journeyParameterization).toContain("prepareOrganizerReleaseFixture(`release-journey-${locale}`, mode)");
+    expect(journeyParameterization).toContain("await fixture.cleanup()");
+    expect(journeyParameterization).toContain("runOrganizerReleaseJourney(page, fixture, locale, mode)");
   });
 
   it("probes reduced motion on the loaded surface before clock, fonts, and screenshot CSS", () => {

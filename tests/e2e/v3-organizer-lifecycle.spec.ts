@@ -93,7 +93,7 @@ const LOCALE_COPY = {
       saveStatistics: "Save player statistics",
       approveSubmission: "Approve submission",
       awardsTab: "Awards",
-      decisionReason: "Decision reason",
+      decisionReason: "Audit decision reason",
       decisionSaved: "Review decision saved.",
       qrisDraftSaved: "QRIS draft saved.",
       qrisPublished: "QRIS published.",
@@ -130,7 +130,7 @@ const LOCALE_COPY = {
     saveStatistics: "Save player statistics",
     approveSubmission: "Approve submission",
     awardsTab: "Awards",
-    decisionReason: "Decision reason",
+    decisionReason: "Audit decision reason",
     decisionSaved: "Review decision saved.",
     qrisDraftSaved: "QRIS draft saved.",
     qrisPublished: "QRIS published.",
@@ -649,12 +649,12 @@ for (const locale of LOCALES) {
   }
 }
 
-test("@task11-release-journey organizer release journey covers registration through publication in ID and EN", async ({ page }) => {
-  test.setTimeout(180_000);
-  const configuredMode = test.info().project.metadata.releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number] | undefined;
-  const mode = configuredMode ?? (process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true" ? "on" : "off");
-  expect(FEATURE_FLAG_MODES).toContain(mode);
-  for (const locale of LOCALES) {
+for (const locale of ["id", "en"] as const) {
+  test(`@task11-release-journey organizer release journey ${locale} covers registration through publication`, async ({ page }) => {
+    test.setTimeout(180_000);
+    const configuredMode = test.info().project.metadata.releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number] | undefined;
+    const mode = configuredMode ?? (process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true" ? "on" : "off");
+    expect(FEATURE_FLAG_MODES).toContain(mode);
     const fixture = await prepareOrganizerReleaseFixture(`release-journey-${locale}`, mode);
     try {
       await loginWithCredentials(page, {
@@ -667,8 +667,8 @@ test("@task11-release-journey organizer release journey covers registration thro
     } finally {
       await fixture.cleanup();
     }
-  }
-});
+  });
+}
 
 test("admin can use the shared workspace while a non-owner is denied", async ({ browser }) => {
   test.setTimeout(120_000);
