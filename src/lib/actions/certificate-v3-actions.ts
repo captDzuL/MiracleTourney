@@ -14,6 +14,15 @@ import { safeEntityIdSchema } from "@/lib/security/request-guard";
 import { withServerActionLog } from "@/lib/observability/logger";
 
 type GateResult = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" | "rate_limited" };
+
+/**
+ * A release journey creates seven certificate types and may regenerate the
+ * champion to preserve superseded verification history. Keep the limit above
+ * that workflow while retaining the actor/event five-minute abuse guard.
+ */
+export const CERTIFICATE_REGENERATION_RATE_LIMIT = 20;
+export const CERTIFICATE_REGENERATION_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
+
 function normalizePublicationResult(result: PublishCertificateSetResult): CertificatePublicationActionResult {
   if (result.status === "published") return { status: "published", revision: result.publicationVersion, publishedAt: result.publishedAt };
   if (result.status === "already_applied") return { status: "already_applied", result: normalizePublicationResult(result.result) };
@@ -47,7 +56,11 @@ async function regenerateCertificateActionImpl(input: unknown): Promise<Regenera
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const access = await gate(parsed.data.eventId);
   if ("status" in access) return access;
-  if (!checkRateLimit(`certificate-v3:regenerate:${access.actor.id}:${parsed.data.eventId}`, 3, 5 * 60 * 1000)) {
+  if (!checkRateLimit(
+    `certificate-v3:regenerate:${access.actor.id}:${parsed.data.eventId}`,
+    CERTIFICATE_REGENERATION_RATE_LIMIT,
+    CERTIFICATE_REGENERATION_RATE_LIMIT_WINDOW_MS,
+  )) {
     return { status: "blocked", code: "rate_limited" };
   }
   const result = await regenerateCertificate(parsed.data, createPrismaCertificateStudioDependencies(access.actor));
