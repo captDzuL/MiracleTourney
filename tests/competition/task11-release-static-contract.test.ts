@@ -529,4 +529,25 @@ describe("Task 11 release verification contracts", () => {
     expect(fixtures).toContain('const handle = await fileSystem.open(filePath, "wx");');
     expect(fixtures).toContain("const persistedBytes = await fileSystem.readFile(filePath);");
   });
+
+  it("maps every release certificate type to its required approved logo control", () => {
+    const certificateJourney = lifecycle;
+
+    expect(certificateJourney).toContain("const REQUIRED_CERTIFICATE_ASSET_KIND");
+    for (const [certificateType, assetKind] of [
+      ["champion", "team_logo_hero"],
+      ["runner_up", "team_logo_hero"],
+      ["third_place", "team_logo_hero"],
+      ["mvp", "team_logo_badge"],
+      ["top_scorer", "team_logo_badge"],
+      ["top_defender", "team_logo_badge"],
+      ["top_assist", "team_logo_badge"],
+    ] as const) {
+      expect(certificateJourney).toContain(`${certificateType}: "${assetKind}"`);
+    }
+    expect(certificateJourney).toContain("selectReleaseCertificateAsset");
+    expect(certificateJourney).toContain('[data-certificate-assets] select#certificate-placement-error-asset');
+    expect(certificateJourney).toContain('[data-certificate-assets] select#certificate-placement-error-team_logo_badge-asset');
+    expect(certificateJourney).not.toContain('[data-certificate-assets] select").first()');
+  });
 });

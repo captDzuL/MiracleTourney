@@ -17,6 +17,25 @@ export const RELEASE_BASELINE_CASE_COUNT = VIEWPORTS.length * LOCALES.length * F
 const VALID_ARIA_SORT_VALUES = new Set(["ascending", "descending", "none", "other"]);
 const FOCUSABLE_SELECTOR = 'main button, main a[href], main input, main select, main textarea, main summary';
 const EXPECTED_CERTIFICATE_TYPES = ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"] as const;
+type RequiredCertificateAssetKind = "team_logo_hero" | "team_logo_badge";
+const REQUIRED_CERTIFICATE_ASSET_KIND: Record<(typeof EXPECTED_CERTIFICATE_TYPES)[number], RequiredCertificateAssetKind> = {
+  champion: "team_logo_hero",
+  runner_up: "team_logo_hero",
+  third_place: "team_logo_hero",
+  mvp: "team_logo_badge",
+  top_scorer: "team_logo_badge",
+  top_defender: "team_logo_badge",
+  top_assist: "team_logo_badge",
+};
+const CERTIFICATE_ASSET_SELECTOR: Record<RequiredCertificateAssetKind, string> = {
+  team_logo_hero: '[data-certificate-assets] select#certificate-placement-error-asset',
+  team_logo_badge: '[data-certificate-assets] select#certificate-placement-error-team_logo_badge-asset',
+};
+
+async function selectReleaseCertificateAsset(page: Page, certificateType: (typeof EXPECTED_CERTIFICATE_TYPES)[number], assetId: string) {
+  const assetKind = REQUIRED_CERTIFICATE_ASSET_KIND[certificateType];
+  await page.locator(CERTIFICATE_ASSET_SELECTOR[assetKind]).selectOption(assetId);
+}
 
 const LOCALE_COPY = {
   id: {
@@ -535,9 +554,7 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   expect(certificateTypes.sort()).toEqual([...EXPECTED_CERTIFICATE_TYPES].sort());
   for (const certificateType of EXPECTED_CERTIFICATE_TYPES) {
     await page.locator(`[data-certificate-type="${certificateType}"]`).click();
-    if (["champion", "runner_up", "third_place"].includes(certificateType)) {
-      await page.locator("[data-certificate-assets] select").first().selectOption(fixture.certificateLogoAssetId);
-    }
+    await selectReleaseCertificateAsset(page, certificateType, fixture.certificateLogoAssetId);
     await page.locator("[data-regenerate-certificate]").click();
     await expectLocalizedText(page, copy.certificateGenerated, copy.opposite.certificateGenerated);
     await expect.poll(async () => (await fixture.readState()).certificates.filter(({ type }) => type === certificateType).length).toBeGreaterThan(0);
@@ -551,7 +568,7 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await expectLocalizedText(page, copy.certificatePublished, copy.opposite.certificatePublished);
   await expect.poll(async () => (await fixture.readState()).publicationVersion).toBe(revisionBefore + 1);
   await page.locator('[data-certificate-type="champion"]').click();
-  await page.locator("[data-certificate-assets] select").first().selectOption(fixture.certificateLogoAssetId);
+  await selectReleaseCertificateAsset(page, "champion", fixture.certificateLogoAssetId);
   await page.locator("[data-regenerate-certificate]").click();
   await expectLocalizedText(page, copy.certificateGenerated, copy.opposite.certificateGenerated);
   await expect.poll(async () => (await fixture.readState()).certificates.filter(({ type, version }) => type === "champion" && version === 2).length).toBe(1);
