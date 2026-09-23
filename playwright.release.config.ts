@@ -10,6 +10,7 @@ const releaseOffBaseURL = `http://127.0.0.1:${releaseOffPort}`;
 const releaseTestMatch = /v3-organizer-lifecycle\.spec\.ts/;
 const releaseMatrixGrep = /@task11-release-matrix/;
 const releaseJourneyGrep = /@task11-release-journey/;
+const releasePublicLeaderboardTailGrep = /@task11-public-leaderboard-tail/;
 const releaseClock = "2026-09-21T00:00:00.000Z";
 const channel = process.env.PLAYWRIGHT_CHANNEL;
 
@@ -45,7 +46,7 @@ export default defineConfig({
     {
       name: "organizer-release-on",
       testMatch: releaseTestMatch,
-      grep: new RegExp(`${releaseMatrixGrep.source}|${releaseJourneyGrep.source}`),
+      grep: new RegExp(`${releaseMatrixGrep.source}|${releaseJourneyGrep.source}|${releasePublicLeaderboardTailGrep.source}`),
       timeout: 120_000,
       metadata: { releaseFlagMode: "on", deterministicClock: releaseClock, requiredViewports: [360, 390, 768, 1024, 1440] },
       use: {

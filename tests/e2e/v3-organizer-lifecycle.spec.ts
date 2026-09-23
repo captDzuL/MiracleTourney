@@ -15,7 +15,7 @@ export const LOCALES = ["id", "en"] as const;
 export const FEATURE_FLAG_MODES = ["on", "off"] as const;
 export const RELEASE_BASELINE_CASE_COUNT = VIEWPORTS.length * LOCALES.length * FEATURE_FLAG_MODES.length;
 const VALID_ARIA_SORT_VALUES = new Set(["ascending", "descending", "none", "other"]);
-const FOCUSABLE_SELECTOR = 'main button, main a[href], main input, main select, main textarea, main summary';
+const FOCUSABLE_SELECTOR = 'main button, main a[href], main input, main select, main textarea, main summary, main [tabindex]:not([tabindex="-1"])';
 const EXPECTED_CERTIFICATE_TYPES = ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"] as const;
 type RequiredCertificateAssetKind = "team_logo_hero" | "team_logo_badge";
 const REQUIRED_CERTIFICATE_ASSET_KIND: Record<(typeof EXPECTED_CERTIFICATE_TYPES)[number], RequiredCertificateAssetKind> = {
@@ -50,7 +50,7 @@ const LOCALE_COPY = {
     matchControlHeading: "Kontrol Pertandingan",
     matchWorkspaceHeading: "Hasil & statistik pertandingan",
     officialResultHeading: "Hasil resmi",
-    statisticsHeading: "Statistik pemain",
+    statisticsLink: "Statistik pemain",
     historyHeading: "Riwayat",
     history: "Riwayat",
     submitResult: "Kirim hasil resmi",
@@ -86,7 +86,7 @@ const LOCALE_COPY = {
       matchControlHeading: "Match Control",
       matchWorkspaceHeading: "Match results & statistics",
       officialResultHeading: "Official result",
-      statisticsHeading: "Player statistics",
+      statisticsLink: "Player statistics",
       historyHeading: "History",
       history: "History",
       submitResult: "Submit official result",
@@ -123,7 +123,7 @@ const LOCALE_COPY = {
     matchControlHeading: "Match Control",
     matchWorkspaceHeading: "Match results & statistics",
     officialResultHeading: "Official result",
-    statisticsHeading: "Player statistics",
+    statisticsLink: "Player statistics",
     historyHeading: "History",
     history: "History",
     submitResult: "Submit official result",
@@ -159,7 +159,7 @@ const LOCALE_COPY = {
       matchControlHeading: "Kontrol Pertandingan",
       matchWorkspaceHeading: "Hasil & statistik pertandingan",
       officialResultHeading: "Hasil resmi",
-      statisticsHeading: "Statistik pemain",
+      statisticsLink: "Statistik pemain",
       historyHeading: "Riwayat",
       history: "Riwayat",
       submitResult: "Kirim hasil resmi",
@@ -200,6 +200,15 @@ async function expectLocalizedText(page: Page, expected: string, opposite: strin
 async function expectLocalizedHeading(page: Page, expected: string, opposite: string) {
   await expect(page.getByRole("heading", { name: expected, exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: opposite, exact: true })).toHaveCount(0);
+}
+
+function waitForCertificateRegenerationResponse(page: Page, locale: ReleaseLocale, eventId: string) {
+  const certificatePath = `/${locale}/organizer/events/${encodeURIComponent(eventId)}/certificates`;
+  return page.waitForResponse((response) => {
+    const request = response.request();
+    const responseUrl = new URL(response.url());
+    return request.method() === "POST" && responseUrl.pathname === certificatePath;
+  });
 }
 
 /**
@@ -397,7 +406,7 @@ async function expectFlagSpecificMatchSurface(page: Page, fixture: ReleaseFixtur
   return matchId!;
 }
 
-async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number], mode: (typeof FEATURE_FLAG_MODES)[number]) {
+async function runOrganizerReleaseJourneyPartA(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number], mode: (typeof FEATURE_FLAG_MODES)[number]) {
   const copy = LOCALE_COPY[locale];
   const initialState = await fixture.readState();
   expect(initialState.event).toMatchObject({ id: fixture.id, status: "Ongoing" });
@@ -445,11 +454,21 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   const paymentRow = page.getByRole("button").filter({ hasText: "Release Fixture Team" }).first();
   await expect(paymentRow).toBeVisible();
   await paymentRow.click();
+  const paymentReviewPath = `/${locale}/organizer/events/${encodeURIComponent(registrationFixture.id)}/registration`;
+  const paymentReviewResponsePromise = page.waitForResponse((response) => {
+    const request = response.request();
+    const responseUrl = new URL(response.url());
+    return request.method() === "POST"
+      && responseUrl.pathname === paymentReviewPath
+      && responseUrl.searchParams.get("view") === "payments";
+  });
   await page.locator("[data-approve]").click();
-  await expectLocalizedText(page, copy.decisionSaved, copy.opposite.decisionSaved);
+  const paymentReviewResponse = await paymentReviewResponsePromise;
+  expect(paymentReviewResponse.status()).toBeLessThan(400);
   await expect.poll(async () => (await fixture.readState()).paymentRequest?.status).toBe("approved");
   receipt = await fixture.readState();
   expect(receipt.paymentRequest).toMatchObject({ id: fixture.paymentRequestId, eventId: fixture.registrationEventId, status: "approved" });
+  await expectLocalizedText(page, copy.decisionSaved, copy.opposite.decisionSaved);
 
   await expectLocalizedRegistrationSurface(page, registrationFixture, locale, "qris");
   await page.locator("textarea").fill(locale === "id" ? "Gunakan QRIS rilis deterministik." : "Use the deterministic release QRIS.");
@@ -503,7 +522,8 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}?view=statistics`);
   if (mode === "on") {
     await expect(page.locator("[data-match-workspace]")).toBeVisible();
-    await expectLocalizedHeading(page, copy.statisticsHeading, copy.opposite.statisticsHeading);
+    await expect(page.getByRole("link", { name: copy.statisticsLink, exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("link", { name: copy.opposite.statisticsLink, exact: true })).toHaveCount(0);
     const playerForm = page.locator(`[data-player-form="${fixture.releasePlayerTeamId}"]`);
     await playerForm.locator(`input[name="score_${fixture.releasePlayerId}_1"]`).fill("8.7");
     await playerForm.locator(`input[name="stat_${fixture.releasePlayerId}_goal"]`).fill("4");
@@ -538,14 +558,17 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   for (const award of ["mvp", "top_scorer", "top_defender", "top_assist"]) {
     await page.locator(`[data-award="${award}"] input[type="radio"]`).first().check();
   }
-  await page.getByLabel(copy.decisionReason, { exact: true }).fill(locale === "id" ? "Kontribusi final menentukan pilihan penghargaan." : "Decisive final contribution selected for the award.");
+  await expect(page.getByLabel(copy.decisionReason, { exact: true })).toHaveCount(0);
   await page.locator("[data-complete-tournament]").click();
   await expectLocalizedText(page, copy.completionFeedback, copy.opposite.completionFeedback);
   await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", copy.completionStatus);
   await expect.poll(async () => (await fixture.readState()).completion?.status).toBe("completed");
   receipt = await fixture.readState();
   expect(receipt.completion).toMatchObject({ status: "completed" });
+}
 
+async function runOrganizerReleaseJourneyPartB(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number]) {
+  const copy = LOCALE_COPY[locale];
   await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/certificates`);
   await expectLocalizedHeading(page, copy.certificateHeading, copy.opposite.certificateHeading);
   await expect(page.locator("[data-certificate-type]")).toHaveCount(EXPECTED_CERTIFICATE_TYPES.length);
@@ -555,7 +578,10 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   for (const certificateType of EXPECTED_CERTIFICATE_TYPES) {
     await page.locator(`[data-certificate-type="${certificateType}"]`).click();
     await selectReleaseCertificateAsset(page, certificateType, fixture.certificateLogoAssetId);
+    const certificateRegenerationResponsePromise = waitForCertificateRegenerationResponse(page, locale, fixture.id);
     await page.locator("[data-regenerate-certificate]").click();
+    const certificateRegenerationResponse = await certificateRegenerationResponsePromise;
+    expect(certificateRegenerationResponse.status()).toBeLessThan(400);
     await expectLocalizedText(page, copy.certificateGenerated, copy.opposite.certificateGenerated);
     await expect.poll(async () => (await fixture.readState()).certificates.filter(({ type }) => type === certificateType).length).toBeGreaterThan(0);
   }
@@ -569,7 +595,10 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await expect.poll(async () => (await fixture.readState()).publicationVersion).toBe(revisionBefore + 1);
   await page.locator('[data-certificate-type="champion"]').click();
   await selectReleaseCertificateAsset(page, "champion", fixture.certificateLogoAssetId);
+  const certificateRegenerationResponsePromise = waitForCertificateRegenerationResponse(page, locale, fixture.id);
   await page.locator("[data-regenerate-certificate]").click();
+  const certificateRegenerationResponse = await certificateRegenerationResponsePromise;
+  expect(certificateRegenerationResponse.status()).toBeLessThan(400);
   await expectLocalizedText(page, copy.certificateGenerated, copy.opposite.certificateGenerated);
   await expect.poll(async () => (await fixture.readState()).certificates.filter(({ type, version }) => type === "champion" && version === 2).length).toBe(1);
   await expect(publish).toBeEnabled();
@@ -577,7 +606,7 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await expectLocalizedText(page, copy.certificatePublished, copy.opposite.certificatePublished);
   const revisionAfter = (await fixture.readState()).publicationVersion;
   expect(revisionAfter).toBe(revisionBefore + 2);
-  receipt = await fixture.readState();
+  const receipt = await fixture.readState();
   const historicalVerificationCode = receipt.certificates.find(({ type, version }) => type === "champion" && version === 1)?.verificationCode;
   const currentVerificationCode = receipt.certificates.find(({ type, version }) => type === "champion" && version === 2)?.verificationCode;
   expect(historicalVerificationCode).toBeTruthy();
@@ -592,10 +621,6 @@ async function runOrganizerReleaseJourney(page: Page, fixture: ReleaseFixture, l
   await expectLocalizedHeading(page, copy.verificationTitle, copy.opposite.verificationTitle);
   await expectLocalizedText(page, copy.currentStatus, copy.opposite.currentStatus);
   await expect(page.getByText(copy.supersededStatus, { exact: true })).toHaveCount(0);
-  await page.goto(`/${locale}/events/flashpeak-champions-32/leaderboards`);
-  await expectAriaSortTransition(page);
-  const artifactText = await page.locator("body").innerText();
-  expect(artifactText).not.toMatch(/Miracle2026!|organizer-a@miraclefc\.gg|captain@miraclefc\.gg/i);
 }
 
 function eventIdentity() {
@@ -605,8 +630,6 @@ function eventIdentity() {
     slug: `v3-lifecycle-${suffix}`,
   };
 }
-
-test.describe.configure({ mode: "serial" });
 
 for (const locale of LOCALES) {
   for (const viewport of VIEWPORTS) {
@@ -650,23 +673,57 @@ for (const locale of LOCALES) {
 }
 
 for (const locale of ["id", "en"] as const) {
-  test(`@task11-release-journey organizer release journey ${locale} covers registration through publication`, async ({ page }) => {
-    test.setTimeout(180_000);
-    const configuredMode = test.info().project.metadata.releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number] | undefined;
-    const mode = configuredMode ?? (process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true" ? "on" : "off");
-    expect(FEATURE_FLAG_MODES).toContain(mode);
-    const fixture = await prepareOrganizerReleaseFixture(`release-journey-${locale}`, mode);
-    try {
+  test(`@task11-public-leaderboard-tail seeded public leaderboard ${locale}`, async ({ page }) => {
+    await page.goto(`/${locale}/events/flashpeak-champions-32/leaderboards`);
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    await expectAriaSortTransition(page);
+    const artifactText = await page.locator("body").innerText();
+    expect(artifactText).not.toMatch(/Miracle2026!|organizer-a@miraclefc\.gg|captain@miraclefc\.gg/i);
+  });
+}
+
+for (const locale of ["id", "en"] as const) {
+  test.describe(`@task11-release-journey organizer release journey ${locale}`, () => {
+    test.describe.configure({ mode: "serial" });
+    let fixture: ReleaseFixture | undefined;
+    let mode: (typeof FEATURE_FLAG_MODES)[number];
+
+    test.beforeAll(async ({}, testInfo) => {
+      const configuredMode = testInfo.project.metadata.releaseFlagMode as (typeof FEATURE_FLAG_MODES)[number] | undefined;
+      mode = configuredMode ?? (process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true" ? "on" : "off");
+      expect(FEATURE_FLAG_MODES).toContain(mode);
+      fixture = await prepareOrganizerReleaseFixture(`release-journey-${locale}`, mode);
+    });
+
+    test.afterAll(async () => {
+      if (fixture) await fixture.cleanup();
+    });
+
+    test(`@task11-release-journey-part-a organizer release journey ${locale} covers registration through Completion`, async ({ page }) => {
+      test.setTimeout(180_000);
+      expect(fixture).toBeDefined();
+      const currentFixture = fixture!;
       await loginWithCredentials(page, {
         locale,
         email: "organizer-a@miraclefc.gg",
         password: "Miracle2026!",
         destination: /organizer/,
       });
-      await runOrganizerReleaseJourney(page, fixture, locale, mode);
-    } finally {
-      await fixture.cleanup();
-    }
+      await runOrganizerReleaseJourneyPartA(page, currentFixture, locale, mode);
+    });
+
+    test(`@task11-release-journey-part-b organizer release journey ${locale} covers certificates and publication`, async ({ page }) => {
+      test.setTimeout(180_000);
+      expect(fixture).toBeDefined();
+      const currentFixture = fixture!;
+      await loginWithCredentials(page, {
+        locale,
+        email: "organizer-a@miraclefc.gg",
+        password: "Miracle2026!",
+        destination: /organizer/,
+      });
+      await runOrganizerReleaseJourneyPartB(page, currentFixture, locale);
+    });
   });
 }
 

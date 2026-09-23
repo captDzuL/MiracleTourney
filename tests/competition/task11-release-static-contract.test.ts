@@ -18,10 +18,16 @@ const releaseFixture = fixtures.match(
 const completionFixtures = readFileSync(resolve(root, "tests/e2e/helpers/completion.ts"), "utf8");
 const registrationIntake = readFileSync(resolve(root, "src/lib/imports/registration-intake.ts"), "utf8");
 const releaseJourney = lifecycle.match(
-  /async function runOrganizerReleaseJourney[\s\S]*?function eventIdentity/,
+  /async function runOrganizerReleaseJourneyPartA[\s\S]*?function eventIdentity/,
+)?.[0] ?? "";
+const releaseJourneyPartA = lifecycle.match(
+  /async function runOrganizerReleaseJourneyPartA[\s\S]*?async function runOrganizerReleaseJourneyPartB/,
+)?.[0] ?? "";
+const releaseJourneyPartB = lifecycle.match(
+  /async function runOrganizerReleaseJourneyPartB[\s\S]*?function eventIdentity/,
 )?.[0] ?? "";
 const journeyTest = lifecycle.match(
-  /for \(const locale of \["id", "en"\] as const\) \{[\s\S]*?\n\}\n\ntest\("admin can use/,
+  /for \(const locale of \["id", "en"\] as const\) \{\n  test\.describe\(`@task11-release-journey[\s\S]*?\n\}\n\ntest\("admin can use/,
 )?.[0] ?? "";
 
 describe("Task 11 release verification contracts", () => {
@@ -38,6 +44,14 @@ describe("Task 11 release verification contracts", () => {
     expect(releaseConfig).toMatch(/organizer-release-off[\s\S]*grep[\s\S]*releaseMatrixGrep/);
     expect(lifecycle).toMatch(/release-accessibility-\$\{mode\}-\$\{locale\}-\$\{viewport\.name\}/);
     expect(lifecycle).toMatch(/VIEWPORTS\.length \* LOCALES\.length \* FEATURE_FLAG_MODES\.length/);
+  });
+
+  it("selects the public leaderboard tail in release-on without broadening release-off", () => {
+    expect(releaseConfig).toContain("const releasePublicLeaderboardTailGrep = /@task11-public-leaderboard-tail/;");
+    expect(releaseConfig).toMatch(/name:\s*"organizer-release-on"[\s\S]*grep:[\s\S]*releasePublicLeaderboardTailGrep[\s\S]*releaseFlagMode:\s*"on"/);
+    const releaseOffProject = releaseConfig.slice(releaseConfig.lastIndexOf('name: "organizer-release-off"'));
+    expect(releaseOffProject).toContain("grep: releaseMatrixGrep");
+    expect(releaseOffProject).not.toContain("releasePublicLeaderboardTailGrep");
   });
 
   it("uses explicit release metadata and derives the ordinary CI profile from the actual flag", () => {
@@ -69,7 +83,7 @@ describe("Task 11 release verification contracts", () => {
   });
 
   it("derives the ordinary CI release journey mode from the actual flag without a hardcoded-on fallback", () => {
-    expect(journeyTest).toContain("const configuredMode = test.info().project.metadata.releaseFlagMode");
+    expect(journeyTest).toContain("const configuredMode = testInfo.project.metadata.releaseFlagMode");
     expect(journeyTest).toContain(
       'configuredMode ?? (process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true" ? "on" : "off")',
     );
@@ -260,7 +274,8 @@ describe("Task 11 release verification contracts", () => {
     expect(fixtures).toMatch(/scheduleStatus:\s*"live"/);
     expect(fixtures).toContain("actualStartedAt: RELEASE_FIXTURE_NOW");
     expect(journeyTest).toContain("prepareOrganizerReleaseFixture");
-    expect(journeyTest).toContain("runOrganizerReleaseJourney(page, fixture, locale, mode)");
+    expect(journeyTest).toContain("runOrganizerReleaseJourneyPartA(page, currentFixture, locale, mode)");
+    expect(journeyTest).toContain("runOrganizerReleaseJourneyPartB(page, currentFixture, locale)");
     expect(journeyTest).not.toContain("expectReleaseLocaleReadback");
     expect(releaseJourney).toMatch(/receipt\.match[\s\S]*resultVersion/);
   });
@@ -431,14 +446,18 @@ describe("Task 11 release verification contracts", () => {
     expect(resultSurface).not.toMatch(/fixture\.(?!readState\b)[A-Za-z]\w*\(/);
   });
 
-  it("asserts exact current and absent opposite statistics headings in the on-mode journey", () => {
+  it("asserts exact current and absent opposite statistics navigation in the on-mode journey", () => {
     const statisticsSurface = releaseJourney.slice(
       releaseJourney.indexOf("?view=statistics"),
       releaseJourney.indexOf("?view=history"),
     );
     expect(statisticsSurface).toContain(
-      "expectLocalizedHeading(page, copy.statisticsHeading, copy.opposite.statisticsHeading)",
+      'await expect(page.getByRole("link", { name: copy.statisticsLink, exact: true })).toHaveAttribute("aria-current", "page");',
     );
+    expect(statisticsSurface).toContain(
+      'await expect(page.getByRole("link", { name: copy.opposite.statisticsLink, exact: true })).toHaveCount(0);',
+    );
+    expect(statisticsSurface).not.toContain("copy.statisticsHeading");
   });
 
   it("asserts the rendered localized saved feedback before the captain-stat approval receipt", () => {
@@ -461,10 +480,67 @@ describe("Task 11 release verification contracts", () => {
     expect(lifecycle).toContain('export const LOCALES = ["id", "en"] as const');
     expect(journeyTest).toContain('for (const locale of ["id", "en"] as const)');
     expect(journeyTest).not.toContain("for (const locale of LOCALES)");
-    expect(journeyTest).toContain('test(`@task11-release-journey organizer release journey ${locale}');
-    expect(journeyTest).toContain("test.setTimeout(180_000);");
-    expect(journeyTest).toContain("runOrganizerReleaseJourney(page, fixture, locale, mode)");
+    expect(journeyTest).toContain('test.describe(`@task11-release-journey organizer release journey ${locale}`');
+    expect(journeyTest).toContain('@task11-release-journey-part-a organizer release journey ${locale}');
+    expect(journeyTest).toContain('@task11-release-journey-part-b organizer release journey ${locale}');
+    expect(journeyTest.match(/test\.setTimeout\(180_000\)/g)).toEqual(["test.setTimeout(180_000)", "test.setTimeout(180_000)"]);
+    expect(journeyTest).toContain("runOrganizerReleaseJourneyPartA(page, currentFixture, locale, mode)");
+    expect(journeyTest).toContain("runOrganizerReleaseJourneyPartB(page, currentFixture, locale)");
     expect(releaseConfig).toMatch(/name:\s*"organizer-release-on"[\s\S]*releaseJourneyGrep[\s\S]*releaseFlagMode:\s*"on"/);
+  });
+
+  it("splits the organizer release journey instead of retaining the monolithic helper", () => {
+    expect(lifecycle.includes("async function runOrganizerReleaseJourney(")).toBe(false);
+  });
+
+  it("scopes serial execution to the release journey describes only", () => {
+    const serialConfigure = 'test.describe.configure({ mode: "serial" });';
+    const journeyDescribe = lifecycle.indexOf('test.describe(`@task11-release-journey organizer release journey ${locale}`');
+    expect(journeyDescribe).toBeGreaterThanOrEqual(0);
+    expect(lifecycle.slice(0, journeyDescribe)).not.toContain(serialConfigure);
+    expect(lifecycle.match(/test\.describe\.configure\(\{ mode: "serial" \}\);/g)).toHaveLength(1);
+    expect(lifecycle.slice(journeyDescribe)).toContain(serialConfigure);
+  });
+
+  it("uses one serial fixture lifecycle for two independent locale phases", () => {
+    expect(journeyTest).toContain('test.describe.configure({ mode: "serial" });');
+    expect(journeyTest).toContain('test.beforeAll(async ({}, testInfo) => {');
+    expect(journeyTest).toContain('test.afterAll(async () => {');
+    expect(journeyTest.match(/prepareOrganizerReleaseFixture\(`release-journey-\$\{locale\}`, mode\)/g)).toEqual([
+      "prepareOrganizerReleaseFixture(`release-journey-${locale}`, mode)",
+    ]);
+    expect(journeyTest.match(/await fixture\.cleanup\(\)/g)).toEqual(["await fixture.cleanup()"]);
+    expect(journeyTest.match(/@task11-release-journey-part-[ab]/g)).toEqual([
+      "@task11-release-journey-part-a",
+      "@task11-release-journey-part-b",
+    ]);
+    expect(journeyTest.match(/test\.setTimeout\(180_000\)/g)).toHaveLength(2);
+  });
+
+  it("keeps Completion receipt at the Part A boundary and certificate history in Part B", () => {
+    expect(releaseJourneyPartA).toContain('expect(receipt.completion).toMatchObject({ status: "completed" });');
+    expect(releaseJourneyPartA).not.toContain("/certificates`");
+    expect(releaseJourneyPartB).toContain("await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/certificates`);");
+    expect(releaseJourneyPartB).toContain("const revisionBefore = firstPublication.publicationVersion;");
+    expect(releaseJourneyPartB).toContain("const revisionAfter = (await fixture.readState()).publicationVersion;");
+    expect(releaseJourneyPartB).toContain("historicalVerificationCode");
+    expect(releaseJourneyPartB).toContain("currentVerificationCode");
+    expect(releaseJourneyPartB).toContain("copy.supersededStatus");
+    expect(releaseJourneyPartB).toContain("copy.currentStatus");
+  });
+
+  it("logs in independently before each phase on the shared locale fixture", () => {
+    const partAStart = journeyTest.indexOf("@task11-release-journey-part-a");
+    const partBStart = journeyTest.indexOf("@task11-release-journey-part-b");
+    const partA = journeyTest.slice(partAStart, partBStart);
+    const partB = journeyTest.slice(partBStart);
+
+    expect(partAStart).toBeGreaterThanOrEqual(0);
+    expect(partBStart).toBeGreaterThan(partAStart);
+    expect(partA.match(/await loginWithCredentials\(page/g)).toHaveLength(1);
+    expect(partB.match(/await loginWithCredentials\(page/g)).toHaveLength(1);
+    expect(partA).toContain("runOrganizerReleaseJourneyPartA(page, currentFixture, locale, mode)");
+    expect(partB).toContain("runOrganizerReleaseJourneyPartB(page, currentFixture, locale)");
   });
 
   it("isolates each release journey locale and uses the exact EN audit decision label", () => {
@@ -479,14 +555,93 @@ describe("Task 11 release verification contracts", () => {
     expect(lifecycle).not.toContain('decisionReason: "Decision reason"');
 
     expect(journeyParameterization).toContain('for (const locale of ["id", "en"] as const) {');
-    expect(journeyParameterization).toContain('test(`@task11-release-journey organizer release journey ${locale}');
+    expect(journeyParameterization).toContain('test.describe(`@task11-release-journey organizer release journey ${locale}`');
     expect(lifecycle).toContain('test.describe.configure({ mode: "serial" });');
     expect(journeyParameterization).not.toContain("for (const locale of LOCALES)");
-    expect(journeyParameterization.match(/test\.setTimeout\([^)]*\)/g)).toEqual(["test.setTimeout(180_000)"]);
+    expect(journeyParameterization.match(/test\.setTimeout\([^)]*\)/g)).toEqual(["test.setTimeout(180_000)", "test.setTimeout(180_000)"]);
     expect(journeyParameterization).not.toContain("test.setTimeout(360_000)");
-    expect(journeyParameterization).toContain("prepareOrganizerReleaseFixture(`release-journey-${locale}`, mode)");
-    expect(journeyParameterization).toContain("await fixture.cleanup()");
-    expect(journeyParameterization).toContain("runOrganizerReleaseJourney(page, fixture, locale, mode)");
+    expect(journeyParameterization.match(/prepareOrganizerReleaseFixture\(`release-journey-\$\{locale\}`, mode\)/g)).toEqual(["prepareOrganizerReleaseFixture(`release-journey-${locale}`, mode)"]);
+    expect(journeyParameterization.match(/await fixture\.cleanup\(\)/g)).toEqual(["await fixture.cleanup()"]);
+    expect(journeyParameterization).toContain("runOrganizerReleaseJourneyPartA(page, currentFixture, locale, mode)");
+    expect(journeyParameterization).toContain("runOrganizerReleaseJourneyPartB(page, currentFixture, locale)");
+  });
+
+  it("checks payment review response and persisted receipt before localized feedback", () => {
+    const paymentReview = releaseJourney.slice(
+      releaseJourney.indexOf("const paymentRow = page.getByRole(\"button\").filter"),
+      releaseJourney.indexOf("await expectLocalizedRegistrationSurface(page, registrationFixture, locale, \"qris\")"),
+    );
+    const responseWait = paymentReview.indexOf("const paymentReviewResponsePromise = page.waitForResponse");
+    const approveClick = paymentReview.indexOf('await page.locator("[data-approve]").click()');
+    const responseAwait = paymentReview.indexOf("const paymentReviewResponse = await paymentReviewResponsePromise");
+    const responseStatus = paymentReview.indexOf("expect(paymentReviewResponse.status()).toBeLessThan(400)");
+    const persistedPoll = paymentReview.indexOf("expect.poll(async () => (await fixture.readState()).paymentRequest?.status).toBe(\"approved\")");
+    const persistedReceipt = paymentReview.indexOf('expect(receipt.paymentRequest).toMatchObject({ id: fixture.paymentRequestId, eventId: fixture.registrationEventId, status: "approved" })');
+    const localizedFeedback = paymentReview.indexOf("expectLocalizedText(page, copy.decisionSaved, copy.opposite.decisionSaved)");
+
+    expect(responseWait).toBeGreaterThanOrEqual(0);
+    expect(approveClick).toBeGreaterThan(responseWait);
+    expect(responseAwait).toBeGreaterThan(approveClick);
+    expect(responseStatus).toBeGreaterThan(responseAwait);
+    expect(persistedPoll).toBeGreaterThan(responseStatus);
+    expect(persistedReceipt).toBeGreaterThan(persistedPoll);
+    expect(localizedFeedback).toBeGreaterThan(persistedReceipt);
+    expect(paymentReview).not.toContain("paymentReviewResponse.finished()");
+    expect(paymentReview.slice(responseWait, approveClick)).toContain('request.method() === "POST"');
+    expect(paymentReview.slice(responseWait, approveClick)).toContain('responseUrl.searchParams.get("view") === "payments"');
+  });
+
+  it("waits for every certificate regeneration response before feedback and receipt", () => {
+    const responseHelper = lifecycle.match(
+      /function waitForCertificateRegenerationResponse[\s\S]*?\n}\n/,
+    )?.[0] ?? "";
+    const certificateJourney = releaseJourney.slice(
+      releaseJourney.indexOf("await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/certificates`);"),
+      releaseJourney.indexOf("await page.goto(`/${locale}/events/flashpeak-champions-32/leaderboards`);")
+    );
+    const firstPublication = certificateJourney.indexOf("const firstPublication = await fixture.readState();");
+    expect(firstPublication).toBeGreaterThanOrEqual(0);
+    const initialRegenerations = certificateJourney.slice(0, firstPublication);
+    const championRegeneration = certificateJourney.slice(firstPublication);
+    const click = 'await page.locator("[data-regenerate-certificate]").click();';
+    expect(initialRegenerations).toContain("for (const certificateType of EXPECTED_CERTIFICATE_TYPES)");
+    expect(initialRegenerations.split(click).length - 1).toBe(1);
+    expect(championRegeneration.split(click).length - 1).toBe(1);
+    expect(responseHelper).toContain("return page.waitForResponse");
+    expect(responseHelper).toContain('request.method() === "POST"');
+    expect(responseHelper).toContain("responseUrl.pathname === certificatePath");
+
+    for (const [surface, persistedReceipt] of [
+      [initialRegenerations, "expect.poll(async () => (await fixture.readState()).certificates.filter(({ type }) => type === certificateType).length).toBeGreaterThan(0);"],
+      [championRegeneration, "expect.poll(async () => (await fixture.readState()).certificates.filter(({ type, version }) => type === \"champion\" && version === 2).length).toBe(1);"],
+    ] as const) {
+      const responseWait = surface.indexOf("const certificateRegenerationResponsePromise = waitForCertificateRegenerationResponse(page, locale, fixture.id)");
+      const regenerationClick = surface.indexOf(click);
+      const responseAwait = surface.indexOf("const certificateRegenerationResponse = await certificateRegenerationResponsePromise");
+      const responseStatus = surface.indexOf("expect(certificateRegenerationResponse.status()).toBeLessThan(400)");
+      const localizedFeedback = surface.indexOf("expectLocalizedText(page, copy.certificateGenerated, copy.opposite.certificateGenerated)");
+      const receipt = surface.indexOf(persistedReceipt);
+
+      expect(responseWait).toBeGreaterThanOrEqual(0);
+      expect(regenerationClick).toBeGreaterThan(responseWait);
+      expect(responseAwait).toBeGreaterThan(regenerationClick);
+      expect(responseStatus).toBeGreaterThan(responseAwait);
+      expect(localizedFeedback).toBeGreaterThan(responseStatus);
+      expect(receipt).toBeGreaterThan(localizedFeedback);
+      expect(surface).not.toContain("certificateRegenerationResponse.finished()");
+    }
+  });
+
+  it("does not fill the tie-only audit reason for the non-tied completion fixture", () => {
+    const completionJourney = releaseJourney.slice(
+      releaseJourney.indexOf("/completion`"),
+      releaseJourney.indexOf("/certificates`"),
+    );
+
+    expect(completionJourney).toContain(
+      'await expect(page.getByLabel(copy.decisionReason, { exact: true })).toHaveCount(0);',
+    );
+    expect(completionJourney).not.toContain("getByLabel(copy.decisionReason, { exact: true }).fill(");
   });
 
   it("probes reduced motion on the loaded surface before clock, fonts, and screenshot CSS", () => {
@@ -521,11 +676,13 @@ describe("Task 11 release verification contracts", () => {
     const contractBody = lifecycle.match(
       /export async function expectReleaseAccessibilityContract[\s\S]*?export async function expectNavigationEscapeRestoresFocus/,
     )?.[0] ?? "";
+    const focusableSelector = lifecycle.match(/const FOCUSABLE_SELECTOR = (['"])(.*?)\1;/)?.[2] ?? "";
     const markerAssignment = contractBody.slice(
       contractBody.indexOf("const focusables ="),
       contractBody.indexOf("return focusables.map"),
     );
 
+    expect(focusableSelector).toContain('main [tabindex]:not([tabindex="-1"])');
     expect(markerAssignment).toContain("Array.from(document.querySelectorAll<HTMLElement>(selector))");
     expect(markerAssignment).toContain(".filter((element) => visible(element)");
     expect(markerAssignment).not.toContain(".sort(");
@@ -591,5 +748,24 @@ describe("Task 11 release verification contracts", () => {
     expect(certificateJourney).toContain('[data-certificate-assets] select#certificate-placement-error-asset');
     expect(certificateJourney).toContain('[data-certificate-assets] select#certificate-placement-error-team_logo_badge-asset');
     expect(certificateJourney).not.toContain('[data-certificate-assets] select").first()');
+  });
+
+  it("keeps the independent public leaderboard tail in locale-parameterized tests", () => {
+    const publicTailRoute = "/events/flashpeak-champions-32/leaderboards";
+    const publicTailTests = lifecycle.match(
+      /for \(const locale of \["id", "en"\] as const\) \{\s*test\(`@task11-public-leaderboard-tail[\s\S]*?\n\}\n/,
+    )?.[0] ?? "";
+
+    expect(releaseJourney).not.toContain(publicTailRoute);
+    expect(publicTailTests, "the public leaderboard tail must have locale-parameterized tests").not.toBe("");
+    expect(publicTailTests).toContain("await page.goto(`/${locale}/events/flashpeak-champions-32/leaderboards`);");
+    expect(publicTailTests).toContain('await expect(page.locator("html")).toHaveAttribute("lang", locale);');
+    expect(publicTailTests).toContain("await expectAriaSortTransition(page);");
+    expect(publicTailTests).toContain('const artifactText = await page.locator("body").innerText();');
+    expect(publicTailTests).toContain(
+      "expect(artifactText).not.toMatch(/Miracle2026!|organizer-a@miraclefc\\.gg|captain@miraclefc\\.gg/i);",
+    );
+    expect(publicTailTests).not.toContain("prepareOrganizerReleaseFixture");
+    expect(publicTailTests).not.toContain("loginWithCredentials");
   });
 });

@@ -89,7 +89,7 @@ describe("registration workspace behavior", () => {
     ["en", "reject", "Review decision saved.", "Rejected"],
     ["id", "approve", "Keputusan pemeriksaan disimpan.", "Disetujui"],
     ["id", "reject", "Keputusan pemeriksaan disimpan.", "Ditolak"],
-  ] as const)("keeps %s payment %s success feedback and status without a refresh", async (locale, decision, feedback, status) => {
+  ] as const)("keeps %s payment %s success feedback visible after the reviewed row disappears", async (locale, decision, feedback, status) => {
     (decision === "approve" ? actions.approve : actions.reject).mockResolvedValue({ status: decision === "approve" ? "approved" : "rejected" });
     await render({ locale, query: { ...base.query, view: "payments" }, payments: [payment] });
     if (decision === "reject") {
@@ -102,6 +102,9 @@ describe("registration workspace behavior", () => {
 
     expect(host.querySelector('[role="status"]')?.textContent).toBe(feedback);
     expect(host.querySelector("aside")?.textContent).toContain(status);
+    await render({ locale, query: { ...base.query, view: "payments" }, payments: [] });
+    expect(host.querySelector('[data-approve]')).toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(feedback);
     expect(actions.refresh).not.toHaveBeenCalled();
   });
   it("does not render unsafe proof URLs", async () => { await render({ query: { ...base.query, view: "payments" }, payments: [{ ...payment, proofImageUrl: "javascript:alert(1)" }] }); expect(host.querySelector("img")).toBeNull(); });
