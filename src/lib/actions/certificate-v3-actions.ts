@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAnyRole } from "@/lib/auth/session";
 import { uploadImageAsset } from "@/lib/actions";
+import { CERTIFICATE_REGENERATION_RATE_LIMIT, CERTIFICATE_REGENERATION_RATE_LIMIT_WINDOW_MS } from "@/lib/actions/certificate-v3-rate-limit";
 import { CERTIFICATE_ASSET_LIMITS, publishCertificateSet, publishCertificateSetInputSchema, regenerateCertificate, regenerateCertificateInputSchema, type CertificatePublicationActionResult, type CertificateStudioActor, type PublishCertificateSetResult, type RegenerateCertificateResult } from "@/lib/certificate/service";
 import { createPrismaCertificateStudioDependencies } from "@/lib/certificate/studio-repository";
 import { isFeatureEnabled } from "@/lib/feature-flags";
@@ -14,14 +15,6 @@ import { safeEntityIdSchema } from "@/lib/security/request-guard";
 import { withServerActionLog } from "@/lib/observability/logger";
 
 type GateResult = { status: "blocked"; code: "feature_disabled" | "unauthorized" | "password_change_required" | "forbidden" | "rate_limited" };
-
-/**
- * A release journey creates seven certificate types and may regenerate the
- * champion to preserve superseded verification history. Keep the limit above
- * that workflow while retaining the actor/event five-minute abuse guard.
- */
-export const CERTIFICATE_REGENERATION_RATE_LIMIT = 20;
-export const CERTIFICATE_REGENERATION_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
 
 function normalizePublicationResult(result: PublishCertificateSetResult): CertificatePublicationActionResult {
   if (result.status === "published") return { status: "published", revision: result.publicationVersion, publishedAt: result.publishedAt };

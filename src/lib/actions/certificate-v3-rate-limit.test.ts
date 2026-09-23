@@ -18,11 +18,8 @@ vi.mock("@/lib/certificate/service", async (load) => {
   return { ...actual, regenerateCertificate: external.regenerate };
 });
 
-import {
-  CERTIFICATE_REGENERATION_RATE_LIMIT,
-  CERTIFICATE_REGENERATION_RATE_LIMIT_WINDOW_MS,
-  regenerateCertificateAction,
-} from "./certificate-v3-actions";
+import { regenerateCertificateAction } from "./certificate-v3-actions";
+import { CERTIFICATE_REGENERATION_RATE_LIMIT, CERTIFICATE_REGENERATION_RATE_LIMIT_WINDOW_MS } from "./certificate-v3-rate-limit";
 
 const input = (eventId: string, idempotencyKey = crypto.randomUUID()) => ({
   eventId,
