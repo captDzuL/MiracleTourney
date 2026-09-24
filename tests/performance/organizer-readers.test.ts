@@ -300,7 +300,7 @@ function observerForType(observers: readonly ObserverRecord[], type: string): Ob
 }
 
 type LoadFixtureMode = "healthy" | "failing" | "slow" | "errors" | "non2xx" | "boundary-pass" | "boundary-fail" | "missing";
-type WarmupFixture = Readonly<{ failurePath?: string; status?: number; transportFailure?: boolean }>;
+type WarmupFixture = Readonly<{ failurePath?: string; status?: number; transportFailure?: boolean; bodyFailure?: boolean }>;
 type LoadRequest = Readonly<{ kind: "warmup" | "autocannon" | "other"; method: string; url: string; accept?: string }>;
 type LoadScriptProcess = Readonly<{ exitCode: number; stdout: string; stderr: string; baseUrl: string | null; requests: readonly LoadRequest[] }>;
 
@@ -329,6 +329,13 @@ async function runLoadScriptWithOutput(scriptName: string, mode: LoadFixtureMode
     if (warmup && kind === "warmup" && (warmup.failurePath === undefined || pathname === warmup.failurePath)) {
       if (warmup.transportFailure) {
         _request.socket.destroy();
+        return;
+      }
+      if (warmup.bodyFailure) {
+        response.writeHead(warmup.status ?? 200, { "content-type": "text/plain" });
+        response.flushHeaders();
+        response.write("partial warmup body");
+        setTimeout(() => response.destroy(), 10);
         return;
       }
       response.writeHead(warmup.status ?? 500, warmup.status === 307 ? { location: "/warmup-redirect-target" } : undefined);
@@ -564,6 +571,21 @@ describe("organizer reader release-scale contracts", () => {
   it("fails closed before autocannon on a warmup transport failure for every selected route", async () => {
     for (const path of LOCAL_QUICK_LOAD_ROUTES) {
       const result = await runLoadScriptWithOutput("scripts/load-test-quick.mjs", "healthy", { failurePath: path, transportFailure: true });
+      const attemptedWarmupCount = LOCAL_QUICK_LOAD_ROUTES.indexOf(path) + 1;
+      expect(result.exitCode, path).toBe(1);
+      expect(result.stderr, path).toContain(path);
+      expect(result.stderr, path).toMatch(/transport error/i);
+      expect(result.stderr, path).not.toContain(result.baseUrl ?? "");
+      expect(result.requests, path).toHaveLength(attemptedWarmupCount);
+      expect(result.requests.filter(({ kind }) => kind === "warmup"), path).toHaveLength(attemptedWarmupCount);
+      expect(result.requests.filter(({ kind }) => kind === "autocannon"), path).toHaveLength(0);
+      expect(result.stdout, path).toContain("AUTOCANNON_FIXTURE_CALLS=[]");
+    }
+  });
+
+  it("fails closed before autocannon when a warmup body rejects after headers", async () => {
+    for (const path of LOCAL_QUICK_LOAD_ROUTES) {
+      const result = await runLoadScriptWithOutput("scripts/load-test-quick.mjs", "healthy", { failurePath: path, status: 200, bodyFailure: true });
       const attemptedWarmupCount = LOCAL_QUICK_LOAD_ROUTES.indexOf(path) + 1;
       expect(result.exitCode, path).toBe(1);
       expect(result.stderr, path).toContain(path);

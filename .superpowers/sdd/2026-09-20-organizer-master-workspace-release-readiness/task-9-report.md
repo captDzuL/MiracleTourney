@@ -367,7 +367,7 @@ The discriminator classifies the recorded homepage result as a route-order-biase
 
 The preserved round-4 implementation now performs one sequential `GET` warmup for each selected full URL before the first autocannon call. Warmups send the same `Accept: text/html,application/xhtml+xml` header as measurement, use `redirect: "manual"`, consume the response body, and allow only inclusive 2xx statuses. Any fetch/body transport error or non-2xx status (including 307 and 500) exits 1 before measurement; missing `BASE_URL` remains the existing exit-2 contract. The existing measurement contract is unchanged: 50 connections × 5 seconds per route, p97.5 `< 3,000 ms`, zero errors/non-2xx, and exactly three route results.
 
-The loopback fixture records exact request order, method, full URL, and `Accept` header. The success matrix proves exactly one warmup per exact route before all three measurement calls for both status 200 and status 299. Failure matrices exercise each selected route independently for status 307, status 500, and transport failure, and assert exit 1, zero autocannon calls, and no redirect-follow request. The missing-target contract continues to assert exit 2.
+The loopback fixture records exact request order, method, full URL, and `Accept` header. The success matrix proves exactly one warmup per exact route before all three measurement calls for both status 200 and status 299. Failure matrices exercise each selected route independently for status 307, status 500, pre-header transport rejection, and post-header body-consumption rejection, and assert exit 1, zero autocannon calls, and no redirect-follow request. The missing-target contract continues to assert exit 2.
 
 ### TDD and verification evidence
 
@@ -382,3 +382,17 @@ The loopback fixture records exact request order, method, full URL, and `Accept`
 | Diff whitespace | `git diff --check` — exit 0. |
 
 The historical runtime classification remains a sequential route-order/cold-start observation; this recovery adds deterministic warmup coverage only and does not claim a new runtime, browser, database, E2E, reset/seed, deployment, or push result.
+
+## Review round 5 — post-header warmup body failure coverage — 2026-09-24
+
+The round-4 wording that called the failure matrix “transport failure” was too broad: that fixture only rejected the fetch before response headers arrived. The preserved pre-header socket-rejection case remains, and the fixture now separately sends successful 200 headers plus a partial body before closing the response. The warmup test therefore exercises the `await response.arrayBuffer()` rejection path, requires a safe route-scoped transport-error message, exit 1, zero autocannon calls, and no measurement continuation for each selected route. No warmup gate or measurement threshold was weakened.
+
+### TDD and verification evidence
+
+| Check | Result |
+| --- | --- |
+| Body-failure RED | Before the fixture could close a post-header body, the new 200-status test exited 0 and proceeded to measurement; the missing behavior was exposed. |
+| Body-failure GREEN | The fixture now flushes headers, writes a partial body, and closes the response; the focused body-rejection test passes for all three selected routes. |
+| Mutation check | Temporarily removing `await response.arrayBuffer()` made the body-rejection test fail with exit 0, proving the assertion depends on body consumption; the line was restored. |
+| Focused warmup matrix | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts -t "(exact local quick-load|warms every exact|fails closed|manual redirects|quick-load gates)"` — exit 0; 9 tests passed, 10 skipped. |
+| Full Task 9 contract file | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts` — exit 0; 19 tests passed. |
