@@ -632,16 +632,27 @@ describe("Task 11 release verification contracts", () => {
     }
   });
 
-  it("does not fill the tie-only audit reason for the non-tied completion fixture", () => {
+  it("fills a localized tie-only audit reason while preserving award decisions", () => {
     const completionJourney = releaseJourney.slice(
       releaseJourney.indexOf("/completion`"),
       releaseJourney.indexOf("/certificates`"),
     );
 
+    expect(completionJourney).toContain("await expect(selected).toBeChecked();");
     expect(completionJourney).toContain(
+      'const decisionReason = page.getByLabel(copy.decisionReason, { exact: true });',
+    );
+    expect(completionJourney).toContain(
+      'await expect(page.getByLabel(copy.opposite.decisionReason, { exact: true })).toHaveCount(0);',
+    );
+    expect(completionJourney).toContain("if (await decisionReason.count()) {");
+    expect(completionJourney).toContain(
+      'await decisionReason.fill(locale === "id" ? "Pemilihan berdasarkan performa turnamen." : "Selected based on tournament performance.");',
+    );
+    expect(completionJourney).toContain("await expect(decisionReason).toHaveValue(");
+    expect(completionJourney).not.toContain(
       'await expect(page.getByLabel(copy.decisionReason, { exact: true })).toHaveCount(0);',
     );
-    expect(completionJourney).not.toContain("getByLabel(copy.decisionReason, { exact: true }).fill(");
   });
 
   it("probes reduced motion on the loaded surface before clock, fonts, and screenshot CSS", () => {

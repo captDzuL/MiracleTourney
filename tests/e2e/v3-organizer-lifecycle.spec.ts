@@ -556,9 +556,16 @@ async function runOrganizerReleaseJourneyPartA(page: Page, fixture: ReleaseFixtu
   await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
   await page.getByRole("tab", { name: copy.awardsTab, exact: true }).click();
   for (const award of ["mvp", "top_scorer", "top_defender", "top_assist"]) {
-    await page.locator(`[data-award="${award}"] input[type="radio"]`).first().check();
+    const selected = page.locator(`[data-award="${award}"] input[type="radio"]`).first();
+    await selected.check();
+    await expect(selected).toBeChecked();
   }
-  await expect(page.getByLabel(copy.decisionReason, { exact: true })).toHaveCount(0);
+  const decisionReason = page.getByLabel(copy.decisionReason, { exact: true });
+  await expect(page.getByLabel(copy.opposite.decisionReason, { exact: true })).toHaveCount(0);
+  if (await decisionReason.count()) {
+    await decisionReason.fill(locale === "id" ? "Pemilihan berdasarkan performa turnamen." : "Selected based on tournament performance.");
+    await expect(decisionReason).toHaveValue(locale === "id" ? "Pemilihan berdasarkan performa turnamen." : "Selected based on tournament performance.");
+  }
   await page.locator("[data-complete-tournament]").click();
   await expectLocalizedText(page, copy.completionFeedback, copy.opposite.completionFeedback);
   await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", copy.completionStatus);
