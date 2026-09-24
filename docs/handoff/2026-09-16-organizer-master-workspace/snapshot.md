@@ -52,6 +52,25 @@ and a fresh whole-branch Sol/high review with no P0/P1/P2.
   GitHub CI; Vercel preview/logs/RUM/rollback/PIC; Neon recovery console,
   restore rehearsal, and migration integration; and the live 64-team query/p95.
 
+## Final bounded migration-safety correction — 2026-09-24
+
+- Correction base: `44a3068a7e7296c1da50a6fcd5b4e08241bb1860`.
+- `20260921000000_add_user_session_version/migration.sql` now fails closed
+  when duplicate `PasswordResetToken.userId` rows exist, before creating the
+  unique index. It performs no legacy-row deletion, deduplication, update,
+  insert, truncate, or merge; the static contract test proves the guard and
+  ordering (TDD GREEN 2/2 after the intentional RED).
+- Focused checks passed: migration contract 2/2, nonincremental TypeScript,
+  no-DB Prisma validate, changed-file ESLint, and diff hygiene. The valid
+  final fix-wave suite evidence is 209 passed / 2 skipped files and 2,445
+  passed / 6 skipped tests, exit 0, and was not rerun here. The final supplied
+  pressure result remains RED at `/id/login` p95 `4197ms`, max `4199ms`,
+  failures `0`, exit 1; no threshold was weakened.
+- No pressure/full-suite/E2E, database migration, reset, seed, deployment,
+  push, or PR was run. Status remains **BLOCKED** on final-SHA CI,
+  Vercel/preview/log/RUM/PIC, Neon recovery/restore/migration integration,
+  live 64-team query/p95/load evidence, and fresh scoped Sol/high review.
+
 ## Historical handoff details — 2026-09-16 (non-operative)
 
 The repository/worktree, commit-map, resume-command, and release-gate text

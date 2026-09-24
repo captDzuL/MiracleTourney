@@ -58,6 +58,30 @@ CI, preview, monitoring, performance, review, and evidence gate is green.
   Neon recovery console/restore rehearsal/migration integration; and the
   live 64-team query/p95.
 
+## Final bounded migration-safety correction — 2026-09-24
+
+- Base: `44a3068a7e7296c1da50a6fcd5b4e08241bb1860` on the isolated
+  `codex/organizer-release-readiness` worktree.
+- The password-reset migration now checks duplicate `PasswordResetToken.userId`
+  rows in a PostgreSQL `DO` block, raises an actionable exception before the
+  unique index, and never deletes, deduplicates, updates, inserts, truncates,
+  or merges legacy rows. The static contract TDD RED preceded the guard and
+  GREEN is 2/2.
+- Focused DB-free verification passed: migration contract 1 file/2 tests,
+  TypeScript, Prisma validate with dummy URLs, changed-file ESLint, and
+  `git diff --check`. Sandbox-only engine/esbuild failures occurred before
+  collection and were resolved by identical elevated checks.
+- Final supplied fix-wave Vitest evidence is 209 passed / 2 skipped files and
+  2,445 passed / 6 skipped tests, exit 0; no full-suite rerun was performed in
+  this correction. Final supplied pressure remains RED at `/id/login` p95
+  `4197ms`, max `4199ms`, failures `0`, exit 1; the `<3000ms` contract and
+  failure semantics were not changed.
+- No pressure, E2E, reset, seed, migration application, deployment, push, or
+  PR was run. Release remains **BLOCKED** on final-SHA CI, authorized
+  Vercel/preview/log/RUM/PIC evidence, Neon recovery/restore/migration
+  integration, live 64-team query/p95/load evidence, and fresh scoped
+  Sol/high review.
+
 ## Historical handoff details — 2026-09-16 (non-operative)
 
 The Task ledger, stale Tasks 9–12 status, and the next-action instructions

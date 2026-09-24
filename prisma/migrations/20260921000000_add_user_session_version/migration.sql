@@ -11,5 +11,18 @@ ALTER TABLE "User"
 ALTER TABLE "PasswordResetToken"
   ADD COLUMN IF NOT EXISTS "tokenFormat" TEXT NOT NULL DEFAULT 'legacy_raw';
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM "PasswordResetToken"
+    GROUP BY "userId"
+    HAVING COUNT(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'Cannot create PasswordResetToken_userId_key: duplicate PasswordResetToken.userId rows exist; resolve duplicate reset-token rows before applying this migration';
+  END IF;
+END
+$$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS "PasswordResetToken_userId_key"
   ON "PasswordResetToken"("userId");
