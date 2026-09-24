@@ -53,7 +53,7 @@ Required report file:
 
 - `.superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/runtime-certificate-publication-response-report.md`
 
-Implementation commit SHA: pending the final task commit.
+Implementation commit SHA: `1fb310b` (`test: settle certificate publication responses`). The report text was finalized in the follow-up report-only commit listed in the SDD delivery.
 
 ## Self-review and concerns
 
