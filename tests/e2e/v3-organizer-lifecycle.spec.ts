@@ -665,6 +665,21 @@ async function cleanupCreatedOrganizerEvent(event: ReturnType<typeof eventIdenti
   if (remaining !== 0) throw new Error(`Lifecycle event ${event.slug} remained after cleanup`);
 }
 
+type LifecycleEvent = ReturnType<typeof eventIdentity>;
+type LifecycleEventTracker = (event: LifecycleEvent) => void;
+const LIFECYCLE_CLEANUP_TIMEOUT = 30_000;
+
+const lifecycleTest = test.extend<{ trackLifecycleEvent: LifecycleEventTracker }>({
+  trackLifecycleEvent: [async ({}, use) => {
+    let trackedEvent: LifecycleEvent | undefined;
+    const trackLifecycleEvent: LifecycleEventTracker = (event) => {
+      trackedEvent = event;
+    };
+    await use(trackLifecycleEvent);
+    if (trackedEvent) await cleanupCreatedOrganizerEvent(trackedEvent);
+  }, { timeout: LIFECYCLE_CLEANUP_TIMEOUT }],
+});
+
 test.afterAll(async () => {
   await lifecycleDb.$disconnect();
 });
@@ -808,9 +823,10 @@ test.describe("V3 organizer lifecycle", () => {
     await page.goto("/id/admin");
     await expect(page).toHaveURL(/\/id\/organizer$/);
   });
-  test("organizer can create, autosave, preview, revoke, and publish an event", async ({ browser, page }) => {
+  lifecycleTest("organizer can create, autosave, preview, revoke, and publish an event", async ({ browser, page, trackLifecycleEvent }) => {
     test.setTimeout(90_000);
     const event = eventIdentity();
+    trackLifecycleEvent(event);
     let guest: BrowserContext | undefined;
 
     try {
@@ -891,52 +907,48 @@ test.describe("V3 organizer lifecycle", () => {
       await expect(page.getByRole("heading", { name: event.name })).toBeVisible({ timeout: 20_000 });
     } finally {
       await guest?.close();
-      await cleanupCreatedOrganizerEvent(event);
     }
   });
 
   for (const locale of ["id", "en"] as const) {
-    test(`workspace navigation labels fit without overlap at ${locale} tablet widths`, async ({ page }) => {
+    lifecycleTest(`workspace navigation labels fit without overlap at ${locale} tablet widths`, async ({ page, trackLifecycleEvent }) => {
       test.setTimeout(90_000);
       const event = eventIdentity();
-      try {
-        await loginAsOrganizer(page, locale);
-        await page.goto(`/${locale}/organizer/events/new`);
-        await page.getByLabel("Event name").fill(event.name);
-        await page.getByLabel("Public URL slug").fill(event.slug);
-        await page.getByRole("button", { name: "Create private draft" }).click();
-        await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+/overview$`), { timeout: 30_000 });
-        const eventId = new URL(page.url()).pathname.match(/\/events\/([^/]+)\/overview$/)?.[1];
-        expect(eventId).toBeTruthy();
-        await page.goto(`/${locale}/organizer/events/${encodeURIComponent(eventId!)}/edit`);
-        await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+/edit$`));
-        const navigation = page.locator('nav:has(a[aria-current="step"])');
-        await expect(navigation).toHaveCount(1);
-        await expect(navigation.locator('a[aria-current="step"]')).toHaveCount(1);
+      trackLifecycleEvent(event);
+      await loginAsOrganizer(page, locale);
+      await page.goto(`/${locale}/organizer/events/new`);
+      await page.getByLabel("Event name").fill(event.name);
+      await page.getByLabel("Public URL slug").fill(event.slug);
+      await page.getByRole("button", { name: "Create private draft" }).click();
+      await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+/overview$`), { timeout: 30_000 });
+      const eventId = new URL(page.url()).pathname.match(/\/events\/([^/]+)\/overview$/)?.[1];
+      expect(eventId).toBeTruthy();
+      await page.goto(`/${locale}/organizer/events/${encodeURIComponent(eventId!)}/edit`);
+      await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+\/edit$`));
+      const navigation = page.locator('nav:has(a[aria-current="step"])');
+      await expect(navigation).toHaveCount(1);
+      await expect(navigation.locator('a[aria-current="step"]')).toHaveCount(1);
 
-        for (const width of [700, 768, 980]) {
-          await page.setViewportSize({ width, height: 800 });
-          await expect(navigation.locator('a[aria-current="step"]')).toHaveCount(1);
-          const layout = await navigation.evaluate((navigation) => {
-            const viewportWidth = document.documentElement.clientWidth;
-            const labels = Array.from(navigation.querySelectorAll<HTMLElement>("a > span:last-child"))
-              .map((label) => {
-                const rect = label.getBoundingClientRect();
-                return { left: Math.round(rect.left), right: Math.round(rect.right), visible: rect.width > 1 && rect.height > 1 };
-              });
-            return {
-              overflow: Array.from(document.querySelectorAll<HTMLElement>("*")).filter((element) => element.getBoundingClientRect().right > viewportWidth + 1).map((element) => element.tagName),
-              labels,
-              overlaps: labels.flatMap((label, index) => labels.slice(index + 1).filter((other) => label.right > other.left + 1).map(() => index)),
-            };
-          });
-          expect(layout.overflow).toEqual([]);
-          expect(layout.labels).toHaveLength(5);
-          expect(layout.labels.filter((label) => label.visible)).toHaveLength(width < 900 ? 0 : 5);
-          expect(layout.overlaps).toEqual([]);
-        }
-      } finally {
-        await cleanupCreatedOrganizerEvent(event);
+      for (const width of [700, 768, 980]) {
+        await page.setViewportSize({ width, height: 800 });
+        await expect(navigation.locator('a[aria-current="step"]')).toHaveCount(1);
+        const layout = await navigation.evaluate((navigation) => {
+          const viewportWidth = document.documentElement.clientWidth;
+          const labels = Array.from(navigation.querySelectorAll<HTMLElement>("a > span:last-child"))
+            .map((label) => {
+              const rect = label.getBoundingClientRect();
+              return { left: Math.round(rect.left), right: Math.round(rect.right), visible: rect.width > 1 && rect.height > 1 };
+            });
+          return {
+            overflow: Array.from(document.querySelectorAll<HTMLElement>("*")).filter((element) => element.getBoundingClientRect().right > viewportWidth + 1).map((element) => element.tagName),
+            labels,
+            overlaps: labels.flatMap((label, index) => labels.slice(index + 1).filter((other) => label.right > other.left + 1).map(() => index)),
+          };
+        });
+        expect(layout.overflow).toEqual([]);
+        expect(layout.labels).toHaveLength(5);
+        expect(layout.labels.filter((label) => label.visible)).toHaveLength(width < 900 ? 0 : 5);
+        expect(layout.overlaps).toEqual([]);
       }
     });
   }

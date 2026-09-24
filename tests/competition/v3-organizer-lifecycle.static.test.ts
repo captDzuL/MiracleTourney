@@ -16,7 +16,7 @@ describe("organizer lifecycle wizard E2E contracts", () => {
   it("uses the canonical five-step editor with localized wizard controls", () => {
     const lifecycle = sliceBetween(
       lifecycleSpec,
-      'test("organizer can create, autosave, preview, revoke, and publish an event"',
+      'lifecycleTest("organizer can create, autosave, preview, revoke, and publish an event"',
       'for (const locale of ["id", "en"] as const)',
     );
 
@@ -50,7 +50,7 @@ describe("organizer lifecycle wizard E2E contracts", () => {
   it("enters the canonical editor before checking both locale tablet navigations", () => {
     const tablet = sliceBetween(
       lifecycleSpec,
-      "test(`workspace navigation labels fit without overlap at ${locale} tablet widths`",
+      "lifecycleTest(`workspace navigation labels fit without overlap at ${locale} tablet widths`",
       'test("workspace stays within a 360px viewport"',
     );
 
@@ -69,5 +69,34 @@ describe("organizer lifecycle wizard E2E contracts", () => {
     expect(lifecycleSpec).not.toContain('slug: { startsWith: "V3 Lifecycle" }');
     expect(lifecycleSpec).not.toContain('slug: { startsWith: "v3-lifecycle" }');
     expect(lifecycleSpec).not.toContain("E2E_DATABASE_RESET_ALLOWED");
+  });
+
+  it("runs exact cleanup from a timeout-resilient test fixture", () => {
+    const fixtureStart = lifecycleSpec.indexOf("const lifecycleTest = test.extend");
+    const fixtureEnd = lifecycleSpec.indexOf("for (const locale of LOCALES)", fixtureStart);
+    expect(fixtureStart).toBeGreaterThanOrEqual(0);
+    expect(fixtureEnd).toBeGreaterThan(fixtureStart);
+    const fixture = lifecycleSpec.slice(fixtureStart, fixtureEnd);
+
+    expect(fixture).toContain("trackLifecycleEvent");
+    expect(fixture).toContain("await use(trackLifecycleEvent)");
+    expect(lifecycleSpec).toContain("const LIFECYCLE_CLEANUP_TIMEOUT = 30_000");
+    expect(fixture).toContain("timeout: LIFECYCLE_CLEANUP_TIMEOUT");
+    expect(fixture.indexOf("await use(trackLifecycleEvent)")).toBeLessThan(fixture.indexOf("cleanupCreatedOrganizerEvent(trackedEvent)"));
+
+    const lifecycle = sliceBetween(
+      lifecycleSpec,
+      'lifecycleTest("organizer can create, autosave, preview, revoke, and publish an event"',
+      'for (const locale of ["id", "en"] as const)',
+    );
+    const tablet = sliceBetween(
+      lifecycleSpec,
+      "lifecycleTest(`workspace navigation labels fit without overlap at ${locale} tablet widths`",
+      'test("workspace stays within a 360px viewport"',
+    );
+    expect(lifecycle).toContain("trackLifecycleEvent(event)");
+    expect(tablet).toContain("trackLifecycleEvent(event)");
+    expect(lifecycle).not.toContain("cleanupCreatedOrganizerEvent(event)");
+    expect(tablet).not.toContain("cleanupCreatedOrganizerEvent(event)");
   });
 });
