@@ -12,6 +12,46 @@ function sliceBetween(source: string, startMarker: string, endMarker: string) {
   return source.slice(start, end);
 }
 
+function assertExactOvernightCleanupContract(cleanup: string) {
+  const normalizedCleanup = cleanup.replace(/\s+/g, " ").trim();
+  const exactWhereStart = cleanup.indexOf("const exactWhere = {");
+  const exactWhereEnd = cleanup.indexOf("\n  };", exactWhereStart);
+  if (exactWhereStart < 0 || exactWhereEnd < 0) {
+    throw new Error("cleanup must declare exactWhere");
+  }
+  const exactWhere = cleanup.slice(exactWhereStart, exactWhereEnd);
+  for (const field of [
+    "id: created.id",
+    "slug: event.slug",
+    "name: event.name",
+    "description: created.description",
+    "organizerUserId: created.organizerUserId",
+  ]) {
+    if (!exactWhere.includes(field)) throw new Error(`exactWhere is missing ${field}`);
+  }
+  if (!cleanup.includes("const result = await prisma.event.deleteMany({ where: exactWhere });")) {
+    throw new Error("deleteMany must use exactWhere");
+  }
+  if (!normalizedCleanup.includes(
+    "const isInitialState = created.description === OVERNIGHT_INITIAL_DESCRIPTION && created.organizerUserId === null;",
+  )) {
+    throw new Error("cleanup must retain the exact initial lifecycle whitelist");
+  }
+  if (!normalizedCleanup.includes(
+    "const isFinalState = organizer !== null && created.description === OVERNIGHT_FINAL_DESCRIPTION && created.organizerUserId === organizer.id;",
+  )) {
+    throw new Error("cleanup must retain the exact final lifecycle whitelist");
+  }
+  const stateGuardStart = normalizedCleanup.indexOf("if (!isInitialState && !isFinalState) {");
+  const stateGuardEnd = normalizedCleanup.indexOf("); }", stateGuardStart);
+  const stateGuard = normalizedCleanup.slice(stateGuardStart, stateGuardEnd + 4);
+  if (stateGuardStart < 0 || stateGuardEnd < 0 || !stateGuard.includes(
+    "throw new Error(`Refusing to clean ${event.slug}: unexpected description/owner lifecycle state`);",
+  )) {
+    throw new Error("cleanup must retain lifecycle state fail-closed guard");
+  }
+}
+
 describe("overnight smoke fixture cleanup contracts", () => {
   it("tracks the unique event before create and preserves the body timeout", () => {
     const scenario = overnightSpec.slice(overnightSpec.indexOf("registration order stays private and imports stop after drawing publication"));
@@ -62,6 +102,35 @@ describe("overnight smoke fixture cleanup contracts", () => {
     expect(cleanup).not.toContain("event.deleteMany({});");
     expect(cleanup).not.toContain("user.delete");
     expect(cleanup).not.toContain("user.deleteMany");
+  });
+
+  it("rejects deletion and lifecycle-guard mutations", () => {
+    const cleanup = sliceBetween(overnightSpec, "async function cleanupCreatedOvernightEvent", "const overnightTest = test.extend");
+    const slugOnlyMutation = cleanup.replace(
+      "const result = await prisma.event.deleteMany({ where: exactWhere });",
+      "const result = await prisma.event.deleteMany({ where: { slug: event.slug } });",
+    );
+    const bypassedStateGuardMutation = cleanup.replace(
+      "if (!isInitialState && !isFinalState) {",
+      "if (false) {",
+    );
+    const unconditionalInitialStateMutation = cleanup.replace(
+      /const isInitialState =\s+created\.description === OVERNIGHT_INITIAL_DESCRIPTION && created\.organizerUserId === null;/,
+      "const isInitialState = true;",
+    );
+    const unconditionalFinalStateMutation = cleanup.replace(
+      /const isFinalState =\s+organizer !== null &&\s+created\.description === OVERNIGHT_FINAL_DESCRIPTION &&\s+created\.organizerUserId === organizer\.id;/,
+      "const isFinalState = true;",
+    );
+    expect(slugOnlyMutation).not.toBe(cleanup);
+    expect(bypassedStateGuardMutation).not.toBe(cleanup);
+    expect(unconditionalInitialStateMutation).not.toBe(cleanup);
+    expect(unconditionalFinalStateMutation).not.toBe(cleanup);
+    expect(() => assertExactOvernightCleanupContract(cleanup)).not.toThrow();
+    expect(() => assertExactOvernightCleanupContract(slugOnlyMutation)).toThrow(/deleteMany/);
+    expect(() => assertExactOvernightCleanupContract(bypassedStateGuardMutation)).toThrow(/lifecycle state/);
+    expect(() => assertExactOvernightCleanupContract(unconditionalInitialStateMutation)).toThrow(/initial lifecycle/);
+    expect(() => assertExactOvernightCleanupContract(unconditionalFinalStateMutation)).toThrow(/final lifecycle/);
   });
 
   it("routes the scenario through the cleanup fixture without changing assertions", () => {
