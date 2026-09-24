@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { loginAsOrganizer, normalizeReleasePage, waitForReleaseFonts } from "./helpers/auth";
-import { matchdayDb, prepareMatchdayFixture, type MatchdayKind } from "./helpers/matchday";
+import { matchdayDb, matchdaySchedule, prepareMatchdayFixture, type MatchdayKind } from "./helpers/matchday";
 import type { CompetitionWorkspaceState } from "../../src/lib/competition/workspace-types";
 import type { PublicOngoingEventViewModel } from "../../src/lib/events/public-ongoing-types";
 
@@ -14,6 +14,7 @@ const ASSERT_TIMEOUT_MS = 20_000;
 const NAV_TIMEOUT_MS = 60_000;
 const API_TIMEOUT_MS = 20_000;
 const API_RETRY_COUNT = 3;
+const MAX_ERROR_BODY_LENGTH = 2_000;
 
 test.afterEach(async () => {
   if (fixture) await fixture.cleanup();
@@ -50,6 +51,21 @@ async function state(page: Page) {
 async function publicState(page: Page) {
   return requestJson<PublicOngoingEventViewModel>(page, `/api/events/${fixture.slug}/ongoing`);
 }
+
+function boundedBody(body: string) {
+  return body.length > MAX_ERROR_BODY_LENGTH ? `${body.slice(0, MAX_ERROR_BODY_LENGTH)}…` : body;
+}
+
+async function navigateChecked(page: Page, path: string) {
+  const response = await page.goto(path, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
+  if (!response) throw new Error(`GET ${path} returned no response`);
+  if (!response.ok()) {
+    const body = boundedBody(await response.text().catch(() => ""));
+    throw new Error(`GET ${path} failed: ${response.status()} ${response.statusText()}\n${body}`.trim());
+  }
+  return response;
+}
+
 async function openMatch(page: Page, id: string) {
   const response = await page.goto(`/en/organizer/events/${fixture.id}/matches/${id}`, {
     waitUntil: "domcontentloaded",
@@ -353,14 +369,79 @@ test("match control preserves ID/EN parity, visible focus, aria-sort values, and
   }
 });
 
-test("public ongoing hides draft/expired announcements and draft schedule on mobile", async ({ page }) => {
-  fixture = await prepareMatchdayFixture("round_robin", "showcase");
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/id/events/${fixture.slug}`);
+test("public ongoing API hides an unpublished schedule and private draft data", async ({ request }) => {
+  let privateRoom = "";
+  fixture = await test.step("create four-team graph with an unpublished private schedule", async () => {
+    const created = await prepareMatchdayFixture("single_elimination", "graph");
+    privateRoom = `Private draft room ${created.slug}`;
+    const draft = await created.run({
+      kind: "schedule_save",
+      input: { ...matchdaySchedule, rooms: [privateRoom] },
+    });
+    expect(draft.resourceId).toBeTruthy();
+    return created;
+  });
 
-  await expect(page.getByText("Active urgent notice", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Private draft notice", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Expired notice", { exact: true })).toHaveCount(0);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  expect(JSON.stringify(await publicState(page))).not.toContain("Verified desk correction");
+  const publicView = await test.step("fetch public ongoing API", async () => {
+    const path = `/api/events/${fixture.slug}/ongoing`;
+    const response = await request.get(path, { maxRedirects: 0, timeout: API_TIMEOUT_MS });
+    expect(response, `GET ${path} response`).toBeTruthy();
+    if (!response.ok()) {
+      const body = boundedBody(await response.text().catch(() => ""));
+      throw new Error(`GET ${path} failed: ${response.status()} ${response.statusText()}\n${body}`.trim());
+    }
+    expect(response.ok(), `GET ${path} should succeed`).toBe(true);
+
+    const contentType = response.headers()["content-type"] ?? "unknown";
+    const body = await response.text();
+    try {
+      return JSON.parse(body) as PublicOngoingEventViewModel;
+    } catch (error) {
+      const reason = error instanceof Error ? `: ${error.message}` : "";
+      throw new Error(`GET ${path} returned malformed JSON (content-type ${contentType})${reason}\n${boundedBody(body)}`.trim());
+    }
+  });
+
+  expect(publicView.schedule).toBeNull();
+  for (const match of publicView.matches) {
+    expect(match.start).toBeNull();
+    expect(match.end).toBeNull();
+    expect(match.room).toBeNull();
+  }
+  const serialized = JSON.stringify(publicView);
+  expect(serialized).not.toContain(privateRoom);
+  for (const privateKey of ["audit", "readiness", "resultSnapshot", "actorUserId"]) {
+    expect(serialized).not.toContain(privateKey);
+  }
+});
+
+test("public ongoing shows only active announcements and has no mobile overflow", async ({ page }) => {
+  fixture = await test.step("create four-team graph and announcement fixtures", async () => {
+    const created = await prepareMatchdayFixture("single_elimination", "graph");
+    const active = await created.run({ kind: "announcement_save", title: "Active urgent notice", body: "Active urgent notice", urgency: "urgent" });
+    await created.run({ kind: "announcement_publish", announcementId: active.resourceId! });
+    const expired = await created.run({
+      kind: "announcement_save",
+      title: "Expired notice",
+      body: "Expired notice",
+      urgency: "important",
+      startsAt: "2025-01-01T00:00:00Z",
+      endsAt: "2025-01-02T00:00:00Z",
+    });
+    await created.run({ kind: "announcement_publish", announcementId: expired.resourceId! });
+    await created.run({ kind: "announcement_save", title: "Private draft notice", body: "Private draft notice", urgency: "info" });
+    return created;
+  });
+
+  await test.step("navigate to the public event at the mobile viewport", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await navigateChecked(page, `/id/events/${fixture.slug}`);
+  });
+
+  await test.step("verify announcement filtering and bounded mobile layout", async () => {
+    await expect(page.getByText("Active urgent notice", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Private draft notice", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Expired notice", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
 });
