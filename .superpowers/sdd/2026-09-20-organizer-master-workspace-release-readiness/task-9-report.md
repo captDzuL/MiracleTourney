@@ -269,3 +269,50 @@ The autocannon fixture now has independent `slow`, `errors`, `non2xx`, `boundary
 | `git diff --check` | 0 | No whitespace errors. |
 
 No browser, database, full E2E, live load target, reset/seed, push, deployment, or Schannel retry was performed. External credentialed preview/load and preflight gates remain blocked as previously recorded.
+
+## Runtime confirmation — 2026-09-24
+
+The single requested runtime confirmation was executed against the current guarded database without reset, seed, migration, cleanup, or retry. The three focused preflight unit suites passed, and `pnpm test:e2e:preflight` was run exactly once and passed. The existing production-like `.next` build was valid and reused (`BUILD_REUSED=true`). A read-only Prisma lookup resolved slug `flashpeak-champions-32` to event `cmuf8j3x9000tgp5okkkvztza`; seeded credentials were loaded in process and never printed.
+
+### Preflight/build/server evidence
+
+| Command/check | Exit/result | Duration |
+| --- | ---: | ---: |
+| `pnpm exec vitest run src/e2e-db-preflight.test.ts src/e2e-db-safety.test.ts src/e2e-db-url-priority.test.ts` | 0; 3 files, 13 tests passed | Vitest 493 ms |
+| `pnpm test:e2e:preflight` (exactly once) | 0; Neon connection reachable | 1,669 ms |
+| Existing `.next` build markers | reused; no rebuild | — |
+| `127.0.0.1:3103` server lifecycle | one server; stopped in `finally`; `PORT_3103_CLOSED=True` | — |
+
+### Dashboard browser confirmation
+
+`pnpm test:dashboard:perf` ran exactly once, measured all 15 routes, and exited 0 in 17,194 ms. Every route stayed below the script's 3,000 ms route threshold and the local browser metric budgets.
+
+| Route | Load ms | LCP | INP | CLS | TTFB ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `/id/admin` | 759 | 180 | 16 | 0 | 122.30 |
+| `/id/admin?phase=import` | 617 | 48 | 16 | 0 | 15.20 |
+| `/id/admin?phase=run` | 675 | 52 | 0 | 0 | 14.90 |
+| `/id/admin?phase=review` | 627 | 48 | 8 | 0 | 14.50 |
+| `/id/organizer/events/cmuf8j3x9000tgp5okkkvztza/overview` | 1,198 | 556 | 8 | 0.000243 | 310.00 |
+| `/id/organizer/events/cmuf8j3x9000tgp5okkkvztza/registration` | 792 | 188 | 0 | 0 | 15.20 |
+| `/id/organizer/events/cmuf8j3x9000tgp5okkkvztza/participants` | 777 | 200 | 0 | 0 | 18.40 |
+| `/id/organizer/events/cmuf8j3x9000tgp5okkkvztza/competition` | 764 | 172 | 8 | 0 | 13.90 |
+| `/id/organizer/events/cmuf8j3x9000tgp5okkkvztza/match-control` | 649 | 64 | 0 | 0 | 12.20 |
+| `/id/organizer/events/cmuf8j3x9000tgp5okkkvztza/completion` | 760 | 180 | 16 | 0 | 15.70 |
+| `/id/organizer/events/cmuf8j3x9000tgp5okkkvztza/certificates` | 670 | 64 | 8 | 0 | 13.50 |
+| `/id/events/flashpeak-champions-32` | 1,115 | 452 | 8 | 0.000571 | 333.80 |
+| `/id/captain` | 1,130 | 404 | 16 | 0 | 217.60 |
+| `/id/captain/stats` | 642 | 52 | 16 | 0 | 12.90 |
+| `/id/captain/settings` | 743 | 160 | 0 | 0 | 120.90 |
+
+### Quick-load confirmation
+
+`node scripts/load-test-quick.mjs` ran exactly once with `BASE_URL=http://127.0.0.1:3103`, using its unchanged 50-connections × 5-second contract and strict p97.5 `< 3,000 ms`, zero-error/non-2xx gates. It exited 1 after 15,480 ms.
+
+| Route | Req/s | p50 | p97.5 | 2xx | Errors/non-2xx | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `/id` | 12 | 3,628 ms | 4,014 ms | 59 | 0 | Failed p97.5 budget |
+| `/id/events` | 48 | 824 ms | 1,790 ms | 241 | 0 | Passed |
+| `/id/events/kuroko-summer-cup/bracket` | 72 | 595 ms | 1,378 ms | 0 | 359 (404) | Failed non-2xx gate |
+
+The dashboard run is local evidence only and does not replace credentialed preview/RUM evidence. The quick-load blockers are a real local performance breach on `/id` and a missing local `kuroko-summer-cup` route returning 404; no budget, status handling, redirect policy, timeout, retry, or script behavior was weakened. The Task 9 performance/release decision remains `BLOCKED` pending diagnosis of those local results plus external preview/load/RUM evidence.
