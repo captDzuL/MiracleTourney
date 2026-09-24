@@ -23,9 +23,9 @@ The report and progress handoff are authoritative for the exact blockers:
 guarded `.env.test`/Neon Delicate or preview access; live shared-Neon E2E and
 performance results; Delicate/preview migration diff and restore rehearsal;
 final-SHA GitHub Actions result; Vercel preview URL/deployment ID and Runtime
-Logs scan; saved-view/PIC/notification access; deployed Speed Insights/RUM;
-Neon snapshot/PITR/retention/RPO/RTO/PIC/switchover/integrity-query evidence;
-and a fresh whole-branch Sol/high review with no P0/P1/P2.
+Logs scan; saved-view/PIC/notification access; deployed Speed Insights/RUM; and
+Neon snapshot/PITR/retention/RPO/RTO/PIC/switchover/integrity-query evidence.
+Fresh gpt-5.6-sol/high review is separately attested below.
 
 ## Final-review fix wave — 2026-09-24
 
@@ -47,8 +47,9 @@ and a fresh whole-branch Sol/high review with no P0/P1/P2.
   `whole-branch-final-fix-report.md`. Its historical pressure rerun recorded
   `/id/login` p95 values of 4,387 ms and 3,783 ms with zero failures; those
   samples are superseded by the exact final RED record below without weakening
-  the 3,000 ms contract. Fresh scoped 5.6-Sol/high re-review is **PENDING**, not
-  approved.
+  the 3,000 ms contract. Fresh gpt-5.6-sol/high review range
+  `5d2b688..2cda371`, head `2cda371`, is approved with P2-1/P2-2/P2-3
+  **ADDRESSED**, P0=0/P1=0/P2=0, code verdict `APPROVED_NO_P0_P1_P2`.
 - Overall status remains **BLOCKED** by the local pressure RED (`/id/login`
   p95 `4197ms`, max `4199ms`, failures `0`, exit `1`) plus final-SHA GitHub
   CI; Vercel preview/logs/RUM/rollback/PIC; Neon recovery console, restore
@@ -73,7 +74,8 @@ and a fresh whole-branch Sol/high review with no P0/P1/P2.
 - No pressure/full-suite/E2E, database migration, reset, seed, deployment,
   push, or PR was run. Status remains **BLOCKED** on final-SHA CI,
   Vercel/preview/log/RUM/PIC, Neon recovery/restore/migration integration,
-  live 64-team query/p95/load evidence, and fresh scoped Sol/high review.
+  live 64-team query/p95/load evidence. Release remains **NOT_READY / BLOCKED**
+  and **NOT_READY_FOR_PUSH**; no push or PR was run.
 
 ### Human-gated password-reset migration and digest rollback procedure
 

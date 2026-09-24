@@ -20,7 +20,7 @@ Release decision at this point: BLOCKED. No READY claim is permitted.
 
 1. Authorized `.env.test` with guarded Delicate/preview `DATABASE_URL` and `DIRECT_URL` is absent, so shared-Neon E2E, reset/completion/certificate persistence, manipulated-ID runtime checks, 64-team live query/pressure checks, and migration/shadow-database review cannot run.
 2. No authorized Vercel project/session, known-good preview deployment ID, preview URL, Runtime Logs export, deployment-failure notification proof, saved-view/PIC access proof, or deployed Speed Insights/RUM sample is available.
-3. No final-SHA GitHub Actions run URL/result or fresh whole-branch Sol/high verdict is available.
+3. No final-SHA GitHub Actions run URL/result is available. Fresh gpt-5.6-sol/high review range `5d2b688..2cda371`, head `2cda371`, records P2-1/P2-2/P2-3 **ADDRESSED**, P0=0/P1=0/P2=0, code verdict `APPROVED_NO_P0_P1_P2`.
 4. Neon snapshot/PITR/retention/RPO/RTO/PIC/switchover details and a fresh non-production restore rehearsal with integrity queries are unavailable.
 5. The two local full-suite failures in the historical verification record are superseded by the final fix-wave result: 209 passed / 2 skipped files and 2,445 passed / 6 intentional skipped tests, exit 0; they are retained for provenance and are not a current blocker.
 6. Local pressure is also RED: `/id/login` p95 `4197ms`, max `4199ms`, failures `0`, exit `1`; the `<3000ms` contract remains unchanged.
@@ -52,7 +52,7 @@ CI, preview, monitoring, performance, review, and evidence gate is green.
   DB-free smoke, pressure, audit, build, diff check, and status. Historical
   `/id/login` p95 samples were 4,387 ms and 3,783 ms with zero request
   failures; they are superseded by the exact final RED record below.
-- Fresh scoped 5.6-Sol/high re-review is **PENDING**; no approval is claimed.
+- Fresh gpt-5.6-sol/high review range `5d2b688..2cda371`, head `2cda371`, is **APPROVED_NO_P0_P1_P2**: P2-1/P2-2/P2-3 **ADDRESSED**, P0=0/P1=0/P2=0.
   Overall release status remains **BLOCKED** by the local pressure RED
   (`/id/login` p95 `4197ms`, max `4199ms`, failures `0`, exit `1`) plus
   final-SHA GitHub CI; credentialed Vercel preview/logs/RUM/rollback/PIC;
@@ -82,8 +82,9 @@ CI, preview, monitoring, performance, review, and evidence gate is green.
 - No pressure, E2E, reset, seed, migration application, deployment, push, or
   PR was run. Release remains **BLOCKED** on final-SHA CI, authorized
   Vercel/preview/log/RUM/PIC evidence, Neon recovery/restore/migration
-  integration, live 64-team query/p95/load evidence, and fresh scoped
-  Sol/high review, plus the local pressure RED above.
+  integration, live 64-team query/p95/load evidence, plus the local pressure
+  RED above. Release remains **NOT_READY / BLOCKED** and
+  **NOT_READY_FOR_PUSH**; no push or PR was run.
 
 ### Human-gated password-reset migration and digest rollback procedure
 
