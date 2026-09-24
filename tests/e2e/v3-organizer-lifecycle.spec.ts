@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { PrismaClient } from "@prisma/client";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 import { loginAsOrganizer, loginWithCredentials, probeReleaseReducedMotion, suppressAnimationsForScreenshot, waitForReleaseFonts } from "./helpers/auth";
 import { prepareOrganizerReleaseFixture } from "./helpers/fixtures";
@@ -638,6 +639,36 @@ function eventIdentity() {
   };
 }
 
+const lifecycleDb = new PrismaClient();
+const LIFECYCLE_ORGANIZER_EMAIL = "organizer-a@miraclefc.gg";
+
+async function cleanupCreatedOrganizerEvent(event: ReturnType<typeof eventIdentity>) {
+  const organizer = await lifecycleDb.user.findUniqueOrThrow({
+    where: { email: LIFECYCLE_ORGANIZER_EMAIL },
+    select: { id: true },
+  });
+  const created = await lifecycleDb.event.findUnique({
+    where: { slug: event.slug },
+    select: { id: true, organizerUserId: true },
+  });
+  if (!created) return;
+  if (created.organizerUserId !== organizer.id) {
+    throw new Error(`Refusing to clean event ${event.slug}: ownership did not match ${LIFECYCLE_ORGANIZER_EMAIL}`);
+  }
+  const result = await lifecycleDb.event.deleteMany({
+    where: { id: created.id, slug: event.slug, organizerUserId: organizer.id },
+  });
+  if (result.count !== 1) throw new Error(`Expected to clean exactly one lifecycle event, deleted ${result.count}`);
+  const remaining = await lifecycleDb.event.count({
+    where: { id: created.id, slug: event.slug, organizerUserId: organizer.id },
+  });
+  if (remaining !== 0) throw new Error(`Lifecycle event ${event.slug} remained after cleanup`);
+}
+
+test.afterAll(async () => {
+  await lifecycleDb.$disconnect();
+});
+
 for (const locale of LOCALES) {
   for (const viewport of VIEWPORTS) {
     test(`@task11-release-matrix organizer release accessibility matrix ${locale} ${viewport.name}px`, async ({ page }) => {
@@ -780,92 +811,132 @@ test.describe("V3 organizer lifecycle", () => {
   test("organizer can create, autosave, preview, revoke, and publish an event", async ({ browser, page }) => {
     test.setTimeout(90_000);
     const event = eventIdentity();
+    let guest: BrowserContext | undefined;
 
-    await loginAsOrganizer(page);
-    await page.goto("/id/organizer/events/new");
-    await page.getByLabel("Event name").fill(event.name);
-    await page.getByLabel("Public URL slug").fill(event.slug);
-    await page.getByRole("button", { name: "Create private draft" }).click();
-    await expect(page).toHaveURL(/\/id\/organizer\/events\/[^/]+\/overview$/, { timeout: 30_000 });
+    try {
+      await loginAsOrganizer(page);
+      await page.goto("/id/organizer/events/new");
+      await page.getByLabel("Event name").fill(event.name);
+      await page.getByLabel("Public URL slug").fill(event.slug);
+      await page.getByRole("button", { name: "Create private draft" }).click();
+      await expect(page).toHaveURL(/\/id\/organizer\/events\/[^/]+\/overview$/, { timeout: 30_000 });
+      const eventId = new URL(page.url()).pathname.match(/\/events\/([^/]+)\/overview$/)?.[1];
+      expect(eventId).toBeTruthy();
+      await page.goto(`/id/organizer/events/${encodeURIComponent(eventId!)}/edit`);
+      await expect(page).toHaveURL(new RegExp(`/id/organizer/events/[^/]+/edit$`));
 
-    await page.getByRole("link", { name: "Tinjau & Terbitkan" }).click();
-    await expect(page.getByRole("heading", { name: "Complete before publishing" })).toBeVisible();
-    const description = "A complete browser-tested tournament draft for the Miracle V3 organizer lifecycle.";
-    await page.getByRole("link", { name: "Identitas" }).click();
-    await page.getByLabel("Deskripsi singkat").fill(description);
-    await page.getByRole("link", { name: "Format & Jadwal" }).click();
-    await page.getByLabel("Event dimulai").fill("2026-10-10T10:00");
-    await page.getByLabel("Pelaksanaan").fill("Miracle Test Arena");
-    await page.getByRole("link", { name: "Registrasi" }).click();
-    await page.getByLabel("Pendaftaran dibuka").fill("2026-10-01T09:00");
-    await page.getByLabel("Pendaftaran ditutup").fill("2026-10-07T21:00");
-    await expect(page.getByRole("status").filter({ hasText: /Tersimpan|Saved/ })).toBeVisible({ timeout: 20_000 });
+      const expectStep = async (step: number) => {
+        await expect(page.getByText(`Langkah ${step} dari 5`, { exact: true })).toBeVisible();
+      };
+      const back = page.getByRole("button", { name: "Kembali", exact: true });
+      const next = page.getByRole("button", { name: "Lanjut", exact: true });
+      await expectStep(1);
+      const description = "A complete browser-tested tournament draft for the Miracle V3 organizer lifecycle.";
+      await page.getByLabel("Deskripsi singkat").fill(description);
+      await next.click();
+      await expectStep(2);
+      await page.getByLabel("Acara dimulai").fill("2026-10-10T10:00");
+      await page.getByLabel("Pelaksanaan").fill("Miracle Test Arena");
+      await next.click();
+      await expectStep(3);
+      await page.getByLabel("Pendaftaran dibuka").fill("2026-10-01T09:00");
+      await page.getByLabel("Pendaftaran ditutup").fill("2026-10-07T21:00");
+      await expect(page.getByRole("status").filter({ hasText: "Tersimpan" })).toBeVisible({ timeout: 20_000 });
+      await next.click();
+      await expectStep(4);
+      await next.click();
+      await expectStep(5);
+      const review = page.locator("section#section-review");
+      await expect(review.getByRole("heading", { name: "Tinjau & terbitkan", exact: true })).toBeVisible();
+      await expect(review.getByRole("heading", { name: "Siap diterbitkan", exact: true })).toBeVisible({ timeout: 20_000 });
 
-    await page.getByRole("link", { name: "Tinjau & Terbitkan" }).click();
-    await expect(page.getByRole("heading", { name: "Ready to publish" })).toBeVisible({ timeout: 20_000 });
+      await page.reload();
+      await expectStep(5);
+      for (let step = 4; step >= 1; step -= 1) {
+        await back.click();
+        await expectStep(step);
+      }
+      await expect(page.getByLabel("Deskripsi singkat")).toHaveValue(description);
+      await next.click();
+      await expectStep(2);
+      await expect(page.getByLabel("Pelaksanaan")).toHaveValue("Miracle Test Arena");
+      await next.click();
+      await next.click();
+      await next.click();
+      await expectStep(5);
 
-    await page.reload();
-    await page.getByRole("link", { name: "Identitas" }).click();
-    await expect(page.getByLabel("Deskripsi singkat")).toHaveValue(description);
-    await page.getByRole("link", { name: "Format & Jadwal" }).click();
-    await expect(page.getByLabel("Pelaksanaan")).toHaveValue("Miracle Test Arena");
-    await page.getByRole("link", { name: "Tinjau & Terbitkan" }).click();
-    const review = page.locator("section#section-review");
+      await review.getByRole("button", { name: "Buat pratinjau", exact: true }).click();
+      const previewLink = review.getByRole("link", { name: "Buka pratinjau", exact: true });
+      await expect(previewLink).toBeVisible({ timeout: 20_000 });
+      const previewUrl = await previewLink.getAttribute("href");
+      expect(previewUrl).toMatch(/^\/id\/preview\/events\//);
 
-    await review.getByRole("button", { name: "Create preview" }).click();
-    const previewLink = review.getByRole("link", { name: "Open preview" });
-    await expect(previewLink).toBeVisible({ timeout: 20_000 });
-    const previewUrl = await previewLink.getAttribute("href");
-    expect(previewUrl).toMatch(/^\/id\/preview\/events\//);
+      guest = await browser.newContext();
+      const guestPage = await guest.newPage();
+      await guestPage.goto(previewUrl!);
+      await expect(guestPage.getByLabel(/pratinjau privat|private preview/i)).toBeVisible();
+      await expect(guestPage.getByText(event.name)).toBeVisible();
 
-    const guest = await browser.newContext();
-    const guestPage = await guest.newPage();
-    await guestPage.goto(previewUrl!);
-    await expect(guestPage.getByLabel(/pratinjau privat|private preview/i)).toBeVisible();
-    await expect(guestPage.getByText(event.name)).toBeVisible();
+      await review.getByRole("button", { name: "Cabut tautan", exact: true }).click();
+      await expect(review.getByRole("button", { name: "Buat pratinjau", exact: true })).toBeVisible({ timeout: 20_000 });
+      await guestPage.goto(previewUrl!);
+      await expect(guestPage.getByRole("heading", { name: /not found|halaman tidak ditemukan/i })).toBeVisible();
 
-    await review.getByRole("button", { name: "Revoke link" }).click();
-    await expect(review.getByRole("button", { name: "Create preview" })).toBeVisible({ timeout: 20_000 });
-    await guestPage.goto(previewUrl!);
-    await expect(guestPage.getByRole("heading", { name: /not found|halaman tidak ditemukan/i })).toBeVisible();
-    await guest.close();
-
-    await review.getByRole("button", { name: "Publish event" }).click();
-    await expect(page.getByText("Event sudah diterbitkan")).toBeVisible({ timeout: 20_000 });
-    await page.goto(`/id/events/${event.slug}`);
-    await expect(page.getByRole("heading", { name: event.name })).toBeVisible({ timeout: 20_000 });
+      await review.getByRole("button", { name: "Terbitkan acara", exact: true }).click();
+      const publication = page.locator('main > header dl div').filter({ hasText: "Diterbitkan" });
+      await expect(publication).toHaveCount(1, { timeout: 20_000 });
+      await expect(publication.locator("dt")).toHaveText("Publikasi");
+      await expect(publication.locator("dd")).toHaveText("Diterbitkan");
+      await page.goto(`/id/events/${event.slug}`);
+      await expect(page.getByRole("heading", { name: event.name })).toBeVisible({ timeout: 20_000 });
+    } finally {
+      await guest?.close();
+      await cleanupCreatedOrganizerEvent(event);
+    }
   });
 
   for (const locale of ["id", "en"] as const) {
     test(`workspace navigation labels fit without overlap at ${locale} tablet widths`, async ({ page }) => {
       test.setTimeout(90_000);
       const event = eventIdentity();
-      await loginAsOrganizer(page, locale);
-      await page.goto(`/${locale}/organizer/events/new`);
-      await page.getByLabel("Event name").fill(event.name);
-      await page.getByLabel("Public URL slug").fill(event.slug);
-      await page.getByRole("button", { name: "Create private draft" }).click();
-      await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+/overview$`), { timeout: 30_000 });
+      try {
+        await loginAsOrganizer(page, locale);
+        await page.goto(`/${locale}/organizer/events/new`);
+        await page.getByLabel("Event name").fill(event.name);
+        await page.getByLabel("Public URL slug").fill(event.slug);
+        await page.getByRole("button", { name: "Create private draft" }).click();
+        await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+/overview$`), { timeout: 30_000 });
+        const eventId = new URL(page.url()).pathname.match(/\/events\/([^/]+)\/overview$/)?.[1];
+        expect(eventId).toBeTruthy();
+        await page.goto(`/${locale}/organizer/events/${encodeURIComponent(eventId!)}/edit`);
+        await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+/edit$`));
+        const navigation = page.locator('nav:has(a[aria-current="step"])');
+        await expect(navigation).toHaveCount(1);
+        await expect(navigation.locator('a[aria-current="step"]')).toHaveCount(1);
 
-      for (const width of [700, 768, 980]) {
-        await page.setViewportSize({ width, height: 800 });
-        const layout = await page.locator('nav:has(a[aria-current="step"])').evaluate((navigation) => {
-          const viewportWidth = document.documentElement.clientWidth;
-          const labels = Array.from(navigation.querySelectorAll<HTMLElement>("a > span:last-child"))
-            .map((label) => {
-              const rect = label.getBoundingClientRect();
-              return { left: Math.round(rect.left), right: Math.round(rect.right), visible: rect.width > 1 && rect.height > 1 };
-            });
-          return {
-            overflow: Array.from(document.querySelectorAll<HTMLElement>("*")).filter((element) => element.getBoundingClientRect().right > viewportWidth + 1).map((element) => element.tagName),
-            labels,
-            overlaps: labels.flatMap((label, index) => labels.slice(index + 1).filter((other) => label.right > other.left + 1).map(() => index)),
-          };
-        });
-        expect(layout.overflow).toEqual([]);
-        expect(layout.labels).toHaveLength(5);
-        expect(layout.labels.filter((label) => label.visible)).toHaveLength(width < 900 ? 0 : 5);
-        expect(layout.overlaps).toEqual([]);
+        for (const width of [700, 768, 980]) {
+          await page.setViewportSize({ width, height: 800 });
+          await expect(navigation.locator('a[aria-current="step"]')).toHaveCount(1);
+          const layout = await navigation.evaluate((navigation) => {
+            const viewportWidth = document.documentElement.clientWidth;
+            const labels = Array.from(navigation.querySelectorAll<HTMLElement>("a > span:last-child"))
+              .map((label) => {
+                const rect = label.getBoundingClientRect();
+                return { left: Math.round(rect.left), right: Math.round(rect.right), visible: rect.width > 1 && rect.height > 1 };
+              });
+            return {
+              overflow: Array.from(document.querySelectorAll<HTMLElement>("*")).filter((element) => element.getBoundingClientRect().right > viewportWidth + 1).map((element) => element.tagName),
+              labels,
+              overlaps: labels.flatMap((label, index) => labels.slice(index + 1).filter((other) => label.right > other.left + 1).map(() => index)),
+            };
+          });
+          expect(layout.overflow).toEqual([]);
+          expect(layout.labels).toHaveLength(5);
+          expect(layout.labels.filter((label) => label.visible)).toHaveLength(width < 900 ? 0 : 5);
+          expect(layout.overlaps).toEqual([]);
+        }
+      } finally {
+        await cleanupCreatedOrganizerEvent(event);
       }
     });
   }
