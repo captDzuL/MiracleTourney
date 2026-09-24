@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -56,5 +56,26 @@ describe("Playwright CI configuration", () => {
       ["line"],
       ["html", { open: "never", outputFolder: "playwright-report" }],
     ]);
+  });
+
+  it("forces public visual v2 for Playwright and the spawned smoke server", async () => {
+    vi.stubEnv("FEATURE_FLAG_PUBLIC_VISUAL_V2", "false");
+
+    const { default: config } = await import("../playwright.smoke.config");
+
+    expect(process.env.FEATURE_FLAG_PUBLIC_VISUAL_V2).toBe("true");
+    expect(config.webServer).toMatchObject({
+      env: expect.objectContaining({ FEATURE_FLAG_PUBLIC_VISUAL_V2: "true" }),
+    });
+  });
+
+  it("keeps the public visual v2 gate fail-closed", async () => {
+    const smokeSpec = await readFile(
+      join(process.cwd(), "tests/e2e-smoke/public-visual-v2.smoke.spec.ts"),
+      "utf8",
+    );
+
+    expect(smokeSpec).not.toMatch(/test\.skip/);
+    expect(smokeSpec).toMatch(/page\.locator\(\s*["']\.public-visual-v2["']\s*\)/);
   });
 });
