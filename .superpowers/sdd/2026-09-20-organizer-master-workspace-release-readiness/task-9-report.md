@@ -396,3 +396,25 @@ The round-4 wording that called the failure matrix “transport failure” was t
 | Mutation check | Temporarily removing `await response.arrayBuffer()` made the body-rejection test fail with exit 0, proving the assertion depends on body consumption; the line was restored. |
 | Focused warmup matrix | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts -t "(exact local quick-load|warms every exact|fails closed|manual redirects|quick-load gates)"` — exit 0; 9 tests passed, 10 skipped. |
 | Full Task 9 contract file | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts` — exit 0; 19 tests passed. |
+
+## Final focused quick-load confirmation — 2026-09-24
+
+The final focused confirmation reused the valid production-like `.next` build and started exactly one fresh loopback server at `127.0.0.1:3103` with `VERCEL_ENV=preview` and all seven V3 flags enabled (`FEATURE_FLAG_UI_V3_FOUNDATION`, `FEATURE_FLAG_ORGANIZER_WORKSPACE_V3`, `FEATURE_FLAG_REGISTRATION_WORKSPACE_V3`, `FEATURE_FLAG_COMPETITION_OPERATIONS_V3`, `FEATURE_FLAG_COMPLETION_WORKSPACE_V3`, `FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3`, and `FEATURE_FLAG_PUBLIC_DISCOVERY_V3`). No source build, manual route pre-probe, dashboard run, full E2E, database write, reset, seed, migration, or cleanup was performed.
+
+The exact command `BASE_URL=http://127.0.0.1:3103 node scripts/load-test-quick.mjs` ran once on the valid elevated server. The script-owned sequential warmups completed before measurement, with body consumption and status `200` for each exact route:
+
+1. `/id`
+2. `/id/events`
+3. `/id/events/flashpeak-champions-32/bracket`
+
+The measured run exited `0` after approximately `18.02 s`. All three route rows passed the strict p97.5 `< 3,000 ms` and zero-error/non-2xx gates:
+
+| Route | Req/s | p50 | p97.5 | 2xx | Errors | Non-2xx | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `/id` | 22 | 1,748 ms | 2,945 ms | 108 | 0 | 0 | Passed |
+| `/id/events` | 40 | 933 ms | 2,069 ms | 202 | 0 | 0 | Passed |
+| `/id/events/flashpeak-champions-32/bracket` | 45 | 967 ms | 1,582 ms | 225 | 0 | 0 | Passed |
+
+Worst-case p97.5 was `2,945 ms`. The server was stopped in `finally`, and `PORT_3103_CLOSED=True` was verified. The captured server output (80,106 characters plus the shutdown tail) contained zero `prisma:error`, TLS, failed-phase, or `internal_error` entries.
+
+A preliminary sandboxed loopback attempt also exited `0`, but its server log contained Prisma TLS/internal-error fallback responses; it is excluded from the evidence above. The valid elevated run is the sole confirmation used for this report. Credentialed preview/browser/load, production RUM, and live 64-team query/p95 evidence remain unavailable, so the Task 9 release gate remains `BLOCKED` despite the passing local quick-load confirmation.
