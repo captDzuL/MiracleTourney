@@ -110,3 +110,48 @@ runner emitted only the existing `NO_COLOR`/`FORCE_COLOR` warning.
 Implementation commit SHA: `d36f7fc` (`test: settle legacy flags-off API contract`).
 The report text was finalized in the follow-up report-only commit; the
 implementation commit above is the SHA to review for the test correction.
+
+## Review fix round 1 — request ID assertion is load-bearing
+
+Fresh review identified one Important static-contract gap: deleting the E2E
+helper's non-empty `requestId` assertion still left the static test green. The
+E2E helper and runtime behavior were not changed. The static contract now uses
+an exact verifier for
+`expect(privateResponse.body.requestId.length).toBeGreaterThan(0)` and a
+mutation test that removes that line from a helper copy and requires the
+verifier to fail with the non-empty-requestId error.
+
+### TDD RED / GREEN
+
+RED, after adding the mutation test and before adding the verifier:
+
+```text
+node_modules\\.bin\\vitest.cmd run tests/competition/legacy-flags-off.static.test.ts
+```
+
+Exit `1`; 2 tests collected, 1 passed and 1 failed. The new mutation test
+failed because the verifier was not yet defined (Vitest duration `400ms`).
+
+GREEN, after the verifier was added:
+
+```text
+node_modules\\.bin\\vitest.cmd run tests/competition/legacy-flags-off.static.test.ts
+```
+
+Exit `0`; 1 file and 2 tests passed (Vitest duration `297ms`). The second test
+is the load-bearing mutation proof: removing the exact non-empty `requestId`
+assertion makes the verifier throw.
+
+### Review-fix verification
+
+| Command | Result | Duration | Exit |
+| --- | --- | ---: | ---: |
+| `node_modules\\.bin\\tsc.cmd --noEmit --incremental false` | No diagnostics | 15.0s wall | 0 |
+| `node_modules\\.bin\\eslint.cmd tests/competition/legacy-flags-off.static.test.ts` | No errors or warnings | 3.33s wall | 0 |
+| `git diff --check` | Clean; only expected LF-to-CRLF working-copy notice | 0.19s wall | 0 |
+
+No browser, database, reset, seed, Playwright, full CI, deployment,
+production, timeout, retry, skip, or E2E-spec change was made for this review
+fix. The three protected untracked roots remain untouched and unstaged.
+
+Review-fix commit SHA: to be filled after the narrow staged-diff commit.
