@@ -300,16 +300,45 @@ function observerForType(observers: readonly ObserverRecord[], type: string): Ob
 }
 
 type LoadFixtureMode = "healthy" | "failing" | "slow" | "errors" | "non2xx" | "boundary-pass" | "boundary-fail" | "missing";
-type LoadScriptProcess = Readonly<{ exitCode: number; stdout: string; stderr: string; baseUrl: string | null }>;
+type WarmupFixture = Readonly<{ failurePath?: string; status?: number; transportFailure?: boolean }>;
+type LoadRequest = Readonly<{ kind: "warmup" | "autocannon" | "other"; method: string; url: string; accept?: string }>;
+type LoadScriptProcess = Readonly<{ exitCode: number; stdout: string; stderr: string; baseUrl: string | null; requests: readonly LoadRequest[] }>;
 
-async function runLoadScriptWithOutput(scriptName: string, mode: LoadFixtureMode): Promise<LoadScriptProcess> {
+const LOCAL_QUICK_LOAD_ROUTES = [
+  "/id",
+  "/id/events",
+  "/id/events/flashpeak-champions-32/bracket",
+] as const;
+const QUICK_LOAD_ACCEPT = "text/html,application/xhtml+xml";
+
+async function runLoadScriptWithOutput(scriptName: string, mode: LoadFixtureMode, warmup?: WarmupFixture): Promise<LoadScriptProcess> {
   const environment = { ...process.env };
+  const requests: LoadRequest[] = [];
+  let baseUrl: string | null = null;
   const server = createServer((_request, response) => {
+    const requestUrl = new URL(_request.url ?? "/", baseUrl ?? "http://127.0.0.1");
+    const pathname = requestUrl.pathname;
+    const accept = Array.isArray(_request.headers.accept) ? _request.headers.accept.join(",") : _request.headers.accept;
+    const kind = pathname === "/__autocannon_call" ? "autocannon" : LOCAL_QUICK_LOAD_ROUTES.includes(pathname as typeof LOCAL_QUICK_LOAD_ROUTES[number]) ? "warmup" : "other";
+    requests.push({ kind, method: _request.method ?? "", url: requestUrl.href, ...(accept ? { accept } : {}) });
+    if (kind === "autocannon") {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    if (warmup && kind === "warmup" && (warmup.failurePath === undefined || pathname === warmup.failurePath)) {
+      if (warmup.transportFailure) {
+        _request.socket.destroy();
+        return;
+      }
+      response.writeHead(warmup.status ?? 500, warmup.status === 307 ? { location: "/warmup-redirect-target" } : undefined);
+      response.end("warmup failure");
+      return;
+    }
     response.writeHead(200, { "content-type": "text/plain" });
     response.end("fixture");
   });
   let args: string[];
-  let baseUrl: string | null = null;
   if (mode === "missing") {
     delete environment.BASE_URL;
     args = [fileURLToPath(new URL(`../../${scriptName}`, import.meta.url))];
@@ -321,6 +350,7 @@ async function runLoadScriptWithOutput(scriptName: string, mode: LoadFixtureMode
     baseUrl = `http://127.0.0.1:${address.port}`;
     environment.BASE_URL = baseUrl;
     environment.LOAD_FIXTURE_MODE = mode;
+    environment.LOAD_FIXTURE_AUTOCANNON_TRACE = warmup ? "true" : "false";
     args = [
       "--experimental-loader",
       pathToFileURL(fileURLToPath(new URL("./autocannon-fixture-loader.mjs", import.meta.url))).href,
@@ -339,6 +369,7 @@ async function runLoadScriptWithOutput(scriptName: string, mode: LoadFixtureMode
     stdout: Buffer.concat(stdout).toString("utf8"),
     stderr: Buffer.concat(stderr).toString("utf8"),
     baseUrl,
+    requests,
   };
 }
 
@@ -493,7 +524,63 @@ describe("organizer reader release-scale contracts", () => {
     ]);
     expect(quickLoadScript).toMatch(/const P97_5_BUDGET_MS = 3_000;/);
     expect(quickLoadScript).toMatch(/r\.p97_5 < P97_5_BUDGET_MS/);
-    expect(quickLoadScript).not.toMatch(/redirect|allow(?:ed|list)/i);
+    expect(quickLoadScript).not.toMatch(/allow(?:ed|list)/i);
+  });
+
+  it.each([200, 299])("warms every exact local quick-load URL once before autocannon at status %s", async (status) => {
+    const result = await runLoadScriptWithOutput("scripts/load-test-quick.mjs", "healthy", { status });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.baseUrl).toBeDefined();
+    const expectedWarmups = LOCAL_QUICK_LOAD_ROUTES.map((path) => ({
+      kind: "warmup" as const,
+      method: "GET",
+      url: `${result.baseUrl}${path}`,
+      accept: QUICK_LOAD_ACCEPT,
+    }));
+    expect(result.requests.slice(0, expectedWarmups.length)).toEqual(expectedWarmups);
+    expect(result.requests.filter(({ kind }) => kind === "warmup")).toEqual(expectedWarmups);
+    const firstAutocannonCall = result.requests.findIndex(({ kind }) => kind === "autocannon");
+    expect(firstAutocannonCall).toBe(expectedWarmups.length);
+    expect(result.requests.slice(firstAutocannonCall)).toHaveLength(3);
+    expect(result.requests.slice(firstAutocannonCall).every(({ kind }) => kind === "autocannon")).toBe(true);
+    expect(result.stdout).toContain("AUTOCANNON_FIXTURE_CALLS=");
+  });
+
+  it.each([307, 500])("fails closed before autocannon for status %s on every selected route", async (status) => {
+    for (const path of LOCAL_QUICK_LOAD_ROUTES) {
+      const result = await runLoadScriptWithOutput("scripts/load-test-quick.mjs", "healthy", { failurePath: path, status });
+      const attemptedWarmupCount = LOCAL_QUICK_LOAD_ROUTES.indexOf(path) + 1;
+      expect(result.exitCode, `${status} ${path}`).toBe(1);
+      expect(result.stderr, `${status} ${path}`).toContain(path);
+      expect(result.stderr, `${status} ${path}`).toContain(String(status));
+      expect(result.stderr, `${status} ${path}`).not.toContain(result.baseUrl ?? "");
+      expect(result.requests, `${status} ${path}`).toHaveLength(attemptedWarmupCount);
+      expect(result.requests.filter(({ kind }) => kind === "warmup"), `${status} ${path}`).toHaveLength(attemptedWarmupCount);
+      expect(result.requests.filter(({ kind }) => kind === "autocannon"), `${status} ${path}`).toHaveLength(0);
+      expect(result.stdout, `${status} ${path}`).toContain("AUTOCANNON_FIXTURE_CALLS=[]");
+    }
+  });
+
+  it("fails closed before autocannon on a warmup transport failure for every selected route", async () => {
+    for (const path of LOCAL_QUICK_LOAD_ROUTES) {
+      const result = await runLoadScriptWithOutput("scripts/load-test-quick.mjs", "healthy", { failurePath: path, transportFailure: true });
+      const attemptedWarmupCount = LOCAL_QUICK_LOAD_ROUTES.indexOf(path) + 1;
+      expect(result.exitCode, path).toBe(1);
+      expect(result.stderr, path).toContain(path);
+      expect(result.stderr, path).toMatch(/transport error/i);
+      expect(result.stderr, path).not.toContain(result.baseUrl ?? "");
+      expect(result.requests, path).toHaveLength(attemptedWarmupCount);
+      expect(result.requests.filter(({ kind }) => kind === "warmup"), path).toHaveLength(attemptedWarmupCount);
+      expect(result.requests.filter(({ kind }) => kind === "autocannon"), path).toHaveLength(0);
+      expect(result.stdout, path).toContain("AUTOCANNON_FIXTURE_CALLS=[]");
+    }
+  });
+
+  it("uses manual redirects and a checked 2xx warmup response before measuring", () => {
+    const quickLoadScript = source("scripts/load-test-quick.mjs");
+    expect(quickLoadScript).toContain('redirect: "manual"');
+    expect(quickLoadScript).toMatch(/response\.status\s*<\s*200/);
+    expect(quickLoadScript).toMatch(/response\.status\s*>\s*299/);
   });
 
   it("enforces quick-load gates independently at the p97.5 boundary", async () => {

@@ -331,3 +331,54 @@ TDD evidence:
 | Syntax/diff checks | `node --check scripts/load-test-quick.mjs` and `git diff --check` passed. |
 
 The local quick-load contract remains exactly 50 connections × 5 seconds per route, with the existing text/html headers, strict zero errors/non-2xx handling, and p97.5 `< 3,000 ms`; no redirect option or allowlisting was added. No browser, load, database, E2E, reset/seed, deployment, or runtime confirmation was run in this round.
+
+## Homepage discriminator and conditional quick-load confirmation — 2026-09-24
+
+The homepage-only discriminator used the existing production-like build with `VERCEL_ENV=preview` and all seven V3 flags true. No database write, reset, seed, migration, cleanup, or full E2E ran. Six sequential direct `/id` probes were recorded after one loopback server became ready:
+
+| Probe | Status | TTFB ms | Total ms |
+| ---: | ---: | ---: | ---: |
+| 1 (cold) | 200 | 3,478.91 | 3,491.37 |
+| 2 | 200 | 281.55 | 297.61 |
+| 3 | 200 | 272.67 | 285.18 |
+| 4 | 200 | 282.42 | 297.57 |
+| 5 | 200 | 268.63 | 281.65 |
+| 6 | 200 | 273.18 | 288.68 |
+
+Conditional isolated `/id` autocannon escalation then passed every level, so c=50 was reached once:
+
+| Connections | Duration ms | p50 ms | p97.5 ms | Requests mean | 2xx | Errors | Non-2xx | Gate |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 5,058.82 | 268 | 280 | 3.6 | 18 | 0 | 0 | Passed |
+| 10 | 5,025.06 | 294 | 740 | 29.8 | 149 | 0 | 0 | Passed |
+| 50 | 5,044.20 | 1,666 | 2,464 | 20 | 100 | 0 | 0 | Passed |
+
+Because isolated c=50 passed, the fixed `node scripts/load-test-quick.mjs` ran exactly once against the canonical local routes. It exited 1 after 15,508.4 ms; all routes had zero errors and zero non-2xx responses, and only the Home p97.5 budget failed:
+
+| Route | Req/s | p50 | p97.5 | 2xx | Errors | Non-2xx | Gate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `/id` | 5 | 4,897 ms | 5,046 ms | 27 | 0 | 0 | Failed p97.5 `<3,000` |
+| `/id/events` | 49 | 851 ms | 1,481 ms | 245 | 0 | 0 | Passed |
+| `/id/events/flashpeak-champions-32/bracket` | 41 | 940 ms | 1,931 ms | 206 | 0 | 0 | Passed |
+
+The discriminator classifies the recorded homepage result as a route-order-biased cold-start effect: the first direct request is slow, while warm direct requests and isolated c=50 pass. The quick-load runner is sequential and introduces no cross-route concurrency; the recorded run predates the fail-closed per-route warmup recovered below, so its Home p97.5 breach must not be attributed to cross-route concurrency. The performance gate remains `BLOCKED` on that recorded real p97.5 failure and unavailable external preview/RUM evidence. Both sequential loopback server runs were stopped and port 3103 was confirmed closed; no concurrent or orphaned local server remains.
+
+## Review round 4 — fail-closed exact-route quick-load warmup — 2026-09-24
+
+The preserved round-4 implementation now performs one sequential `GET` warmup for each selected full URL before the first autocannon call. Warmups send the same `Accept: text/html,application/xhtml+xml` header as measurement, use `redirect: "manual"`, consume the response body, and allow only inclusive 2xx statuses. Any fetch/body transport error or non-2xx status (including 307 and 500) exits 1 before measurement; missing `BASE_URL` remains the existing exit-2 contract. The existing measurement contract is unchanged: 50 connections × 5 seconds per route, p97.5 `< 3,000 ms`, zero errors/non-2xx, and exactly three route results.
+
+The loopback fixture records exact request order, method, full URL, and `Accept` header. The success matrix proves exactly one warmup per exact route before all three measurement calls for both status 200 and status 299. Failure matrices exercise each selected route independently for status 307, status 500, and transport failure, and assert exit 1, zero autocannon calls, and no redirect-follow request. The missing-target contract continues to assert exit 2.
+
+### TDD and verification evidence
+
+| Check | Result |
+| --- | --- |
+| Exit-control RED | An attempted immediate `process.exit(1)` warmup-failure path made the Windows child exit as `3221226505` for the 307/500/transport matrix instead of exit 1; this was rejected before completion. |
+| Exit-control GREEN | Restoring graceful `process.exitCode = 1` after the awaited warmup failure returned the required exit 1 with no measurement calls. |
+| Focused warmup matrix | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts -t "(exact local quick-load|warms every exact|fails closed|manual redirects|quick-load gates)"` — exit 0; 8 selected tests passed, 10 skipped. |
+| Full Task 9 contract file | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts` — exit 0; 18 tests passed. |
+| Type check | `node node_modules/typescript/bin/tsc --noEmit --incremental false` — exit 0. |
+| Syntax | `node --check scripts/load-test-quick.mjs` and `node --check tests/performance/autocannon-fixture-loader.mjs` — exit 0. |
+| Diff whitespace | `git diff --check` — exit 0. |
+
+The historical runtime classification remains a sequential route-order/cold-start observation; this recovery adds deterministic warmup coverage only and does not claim a new runtime, browser, database, E2E, reset/seed, deployment, or push result.

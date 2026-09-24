@@ -19,8 +19,15 @@ export default function autocannon(_options, callback) {
     errors,
     statusCodeStats: {},
   };
-  calls.push({ ..._options, result: { p97_5: result.latency.p97_5, errors: result.errors, non2xx: result.non2xx } });
-  callback(null, result);
+  const complete = () => {
+    calls.push({ ..._options, result: { p97_5: result.latency.p97_5, errors: result.errors, non2xx: result.non2xx } });
+    callback(null, result);
+  };
+  if (process.env.LOAD_FIXTURE_AUTOCANNON_TRACE === "true" && process.env.BASE_URL) {
+    fetch(process.env.BASE_URL + "/__autocannon_call", { method: "POST" }).then(complete, complete);
+  } else {
+    complete();
+  }
 }
 process.once("exit", () => console.log("AUTOCANNON_FIXTURE_CALLS=" + JSON.stringify(calls)));
 `;

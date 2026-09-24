@@ -5,6 +5,7 @@ import autocannon from "autocannon";
 
 const BASE = process.env.BASE_URL;
 const P97_5_BUDGET_MS = 3_000;
+const REQUEST_HEADERS = { accept: "text/html,application/xhtml+xml" };
 
 if (!BASE) {
   console.error("[load-test-quick] BLOCKED: set BASE_URL to the credentialed preview or explicitly approved load-test target.");
@@ -33,7 +34,7 @@ async function measure(label, path) {
         url: BASE + path,
         connections: 50,
         duration: 5,
-        headers: { accept: "text/html,application/xhtml+xml" },
+        headers: REQUEST_HEADERS,
       },
       (err, res) => resolve(err ? null : res),
     ),
@@ -52,9 +53,33 @@ async function measure(label, path) {
   };
 }
 
+async function warmupRoutes() {
+  for (const route of routes) {
+    let response;
+    try {
+      response = await fetch(BASE + route.path, { method: "GET", headers: REQUEST_HEADERS, redirect: "manual" });
+    } catch {
+      console.error(`[load-test-quick] Warmup failed for ${route.label} (${route.path}): transport error`);
+      return false;
+    }
+    try {
+      await response.arrayBuffer();
+    } catch {
+      console.error(`[load-test-quick] Warmup failed for ${route.label} (${route.path}): transport error`);
+      return false;
+    }
+    if (response.status < 200 || response.status > 299) {
+      console.error(`[load-test-quick] Warmup failed for ${route.label} (${route.path}): status ${response.status}`);
+      return false;
+    }
+  }
+  return true;
+}
+
 console.log(`\nLoad test target: ${BASE}`);
 console.log(`Config: 50 concurrent connections × 5s per route; p97.5 < ${P97_5_BUDGET_MS}ms\n`);
 
+async function runMeasurements() {
 const results = [];
 for (const route of routes) {
   process.stdout.write(`Testing: ${route.label} ... `);
@@ -89,5 +114,12 @@ if (allPass) {
   const errored = results.filter((r) => r.errors > 0 || r.non2xx > 0);
   if (slow.length) console.log(`⚠️  Slow routes (p97.5 ≥ ${P97_5_BUDGET_MS}ms): ${slow.map((r) => r.label).join(", ")}`);
   if (errored.length) console.log(`❌ Routes with errors/non-2xx: ${errored.map((r) => r.label).join(", ")}`);
+  process.exitCode = 1;
+}
+}
+
+if (await warmupRoutes()) {
+  await runMeasurements();
+} else {
   process.exitCode = 1;
 }
