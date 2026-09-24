@@ -1,5 +1,5 @@
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import sharp from "sharp";
 
 import { buildMiracleV3CertificateHtml } from "../../src/lib/certificate/templates/miracle-v3";
@@ -23,6 +23,19 @@ test.afterEach(async () => {
   fixture = undefined;
 });
 
+function waitForCertificatePublicationResponse(page: Page, locale: "en" | "id", eventId: string) {
+  const certificatePath = `/${locale}/organizer/events/${encodeURIComponent(eventId)}/certificates`;
+  return page.waitForResponse((response) => {
+    const request = response.request();
+    const responseUrl = new URL(response.url());
+    const requestData = request.postData() ?? "";
+    return request.method() === "POST"
+      && responseUrl.pathname === certificatePath
+      && Boolean(request.headers()["next-action"])
+      && requestData.includes(eventId);
+  });
+}
+
 test("publishes all seven certificates and preserves superseded verification history", async ({ page }) => {
   test.slow();
   const scenario = await prepareCertificateFixture();
@@ -34,7 +47,12 @@ test("publishes all seven certificates and preserves superseded verification his
   await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
   await expect(page.locator("[data-publish-certificate-set]")).toBeEnabled();
   await expect.poll(() => completionDb.certificateGenerationMutation.count({ where: { eventId: scenario.id } })).toBe(scenario.generatedMutationCount);
-  await page.locator("[data-publish-certificate-set]").click();
+  const publicationResponsePromise = waitForCertificatePublicationResponse(page, "en", scenario.id);
+  const [publicationResponse] = await Promise.all([
+    publicationResponsePromise,
+    page.locator("[data-publish-certificate-set]").click(),
+  ]);
+  expect(publicationResponse.status()).toBe(200);
   await expect(page.locator('[role="status"]')).toContainText("The seven-certificate set was published safely.");
   await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
   await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({ where: { eventId: scenario.id }, select: { certificateRevision: true } })).certificateRevision).toBe(2);
@@ -75,7 +93,9 @@ test("publishes once in Indonesian and announces the localized revision", async 
   await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
   const publish = page.locator("[data-publish-certificate-set]");
   await expect(publish).toBeEnabled();
-  await publish.click();
+  const publicationResponsePromise = waitForCertificatePublicationResponse(page, "id", scenario.id);
+  const [publicationResponse] = await Promise.all([publicationResponsePromise, publish.click()]);
+  expect(publicationResponse.status()).toBe(200);
   await expect(page.locator('[role="status"]')).toContainText("Set tujuh sertifikat diterbitkan dengan aman.");
   await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
   await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({ where: { eventId: scenario.id }, select: { certificateRevision: true } })).certificateRevision).toBe(2);
@@ -172,7 +192,9 @@ test("certificate studio preserves ID/EN publication and verification parity", a
     if (locale === "id") {
       const publish = page.locator("[data-publish-certificate-set]");
       await expect(publish).toBeEnabled();
-      await publish.click();
+      const publicationResponsePromise = waitForCertificatePublicationResponse(page, locale, scenario.id);
+      const [publicationResponse] = await Promise.all([publicationResponsePromise, publish.click()]);
+      expect(publicationResponse.status()).toBe(200);
       await expect(page.locator('[role="status"]')).toContainText("Set tujuh sertifikat diterbitkan dengan aman.");
       await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
       await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({
