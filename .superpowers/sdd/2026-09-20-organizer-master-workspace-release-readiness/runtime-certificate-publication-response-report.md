@@ -37,7 +37,7 @@ All commands ran in the specified isolated worktree. The focused browser proof u
 | --- | --- | --- | --- |
 | `node node_modules/typescript/bin/tsc --noEmit --incremental false` | TypeScript clean | 17.4s | 0 |
 | `node node_modules/eslint/bin/eslint.js tests/e2e/organizer-v3-certificates.spec.ts` | Changed-file ESLint clean | 2.7s | 0 |
-| `pnpm test -- tests/competition/task11-release-static-contract.test.ts` | 1 file, 39 tests passed | 1.01s (elevated rerun after sandbox `spawn EPERM`) | 0 |
+| `node node_modules/vitest/vitest.mjs run tests/competition/task11-release-static-contract.test.ts` | 1 file, 39 tests passed | 1.01s (elevated rerun after sandbox `spawn EPERM`) | 0 |
 | `git diff --check` | Clean; only LF-to-CRLF working-copy notice | — | 0 |
 | `pnpm exec playwright test tests/e2e/organizer-v3-certificates.spec.ts --fail-on-flaky-tests --workers=1` | 5/5 passed; 0 skipped; 0 flaky/retried | 2.2m total; 31.4s, 12.2s, 16.6s, 19.5s, and 930ms by test | 0 |
 
