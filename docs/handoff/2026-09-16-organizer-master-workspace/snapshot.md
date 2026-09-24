@@ -44,10 +44,11 @@ and a fresh whole-branch Sol/high review with no P0/P1/P2.
   24/24 plus V2 9/9 with zero skips/retries/flakes; quick-load warmups HTTP
   200 and p97.5 2,945/2,069/1,582 ms with zero errors.
 - Fresh bounded verification is recorded in the ignored
-  `whole-branch-final-fix-report.md`. Its pressure rerun reproduced a local
-  `/id/login` p95 concern (4,387 ms, then 3,783 ms; zero failures) without
-  weakening the 3,000 ms contract. Fresh scoped 5.6-Sol/high re-review is
-  **PENDING**, not approved.
+  `whole-branch-final-fix-report.md`. Its historical pressure rerun recorded
+  `/id/login` p95 values of 4,387 ms and 3,783 ms with zero failures; those
+  samples are superseded by the exact final RED record below without weakening
+  the 3,000 ms contract. Fresh scoped 5.6-Sol/high re-review is **PENDING**, not
+  approved.
 - Overall status remains **BLOCKED** by the local pressure RED (`/id/login`
   p95 `4197ms`, max `4199ms`, failures `0`, exit `1`) plus final-SHA GitHub
   CI; Vercel preview/logs/RUM/rollback/PIC; Neon recovery console, restore
@@ -55,7 +56,8 @@ and a fresh whole-branch Sol/high review with no P0/P1/P2.
 
 ## Final bounded migration-safety correction — 2026-09-24
 
-- Correction base: `44a3068a7e7296c1da50a6fcd5b4e08241bb1860`.
+- Security implementation base: `44a3068a7e7296c1da50a6fcd5b4e08241bb1860`;
+  migration guard/docs correction: `76f62641693c8287896140f6d566fdd2a794d92f`.
 - `20260921000000_add_user_session_version/migration.sql` now fails closed
   when duplicate `PasswordResetToken.userId` rows exist, before creating the
   unique index. It performs no legacy-row deletion, deduplication, update,
@@ -64,20 +66,22 @@ and a fresh whole-branch Sol/high review with no P0/P1/P2.
 - Focused checks passed: migration contract 2/2, nonincremental TypeScript,
   no-DB Prisma validate, changed-file ESLint, and diff hygiene. The valid
   final fix-wave suite evidence is 209 passed / 2 skipped files and 2,445
-  passed / 6 skipped tests, exit 0, and was not rerun here. The final supplied
-  pressure result remains RED at `/id/login` p95 `4197ms`, max `4199ms`,
-  failures `0`, exit 1; no threshold was weakened.
+  passed / 6 skipped tests, exit 0, and was not rerun here. The final pressure
+  record is exact and was not retried: 80 requests at concurrency 20 against
+  `/id/login`, p95 `4197ms`, max `4199ms`, failures `0`, exit `1`; later
+  scenarios stopped. No threshold was weakened.
 - No pressure/full-suite/E2E, database migration, reset, seed, deployment,
   push, or PR was run. Status remains **BLOCKED** on final-SHA CI,
   Vercel/preview/log/RUM/PIC, Neon recovery/restore/migration integration,
   live 64-team query/p95/load evidence, and fresh scoped Sol/high review.
 
-### Password-reset duplicate guard operator procedure
+### Human-gated password-reset migration and digest rollback procedure
 
 The six skipped final-suite tests are intentional: one guarded migration-DB
-integration and five opt-in installed-browser renderer tests. If the migration
-guard raises, freeze password-reset issuance and obtain explicit
-release/security/data-owner approval. Run this exact read-only diagnostic:
+integration and five opt-in installed-browser renderer tests. Pause
+password-reset issuance and obtain a named release/security/data owner. Run
+these as separate human-gated commands; never silently deduplicate or issue an
+immediate commit. First run this exact read-only diagnostic:
 
 ```sql
 SELECT "userId", COUNT(*) AS "duplicateCount"
@@ -87,37 +91,58 @@ HAVING COUNT(*) > 1
 ORDER BY "duplicateCount" DESC, "userId";
 ```
 
-Wait through the exact 30-minute effective TTL for every affected row. Effective
-expiry is the earlier of `expiresAt` and `createdAt + INTERVAL '30 minutes'`.
-In one explicit owner-approved transaction, delete only affected duplicate-user
-rows where `usedAt IS NOT NULL` or effective expiry is at/before
-`CURRENT_TIMESTAMP`; review `RETURNING`, roll back if needed, and never silently
-deduplicate:
+Wait until `MAX(LEAST("createdAt" + INTERVAL '30 minutes', "expiresAt"))` for
+the affected rows has passed. Then begin, lock candidates, and delete only used
+or effectively expired rows:
 
 ```sql
 BEGIN;
 WITH duplicate_users AS (
-  SELECT "userId"
-  FROM "PasswordResetToken"
-  GROUP BY "userId"
-  HAVING COUNT(*) > 1
+  SELECT "userId" FROM "PasswordResetToken" GROUP BY "userId" HAVING COUNT(*) > 1
+)
+SELECT t."id", t."userId", t."createdAt", t."expiresAt", t."usedAt"
+FROM "PasswordResetToken" AS t
+JOIN duplicate_users AS d ON d."userId" = t."userId"
+WHERE t."usedAt" IS NOT NULL
+   OR LEAST(t."expiresAt", t."createdAt" + INTERVAL '30 minutes') <= CURRENT_TIMESTAMP
+FOR UPDATE;
+
+WITH duplicate_users AS (
+  SELECT "userId" FROM "PasswordResetToken" GROUP BY "userId" HAVING COUNT(*) > 1
 )
 DELETE FROM "PasswordResetToken" AS t
 USING duplicate_users AS d
 WHERE t."userId" = d."userId"
-  AND (
-    t."usedAt" IS NOT NULL
-    OR LEAST(t."expiresAt", t."createdAt" + INTERVAL '30 minutes') <= CURRENT_TIMESTAMP
-  )
+  AND (t."usedAt" IS NOT NULL OR LEAST(t."expiresAt", t."createdAt" + INTERVAL '30 minutes') <= CURRENT_TIMESTAMP)
 RETURNING t."id", t."userId", t."tokenFormat", t."createdAt", t."expiresAt", t."usedAt";
--- Review RETURNING rows; ROLLBACK on disagreement, otherwise COMMIT.
-COMMIT;
 ```
 
-Re-run the exact diagnostic and require zero rows before applying the migration;
-stop for owner direction if any duplicate remains. A digest rollback
-invalidates digest-only rows and requires a fresh reset request; never interpret
-a digest as a raw token or weaken the legacy fallback.
+Stop with the transaction open for named-owner review. Only after explicit
+approval run separate `COMMIT;`; otherwise run separate `ROLLBACK;`. After a
+committed cleanup, re-run the exact diagnostic and require zero rows, then and
+only then apply the migration.
+
+For digest rollback after issuance, keep issuance paused and run:
+
+```sql
+BEGIN;
+SELECT "id", "userId", "createdAt", "expiresAt", "usedAt"
+FROM "PasswordResetToken"
+WHERE "tokenFormat" = 'sha256' AND "usedAt" IS NULL
+FOR UPDATE;
+
+UPDATE "PasswordResetToken"
+SET "usedAt" = CURRENT_TIMESTAMP
+WHERE "tokenFormat" = 'sha256' AND "usedAt" IS NULL
+RETURNING "id", "userId", "tokenFormat", "createdAt", "expiresAt", "usedAt";
+```
+
+Stop for named-owner review with the transaction open; separately `COMMIT;`
+only after explicit approval, otherwise separately `ROLLBACK;`. After commit,
+confirm zero active SHA-256 rows with `SELECT COUNT(*) ... WHERE
+"tokenFormat" = 'sha256' AND "usedAt" IS NULL`; only then perform app rollback
+and require users to request fresh resets. Never interpret a digest as a raw
+token or weaken the legacy fallback.
 
 ## Historical handoff details — 2026-09-16 (non-operative)
 
