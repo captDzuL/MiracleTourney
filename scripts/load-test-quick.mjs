@@ -21,9 +21,9 @@ const routes = isProd
       { label: "Bracket (miracle-league)", path: "/events/miracle-league/bracket" },
     ]
   : [
-      { label: "Home page", path: "/" },
-      { label: "Events list", path: "/events" },
-      { label: "Bracket (kuroko-summer-cup)", path: "/events/kuroko-summer-cup/bracket" },
+      { label: "Home page", path: "/id" },
+      { label: "Events list", path: "/id/events" },
+      { label: "Bracket (kuroko-summer-cup)", path: "/id/events/kuroko-summer-cup/bracket" },
     ];
 
 async function measure(label, path) {

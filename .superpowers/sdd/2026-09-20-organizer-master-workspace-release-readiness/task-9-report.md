@@ -193,3 +193,29 @@ Round-4 focused verification:
 | Load test | `BLOCKED` | `BASE_URL` was not supplied; both load scripts now exit `2` rather than target a default remote URL |
 
 No production deployment, migration, shared-Neon mutation, preview mutation, or secret inspection was performed. The release decision remains `BLOCKED` pending the external evidence gates and independent Task 9 review verdicts.
+
+## Focused runtime-harness fix — 2026-09-24
+
+The execution-boundary Windows Schannel preflight failure remains unchanged and was not retried or treated as a repository defect. This scoped fix addresses only the two repo-owned harness defects identified in the runtime report:
+
+- `scripts/run-dashboard-performance.mjs` now installs a buffered `first-input` observer before navigation and uses its finite duration only when the Event Timing `event` value is unavailable. The existing `<200 ms` browser budget remains fail-closed when neither evidence source is available. The representative interaction remains exactly one body click per measurement.
+- `scripts/load-test-quick.mjs` now uses `/id`, `/id/events`, and `/id/events/kuroko-summer-cup/bracket` for local targets, avoiding middleware's intentional 307 locale redirect while preserving 50 connections, 5 seconds, zero non-2xx/error requirements, and p97.5 `< 3,000 ms`.
+
+### TDD evidence
+
+| Phase | Command | Result |
+| --- | --- | --- |
+| RED | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts -t "(first-input fallback|exact locale-prefixed local quick-load routes)"` | Exit 1; 10 tests collected, 2 new contracts failed (missing `first-input`; locale-less local paths), 8 skipped. The initial sandbox attempt was an environment-only `spawn EPERM`; the elevated rerun reached the intended assertions. |
+| GREEN | same focused command | Exit 0; 1 file, 2 selected tests passed, 8 skipped; 312 ms. |
+| Focused unit | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts` | Exit 0; 1 file, 10 tests passed; 1.50 s. |
+
+### Static verification
+
+| Command | Exit | Result |
+| --- | ---: | --- |
+| `node node_modules/typescript/bin/tsc --noEmit --incremental false` | 0 | TypeScript check passed; 18.37 s. The default incremental invocation was not used for evidence because it hit an environment-only `EPERM` rewriting `tsconfig.tsbuildinfo`. |
+| `node node_modules/eslint/bin/eslint.js scripts/run-dashboard-performance.mjs scripts/load-test-quick.mjs tests/performance/organizer-readers.test.ts` | 0 | No errors. |
+| `node --check scripts/run-dashboard-performance.mjs` and `node --check scripts/load-test-quick.mjs` | 0 | Both scripts parsed successfully. |
+| `git diff --check` | 0 | No whitespace errors. |
+
+Files changed for this fix: `scripts/run-dashboard-performance.mjs`, `scripts/load-test-quick.mjs`, `tests/performance/organizer-readers.test.ts`, and this report. No product behavior, thresholds, retries, timeouts, full load script, database, browser run, E2E run, reset/seed, push, or deployment was changed or executed. Residual risks remain the blocked credentialed preview/browser/load evidence and the external Schannel preflight boundary.

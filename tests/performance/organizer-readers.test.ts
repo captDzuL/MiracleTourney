@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { runInNewContext } from "node:vm";
 import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
@@ -265,6 +266,12 @@ function source(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(`../../${relativePath}`, import.meta.url)), "utf8");
 }
 
+function extractObserverInit(browserScript: string): string {
+  const match = browserScript.match(/const PERFORMANCE_OBSERVER_INIT = `([\s\S]*?)`;/);
+  if (!match) throw new Error("Dashboard performance observer init was not found");
+  return match[1];
+}
+
 async function runLoadScript(scriptName: string, mode: "healthy" | "failing" | "missing"): Promise<number> {
   const environment = { ...process.env };
   const server = createServer((_request, response) => {
@@ -364,6 +371,52 @@ describe("organizer reader release-scale contracts", () => {
     expect(browserScript).toContain("durationThreshold");
     expect(browserScript).toContain("recordRepresentativeInteraction");
     expect(browserScript).toMatch(/INP[\s\S]*unavailable/);
+  });
+
+  it("uses one buffered first-input fallback for a representative lab INP click", () => {
+    const browserScript = source("scripts/run-dashboard-performance.mjs");
+    const observerInit = extractObserverInit(browserScript);
+    type ObserverEntry = Readonly<{ duration?: number }>;
+    type ObserverList = Readonly<{ getEntries: () => readonly ObserverEntry[] }>;
+    type ObserverRecord = {
+      callback: (list: ObserverList) => void;
+      options: Record<string, unknown>;
+    };
+    const observers: ObserverRecord[] = [];
+    class FakePerformanceObserver {
+      constructor(private readonly callback: ObserverRecord["callback"]) {}
+
+      observe(options: Record<string, unknown>) {
+        observers.push({ callback: this.callback, options });
+      }
+    }
+    const pageWindow: { __miracleDashboardPerformance?: Record<string, unknown> } = {};
+    runInNewContext(observerInit, { PerformanceObserver: FakePerformanceObserver, window: pageWindow });
+
+    expect(observers.find(({ options }) => options.type === "event")?.options).toMatchObject({ buffered: true, durationThreshold: 16 });
+    const firstInput = observers.find(({ options }) => options.type === "first-input");
+    expect(firstInput?.options).toEqual({ type: "first-input", buffered: true });
+    firstInput?.callback({ getEntries: () => [{ duration: 37.5 }] });
+    expect(pageWindow.__miracleDashboardPerformance?.firstInput).toBe(37.5);
+
+    expect(browserScript).toMatch(/const inp[\s\S]*observed\?\.inp[\s\S]*observed\?\.firstInput/);
+    expect(browserScript).toMatch(/metricFailures[\s\S]*INP[\s\S]*unavailable/);
+    const interaction = browserScript.match(/async function recordRepresentativeInteraction\(page\) \{[\s\S]*?\n\}/)?.[0];
+    expect(interaction?.match(/\.click\(/g)).toHaveLength(1);
+  });
+
+  it("uses exact locale-prefixed local quick-load routes and preserves the load budget", () => {
+    const quickLoadScript = source("scripts/load-test-quick.mjs");
+    const localRoutes = quickLoadScript.match(/\n  : \[([\s\S]*?)\n    \]\s*;/)?.[1];
+    expect(localRoutes).toBeDefined();
+    expect(localRoutes).toMatch(/label: "Home page", path: "\/id"/);
+    expect(localRoutes).toMatch(/label: "Events list", path: "\/id\/events"/);
+    expect(localRoutes).toMatch(/label: "Bracket \(kuroko-summer-cup\)", path: "\/id\/events\/kuroko-summer-cup\/bracket"/);
+    expect(localRoutes).not.toMatch(/path: "\/(?:events|$)/);
+    expect(quickLoadScript).toMatch(/connections: 50/);
+    expect(quickLoadScript).toMatch(/duration: 5/);
+    expect(quickLoadScript).toContain("p97.5");
+    expect(quickLoadScript).toContain("non2xx === 0");
   });
 
   it("keeps the Task 9 report whitespace-clean and records its exact diff-check range", () => {

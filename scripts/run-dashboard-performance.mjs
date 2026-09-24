@@ -13,7 +13,7 @@ const thresholdMs = Number(process.env.DASHBOARD_PERF_THRESHOLD_MS ?? "3000");
 const browserBudgets = { lcpMs: 2_500, inpMs: 200, cls: 0.1, ttfbMs: 800 };
 const PERFORMANCE_OBSERVER_INIT = `
 (() => {
-  const state = { lcp: null, inp: null, cls: 0, clsAvailable: false };
+  const state = { lcp: null, inp: null, firstInput: null, cls: 0, clsAvailable: false };
   window.__miracleDashboardPerformance = state;
   if (typeof PerformanceObserver !== "function") return;
   try {
@@ -25,6 +25,14 @@ const PERFORMANCE_OBSERVER_INIT = `
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) state.inp = Math.max(state.inp ?? 0, Number(entry.duration) || 0);
     }).observe({ type: "event", buffered: true, durationThreshold: 16 });
+  } catch {}
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        const duration = Number(entry.duration);
+        if (Number.isFinite(duration)) state.firstInput = duration;
+      }
+    }).observe({ type: "first-input", buffered: true });
   } catch {}
   try {
     new PerformanceObserver((list) => {
@@ -86,7 +94,11 @@ async function measure(page, path) {
       ? Number(navigation.responseStart) - Number(navigation.requestStart)
       : null;
     const lcp = typeof observed?.lcp === "number" && Number.isFinite(observed.lcp) ? observed.lcp : null;
-    const inp = typeof observed?.inp === "number" && Number.isFinite(observed.inp) ? observed.inp : null;
+    const inp = typeof observed?.inp === "number" && Number.isFinite(observed.inp)
+      ? observed.inp
+      : typeof observed?.firstInput === "number" && Number.isFinite(observed.firstInput)
+        ? observed.firstInput
+        : null;
     const cls = observed?.clsAvailable && typeof observed.cls === "number" && Number.isFinite(observed.cls) ? observed.cls : null;
     return { lcp, inp, cls, ttfb };
   });
