@@ -107,4 +107,6 @@ runner emitted only the existing `NO_COLOR`/`FORCE_COLOR` warning.
 
 ## Commit
 
-To be filled after the final staged-diff audit.
+Implementation commit SHA: `d36f7fc` (`test: settle legacy flags-off API contract`).
+The report text was finalized in the follow-up report-only commit; the
+implementation commit above is the SHA to review for the test correction.
