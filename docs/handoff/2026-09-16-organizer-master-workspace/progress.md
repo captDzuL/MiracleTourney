@@ -22,7 +22,7 @@ Release decision at this point: BLOCKED. No READY claim is permitted.
 2. No authorized Vercel project/session, known-good preview deployment ID, preview URL, Runtime Logs export, deployment-failure notification proof, saved-view/PIC access proof, or deployed Speed Insights/RUM sample is available.
 3. No final-SHA GitHub Actions run URL/result or fresh whole-branch Sol/high verdict is available.
 4. Neon snapshot/PITR/retention/RPO/RTO/PIC/switchover details and a fresh non-production restore rehearsal with integrity queries are unavailable.
-5. Repository/code owner action is required for the two local full-suite failures recorded in the verification report, followed by a complete-suite rerun on the resulting HEAD; focused tests do not resolve that gate.
+5. The two local full-suite failures in the historical verification record are superseded by the final fix-wave result: 209 passed / 2 skipped files and 2,445 passed / 6 intentional skipped tests, exit 0; they are retained for provenance and are not a current blocker.
 6. Local pressure is also RED: `/id/login` p95 `4197ms`, max `4199ms`, failures `0`, exit `1`; the `<3000ms` contract remains unchanged.
 
 The release decision remains `BLOCKED` until every required security, recovery,
