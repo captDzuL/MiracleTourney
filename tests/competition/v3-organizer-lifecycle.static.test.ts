@@ -66,6 +66,16 @@ describe("organizer lifecycle wizard E2E contracts", () => {
     expect(tablet).toContain('data-workspace-step-controls');
     expect(tablet).toContain("locator('a[aria-current=\"step\"]')");
     expect(tablet).toContain("toHaveCount(1)");
+    const viewportLoop = tablet.indexOf("for (const width of [700, 768, 980])");
+    const modeConditional = tablet.indexOf("if (organizerMasterShellEnabled)");
+    expect(viewportLoop).toBeGreaterThanOrEqual(0);
+    expect(viewportLoop).toBeLessThan(modeConditional);
+    const offMode = tablet.slice(tablet.indexOf("} else {"));
+    expect(offMode).toContain('const controls = page.locator("[data-workspace-step-controls]");');
+    expect(offMode).toContain("controls.evaluate");
+    expect(offMode).toContain("document.documentElement.scrollWidth");
+    expect(offMode).toContain("overlaps");
+    expect(offMode).toContain("expect(layout.overlaps).toEqual([])");
     expect(tablet.indexOf("overview$/")).toBeGreaterThanOrEqual(0);
     expect(tablet.indexOf("overview$/")).toBeLessThan(tablet.indexOf('await page.goto(`/${locale}/organizer/events/${encodeURIComponent(eventId!)}/${eventEditorRoute}`);'));
   });

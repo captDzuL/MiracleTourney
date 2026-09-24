@@ -933,12 +933,10 @@ test.describe("V3 organizer lifecycle", () => {
       await page.goto(`/${locale}/organizer/events/${encodeURIComponent(eventId!)}/${eventEditorRoute}`);
       await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+/${eventEditorRoute}$`));
       const navigation = page.locator('nav:has(a[aria-current="step"])');
-      if (organizerMasterShellEnabled) {
-        await expect(navigation).toHaveCount(1);
-        await expect(navigation.locator('a[aria-current="step"]')).toHaveCount(1);
-
-        for (const width of [700, 768, 980]) {
-          await page.setViewportSize({ width, height: 800 });
+      for (const width of [700, 768, 980]) {
+        await page.setViewportSize({ width, height: 800 });
+        if (organizerMasterShellEnabled) {
+          await expect(navigation).toHaveCount(1);
           await expect(navigation.locator('a[aria-current="step"]')).toHaveCount(1);
           const layout = await navigation.evaluate((navigation) => {
             const viewportWidth = document.documentElement.clientWidth;
@@ -957,10 +955,37 @@ test.describe("V3 organizer lifecycle", () => {
           expect(layout.labels).toHaveLength(5);
           expect(layout.labels.filter((label) => label.visible)).toHaveLength(width < 900 ? 0 : 5);
           expect(layout.overlaps).toEqual([]);
+        } else {
+          await expect(navigation).toHaveCount(0);
+          const controls = page.locator("[data-workspace-step-controls]");
+          await expect(controls).toBeVisible();
+          const layout = await controls.evaluate((controls) => {
+            const viewportWidth = document.documentElement.clientWidth;
+            const bounds = controls.getBoundingClientRect();
+            const children = Array.from(controls.children)
+              .map((element) => {
+                const rect = (element as HTMLElement).getBoundingClientRect();
+                return { left: rect.left, right: rect.right, visible: rect.width > 0 && rect.height > 0 };
+              })
+              .filter((child) => child.visible);
+            const overflowingElements = Array.from(controls.querySelectorAll<HTMLElement>("*"))
+              .filter((element) => {
+                const rect = element.getBoundingClientRect();
+                return rect.width > 0 && (rect.left < -1 || rect.right > viewportWidth + 1);
+              })
+              .map((element) => element.tagName);
+            return {
+              pageOverflow: document.documentElement.scrollWidth > viewportWidth,
+              controlsWithinViewport: bounds.left >= -1 && bounds.right <= viewportWidth + 1,
+              overflowingElements,
+              overlaps: children.flatMap((child, index) => children.slice(index + 1).filter((other) => child.right > other.left + 1).map(() => index)),
+            };
+          });
+          expect(layout.pageOverflow).toBe(false);
+          expect(layout.controlsWithinViewport).toBe(true);
+          expect(layout.overflowingElements).toEqual([]);
+          expect(layout.overlaps).toEqual([]);
         }
-      } else {
-        await expect(navigation).toHaveCount(0);
-        await expect(page.locator("[data-workspace-step-controls]")).toBeVisible();
       }
     });
   }
