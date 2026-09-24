@@ -32,12 +32,13 @@ function isValidMemoryBytes(value) {
 function readCallerHeapMiB(nodeOptions) {
   if (typeof nodeOptions !== "string") return undefined;
 
+  let selectedMiB;
   for (const match of nodeOptions.matchAll(CALLER_HEAP_OPTION_PATTERN)) {
-    const value = Number(match[1]);
-    if (Number.isSafeInteger(value) && value > 0) return value;
+    const normalizedMiB = match[1].replace(/^0+/, "");
+    if (normalizedMiB) selectedMiB = normalizedMiB;
   }
 
-  return undefined;
+  return selectedMiB;
 }
 
 function selectMemoryHeadroom({ nodeOptions, systemMemoryBytes, constrainedMemoryBytes }) {

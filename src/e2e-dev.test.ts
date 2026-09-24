@@ -209,6 +209,93 @@ describe("E2E development server", () => {
     expect(logger).toHaveBeenCalledWith("[e2e-dev] memory-headroom selectedMiB=2048 source=caller");
   });
 
+  it("preserves a huge positive caller heap option without unsafe numeric coercion", async () => {
+    const cwd = await createEnvironment("DATABASE_URL=postgresql://test:test@isolated.example.test/testdb");
+    const spawnImpl = spawnMock();
+    const logger = vi.fn();
+    const callerNodeOptions = "--trace-warnings --max-old-space-size=9007199254740992 --unhandled-rejections=strict";
+
+    startE2eDevServer({
+      cwd,
+      env: { NODE_OPTIONS: callerNodeOptions },
+      spawnImpl,
+      systemMemoryBytes: SYSTEM_MEMORY_BYTES,
+      constrainedMemoryBytes: undefined,
+      logger,
+    });
+
+    expect(spawnImpl.mock.calls[0][2].env?.NODE_OPTIONS).toBe(callerNodeOptions);
+    expect(logger).toHaveBeenCalledWith("[e2e-dev] memory-headroom selectedMiB=9007199254740992 source=caller");
+  });
+
+  it.each([
+    "--max-old-space-size=0",
+    "--max_old_space_size 0",
+    "--max-old-space-size=-1",
+    "--max-old-space-size=1.5",
+  ])("falls back to the derived heap for an invalid caller option (%s)", async (invalidHeapOption) => {
+    const cwd = await createEnvironment("DATABASE_URL=postgresql://test:test@isolated.example.test/testdb");
+    const spawnImpl = spawnMock();
+    const logger = vi.fn();
+    const callerNodeOptions = `--trace-warnings ${invalidHeapOption}`;
+
+    startE2eDevServer({
+      cwd,
+      env: { NODE_OPTIONS: callerNodeOptions },
+      spawnImpl,
+      systemMemoryBytes: SYSTEM_MEMORY_BYTES,
+      constrainedMemoryBytes: undefined,
+      logger,
+    });
+
+    expect(spawnImpl.mock.calls[0][2].env?.NODE_OPTIONS)
+      .toBe(`${callerNodeOptions} --max-old-space-size=5120`);
+    expect(logger).toHaveBeenCalledWith("[e2e-dev] memory-headroom selectedMiB=5120 source=system");
+  });
+
+  it("reports the last valid heap option when caller options contain duplicates", async () => {
+    const cwd = await createEnvironment("DATABASE_URL=postgresql://test:test@isolated.example.test/testdb");
+    const spawnImpl = spawnMock();
+    const logger = vi.fn();
+    const callerNodeOptions = "--max-old-space-size=1024 --trace-warnings --max_old_space_size 2048";
+
+    startE2eDevServer({
+      cwd,
+      env: { NODE_OPTIONS: callerNodeOptions },
+      spawnImpl,
+      systemMemoryBytes: SYSTEM_MEMORY_BYTES,
+      constrainedMemoryBytes: undefined,
+      logger,
+    });
+
+    expect(spawnImpl.mock.calls[0][2].env?.NODE_OPTIONS).toBe(callerNodeOptions);
+    expect(logger).toHaveBeenCalledWith("[e2e-dev] memory-headroom selectedMiB=2048 source=caller");
+  });
+
+  it("emits telemetry before spawning Next", async () => {
+    const cwd = await createEnvironment("DATABASE_URL=postgresql://test:test@isolated.example.test/testdb");
+    const events: string[] = [];
+    const logger = vi.fn((line: string) => events.push(`logger:${line}`));
+    const spawnImpl = vi.fn(() => {
+      events.push("spawn");
+      return { on: vi.fn() } as unknown as ChildProcess;
+    });
+
+    startE2eDevServer({
+      cwd,
+      env: {},
+      spawnImpl,
+      systemMemoryBytes: SYSTEM_MEMORY_BYTES,
+      constrainedMemoryBytes: undefined,
+      logger,
+    });
+
+    expect(events).toEqual([
+      "logger:[e2e-dev] memory-headroom selectedMiB=5120 source=system",
+      "spawn",
+    ]);
+  });
+
   it("appends the canonical heap option without changing unrelated caller options", async () => {
     const cwd = await createEnvironment("DATABASE_URL=postgresql://test:test@isolated.example.test/testdb");
     const spawnImpl = spawnMock();
