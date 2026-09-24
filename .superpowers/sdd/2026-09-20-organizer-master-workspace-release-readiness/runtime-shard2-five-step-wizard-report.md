@@ -66,3 +66,48 @@ git diff --check
 ```
 
 Final diff scope is limited to the lifecycle E2E contract, its focused static contract test, and this report. The change is test-only and was committed without pushing.
+
+## Review round 2: mode-aware route contract
+
+### TDD RED/GREEN
+
+The focused static command was:
+
+```powershell
+.\node_modules\.bin\vitest.CMD run tests/competition/v3-organizer-lifecycle.static.test.ts
+```
+
+After adding the mode-aware static expectations but before changing the E2E source, RED was **2 failed, 2 passed, 0 skipped**, duration **316 ms**. The failures were the missing `FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3` mode constant and the missing off/on route destination assertions in the lifecycle and tablet blocks.
+
+After the minimal route change, the same command was GREEN at **4 passed, 0 skipped**, duration **273 ms**. Adding the legacy publication/no-outer-nav assertions then produced a focused RED of **1 failed, 3 passed, 0 skipped** in **299 ms**; the final static GREEN was **4 passed, 0 skipped** in **402 ms**.
+
+The final source derives `eventEditorRoute` from the actual flag: off mode visits `/overview`, while flag-on visits `/edit`. The lifecycle keeps all five-step, autosave, reload, preview, revoke, publish, and public-page checks. Publication uses the durable master-shell metadata in flag-on and the durable legacy `Acara sudah diterbitkan` state in off mode. Tablet geometry assertions for the five-link active-step navigation remain unchanged under flag-on; off mode explicitly verifies the legacy setup controls and the absence of that mode-inapplicable outer navigation.
+
+### Dual-profile browser proof
+
+The controller confirmed the guarded database baseline before browser access: 7 seeded events, `suspiciousCount: 0`, and the two exact overnight-smoke residues removed and verified absent. Both final browser runs used one worker, no reset/seed command, and no retries:
+
+Default/off profile, with the flag explicitly unset:
+
+```powershell
+Remove-Item Env:FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 -ErrorAction SilentlyContinue; & .\node_modules\.bin\playwright.CMD test tests/e2e/v3-organizer-lifecycle.spec.ts --config playwright.ci-default.config.ts --grep 'organizer can create, autosave, preview, revoke, and publish an event|workspace navigation labels fit without overlap at'
+```
+
+Result: **3 passed, 0 skipped** (lifecycle **35.9s**, ID tablet **7.4s**, EN tablet **5.8s**, total **1.5m**).
+
+Flag-on profile:
+
+```powershell
+$env:FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3='true'; & .\node_modules\.bin\playwright.CMD test tests/e2e/v3-organizer-lifecycle.spec.ts --config playwright.config.ts --grep 'organizer can create, autosave, preview, revoke, and publish an event|workspace navigation labels fit without overlap at'
+```
+
+Result: **3 passed, 0 skipped** (lifecycle **38.7s**, ID tablet **6.8s**, EN tablet **6.0s**, total **1.5m**).
+
+An initial off-mode diagnostic run before the mode-aware publication and navigation branches failed all three cases only at those mode-mismatched assertions; its fixture teardown left zero new lifecycle rows, confirmed by a read-only guarded query before the successful retry. No final run flaked or retried.
+
+### Self-review
+
+- `git diff` is limited to the test spec, its static contract, and this report; no product code, auth, worker, retry, skip, or existing test timeout changed.
+- The exact owner/slug/ID cleanup predicate and 30-second fixture teardown budget remain intact for success and failure paths.
+- The temporary failure probe is absent from the final source; only its prior exact-slug `null` proof remains documented.
+- The protected certificate/report artifacts remain untouched, and no push was performed.

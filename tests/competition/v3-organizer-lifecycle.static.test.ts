@@ -20,7 +20,10 @@ describe("organizer lifecycle wizard E2E contracts", () => {
       'for (const locale of ["id", "en"] as const)',
     );
 
-    expect(lifecycle).toContain('await page.goto(`/id/organizer/events/${encodeURIComponent(eventId!)}/edit`);');
+    expect(lifecycleSpec).toContain('const organizerMasterShellEnabled = process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true";');
+    expect(lifecycleSpec).toContain('const eventEditorRoute = organizerMasterShellEnabled ? "edit" : "overview";');
+    expect(lifecycle).toContain('await page.goto(`/id/organizer/events/${encodeURIComponent(eventId!)}/${eventEditorRoute}`);');
+    expect(lifecycle).toContain('await expect(page).toHaveURL(new RegExp(`/id/organizer/events/[^/]+/${eventEditorRoute}$`));');
     expect(lifecycle).toContain('name: "Kembali"');
     expect(lifecycle).toContain('name: "Lanjut"');
     expect(lifecycle).toContain("Langkah ${step} dari 5");
@@ -30,10 +33,12 @@ describe("organizer lifecycle wizard E2E contracts", () => {
     expect(lifecycle).toContain("Buka pratinjau");
     expect(lifecycle).toContain("Cabut tautan");
     expect(lifecycle).toContain("Terbitkan acara");
+    expect(lifecycle).toContain("if (organizerMasterShellEnabled)");
     expect(lifecycle).toContain('main > header dl div');
     expect(lifecycle).toContain('hasText: "Diterbitkan"');
     expect(lifecycle).toContain('toHaveText("Publikasi")');
     expect(lifecycle).toContain('toHaveText("Diterbitkan")');
+    expect(lifecycle).toContain('getByText("Acara sudah diterbitkan", { exact: true })');
     expect(lifecycle).not.toContain('getByRole("status").filter({ hasText: "Diterbitkan" })');
     expect(lifecycle).not.toContain('getByRole("link", { name: "Tinjau & Terbitkan" })');
     expect(lifecycle).not.toContain('getByRole("link", { name: "Identitas" })');
@@ -54,12 +59,15 @@ describe("organizer lifecycle wizard E2E contracts", () => {
       'test("workspace stays within a 360px viewport"',
     );
 
-    expect(tablet).toContain('await page.goto(`/${locale}/organizer/events/${encodeURIComponent(eventId!)}/edit`);');
+    expect(tablet).toContain('await page.goto(`/${locale}/organizer/events/${encodeURIComponent(eventId!)}/${eventEditorRoute}`);');
+    expect(tablet).toContain('await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+/${eventEditorRoute}$`));');
     expect(tablet).toContain('nav:has(a[aria-current="step"])');
+    expect(tablet).toContain("if (organizerMasterShellEnabled)");
+    expect(tablet).toContain('data-workspace-step-controls');
     expect(tablet).toContain("locator('a[aria-current=\"step\"]')");
     expect(tablet).toContain("toHaveCount(1)");
     expect(tablet.indexOf("overview$/")).toBeGreaterThanOrEqual(0);
-    expect(tablet.indexOf("overview$/")).toBeLessThan(tablet.indexOf('await page.goto(`/${locale}/organizer/events/${encodeURIComponent(eventId!)}/edit`);'));
+    expect(tablet.indexOf("overview$/")).toBeLessThan(tablet.indexOf('await page.goto(`/${locale}/organizer/events/${encodeURIComponent(eventId!)}/${eventEditorRoute}`);'));
   });
 
   it("cleans only exact owner-scoped UI-created events", () => {

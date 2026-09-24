@@ -639,6 +639,9 @@ function eventIdentity() {
   };
 }
 
+const organizerMasterShellEnabled = process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true";
+const eventEditorRoute = organizerMasterShellEnabled ? "edit" : "overview";
+
 const lifecycleDb = new PrismaClient();
 const LIFECYCLE_ORGANIZER_EMAIL = "organizer-a@miraclefc.gg";
 
@@ -838,8 +841,8 @@ test.describe("V3 organizer lifecycle", () => {
       await expect(page).toHaveURL(/\/id\/organizer\/events\/[^/]+\/overview$/, { timeout: 30_000 });
       const eventId = new URL(page.url()).pathname.match(/\/events\/([^/]+)\/overview$/)?.[1];
       expect(eventId).toBeTruthy();
-      await page.goto(`/id/organizer/events/${encodeURIComponent(eventId!)}/edit`);
-      await expect(page).toHaveURL(new RegExp(`/id/organizer/events/[^/]+/edit$`));
+      await page.goto(`/id/organizer/events/${encodeURIComponent(eventId!)}/${eventEditorRoute}`);
+      await expect(page).toHaveURL(new RegExp(`/id/organizer/events/[^/]+/${eventEditorRoute}$`));
 
       const expectStep = async (step: number) => {
         await expect(page.getByText(`Langkah ${step} dari 5`, { exact: true })).toBeVisible();
@@ -899,10 +902,14 @@ test.describe("V3 organizer lifecycle", () => {
       await expect(guestPage.getByRole("heading", { name: /not found|halaman tidak ditemukan/i })).toBeVisible();
 
       await review.getByRole("button", { name: "Terbitkan acara", exact: true }).click();
-      const publication = page.locator('main > header dl div').filter({ hasText: "Diterbitkan" });
-      await expect(publication).toHaveCount(1, { timeout: 20_000 });
-      await expect(publication.locator("dt")).toHaveText("Publikasi");
-      await expect(publication.locator("dd")).toHaveText("Diterbitkan");
+      if (organizerMasterShellEnabled) {
+        const publication = page.locator('main > header dl div').filter({ hasText: "Diterbitkan" });
+        await expect(publication).toHaveCount(1, { timeout: 20_000 });
+        await expect(publication.locator("dt")).toHaveText("Publikasi");
+        await expect(publication.locator("dd")).toHaveText("Diterbitkan");
+      } else {
+        await expect(page.getByText("Acara sudah diterbitkan", { exact: true })).toBeVisible({ timeout: 20_000 });
+      }
       await page.goto(`/id/events/${event.slug}`);
       await expect(page.getByRole("heading", { name: event.name })).toBeVisible({ timeout: 20_000 });
     } finally {
@@ -923,32 +930,37 @@ test.describe("V3 organizer lifecycle", () => {
       await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+/overview$`), { timeout: 30_000 });
       const eventId = new URL(page.url()).pathname.match(/\/events\/([^/]+)\/overview$/)?.[1];
       expect(eventId).toBeTruthy();
-      await page.goto(`/${locale}/organizer/events/${encodeURIComponent(eventId!)}/edit`);
-      await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+\/edit$`));
+      await page.goto(`/${locale}/organizer/events/${encodeURIComponent(eventId!)}/${eventEditorRoute}`);
+      await expect(page).toHaveURL(new RegExp(`/${locale}/organizer/events/[^/]+/${eventEditorRoute}$`));
       const navigation = page.locator('nav:has(a[aria-current="step"])');
-      await expect(navigation).toHaveCount(1);
-      await expect(navigation.locator('a[aria-current="step"]')).toHaveCount(1);
-
-      for (const width of [700, 768, 980]) {
-        await page.setViewportSize({ width, height: 800 });
+      if (organizerMasterShellEnabled) {
+        await expect(navigation).toHaveCount(1);
         await expect(navigation.locator('a[aria-current="step"]')).toHaveCount(1);
-        const layout = await navigation.evaluate((navigation) => {
-          const viewportWidth = document.documentElement.clientWidth;
-          const labels = Array.from(navigation.querySelectorAll<HTMLElement>("a > span:last-child"))
-            .map((label) => {
-              const rect = label.getBoundingClientRect();
-              return { left: Math.round(rect.left), right: Math.round(rect.right), visible: rect.width > 1 && rect.height > 1 };
-            });
-          return {
-            overflow: Array.from(document.querySelectorAll<HTMLElement>("*")).filter((element) => element.getBoundingClientRect().right > viewportWidth + 1).map((element) => element.tagName),
-            labels,
-            overlaps: labels.flatMap((label, index) => labels.slice(index + 1).filter((other) => label.right > other.left + 1).map(() => index)),
-          };
-        });
-        expect(layout.overflow).toEqual([]);
-        expect(layout.labels).toHaveLength(5);
-        expect(layout.labels.filter((label) => label.visible)).toHaveLength(width < 900 ? 0 : 5);
-        expect(layout.overlaps).toEqual([]);
+
+        for (const width of [700, 768, 980]) {
+          await page.setViewportSize({ width, height: 800 });
+          await expect(navigation.locator('a[aria-current="step"]')).toHaveCount(1);
+          const layout = await navigation.evaluate((navigation) => {
+            const viewportWidth = document.documentElement.clientWidth;
+            const labels = Array.from(navigation.querySelectorAll<HTMLElement>("a > span:last-child"))
+              .map((label) => {
+                const rect = label.getBoundingClientRect();
+                return { left: Math.round(rect.left), right: Math.round(rect.right), visible: rect.width > 1 && rect.height > 1 };
+              });
+            return {
+              overflow: Array.from(document.querySelectorAll<HTMLElement>("*")).filter((element) => element.getBoundingClientRect().right > viewportWidth + 1).map((element) => element.tagName),
+              labels,
+              overlaps: labels.flatMap((label, index) => labels.slice(index + 1).filter((other) => label.right > other.left + 1).map(() => index)),
+            };
+          });
+          expect(layout.overflow).toEqual([]);
+          expect(layout.labels).toHaveLength(5);
+          expect(layout.labels.filter((label) => label.visible)).toHaveLength(width < 900 ? 0 : 5);
+          expect(layout.overlaps).toEqual([]);
+        }
+      } else {
+        await expect(navigation).toHaveCount(0);
+        await expect(page.locator("[data-workspace-step-controls]")).toBeVisible();
       }
     });
   }
