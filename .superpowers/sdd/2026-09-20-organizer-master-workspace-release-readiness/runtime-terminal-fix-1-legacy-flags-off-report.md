@@ -154,4 +154,4 @@ No browser, database, reset, seed, Playwright, full CI, deployment,
 production, timeout, retry, skip, or E2E-spec change was made for this review
 fix. The three protected untracked roots remain untouched and unstaged.
 
-Review-fix commit SHA: to be filled after the narrow staged-diff commit.
+Review-fix commit SHA: `8af38f0` (`test: harden legacy flags-off request id contract`).
