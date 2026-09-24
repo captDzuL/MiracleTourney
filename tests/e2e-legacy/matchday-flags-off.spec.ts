@@ -20,8 +20,23 @@ const test = base.extend<{ legacy: LegacyFixture }>({
 });
 
 async function expectV3Unavailable(page: Page, fixture: LegacyFixture) {
-  expect(await page.evaluate(async (url) => (await fetch(url)).status, `/api/events/${fixture.slug}/ongoing`)).toBe(404);
-  expect(await page.evaluate(async (url) => (await fetch(url)).status, `/api/organizer/events/${fixture.id}/competition`)).toBe(404);
+  const publicStatus = await page.evaluate(async (url) => (await fetch(url)).status, `/api/events/${fixture.slug}/ongoing`);
+  expect(publicStatus, `/api/events/${fixture.slug}/ongoing`).toBe(404);
+
+  const privateResponse = await page.evaluate(async (url) => {
+    const response = await fetch(url);
+    return {
+      status: response.status,
+      body: await response.json(),
+      cacheControl: response.headers.get("cache-control"),
+      vary: response.headers.get("vary"),
+    };
+  }, `/api/organizer/events/${fixture.id}/competition`);
+  expect(privateResponse.status, `/api/organizer/events/${fixture.id}/competition`).toBe(503);
+  expect(privateResponse.body).toEqual({ code: "internal_error", requestId: expect.any(String) });
+  expect(privateResponse.body.requestId.length).toBeGreaterThan(0);
+  expect(privateResponse.cacheControl).toBe("private, no-store, max-age=0");
+  expect(privateResponse.vary).toContain("Cookie");
 }
 
 async function openLegacyMatch(page: Page, fixture: LegacyFixture, round: number) {
