@@ -244,3 +244,28 @@ The quick-load contract test now runs the script through the autocannon fixture 
 | `git diff --check` | 0 | No whitespace errors. |
 
 Files changed in this review round: `scripts/run-dashboard-performance.mjs`, `tests/performance/organizer-readers.test.ts`, `tests/performance/autocannon-fixture-loader.mjs`, and this report. The Schannel preflight was not retried; live preview/browser/load, database, full E2E, reset/seed, push, and deployment remain out of scope and blocked as previously recorded.
+
+## Review fix round 2 — independent gate and observer-order contracts — 2026-09-24
+
+The second review-round test hardening is complete. The observer contract now exercises both opposing orders (`first-input=240` then `event=30`, and `event=30` then `first-input=240`) and retains the shared maximum in both cases, alongside event-only, first-input-only, invalid/non-finite, and no-metric cases. The production observer implementation was already correct; this round strengthens regression resistance without changing it.
+
+The autocannon fixture now has independent `slow`, `errors`, `non2xx`, `boundary-pass` (p97.5=2,999), and `boundary-fail` (p97.5=3,000) modes. Each mode runs the real quick-load script entrypoint and asserts all three captured calls independently: exact full loopback origin plus `/id`, `/id/events`, and `/id/events/kuroko-summer-cup/bracket`; exact 50 connections, 5-second duration, and headers; zero/non-zero errors and non-2xx fields; and the strict p97.5 `< 3,000 ms` boundary. Exact URL equality rejects prefix-lookalike routes, and exact captured option keys reject redirect/allowlisting options.
+
+### TDD evidence
+
+| Phase | Command | Result |
+| --- | --- | --- |
+| RED | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts -t "(shared finite-only|exact local quick-load route/options|quick-load gates)"` | Exit 1; 12 tests collected, 1 new independent-gate contract failed, 2 selected contracts passed, 9 skipped. The existing fixture emitted p97.5=100 for `boundary-pass` instead of the required 2,999. |
+| GREEN | same focused command | Exit 0; 1 file, 3 selected tests passed, 9 skipped; 1.06 s. |
+| Focused unit | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts` | Exit 0; 1 file, 12 tests passed; 2.14 s. |
+
+### Static verification
+
+| Command | Exit | Result |
+| --- | ---: | --- |
+| `node node_modules/typescript/bin/tsc --noEmit --incremental false` | 0 | TypeScript check passed. |
+| `node node_modules/eslint/bin/eslint.js scripts/run-dashboard-performance.mjs scripts/load-test-quick.mjs tests/performance/organizer-readers.test.ts tests/performance/autocannon-fixture-loader.mjs` | 0 | No errors. |
+| `node --check scripts/run-dashboard-performance.mjs` and `node --check scripts/load-test-quick.mjs` and `node --check tests/performance/autocannon-fixture-loader.mjs` | 0 | All relevant scripts parsed successfully. |
+| `git diff --check` | 0 | No whitespace errors. |
+
+No browser, database, full E2E, live load target, reset/seed, push, deployment, or Schannel retry was performed. External credentialed preview/load and preflight gates remain blocked as previously recorded.

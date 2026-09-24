@@ -299,15 +299,17 @@ function observerForType(observers: readonly ObserverRecord[], type: string): Ob
   return observer;
 }
 
-type LoadScriptProcess = Readonly<{ exitCode: number; stdout: string; stderr: string }>;
+type LoadFixtureMode = "healthy" | "failing" | "slow" | "errors" | "non2xx" | "boundary-pass" | "boundary-fail" | "missing";
+type LoadScriptProcess = Readonly<{ exitCode: number; stdout: string; stderr: string; baseUrl: string | null }>;
 
-async function runLoadScriptWithOutput(scriptName: string, mode: "healthy" | "failing" | "missing"): Promise<LoadScriptProcess> {
+async function runLoadScriptWithOutput(scriptName: string, mode: LoadFixtureMode): Promise<LoadScriptProcess> {
   const environment = { ...process.env };
   const server = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/plain" });
     response.end("fixture");
   });
   let args: string[];
+  let baseUrl: string | null = null;
   if (mode === "missing") {
     delete environment.BASE_URL;
     args = [fileURLToPath(new URL(`../../${scriptName}`, import.meta.url))];
@@ -316,7 +318,8 @@ async function runLoadScriptWithOutput(scriptName: string, mode: "healthy" | "fa
     await once(server, "listening");
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("Fixture server did not expose a port");
-    environment.BASE_URL = `http://127.0.0.1:${address.port}`;
+    baseUrl = `http://127.0.0.1:${address.port}`;
+    environment.BASE_URL = baseUrl;
     environment.LOAD_FIXTURE_MODE = mode;
     args = [
       "--experimental-loader",
@@ -335,10 +338,11 @@ async function runLoadScriptWithOutput(scriptName: string, mode: "healthy" | "fa
     exitCode: exitCode ?? -1,
     stdout: Buffer.concat(stdout).toString("utf8"),
     stderr: Buffer.concat(stderr).toString("utf8"),
+    baseUrl,
   };
 }
 
-async function runLoadScript(scriptName: string, mode: "healthy" | "failing" | "missing"): Promise<number> {
+async function runLoadScript(scriptName: string, mode: LoadFixtureMode): Promise<number> {
   return (await runLoadScriptWithOutput(scriptName, mode)).exitCode;
 }
 
@@ -423,6 +427,11 @@ describe("organizer reader release-scale contracts", () => {
     observerForType(opposing.observers, "event").callback({ getEntries: () => [{ duration: 30 }] });
     expect(opposing.pageWindow.__miracleDashboardPerformance?.inp).toBe(240);
 
+    const lowThenHigh = executeObserverInit(browserScript);
+    observerForType(lowThenHigh.observers, "event").callback({ getEntries: () => [{ duration: 30 }] });
+    observerForType(lowThenHigh.observers, "first-input").callback({ getEntries: () => [{ duration: 240 }] });
+    expect(lowThenHigh.pageWindow.__miracleDashboardPerformance?.inp).toBe(240);
+
     const cases = [
       { name: "event-only", event: [{ duration: 30 }], firstInput: [], expected: 30 },
       { name: "first-input-only", event: [], firstInput: [{ duration: 240 }], expected: 240 },
@@ -471,10 +480,11 @@ describe("organizer reader release-scale contracts", () => {
       ["duration", "headers", "result", "url", "connections"].sort(),
       ["duration", "headers", "result", "url", "connections"].sort(),
     ]);
-    expect(calls.map(({ url, connections, duration, headers }) => ({ path: new URL(url).pathname, connections, duration, headers }))).toEqual([
-      { path: "/id", connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
-      { path: "/id/events", connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
-      { path: "/id/events/kuroko-summer-cup/bracket", connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
+    expect(result.baseUrl).toBeDefined();
+    expect(calls.map(({ url, connections, duration, headers }) => ({ url, connections, duration, headers }))).toEqual([
+      { url: `${result.baseUrl}/id`, connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
+      { url: `${result.baseUrl}/id/events`, connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
+      { url: `${result.baseUrl}/id/events/kuroko-summer-cup/bracket`, connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
     ]);
     expect(calls.map(({ result }) => result)).toEqual([
       { p97_5: 100, errors: 0, non2xx: 0 },
@@ -484,6 +494,29 @@ describe("organizer reader release-scale contracts", () => {
     expect(quickLoadScript).toMatch(/const P97_5_BUDGET_MS = 3_000;/);
     expect(quickLoadScript).toMatch(/r\.p97_5 < P97_5_BUDGET_MS/);
     expect(quickLoadScript).not.toMatch(/redirect|allow(?:ed|list)/i);
+  });
+
+  it("enforces quick-load gates independently at the p97.5 boundary", async () => {
+    const cases: ReadonlyArray<Readonly<{
+      mode: Exclude<LoadFixtureMode, "missing">;
+      exitCode: number;
+      result: { p97_5: number; errors: number; non2xx: number };
+    }>> = [
+      { mode: "boundary-pass", exitCode: 0, result: { p97_5: 2_999, errors: 0, non2xx: 0 } },
+      { mode: "boundary-fail", exitCode: 1, result: { p97_5: 3_000, errors: 0, non2xx: 0 } },
+      { mode: "slow", exitCode: 1, result: { p97_5: 3_500, errors: 0, non2xx: 0 } },
+      { mode: "errors", exitCode: 1, result: { p97_5: 2_999, errors: 1, non2xx: 0 } },
+      { mode: "non2xx", exitCode: 1, result: { p97_5: 2_999, errors: 0, non2xx: 1 } },
+    ];
+    for (const item of cases) {
+      const process = await runLoadScriptWithOutput("scripts/load-test-quick.mjs", item.mode);
+      expect(process.exitCode, item.mode).toBe(item.exitCode);
+      const captureLine = process.stdout.split(/\r?\n/).find((line) => line.startsWith("AUTOCANNON_FIXTURE_CALLS="));
+      expect(captureLine, item.mode).toBeDefined();
+      const calls = JSON.parse(captureLine?.slice("AUTOCANNON_FIXTURE_CALLS=".length) ?? "null") as Array<{ result: typeof item.result }>;
+      expect(calls).toHaveLength(3);
+      expect(calls.map(({ result }) => result), item.mode).toEqual([item.result, item.result, item.result]);
+    }
   });
 
   it("uses exact locale-prefixed local quick-load routes and preserves the load budget", () => {
