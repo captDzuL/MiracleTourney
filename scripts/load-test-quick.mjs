@@ -23,7 +23,7 @@ const routes = isProd
   : [
       { label: "Home page", path: "/id" },
       { label: "Events list", path: "/id/events" },
-      { label: "Bracket (kuroko-summer-cup)", path: "/id/events/kuroko-summer-cup/bracket" },
+      { label: "Bracket (flashpeak-champions-32)", path: "/id/events/flashpeak-champions-32/bracket" },
     ];
 
 async function measure(label, path) {

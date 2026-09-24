@@ -316,3 +316,18 @@ The single requested runtime confirmation was executed against the current guard
 | `/id/events/kuroko-summer-cup/bracket` | 72 | 595 ms | 1,378 ms | 0 | 359 (404) | Failed non-2xx gate |
 
 The dashboard run is local evidence only and does not replace credentialed preview/RUM evidence. The quick-load blockers are a real local performance breach on `/id` and a missing local `kuroko-summer-cup` route returning 404; no budget, status handling, redirect policy, timeout, retry, or script behavior was weakened. The Task 9 performance/release decision remains `BLOCKED` pending diagnosis of those local results plus external preview/load/RUM evidence.
+
+## Review round 3 — canonical local public bracket fixture — 2026-09-24
+
+The runtime quick-load failure diagnosis confirmed that `kuroko-summer-cup` is a seeded Draft and correctly returns 404 publicly. The canonical seeded public bracket fixture is `flashpeak-champions-32`. This round changes only the local quick-load label/path and its two exact contract assertions; the production routes and all load gates remain unchanged.
+
+TDD evidence:
+
+| Stage | Result |
+| --- | --- |
+| RED after changing both exact test assertions first, with script still on Kuroko | 2 focused tests failed: captured Kuroko URL/label did not match the required `flashpeak-champions-32` contract. |
+| GREEN after changing only local script label/path | 2 focused tests passed; full `organizer-readers` contract file passed 12/12. |
+| Changed-file ESLint | Passed for `scripts/load-test-quick.mjs` and `tests/performance/organizer-readers.test.ts`. |
+| Syntax/diff checks | `node --check scripts/load-test-quick.mjs` and `git diff --check` passed. |
+
+The local quick-load contract remains exactly 50 connections × 5 seconds per route, with the existing text/html headers, strict zero errors/non-2xx handling, and p97.5 `< 3,000 ms`; no redirect option or allowlisting was added. No browser, load, database, E2E, reset/seed, deployment, or runtime confirmation was run in this round.

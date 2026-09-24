@@ -484,7 +484,7 @@ describe("organizer reader release-scale contracts", () => {
     expect(calls.map(({ url, connections, duration, headers }) => ({ url, connections, duration, headers }))).toEqual([
       { url: `${result.baseUrl}/id`, connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
       { url: `${result.baseUrl}/id/events`, connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
-      { url: `${result.baseUrl}/id/events/kuroko-summer-cup/bracket`, connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
+      { url: `${result.baseUrl}/id/events/flashpeak-champions-32/bracket`, connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
     ]);
     expect(calls.map(({ result }) => result)).toEqual([
       { p97_5: 100, errors: 0, non2xx: 0 },
@@ -525,7 +525,7 @@ describe("organizer reader release-scale contracts", () => {
     expect(localRoutes).toBeDefined();
     expect(localRoutes).toMatch(/label: "Home page", path: "\/id"/);
     expect(localRoutes).toMatch(/label: "Events list", path: "\/id\/events"/);
-    expect(localRoutes).toMatch(/label: "Bracket \(kuroko-summer-cup\)", path: "\/id\/events\/kuroko-summer-cup\/bracket"/);
+    expect(localRoutes).toMatch(/label: "Bracket \(flashpeak-champions-32\)", path: "\/id\/events\/flashpeak-champions-32\/bracket"/);
     expect(localRoutes).not.toMatch(/path: "\/(?:events|$)/);
     expect(quickLoadScript).toMatch(/connections: 50/);
     expect(quickLoadScript).toMatch(/duration: 5/);
