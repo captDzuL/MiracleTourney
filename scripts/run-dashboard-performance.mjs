@@ -11,11 +11,17 @@ const eventId = process.env.DASHBOARD_PERF_EVENT_ID;
 const publicEventSlug = process.env.DASHBOARD_PERF_PUBLIC_EVENT_SLUG;
 const thresholdMs = Number(process.env.DASHBOARD_PERF_THRESHOLD_MS ?? "3000");
 const browserBudgets = { lcpMs: 2_500, inpMs: 200, cls: 0.1, ttfbMs: 800 };
+const INP_OBSERVATION_TIMEOUT_MS = 250;
+const INP_OBSERVATION_POLLING_MS = 10;
 const PERFORMANCE_OBSERVER_INIT = `
 (() => {
-  const state = { lcp: null, inp: null, firstInput: null, cls: 0, clsAvailable: false };
+  const state = { lcp: null, inp: null, cls: 0, clsAvailable: false };
   window.__miracleDashboardPerformance = state;
   if (typeof PerformanceObserver !== "function") return;
+  const recordInteractionDuration = (duration) => {
+    if (typeof duration !== "number" || !Number.isFinite(duration)) return;
+    state.inp = state.inp === null ? duration : Math.max(state.inp, duration);
+  };
   try {
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) state.lcp = Number(entry.startTime);
@@ -23,15 +29,12 @@ const PERFORMANCE_OBSERVER_INIT = `
   } catch {}
   try {
     new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) state.inp = Math.max(state.inp ?? 0, Number(entry.duration) || 0);
+      for (const entry of list.getEntries()) recordInteractionDuration(entry.duration);
     }).observe({ type: "event", buffered: true, durationThreshold: 16 });
   } catch {}
   try {
     new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) {
-        const duration = Number(entry.duration);
-        if (Number.isFinite(duration)) state.firstInput = duration;
-      }
+      for (const entry of list.getEntries()) recordInteractionDuration(entry.duration);
     }).observe({ type: "first-input", buffered: true });
   } catch {}
   try {
@@ -78,7 +81,14 @@ async function preparePerformanceObservers(page) {
 
 async function recordRepresentativeInteraction(page) {
   await page.locator("body").click({ position: { x: 4, y: 4 }, force: true });
-  await page.waitForTimeout(50);
+  await page.waitForFunction(
+    () => {
+      const duration = window.__miracleDashboardPerformance?.inp;
+      return typeof duration === "number" && Number.isFinite(duration);
+    },
+    undefined,
+    { timeout: INP_OBSERVATION_TIMEOUT_MS, polling: INP_OBSERVATION_POLLING_MS },
+  ).catch(() => {});
 }
 
 async function measure(page, path) {
@@ -94,11 +104,7 @@ async function measure(page, path) {
       ? Number(navigation.responseStart) - Number(navigation.requestStart)
       : null;
     const lcp = typeof observed?.lcp === "number" && Number.isFinite(observed.lcp) ? observed.lcp : null;
-    const inp = typeof observed?.inp === "number" && Number.isFinite(observed.inp)
-      ? observed.inp
-      : typeof observed?.firstInput === "number" && Number.isFinite(observed.firstInput)
-        ? observed.firstInput
-        : null;
+    const inp = typeof observed?.inp === "number" && Number.isFinite(observed.inp) ? observed.inp : null;
     const cls = observed?.clsAvailable && typeof observed.cls === "number" && Number.isFinite(observed.cls) ? observed.cls : null;
     return { lcp, inp, cls, ttfb };
   });

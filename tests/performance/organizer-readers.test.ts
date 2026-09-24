@@ -272,7 +272,36 @@ function extractObserverInit(browserScript: string): string {
   return match[1];
 }
 
-async function runLoadScript(scriptName: string, mode: "healthy" | "failing" | "missing"): Promise<number> {
+type ObserverEntry = Readonly<{ duration?: number }>;
+type ObserverList = Readonly<{ getEntries: () => readonly ObserverEntry[] }>;
+type ObserverRecord = {
+  callback: (list: ObserverList) => void;
+  options: Record<string, unknown>;
+};
+
+function executeObserverInit(browserScript: string) {
+  const observers: ObserverRecord[] = [];
+  class FakePerformanceObserver {
+    constructor(private readonly callback: ObserverRecord["callback"]) {}
+
+    observe(options: Record<string, unknown>) {
+      observers.push({ callback: this.callback, options });
+    }
+  }
+  const pageWindow: { __miracleDashboardPerformance?: Record<string, unknown> } = {};
+  runInNewContext(extractObserverInit(browserScript), { PerformanceObserver: FakePerformanceObserver, window: pageWindow });
+  return { observers, pageWindow };
+}
+
+function observerForType(observers: readonly ObserverRecord[], type: string): ObserverRecord {
+  const observer = observers.find(({ options }) => options.type === type);
+  if (!observer) throw new Error(`Missing ${type} observer`);
+  return observer;
+}
+
+type LoadScriptProcess = Readonly<{ exitCode: number; stdout: string; stderr: string }>;
+
+async function runLoadScriptWithOutput(scriptName: string, mode: "healthy" | "failing" | "missing"): Promise<LoadScriptProcess> {
   const environment = { ...process.env };
   const server = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/plain" });
@@ -296,9 +325,21 @@ async function runLoadScript(scriptName: string, mode: "healthy" | "failing" | "
     ];
   }
   const child = spawn(process.execPath, args, { env: environment, stdio: ["ignore", "pipe", "pipe"] });
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
+  child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
   const [exitCode] = await once(child, "close") as [number | null, string | null];
   if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
-  return exitCode ?? -1;
+  return {
+    exitCode: exitCode ?? -1,
+    stdout: Buffer.concat(stdout).toString("utf8"),
+    stderr: Buffer.concat(stderr).toString("utf8"),
+  };
+}
+
+async function runLoadScript(scriptName: string, mode: "healthy" | "failing" | "missing"): Promise<number> {
+  return (await runLoadScriptWithOutput(scriptName, mode)).exitCode;
 }
 
 describe("organizer reader release-scale contracts", () => {
@@ -373,36 +414,76 @@ describe("organizer reader release-scale contracts", () => {
     expect(browserScript).toMatch(/INP[\s\S]*unavailable/);
   });
 
-  it("uses one buffered first-input fallback for a representative lab INP click", () => {
+  it("records a shared finite-only interaction maximum across event and first-input observers", () => {
     const browserScript = source("scripts/run-dashboard-performance.mjs");
-    const observerInit = extractObserverInit(browserScript);
-    type ObserverEntry = Readonly<{ duration?: number }>;
-    type ObserverList = Readonly<{ getEntries: () => readonly ObserverEntry[] }>;
-    type ObserverRecord = {
-      callback: (list: ObserverList) => void;
-      options: Record<string, unknown>;
-    };
-    const observers: ObserverRecord[] = [];
-    class FakePerformanceObserver {
-      constructor(private readonly callback: ObserverRecord["callback"]) {}
+    const opposing = executeObserverInit(browserScript);
+    expect(observerForType(opposing.observers, "event").options).toEqual({ type: "event", buffered: true, durationThreshold: 16 });
+    expect(observerForType(opposing.observers, "first-input").options).toEqual({ type: "first-input", buffered: true });
+    observerForType(opposing.observers, "first-input").callback({ getEntries: () => [{ duration: 240 }] });
+    observerForType(opposing.observers, "event").callback({ getEntries: () => [{ duration: 30 }] });
+    expect(opposing.pageWindow.__miracleDashboardPerformance?.inp).toBe(240);
 
-      observe(options: Record<string, unknown>) {
-        observers.push({ callback: this.callback, options });
-      }
+    const cases = [
+      { name: "event-only", event: [{ duration: 30 }], firstInput: [], expected: 30 },
+      { name: "first-input-only", event: [], firstInput: [{ duration: 240 }], expected: 240 },
+      { name: "no metric", event: [], firstInput: [], expected: null },
+      { name: "nonfinite", event: [{ duration: Number.NaN }, { duration: Number.POSITIVE_INFINITY }, {}], firstInput: [{ duration: Number.NaN }], expected: null },
+    ] as const;
+    for (const item of cases) {
+      const { observers, pageWindow } = executeObserverInit(browserScript);
+      observerForType(observers, "event").callback({ getEntries: () => item.event });
+      observerForType(observers, "first-input").callback({ getEntries: () => item.firstInput });
+      expect(pageWindow.__miracleDashboardPerformance?.inp, item.name).toBe(item.expected);
     }
-    const pageWindow: { __miracleDashboardPerformance?: Record<string, unknown> } = {};
-    runInNewContext(observerInit, { PerformanceObserver: FakePerformanceObserver, window: pageWindow });
 
-    expect(observers.find(({ options }) => options.type === "event")?.options).toMatchObject({ buffered: true, durationThreshold: 16 });
-    const firstInput = observers.find(({ options }) => options.type === "first-input");
-    expect(firstInput?.options).toEqual({ type: "first-input", buffered: true });
-    firstInput?.callback({ getEntries: () => [{ duration: 37.5 }] });
-    expect(pageWindow.__miracleDashboardPerformance?.firstInput).toBe(37.5);
-
-    expect(browserScript).toMatch(/const inp[\s\S]*observed\?\.inp[\s\S]*observed\?\.firstInput/);
+    const observerInit = extractObserverInit(browserScript);
+    expect(observerInit).toContain("recordInteractionDuration");
+    expect(observerInit).not.toContain("Number(entry.duration) || 0");
+    expect(browserScript).toMatch(/const inp = typeof observed\?\.inp[\s\S]*: null/);
+    expect(browserScript).toMatch(/browserBudgets = \{[^}]*inpMs: 200/);
+    expect(browserScript).toMatch(/typeof value !== "number" \|\| !Number\.isFinite\(value\) \|\| value >= budget/);
     expect(browserScript).toMatch(/metricFailures[\s\S]*INP[\s\S]*unavailable/);
     const interaction = browserScript.match(/async function recordRepresentativeInteraction\(page\) \{[\s\S]*?\n\}/)?.[0];
     expect(interaction?.match(/\.click\(/g)).toHaveLength(1);
+    expect(interaction).toContain("waitForFunction");
+    expect(interaction).not.toContain("waitForTimeout");
+    expect(interaction).toMatch(/timeout:\s*(?:INP_OBSERVATION_TIMEOUT_MS|\d+)/);
+    expect(interaction).toMatch(/polling:\s*(?:INP_OBSERVATION_POLLING_MS|\d+)/);
+    expect(interaction).toMatch(/catch\(\s*\(\)\s*=>\s*\{\}\s*\)/);
+  });
+
+  it("executes the exact local quick-load route/options contract", async () => {
+    const quickLoadScript = source("scripts/load-test-quick.mjs");
+    const result = await runLoadScriptWithOutput("scripts/load-test-quick.mjs", "healthy");
+    expect(result.exitCode).toBe(0);
+    const captureLine = result.stdout.split(/\r?\n/).find((line) => line.startsWith("AUTOCANNON_FIXTURE_CALLS="));
+    expect(captureLine).toBeDefined();
+    const calls = JSON.parse(captureLine?.slice("AUTOCANNON_FIXTURE_CALLS=".length) ?? "null") as Array<{
+      url: string;
+      connections: number;
+      duration: number;
+      headers: Record<string, string>;
+      result: { p97_5: number; errors: number; non2xx: number };
+    }>;
+    expect(calls).toHaveLength(3);
+    expect(calls.map((call) => Object.keys(call).sort())).toEqual([
+      ["duration", "headers", "result", "url", "connections"].sort(),
+      ["duration", "headers", "result", "url", "connections"].sort(),
+      ["duration", "headers", "result", "url", "connections"].sort(),
+    ]);
+    expect(calls.map(({ url, connections, duration, headers }) => ({ path: new URL(url).pathname, connections, duration, headers }))).toEqual([
+      { path: "/id", connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
+      { path: "/id/events", connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
+      { path: "/id/events/kuroko-summer-cup/bracket", connections: 50, duration: 5, headers: { accept: "text/html,application/xhtml+xml" } },
+    ]);
+    expect(calls.map(({ result }) => result)).toEqual([
+      { p97_5: 100, errors: 0, non2xx: 0 },
+      { p97_5: 100, errors: 0, non2xx: 0 },
+      { p97_5: 100, errors: 0, non2xx: 0 },
+    ]);
+    expect(quickLoadScript).toMatch(/const P97_5_BUDGET_MS = 3_000;/);
+    expect(quickLoadScript).toMatch(/r\.p97_5 < P97_5_BUDGET_MS/);
+    expect(quickLoadScript).not.toMatch(/redirect|allow(?:ed|list)/i);
   });
 
   it("uses exact locale-prefixed local quick-load routes and preserves the load budget", () => {

@@ -219,3 +219,28 @@ The execution-boundary Windows Schannel preflight failure remains unchanged and 
 | `git diff --check` | 0 | No whitespace errors. |
 
 Files changed for this fix: `scripts/run-dashboard-performance.mjs`, `scripts/load-test-quick.mjs`, `tests/performance/organizer-readers.test.ts`, and this report. No product behavior, thresholds, retries, timeouts, full load script, database, browser run, E2E run, reset/seed, push, or deployment was changed or executed. Residual risks remain the blocked credentialed preview/browser/load evidence and the external Schannel preflight boundary.
+
+## Review fix round 1 — runtime-harness contracts — 2026-09-24
+
+The review-required follow-up is complete. The browser harness now feeds both buffered `event` and buffered `first-input` entries through one finite-only `recordInteractionDuration` reducer. It retains the maximum valid duration regardless of observer order, ignores missing/non-finite values without coercing them to zero, and leaves `inp` null when no valid evidence exists. After the single representative body click, `recordRepresentativeInteraction` uses a bounded `waitForFunction` poll for that shared metric; timeout is swallowed so the existing fail-closed `<200 ms` metric failure remains authoritative. No fixed sleep or synthetic delay remains.
+
+The quick-load contract test now runs the script through the autocannon fixture loader, captures every actual URL/options object, and deep-compares the exact local route set, 50 connections, 5-second duration, accepted header, p97.5 result, zero errors/non-2xx, and absence of redirect/allowlisting options. The fixture loader change is test-only and does not alter the full load script or production behavior.
+
+### TDD evidence
+
+| Phase | Command | Result |
+| --- | --- | --- |
+| RED | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts -t "(shared finite-only|exact local quick-load route/options)"` | Exit 1; 11 tests collected, 2 review contracts failed, 9 skipped. The opposing observer case produced 30 instead of the required shared maximum 240; the capture marker was absent before fixture instrumentation. |
+| GREEN | same focused command | Exit 0; 1 file, 2 selected tests passed, 9 skipped; 440 ms. |
+| Focused unit | `node node_modules/vitest/vitest.mjs run tests/performance/organizer-readers.test.ts` | Exit 0; 1 file, 11 tests passed; 1.60 s. |
+
+### Static verification
+
+| Command | Exit | Result |
+| --- | ---: | --- |
+| `node node_modules/typescript/bin/tsc --noEmit --incremental false` | 0 | TypeScript check passed. |
+| `node node_modules/eslint/bin/eslint.js scripts/run-dashboard-performance.mjs scripts/load-test-quick.mjs tests/performance/organizer-readers.test.ts tests/performance/autocannon-fixture-loader.mjs` | 0 | No errors. |
+| `node --check scripts/run-dashboard-performance.mjs` and `node --check scripts/load-test-quick.mjs` and `node --check tests/performance/autocannon-fixture-loader.mjs` | 0 | All changed scripts parsed successfully. |
+| `git diff --check` | 0 | No whitespace errors. |
+
+Files changed in this review round: `scripts/run-dashboard-performance.mjs`, `tests/performance/organizer-readers.test.ts`, `tests/performance/autocannon-fixture-loader.mjs`, and this report. The Schannel preflight was not retried; live preview/browser/load, database, full E2E, reset/seed, push, and deployment remain out of scope and blocked as previously recorded.
