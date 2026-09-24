@@ -10,15 +10,15 @@ const migration = readFileSync(
 
 function migrationGuard(source: string) {
   const start = source.indexOf("DO $$");
-  const end = source.indexOf("$$;", start);
-  if (start < 0 || end < 0) throw new Error("Expected a complete PostgreSQL DO guard");
-  return source.slice(start, end);
+  const endMarker = /END\s*\$\$;/m.exec(source.slice(start));
+  if (start < 0 || !endMarker || endMarker.index === undefined) throw new Error("Expected a complete PostgreSQL DO guard");
+  const end = start + endMarker.index + endMarker[0].length;
+  return { start, end, source: source.slice(start, end) };
 }
 
 describe("password reset token migration contract", () => {
   it("fails closed on duplicate user reset rows before creating the unique index", () => {
-    const guard = migrationGuard(migration);
-    const guardStart = migration.indexOf("DO $$");
+    const { start: guardStart, end: guardEnd, source: guard } = migrationGuard(migration);
     const uniqueIndex = migration.indexOf('CREATE UNIQUE INDEX IF NOT EXISTS "PasswordResetToken_userId_key"');
 
     expect(guard).toContain("IF EXISTS");
@@ -27,8 +27,9 @@ describe("password reset token migration contract", () => {
     expect(guard).toMatch(/HAVING\s+COUNT\(\*\)\s*>\s*1/);
     expect(guard).toContain("RAISE EXCEPTION");
     expect(guard).toMatch(/duplicate.*PasswordResetToken.*userId|PasswordResetToken.*userId.*duplicate/i);
+    expect(guard).toMatch(/END\s*\$\$;/);
     expect(guardStart).toBeGreaterThanOrEqual(0);
-    expect(uniqueIndex).toBeGreaterThan(guardStart);
+    expect(uniqueIndex).toBeGreaterThan(guardEnd);
   });
 
   it("does not delete, deduplicate, update, or insert legacy reset rows", () => {

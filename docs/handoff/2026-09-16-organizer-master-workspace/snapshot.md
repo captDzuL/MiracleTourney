@@ -48,9 +48,10 @@ and a fresh whole-branch Sol/high review with no P0/P1/P2.
   `/id/login` p95 concern (4,387 ms, then 3,783 ms; zero failures) without
   weakening the 3,000 ms contract. Fresh scoped 5.6-Sol/high re-review is
   **PENDING**, not approved.
-- Overall status remains **BLOCKED only by external evidence**: final-SHA
-  GitHub CI; Vercel preview/logs/RUM/rollback/PIC; Neon recovery console,
-  restore rehearsal, and migration integration; and the live 64-team query/p95.
+- Overall status remains **BLOCKED** by the local pressure RED (`/id/login`
+  p95 `4197ms`, max `4199ms`, failures `0`, exit `1`) plus final-SHA GitHub
+  CI; Vercel preview/logs/RUM/rollback/PIC; Neon recovery console, restore
+  rehearsal, and migration integration; and the live 64-team query/p95.
 
 ## Final bounded migration-safety correction — 2026-09-24
 
@@ -70,6 +71,53 @@ and a fresh whole-branch Sol/high review with no P0/P1/P2.
   push, or PR was run. Status remains **BLOCKED** on final-SHA CI,
   Vercel/preview/log/RUM/PIC, Neon recovery/restore/migration integration,
   live 64-team query/p95/load evidence, and fresh scoped Sol/high review.
+
+### Password-reset duplicate guard operator procedure
+
+The six skipped final-suite tests are intentional: one guarded migration-DB
+integration and five opt-in installed-browser renderer tests. If the migration
+guard raises, freeze password-reset issuance and obtain explicit
+release/security/data-owner approval. Run this exact read-only diagnostic:
+
+```sql
+SELECT "userId", COUNT(*) AS "duplicateCount"
+FROM "PasswordResetToken"
+GROUP BY "userId"
+HAVING COUNT(*) > 1
+ORDER BY "duplicateCount" DESC, "userId";
+```
+
+Wait through the exact 30-minute effective TTL for every affected row. Effective
+expiry is the earlier of `expiresAt` and `createdAt + INTERVAL '30 minutes'`.
+In one explicit owner-approved transaction, delete only affected duplicate-user
+rows where `usedAt IS NOT NULL` or effective expiry is at/before
+`CURRENT_TIMESTAMP`; review `RETURNING`, roll back if needed, and never silently
+deduplicate:
+
+```sql
+BEGIN;
+WITH duplicate_users AS (
+  SELECT "userId"
+  FROM "PasswordResetToken"
+  GROUP BY "userId"
+  HAVING COUNT(*) > 1
+)
+DELETE FROM "PasswordResetToken" AS t
+USING duplicate_users AS d
+WHERE t."userId" = d."userId"
+  AND (
+    t."usedAt" IS NOT NULL
+    OR LEAST(t."expiresAt", t."createdAt" + INTERVAL '30 minutes') <= CURRENT_TIMESTAMP
+  )
+RETURNING t."id", t."userId", t."tokenFormat", t."createdAt", t."expiresAt", t."usedAt";
+-- Review RETURNING rows; ROLLBACK on disagreement, otherwise COMMIT.
+COMMIT;
+```
+
+Re-run the exact diagnostic and require zero rows before applying the migration;
+stop for owner direction if any duplicate remains. A digest rollback
+invalidates digest-only rows and requires a fresh reset request; never interpret
+a digest as a raw token or weaken the legacy fallback.
 
 ## Historical handoff details — 2026-09-16 (non-operative)
 

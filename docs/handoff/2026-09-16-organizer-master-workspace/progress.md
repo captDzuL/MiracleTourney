@@ -16,13 +16,14 @@ Release decision at this point: BLOCKED. No READY claim is permitted.
 - Task 12 created `2026-09-14-release-1.0-verification.md` only after fresh evidence was available. The report is explicitly `BLOCKED`; no production deployment, migration, restore, flag activation, force-push, or PR was performed.
 - The ignored `.superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/progress.md` ledger was updated with the final-review fix-wave facts below; it remains an orchestrator-owned evidence record.
 
-### Task 12 external blockers
+### Task 12 blockers
 
 1. Authorized `.env.test` with guarded Delicate/preview `DATABASE_URL` and `DIRECT_URL` is absent, so shared-Neon E2E, reset/completion/certificate persistence, manipulated-ID runtime checks, 64-team live query/pressure checks, and migration/shadow-database review cannot run.
 2. No authorized Vercel project/session, known-good preview deployment ID, preview URL, Runtime Logs export, deployment-failure notification proof, saved-view/PIC access proof, or deployed Speed Insights/RUM sample is available.
 3. No final-SHA GitHub Actions run URL/result or fresh whole-branch Sol/high verdict is available.
 4. Neon snapshot/PITR/retention/RPO/RTO/PIC/switchover details and a fresh non-production restore rehearsal with integrity queries are unavailable.
 5. Repository/code owner action is required for the two local full-suite failures recorded in the verification report, followed by a complete-suite rerun on the resulting HEAD; focused tests do not resolve that gate.
+6. Local pressure is also RED: `/id/login` p95 `4197ms`, max `4199ms`, failures `0`, exit `1`; the `<3000ms` contract remains unchanged.
 
 The release decision remains `BLOCKED` until every required security, recovery,
 CI, preview, monitoring, performance, review, and evidence gate is green.
@@ -53,7 +54,8 @@ CI, preview, monitoring, performance, review, and evidence gate is green.
   (4,387 ms and 3,783 ms, zero request failures) without threshold changes;
   this is retained as a concern, not promoted to a release blocker.
 - Fresh scoped 5.6-Sol/high re-review is **PENDING**; no approval is claimed.
-  Overall release status remains **BLOCKED only by external evidence**:
+  Overall release status remains **BLOCKED** by the local pressure RED
+  (`/id/login` p95 `4197ms`, max `4199ms`, failures `0`, exit `1`) plus
   final-SHA GitHub CI; credentialed Vercel preview/logs/RUM/rollback/PIC;
   Neon recovery console/restore rehearsal/migration integration; and the
   live 64-team query/p95.
@@ -80,7 +82,54 @@ CI, preview, monitoring, performance, review, and evidence gate is green.
   PR was run. Release remains **BLOCKED** on final-SHA CI, authorized
   Vercel/preview/log/RUM/PIC evidence, Neon recovery/restore/migration
   integration, live 64-team query/p95/load evidence, and fresh scoped
-  Sol/high review.
+  Sol/high review, plus the local pressure RED above.
+
+### Password-reset duplicate guard operator procedure
+
+The six skipped final-suite tests are intentional: one guarded migration-DB
+integration and five opt-in installed-browser renderer tests. If the migration
+guard raises, freeze password-reset issuance and obtain explicit
+release/security/data-owner approval. Run this exact read-only diagnostic:
+
+```sql
+SELECT "userId", COUNT(*) AS "duplicateCount"
+FROM "PasswordResetToken"
+GROUP BY "userId"
+HAVING COUNT(*) > 1
+ORDER BY "duplicateCount" DESC, "userId";
+```
+
+Wait through the exact 30-minute effective TTL for every affected row. Effective
+expiry is the earlier of `expiresAt` and `createdAt + INTERVAL '30 minutes'`.
+In one explicit owner-approved transaction, delete only affected duplicate-user
+rows where `usedAt IS NOT NULL` or effective expiry is at/before
+`CURRENT_TIMESTAMP`; review `RETURNING`, roll back if needed, and never silently
+deduplicate:
+
+```sql
+BEGIN;
+WITH duplicate_users AS (
+  SELECT "userId"
+  FROM "PasswordResetToken"
+  GROUP BY "userId"
+  HAVING COUNT(*) > 1
+)
+DELETE FROM "PasswordResetToken" AS t
+USING duplicate_users AS d
+WHERE t."userId" = d."userId"
+  AND (
+    t."usedAt" IS NOT NULL
+    OR LEAST(t."expiresAt", t."createdAt" + INTERVAL '30 minutes') <= CURRENT_TIMESTAMP
+  )
+RETURNING t."id", t."userId", t."tokenFormat", t."createdAt", t."expiresAt", t."usedAt";
+-- Review RETURNING rows; ROLLBACK on disagreement, otherwise COMMIT.
+COMMIT;
+```
+
+Re-run the exact diagnostic and require zero rows before applying the migration;
+stop for owner direction if any duplicate remains. A digest rollback
+invalidates digest-only rows and requires a fresh reset request; never interpret
+a digest as a raw token or weaken the legacy fallback.
 
 ## Historical handoff details — 2026-09-16 (non-operative)
 
