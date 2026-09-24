@@ -10,6 +10,66 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
+const OVERNIGHT_INITIAL_DESCRIPTION = "New event created from admin panel.";
+const OVERNIGHT_FINAL_DESCRIPTION = "Ready legacy admin event for V3 publish readiness coverage.";
+const OVERNIGHT_ORGANIZER_EMAIL = "organizer-a@miraclefc.gg";
+const OVERNIGHT_CLEANUP_TIMEOUT = 30_000;
+
+type OvernightEventIdentity = { name: string; slug: string };
+type OvernightEventTracker = (event: OvernightEventIdentity) => void;
+
+async function cleanupCreatedOvernightEvent(event: OvernightEventIdentity) {
+  const rows = await prisma.event.findMany({
+    where: { slug: event.slug, name: event.name },
+    select: { id: true, slug: true, name: true, description: true, organizerUserId: true },
+  });
+  if (rows.length === 0) return;
+  if (rows.length > 1) {
+    throw new Error(`Refusing to clean ${event.slug}: found ${rows.length} exact name/slug matches`);
+  }
+
+  const created = rows[0];
+  if (!created) throw new Error(`Refusing to clean ${event.slug}: exact event row was not readable`);
+  const organizer = await prisma.user.findUnique({
+    where: { email: OVERNIGHT_ORGANIZER_EMAIL },
+    select: { id: true },
+  });
+  const isInitialState =
+    created.description === OVERNIGHT_INITIAL_DESCRIPTION && created.organizerUserId === null;
+  const isFinalState =
+    organizer !== null &&
+    created.description === OVERNIGHT_FINAL_DESCRIPTION &&
+    created.organizerUserId === organizer.id;
+  if (!isInitialState && !isFinalState) {
+    throw new Error(`Refusing to clean ${event.slug}: unexpected description/owner lifecycle state`);
+  }
+
+  const exactWhere = {
+    id: created.id,
+    slug: event.slug,
+    name: event.name,
+    description: created.description,
+    organizerUserId: created.organizerUserId,
+  };
+  const result = await prisma.event.deleteMany({ where: exactWhere });
+  if (result.count !== 1) {
+    throw new Error(`Expected to clean exactly one overnight event, deleted ${result.count}`);
+  }
+  const remaining = await prisma.event.count({ where: exactWhere });
+  if (remaining !== 0) throw new Error(`Overnight event ${event.slug} remained after cleanup`);
+}
+
+const overnightTest = test.extend<{ trackOvernightEvent: OvernightEventTracker }>({
+  trackOvernightEvent: [async ({}, use) => {
+    let trackedEvent: OvernightEventIdentity | undefined;
+    const trackOvernightEvent: OvernightEventTracker = (event) => {
+      trackedEvent = event;
+    };
+    await use(trackOvernightEvent);
+    if (trackedEvent) await cleanupCreatedOvernightEvent(trackedEvent);
+  }, { timeout: OVERNIGHT_CLEANUP_TIMEOUT }],
+});
+
 const csvHeader = "event_slug,team_name,team_tag,captain_name,captain_contact,captain_ign,captain_uid,Player 1 Nickname,Player 2 Nickname";
 
 function teamImportCsv(slug: string, teamNumbers: number[]) {
@@ -134,7 +194,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   await expect(page.getByRole("main")).toBeVisible();
 });
 
-test("registration order stays private and imports stop after drawing publication", async ({ page }) => {
+overnightTest("registration order stays private and imports stop after drawing publication", async ({ page, trackOvernightEvent }) => {
   test.setTimeout(240_000);
   const suffix = randomUUID().slice(0, 8);
   const eventName = `Flashpeak 24 ${suffix}`;
@@ -152,6 +212,7 @@ test("registration order stays private and imports stop after drawing publicatio
   await createEventForm.getByLabel("Game and mode").selectOption("mode-flashpeak-5v5");
   await createEventForm.getByLabel("Format").selectOption("Single Elimination");
   await createEventForm.getByLabel("Participant cap").selectOption("24");
+  trackOvernightEvent({ name: eventName, slug });
   await createEventForm.getByRole("button", { name: /create draft event|buat draft event/i }).click();
   await expect(page).toHaveURL(/\/admin\?success=event-created/);
 
@@ -170,7 +231,7 @@ test("registration order stays private and imports stop after drawing publicatio
   await prisma.event.update({
     where: { id: eventId },
     data: {
-      description: "Ready legacy admin event for V3 publish readiness coverage.",
+      description: OVERNIGHT_FINAL_DESCRIPTION,
       formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination,
       registrationOpensAt: new Date("2026-10-01T02:00:00.000Z"),
       registrationClosesAt: new Date("2026-10-07T14:00:00.000Z"),
