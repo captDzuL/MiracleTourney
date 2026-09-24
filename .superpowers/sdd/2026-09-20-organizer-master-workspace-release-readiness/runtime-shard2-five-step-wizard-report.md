@@ -160,3 +160,61 @@ The final verification run passed the focused static command **4/4** with **0 sk
 - The three focused cases remain fully asserted in both profiles; the only mode-specific difference is the valid rendered navigation contract.
 - The unconditional width loop now prevents either profile from silently skipping its tablet geometry checks, and static coverage requires the off-mode overlap/overflow/bounds assertions.
 - Protected artifacts remain untouched, the transient failure probe remains absent, and no push was performed.
+
+## Review round 4: exact visible flag-off setup controls
+
+### TDD RED/GREEN
+
+The focused static command remained:
+
+```powershell
+.\node_modules\.bin\vitest.CMD run tests/competition/v3-organizer-lifecycle.static.test.ts
+```
+
+The first round-4 contract ran RED with **1 failed, 3 passed, 0 skipped** in **519 ms**. It failed because the flag-off source had no `directControls` contract: it filtered zero-sized children out before overlap analysis and never required three visible direct children. The minimal E2E change added the exact direct-child count, localized Back/progress/Continue identities, three visibility assertions, and an unfiltered three-child/non-zero geometry assertion. The first GREEN was **4 passed, 0 skipped** in **275 ms**.
+
+A final semantic tightening required those three children to be exactly `BUTTON`, `P`, `BUTTON`, rather than merely named elements. That focused check ran RED with **1 failed, 3 passed, 0 skipped** in **301 ms**, then GREEN with **4 passed, 0 skipped** in **300 ms** after the matching one-line browser assertion was added. The final static contract also fixes the ordering requirement: direct-child visibility precedes geometry evaluation, and non-zero child geometry precedes the existing bounds assertions. The final verification run was **4 passed, 0 skipped** in **283 ms**.
+
+At each unconditional width of **700, 768, and 980 px**, flag-off now proves the wrapper has exactly three direct children in Back button / progress paragraph / Continue button order, checks the locale-specific labels (`Kembali` / `Langkah 1 dari 5` / `Lanjut` and `Back` / `Step 1 of 5` / `Continue`), and requires every child to be visible and non-zero before the existing bounds, overflow, and overlap assertions. The Step 1 Back button remains disabled but must still be visible. Flag-on geometry is unchanged.
+
+### Dual-profile browser proof
+
+Both final profiles ran after the exact child-role assertion, serially with one worker against the current guarded database. Neither command reset or seeded the database, and neither run skipped, retried, or flaked.
+
+Default/off profile, with the feature flag explicitly unset:
+
+```powershell
+Remove-Item Env:FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 -ErrorAction SilentlyContinue; & .\node_modules\.bin\playwright.CMD test tests/e2e/v3-organizer-lifecycle.spec.ts --config playwright.ci-default.config.ts --grep 'organizer can create, autosave, preview, revoke, and publish an event|workspace navigation labels fit without overlap at'
+```
+
+Result: **3 passed, 0 skipped** (lifecycle **31.7s**, ID tablet **6.9s**, EN tablet **6.1s**, total **1.4m**).
+
+Flag-on profile:
+
+```powershell
+$env:FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3='true'; & .\node_modules\.bin\playwright.CMD test tests/e2e/v3-organizer-lifecycle.spec.ts --config playwright.config.ts --grep 'organizer can create, autosave, preview, revoke, and publish an event|workspace navigation labels fit without overlap at'
+```
+
+Result: **3 passed, 0 skipped** (lifecycle **37.4s**, ID tablet **6.3s**, EN tablet **6.0s**, total **1.4m**).
+
+### Cleanup and final verification
+
+The read-only guarded residue query selected exact `V3 Lifecycle` rows created since `2026-09-24T05:00:00.000Z` by ID, name, slug, and creation time. It returned `[]` after both final profiles.
+
+```powershell
+node --env-file=.env.test --input-type=module -e 'import { PrismaClient } from "@prisma/client"; const prisma = new PrismaClient(); const rows = await prisma.event.findMany({ where: { name: { startsWith: "V3 Lifecycle" }, createdAt: { gte: new Date("2026-09-24T05:00:00.000Z") } }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, slug: true, createdAt: true } }); console.log(JSON.stringify(rows, null, 2)); await prisma.$disconnect();'
+```
+
+Final verification results:
+
+- focused static contract: **4/4 passed**, **0 skipped**, **283 ms**;
+- `tsc --noEmit`: exit 0;
+- changed-file ESLint for the E2E and static contract: exit 0;
+- `git diff --check`: exit 0, with only normal LF-to-CRLF working-copy warnings.
+
+### Self-review
+
+- The round-4 diff is test-only plus this report: no production, authentication, config, timeout, retry, skip, worker, cleanup, or other assertion changed.
+- The unconditional width loop and flag-on branch are untouched. The flag-off assertions are additive and execute before the existing geometry assertions.
+- Exact fixture cleanup remains unchanged and the guarded post-run query confirms no new lifecycle residue.
+- The protected pre-existing untracked artifacts remain untouched, and no push was performed.

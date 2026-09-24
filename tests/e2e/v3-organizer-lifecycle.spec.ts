@@ -959,6 +959,15 @@ test.describe("V3 organizer lifecycle", () => {
           await expect(navigation).toHaveCount(0);
           const controls = page.locator("[data-workspace-step-controls]");
           await expect(controls).toBeVisible();
+          const directControls = controls.locator(":scope > *");
+          await expect(directControls).toHaveCount(3);
+          expect(await directControls.evaluateAll((elements) => elements.map((element) => element.tagName))).toEqual(["BUTTON", "P", "BUTTON"]);
+          await expect(directControls.nth(0)).toBeVisible();
+          await expect(directControls.nth(0)).toHaveAccessibleName(locale === "id" ? "Kembali" : "Back");
+          await expect(directControls.nth(1)).toBeVisible();
+          await expect(directControls.nth(1)).toHaveText(locale === "id" ? "Langkah 1 dari 5" : "Step 1 of 5");
+          await expect(directControls.nth(2)).toBeVisible();
+          await expect(directControls.nth(2)).toHaveAccessibleName(locale === "id" ? "Lanjut" : "Continue");
           const layout = await controls.evaluate((controls) => {
             const viewportWidth = document.documentElement.clientWidth;
             const bounds = controls.getBoundingClientRect();
@@ -966,8 +975,7 @@ test.describe("V3 organizer lifecycle", () => {
               .map((element) => {
                 const rect = (element as HTMLElement).getBoundingClientRect();
                 return { left: rect.left, right: rect.right, visible: rect.width > 0 && rect.height > 0 };
-              })
-              .filter((child) => child.visible);
+              });
             const overflowingElements = Array.from(controls.querySelectorAll<HTMLElement>("*"))
               .filter((element) => {
                 const rect = element.getBoundingClientRect();
@@ -977,10 +985,13 @@ test.describe("V3 organizer lifecycle", () => {
             return {
               pageOverflow: document.documentElement.scrollWidth > viewportWidth,
               controlsWithinViewport: bounds.left >= -1 && bounds.right <= viewportWidth + 1,
+              children,
               overflowingElements,
               overlaps: children.flatMap((child, index) => children.slice(index + 1).filter((other) => child.right > other.left + 1).map(() => index)),
             };
           });
+          expect(layout.children).toHaveLength(3);
+          expect(layout.children.map((child) => child.visible)).toEqual([true, true, true]);
           expect(layout.pageOverflow).toBe(false);
           expect(layout.controlsWithinViewport).toBe(true);
           expect(layout.overflowingElements).toEqual([]);
