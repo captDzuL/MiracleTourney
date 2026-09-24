@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 type CiModule = {
   RELEASE_STEPS: readonly [label: string, command: "pnpm", args: readonly string[]][];
+  VISUAL_PROFILE_STEPS: readonly [label: string, command: "pnpm", args: readonly string[]][];
   runCommand(
     command: string,
     args: string[],
@@ -63,7 +64,7 @@ describe("CI E2E release sequence", () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
   it("guards the shared database, then runs Match Day, two fresh-server shards, and flags-off profiles serially", async () => {
-    const { RELEASE_STEPS, runE2eCi } = await import(ciModulePath) as CiModule;
+    const { RELEASE_STEPS, VISUAL_PROFILE_STEPS, runE2eCi } = await import(ciModulePath) as CiModule;
     const calls: string[] = [];
     const runCommand = vi.fn(async (command: string, args: string[]) => {
       calls.push([command, ...args].join(" "));
@@ -78,8 +79,11 @@ describe("CI E2E release sequence", () => {
       "pnpm exec playwright test --config playwright.ci-default.config.ts --shard=1/2 --fail-on-flaky-tests",
       "pnpm exec playwright test --config playwright.ci-default.config.ts --shard=2/2 --fail-on-flaky-tests",
       "pnpm exec playwright test --config playwright.smoke.config.ts --fail-on-flaky-tests",
+      "pnpm exec playwright test --config playwright.visual-v2.config.ts --fail-on-flaky-tests",
       "pnpm exec playwright test --config playwright.legacy.config.ts --fail-on-flaky-tests",
     ]);
+    expect(calls.filter((call) => call.includes("--config playwright.smoke.config.ts"))).toHaveLength(1);
+    expect(calls.filter((call) => call.includes("--config playwright.visual-v2.config.ts"))).toHaveLength(1);
     expect(RELEASE_STEPS.map(([label]) => label)).toEqual([
       "Database preflight",
       "Database reset and seed",
@@ -89,6 +93,38 @@ describe("CI E2E release sequence", () => {
       "Visual profile",
       "Legacy flags-off profile",
     ]);
+    expect(VISUAL_PROFILE_STEPS).toEqual([
+      [
+        "Visual profile V3 foundation",
+        "pnpm",
+        ["exec", "playwright", "test", "--config", "playwright.smoke.config.ts", "--fail-on-flaky-tests"],
+      ],
+      [
+        "Visual profile public V2",
+        "pnpm",
+        ["exec", "playwright", "test", "--config", "playwright.visual-v2.config.ts", "--fail-on-flaky-tests"],
+      ],
+    ]);
+  });
+
+  it("fails closed inside the visual phase before starting V2 when V3 fails", async () => {
+    const { runE2eCi } = await import(ciModulePath) as CiModule;
+    const calls: string[] = [];
+    const runCommand = vi.fn(async (command: string, args: string[]) => {
+      const call = [command, ...args].join(" ");
+      calls.push(call);
+      if (call === "pnpm exec playwright test --config playwright.smoke.config.ts --fail-on-flaky-tests") {
+        throw new Error("V3 visual failed");
+      }
+    });
+
+    await expect(runE2eCi({ runCommand })).rejects.toThrow("V3 visual failed");
+    expect(calls.at(-1)).toBe(
+      "pnpm exec playwright test --config playwright.smoke.config.ts --fail-on-flaky-tests",
+    );
+    expect(calls).not.toContain(
+      "pnpm exec playwright test --config playwright.visual-v2.config.ts --fail-on-flaky-tests",
+    );
   });
 
   it("stops before later profiles when a guarded step fails", async () => {

@@ -58,14 +58,49 @@ describe("Playwright CI configuration", () => {
     ]);
   });
 
-  it("forces public visual v2 for Playwright and the spawned smoke server", async () => {
-    vi.stubEnv("FEATURE_FLAG_PUBLIC_VISUAL_V2", "false");
+  it("keeps the smoke profile explicit V3-only and excludes only the V2 suite", async () => {
+    vi.stubEnv("FEATURE_FLAG_UI_V3_FOUNDATION", "false");
+    vi.stubEnv("FEATURE_FLAG_PUBLIC_VISUAL_V2", "true");
 
     const { default: config } = await import("../playwright.smoke.config");
 
-    expect(process.env.FEATURE_FLAG_PUBLIC_VISUAL_V2).toBe("true");
+    expect(process.env.FEATURE_FLAG_UI_V3_FOUNDATION).toBe("true");
+    expect(process.env.FEATURE_FLAG_PUBLIC_VISUAL_V2).toBe("false");
+    expect(config.workers).toBe(1);
+    expect(config.retries).toBe(0);
+    expect(config.testIgnore).toEqual([/public-visual-v2\.smoke\.spec\.ts$/]);
+    expect(config.testMatch).toBeUndefined();
+    expect(config.use?.baseURL).toBe("http://127.0.0.1:3101");
+    expect(config.outputDir).toContain("visual-v3");
     expect(config.webServer).toMatchObject({
-      env: expect.objectContaining({ FEATURE_FLAG_PUBLIC_VISUAL_V2: "true" }),
+      env: expect.objectContaining({
+        FEATURE_FLAG_UI_V3_FOUNDATION: "true",
+        FEATURE_FLAG_PUBLIC_VISUAL_V2: "false",
+      }),
+    });
+  });
+
+  it("isolates the dedicated V2 profile with its own port and test match", async () => {
+    vi.stubEnv("FEATURE_FLAG_UI_V3_FOUNDATION", "false");
+    vi.stubEnv("FEATURE_FLAG_PUBLIC_VISUAL_V2", "false");
+    vi.stubEnv("PLAYWRIGHT_VISUAL_V2_PORT", "3312");
+
+    const { default: config } = await import("../playwright.visual-v2.config");
+
+    expect(process.env.FEATURE_FLAG_UI_V3_FOUNDATION).toBe("true");
+    expect(process.env.FEATURE_FLAG_PUBLIC_VISUAL_V2).toBe("true");
+    expect(config.workers).toBe(1);
+    expect(config.retries).toBe(0);
+    expect(config.testDir).toBe("./tests/e2e-smoke");
+    expect(config.testMatch).toEqual(/public-visual-v2\.smoke\.spec\.ts$/);
+    expect(config.testIgnore).toBeUndefined();
+    expect(config.use?.baseURL).toBe("http://127.0.0.1:3312");
+    expect(config.outputDir).toContain("visual-v2");
+    expect(config.webServer).toMatchObject({
+      env: expect.objectContaining({
+        FEATURE_FLAG_UI_V3_FOUNDATION: "true",
+        FEATURE_FLAG_PUBLIC_VISUAL_V2: "true",
+      }),
     });
   });
 

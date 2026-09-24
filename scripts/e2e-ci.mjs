@@ -49,6 +49,29 @@ export function runCommand(
   });
 }
 
+const VISUAL_V3_ARGS = [
+  "exec",
+  "playwright",
+  "test",
+  "--config",
+  "playwright.smoke.config.ts",
+  "--fail-on-flaky-tests",
+];
+const VISUAL_V2_ARGS = [
+  "exec",
+  "playwright",
+  "test",
+  "--config",
+  "playwright.visual-v2.config.ts",
+  "--fail-on-flaky-tests",
+];
+
+/** @type {readonly [label: string, command: "pnpm", args: readonly string[]][]} */
+export const VISUAL_PROFILE_STEPS = [
+  ["Visual profile V3 foundation", "pnpm", VISUAL_V3_ARGS],
+  ["Visual profile public V2", "pnpm", VISUAL_V2_ARGS],
+];
+
 /** @type {readonly [label: string, command: "pnpm", args: readonly string[]][]} */
 export const RELEASE_STEPS = [
   ["Database preflight", "pnpm", ["test:e2e:preflight"]],
@@ -93,14 +116,7 @@ export const RELEASE_STEPS = [
   [
     "Visual profile",
     "pnpm",
-    [
-      "exec",
-      "playwright",
-      "test",
-      "--config",
-      "playwright.smoke.config.ts",
-      "--fail-on-flaky-tests",
-    ],
+    VISUAL_V3_ARGS,
   ],
   [
     "Legacy flags-off profile",
@@ -127,7 +143,17 @@ export async function runE2eCi({
       logger.log(`[e2e-ci] START ${label}`);
       const phaseStartedAt = now();
       try {
-        await execute(command, args);
+        // The two visual profiles share .next and therefore must remain serial within one phase.
+        const commands =
+          label === "Visual profile"
+            ? VISUAL_PROFILE_STEPS.map(([, profileCommand, profileArgs]) => [
+                profileCommand,
+                profileArgs,
+              ])
+            : [[command, args]];
+        for (const [phaseCommand, phaseArgs] of commands) {
+          await execute(phaseCommand, phaseArgs);
+        }
       } catch (error) {
         logger.error(`[e2e-ci] FAIL ${label} (${now() - phaseStartedAt}ms)`);
         throw error;
