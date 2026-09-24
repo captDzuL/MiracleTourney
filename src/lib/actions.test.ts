@@ -116,7 +116,7 @@ const {
   signOut: vi.fn(),
   headers: vi.fn(),
   after: vi.fn(),
-  checkRateLimit: vi.fn(),
+  checkRateLimit: vi.fn().mockReturnValue(true),
   updateCaptainPassword: vi.fn(),
   updateEventBrandAssets: vi.fn(),
   updatePaymentSettings: vi.fn(),
@@ -305,7 +305,10 @@ beforeEach(() => {
 });
 
 describe("loginAction", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    checkRateLimit.mockReturnValue(true);
+  });
 
   it("redirects admin to /admin on valid credentials", async () => {
     signIn.mockResolvedValue({ ok: true, user: { role: "admin" } });
@@ -355,6 +358,15 @@ describe("loginAction", () => {
     await expect(loginAction(fd({ email: "bad@test.com", password: "wrong" }))).rejects.toThrow(
       "REDIRECT:/login?error=invalid",
     );
+  });
+
+  it("fails closed with the generic login response when the shared limiter denies", async () => {
+    checkRateLimit.mockReturnValue(false);
+
+    await expect(loginAction(fd({ email: "admin@test.com", password: "secret123" }))).rejects.toThrow(
+      "REDIRECT:/login?error=invalid",
+    );
+    expect(signIn).not.toHaveBeenCalled();
   });
 
   it("preserves adaptive event context after invalid credentials", async () => {

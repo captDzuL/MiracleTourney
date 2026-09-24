@@ -5,7 +5,9 @@ type TokenRow = {
   id: string;
   userId: string;
   token: string;
+  tokenFormat: string;
   expiresAt: Date;
+  createdAt: Date;
   usedAt: Date | null;
 };
 
@@ -35,24 +37,36 @@ const prisma = vi.hoisted(() => {
         state.tokens = state.tokens.filter((row) => row.userId !== where.userId);
         return { count: 1 };
       }),
-      create: vi.fn(async ({ data }: { data: Omit<TokenRow, "id" | "usedAt"> }) => {
-        const row: TokenRow = { ...data, id: `reset-${state.tokens.length + 1}`, usedAt: null };
+      create: vi.fn(async ({ data }: { data: Omit<TokenRow, "id" | "usedAt" | "createdAt"> & { createdAt?: Date } }) => {
+        const row: TokenRow = {
+          ...data,
+          id: `reset-${state.tokens.length + 1}`,
+          createdAt: data.createdAt ?? new Date(),
+          usedAt: null,
+        };
         state.tokens.push(row);
         return row;
       }),
       upsert: vi.fn(async ({ where, update, create }: {
         where: { userId: string };
-        update: { token: string; expiresAt: Date; usedAt: null };
-        create: Omit<TokenRow, "id" | "usedAt">;
+        update: { token: string; tokenFormat: string; expiresAt: Date; usedAt: null };
+        create: Omit<TokenRow, "id" | "usedAt" | "createdAt"> & { createdAt?: Date };
       }) => {
         const existing = state.tokens.find((row) => row.userId === where.userId);
         if (existing) {
           existing.token = update.token;
+          existing.tokenFormat = update.tokenFormat;
           existing.expiresAt = update.expiresAt;
           existing.usedAt = update.usedAt;
           return existing;
         }
-        const row: TokenRow = { ...create, id: `reset-${state.tokens.length + 1}`, usedAt: null };
+        const row: TokenRow = {
+          ...create,
+          tokenFormat: create.tokenFormat,
+          id: `reset-${state.tokens.length + 1}`,
+          createdAt: create.createdAt ?? new Date(),
+          usedAt: null,
+        };
         state.tokens.push(row);
         return row;
       }),
@@ -61,13 +75,14 @@ const prisma = vi.hoisted(() => {
         return row ? { ...row } : null;
       }),
       updateMany: vi.fn(async ({ where, data }: {
-        where: { token: string; usedAt: null; expiresAt: { gt: Date } };
+        where: { token: string; usedAt: null; expiresAt: { gt: Date }; createdAt?: { gt: Date } };
         data: { usedAt: Date };
       }) => {
         const row = state.tokens.find((candidate) =>
           candidate.token === where.token
           && candidate.usedAt === null
-          && candidate.expiresAt.getTime() > where.expiresAt.gt.getTime());
+          && candidate.expiresAt.getTime() > where.expiresAt.gt.getTime()
+          && (!where.createdAt || candidate.createdAt.getTime() > where.createdAt.gt.getTime()));
         if (!row) return { count: 0 };
         row.usedAt = data.usedAt;
         return { count: 1 };
@@ -94,10 +109,13 @@ const prisma = vi.hoisted(() => {
 vi.mock("@/lib/platform/db", () => ({ prisma }));
 
 import {
+  PASSWORD_RESET_LEGACY_RAW_READ_WINDOW_MS,
+  PASSWORD_RESET_LEGACY_TOKEN_FORMAT,
   PASSWORD_RESET_TOKEN_TTL_MS,
   consumePasswordResetToken,
   createPasswordResetToken,
   digestPasswordResetToken,
+  verifyPasswordResetToken,
 } from "./password-reset";
 
 describe("password reset token hardening", () => {
@@ -124,6 +142,7 @@ describe("password reset token hardening", () => {
     expect(state.tokens[0]).toMatchObject({
       userId: "user-1",
       token: digestPasswordResetToken(rawToken),
+      tokenFormat: "sha256",
       expiresAt: new Date(now.getTime() + 30 * 60 * 1000),
     });
     expect(state.tokens[0]?.token).not.toBe(rawToken);
@@ -161,6 +180,44 @@ describe("password reset token hardening", () => {
     ).rejects.toThrow("Token tidak valid atau sudah kadaluarsa");
     expect(state.users.get("user-1")?.passwordHash).toBe("old-hash");
     expect(state.users.get("user-1")?.sessionVersion).toBe(7);
+  });
+
+  it("accepts a legacy raw row only until the exact 30-minute boundary", async () => {
+    const createdAt = new Date("2026-09-21T00:00:00.000Z");
+    const rawToken = "a".repeat(64);
+    state.tokens.push({
+      id: "legacy-1",
+      userId: "user-1",
+      token: rawToken,
+      tokenFormat: PASSWORD_RESET_LEGACY_TOKEN_FORMAT,
+      createdAt,
+      expiresAt: new Date(createdAt.getTime() + 60 * 60 * 1000),
+      usedAt: null,
+    });
+
+    await expect(verifyPasswordResetToken(rawToken, new Date(createdAt.getTime() + 29 * 60 * 1000))).resolves.toMatchObject({ id: "legacy-1" });
+    await expect(consumePasswordResetToken(rawToken, "new-hash", new Date(createdAt.getTime() + PASSWORD_RESET_TOKEN_TTL_MS)))
+      .rejects.toThrow("Token tidak valid atau sudah kadaluarsa");
+    expect(state.users.get("user-1")?.passwordHash).toBe("old-hash");
+    expect(PASSWORD_RESET_LEGACY_RAW_READ_WINDOW_MS).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  it("does not interpret a digest row as a raw token", async () => {
+    const createdAt = new Date("2026-09-21T00:00:00.000Z");
+    const rawToken = "b".repeat(64);
+    state.tokens.push({
+      id: "digest-1",
+      userId: "user-1",
+      token: digestPasswordResetToken(rawToken),
+      tokenFormat: "sha256",
+      createdAt,
+      expiresAt: new Date(createdAt.getTime() + PASSWORD_RESET_TOKEN_TTL_MS),
+      usedAt: null,
+    });
+
+    const checkAt = new Date(createdAt.getTime() + 1_000);
+    await expect(verifyPasswordResetToken(state.tokens[0]!.token, checkAt)).resolves.toBeNull();
+    await expect(verifyPasswordResetToken(rawToken, checkAt)).resolves.toMatchObject({ id: "digest-1" });
   });
 
   it("updates the password, clears temporary state, and revokes sessions once", async () => {
@@ -211,17 +268,19 @@ describe("password reset token hardening", () => {
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
   });
 
-  it("reviews the migration's destructive legacy-token cleanup before unique constraints", () => {
+  it("preserves legacy reset rows while marking their format for bounded compatibility", () => {
     const migrationSql = readFileSync(new URL(
       "../../../prisma/migrations/20260921000000_add_user_session_version/migration.sql",
       import.meta.url,
     ), "utf8");
-    const deleteIndex = migrationSql.indexOf('DELETE FROM "PasswordResetToken"');
     const uniqueIndex = migrationSql.indexOf('PasswordResetToken_userId_key');
     const sessionVersionIndex = migrationSql.indexOf('"sessionVersion"');
+    const formatIndex = migrationSql.indexOf('"tokenFormat"');
 
-    expect(deleteIndex).toBeGreaterThanOrEqual(0);
-    expect(uniqueIndex).toBeGreaterThan(deleteIndex);
-    expect(sessionVersionIndex).toBeGreaterThan(deleteIndex);
+    expect(migrationSql).not.toContain('DELETE FROM "PasswordResetToken"');
+    expect(migrationSql).toContain("DEFAULT 'legacy_raw'");
+    expect(uniqueIndex).toBeGreaterThanOrEqual(0);
+    expect(sessionVersionIndex).toBeGreaterThanOrEqual(0);
+    expect(formatIndex).toBeGreaterThanOrEqual(0);
   });
 });

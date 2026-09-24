@@ -369,7 +369,7 @@ export async function captainSignUpAction(formData: FormData) {
   }
 
   const ip = (await headers()).get("x-forwarded-for") ?? "unknown";
-  if (!checkRateLimit(`register:${ip}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`register:${ip}`, 5, 15 * 60 * 1000))) {
     await signUpError("Terlalu banyak percobaan pendaftaran. Coba lagi dalam 15 menit.");
   }
 
@@ -414,6 +414,10 @@ export async function loginAction(formData: FormData) {
   };
   const email = z.string().email().parse(formData.get("email"));
   const password = z.string().min(1).parse(formData.get("password"));
+  const requestIp = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  if (!(await checkRateLimit(`login:${requestIp}`, 20, 5 * 60 * 1000))) {
+    return await redirectToRequestedLocale(loginErrorPath("invalid"), requestedLocale);
+  }
   let result;
 
   try {
@@ -580,7 +584,7 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
     await redirectToActiveLocale(appendActionError(registrationBase, message) as never);
   }
 
-  if (!request || !checkRateLimit(`payment-proof:${captain.id}:${request.eventId}:${request.id}`, 5, 15 * 60 * 1000)) {
+  if (!request || !(await checkRateLimit(`payment-proof:${captain.id}:${request.eventId}:${request.id}`, 5, 15 * 60 * 1000))) {
     await redirectToActiveLocale(appendActionError(registrationBase, "rate-limited") as never);
   }
 
@@ -731,7 +735,7 @@ export async function captainUploadTeamLogoAction(formData: FormData) {
     return await redirectToActiveLocale(`/captain?tab=roster&error=${encodeURIComponent(message)}`);
   }
 
-  if (!checkRateLimit(`team-logo:${captain.id}:${team.eventId}:${team.id}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`team-logo:${captain.id}:${team.eventId}:${team.id}`, 5, 15 * 60 * 1000))) {
     await redirectToActiveLocale("/captain?tab=roster&error=rate-limited");
   }
 
@@ -1148,7 +1152,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
 export async function adminImportTeamsCsvAction(formData: FormData) {
   const user = await requireAdminSession();
 
-  if (!checkRateLimit(`team-import:${user.id}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`team-import:${user.id}`, 5, 15 * 60 * 1000))) {
     return redirectToActiveLocale("/admin?error=rate-limited");
   }
 
@@ -1495,7 +1499,7 @@ export async function adminUploadCharacterArtAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
 
-  if (!checkRateLimit(`character-art:${user.id}:${eventId}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`character-art:${user.id}:${eventId}`, 5, 15 * 60 * 1000))) {
     return redirectToActiveLocale("/admin?error=rate-limited");
   }
 
@@ -1522,7 +1526,7 @@ async function uploadEventLogo(formData: FormData, returnPath: string, returnSec
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
 
-  if (!checkRateLimit(`event-logo:${user.id}:${eventId}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`event-logo:${user.id}:${eventId}`, 5, 15 * 60 * 1000))) {
     return redirectToActiveLocale(`${returnPath}?error=rate-limited` as never);
   }
 
@@ -1582,7 +1586,7 @@ async function uploadEventVisual(formData: FormData, returnPath: string, returnS
     redirect(`${appendActionError(returnPath, message)}${returnSection === "public" ? "#section-public" : ""}` as never);
   }
 
-  if (!checkRateLimit(`event-visual:${user.id}:${eventId}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`event-visual:${user.id}:${eventId}`, 5, 15 * 60 * 1000))) {
     return redirect(`${returnPath}?error=rate-limited${returnSection === "public" ? "#section-public" : ""}` as never);
   }
 
@@ -1738,7 +1742,7 @@ export async function adminUploadTeamLogoAction(formData: FormData) {
     await redirectToActiveLocale(`/admin?error=${encodeURIComponent(message)}`);
   }
 
-  if (!checkRateLimit(`team-logo:${user.id}:${eventId}:${teamId}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`team-logo:${user.id}:${eventId}:${teamId}`, 5, 15 * 60 * 1000))) {
     await redirectToActiveLocale("/admin?error=rate-limited");
   }
 
@@ -1785,7 +1789,7 @@ export async function adminRegenerateCertificateAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
 
-  if (!checkRateLimit(`cert-regen:${eventId}`, 3, 5 * 60 * 1000)) {
+  if (!(await checkRateLimit(`cert-regen:${eventId}`, 3, 5 * 60 * 1000))) {
     await redirectToActiveLocale(
       `/admin?error=${encodeURIComponent("Terlalu banyak percobaan. Coba lagi dalam beberapa menit.")}`,
     );
@@ -1836,7 +1840,7 @@ async function requestPasswordResetActionImpl(formData: FormData): Promise<Passw
     };
   }
   const requestIp = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  if (!checkRateLimit(`password-reset-request:${requestIp}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`password-reset-request:${requestIp}`, 5, 15 * 60 * 1000))) {
     return { status: "rate_limited", redirectPath: "/forgot-password?sent=1" };
   }
 
@@ -1890,7 +1894,7 @@ async function resetPasswordActionImpl(formData: FormData): Promise<PasswordRese
   const confirm = String(formData.get("confirmPassword") ?? "");
 
   const requestIp = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  if (!checkRateLimit(`password-reset-consume:${requestIp}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`password-reset-consume:${requestIp}`, 5, 15 * 60 * 1000))) {
     return {
       status: "rate_limited",
       redirectPath: `/forgot-password/reset?token=${token}&error=${encodeURIComponent("Token tidak valid atau sudah kadaluarsa.")}`,

@@ -42,14 +42,18 @@ export async function signToken(payload: { sub: string; role: string; sv: number
 export async function verifyToken(token: string): Promise<{ sub: string; role: SessionRole; sv: number } | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret());
+    // During the bounded rollout, pre-sessionVersion tokens are version zero.
+    // The row comparison below still revokes them as soon as the account is
+    // incremented, so this does not weaken nonzero session invalidation.
+    const sessionVersion = payload.sv === undefined ? 0 : payload.sv;
     if (
       typeof payload.sub !== "string"
       || !isSessionRole(payload.role)
-      || typeof payload.sv !== "number"
-      || !Number.isInteger(payload.sv)
-      || payload.sv < 0
+      || typeof sessionVersion !== "number"
+      || !Number.isInteger(sessionVersion)
+      || sessionVersion < 0
     ) return null;
-    return { sub: payload.sub, role: payload.role, sv: payload.sv };
+    return { sub: payload.sub, role: payload.role, sv: sessionVersion };
   } catch {
     return null;
   }

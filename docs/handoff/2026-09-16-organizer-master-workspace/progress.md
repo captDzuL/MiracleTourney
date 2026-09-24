@@ -14,7 +14,7 @@ Release decision at this point: BLOCKED. No READY claim is permitted.
 - Release target: `feature/ui/release/1.0`; no PR was created.
 - Tasks 1–11 have credential-independent implementation/static evidence and task review artifacts. Their guarded shared-Neon/browser, preview, CI-final-SHA, Vercel, Neon recovery, and deployed-RUM gates remain incomplete as recorded in the new release verification report.
 - Task 12 created `2026-09-14-release-1.0-verification.md` only after fresh evidence was available. The report is explicitly `BLOCKED`; no production deployment, migration, restore, flag activation, force-push, or PR was performed.
-- The ignored `.superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/progress.md` ledger remains orchestrator-owned and was not edited in this pass.
+- The ignored `.superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/progress.md` ledger was updated with the final-review fix-wave facts below; it remains an orchestrator-owned evidence record.
 
 ### Task 12 external blockers
 
@@ -26,6 +26,37 @@ Release decision at this point: BLOCKED. No READY claim is permitted.
 
 The release decision remains `BLOCKED` until every required security, recovery,
 CI, preview, monitoring, performance, review, and evidence gate is green.
+
+## Final-review fix wave — 2026-09-24
+
+- Base reviewed: `b97b9e80aa92806e23cfb93752f2cf4c630cbe09` on the isolated
+  `codex/organizer-release-readiness` branch. No push, PR, deployment,
+  migration, reset, seed, or production operation was performed.
+- Whole-branch review P2 remediation is bounded and complete in the working
+  tree: the process-local limiter is now a shared Prisma CAS bucket with
+  digest-only keys, bounded deny-only local tracking, and fail-closed errors;
+  session/reset rollout accepts version-zero legacy sessions safely and writes
+  digest-form reset tokens with an explicit bounded legacy window; the
+  registration contract fixture now mocks the new async limiter seam.
+- The authoritative pre-fix local matrix remains: Prisma valid; TypeScript
+  exit 0; ESLint 0 errors/56 warnings; unit 207 passed/2 skipped files and
+  2,433 passed/6 intentional skips; smoke 24/24; pressure p95 2,370/414/52
+  ms with zero failures; audit clean; and build 46/46.
+- Terminal gates are CLOSED, not blockers: legacy 4/4; split visual V3 24/24
+  plus V2 9/9 with zero skips/retries/flakes; and warmed quick-load HTTP 200
+  with p97.5 2,945/2,069/1,582 ms and zero errors.
+- Fresh bounded verification is captured in the ignored
+  `whole-branch-final-fix-report.md`: generate/validate, nonincremental
+  TypeScript, actual ESLint, complete Vitest plus the affected-file repair,
+  DB-free smoke, pressure, audit, build, diff check, and status. The fresh
+  pressure environment reproduced a local `/id/login` p95 concern twice
+  (4,387 ms and 3,783 ms, zero request failures) without threshold changes;
+  this is retained as a concern, not promoted to a release blocker.
+- Fresh scoped 5.6-Sol/high re-review is **PENDING**; no approval is claimed.
+  Overall release status remains **BLOCKED only by external evidence**:
+  final-SHA GitHub CI; credentialed Vercel preview/logs/RUM/rollback/PIC;
+  Neon recovery console/restore rehearsal/migration integration; and the
+  live 64-team query/p95.
 
 ## Historical handoff details — 2026-09-16 (non-operative)
 

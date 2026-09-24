@@ -49,11 +49,11 @@ async function regenerateCertificateActionImpl(input: unknown): Promise<Regenera
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const access = await gate(parsed.data.eventId);
   if ("status" in access) return access;
-  if (!checkRateLimit(
+  if (!(await checkRateLimit(
     `certificate-v3:regenerate:${access.actor.id}:${parsed.data.eventId}`,
     CERTIFICATE_REGENERATION_RATE_LIMIT,
     CERTIFICATE_REGENERATION_RATE_LIMIT_WINDOW_MS,
-  )) {
+  ))) {
     return { status: "blocked", code: "rate_limited" };
   }
   const result = await regenerateCertificate(parsed.data, createPrismaCertificateStudioDependencies(access.actor));
@@ -70,7 +70,7 @@ async function publishCertificateSetActionImpl(input: unknown): Promise<Certific
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const access = await gate(parsed.data.eventId);
   if ("status" in access) return access;
-  if (!checkRateLimit(`certificate-v3:publish:${access.actor.id}:${parsed.data.eventId}`, 5, 5 * 60 * 1000)) {
+  if (!(await checkRateLimit(`certificate-v3:publish:${access.actor.id}:${parsed.data.eventId}`, 5, 5 * 60 * 1000))) {
     return { status: "blocked", code: "rate_limited" };
   }
   const result = await publishCertificateSet(parsed.data, createPrismaCertificateStudioDependencies(access.actor));
@@ -95,7 +95,7 @@ async function uploadCertificateAssetActionImpl(formData: FormData) {
   if (!parsed.success) return { status: "blocked" as const, code: "invalid_input" as const };
   const access = await gate(parsed.data.eventId);
   if ("status" in access) return access;
-  if (!checkRateLimit(`certificate-asset:${access.actor.id}:${parsed.data.eventId}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`certificate-asset:${access.actor.id}:${parsed.data.eventId}`, 5, 15 * 60 * 1000))) {
     return { status: "blocked" as const, code: "rate_limited" as const };
   }
   let asset: Awaited<ReturnType<typeof uploadImageAsset>>;

@@ -49,7 +49,7 @@ async function captainEventLoginActionImpl(
 
   const forwarded = (await headers()).get("x-forwarded-for") ?? "unknown";
   const ip = forwarded.split(",")[0]?.trim() || "unknown";
-  if (!checkRateLimit(`captain-event-login:${ip}`, 10, 60_000)) {
+  if (!(await checkRateLimit(`captain-event-login:${ip}`, 10, 60_000))) {
     return { status: "error", code: "rate_limited" };
   }
 

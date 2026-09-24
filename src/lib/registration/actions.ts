@@ -73,7 +73,7 @@ async function captainRegisterEventTeamActionImpl(formData: FormData) {
   if (!eventId.success) {
     return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
   }
-  if (!checkRateLimit(`registration:${captainId}:${eventId.data}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`registration:${captainId}:${eventId.data}`, 5, 15 * 60 * 1000))) {
     return redirectToActiveLocale(registrationErrorPath(safeSlug, "rate-limited"));
   }
 

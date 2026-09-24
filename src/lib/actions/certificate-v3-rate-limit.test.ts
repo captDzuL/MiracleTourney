@@ -8,11 +8,24 @@ const external = vi.hoisted(() => ({
   regenerate: vi.fn(),
 }));
 
+const rateLimitState = vi.hoisted(() => ({
+  buckets: new Map<string, { count: number; resetAt: Date }>(),
+}));
+
+const rateLimitBucket = vi.hoisted(() => ({
+  findUnique: vi.fn(),
+  create: vi.fn(),
+  updateMany: vi.fn(),
+  findMany: vi.fn(),
+  deleteMany: vi.fn(),
+}));
+
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: external.flag }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: external.session }));
 vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent: external.manage, getCertificateByEvent: vi.fn() }));
 vi.mock("@/lib/certificate/studio-repository", () => ({ createPrismaCertificateStudioDependencies: external.deps }));
+vi.mock("@/lib/platform/db", () => ({ prisma: { rateLimitBucket } }));
 vi.mock("@/lib/certificate/service", async (load) => {
   const actual = await load<typeof import("@/lib/certificate/service")>();
   return { ...actual, regenerateCertificate: external.regenerate };
@@ -20,6 +33,7 @@ vi.mock("@/lib/certificate/service", async (load) => {
 
 import { regenerateCertificateAction } from "./certificate-v3-actions";
 import { CERTIFICATE_REGENERATION_RATE_LIMIT, CERTIFICATE_REGENERATION_RATE_LIMIT_WINDOW_MS } from "./certificate-v3-rate-limit";
+import { resetRateLimitForTests } from "@/lib/rate-limit";
 
 const input = (eventId: string, idempotencyKey = crypto.randomUUID()) => ({
   eventId,
@@ -28,11 +42,46 @@ const input = (eventId: string, idempotencyKey = crypto.randomUUID()) => ({
   idempotencyKey,
 });
 
+function installRateLimitStore() {
+  rateLimitBucket.findUnique.mockImplementation(async ({ where }: { where: { key: string } }) => {
+    const bucket = rateLimitState.buckets.get(where.key);
+    return bucket ? { ...bucket } : null;
+  });
+  rateLimitBucket.create.mockImplementation(async ({ data }: {
+    data: { key: string; count: number; resetAt: Date };
+  }) => {
+    if (rateLimitState.buckets.has(data.key)) {
+      throw Object.assign(new Error("unique"), { code: "P2002" });
+    }
+    const bucket = { ...data };
+    rateLimitState.buckets.set(data.key, bucket);
+    return { ...bucket };
+  });
+  rateLimitBucket.updateMany.mockImplementation(async ({ where, data }: {
+    where: { key: string; count?: number; resetAt?: Date };
+    data: { count: number | { increment: number }; resetAt?: Date };
+  }) => {
+    const bucket = rateLimitState.buckets.get(where.key);
+    const resetAtMatches = !where.resetAt || bucket?.resetAt.getTime() === where.resetAt.getTime();
+    if (!bucket || where.count !== undefined && bucket.count !== where.count || !resetAtMatches) {
+      return { count: 0 };
+    }
+    bucket.count = typeof data.count === "number" ? data.count : bucket.count + data.count.increment;
+    if (data.resetAt) bucket.resetAt = data.resetAt;
+    return { count: 1 };
+  });
+  rateLimitBucket.findMany.mockResolvedValue([]);
+  rateLimitBucket.deleteMany.mockResolvedValue({ count: 0 });
+}
+
 describe("certificate regeneration rate limit", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-23T00:00:00.000Z"));
     vi.clearAllMocks();
+    rateLimitState.buckets.clear();
+    resetRateLimitForTests();
+    installRateLimitStore();
     external.flag.mockReturnValue(true);
     external.session.mockResolvedValue({ id: "organizer-rate-limit", role: "organizer", mustChangePassword: false });
     external.manage.mockResolvedValue(undefined);

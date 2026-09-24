@@ -308,7 +308,12 @@ const { state, prisma, resetState } = vi.hoisted(() => {
   return { state, prisma, resetState };
 });
 
+const { checkRateLimit } = vi.hoisted(() => ({
+  checkRateLimit: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock("../platform/db", () => ({ prisma }));
+vi.mock("../rate-limit", () => ({ checkRateLimit }));
 vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn, revalidateTag: vi.fn() }));
 
 import { parseRegistrationSource, suggestRegistrationMapping, buildRegistrationPreview } from "../imports/registration-intake";
@@ -329,7 +334,10 @@ const unrelated = { id: "organizer-2", role: "organizer" as const, email: "organ
 const admin = { id: "admin-1", role: "admin" as const, email: "admin@example.test", name: "Admin" };
 const platformAdmin = { id: "platform-1", role: "platform_admin" as const, email: "platform@example.test", name: "Platform" };
 
-beforeEach(() => resetState());
+beforeEach(() => {
+  resetState();
+  checkRateLimit.mockResolvedValue(true);
+});
 
 describe("registration V3 real-contract evidence", () => {
   it("runs the real CSV parser, mapping, validation, and event-local readers", async () => {

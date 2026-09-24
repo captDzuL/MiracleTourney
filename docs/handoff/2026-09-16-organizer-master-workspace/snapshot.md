@@ -14,7 +14,7 @@ release coordination while preserving the historical handoff details.
 - Evidence-doc commit: `7cdb39df8810045ebdddf8384a55d9f147608fb9` (`docs: finalize organizer release readiness evidence`); this docs SHA is intentionally separate from the source/product SHA.
 - Release target: `feature/ui/release/1.0`; no PR, push, deploy, migration, restore, or production flag activation was performed.
 - Verification report: [`2026-09-14-release-1.0-verification.md`](../../../2026-09-14-release-1.0-verification.md).
-- Task 12 report: `.superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/task-12-report.md` (ignored SDD artifact; no ledger edit was made).
+- Task 12 report: `.superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/task-12-report.md` (ignored SDD artifact; the final-review fix wave is recorded in the ledger addendum).
 - Current decision: `BLOCKED`.
 
 ### Required external evidence still absent
@@ -26,6 +26,31 @@ final-SHA GitHub Actions result; Vercel preview URL/deployment ID and Runtime
 Logs scan; saved-view/PIC/notification access; deployed Speed Insights/RUM;
 Neon snapshot/PITR/retention/RPO/RTO/PIC/switchover/integrity-query evidence;
 and a fresh whole-branch Sol/high review with no P0/P1/P2.
+
+## Final-review fix wave — 2026-09-24
+
+- Final-fix base: `b97b9e80aa92806e23cfb93752f2cf4c630cbe09`; branch remains
+  `codex/organizer-release-readiness` in the isolated worktree above.
+- The two whole-branch P2s are remediated in the working tree: shared
+  fail-closed Prisma rate limiting with digest-only keys and bounded local
+  deny tracking, plus mixed-version session/reset handling with version-zero
+  session compatibility, digest reset writes, and bounded explicit legacy
+  compatibility. Stale official evidence is corrected in the current records.
+- Authoritative pre-fix local gates at `b97b9e8`: Prisma valid, tsc 0,
+  ESLint 0 errors/56 warnings, unit 207 passed/2 skipped files and 2,433
+  passed/6 intentional skips, smoke 24/24, pressure p95 2,370/414/52 ms with
+  zero failures, audit clean, and build 46/46.
+- Terminal gates remain CLOSED rather than blockers: legacy 4/4; visual V3
+  24/24 plus V2 9/9 with zero skips/retries/flakes; quick-load warmups HTTP
+  200 and p97.5 2,945/2,069/1,582 ms with zero errors.
+- Fresh bounded verification is recorded in the ignored
+  `whole-branch-final-fix-report.md`. Its pressure rerun reproduced a local
+  `/id/login` p95 concern (4,387 ms, then 3,783 ms; zero failures) without
+  weakening the 3,000 ms contract. Fresh scoped 5.6-Sol/high re-review is
+  **PENDING**, not approved.
+- Overall status remains **BLOCKED only by external evidence**: final-SHA
+  GitHub CI; Vercel preview/logs/RUM/rollback/PIC; Neon recovery console,
+  restore rehearsal, and migration integration; and the live 64-team query/p95.
 
 ## Historical handoff details — 2026-09-16 (non-operative)
 

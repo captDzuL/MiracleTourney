@@ -140,7 +140,7 @@ async function uploadPublishedRevisionVisualActionImpl(formData: FormData) {
   const basePath = user.role === "organizer" ? "organizer" : "admin";
   const returnPath = `/${input.locale}/${basePath}/events/${input.eventId}/edit`;
   const returnTarget = `${returnPath}#section-public`;
-  if (!checkRateLimit(`revision-visual:${user.id}:${input.eventId}`, 3, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`revision-visual:${user.id}:${input.eventId}`, 3, 15 * 60 * 1000))) {
     redirect(`${returnPath}?error=rate-limited#section-public`);
   }
   const revision = await resolveRevisionWorkspaceAccess(actor, input.revisionId);

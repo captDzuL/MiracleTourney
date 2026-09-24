@@ -4,12 +4,11 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { routing } from "./i18n/routing";
+import { checkLocalRateLimit } from "./lib/rate-limit-local";
 
 const JWT_COOKIE = "mfl_token";
 const DEFAULT_JWT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32chars-min";
 
-// In-memory rate limiter for login — per edge instance.
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 10;
 const LOCALE_SEGMENT = /^\/(id|en)(?=\/|$)/;
@@ -17,16 +16,9 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const HTTP_PROTOCOLS = new Set(["http:", "https:"]);
 
 function checkLoginRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = loginAttempts.get(ip);
-
-  if (!entry || entry.resetAt < now) {
-    loginAttempts.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= RATE_MAX) return false;
-  entry.count += 1;
-  return true;
+  // This edge-local check is only a conservative early deny. The login
+  // action performs the authoritative shared database check as well.
+  return checkLocalRateLimit(`login:${ip}`, RATE_MAX, RATE_WINDOW_MS);
 }
 
 async function getRole(request: NextRequest): Promise<string | null> {

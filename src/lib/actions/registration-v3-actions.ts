@@ -259,7 +259,7 @@ export async function previewRegistrationImportForUser(
   if ("status" in input) return input;
   const { locale, eventId, file } = input;
   const redirectTo = canonicalRegistrationPath(locale, eventId, input.returnTo, "import");
-  if (!checkRateLimit(`registration-import:${user.id}:${eventId}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`registration-import:${user.id}:${eventId}`, 5, 15 * 60 * 1000))) {
     return withLegacyFailure(blocked(locale, "rate_limited", redirectTo), options, {
       phase: "import", message: localizedMessage(locale, "rate_limited"), behavior: "redirect",
     });
@@ -434,7 +434,7 @@ export async function commitRegistrationImportForUser(
   if (!parsed.input) return blocked(parsed.locale, "invalid_input");
   const { eventId, batchId, selectedItemIds, returnTo } = parsed.input;
   const redirectTo = canonicalRegistrationPath(parsed.locale, eventId, returnTo ?? "", "import");
-  if (!checkRateLimit(`registration-import:${user.id}:${eventId}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`registration-import:${user.id}:${eventId}`, 5, 15 * 60 * 1000))) {
     return withLegacyFailure(blocked(parsed.locale, "rate_limited", redirectTo), options, {
       phase: "registration", message: localizedMessage(parsed.locale, "rate_limited"), behavior: "redirect",
     });
@@ -604,7 +604,7 @@ export async function saveEventQrisDraftAction(formData: FormData): Promise<Acti
   const access = await gate(input.eventId);
   if ("status" in access) return { ...access, message: localizedMessage(input.locale, access.code) };
   const redirectTo = canonicalRegistrationPath(input.locale, input.eventId, input.returnTo, "qris");
-  if (!checkRateLimit(`registration-qris:${access.id}:${input.eventId}`, 5, 15 * 60 * 1000)) {
+  if (!(await checkRateLimit(`registration-qris:${access.id}:${input.eventId}`, 5, 15 * 60 * 1000))) {
     return blocked(input.locale, "rate_limited", redirectTo);
   }
   let uploaded: Awaited<ReturnType<typeof import("@/lib/actions").uploadImageAsset>> | undefined;
