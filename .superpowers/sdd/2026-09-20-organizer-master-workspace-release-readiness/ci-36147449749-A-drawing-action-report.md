@@ -86,3 +86,66 @@ untracked protected roots were inspected and left untouched and unstaged:
 - `docs/testing/task11-release-runtime-accessibility-report-2026-09-23.md`
 - `public/certificates/e2e-completion-single_elimination-release-journey-en/`
 - `public/certificates/e2e-completion-single_elimination-release-journey-id/`
+
+## Review round 1 evidence (base `67b41f1`)
+
+### RED
+
+The review-focused tests were run before the corrections:
+
+```text
+.\\node_modules\\.bin\\vitest.cmd run src/lib/actions/competition-v3-actions.test.ts src/lib/tournament/operations/operations.test.ts src/lib/tournament/operations/observability.test.ts tests/competition/ci-36147449749-drawing-action.static.test.ts --reporter=dot
+Result: 4 files failed; 7 tests failed and 84 passed.
+```
+
+The expected failures covered Save-drawing diagnostic ordering, parser
+ambiguity/non-result handling, explicit action-result/component contracts,
+unknown error-message collisions, P2028 evidence gating, and terminal events
+for exhausted P2034 retries.
+
+### GREEN
+
+```text
+.\\node_modules\\.bin\\vitest.cmd run src/lib/actions/competition-v3-actions.test.ts src/lib/tournament/operations/operations.test.ts src/lib/tournament/operations/observability.test.ts src/lib/observability/logger.test.ts tests/competition/ci-36125458721-server-action-settlement.static.test.ts tests/competition/ci-36147449749-drawing-action.static.test.ts --reporter=dot
+Result: 6 files passed; 117 tests passed.
+
+.\\node_modules\\.bin\\tsc.cmd --noEmit --incremental false
+Result: passed.
+
+.\\node_modules\\.bin\\eslint.cmd <changed implementation and focused test paths>
+Result: passed.
+
+git diff --check
+Result: passed.
+```
+
+### Review corrections
+
+- Ordered the browser diagnostic guard and safe `code`/`correlationId` message
+  before the saved assertion and database poll; the static mutation test now
+  fails if that order regresses.
+- Added explicit `CompetitionExpectedError` domain types and an exported
+  `CompetitionMutationActionResult` union. Unknown/storage errors, including
+  messages containing `unavailable`, `conflict`, or `stale`, use only the safe
+  classifier and correlation ID; existing authorization/conflict semantics and
+  user-facing messages remain unchanged.
+- Added a safe retry terminal event for every `P2034` attempt, including the
+  exhausted final attempt, with `serialization_conflict`; retry count and
+  transaction behavior are unchanged.
+- Replaced the test-only hard-coded response parser with the exported
+  `parseServerActionResult`, covering framed React Flight result bodies,
+  multiple/ambiguous frames, malformed frames, and non-result bodies.
+- Removed the local failed-result assertion/model from
+  `AnnouncementsWorkspace`; transport failures now settle as `undefined` while
+  the shared action-result union models real server results.
+- Classified `P2028` as `transaction_timeout` only with timeout-shaped
+  metadata/message evidence; unrelated P2028 values fall back to
+  `internal_error`.
+
+### Invariants and scope
+
+The review changes preserve authorization, CAS/conflict handling, atomicity,
+transaction options, the existing six-attempt retry policy, payload shape, and
+product behavior. No browser, live database, seed/reset, timeout increase, or
+retry broadening was used. The review implementation commit is `346d577`; the
+protected untracked roots above remain untouched and unstaged.
