@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireAnyRole: vi.fn(),
@@ -75,7 +75,27 @@ function form(fields: Record<string, string | File>) {
   return value;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+type InfoSpy = { mock: { calls: unknown[][] } };
+
+function stageRecords(info: InfoSpy) {
+  return info.mock.calls
+    .map((call: unknown[]) => JSON.parse(String(call[0])) as Record<string, unknown>)
+    .filter((record: Record<string, unknown>) => typeof record.stage === "string");
+}
+
 describe("registration V3 actions", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAnyRole.mockResolvedValue(organizer);
@@ -191,6 +211,71 @@ describe("registration V3 actions", () => {
     expect(mocks.saveRegistrationImportPreviewBatch).toHaveBeenCalledWith(expect.objectContaining({ user: organizer, eventId: "event-1" }));
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/en/organizer/events/event-1/registration");
     expect(result.redirectTo).not.toContain("/admin");
+  });
+
+  it("does not return while preview persistence is deferred", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const save = deferred<{ id: string }>();
+    mocks.saveRegistrationImportPreviewBatch.mockReturnValue(save.promise);
+
+    const action = previewEventRegistrationImportAction(form({
+      locale: "en",
+      eventId: "event-1",
+      registrationFile: new File(["Team Name\nAlpha"], "registrations.csv", { type: "text/csv" }),
+    }));
+
+    await vi.waitFor(() => expect(mocks.saveRegistrationImportPreviewBatch).toHaveBeenCalled());
+    expect(stageRecords(info).some(record => record.stage === "preview_batch_saved")).toBe(false);
+    expect(stageRecords(info).some(record => record.stage === "action_return")).toBe(false);
+
+    save.resolve({ id: "batch-deferred" });
+    await expect(action).resolves.toMatchObject({ status: "preview_ready", batchId: "batch-deferred" });
+
+    const stages = stageRecords(info).map(record => record.stage);
+    expect(stages).toEqual(expect.arrayContaining([
+      "action_enter",
+      "access_gate_done",
+      "event_context_done",
+      "source_parsed",
+      "users_resolved",
+      "bracket_lock_done",
+      "preview_batch_saved",
+      "revalidation_requested",
+      "action_return",
+    ]));
+    expect(stages.indexOf("preview_batch_saved")).toBeLessThan(stages.indexOf("revalidation_requested"));
+    expect(stages.indexOf("revalidation_requested")).toBeLessThan(stages.indexOf("action_return"));
+  });
+
+  it("emits a terminal failed milestone when preview persistence rejects", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    mocks.saveRegistrationImportPreviewBatch.mockRejectedValue(new Error("P2028 private@example.test"));
+
+    const result = await previewEventRegistrationImportAction(form({
+      locale: "id",
+      eventId: "event-1",
+      registrationFile: new File(["Team Name\nAlpha"], "registrations.csv", { type: "text/csv" }),
+    }));
+
+    expect(result).toMatchObject({ status: "blocked", code: "operation_failed" });
+    const actionReturn = stageRecords(info).find(record => record.stage === "action_return");
+    expect(actionReturn).toMatchObject({ phase: "failed", terminal: "failed", status: 500 });
+    expect(JSON.stringify(info.mock.calls)).not.toContain("private@example.test");
+  });
+
+  it("emits a terminal failed milestone when the access gate rejects unexpectedly", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    mocks.assertUserCanManageEvent.mockRejectedValue(new Error("database private@example.test"));
+
+    await expect(previewEventRegistrationImportAction(form({
+      locale: "en",
+      eventId: "event-1",
+      registrationFile: new File(["Team Name\nAlpha"], "registrations.csv", { type: "text/csv" }),
+    }))).rejects.toThrow("database private@example.test");
+
+    const actionReturn = stageRecords(info).find(record => record.stage === "action_return");
+    expect(actionReturn).toMatchObject({ phase: "failed", terminal: "failed", status: 500 });
+    expect(JSON.stringify(info.mock.calls)).not.toContain("private@example.test");
   });
 
   it("commits only a batch belonging to the submitted event and refreshes event-local paths", async () => {

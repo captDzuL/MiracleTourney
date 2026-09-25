@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 
 import {
   getRequestId,
+  createServerMilestoneLogger,
   redactIdentifier,
   withRouteLog,
   withServerActionLog,
@@ -285,5 +286,53 @@ describe("structured server logger", () => {
     const record = JSON.parse(String(info.mock.calls[0]?.[0]));
     expect(record.route).toBe("/api/events/:slug/ongoing");
     expect(record.route).not.toContain("admin");
+  });
+
+  it("emits correlated redacted locale milestones", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const trace = createServerMilestoneLogger({
+      operation: "registration_import_preview",
+      route: "/server-actions/registration/import/preview",
+      requestId: "preview-request-1",
+    });
+
+    trace("event_context_done", { locale: "en", resourceId: "event-secret" });
+
+    const record = JSON.parse(String(info.mock.calls[0]?.[0]));
+    expect(record).toMatchObject({
+      phase: "done",
+      operation: "registration_import_preview",
+      requestId: "preview-request-1",
+      locale: "en",
+      stage: "event_context_done",
+      resourceId: redactIdentifier("event-secret"),
+    });
+    expect(JSON.stringify(record)).not.toContain("event-secret");
+  });
+
+  it("marks a terminal failed milestone without serializing dependency errors", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const trace = createServerMilestoneLogger({
+      operation: "registration_import_preview",
+      route: "/server-actions/registration/import/preview",
+      requestId: "preview-request-2",
+    });
+
+    trace("action_return", {
+      locale: "id",
+      resourceId: "event-secret",
+      status: 500,
+      terminal: "failed",
+      errorCode: "P2028 private@example.test",
+    });
+
+    const record = JSON.parse(String(info.mock.calls[0]?.[0]));
+    expect(record).toMatchObject({
+      phase: "failed",
+      stage: "action_return",
+      terminal: "failed",
+      status: 500,
+    });
+    expect(JSON.stringify(record)).not.toMatch(/event-secret|private@example\.test/);
   });
 });

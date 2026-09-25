@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { toPublicError } from "@/lib/security/public-error";
 
 export type ServerLogPhase = "start" | "done" | "failed";
+export type ServerLogLocale = "id" | "en";
 
 export type ServerLogEvent = Readonly<{
   phase: ServerLogPhase;
@@ -14,6 +15,7 @@ export type ServerLogEvent = Readonly<{
   errorCode?: string;
   actorId?: string;
   resourceId?: string;
+  locale?: ServerLogLocale;
   stage?: string;
   counts?: Readonly<Record<string, number>>;
   terminal?: "retry" | "failed";
@@ -65,6 +67,7 @@ export function redactIdentifier(value: string): string {
 
 function safeEvent(event: ServerLogEvent): ServerLogEvent {
   const counts = safeCounts(event.counts);
+  const locale = event.locale === "id" || event.locale === "en" ? event.locale : undefined;
   const result: ServerLogEvent = {
     phase: event.phase,
     operation: safeCode(event.operation),
@@ -75,6 +78,7 @@ function safeEvent(event: ServerLogEvent): ServerLogEvent {
     ...(event.errorCode ? { errorCode: safeCode(event.errorCode) } : {}),
     ...(event.actorId ? { actorId: redactIdentifier(event.actorId) } : {}),
     ...(event.resourceId ? { resourceId: redactIdentifier(event.resourceId) } : {}),
+    ...(locale ? { locale } : {}),
     ...(event.stage ? { stage: safeCode(event.stage) } : {}),
     ...(counts ? { counts } : {}),
     ...(event.terminal ? { terminal: event.terminal } : {}),
@@ -102,6 +106,50 @@ function redirectStatus(error: unknown): number | undefined {
 /** Emits only the allowlisted structured event fields to the platform logger. */
 export function writeServerLog(event: ServerLogEvent): void {
   console.info(JSON.stringify(safeEvent(event)));
+}
+
+export type ServerMilestoneContext = Readonly<{
+  operation: string;
+  route: string;
+  requestId: string;
+}>;
+
+export type ServerMilestoneEvent = Readonly<{
+  locale?: ServerLogLocale;
+  resourceId?: string;
+  status?: number;
+  terminal?: "failed";
+  counts?: Readonly<Record<string, number>>;
+  errorCode?: string;
+}>;
+
+const SAFE_MILESTONE_ERROR_CODES = new Set([
+  "forbidden", "internal_error", "invalid_input", "not_found", "operation_failed", "rate_limited", "unauthorized",
+]);
+
+/** Emits a redacted, correlated stage record without observing or changing the awaited work. */
+export function createServerMilestoneLogger(context: ServerMilestoneContext) {
+  const startedAt = Date.now();
+  return (stage: string, event: ServerMilestoneEvent = {}): void => {
+    const failed = event.terminal === "failed";
+    const errorCode = event.errorCode && SAFE_MILESTONE_ERROR_CODES.has(event.errorCode)
+      ? event.errorCode
+      : undefined;
+    writeServerLog({
+      phase: failed ? "failed" : "done",
+      operation: context.operation,
+      route: context.route,
+      requestId: context.requestId,
+      durationMs: Date.now() - startedAt,
+      status: event.status ?? (failed ? 500 : 200),
+      stage,
+      ...(event.locale ? { locale: event.locale } : {}),
+      ...(event.resourceId ? { resourceId: event.resourceId } : {}),
+      ...(event.counts ? { counts: event.counts } : {}),
+      ...(errorCode ? { errorCode } : {}),
+      ...(event.terminal ? { terminal: event.terminal } : {}),
+    });
+  };
 }
 
 export function getRequestId(request: Request): string {
@@ -190,7 +238,7 @@ function actionResultStatus(value: unknown): Pick<ServerLogResult<unknown>, "sta
   const code = result.code;
   const safeActionCodes = new Set([
     "failed", "forbidden", "unauthorized", "rate_limited", "delivery_failed", "token_invalid", "upload_failed",
-    "transaction_timeout", "internal_error", "serialization_conflict",
+    "transaction_timeout", "internal_error", "serialization_conflict", "operation_failed",
   ]);
   const safeCodeValue = typeof code === "string" && safeActionCodes.has(code) ? code : undefined;
   const explicitStatus = typeof result.statusCode === "number"
@@ -205,6 +253,7 @@ function actionResultStatus(value: unknown): Pick<ServerLogResult<unknown>, "sta
   }
   if (status === "blocked" && code === "forbidden") return { status: 403, errorCode: "forbidden" };
   if (status === "blocked" && code === "upload_failed") return { status: 500, errorCode: "upload_failed" };
+  if (status === "blocked" && code === "operation_failed") return { status: 500, errorCode: "operation_failed" };
   if (status === "rate_limited" || ((status === "blocked" || status === "error") && code === "rate_limited")) {
     return { status: 429, errorCode: "rate_limited" };
   }

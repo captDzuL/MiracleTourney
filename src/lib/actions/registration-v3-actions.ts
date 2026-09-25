@@ -31,6 +31,7 @@ import {
 } from "@/lib/registration/event-payment-settings";
 import type { AppUser, TeamRegistrationRequestStatus } from "@/lib/platform/types";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { createServerMilestoneLogger, withServerActionLog, type ServerMilestoneEvent } from "@/lib/observability/logger";
 
 type Locale = "id" | "en";
 type BlockedCode =
@@ -234,6 +235,16 @@ type PreviewInput = {
   file: File;
 };
 
+type RegistrationImportTrace = (stage: string, event?: ServerMilestoneEvent) => void;
+
+const REGISTRATION_IMPORT_ACTION_OPERATION = "registration_import_preview";
+const REGISTRATION_IMPORT_ACTION_ROUTE = "/server-actions/registration/import/preview";
+
+function actionResultMilestone(result: RegistrationActionResult): ServerMilestoneEvent {
+  const failed = result.status === "blocked" && result.code === "operation_failed";
+  return failed ? { status: 500, terminal: "failed", errorCode: "operation_failed" } : { status: 200 };
+}
+
 function readPreviewInput(formData: FormData): PreviewInput | RegistrationActionBlocked {
   const locale = localeFrom(formData);
   const parsed = z.object({
@@ -254,6 +265,7 @@ export async function previewRegistrationImportForUser(
   user: AppUser,
   formData: FormData,
   options: RegistrationActionOptions = {},
+  trace?: RegistrationImportTrace,
 ): Promise<RegistrationActionResult> {
   const input = readPreviewInput(formData);
   if ("status" in input) return input;
@@ -280,6 +292,7 @@ export async function previewRegistrationImportForUser(
     }
 
     const event = await getRegistrationImportEventContext(user, eventId);
+    trace?.("event_context_done", { locale, resourceId: eventId, status: event ? 200 : 404 });
     if (!event) {
       return withLegacyFailure(blocked(locale, "not_found", redirectTo), options, {
         phase: "import", message: "Event tidak ditemukan.", behavior: "redirect", includeActiveEventId: false,
@@ -294,6 +307,7 @@ export async function previewRegistrationImportForUser(
         buffer: Buffer.from(await file.arrayBuffer()),
         worksheetName: input.worksheetName,
       });
+      trace?.("source_parsed", { locale, resourceId: eventId, counts: { rowCount: parsed.worksheets[0]?.rows.length ?? 0 } });
     } catch (error) {
       if (options.legacyCompatibility) {
         return withLegacyFailure(blocked(locale, "invalid_input", redirectTo), options, {
@@ -359,13 +373,16 @@ export async function previewRegistrationImportForUser(
     const existingUsers = emailValues.length && typeof getRegistrationImportUsersByEmails === "function"
       ? await getRegistrationImportUsersByEmails(user, eventId, emailValues)
       : [];
+    trace?.("users_resolved", { locale, resourceId: eventId, counts: { userCount: existingUsers.length } });
+    const bracketLocked = await isEventBracketLocked(event.id);
+    trace?.("bracket_lock_done", { locale, resourceId: eventId, counts: { locked: bracketLocked ? 1 : 0 } });
     const preview = buildRegistrationPreview({
       event: {
         id: event.id,
         name: event.name,
         slug: event.slug,
         participantCap: event.participantCap,
-        bracketLocked: await isEventBracketLocked(event.id),
+        bracketLocked,
         maxRosterSize: mode.maxRosterSize,
         minRosterSize: mode.teamSize,
       },
@@ -392,6 +409,7 @@ export async function previewRegistrationImportForUser(
       items: preview.items,
       summary: preview.summary,
     });
+    trace?.("preview_batch_saved", { locale, resourceId: eventId, counts: { itemCount: batch.items?.length ?? preview.items.length } });
     if (options.legacyCompatibility) return { status: "preview_ready", batchId: batch.id, redirectTo, summary: preview.summary };
     return {
       status: "preview_ready", batchId: batch.id, redirectTo, summary: preview.summary,
@@ -667,14 +685,53 @@ export async function publishEventQrisAction(formData: FormData): Promise<Action
   }
 }
 
-export async function previewEventRegistrationImportAction(formData: FormData): Promise<ActionResult> {
+async function previewEventRegistrationImportActionImpl(formData: FormData, requestId: string): Promise<ActionResult> {
+  const locale = localeFrom(formData);
+  const rawEventId = value(formData, "eventId");
+  const trace = createServerMilestoneLogger({
+    operation: REGISTRATION_IMPORT_ACTION_OPERATION,
+    route: REGISTRATION_IMPORT_ACTION_ROUTE,
+    requestId,
+  });
+  trace("action_enter", { locale, resourceId: rawEventId || undefined });
   const input = readPreviewInput(formData);
-  if ("status" in input) return input;
-  const access = await gate(input.eventId);
-  if ("status" in access) return { ...access, message: localizedMessage(input.locale, access.code) };
-  const result = await previewRegistrationImportForUser(access, formData);
-  if (result.status === "preview_ready") revalidatePath(registrationPath(input.locale, input.eventId));
+  if ("status" in input) {
+    trace("action_return", { locale, resourceId: rawEventId || undefined, ...actionResultMilestone(input) });
+    return input;
+  }
+  let access: AppUser | RegistrationActionBlocked;
+  try {
+    access = await gate(input.eventId);
+  } catch (error) {
+    trace("action_return", { locale: input.locale, resourceId: input.eventId, status: 500, terminal: "failed", errorCode: "internal_error" });
+    throw error;
+  }
+  trace("access_gate_done", { locale: input.locale, resourceId: input.eventId, status: "status" in access ? 403 : 200 });
+  if ("status" in access) {
+    trace("action_return", { locale: input.locale, resourceId: input.eventId, ...actionResultMilestone(access) });
+    return { ...access, message: localizedMessage(input.locale, access.code) };
+  }
+  let result: ActionResult;
+  try {
+    result = await previewRegistrationImportForUser(access, formData, {}, trace);
+    if (result.status === "preview_ready") {
+      revalidatePath(registrationPath(input.locale, input.eventId));
+      trace("revalidation_requested", { locale: input.locale, resourceId: input.eventId });
+    }
+  } catch (error) {
+    trace("action_return", { locale: input.locale, resourceId: input.eventId, status: 500, terminal: "failed", errorCode: "internal_error" });
+    throw error;
+  }
+  trace("action_return", { locale: input.locale, resourceId: input.eventId, ...actionResultMilestone(result) });
   return result;
+}
+
+export async function previewEventRegistrationImportAction(formData: FormData): Promise<ActionResult> {
+  return withServerActionLog(
+    REGISTRATION_IMPORT_ACTION_OPERATION,
+    REGISTRATION_IMPORT_ACTION_ROUTE,
+    ({ requestId }) => previewEventRegistrationImportActionImpl(formData, requestId),
+  );
 }
 
 export async function commitEventRegistrationImportAction(formData: FormData): Promise<ActionResult> {
