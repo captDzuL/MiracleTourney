@@ -6,6 +6,20 @@ const root = resolve(import.meta.dirname, "../..");
 const completionSpec = readFileSync(resolve(root, "tests/e2e/organizer-v3-completion.spec.ts"), "utf8");
 const completionHelper = readFileSync(resolve(root, "tests/e2e/helpers/completion.ts"), "utf8");
 
+function extractBracedBlock(source: string, marker: string) {
+  const markerIndex = source.indexOf(marker);
+  if (markerIndex < 0) return "";
+  const openBraceIndex = source.indexOf("{", markerIndex + marker.length - 1);
+  if (openBraceIndex < 0) return "";
+  let depth = 0;
+  for (let index = openBraceIndex; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}") depth -= 1;
+    if (depth === 0) return source.slice(markerIndex, index + 1);
+  }
+  return "";
+}
+
 describe("Completion action settlement contract", () => {
   it("waits for the exact event-bound server action before persistence and refresh assertions", () => {
     expect(completionSpec).toContain("function waitForCompletionActionResponse");
@@ -38,33 +52,52 @@ describe("Completion action settlement contract", () => {
   });
 
   it("keeps single-elimination prerequisites outside the timed Completion contract", () => {
-    const singleCaseStart = completionSpec.indexOf(
-      'test("completes the authoritative single_elimination release format with an audited tied award"',
+    const singleDescribe = extractBracedBlock(completionSpec, 'test.describe("single-elimination Completion budget", () => {');
+    const beforeAll = extractBracedBlock(singleDescribe, "test.beforeAll(async ({ browser }, testInfo) => {");
+    const timedCase = extractBracedBlock(
+      singleDescribe,
+      'test("completes the authoritative single_elimination release format with an audited tied award", async ({ browser }) => {',
     );
-    const remainingCasesStart = completionSpec.indexOf("for (const kind of", singleCaseStart);
-    expect(singleCaseStart).toBeGreaterThan(-1);
-    expect(remainingCasesStart).toBeGreaterThan(singleCaseStart);
-    const singleCase = completionSpec.slice(singleCaseStart, remainingCasesStart);
+    const cleanupResources = extractBracedBlock(completionSpec, "async function cleanupCompletionResources() {");
+    const responseWaiter = extractBracedBlock(completionSpec, "function waitForCompletionActionResponse(");
+    const completionJourney = extractBracedBlock(completionSpec, "async function runCompletionJourney(");
+    expect(singleDescribe).not.toBe("");
+    expect(beforeAll).not.toBe("");
+    expect(timedCase).not.toBe("");
+    expect(cleanupResources).not.toBe("");
+    expect(responseWaiter).not.toBe("");
+    expect(completionJourney).not.toBe("");
 
-    expect(completionSpec).toContain("test.beforeAll(async ({ browser }, testInfo) => {");
-    expect(completionSpec).toContain("prepareCompletionFixture(\"single_elimination\"");
-    expect(completionSpec).toContain('await loginAsOrganizer(prewarmPage, "en")');
-    expect(completionSpec).toContain("await prewarmPage.goto(completionUrl)");
-    expect(completionSpec).toContain("singleEliminationStorageState = await prewarmContext.storageState()");
-    expect(completionSpec).toContain("await prewarmContext.close()");
-    expect(completionSpec).toContain("browser.newContext({ storageState: singleEliminationStorageState })");
-    expect(completionSpec).toContain("await completionContext.close()");
+    expect(beforeAll).toContain('prepareTestCompletionFixture("single_elimination")');
+    expect(beforeAll).toContain('await loginAsOrganizer(prewarmPage, "en")');
+    expect(beforeAll).toContain("await prewarmPage.goto(completionUrl)");
+    expect(beforeAll).toContain("singleEliminationStorageState = await prewarmContext.storageState()");
+    expect(beforeAll).toContain("await prewarmContext.close()");
+    expect(timedCase).toContain("browser.newContext({ storageState: singleEliminationStorageState })");
+    expect(timedCase).toContain("await completionContext.close()");
 
-    expect(singleCase).not.toContain("test.step(\"fixture setup\"");
-    expect(singleCase).not.toContain("loginAsOrganizer(page, \"en\")");
-    expect(singleCase).not.toContain("test.setTimeout(");
-    expect(singleCase).not.toContain("test.slow(");
-    expect(singleCase).not.toContain("retries");
+    expect(timedCase).not.toMatch(/\b(?:prepareTestCompletionFixture|prepareCompletionFixture)\s*\(/);
+    expect(timedCase).not.toMatch(/\blogin[A-Za-z]*\s*\(/);
+    expect(singleDescribe).not.toMatch(/\btest\.setTimeout\s*\(/);
+    expect(singleDescribe).not.toMatch(/\btest\.slow\s*\(/);
+    expect(singleDescribe).not.toMatch(/\bretries\b/);
 
-    expect(completionSpec).toContain("completionActionResponsePending");
-    expect(completionSpec).toContain("await completionActionResponse.catch(() => undefined)");
-    expect(completionSpec).toContain("expect(completionResponse.status()).toBe(200)");
-    expect(completionSpec).toContain("await cleanup?.cleanup();");
+    const callbackOpen = timedCase.indexOf("=> {");
+    expect(callbackOpen).toBeGreaterThan(-1);
+    expect(timedCase.slice(callbackOpen + "=> {".length).trimStart()).toMatch(/^const timedBodyStartedAt = performance\.now\(\);/);
+    expect(timedCase).toContain("testBodyDurationMs");
+    expect(timedCase).toContain("measuredFrom=first-test-line");
+    expect(timedCase).toContain("attachment=excluded");
+
+    expect(responseWaiter).toContain('request.method() === "POST"');
+    expect(responseWaiter).toContain("responseUrl.pathname === completionPath");
+    expect(responseWaiter).toContain('Boolean(request.headers()["next-action"])');
+    expect(responseWaiter).toContain("requestData.includes(eventId)");
+    expect(completionJourney).toContain("await Promise.all([completionResponsePromise, completeButton.click()])");
+    expect(completionJourney).toContain("expect(completionResponse.status()).toBe(200)");
+    expect(cleanupResources).toContain("completionActionResponsePending");
+    expect(cleanupResources).toContain("await completionActionResponse.catch(() => undefined)");
+    expect(cleanupResources).toContain("await cleanup?.cleanup();");
     const eventCreateIndex = completionHelper.indexOf("await completionDb.event.create({");
     const cleanupRegistrationIndex = completionHelper.indexOf("await options.onBaseFixtureReady?.(cleanup)");
     const firstDependentWriteIndex = completionHelper.indexOf("await completionDb.team.createMany({", eventCreateIndex);

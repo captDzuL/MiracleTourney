@@ -8,9 +8,11 @@ Branch: `codex/organizer-release-readiness`
 
 Implemented the narrow Completion `single_elimination` CI-budget fix. The
 30-second test deadline, `workers=1`, and `retries=0` remain unchanged. The
-focused browser case passed with the full timed body at **5.222 s**, below the
-24-second target, and the exact completion action response settled HTTP 200 in
-**1.393 s**.
+focused browser case passed with the measured test-body span at **5.663 s**,
+below the 24-second target, and the exact completion action response settled
+HTTP 200 in **1.313 s**. The body measurement starts at the first executable
+line of the Playwright test and ends after the isolated completion context is
+closed; the timing attachment itself is explicitly excluded.
 
 The requested retained browser journey is unchanged inside the timed case:
 exact event navigation and readiness, tied award selection and reason, real
@@ -41,14 +43,15 @@ a fresh isolated context. The focused local evidence recorded:
 
 | Phase | After |
 | --- | ---: |
-| Fixture + authentication + exact-route prewarm (outside timed body) | 11.795 s |
-| Timed Completion body | **5.222 s** |
-| Exact action response | **1.393 s**, HTTP 200 |
-| Measured headroom against 30 s | **24.778 s** |
+| Fixture + authentication + exact-route prewarm (outside timed body) | 12.508 s |
+| Measured test-body span (first test line → context close; attachment excluded) | **5.663 s** |
+| Exact action response | **1.313 s**, HTTP 200 |
+| Measured headroom against 30 s | **24.337 s** |
 
-The complete Playwright invocation took 57.4 s wall time because it included
+The complete Playwright invocation took 53.1 s wall time because it included
 web-server startup/compile and the prerequisite hook; that startup time is not
-the test body's deadline budget.
+the test body's deadline budget. Playwright reported the test case itself at
+5.7 s including its post-measurement attachment.
 
 ## Cleanup ownership
 
@@ -79,14 +82,19 @@ The protected untracked roots were not touched or staged:
 
 ## TDD and verification evidence
 
-The new static contract was first run RED before implementation: it failed on
-the missing single-elimination suite-hook/prewarm contract. After the minimal
-implementation it passed.
+The review-round static contract was first run RED against commit `1998173`:
+the first-line body timer and precise measurement labels were absent. After
+the minimal instrumentation it passed. Its prerequisite assertions now extract
+the single-elimination `describe`, `beforeAll`, and timed-test blocks; direct
+fixture/auth helpers are rejected in the timed block, timeout/retry escapes are
+rejected in the enclosing describe, and fixture/login/prewarm/storage-state
+placement is proven in `beforeAll`. Shared waiter, journey, and cleanup blocks
+are extracted separately for their settlement invariants.
 
 | Command | Result |
 | --- | --- |
 | `pnpm exec vitest run tests/competition/completion-action-settlement.static.test.ts -t "keeps single-elimination prerequisites outside the timed Completion contract"` | The Windows pnpm shim could not resolve the local binary; the equivalent checked-in `node_modules/.bin/vitest.CMD` runner produced the required RED, then GREEN: **1 passed, 3 skipped**, exit 0, ~0.27 s. |
-| `node_modules/.bin/playwright.CMD test tests/e2e/organizer-v3-completion.spec.ts --config=playwright.ci-default.config.ts --grep "completes the authoritative single_elimination release format with an audited tied award" --workers=1 --retries=0` | **1 passed**, exit 0; timed body 5.222 s; action 1.393 s / HTTP 200; 57.4 s wall including startup. |
+| `node_modules/.bin/playwright.CMD test tests/e2e/organizer-v3-completion.spec.ts --config=playwright.ci-default.config.ts --grep "completes the authoritative single_elimination release format with an audited tied award" --workers=1 --retries=0` | **1 passed**, exit 0; measured test body 5.663 s from first test line through context close (attachment excluded); action 1.313 s / HTTP 200; 53.1 s wall including startup. |
 | `node_modules/.bin/tsc.CMD --noEmit` | exit 0 (elevated only because the repository's incremental build-info write was sandbox-blocked). |
 | `node_modules/.bin/eslint.CMD tests/competition/completion-action-settlement.static.test.ts tests/e2e/helpers/completion.ts tests/e2e/organizer-v3-completion.spec.ts` | exit 0; no diagnostics. |
 | Focused static contract rerun | exit 0; **1 passed, 3 skipped**. |

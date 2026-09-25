@@ -173,6 +173,7 @@ test.describe("single-elimination Completion budget", () => {
   });
 
   test("completes the authoritative single_elimination release format with an audited tied award", async ({ browser }) => {
+    const timedBodyStartedAt = performance.now();
     const scenario = fixture;
     const storageState = singleEliminationStorageState;
     if (!scenario || !storageState) throw new Error("Single-elimination Completion prerequisites were not prepared.");
@@ -181,20 +182,19 @@ test.describe("single-elimination Completion budget", () => {
     activeCompletionContext = completionContext;
     try {
       const page = await completionContext.newPage();
-      const startedAt = performance.now();
       await runCompletionJourney(page, scenario, "single_elimination");
-      const durationMs = Math.round(performance.now() - startedAt);
-      console.info(`[completion-timed-path] kind=single_elimination durationMs=${durationMs}`);
-      await test.info().attach("completion-single-elimination-timed-path", {
-        body: `durationMs=${durationMs}\nfixture=pre-created\nauthentication=prewarmed-storage-state\n`,
-        contentType: "text/plain",
-      });
     } finally {
       if (!completionActionResponsePending) {
         await completionContext.close();
         activeCompletionContext = undefined;
       }
     }
+    const testBodyDurationMs = Math.round(performance.now() - timedBodyStartedAt);
+    console.info(`[completion-test-body] kind=single_elimination measuredFrom=first-test-line attachment=excluded durationMs=${testBodyDurationMs}`);
+    await test.info().attach("completion-single-elimination-test-body", {
+      body: `testBodyDurationMs=${testBodyDurationMs}\nmeasuredFrom=first-test-line\nattachment=excluded\nfixture=pre-created\nauthentication=prewarmed-storage-state\n`,
+      contentType: "text/plain",
+    });
   });
 });
 
