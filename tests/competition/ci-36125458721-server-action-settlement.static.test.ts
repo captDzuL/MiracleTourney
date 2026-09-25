@@ -281,6 +281,20 @@ describe("server action settlement contract", () => {
     expect(previewBlock).toContain("trigger: () => page.locator(\"[data-preview]\").click(),");
     expect(previewBlock).toContain("uiReady: async () => {");
     expect(previewBlock).toContain('await expect(page.locator("[data-commit]")).toBeEnabled();');
+    const commitAction = 'await page.locator("[data-commit]").click();';
+    expect(previewBlock).toContain(commitAction);
+    const withoutCommitAction = organizerSpec.replace(commitAction, "");
+    expect(withoutCommitAction).not.toBe(organizerSpec);
+    expect(() => {
+      const mutatedPreviewBlock = sliceBetween(
+        withoutCommitAction,
+        "  await expectLocalizedRegistrationSurface(page, registrationFixture, locale, \"import\");",
+        "  await expectLocalizedRegistrationSurface(page, registrationFixture, locale, \"payments\");",
+      );
+      expect(mutatedPreviewBlock).toContain(commitAction);
+      expect(mutatedPreviewBlock).toContain("await expectLocalizedText(page, copy.importCompleted, copy.opposite.importCompleted, 15_000);");
+      expect(mutatedPreviewBlock).toContain("expect(receipt.importBatch).toMatchObject({ id: fixture.importBatchId, eventId: fixture.registrationEventId, status: \"committed\" });");
+    }).toThrow();
     expect(previewBlock.indexOf("runAndSettleServerActionUi")).toBeLessThan(previewBlock.indexOf('trigger: () => page.locator("[data-preview]").click()'));
     expect(previewBlock.indexOf('trigger: () => page.locator("[data-preview]").click()')).toBeLessThan(previewBlock.indexOf("uiReady: async () => {"));
     expect(previewBlock.indexOf("uiReady: async () => {")).toBeLessThan(previewBlock.indexOf('await expect(page.locator("[data-commit]")).toBeEnabled();'));
