@@ -224,5 +224,8 @@ Focused classifier and transaction tests prove both domain categories, one
 transaction attempt, `terminal: "failed"`, no retry, and unchanged rollback.
 The focused three-file run passed 87/87 tests, and the expanded A/B/C
 regression run passed 140/140 tests. TypeScript, changed-file ESLint, and
-`git diff --check` exited 0. No browser, database, seed, reset, timeout, or
-retry behavior was exercised or changed.
+`git diff --check` exited 0. No browser, database, seed, or reset was run.
+Competition product/action/transaction timeout and retry behavior were not
+changed. The same `ba7b87c` commit intentionally added the separate bounded
+120,000 ms Playwright `beforeAll` preparation budget documented by Brief C;
+that test-harness hook budget is not a competition-action timeout change.
