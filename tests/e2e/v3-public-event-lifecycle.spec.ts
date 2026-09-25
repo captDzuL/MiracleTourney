@@ -187,7 +187,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
     });
   });
 
-  test("keeps the same permanent URL through ongoing and finished", async ({ page }) => {
+  test("keeps the same permanent URL through ongoing and result", async ({ page }) => {
     test.setTimeout(120_000);
     const url = `/id/events/${slug}`;
     await loginAsAdmin(page, "en");
@@ -278,8 +278,13 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       });
       completionId = completion.id;
     });
+  });
 
-    await test.step("finished and public verification", async () => {
+  test("keeps the same permanent URL through finished and certificates", async ({ page }) => {
+    test.setTimeout(120_000);
+    const url = `/id/events/${slug}`;
+    await loginAsAdmin(page, "en");
+    await test.step("finished and certificates", async () => {
       await updateStatus(page, "Finished");
 
       await page.goto(url);

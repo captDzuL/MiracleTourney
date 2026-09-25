@@ -438,12 +438,38 @@ describe("Task 11 release verification contracts", () => {
     expect(currentForm).toBeGreaterThan(legacyHeading);
     expect(oppositeForm).toBeGreaterThan(currentForm);
     expect(submit).toBeGreaterThan(oppositeForm);
+    expect(resultSurface).toContain("const resultPath = `/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}`;");
+    expect(resultSurface).toContain("const resultSaved = mode === \"on\" ? copy.statisticsSaved : copy.legacyOperationSaved;");
+    expect(resultSurface).toContain("const oppositeResultSaved = mode === \"on\" ? copy.opposite.statisticsSaved : copy.opposite.legacyOperationSaved;");
+    expect(resultSurface).toContain("await runAndSettleServerActionUi(page, {");
+    expect(resultSurface).toContain("requestUrl.pathname === resultPath && requestUrl.search === \"\"");
+    expect(resultSurface).toContain("uiReady: () => expectLocalizedText(page, resultSaved, oppositeResultSaved),");
     expect(resultSurface).toContain('input[name="home-1"]');
     expect(resultSurface).toContain('input[name="away-1"]');
     expect(persistedReceipt).toBeGreaterThan(submit);
     expect(resultSurface).toContain("resultRevisions.map(({ version }) => version)).toContain(1)");
     expect(resultSurface).not.toMatch(/(?:prisma|completionDb)\./);
     expect(resultSurface).not.toMatch(/fixture\.(?!readState\b)[A-Za-z]\w*\(/);
+  });
+
+  it("settles QRIS publication through the exact localized UI success before its persisted receipt", () => {
+    const qrisSurface = releaseJourney.slice(
+      releaseJourney.indexOf('await expectLocalizedRegistrationSurface(page, registrationFixture, locale, "qris");'),
+      releaseJourney.indexOf("await expectDialogEscapeRestoresFocus"),
+    );
+    const settlement = qrisSurface.indexOf("await runAndSettleServerActionUi(page, {");
+    const localizedSuccess = qrisSurface.indexOf("uiReady: () => expectLocalizedText(page, copy.qrisPublished, copy.opposite.qrisPublished),");
+    const persistedPoll = qrisSurface.indexOf('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");');
+    const persistedReceipt = qrisSurface.indexOf('expect(receipt.qris).toMatchObject({ eventId: fixture.registrationEventId, status: "published", version: fixture.qrisVersion + 2 });');
+    expect(settlement).toBeGreaterThanOrEqual(0);
+    expect(qrisSurface).toContain(
+      'requestUrl.pathname === `/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration`',
+    );
+    expect(qrisSurface).toContain('requestUrl.search === "?view=qris"');
+    expect(qrisSurface).toContain('trigger: () => page.locator("[data-publish]").click(),');
+    expect(localizedSuccess).toBeGreaterThan(settlement);
+    expect(persistedPoll).toBeGreaterThan(localizedSuccess);
+    expect(persistedReceipt).toBeGreaterThan(persistedPoll);
   });
 
   it("asserts exact current and absent opposite statistics navigation in the on-mode journey", () => {

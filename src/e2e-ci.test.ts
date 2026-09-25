@@ -97,13 +97,13 @@ describe("CI E2E release sequence", () => {
       commandLines.filter(
         (line) =>
           line ===
-          "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and finished\" --fail-on-flaky-tests",
+          "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and result|keeps the same permanent URL through finished and certificates\" --fail-on-flaky-tests",
       ),
     ).toHaveLength(1);
     expect(commandLines.filter((line) => line === "pnpm test:e2e:prepare")).toHaveLength(0);
     expect(commandLines.indexOf("pnpm test:e2e:preflight")).toBeLessThan(
       commandLines.indexOf(
-        "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and finished\" --fail-on-flaky-tests",
+        "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and result|keeps the same permanent URL through finished and certificates\" --fail-on-flaky-tests",
       ),
     );
   });

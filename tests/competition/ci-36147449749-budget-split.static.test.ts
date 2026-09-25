@@ -50,21 +50,26 @@ function assertAdaptiveLifecycleLoadBearing(source: string) {
   const registration = sliceBetween(
     source,
     'test("keeps one permanent URL through registration and drawing"',
-    '\n  test("keeps the same permanent URL through ongoing and finished"',
+    '\n  test("keeps the same permanent URL through ongoing and result"',
   );
-  const ongoingAndFinished = sliceBetween(
+  const ongoing = sliceBetween(
     source,
-    'test("keeps the same permanent URL through ongoing and finished"',
+    'test("keeps the same permanent URL through ongoing and result"',
+    '\n  test("keeps the same permanent URL through finished and certificates"',
+  );
+  const finished = sliceBetween(
+    source,
+    'test("keeps the same permanent URL through finished and certificates"',
     "\n});",
   );
-  const ongoing = sliceBetween(ongoingAndFinished, 'await test.step("ongoing and result"', 'await test.step("finished and public verification"');
-  const finished = sliceBetween(ongoingAndFinished, 'await test.step("finished and public verification"', "\n    });");
 
   expect(countLiteral(source, 'test("keeps one permanent URL through registration and drawing"')).toBe(1);
-  expect(countLiteral(source, 'test("keeps the same permanent URL through ongoing and finished"')).toBe(1);
+  expect(countLiteral(source, 'test("keeps the same permanent URL through ongoing and result"')).toBe(1);
+  expect(countLiteral(source, 'test("keeps the same permanent URL through finished and certificates"')).toBe(1);
   expect(registration).toContain("const url = `/id/events/${slug}`;");
   expect(countLiteral(registration, "await page.goto(url);")).toBe(3);
-  expect(countLiteral(ongoingAndFinished, "await page.goto(url);")).toBe(3);
+  expect(countLiteral(ongoing, "await page.goto(url);")).toBe(1);
+  expect(countLiteral(finished, "await page.goto(url);")).toBe(2);
   expect(countLiteral(source, "await page.goto(url);")).toBe(6);
   expect(countLiteral(source, "await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));")).toBe(5);
   expect(registration).toContain('await expect(page.getByRole("heading", { level: 1, name: `Public Lifecycle ${namespace}` })).toBeVisible();');
@@ -80,8 +85,11 @@ function assertAdaptiveLifecycleLoadBearing(source: string) {
   expect(ongoing).toContain('await expect(page.getByText("Event berlangsung", { exact: true })).toBeVisible();');
   expect(ongoing).toContain('await expect(page.getByRole("heading", { name: "Pertandingan berikutnya" })).toBeVisible();');
   expect(ongoing).toContain('expect(await prisma.match.count({ where: { eventId, resultVersion: 0 } })).toBe(0);');
+  expect(ongoing).toContain("completionId = completion.id;");
+  expect(ongoing).toContain("completionVersion = event.competitionVersion;");
 
   expect(finished).toContain('await updateStatus(page, "Finished");');
+  expect(finished).toContain('await loginAsAdmin(page, "en");');
   expect(finished).toContain('await expect(page.getByText("Hasil akhir resmi", { exact: true })).toBeVisible();');
   expect(finished).toContain('await expect(page.getByRole("heading", { name: "Podium akhir" })).toBeVisible();');
   expect(finished).toContain('await expect(page.getByText(winner.name, { exact: true }).first()).toBeVisible();');
@@ -116,9 +124,31 @@ function assertAdaptiveLifecycleOrdering(source: string) {
 function assertAdaptiveLifecycleContract(source: string) {
   expect(source).toContain('test.describe.serial("Adaptive public event lifecycle", () => {');
   expect(source).toContain("test.describe.configure({ timeout: 120_000 });");
-  expect(source).toContain('test("keeps one permanent URL through registration and drawing"');
-  expect(source).toContain('test("keeps the same permanent URL through ongoing and finished"');
-  expect(countLiteral(source, "test.setTimeout(120_000);")).toBe(2);
+  const lifecycleDescribe = sliceBetween(
+    source,
+    'test.describe.serial("Adaptive public event lifecycle", () => {',
+    "\n});",
+  );
+  const lifecycleBody = lifecycleDescribe.slice(lifecycleDescribe.indexOf("{") + 1);
+  const declarations = [...lifecycleBody.matchAll(/\btest\s*\(\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`)/g)];
+  const declaredTests = declarations.map(([, doubleQuoted, singleQuoted, templateQuoted]) => doubleQuoted ?? singleQuoted ?? templateQuoted);
+  expect(declaredTests).toEqual([
+    "keeps one permanent URL through registration and drawing",
+    "keeps the same permanent URL through ongoing and result",
+    "keeps the same permanent URL through finished and certificates",
+  ]);
+  const approvedDescribeTimeouts = lifecycleBody.match(/test\.describe\.configure\(\{\s*timeout:\s*120_000\s*\}\);/g) ?? [];
+  expect(approvedDescribeTimeouts).toHaveLength(1);
+  const approvedBudgets = lifecycleBody.match(/test\.setTimeout\(120_000\);/g) ?? [];
+  expect(approvedBudgets).toHaveLength(3);
+  const bodyWithoutApprovedTimeouts = lifecycleBody
+    .replace(/test\.describe\.configure\(\{\s*timeout:\s*120_000\s*\}\);/g, "")
+    .replace(/test\.setTimeout\(120_000\);/g, "");
+  expect(bodyWithoutApprovedTimeouts).not.toMatch(/\btest\.describe\.configure\s*\(/);
+  expect(bodyWithoutApprovedTimeouts).not.toMatch(/\b(?:timeout|actionTimeout|navigationTimeout|globalTimeout|testTimeout)\s*:/i);
+  expect(bodyWithoutApprovedTimeouts).not.toMatch(/\btest\.(?:setTimeout|slow|skip|fixme)\s*\(/);
+  expect(bodyWithoutApprovedTimeouts).not.toMatch(/\b(?:setTimeout|waitForTimeout|sleep)\s*\(/);
+  expect(bodyWithoutApprovedTimeouts).not.toMatch(/\bretr(?:y|ies)\b|retries\s*:/i);
   for (const marker of ["Template bracket", "Drawing resmi", "Event berlangsung", "Hasil akhir resmi"]) {
     expect(source).toContain(marker);
   }
@@ -287,10 +317,33 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
     assertAdaptiveLifecycleContract(lifecycle);
     for (const title of [
       'test("keeps one permanent URL through registration and drawing"',
-      'test("keeps the same permanent URL through ongoing and finished"',
+      'test("keeps the same permanent URL through ongoing and result"',
+      'test("keeps the same permanent URL through finished and certificates"',
     ]) {
       expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(title, ""))).toThrow();
     }
+    const describeEnd = lifecycle.lastIndexOf("\n});");
+    const extraTest = `${lifecycle.slice(0, describeEnd)}\n  test("unexpected fourth lifecycle phase", async () => {});${lifecycle.slice(describeEnd)}`;
+    expect(() => assertAdaptiveLifecycleContract(extraTest)).toThrow();
+    const extraSingleQuotedTest = `${lifecycle.slice(0, describeEnd)}\n  test('unexpected fourth lifecycle phase', async () => {});${lifecycle.slice(describeEnd)}`;
+    expect(() => assertAdaptiveLifecycleContract(extraSingleQuotedTest)).toThrow();
+    const extraTemplateQuotedTest = `${lifecycle.slice(0, describeEnd)}\n  test(\`unexpected fourth lifecycle phase\`, async () => {});${lifecycle.slice(describeEnd)}`;
+    expect(() => assertAdaptiveLifecycleContract(extraTemplateQuotedTest)).toThrow();
+    const extraTimeout = lifecycle.replace(
+      "test.setTimeout(120_000);",
+      "test.setTimeout(120_000);\n    test.setTimeout(180_000);",
+    );
+    expect(() => assertAdaptiveLifecycleContract(extraTimeout)).toThrow();
+    const extraDescribeTimeout = lifecycle.replace(
+      "test.describe.configure({ timeout: 120_000 });",
+      "test.describe.configure({ timeout: 120_000 });\n  test.describe.configure({ timeout: 180_000 });",
+    );
+    expect(() => assertAdaptiveLifecycleContract(extraDescribeTimeout)).toThrow();
+    const extraSlow = lifecycle.replace(
+      "test.setTimeout(120_000);",
+      "test.setTimeout(120_000);\n    test.slow();",
+    );
+    expect(() => assertAdaptiveLifecycleContract(extraSlow)).toThrow();
     expect(() => assertAdaptiveLifecycleContract(lifecycle.replace("operationVersion = receipt.version;", "operationVersion = operationVersion;"))).toThrow();
     expect(() => assertAdaptiveLifecycleContract(lifecycle.replace("await Promise.allSettled([...inFlightOperations]);", "await Promise.all([]);"))).toThrow();
     for (const removedAssertion of [
@@ -329,7 +382,7 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
       "while (inFlightOperations.size > 0) {\n      await Promise.allSettled([...inFlightOperations]);\n    }\n    await prisma.event.deleteMany({ where: { id: eventId } });",
       "await prisma.event.deleteMany({ where: { id: eventId } });\n    while (inFlightOperations.size > 0) {\n      await Promise.allSettled([...inFlightOperations]);\n    }",
     ))).toThrow();
-    for (const label of ["registration and drawing", "ongoing and result", "finished and public verification"]) {
+    for (const label of ["registration and drawing", "ongoing and result", "finished and certificates"]) {
       expect(lifecycle).toContain(`test.step("${label}"`);
     }
   });

@@ -64,6 +64,7 @@ const LOCALE_COPY = {
     qrisDraftSaved: "Draf QRIS disimpan.",
     qrisPublished: "QRIS diterbitkan.",
     statisticsSaved: "Tersimpan. Memuat data terbaru.",
+    legacyOperationSaved: "Tersimpan. Memperbarui ruang kerja.",
     completionHeading: "Penyelesaian Turnamen",
     completionStatus: "completed",
     completionFeedback: "Turnamen berhasil diselesaikan. Muat ulang untuk melihat versi yang tercatat.",
@@ -100,6 +101,7 @@ const LOCALE_COPY = {
       qrisDraftSaved: "QRIS draft saved.",
       qrisPublished: "QRIS published.",
       statisticsSaved: "Saved. Refreshing authoritative data.",
+      legacyOperationSaved: "Saved. Updating workspace.",
       completionHeading: "Tournament Completion",
       completionStatus: "ready",
       completionFeedback: "Tournament completed successfully. Refresh to view the committed version.",
@@ -137,6 +139,7 @@ const LOCALE_COPY = {
     qrisDraftSaved: "QRIS draft saved.",
     qrisPublished: "QRIS published.",
     statisticsSaved: "Saved. Refreshing authoritative data.",
+    legacyOperationSaved: "Saved. Updating workspace.",
     completionHeading: "Tournament Completion",
     completionStatus: "completed",
     completionFeedback: "Tournament completed successfully. Refresh to view the committed version.",
@@ -173,6 +176,7 @@ const LOCALE_COPY = {
       qrisDraftSaved: "Draf QRIS disimpan.",
       qrisPublished: "QRIS diterbitkan.",
       statisticsSaved: "Tersimpan. Memuat data terbaru.",
+      legacyOperationSaved: "Tersimpan. Memperbarui ruang kerja.",
       completionHeading: "Penyelesaian Turnamen",
       completionStatus: "ready",
       completionFeedback: "Turnamen berhasil diselesaikan. Muat ulang untuk melihat versi yang tercatat.",
@@ -489,8 +493,12 @@ async function runOrganizerReleaseJourneyPartA(page: Page, fixture: ReleaseFixtu
   await expect.poll(async () => (await fixture.readState()).qris?.status).toBe("draft");
   const savedQris = await fixture.readState();
   expect(savedQris.qris?.version).toBe(fixture.qrisVersion + 1);
-  await page.locator("[data-publish]").click();
-  await expectLocalizedText(page, copy.qrisPublished, copy.opposite.qrisPublished);
+  await runAndSettleServerActionUi(page, {
+    request: (_request, requestUrl) => requestUrl.pathname === `/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration`
+      && requestUrl.search === "?view=qris",
+    trigger: () => page.locator("[data-publish]").click(),
+    uiReady: () => expectLocalizedText(page, copy.qrisPublished, copy.opposite.qrisPublished),
+  });
   await expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");
   receipt = await fixture.readState();
   expect(receipt.qris).toMatchObject({ eventId: fixture.registrationEventId, status: "published", version: fixture.qrisVersion + 2 });
@@ -525,7 +533,14 @@ async function runOrganizerReleaseJourneyPartA(page: Page, fixture: ReleaseFixtu
   await expect(page.getByRole("form", { name: copy.opposite.officialResultHeading, exact: true })).toHaveCount(0);
   await resultForm.locator('input[name="home-1"]').fill("2");
   await resultForm.locator('input[name="away-1"]').fill("1");
-  await resultForm.getByRole("button", { name: copy.submitResult, exact: true }).click();
+  const resultPath = `/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/matches/${encodeURIComponent(matchId!)}`;
+  const resultSaved = mode === "on" ? copy.statisticsSaved : copy.legacyOperationSaved;
+  const oppositeResultSaved = mode === "on" ? copy.opposite.statisticsSaved : copy.opposite.legacyOperationSaved;
+  await runAndSettleServerActionUi(page, {
+    request: (_request, requestUrl) => requestUrl.pathname === resultPath && requestUrl.search === "",
+    trigger: () => resultForm.getByRole("button", { name: copy.submitResult, exact: true }).click(),
+    uiReady: () => expectLocalizedText(page, resultSaved, oppositeResultSaved),
+  });
   await expect.poll(async () => (await fixture.readState()).match?.resultVersion).toBe(1);
   receipt = await fixture.readState();
   expect(receipt.match).toMatchObject({ id: matchId, eventId: fixture.id, resultVersion: 1, status: "Completed", homeScore: 2, awayScore: 1 });
