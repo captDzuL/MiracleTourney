@@ -9,7 +9,7 @@ import {
   MIRACLE_V3_CERTIFICATE_TYPES,
   type MiracleV3CertificateType,
 } from "../../../src/lib/certificate/templates/miracle-v3-contract";
-import { getMiracleV3CertificateManifest } from "../../../src/lib/certificate/templates/miracle-v3";
+import { getMiracleV3CertificateFingerprint, getMiracleV3CertificateManifest } from "../../../src/lib/certificate/templates/miracle-v3";
 import { generateCompetitionGraph, type CompetitionGraph } from "../../../src/lib/tournament/competition";
 import type { TournamentFormatConfig } from "../../../src/lib/tournament/formats/types";
 import { competitionProjection } from "../../../src/lib/tournament/operations/result-projection";
@@ -52,6 +52,7 @@ type CertificateFixtureRow = {
   attemptCount: number;
   generationIdempotencyKey: string;
   generationFingerprint: string;
+  mutationFingerprint: string;
   generationActorUserId: string;
   completionId: string;
   completionVersion: number;
@@ -596,6 +597,12 @@ export async function prepareCertificateFixture(
         branding: MIRACLE_V3_BRANDING,
         assetPlacements: [placement],
       });
+      const mutationFingerprint = JSON.stringify({
+        action: "regenerate",
+        certificateType: type,
+        expectedVersion: result.version,
+        assets: [{ assetId: logoAsset.id, placement }],
+      });
       return [{
         id,
         eventId: fixture.id,
@@ -616,7 +623,8 @@ export async function prepareCertificateFixture(
         publishedAt: CERTIFICATE_FIXTURE_NOW,
         attemptCount: 1,
         generationIdempotencyKey: randomUUID(),
-        generationFingerprint: JSON.stringify({ action: "regenerate", certificateType: type, expectedVersion: result.version, assets: [asset] }),
+        generationFingerprint: getMiracleV3CertificateFingerprint(renderManifest),
+        mutationFingerprint,
         generationActorUserId: fixture.actor.id,
         completionId: completion.id,
         completionVersion: result.version,
@@ -662,6 +670,12 @@ export async function prepareCertificateFixture(
       branding: MIRACLE_V3_BRANDING,
       assetPlacements: [currentChampionPlacement],
     });
+    const mutationFingerprint = JSON.stringify({
+      action: "regenerate",
+      certificateType: "champion",
+      expectedVersion: result.version,
+      assets: [{ assetId: logoAsset.id, placement: currentChampionPlacement }],
+    });
     certificateRows.push({
       id: currentChampionId,
       eventId: fixture.id,
@@ -682,7 +696,8 @@ export async function prepareCertificateFixture(
       publishedAt: null,
       attemptCount: 1,
       generationIdempotencyKey: randomUUID(),
-      generationFingerprint: JSON.stringify({ action: "regenerate", certificateType: "champion", expectedVersion: result.version, assets: [currentChampionAsset] }),
+      generationFingerprint: getMiracleV3CertificateFingerprint(currentChampionManifest),
+      mutationFingerprint,
       generationActorUserId: fixture.actor.id,
       completionId: completion.id,
       completionVersion: result.version,
@@ -692,13 +707,18 @@ export async function prepareCertificateFixture(
       .map(({ type, id }) => ({ certificateType: type, certificateId: id }));
     const publicationKey = randomUUID();
     await completionDb.$transaction(async (tx) => {
-      await tx.certificate.createMany({ data: certificateRows });
+      await tx.certificate.createMany({
+        data: certificateRows.map(({ mutationFingerprint, ...row }) => {
+          if (!mutationFingerprint) throw new Error("Certificate fixture mutation fingerprint is missing");
+          return row;
+        }),
+      });
       await tx.certificateGenerationMutation.createMany({
         data: certificateRows.map((row) => ({
           eventId: fixture.id,
           type: row.type,
           idempotencyKey: row.generationIdempotencyKey,
-          fingerprint: row.generationFingerprint,
+          fingerprint: row.mutationFingerprint,
           actorUserId: fixture.actor.id,
           certificateId: row.id,
           status: "succeeded",

@@ -22,4 +22,15 @@ describe("certificate fixture budget contract", () => {
     expect(certificateSpec).toContain('test.step("certificate navigation"');
     expect(certificateSpec).toContain('test.step("publication"');
   });
+
+  it("keeps canonical artifact and regeneration-request fingerprints separate", () => {
+    expect(helper).toContain("generationFingerprint: getMiracleV3CertificateFingerprint(renderManifest)");
+    expect(helper).toContain("generationFingerprint: getMiracleV3CertificateFingerprint(currentChampionManifest)");
+    expect(helper).toContain("mutationFingerprint");
+    expect(helper).toContain('assets: [{ assetId: logoAsset.id, placement }]');
+    expect(helper).toContain('assets: [{ assetId: logoAsset.id, placement: currentChampionPlacement }]');
+    expect(helper).toContain("certificateRows.map(({ mutationFingerprint, ...row })");
+    expect(helper).toContain("fingerprint: row.mutationFingerprint");
+    expect(helper).not.toContain("fingerprint: row.generationFingerprint");
+  });
 });
