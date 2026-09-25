@@ -50,6 +50,7 @@ function assertAdaptiveLifecycleLoadBearing(source: string) {
   expect(ongoing).toContain('await updateStatus("Ongoing");');
   expect(ongoing).toContain('await expect(page.getByText("Event berlangsung", { exact: true })).toBeVisible();');
   expect(ongoing).toContain('await expect(page.getByRole("heading", { name: "Pertandingan berikutnya" })).toBeVisible();');
+  expect(ongoing).toContain('expect(await prisma.match.count({ where: { eventId, resultVersion: 0 } })).toBe(0);');
 
   expect(finished).toContain('await updateStatus("Finished");');
   expect(finished).toContain('await expect(page.getByText("Hasil akhir resmi", { exact: true })).toBeVisible();');
@@ -243,6 +244,7 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
       'await expect(page.getByText("Drawing resmi", { exact: true })).toBeVisible();',
       'await expect(page.getByText("Event berlangsung", { exact: true })).toBeVisible();',
       'await expect(page.getByRole("heading", { name: "Pertandingan berikutnya" })).toBeVisible();',
+      'expect(await prisma.match.count({ where: { eventId, resultVersion: 0 } })).toBe(0);',
       'await expect(page.getByText("Hasil akhir resmi", { exact: true })).toBeVisible();',
       'await expect(page.getByRole("heading", { name: "Podium akhir" })).toBeVisible();',
       'await expect(page.getByText(teams[0].name, { exact: true }).first()).toBeVisible();',
@@ -253,6 +255,10 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
     ]) {
       expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(removedAssertion, ""))).toThrow();
     }
+    expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(
+      'expect(await prisma.match.count({ where: { eventId, resultVersion: 0 } })).toBe(0);',
+      'expect(await prisma.match.count({ where: { eventId, resultVersion: 1 } })).toBe(0);',
+    ))).toThrow();
     expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(
       "inFlightOperations.add(operation);\n      try {\n        const receipt = await operation;",
       "try {\n        const receipt = await operation;\n        inFlightOperations.add(operation);",
