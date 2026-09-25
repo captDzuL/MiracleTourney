@@ -10,6 +10,14 @@ const captainAuth = readFileSync(resolve(root, "tests/e2e/captain-auth.spec.ts")
 const loginBody = auth.match(
   /export async function loginWithCredentials[\s\S]*?export async function loginAsAdmin/,
 )?.[0] ?? "";
+const normalizeSource = (source: string) => source.replace(/\r\n/g, "\n").trim();
+const roleWrappers = {
+  admin: auth.match(/export async function loginAsAdmin[\s\S]*?(?=export async function loginAsCaptain)/)?.[0] ?? "",
+  captain: auth.match(/export async function loginAsCaptain[\s\S]*?(?=export async function loginAsOrganizer)/)?.[0] ?? "",
+  organizer: auth.match(/export async function loginAsOrganizer[\s\S]*$/)?.[0] ?? "",
+};
+const captainDashboardTest =
+  captainAuth.match(/test\("captain can log in and reach captain dashboard",[\s\S]*?\n\s*\}\);/)?.[0] ?? "";
 
 describe("shared login destination readiness contract", () => {
   it("settles the authenticated destination at DOMContentLoaded", () => {
@@ -43,22 +51,42 @@ describe("shared login destination readiness contract", () => {
   });
 
   it("preserves role credentials, destination regexes, and caller-owned readiness", () => {
-    expect(auth).toContain('email: "admin@miraclefc.gg"');
-    expect(auth).toContain('password: "Miracle2026!"');
-    expect(auth).toContain('destination: /\\/(id|en)\\/admin/');
-
-    expect(auth).toContain('email: "captain@miraclefc.gg"');
-    expect(auth).toContain('password: "Miracle2026!"');
-    expect(auth).toContain('destination: /\\/(id|en)\\/captain/');
-
-    expect(auth).toContain('email: "organizer-a@miraclefc.gg"');
-    expect(auth).toContain('password: "Miracle2026!"');
-    expect(auth).toContain('destination: /\\/(id|en)\\/organizer/');
+    expect(normalizeSource(roleWrappers.admin)).toBe(
+      normalizeSource(`export async function loginAsAdmin(page: Page, locale: "id" | "en" = "id") {
+  await loginWithCredentials(page, {
+    locale,
+    email: "admin@miraclefc.gg",
+    password: "Miracle2026!",
+    destination: /\\/(id|en)\\/admin/,
+  });
+}`),
+    );
+    expect(normalizeSource(roleWrappers.captain)).toBe(
+      normalizeSource(`export async function loginAsCaptain(page: Page, locale: "id" | "en" = "id") {
+  await loginWithCredentials(page, {
+    locale,
+    email: "captain@miraclefc.gg",
+    password: "Miracle2026!",
+    destination: /\\/(id|en)\\/captain/,
+  });
+}`),
+    );
+    expect(normalizeSource(roleWrappers.organizer)).toBe(
+      normalizeSource(`export async function loginAsOrganizer(page: Page, locale: "id" | "en" = "id") {
+  await loginWithCredentials(page, {
+    locale,
+    email: "organizer-a@miraclefc.gg",
+    password: "Miracle2026!",
+    destination: /\\/(id|en)\\/organizer/,
+  });
+}`),
+    );
 
     expect(loginBody).not.toMatch(/getByRole\("(main|heading)"/);
-    expect(captainAuth).toContain('await expect(page.getByRole("main")).toBeVisible();');
-    expect(captainAuth.indexOf('await loginAsCaptain(page, "id");')).toBeLessThan(
-      captainAuth.indexOf('await expect(page.getByRole("main")).toBeVisible();'),
+    expect(captainDashboardTest).toContain('await loginAsCaptain(page, "id");');
+    expect(captainDashboardTest).toContain('await expect(page.getByRole("main")).toBeVisible();');
+    expect(captainDashboardTest.indexOf('await loginAsCaptain(page, "id");')).toBeLessThan(
+      captainDashboardTest.indexOf('await expect(page.getByRole("main")).toBeVisible();'),
     );
   });
 });
