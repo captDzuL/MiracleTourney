@@ -506,6 +506,8 @@ describe("CompletionWorkspace", () => {
     expect(container.querySelector("[data-refresh-action-blocker]")?.textContent).toContain(expected);
     expect(container.querySelector("[data-refresh-action-blocker]")?.getAttribute("role")).toBeNull();
     expect(container.querySelector('[role="tabpanel"]:not([hidden])')?.textContent).not.toContain("All required gates are clear");
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).not.toBe("completed");
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).not.toBe("reopened");
     expect(button.disabled).toBe(true);
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
     await act(async () => button.click());
@@ -538,6 +540,8 @@ describe("CompletionWorkspace", () => {
 
     await act(async () => button.click());
     expect(container.querySelector("[data-action-result]")?.textContent).toContain(expected);
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).not.toBe("completed");
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).not.toBe("reopened");
     expect(button.disabled).toBe(true);
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
     await act(async () => button.click());
@@ -670,6 +674,8 @@ describe("CompletionWorkspace", () => {
     await act(async () => button.click());
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
     expect(button.disabled).toBe(true);
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).toBe("reopened");
+    expect(container.querySelector<HTMLButtonElement>("[data-complete-tournament]")?.disabled).toBe(true);
     await act(async () => button.click());
     expect(reopen).toHaveBeenCalledTimes(1);
 
