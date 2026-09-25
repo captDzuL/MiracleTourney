@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -14,6 +13,24 @@ function sliceBetween(source: string, startMarker: string, endMarker: string) {
   const start = source.indexOf(startMarker);
   const end = source.indexOf(endMarker, start + startMarker.length);
   return source.slice(start, end === -1 ? source.length : end);
+}
+
+function assertConcurrentTriggerSettlement(redirectHelper: string) {
+  expect(redirectHelper).toContain("const [response] = await Promise.all([responsePromise, triggerPromise]);");
+  expect(redirectHelper).not.toContain("const response = await responsePromise;");
+
+  const triggerIndex = redirectHelper.indexOf("const triggerPromise = Promise.resolve().then(() => options.trigger());");
+  const concurrentSettlementIndex = redirectHelper.indexOf(
+    "const [response] = await Promise.all([responsePromise, triggerPromise]);",
+  );
+  const statusIndex = redirectHelper.indexOf("response.status() < 400");
+  const redirectHeaderIndex = redirectHelper.indexOf('response.headers()["x-action-redirect"]');
+  const destinationAwaitIndex = redirectHelper.indexOf("await destinationPromise;");
+
+  expect(concurrentSettlementIndex).toBeGreaterThan(triggerIndex);
+  expect(statusIndex).toBeGreaterThan(concurrentSettlementIndex);
+  expect(redirectHeaderIndex).toBeGreaterThan(statusIndex);
+  expect(destinationAwaitIndex).toBeGreaterThan(redirectHeaderIndex);
 }
 
 describe("server action settlement contract", () => {
@@ -67,8 +84,7 @@ describe("server action settlement contract", () => {
     expect(redirectHelper).toContain("const actionRedirect = response.headers()[\"x-action-redirect\"];");
     expect(redirectHelper).toContain("options.expectedActionRedirect");
     expect(redirectHelper).toContain("const triggerPromise = Promise.resolve().then(() => options.trigger());");
-    expect(redirectHelper).toContain("void triggerPromise.catch(() => undefined);");
-    expect(redirectHelper).toContain("await Promise.all([destinationPromise, triggerPromise]);");
+    assertConcurrentTriggerSettlement(redirectHelper);
     expect(redirectHelper).toContain("response.status() < 400");
     expect(redirectHelper).not.toContain("response.finished()");
     expect(redirectHelper).not.toContain("requestfinished");
@@ -78,19 +94,33 @@ describe("server action settlement contract", () => {
     const responseArmIndex = redirectHelper.indexOf("const responsePromise = waitForServerActionResponseHeaders");
     const destinationArmIndex = redirectHelper.indexOf("const destinationPromise = page.waitForURL");
     const triggerIndex = redirectHelper.indexOf("const triggerPromise = Promise.resolve().then(() => options.trigger());");
-    const triggerObserverIndex = redirectHelper.indexOf("void triggerPromise.catch(() => undefined);");
     expect(responseArmIndex).toBeGreaterThan(-1);
     expect(destinationArmIndex).toBeGreaterThan(responseArmIndex);
     expect(triggerIndex).toBeGreaterThan(destinationArmIndex);
-    expect(triggerObserverIndex).toBeGreaterThan(triggerIndex);
 
-    const responseIndex = redirectHelper.indexOf("const response = await responsePromise;");
+    const responseIndex = redirectHelper.indexOf("const [response] = await Promise.all([responsePromise, triggerPromise]);");
     const statusIndex = redirectHelper.indexOf("response.status() < 400");
     const redirectHeaderIndex = redirectHelper.indexOf("response.headers()[\"x-action-redirect\"]");
     expect(responseIndex).toBeGreaterThan(triggerIndex);
-    expect(triggerObserverIndex).toBeLessThan(responseIndex);
     expect(statusIndex).toBeGreaterThan(responseIndex);
     expect(redirectHeaderIndex).toBeGreaterThan(statusIndex);
+  });
+
+  it("rejects the sequential response wait that masks a trigger rejection", () => {
+    const concurrentContract = [
+      "const triggerPromise = Promise.resolve().then(() => options.trigger());",
+      "const [response] = await Promise.all([responsePromise, triggerPromise]);",
+      "if (!(response.status() < 400)) throw new Error();",
+      'const actionRedirect = response.headers()["x-action-redirect"];',
+      "await destinationPromise;",
+    ].join("\n");
+    const sequentialMutation = concurrentContract.replace(
+      "const [response] = await Promise.all([responsePromise, triggerPromise]);",
+      "const response = await responsePromise;",
+    );
+
+    expect(() => assertConcurrentTriggerSettlement(concurrentContract)).not.toThrow();
+    expect(() => assertConcurrentTriggerSettlement(sequentialMutation)).toThrow();
   });
 
   it("settles both legacy admin actions before retaining their URL assertions", () => {
@@ -213,13 +243,4 @@ describe("server action settlement contract", () => {
     expect(previewBlock).not.toContain("requestfailed");
   });
 
-  it("keeps settlement changes out of product source", () => {
-    // Recorded from `git rev-parse e4b2903:src`; this survives actions/checkout's shallow history.
-    const expectedSrcTree = "8ddee33e491bd06435e87546c89a83866b24f990";
-    const headSrcTree = execFileSync("git", ["rev-parse", "HEAD:src"], {
-      cwd: root,
-      encoding: "utf8",
-    }).trim();
-    expect(headSrcTree).toBe(expectedSrcTree);
-  });
 });

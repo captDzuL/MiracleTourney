@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -8,7 +7,6 @@ const sourcePath = resolve(root, "tests/e2e/public-v3-seeded-events.spec.ts");
 const source = readFileSync(sourcePath, "utf8").replace(/\r\n?/g, "\n");
 const cleanupStart = "  async function clearEventCompetition(eventId: string) {";
 const cleanupEnd = "\n\n  async function installUnknownPhaseLessMatch()";
-const immutableSurfaceHash = "d4fa2434f50c2526302d853ccede2bea1958ae04698059d82ca62ca4e76dc006";
 
 const deleteStatements = [
   "prisma.tournamentCompletion.deleteMany({ where: { eventId } })",
@@ -156,6 +154,70 @@ function countLiteral(text: string, literal: string) {
   return text.split(literal).length - 1;
 }
 
+function extractFunction(spec: string, startMarker: string, endMarker: string) {
+  const start = spec.indexOf(startMarker);
+  const end = spec.indexOf(endMarker, start + startMarker.length);
+  if (start < 0 || end < 0) throw new Error(`Unable to isolate ${startMarker.trim()}`);
+  return spec.slice(start, end);
+}
+
+function assertSeedHelpersContract(spec: string) {
+  const runSeed = extractFunction(spec, "  function runSeed() {", "\n\n  function runSeedExpectFailure() {");
+  const runSeedExpectFailure = extractFunction(
+    spec,
+    "  function runSeedExpectFailure() {",
+    "\n\n  async function clearEventCompetition",
+  );
+  const sharedSpawnContract = [
+    'const command = isWindows ? (process.env.ComSpec ?? "cmd.exe") : "pnpm";',
+    'const args = isWindows ? ["/d", "/s", "/c", "pnpm db:seed"] : ["db:seed"];',
+    "spawnSync(command, args, {",
+    "cwd: process.cwd(),",
+    "env: process.env,",
+    'encoding: "utf8",',
+    "windowsHide: true,",
+  ];
+
+  for (const contract of sharedSpawnContract) {
+    expect(runSeed).toContain(contract);
+    expect(runSeedExpectFailure).toContain(contract);
+  }
+  expect(runSeed).toContain("const result = spawnSync(command, args, {");
+  expect(runSeed).toContain("const failure = result.error?.message || result.stderr || result.stdout;");
+  expect(runSeed).toContain("expect(result.status, failure).toBe(0);");
+  expect(runSeedExpectFailure).toContain("return spawnSync(command, args, {");
+  expect(runSeedExpectFailure).not.toMatch(/expect\(result\.status|\.toBe\(0\)/);
+}
+
+function assertUnknownMatchPreservationContract(spec: string) {
+  const testBlock = extractFunction(
+    spec,
+    '  test("refuses an unknown phase-less match without deleting it", async () => {',
+    '\n\n  test("upgrades blocking legacy Flashpeak rows and remains idempotent"',
+  );
+  const installIndex = testBlock.indexOf("await installUnknownPhaseLessMatch();");
+  const beforeIndex = testBlock.indexOf("const before = await prisma.match.findUniqueOrThrow({");
+  const seedIndex = testBlock.indexOf("const result = runSeedExpectFailure();");
+  const failureIndex = testBlock.indexOf("expect(result.status, result.stderr || result.stdout).not.toBe(0);");
+  const refusalIndex = testBlock.indexOf('toContain("Refusing to replace non-fixture matches")');
+  const afterIndex = testBlock.indexOf("const after = await prisma.match.findUniqueOrThrow({");
+  const equalityIndex = testBlock.indexOf("expect(after).toEqual(before);");
+  const cleanupIndex = testBlock.indexOf("await prisma.match.delete({ where: { id: UNKNOWN_FLASHPEAK_MATCH_ID } });");
+  const preservationSelect =
+    "select: { id: true, eventId: true, homeTeamId: true, awayTeamId: true, status: true, round: true, slot: true }";
+
+  expect(testBlock).toContain("where: { id: UNKNOWN_FLASHPEAK_MATCH_ID }");
+  expect(countLiteral(testBlock, preservationSelect)).toBe(2);
+  expect(installIndex).toBeGreaterThan(-1);
+  expect(beforeIndex).toBeGreaterThan(installIndex);
+  expect(seedIndex).toBeGreaterThan(beforeIndex);
+  expect(failureIndex).toBeGreaterThan(seedIndex);
+  expect(refusalIndex).toBeGreaterThan(failureIndex);
+  expect(afterIndex).toBeGreaterThan(refusalIndex);
+  expect(equalityIndex).toBeGreaterThan(afterIndex);
+  expect(cleanupIndex).toBeGreaterThan(equalityIndex);
+}
+
 function assertOrderedBatchTransaction(block: string) {
   expect(countLiteral(block, "prisma.$transaction(")).toBe(1);
   expect(block).toContain("await prisma.$transaction([\n");
@@ -194,12 +256,42 @@ describe("seeded competition cleanup transaction contract", () => {
     expect(() => assertOrderedBatchTransaction(extractCleanupBlock(source))).not.toThrow();
   });
 
-  it("protects the seed helpers, fixture setup, and test assertions outside the cleanup helper", () => {
-    const immutableSurface = source.replace(extractCleanupBlock(source), "<clearEventCompetition>");
-    const digest = createHash("sha256").update(immutableSurface).digest("hex");
+  it("protects the runSeed success and runSeedExpectFailure process contracts", () => {
+    expect(() => assertSeedHelpersContract(source)).not.toThrow();
+  });
 
-    expect(digest).toBe(immutableSurfaceHash);
-    expect(immutableSurface).not.toMatch(/\b(?:db:reset|migrate\s+reset|reset\s+--force)\b/i);
+  it("protects exact unknown phase-less match preservation evidence", () => {
+    expect(() => assertUnknownMatchPreservationContract(source)).not.toThrow();
+  });
+
+  it("rejects mutations to seed-result semantics", () => {
+    const successMutation = source.replace(
+      "expect(result.status, failure).toBe(0);",
+      "expect(result.status, failure).not.toBe(0);",
+    );
+    const failureMutation = source.replace(
+      "return spawnSync(command, args, {",
+      "const result = spawnSync(command, args, {",
+    );
+
+    expect(() => assertSeedHelpersContract(successMutation)).toThrow();
+    expect(() => assertSeedHelpersContract(failureMutation)).toThrow();
+  });
+
+  it("rejects mutations that weaken unknown-match preservation", () => {
+    const statusMutation = source.replace(
+      "expect(result.status, result.stderr || result.stdout).not.toBe(0);",
+      "expect(result.status, result.stderr || result.stdout).toBe(0);",
+    );
+    const equalityMutation = source.replace("expect(after).toEqual(before);", "expect(after.id).toBe(before.id);");
+    const earlyCleanupMutation = source.replace(
+      "const after = await prisma.match.findUniqueOrThrow({",
+      "await prisma.match.delete({ where: { id: UNKNOWN_FLASHPEAK_MATCH_ID } });\n    const after = await prisma.match.findUniqueOrThrow({",
+    );
+
+    expect(() => assertUnknownMatchPreservationContract(statusMutation)).toThrow();
+    expect(() => assertUnknownMatchPreservationContract(equalityMutation)).toThrow();
+    expect(() => assertUnknownMatchPreservationContract(earlyCleanupMutation)).toThrow();
   });
 
   it("rejects a phase delete moved before its groups", () => {

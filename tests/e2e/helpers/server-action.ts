@@ -39,13 +39,12 @@ export async function runAndSettleServerActionRedirect(
   const destinationPromise = page.waitForURL(options.destination, { waitUntil: "domcontentloaded" });
   void destinationPromise.catch(() => undefined);
   const triggerPromise = Promise.resolve().then(() => options.trigger());
-  void triggerPromise.catch(() => undefined);
-  const response = await responsePromise;
+  const [response] = await Promise.all([responsePromise, triggerPromise]);
   if (!(response.status() < 400)) throw new Error(`Server Action failed with HTTP ${response.status()}.`);
   const actionRedirect = response.headers()["x-action-redirect"];
   if (actionRedirect !== options.expectedActionRedirect) {
     throw new Error(`Unexpected Server Action redirect: ${actionRedirect ?? "<missing>"}`);
   }
-  await Promise.all([destinationPromise, triggerPromise]);
+  await destinationPromise;
   return response;
 }
