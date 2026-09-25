@@ -9,7 +9,22 @@ const completionHelper = readFileSync(resolve(root, "tests/e2e/helpers/completio
 function extractBracedBlock(source: string, marker: string) {
   const markerIndex = source.indexOf(marker);
   if (markerIndex < 0) return "";
-  const openBraceIndex = source.indexOf("{", markerIndex + marker.length - 1);
+  let openBraceIndex = source.indexOf("{", markerIndex + marker.length - 1);
+  if (openBraceIndex < 0) return "";
+  const parameterStartIndex = marker.includes("=> {") || marker.includes("=>{") ? -1 : source.indexOf("(", markerIndex);
+  if (parameterStartIndex >= 0 && parameterStartIndex < openBraceIndex) {
+    let parameterDepth = 0;
+    let parameterEndIndex = -1;
+    for (let index = parameterStartIndex; index < source.length; index += 1) {
+      if (source[index] === "(") parameterDepth += 1;
+      if (source[index] === ")") parameterDepth -= 1;
+      if (parameterDepth === 0) {
+        parameterEndIndex = index;
+        break;
+      }
+    }
+    if (parameterEndIndex >= 0) openBraceIndex = source.indexOf("{", parameterEndIndex + 1);
+  }
   if (openBraceIndex < 0) return "";
   let depth = 0;
   for (let index = openBraceIndex; index < source.length; index += 1) {
@@ -22,11 +37,17 @@ function extractBracedBlock(source: string, marker: string) {
 
 describe("Completion action settlement contract", () => {
   it("waits for the exact event-bound server action before persistence and refresh assertions", () => {
-    expect(completionSpec).toContain("function waitForCompletionActionResponse");
-    expect(completionSpec).toContain('request.method() === "POST"');
-    expect(completionSpec).toContain("responseUrl.pathname === completionPath");
-    expect(completionSpec).toContain('Boolean(request.headers()["next-action"])');
-    expect(completionSpec).toContain("requestData.includes(eventId)");
+    const actionRequest = extractBracedBlock(completionSpec, "function isCompletionActionRequest(");
+    const responseWaiter = extractBracedBlock(completionSpec, "function waitForCompletionActionResponse(");
+    expect(actionRequest).not.toBe("");
+    expect(responseWaiter).not.toBe("");
+    expect(actionRequest).toContain('request.method() === "POST"');
+    expect(actionRequest).toContain("requestUrl.pathname === completionPath(locale, eventId)");
+    expect(actionRequest).toContain('Boolean(request.headers()["next-action"])');
+    expect(actionRequest).toContain('(request.postData() ?? "").includes(eventId)');
+    expect(responseWaiter).toContain("const expectedPath = completionPath(locale, eventId);");
+    expect(responseWaiter).toContain("responseUrl.pathname === expectedPath");
+    expect(responseWaiter).toContain("isCompletionActionRequest(request, locale, eventId)");
     expect(completionSpec).toContain("await Promise.all([completionResponsePromise, completeButton.click()])");
 
     const responseStatusIndex = completionSpec.indexOf("expect(completionResponse.status()).toBe(200)");
@@ -59,6 +80,7 @@ describe("Completion action settlement contract", () => {
       'test("completes the authoritative single_elimination release format with an audited tied award", async ({ browser }) => {',
     );
     const cleanupResources = extractBracedBlock(completionSpec, "async function cleanupCompletionResources() {");
+    const actionRequest = extractBracedBlock(completionSpec, "function isCompletionActionRequest(");
     const responseWaiter = extractBracedBlock(completionSpec, "function waitForCompletionActionResponse(");
     const completionJourney = extractBracedBlock(completionSpec, "async function runCompletionJourney(");
     const parityCase = extractBracedBlock(
@@ -70,6 +92,7 @@ describe("Completion action settlement contract", () => {
     expect(beforeAll).not.toBe("");
     expect(timedCase).not.toBe("");
     expect(cleanupResources).not.toBe("");
+    expect(actionRequest).not.toBe("");
     expect(responseWaiter).not.toBe("");
     expect(completionJourney).not.toBe("");
     expect(parityCase).not.toBe("");
@@ -111,10 +134,13 @@ describe("Completion action settlement contract", () => {
     expect(timedCase).toContain("measuredFrom=first-test-line");
     expect(timedCase).toContain("attachment=excluded");
 
-    expect(responseWaiter).toContain('request.method() === "POST"');
-    expect(responseWaiter).toContain("responseUrl.pathname === completionPath");
-    expect(responseWaiter).toContain('Boolean(request.headers()["next-action"])');
-    expect(responseWaiter).toContain("requestData.includes(eventId)");
+    expect(actionRequest).toContain('request.method() === "POST"');
+    expect(actionRequest).toContain("requestUrl.pathname === completionPath(locale, eventId)");
+    expect(actionRequest).toContain('Boolean(request.headers()["next-action"])');
+    expect(actionRequest).toContain('(request.postData() ?? "").includes(eventId)');
+    expect(responseWaiter).toContain("const expectedPath = completionPath(locale, eventId);");
+    expect(responseWaiter).toContain("responseUrl.pathname === expectedPath");
+    expect(responseWaiter).toContain("isCompletionActionRequest(request, locale, eventId)");
     expect(completionJourney).toContain("await Promise.all([completionResponsePromise, completeButton.click()])");
     expect(completionJourney).toContain("expect(completionResponse.status()).toBe(200)");
     expect(cleanupResources).toContain("completionActionResponsePending");
