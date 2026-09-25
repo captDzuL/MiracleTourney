@@ -1,24 +1,26 @@
 # CI 36147449749 Brief B CSV preview settlement observability report
 
-Date: 2026-09-26 (Asia/Jakarta)  
-Worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`  
-Branch: `codex/organizer-release-readiness`  
-Base SHA: `85f958e9a213bbc860400aba53edaa1494eb3577`  
-Implementation SHA: `934d17f` (`test: instrument CSV preview settlement boundaries`)
+Date: 2026-09-26 (Asia/Jakarta)
+Worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`
+Branch: `codex/organizer-release-readiness`
+Base SHA: `994c9ce9ed2cea3628b811cdee5b1c07755fd123`
+Review code/tests SHA: `25e303f63d18c5a286b7ec048a82e977a9c0ba27`
 
 ## Outcome
 
-Brief B is implemented as bounded, redacted action/route observability. The
-CSV preview action now records one correlated request ID across named milestones
-around the existing awaits, and the revalidated registration route records its
-entry, event-context, import-history, and return boundaries. The existing
-action result, preview persistence, `revalidatePath()` call, and response EOF
-contract are unchanged.
+Brief B remains bounded to redacted, correlated action and route observability.
+The CSV preview action records milestones around the existing awaits, and the
+revalidated registration route records its entry, event-context, import-history,
+and return boundaries. Action results, preview persistence, `revalidatePath()`,
+commit/receipt behavior, and the response EOF contract are unchanged.
 
-Action milestones:
+Action milestones, in their truthful order:
 
 ```text
 action_enter
+initial_gate_done
+rate_limit_done
+ownership_done
 access_gate_done
 event_context_done
 source_parsed
@@ -29,6 +31,13 @@ revalidation_requested
 action_return
 ```
 
+`initial_gate_done` describes the outer role/session gate only. The required
+`access_gate_done` is emitted only after the worker has awaited the shared rate
+limiter and the second event-ownership check. Deferred tests prove that neither
+access nor later preview milestones appear while either dependency is pending.
+Rate-limit denial records `rate_limit_done` with status 429 and does not claim
+access was completed.
+
 Route milestones:
 
 ```text
@@ -38,47 +47,51 @@ route_history_done
 route_return
 ```
 
-Each stage contains only an allowlisted locale, hashed event identifier,
+Each stage contains only the allowlisted locale, hashed event identifier,
 bounded counts/status, stage, duration, and request correlation ID. Milestone
 error codes are allowlisted. CSV contents, filenames, form data, email
 addresses, credentials, cookies, tokens, URLs, raw user IDs, database details,
-and dependency exception text are not emitted. Unexpected gate/revalidation or
-route-read failures emit a terminal failed milestone and rethrow the original
-error; known preview failures return the same blocked action result while
-emitting a terminal failed `action_return`.
+and dependency exception text are not emitted.
+
+Unexpected outer-gate or revalidation failures emit a terminal failed
+`action_return` and preserve the original rethrow. Known preview failures keep
+their existing typed blocked result; operation failures are terminal failed
+milestones. Route role/session and ownership checks remain outside the fallback
+render catch: ownership failures emit failed `route_return` and rethrow.
+Context and history read failures are inside the fallback catch: they emit a
+failed `route_return` and return the existing error `RegistrationWorkspace`
+render instead of rethrowing. Tests cover both read failures and distinguish
+them from ownership failure.
 
 ## TDD and verification evidence
 
 ### RED
 
-- The new static/action/route tests initially failed against the uninstrumented
-  source: **8 failed, 59 passed** in the approved focused run. Failures were
-  the absent action/route milestones, missing logger helper, absent terminal
-  failure event, and deferred dependency assertions.
-- The additional access-gate terminal test then failed as expected (**1 failed,
-  28 passed**) before its guarded catch was added.
-- The additional route ownership terminal test failed as expected (**1 failed,
-  15 passed**) before its guarded auth/ownership catches were added.
-- The first sandboxed Vitest invocation was blocked by Windows `spawn EPERM`
-  while Vite bundled its config; the same read-only commands were rerun with
-  the repository's approved process access. No browser, database, seed, reset,
-  retry, or timeout change was used.
+- Review tests initially failed against the prior implementation: **3 failed,
+  52 passed** in the three-file focused run. The failures were the stale outer
+  `access_gate_done` during the limiter stall, the same stale milestone during
+  the second ownership stall, and the static ordering contract missing the new
+  truthful stages.
+- The initial sandboxed Vitest invocation was blocked by Windows `spawn EPERM`
+  while Vite bundled its config. The same read-only suite was rerun with the
+  repository's approved process access. No browser, database, seed, reset,
+  retry, timeout, or sleep operation was used.
 
 ### GREEN
 
 ```text
-Focused logger/action/route/static suite:
-  4 files, 69 tests passed, 0 failed
+Review-focused action/route/static suite:
+  3 files, 55 tests passed, 0 failed
 
-Direct registration/action-settlement regressions:
-  4 files, 21 tests passed, 0 failed
+Expanded logger/action/route/static settlement regressions:
+  5 files, 81 tests passed, 0 failed
 
 TypeScript:
   .\node_modules\.bin\tsc.cmd --noEmit --incremental false
   passed
 
 ESLint:
-  changed implementation/test/static files
+  changed implementation, route, logger, unit, and static files
   passed
 
 Whitespace:
@@ -86,30 +99,36 @@ Whitespace:
   passed (only normal LF/CRLF normalization warnings)
 ```
 
-The deferred tests prove that a pending preview persistence dependency emits
-neither `preview_batch_saved` nor `action_return` early, and that
-`revalidation_requested` follows the durable preview save. Failure tests prove
-that persistence and access-gate failures produce terminal failed milestones
-without leaking the dependency message. The route deferred-history test proves
-that `route_return` waits for history completion.
+The deferred persistence test still proves that `preview_batch_saved` and
+`action_return` wait for the durable save, and `revalidation_requested` follows
+that save. The new limiter and second-ownership deferred tests prove that no
+later access or preview milestone is emitted early. Persistence and access
+failures remain redacted and terminal as before. Context/history failure tests
+prove fallback rendering plus failed `route_return`; the ownership test proves
+the separate rethrow behavior.
 
-The static contract retains the non-redirect helper's `status < 400` plus
-`await response.finished()`/EOF assertion, retains redirect headers plus
-navigation without `response.finished()`, rejects headers-only settlement, and
-rejects timeout, retry, sleep, or payload logging additions. Existing import
-commit/readiness, receipt, and downstream journey assertions were not changed.
+The static contract isolates `waitForServerActionResponse`, requiring both
+`status() < 400` and a completed `response.finished()` check. The redirect
+helper checks its redirect header and navigation without EOF. Mutation tests
+reject status-only, EOF-only, and redirect-EOF variants. Existing import
+commit/readiness, receipt, ID/EN one-defect, and downstream journey assertions
+were not changed.
 
 ## Scope and protected roots
 
-Changed implementation/test paths:
+Review files changed in `25e303f`:
+
+- `src/lib/actions/registration-v3-actions.ts`
+- `src/lib/actions/registration-v3-actions.test.ts`
+- `src/app/[locale]/organizer/events/[eventId]/registration/page.test.ts`
+- `tests/competition/ci-36147449749-csv-preview-settlement.static.test.ts`
+
+The complete Brief B implementation also includes the already-recorded base
+files:
 
 - `src/lib/observability/logger.ts`
 - `src/lib/observability/logger.test.ts`
-- `src/lib/actions/registration-v3-actions.ts`
-- `src/lib/actions/registration-v3-actions.test.ts`
 - `src/app/[locale]/organizer/events/[eventId]/registration/page.tsx`
-- `src/app/[locale]/organizer/events/[eventId]/registration/page.test.ts`
-- `tests/competition/ci-36147449749-csv-preview-settlement.static.test.ts`
 - this report
 
 The following pre-existing untracked protected roots were not edited, staged,
@@ -121,10 +140,15 @@ or deleted:
 
 No browser or live database command was run. No seed/reset/preflight, CI rerun,
 timeout increase, retry, sleep, response interception, response-header-only
-settlement, or change to the redirect helper was made. ID and EN remain one
-shared CSV preview settlement defect pending runtime milestone evidence.
+settlement, or redirect-helper change was made. ID and EN remain one shared CSV
+preview settlement defect pending runtime milestone evidence.
 
 ## Commit receipt
 
-The implementation commit is `934d17f`; the final receipt is verified with
-`git show --stat --oneline` and `git status --short` below.
+Base implementation: `994c9ce9ed2cea3628b811cdee5b1c07755fd123`
+
+Review code/tests: `25e303f63d18c5a286b7ec048a82e977a9c0ba27`
+
+The report commit is the following documentation-only commit on top of the
+review SHA; its exact SHA is included in the final handoff after `git show
+--stat --oneline` and `git status --short` verification.
