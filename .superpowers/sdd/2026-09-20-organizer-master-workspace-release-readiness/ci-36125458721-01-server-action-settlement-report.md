@@ -8,8 +8,7 @@ Review-round commit: `450ca7b`
 Review-round status: `DONE_WITH_CONCERNS`; clean-database publish evidence is
 deferred to the next CI run, so this local work is not an acceptance pass.
 
-Review round 2: static-contract hardening pending commit; browser evidence was
-not rerun by design.
+Review-round-2 commit: `572d493`; browser evidence was not rerun by design.
 
 ## Outcome
 
