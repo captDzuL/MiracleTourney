@@ -7,6 +7,7 @@ Base SHA: `994c9ce9ed2cea3628b811cdee5b1c07755fd123`
 Review code/tests SHA: `25e303f63d18c5a286b7ec048a82e977a9c0ba27`
 Review documentation SHA: `7381cbac297139707636832a5a2acc7029239152`
 Whole-delta round-4 correction SHA: `ba7b87ca616266ef459e5ed0a0aba0372100545f`
+Report correction SHA: `72478fad6689b654cae38d06628d05462e1dd0ad`
 
 ## Outcome
 
@@ -155,6 +156,8 @@ Review documentation: `7381cbac297139707636832a5a2acc7029239152`
 
 Whole-delta round-4 correction:
 `ba7b87ca616266ef459e5ed0a0aba0372100545f`
+
+Report correction: `72478fad6689b654cae38d06628d05462e1dd0ad`
 
 The round-4 SHA closes the final hook-budget and competition terminal-category
 findings. It does not change Brief B's CSV preview behavior or evidence.
