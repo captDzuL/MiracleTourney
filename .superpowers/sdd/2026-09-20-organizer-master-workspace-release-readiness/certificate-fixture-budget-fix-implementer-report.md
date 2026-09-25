@@ -73,3 +73,18 @@ The callback receives the base fixture's exact `cleanup` handle immediately afte
   - `public/certificates/e2e-completion-single_elimination-release-journey-id/`
 
 No database reset, seed, full certificate file/profile, timeout/retry change, production action, or push was performed.
+
+## Round 1/5 — fingerprint-contract correction
+
+Reviewer finding addressed in local implementation commit `8f2a3dc` (`test: preserve certificate fingerprint contracts`). The lean fixture had been using one regeneration-request JSON value for both persistence contracts. It now computes `Certificate.generationFingerprint` with `getMiracleV3CertificateFingerprint()` from each canonical render manifest, while the separate transient mutation value remains the regeneration-request JSON containing only the requested `{ assetId, placement }` entries. The certificate insert strips that transient helper field, and `CertificateGenerationMutation.fingerprint` receives it directly.
+
+### TDD and gate evidence
+
+- RED contract run: `& .\\node_modules\\.bin\\vitest.CMD run tests/competition/certificate-fixture-budget.static.test.ts` — exit 1; 3 tests ran and the new fingerprint-separation contract failed against the pre-fix helper.
+- GREEN affected unit/static run: `& .\\node_modules\\.bin\\vitest.CMD run tests/competition/certificate-fixture-budget.static.test.ts tests/competition/completion-e2e-fixture.test.ts` — exit 0; 2 files / 4 tests passed.
+- Focused browser gate: `pnpm exec playwright test tests/e2e/organizer-v3-certificates.spec.ts --config=playwright.ci-default.config.ts --grep "publishes all seven certificates" --workers=1 --retries=0` — final run exit 0; exactly 1 test passed, 27.0s test body and about 1.1m wall including app startup. The first post-change attempt stopped during fixture setup because the transient helper field was initially sent to Prisma `certificate.createMany`; the field was then stripped for that insert and retained for the mutation insert. The final run exercised publication and superseded verification history successfully with workers 1 and retries 0.
+- TypeScript: `pnpm exec tsc --noEmit` — exit 0.
+- Changed-file ESLint: `pnpm exec eslint tests/e2e/helpers/completion.ts tests/competition/certificate-fixture-budget.static.test.ts` — exit 0.
+- Diff check: `git diff --check` — exit 0 (only normal Git LF/CRLF conversion warnings).
+
+No product code, timeout, retry policy, sleep, seed/reset, full-file/profile, or protected untracked root was changed. The earlier reviewer-noted static-test scope/order weakness remains deferred as instructed.
