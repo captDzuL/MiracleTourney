@@ -9,6 +9,8 @@ Review-round status: `DONE_WITH_CONCERNS`; clean-database publish evidence is
 deferred to the next CI run, so this local work is not an acceptance pass.
 
 Review-round-2 commit: `572d493`; browser evidence was not rerun by design.
+Review round 3: shallow-safe `src` tree invariant pending commit; browser
+evidence was not rerun by design.
 
 ## Outcome
 
@@ -131,8 +133,33 @@ Result: exit 0; 7 passed
 Time: 20:07:05
 ```
 
-The committed-range source guard reports no changed `src/` paths for
-`e4b2903..HEAD`; no product source was edited in this review round.
+The recorded task-base `src` tree equals the current `HEAD:src` tree; no
+product source was edited in this review round.
+
+Review round 3 replaced the history-range guard with the shallow-safe tree
+invariant recorded from `git rev-parse e4b2903:src`:
+`8ddee33e491bd06435e87546c89a83866b24f990`. The static contract compares that
+literal to `git rev-parse HEAD:src`, so it works with the default shallow
+`actions/checkout` history and still detects any committed product-source
+change.
+
+The expected tree hash was temporarily mutated to all zeroes; the contract
+failed as expected:
+
+```text
+Mutation: replace the recorded task-base src tree hash with zeroes
+Command: pnpm exec vitest run tests/competition/ci-36125458721-server-action-settlement.static.test.ts
+Result: exit 1; 1 failed, 6 passed
+Time: 20:12:41
+```
+
+After restoring the recorded tree hash:
+
+```text
+Command: pnpm exec vitest run tests/competition/ci-36125458721-server-action-settlement.static.test.ts
+Result: exit 0; 7 passed
+Time: 20:13:03
+```
 
 ## Focused browser evidence
 

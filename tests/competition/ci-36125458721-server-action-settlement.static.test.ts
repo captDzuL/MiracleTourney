@@ -214,11 +214,12 @@ describe("server action settlement contract", () => {
   });
 
   it("keeps settlement changes out of product source", () => {
-    const taskBaseSha = "e4b2903";
-    const changedSourceFiles = execFileSync("git", ["diff", "--name-only", `${taskBaseSha}..HEAD`, "--", "src"], {
+    // Recorded from `git rev-parse e4b2903:src`; this survives actions/checkout's shallow history.
+    const expectedSrcTree = "8ddee33e491bd06435e87546c89a83866b24f990";
+    const headSrcTree = execFileSync("git", ["rev-parse", "HEAD:src"], {
       cwd: root,
       encoding: "utf8",
-    }).split(/\r?\n/).filter(Boolean);
-    expect(changedSourceFiles).toEqual([]);
+    }).trim();
+    expect(headSrcTree).toBe(expectedSrcTree);
   });
 });
