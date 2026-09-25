@@ -373,6 +373,7 @@ test("public ongoing API hides an unpublished schedule and private draft data", 
   let privateRoom = "";
   fixture = await test.step("create four-team graph with an unpublished private schedule", async () => {
     const created = await prepareMatchdayFixture("single_elimination", "graph");
+    fixture = created;
     privateRoom = `Private draft room ${created.slug}`;
     const draft = await created.run({
       kind: "schedule_save",
@@ -418,6 +419,7 @@ test("public ongoing API hides an unpublished schedule and private draft data", 
 test("public ongoing shows only active announcements and has no mobile overflow", async ({ page }) => {
   fixture = await test.step("create four-team graph and announcement fixtures", async () => {
     const created = await prepareMatchdayFixture("single_elimination", "graph");
+    fixture = created;
     const active = await created.run({ kind: "announcement_save", title: "Active urgent notice", body: "Active urgent notice", urgency: "urgent" });
     await created.run({ kind: "announcement_publish", announcementId: active.resourceId! });
     const expired = await created.run({

@@ -7,7 +7,7 @@ Status: `DONE`
 
 The implementation under review is commit `0471b69941073e104b9aeff42e8bc4573f564883` (`test: isolate Match Day public privacy checks`), whose parent is `e76ce6ede79c0ca0321942ae5ec65aa85a33eaa5`. The commit survived the power outage intact: it was present at the expected head when recovery began, and the tracked worktree contained no implementation edits. The implementation commit changes only `tests/e2e/v3-matchday.spec.ts` (91 insertions, 10 deletions); `tests/e2e/helpers/matchday.ts` and production code are unchanged.
 
-The required focused tests and gates were rerun in the existing isolated worktree at `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`. No implementation change was needed after the outage.
+The original required focused tests and gates were rerun in the existing isolated worktree at `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`; no implementation change was needed during outage recovery. Reviewer fix round 1/5 later added only the two cleanup-registration assignments documented below.
 
 ## Root cause and RED evidence
 
@@ -22,6 +22,10 @@ The retained RED trace evidence is:
 | Retry 2 | ~119.74s | Context closed before navigation settled |
 
 All three attempts exhausted the budget and surfaced a browser session-closed symptom. The retained page snapshots nevertheless showed the expected active announcement and the absence of the expired and draft announcements. The schedule assertion in the old test was also vacuous: it checked for the unrelated correction reason `Verified desk correction` instead of asserting that an unpublished-only schedule is `null`.
+
+## Preserved green-before-removal evidence
+
+The escalation implementer preserved one earlier GREEN run from before the old coupled test was removed. At that point, the two new focused tests were already present while the legacy combined `showcase` test still existed. With workers set to `1` and retries set to `0`, both focused tests passed: `public ongoing API hides an unpublished schedule and private draft data` passed in `2.9s`, `public ongoing shows only active announcements and has no mobile overflow` passed in `4.5s`, the Playwright summary was `2 passed (56.4s)`, and the process exited `0`. There were no skips or flakes. The legacy combined test was removed only after this green run. This is preserved pre-outage evidence and is distinct from the two post-outage final runs below; it is not represented as a fresh rerun during outage recovery.
 
 ## GREEN focused-test evidence
 
@@ -59,6 +63,28 @@ The first unprivileged harness invocation exited `1` before Playwright startup b
 
 The API contract test creates a four-team `single_elimination` graph, saves an unpublished schedule with a unique private room sentinel, uses Playwright's standalone `request` fixture, checks successful HTTP and JSON responses with bounded diagnostic bodies, asserts `schedule === null`, null draft match timing/room values, and absence of the sentinel/private keys. The mobile contract test creates only the active published urgent, expired published, and unpublished draft announcements, then verifies the four required 390x844 public-page assertions through checked navigation and named steps.
 
+## Reviewer fix round 1/5
+
+The reviewer identified an unsafe cleanup window in both new setup steps: the shared `fixture` variable was assigned only after all setup operations succeeded. Both callbacks now assign `fixture = created` immediately after `prepareMatchdayFixture` returns and before any schedule or announcement `run`. Therefore, if a later setup operation fails, the existing `afterEach` cleanup sees the partially initialized fixture and can remove it. No broad test infrastructure was added, and the existing named steps and return values remain unchanged.
+
+After this cleanup-registration fix, the same focused command was run once with workers `1` and retries `0`:
+
+- Exit: `0`
+- Result: `2 passed` / `2` executed
+- Skips: `0`
+- Flakes/retries: `0`
+- `public ongoing API hides an unpublished schedule and private draft data`: passed in `3.1s`
+- `public ongoing shows only active announcements and has no mobile overflow`: passed in `4.5s`
+- Playwright summary: `2 passed (45.6s)`
+
+Fix-round gates also exited `0`:
+
+| Command | Exit | Duration |
+| --- | ---: | ---: |
+| `tsc --noEmit --incremental false` | `0` | `18,837ms` |
+| `eslint tests/e2e/v3-matchday.spec.ts` | `0` | `3,891ms` |
+| `git diff --check` | `0` | `116ms` |
+
 ## Required local gates
 
 All gates exited `0`:
@@ -79,6 +105,7 @@ The ESLint invocation intentionally names only `tests/e2e/v3-matchday.spec.ts` b
 - No sleep, `test.slow()`, timeout increase, skip, flaky allowance, or forced interaction was added to either focused test.
 - The checked navigation helper includes method/path, status, status text, and bounded response-body diagnostics for non-2xx responses. The API path includes content type and a bounded body for malformed JSON.
 - No assertion was weakened during recovery.
+- Reviewer fix round 1/5 adds only two immediate shared-fixture assignments in `tests/e2e/v3-matchday.spec.ts`; no helper, production, timeout, retry, or infrastructure change was made.
 
 ## Workspace preservation and prohibited actions
 
@@ -93,7 +120,8 @@ No database reset or seed command was run. No full Match Day file, full E2E prof
 ## Commits
 
 - Implementation commit surviving the outage: `0471b69941073e104b9aeff42e8bc4573f564883` (`test: isolate Match Day public privacy checks`)
-- Evidence report: this file, to be committed separately with message `docs: record Match Day CI fix evidence`.
+- Prior outage evidence report commit: `a2aadba3344579b1d4ae308b1d9111b83c39b883` (`docs: record Match Day CI fix evidence`).
+- Reviewer fix-round commit: the two cleanup assignments and this report are committed together locally; its final SHA is supplied in the handoff.
 
 ## Concerns
 
