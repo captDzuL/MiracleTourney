@@ -7,6 +7,7 @@ import { createCompetitionOperations, type OperationCommand } from "../../src/li
 import type { CompetitionGraph } from "../../src/lib/tournament/competition";
 import type { TournamentFormatConfig } from "../../src/lib/tournament/formats/types";
 import { loginAsAdmin } from "./helpers/auth";
+import { runAndSettleServerActionRedirect } from "./helpers/server-action";
 
 const prisma = new PrismaClient();
 const config: TournamentFormatConfig = {
@@ -115,7 +116,21 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       });
       await form.getByLabel("Event").selectOption(eventId);
       await form.getByLabel("Status").selectOption(status);
-      await form.getByRole("button", { name: "Save event status" }).click();
+      await runAndSettleServerActionRedirect(page, {
+        request: (request) => {
+          const requestUrl = new URL(request.url());
+          return requestUrl.pathname === "/en/admin"
+            && requestUrl.searchParams.get("phase") === "prepare"
+            && requestUrl.searchParams.get("activeEventId") === eventId
+            && requestUrl.search === `?phase=prepare&activeEventId=${eventId}`;
+        },
+        expectedActionRedirect: `/en/admin?success=event-status-updated&event=${eventId};push`,
+        destination: (url) => url.pathname === "/en/admin"
+          && url.searchParams.get("success") === "event-status-updated"
+          && url.searchParams.get("event") === eventId
+          && url.search === `?success=event-status-updated&event=${eventId}`,
+        trigger: () => form.getByRole("button", { name: "Save event status" }).click(),
+      });
       await expect(page).toHaveURL(/success=event-status-updated/);
     };
 

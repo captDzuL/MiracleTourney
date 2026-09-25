@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
+import { runAndSettleServerActionRedirect } from "./helpers/server-action";
 import { TOURNAMENT_FORMAT_PRESETS } from "../../src/lib/tournament/formats/types";
 
 const prisma = new PrismaClient();
@@ -159,7 +160,20 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   await expect(eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i })).toBeEnabled();
   await eventStatusForm.getByLabel("Event").selectOption({ label: "Kuroko Street Rival Summer Cup" });
   await eventStatusForm.getByLabel("Status").selectOption("Published");
-  await eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i }).click();
+  await runAndSettleServerActionRedirect(page, {
+    request: (request) => {
+      const requestUrl = new URL(request.url());
+      return requestUrl.pathname === "/en/admin"
+        && requestUrl.searchParams.get("phase") === "prepare"
+        && requestUrl.search === "?phase=prepare";
+    },
+    expectedActionRedirect: "/en/admin?success=event-status-updated&event=kuroko-summer-cup;push",
+    destination: (url) => url.pathname === "/en/admin"
+      && url.searchParams.get("success") === "event-status-updated"
+      && url.searchParams.get("event") === "kuroko-summer-cup"
+      && url.search === "?success=event-status-updated&event=kuroko-summer-cup",
+    trigger: () => eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i }).click(),
+  });
   await expect(page).toHaveURL(/\/admin\?success=event-status-updated/);
 
   await page.goto(`/en/admin?phase=import&activeEventId=${event.id}`);
@@ -213,7 +227,19 @@ overnightTest("registration order stays private and imports stop after drawing p
   await createEventForm.getByLabel("Format").selectOption("Single Elimination");
   await createEventForm.getByLabel("Participant cap").selectOption("24");
   trackOvernightEvent({ name: eventName, slug });
-  await createEventForm.getByRole("button", { name: /create draft event|buat draft event/i }).click();
+  await runAndSettleServerActionRedirect(page, {
+    request: (request) => {
+      const requestUrl = new URL(request.url());
+      return requestUrl.pathname === "/en/admin"
+        && requestUrl.searchParams.get("phase") === "prepare"
+        && requestUrl.search === "?phase=prepare";
+    },
+    expectedActionRedirect: "/en/admin?success=event-created;push",
+    destination: (url) => url.pathname === "/en/admin"
+      && url.searchParams.get("success") === "event-created"
+      && url.search === "?success=event-created",
+    trigger: () => createEventForm.getByRole("button", { name: /create draft event|buat draft event/i }).click(),
+  });
   await expect(page).toHaveURL(/\/admin\?success=event-created/);
 
   await page.getByLabel(/active event|event aktif/i).selectOption({ label: eventName });
