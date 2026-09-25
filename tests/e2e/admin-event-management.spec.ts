@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { expect, test, type Request, type Response } from "@playwright/test";
+import { expect, test, type Response } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
 
 const prisma = new PrismaClient();
@@ -164,14 +164,15 @@ test.describe("admin event management", () => {
         && url.searchParams.get("success") === "registration-preview-ready",
       { waitUntil: "domcontentloaded" },
     );
-    const settledPreviewResponse = new Promise<Response>((resolve) => {
-      const onRequestFinished = async (request: Request) => {
+    const settledPreviewResponse = page.waitForEvent("requestfinished", {
+      predicate: async (request) => {
         const response = await request.response();
-        if (!response || !isLockedRosterPreviewSettlement(response, lockedEventId)) return;
-        page.off("requestfinished", onRequestFinished);
-        resolve(response);
-      };
-      page.on("requestfinished", onRequestFinished);
+        return response !== null && isLockedRosterPreviewSettlement(response, lockedEventId);
+      },
+    }).then(async (request) => {
+      const response = await request.response();
+      if (!response) throw new Error("Locked-roster preview response disappeared after requestfinished.");
+      return response;
     });
     const [, settlementResponse] = await Promise.all([
       settledPreviewUrl,

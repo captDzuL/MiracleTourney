@@ -34,7 +34,7 @@ describe("locked-roster preview settlement contract", () => {
     expect(waiterIndex).toBeLessThan(clickIndex);
   });
 
-  it("settles on the body-complete response instead of an aborted duplicate", () => {
+  it("uses Playwright's timeout-aware requestfinished waiter", () => {
     const lockedCaseStart = adminEventManagementSpec.indexOf(
       'test("admin sees error when importing CSV after bracket is locked"',
     );
@@ -44,9 +44,10 @@ describe("locked-roster preview settlement contract", () => {
     );
     const lockedCase = adminEventManagementSpec.slice(lockedCaseStart, lockedCaseEnd);
 
-    expect(lockedCase).toContain('page.on("requestfinished"');
-    expect(lockedCase).toContain("const settledPreviewResponse = new Promise<Response>");
+    expect(lockedCase).toContain('const settledPreviewResponse = page.waitForEvent("requestfinished"');
+    expect(lockedCase).toContain("predicate: async (request) =>");
     expect(lockedCase).toContain("const response = await request.response()");
-    expect(lockedCase).toContain('page.off("requestfinished"');
+    expect(lockedCase).not.toContain("new Promise<Response>");
+    expect(lockedCase).not.toContain('page.on("requestfinished"');
   });
 });
