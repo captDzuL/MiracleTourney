@@ -4,6 +4,7 @@ Date: 2026-09-25
 Branch: `codex/organizer-release-readiness`
 Implementation commit: `1f7cecd` (`test: split shard 2 harness budgets`)
 Review-round static contract commit: `de2486c90fe16b6a3f5a11987fbedd0d309d216d` (`test: harden shard 2 contract mutations`)
+Review-round-2 lifecycle contract commit: `2ca7cdcf6812eb3c8e543a6306f590d52f04b647` (`test: enforce lifecycle assertion ordering`)
 
 ## Scope and result
 
@@ -17,6 +18,7 @@ The overnight seeded-event lookup and exact three-delete preparation now run in 
 - GREEN: new static contract **7/7 passed**.
 - Regression guards: `overnight-smoke.static.test.ts`, `v3-public-discovery-static-contract.test.ts`, `ci-36125458721-server-action-settlement.static.test.ts`, and the new contract: **4 files, 25/25 tests passed**.
 - Review-round RED/GREEN mutation evidence: each removed permanent-URL, team, score, certificate-readiness/count, receipt, drain, add-after-await, delete-before-drain, worker, ignore, retry, timeout, and shard-order candidate was rejected by the static contract; the unmutated source is GREEN at 7/7.
+- Review-round-2 mutation evidence: add-before-await < await < finally < delete ordering is enforced; delete-before-await and each removed initial-heading, duplicate Template/TBD, registration/drawing/ongoing/finished, next-match, Podium, winner, score, certificate-readiness, and certificate-count assertion candidate was rejected; the four-file guard set remains GREEN at 25/25.
 - TypeScript: `pnpm lint` / `tsc --noEmit` **passed**. The first sandboxed attempt could not update the existing incremental `tsconfig.tsbuildinfo` (`EPERM`); the same check passed with the required repository filesystem approval.
 - ESLint: changed-file ESLint **passed** for all five changed files. The `pnpm exec eslint` alias was unavailable, so the installed ESLint entrypoint was used.
 - Whitespace: `git diff --check` **passed** (only the repository’s normal LF-to-CRLF normalization warnings were emitted).
