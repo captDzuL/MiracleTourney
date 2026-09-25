@@ -1,0 +1,32 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const root = resolve(import.meta.dirname, "../..");
+const completionSpec = readFileSync(resolve(root, "tests/e2e/organizer-v3-completion.spec.ts"), "utf8");
+const completionHelper = readFileSync(resolve(root, "tests/e2e/helpers/completion.ts"), "utf8");
+
+describe("Completion action settlement contract", () => {
+  it("waits for the exact event-bound server action before persistence and refresh assertions", () => {
+    expect(completionSpec).toContain("function waitForCompletionActionResponse");
+    expect(completionSpec).toContain('request.method() === "POST"');
+    expect(completionSpec).toContain("responseUrl.pathname === completionPath");
+    expect(completionSpec).toContain('Boolean(request.headers()["next-action"])');
+    expect(completionSpec).toContain("requestData.includes(eventId)");
+    expect(completionSpec).toContain("await Promise.all([completionResponsePromise, completeButton.click()])");
+
+    const responseStatusIndex = completionSpec.indexOf("expect(completionResponse.status()).toBe(200)");
+    const persistenceStepIndex = completionSpec.indexOf('test.step("persistence"');
+    const refreshStepIndex = completionSpec.indexOf('test.step("completion refresh"');
+    expect(responseStatusIndex).toBeGreaterThan(-1);
+    expect(persistenceStepIndex).toBeGreaterThan(responseStatusIndex);
+    expect(refreshStepIndex).toBeGreaterThan(persistenceStepIndex);
+  });
+
+  it("installs exact fixture cleanup before authentication and holds it behind response settlement", () => {
+    expect(completionHelper).toContain("onBaseFixtureReady");
+    expect(completionSpec).toContain("onBaseFixtureReady");
+    expect(completionSpec).toContain("completionActionResponsePending");
+    expect(completionSpec).toContain('test.step("fixture cleanup"');
+  });
+});

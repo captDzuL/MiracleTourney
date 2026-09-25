@@ -1,10 +1,11 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page, type Response } from "@playwright/test";
 
 import { loginAsOrganizer, normalizeReleasePage, waitForReleaseFonts } from "./helpers/auth";
 import {
   completionDb,
   prepareCompletionFixture,
   type CompletionFixture,
+  type CompletionFixtureReady,
   type CompletionFixtureKind,
 } from "./helpers/completion";
 
@@ -17,60 +18,122 @@ function assertCompletionReadHealthy() {
 }
 
 let fixture: CompletionFixture | undefined;
+let fixtureCleanup: CompletionFixtureReady | undefined;
+let completionActionResponse: Promise<Response> | undefined;
+let completionActionResponsePending = false;
 test.afterEach(async () => {
-  await fixture?.cleanup();
-  fixture = undefined;
+  await test.step("fixture cleanup", async () => {
+    if (completionActionResponsePending && completionActionResponse) {
+      await completionActionResponse.catch(() => undefined);
+    }
+    await fixtureCleanup?.cleanup();
+    fixture = undefined;
+    fixtureCleanup = undefined;
+    completionActionResponse = undefined;
+    completionActionResponsePending = false;
+  });
 });
+
+async function prepareTestCompletionFixture(kind: CompletionFixtureKind) {
+  const scenario = await prepareCompletionFixture(kind, `completion-action-${kind.replaceAll("_", "-")}`, {
+    onBaseFixtureReady: (baseFixture) => {
+      fixtureCleanup = baseFixture;
+    },
+  });
+  fixture = scenario;
+  fixtureCleanup = scenario;
+  return scenario;
+}
+
+function waitForCompletionActionResponse(page: Page, locale: "en" | "id", eventId: string) {
+  const completionPath = `/${locale}/organizer/events/${encodeURIComponent(eventId)}/completion`;
+  return page.waitForResponse((response) => {
+    const request = response.request();
+    const responseUrl = new URL(response.url());
+    const requestData = request.postData() ?? "";
+    return request.method() === "POST"
+      && responseUrl.pathname === completionPath
+      && Boolean(request.headers()["next-action"])
+      && requestData.includes(eventId);
+  });
+}
 
 for (const kind of ["single_elimination", "double_elimination", "round_robin", "group_playoffs"] as const satisfies readonly CompletionFixtureKind[]) {
   test(`completes the authoritative ${kind} release format with an audited tied award`, async ({ page }) => {
-    fixture = await prepareCompletionFixture(kind);
-    await loginAsOrganizer(page, "en");
-    await page.goto(`/en/organizer/events/${fixture.id}/completion`);
-
-    await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
-    assertCompletionReadHealthy();
-    await page.getByRole("tab", { name: "Awards", exact: true }).click();
-    for (const award of ["mvp", "top_scorer", "top_defender", "top_assist"]) {
-      await page.locator(`[data-award="${award}"] input[type="radio"]`).first().check();
-    }
-    await page.getByLabel("Decision reason").fill("Equal assists; selected for decisive final contribution.");
-    await page.locator("[data-complete-tournament]").click();
-
-    await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "completed");
-    assertCompletionReadHealthy();
-    const persisted = await completionDb.tournamentCompletion.findUniqueOrThrow({
-      where: { eventId: fixture.id },
-      include: { podiumPlacements: true, awards: { include: { decision: true } }, auditEntries: true },
+    const scenario = await test.step("fixture setup", () => prepareTestCompletionFixture(kind));
+    await test.step("organizer authentication", () => loginAsOrganizer(page, "en"));
+    await test.step("completion navigation and readiness", async () => {
+      await page.goto(`/en/organizer/events/${scenario.id}/completion`);
+      await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
+      assertCompletionReadHealthy();
+      await page.getByRole("tab", { name: "Awards", exact: true }).click();
+      for (const award of ["mvp", "top_scorer", "top_defender", "top_assist"]) {
+        await page.locator(`[data-award="${award}"] input[type="radio"]`).first().check();
+      }
+      await page.getByLabel("Decision reason").fill("Equal assists; selected for decisive final contribution.");
     });
-    assertCompletionReadHealthy();
-    expect(persisted.podiumPlacements).toHaveLength(3);
-    const expectedSource = kind === "round_robin" ? "locked_standings" : "official_playoff";
-    const titleMatchId = kind === "round_robin"
-      ? null
-      : (() => {
-          const source = fixture.graph.placements.find(({ rank }) => rank === 1)?.source;
-          return source?.kind === "match" ? source.matchId : null;
-        })();
-    const thirdMatchId = kind === "round_robin"
-      ? null
-      : (() => {
-          const source = fixture.graph.placements.find(({ rank }) => rank === 3)?.source;
-          return source?.kind === "match" ? source.matchId : null;
-        })();
-    expect(persisted.podiumPlacements.sort((left, right) => left.rank - right.rank).map((row) => ({
-      rank: row.rank,
-      teamId: row.teamId,
-      source: row.source,
-      sourceMatchId: row.sourceMatchId,
-    }))).toEqual([
-      { rank: 1, teamId: fixture.teams[0].id, source: expectedSource, sourceMatchId: titleMatchId },
-      { rank: 2, teamId: fixture.teams[1].id, source: expectedSource, sourceMatchId: titleMatchId },
-      { rank: 3, teamId: fixture.teams[kind === "double_elimination" ? 3 : 2].id, source: expectedSource, sourceMatchId: thirdMatchId },
-    ]);
-    expect(persisted.awards).toHaveLength(4);
-    expect(persisted.awards.find(({ type }) => type === "top_assist")?.decision?.reason).toContain("Equal assists");
-    expect(persisted.auditEntries).toHaveLength(1);
+
+    let completionResponse: Response;
+    await test.step("completion action response", async () => {
+      const completionResponsePromise = waitForCompletionActionResponse(page, "en", scenario.id);
+      completionActionResponse = completionResponsePromise;
+      completionActionResponsePending = true;
+      void completionResponsePromise.then(
+        () => { completionActionResponsePending = false; },
+        () => { completionActionResponsePending = false; },
+      );
+      const completeButton = page.locator("[data-complete-tournament]");
+      const startedAt = performance.now();
+      [completionResponse] = await Promise.all([completionResponsePromise, completeButton.click()]);
+      const responseDurationMs = Math.round(performance.now() - startedAt);
+      console.info(`[completion-action] status=${completionResponse.status()} durationMs=${responseDurationMs}`);
+      await test.info().attach("completion-action-response", {
+        body: `status=${completionResponse.status()}\ndurationMs=${responseDurationMs}\n`,
+        contentType: "text/plain",
+      });
+      expect(completionResponse.status()).toBe(200);
+    });
+
+    await test.step("persistence", async () => {
+      const persisted = await completionDb.tournamentCompletion.findUniqueOrThrow({
+        where: { eventId: scenario.id },
+        include: { podiumPlacements: true, awards: { include: { decision: true } }, auditEntries: true },
+      });
+      assertCompletionReadHealthy();
+      expect(persisted.status).toBe("completed");
+      expect(persisted.podiumPlacements).toHaveLength(3);
+      const expectedSource = kind === "round_robin" ? "locked_standings" : "official_playoff";
+      const titleMatchId = kind === "round_robin"
+        ? null
+        : (() => {
+            const source = scenario.graph.placements.find(({ rank }) => rank === 1)?.source;
+            return source?.kind === "match" ? source.matchId : null;
+          })();
+      const thirdMatchId = kind === "round_robin"
+        ? null
+        : (() => {
+            const source = scenario.graph.placements.find(({ rank }) => rank === 3)?.source;
+            return source?.kind === "match" ? source.matchId : null;
+          })();
+      expect(persisted.podiumPlacements.sort((left, right) => left.rank - right.rank).map((row) => ({
+        rank: row.rank,
+        teamId: row.teamId,
+        source: row.source,
+        sourceMatchId: row.sourceMatchId,
+      }))).toEqual([
+        { rank: 1, teamId: scenario.teams[0].id, source: expectedSource, sourceMatchId: titleMatchId },
+        { rank: 2, teamId: scenario.teams[1].id, source: expectedSource, sourceMatchId: titleMatchId },
+        { rank: 3, teamId: scenario.teams[kind === "double_elimination" ? 3 : 2].id, source: expectedSource, sourceMatchId: thirdMatchId },
+      ]);
+      expect(persisted.awards).toHaveLength(4);
+      expect(persisted.awards.find(({ type }) => type === "top_assist")?.decision?.reason).toContain("Equal assists");
+      expect(persisted.auditEntries).toHaveLength(1);
+    });
+
+    await test.step("completion refresh", async () => {
+      await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "completed");
+      assertCompletionReadHealthy();
+    });
   });
 }
 

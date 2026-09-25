@@ -16,12 +16,17 @@ import { competitionProjection } from "../../../src/lib/tournament/operations/re
 
 export const completionDb = new PrismaClient();
 export type CompletionFixtureKind = "single_elimination" | "double_elimination" | "round_robin" | "group_playoffs";
+export type CompletionFixtureReady = { cleanup: () => Promise<void> };
 export type CompletionFixture = Awaited<ReturnType<typeof prepareCompletionFixture>> & {
   historicalVerificationCode?: string;
   currentVerificationCode?: string;
 };
 export type CertificateFixture = Awaited<ReturnType<typeof prepareCertificateFixture>>;
 export type CertificateFixtureReady = Pick<CompletionFixture, "cleanup">;
+export type CompletionFixtureOptions = {
+  readonly pendingFirstPlayerMatch?: boolean;
+  readonly onBaseFixtureReady?: (fixture: CompletionFixtureReady) => void | Promise<void>;
+};
 export type CertificateFixtureOptions = {
   readonly onBaseFixtureReady?: (fixture: CertificateFixtureReady) => void | Promise<void>;
 };
@@ -296,7 +301,7 @@ function assertGuardedTestDatabase() {
 export async function prepareCompletionFixture(
   kind: CompletionFixtureKind = "single_elimination",
   namespace = randomUUID().slice(0, 12),
-  options: { pendingFirstPlayerMatch?: boolean } = {},
+  options: CompletionFixtureOptions = {},
 ) {
   assertGuardedTestDatabase();
   if (!/^[a-z0-9-]{1,48}$/.test(namespace)) throw new Error("Invalid fixture namespace");
@@ -464,7 +469,7 @@ export async function prepareCompletionFixture(
       ],
     });
 
-    return {
+    const fixture = {
       id,
       slug: id,
       eventName,
@@ -478,6 +483,8 @@ export async function prepareCompletionFixture(
         await completionDb.event.deleteMany({ where: { id, slug: id } });
       },
     };
+    await options.onBaseFixtureReady?.(fixture);
+    return fixture;
   } catch (error) {
     await completionDb.event.deleteMany({ where: { id, slug: id } });
     throw error;
