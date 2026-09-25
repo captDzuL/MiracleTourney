@@ -25,6 +25,43 @@ function countLiteral(source: string, literal: string) {
   return source.split(literal).length - 1;
 }
 
+function assertAdaptiveLifecycleLoadBearing(source: string) {
+  const body = sliceBetween(
+    source,
+    'test("keeps one permanent URL across registration, drawing, ongoing, and finished"',
+    "\n  });",
+  );
+  expect(body).toContain("const url = `/id/events/${slug}`;");
+  expect(countLiteral(body, "await page.goto(url);"), "the permanent URL must be revisited at every phase").toBe(6);
+  expect(countLiteral(body, "await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));")).toBe(5);
+  for (const marker of [
+    'await expect(page.getByText(teams[0].name, { exact: true }).first()).toBeVisible();',
+    'await expect(page.getByText(teams[1].name, { exact: true }).first()).toBeVisible();',
+    'await expect(page.getByText("2 - 0", { exact: true }).first()).toBeVisible();',
+    'await expect(page.getByText(/Certificate sedang disiapkan organizer/)).toBeVisible();',
+    'await expect(page.getByText("Tujuh certificate resmi telah diterbitkan.")).toBeVisible();',
+    'await expect(page.getByRole("link", { name: /Lihat certificate/ })).toHaveCount(7);',
+  ]) expect(body).toContain(marker);
+}
+
+function assertAdaptiveLifecycleOrdering(source: string) {
+  const run = sliceBetween(source, "const run = async", "const updateStatus = async");
+  const addIndex = run.indexOf("inFlightOperations.add(operation);");
+  const awaitIndex = run.indexOf("const receipt = await operation;");
+  expect(addIndex).toBeGreaterThanOrEqual(0);
+  expect(awaitIndex).toBeGreaterThan(addIndex);
+
+  const afterAll = sliceBetween(source, "test.afterAll(async () => {", '  test("');
+  const drainLoopIndex = afterAll.indexOf("while (inFlightOperations.size > 0) {");
+  const drainIndex = afterAll.indexOf("await Promise.allSettled([...inFlightOperations]);");
+  const eventDeleteIndex = afterAll.indexOf("await prisma.event.deleteMany({ where: { id: eventId } });");
+  const userDeleteIndex = afterAll.indexOf("await prisma.user.deleteMany({ where: { id: organizerId } });");
+  expect(drainLoopIndex).toBeGreaterThanOrEqual(0);
+  expect(drainIndex).toBeGreaterThan(drainLoopIndex);
+  expect(eventDeleteIndex).toBeGreaterThan(drainIndex);
+  expect(userDeleteIndex).toBeGreaterThan(eventDeleteIndex);
+}
+
 function assertAdaptiveLifecycleContract(source: string) {
   expect(source).toContain('test.describe.serial("Adaptive public event lifecycle", () => {');
   expect(source).toContain("test.describe.configure({ timeout: 120_000 });");
@@ -49,6 +86,33 @@ function assertAdaptiveLifecycleContract(source: string) {
   expect(afterAll.indexOf("await Promise.allSettled([...inFlightOperations]);")).toBeGreaterThanOrEqual(0);
   expect(afterAll.indexOf("await Promise.allSettled([...inFlightOperations]);")).toBeLessThan(
     afterAll.indexOf("await prisma.event.deleteMany({ where: { id: eventId } });"),
+  );
+  assertAdaptiveLifecycleLoadBearing(source);
+  assertAdaptiveLifecycleOrdering(source);
+}
+
+function assertCiProfileContract(configSource: string, e2eCiSource: string) {
+  expect(configSource).toContain('testDir: "./tests/e2e"');
+  expect(configSource).toContain("workers: 1");
+  expect(configSource).toContain("retries: 0");
+  expect(countLiteral(configSource, "workers:")).toBe(1);
+  expect(countLiteral(configSource, "retries:")).toBe(1);
+  expect(countLiteral(configSource, "testIgnore:")).toBe(1);
+  const ignoreStart = configSource.indexOf("testIgnore:");
+  const ignoreEnd = configSource.indexOf("],", ignoreStart) + 2;
+  expect(configSource.slice(ignoreStart, ignoreEnd).replace(/\s+/g, " ").trim()).toBe(
+    "testIgnore: [/v3-matchday\\.spec\\.ts$/, /public-visual-v2\\.smoke\\.spec\\.ts$/],",
+  );
+  expect(configSource).not.toMatch(/\b(?:timeout|actionTimeout|navigationTimeout|globalTimeout|testTimeout)\s*:/i);
+  expect(e2eCiSource).not.toMatch(/\b(?:timeout|actionTimeout|navigationTimeout|globalTimeout|testTimeout)\s*[:=]|--(?:timeout|action-timeout|navigation-timeout)/i);
+  expect(e2eCiSource).not.toMatch(/\bretries\b|--retries|--workers(?:=|\s)/);
+
+  const shardStart = e2eCiSource.indexOf('"Default profile shard 2/2"');
+  const argsStart = e2eCiSource.indexOf("[", shardStart);
+  const argsEnd = e2eCiSource.indexOf("]", argsStart);
+  const normalizedArgs = e2eCiSource.slice(argsStart, argsEnd + 1).replace(/\s+/g, " ").trim();
+  expect(normalizedArgs).toBe(
+    '[ "exec", "playwright", "test", "--config", "playwright.ci-default.config.ts", "--shard=2/2", "--fail-on-flaky-tests", ]',
   );
 }
 
@@ -149,6 +213,24 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
     assertAdaptiveLifecycleContract(lifecycle);
     expect(() => assertAdaptiveLifecycleContract(lifecycle.replace("operationVersion = receipt.version;", "operationVersion = operationVersion;"))).toThrow();
     expect(() => assertAdaptiveLifecycleContract(lifecycle.replace("await Promise.allSettled([...inFlightOperations]);", "await Promise.all([]);"))).toThrow();
+    for (const removedAssertion of [
+      "const url = `/id/events/${slug}`;",
+      'await expect(page.getByText(teams[0].name, { exact: true }).first()).toBeVisible();',
+      'await expect(page.getByText(teams[1].name, { exact: true }).first()).toBeVisible();',
+      'await expect(page.getByText("2 - 0", { exact: true }).first()).toBeVisible();',
+      'await expect(page.getByText(/Certificate sedang disiapkan organizer/)).toBeVisible();',
+      'await expect(page.getByRole("link", { name: /Lihat certificate/ })).toHaveCount(7);',
+    ]) {
+      expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(removedAssertion, ""))).toThrow();
+    }
+    expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(
+      "inFlightOperations.add(operation);\n      try {\n        const receipt = await operation;",
+      "try {\n        const receipt = await operation;\n        inFlightOperations.add(operation);",
+    ))).toThrow();
+    expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(
+      "while (inFlightOperations.size > 0) {\n      await Promise.allSettled([...inFlightOperations]);\n    }\n    await prisma.event.deleteMany({ where: { id: eventId } });",
+      "await prisma.event.deleteMany({ where: { id: eventId } });\n    while (inFlightOperations.size > 0) {\n      await Promise.allSettled([...inFlightOperations]);\n    }",
+    ))).toThrow();
     for (const label of ["registration and drawing", "ongoing and result", "finished and public verification"]) {
       expect(lifecycle).toContain(`test.step("${label}"`);
     }
@@ -178,21 +260,30 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
   });
 
   it("preserves the serial worker, shard command, and fail-closed profile contract", () => {
-    expect(playwrightConfig).toContain('testDir: "./tests/e2e"');
-    expect(playwrightConfig).toContain("workers: 1");
-    expect(playwrightConfig).toContain("retries: 0");
-    expect(playwrightConfig).toContain("/v3-matchday\\.spec\\.ts$/");
-    expect(playwrightConfig).toContain("/public-visual-v2\\.smoke\\.spec\\.ts$/");
-    expect(e2eCi).toContain('"Default profile shard 2/2"');
-    const shard2 = sliceBetween(e2eCi, '"Default profile shard 2/2"', '"Visual profile"');
-    for (const marker of [
-      '"--config",',
-      '"playwright.ci-default.config.ts",',
-      '"--shard=2/2",',
-      '"--fail-on-flaky-tests",',
-    ]) expect(shard2).toContain(marker);
-    for (const source of [playwrightConfig, e2eCi]) {
-      expect(source).not.toMatch(/(?:test\.)?(?:setTimeout|slow|skip|fixme)|waitForTimeout|retries\s*:\s*[1-9]/);
-    }
+    assertCiProfileContract(playwrightConfig, e2eCi);
+    expect(() => assertCiProfileContract(playwrightConfig.replace("workers: 1", "workers: 2"), e2eCi)).toThrow();
+    expect(() => assertCiProfileContract(
+      playwrightConfig.replace(
+        "testIgnore: [/v3-matchday\\.spec\\.ts$/, /public-visual-v2\\.smoke\\.spec\\.ts$/]",
+        "testIgnore: [/v3-matchday\\.spec\\.ts$/, /public-visual-v2\\.smoke\\.spec\\.ts$/, /extra.spec.ts$/]",
+      ),
+      e2eCi,
+    )).toThrow();
+    expect(() => assertCiProfileContract(playwrightConfig.replace("retries: 0", "retries: 2"), e2eCi)).toThrow();
+    expect(() => assertCiProfileContract(`${playwrightConfig}\n  timeout: 300_000,`, e2eCi)).toThrow();
+    expect(() => assertCiProfileContract(
+      playwrightConfig,
+      e2eCi.replace(
+        '      "--shard=2/2",\n      "--fail-on-flaky-tests",',
+        '      "--fail-on-flaky-tests",\n      "--shard=2/2",',
+      ),
+    )).toThrow();
+    expect(() => assertCiProfileContract(
+      playwrightConfig,
+      e2eCi.replace(
+        '      "--shard=2/2",',
+        '      "--shard=2/2",\n      "--workers=2",',
+      ),
+    )).toThrow();
   });
 });
