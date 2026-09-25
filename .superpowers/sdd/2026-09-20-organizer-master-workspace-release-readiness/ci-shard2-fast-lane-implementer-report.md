@@ -15,7 +15,7 @@ Neon concurrency lock, setup, and normal fail-closed dependency behavior.
 The diagnostic step is enabled only when all three conditions match:
 
 - `github.event_name == 'push'`
-- `github.ref_name == 'codex/organizer-release-readiness'`
+- `github.ref == 'refs/heads/codex/organizer-release-readiness'`
 - head commit message contains the exact marker `[ci:shard2-only]`
 
 The normal E2E step uses the logical inverse of that complete predicate. The

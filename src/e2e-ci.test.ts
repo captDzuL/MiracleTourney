@@ -74,7 +74,7 @@ describe("CI E2E release sequence", () => {
     );
 
     expect(fullStep).toContain("github.event_name != 'push'");
-    expect(fullStep).toContain("github.ref_name != 'codex/organizer-release-readiness'");
+    expect(fullStep).toContain("github.ref != 'refs/heads/codex/organizer-release-readiness'");
     expect(fullStep).toContain("!contains(github.event.head_commit.message, '[ci:shard2-only]')");
     expect(fullStep.match(/run: pnpm test:e2e:ci/g)).toHaveLength(1);
   });
@@ -90,7 +90,7 @@ describe("CI E2E release sequence", () => {
       .filter(Boolean);
 
     expect(diagnosticStep).toContain("github.event_name == 'push'");
-    expect(diagnosticStep).toContain("github.ref_name == 'codex/organizer-release-readiness'");
+    expect(diagnosticStep).toContain("github.ref == 'refs/heads/codex/organizer-release-readiness'");
     expect(diagnosticStep).toContain("contains(github.event.head_commit.message, '[ci:shard2-only]')");
     expect(commandLines.filter((line) => line === "pnpm test:e2e:preflight")).toHaveLength(1);
     expect(commandLines.filter((line) => line === "pnpm test:e2e:prepare")).toHaveLength(1);
@@ -157,7 +157,7 @@ describe("CI E2E release sequence", () => {
       const conditionStart = workflow.lastIndexOf("if:", match.index);
       const condition = workflow.slice(conditionStart, (match.index ?? 0) + marker.length);
       expect(condition).toMatch(/github\.event_name\s*(?:==|!=)\s*'push'/);
-      expect(condition).toMatch(/github\.ref_name\s*(?:==|!=)\s*'codex\/organizer-release-readiness'/);
+      expect(condition).toMatch(/github\.ref\s*(?:==|!=)\s*'refs\/heads\/codex\/organizer-release-readiness'/);
     }
   });
 
