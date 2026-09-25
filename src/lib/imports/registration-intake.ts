@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { parse as parseCsv } from "csv-parse/sync";
 
 import { validateTeamData } from "@/lib/validation/team-data";
+import { isSafeFilename } from "@/lib/security/request-guard";
 
 export type RegistrationSourceKind = "xlsx" | "csv" | "google-sheet";
 
@@ -83,6 +84,10 @@ function cleanText(value: unknown): string {
   return String(value).replace(/^\uFEFF/, "").trim();
 }
 
+function isFormulaLeading(value: string): boolean {
+  return /^[\s]*[=+\-@]/.test(value);
+}
+
 function assertSourceBounds(rows: RegistrationCell[][]) {
   const dataRows = Math.max(0, rows.length - 1);
   if (dataRows > MAX_DATA_ROWS) {
@@ -138,6 +143,10 @@ export async function parseRegistrationSource(input: {
   buffer: Buffer;
   worksheetName?: string;
 }): Promise<{ sourceKind: RegistrationSourceKind; worksheets: RegistrationWorksheet[] }> {
+  if (!isSafeFilename(input.fileName)) {
+    throw new Error("Nama file registrasi tidak valid.");
+  }
+
   if (input.buffer.byteLength > MAX_FILE_BYTES) {
     throw new Error("File registrasi maksimal 5 MiB.");
   }
@@ -150,10 +159,10 @@ export async function parseRegistrationSource(input: {
     }) as unknown[][];
     const rows = trimRows(
       records.map((row) =>
-        row.map((value) => ({
-          value: cleanText(value),
-          formula: false,
-        })),
+        row.map((value) => {
+          const cleaned = cleanText(value);
+          return { value: cleaned, formula: isFormulaLeading(cleaned) };
+        }),
       ),
     );
     assertSourceBounds(rows);

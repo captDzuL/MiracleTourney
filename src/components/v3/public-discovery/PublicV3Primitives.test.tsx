@@ -141,9 +141,10 @@ describe("final public V3 primitives", () => {
   });
 
   it("provides scoped landmarks and a skip target without hardcoded route or event data", () => {
-    render(<PublicV3Frame brandHref="/en" homeLabel="Miracle home" skipLabel="Skip to content" navigationLabel="Main navigation" navigation={[{ href: "/en/events", label: "Events", active: true }]}><h1>Events</h1></PublicV3Frame>);
+    render(<PublicV3Frame brandHref="/en" homeLabel="Miracle home" skipLabel="Skip to content" navigationLabel="Main navigation" navigation={[{ href: "/en", label: "Home", active: true }, { href: "/en/events", label: "Events" }]}><h1>Events</h1></PublicV3Frame>);
     expect(container.firstElementChild?.classList.contains("miracle-public-v3")).toBe(true);
-    expect(container.querySelector("header nav a")?.getAttribute("href")).toBe("/en/events");
+    expect(container.querySelector("header nav a")?.getAttribute("href")).toBe("/en");
+    expect(container.querySelector("a.mpv3-brand")?.getAttribute("aria-current")).toBe("page");
     expect(container.querySelector("main")?.tabIndex).toBe(-1);
     expect(container.querySelector("a")?.getAttribute("href")).toBe(`#${container.querySelector("main")?.id}`);
     expect(container.querySelectorAll("main")).toHaveLength(1);

@@ -99,9 +99,9 @@ describe("completion workspace read model", () => {
     expect(state.status === "integration_required" ? [] : state.blockers).toEqual([
       { code: "UNOFFICIAL_REQUIRED_RESULT", subject: "final · final", repairHref: "/id/organizer/events/event-1/matches/final" },
       { code: "ACTIVE_DISPUTE", subject: "incident-1 · final", repairHref: "/id/organizer/events/event-1/matches/final" },
-      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Scorer", repairHref: "/id/organizer/events/event-1/legacy-match-day" },
-      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Defender", repairHref: "/id/organizer/events/event-1/legacy-match-day" },
-      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Assist", repairHref: "/id/organizer/events/event-1/legacy-match-day" },
+      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Scorer", repairHref: "/id/organizer/events/event-1/competition" },
+      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Defender", repairHref: "/id/organizer/events/event-1/competition" },
+      { code: "MISSING_VALIDATED_AWARD_STATISTICS", subject: "Top Assist", repairHref: "/id/organizer/events/event-1/competition" },
     ]);
   });
 

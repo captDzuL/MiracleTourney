@@ -9,6 +9,45 @@ vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => boundary.enabled
 vi.mock("@/lib/platform/db", () => ({ prisma: new Proxy({}, { get: (_, key) => Reflect.get(boundary.db!, key) }) }));
 import { COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS, readCompetitionWorkspace } from "./workspace-read";
 
+const auxiliaryHistoryCases = [
+  {
+    name: "incidents",
+    seed: (store: ReturnType<typeof operationStore>, index: number) => store.seed("competitionIncident", {
+      id: `incident-${index}`,
+      eventId: "event",
+      matchId: null,
+      kind: "fixture",
+      description: `Incident ${index}`,
+      resolvedAt: null,
+      createdAt: new Date(2026, 0, index),
+    }),
+  },
+  {
+    name: "announcements",
+    seed: (store: ReturnType<typeof operationStore>, index: number) => store.seed("eventAnnouncement", {
+      id: `announcement-${index}`,
+      eventId: "event",
+      title: `Announcement ${index}`,
+      body: "Body",
+      status: "draft",
+      urgency: "info",
+      createdAt: new Date(2026, 0, index),
+    }),
+  },
+  {
+    name: "audit",
+    seed: (store: ReturnType<typeof operationStore>, index: number) => store.seed("competitionAuditLog", {
+      id: `audit-${index}`,
+      eventId: "event",
+      matchId: null,
+      actorUserId: "owner",
+      action: "fixture",
+      reason: null,
+      createdAt: new Date(2026, 0, index),
+    }),
+  },
+] as const;
+
 describe("private organizer read state", () => {
   it("exposes authoritative event status even when no graph or matches exist", async () => {
     await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { status: "Finished" } }); });
@@ -129,6 +168,16 @@ describe("private organizer read state", () => {
     const state = await readCompetitionWorkspace("event");
     expect(state.unavailableSections).toEqual(["incidents"]);
     expect(state.matches).toEqual([]);
+  });
+  it.each(auxiliaryHistoryCases)("rejects $name overflow instead of treating it as an unavailable section", async ({ seed }) => {
+    for (let index = 1; index <= 101; index += 1) seed(store, index);
+    await expect(readCompetitionWorkspace("event"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 100 });
+  });
+  it.each(auxiliaryHistoryCases)("supports exactly 100 $name", async ({ name, seed }) => {
+    for (let index = 1; index <= 100; index += 1) seed(store, index);
+    const state = await readCompetitionWorkspace("event");
+    expect(state[name]).toHaveLength(100);
   });
   it.each([false, true])("reopens published constraints without resurrecting superseded drafts (earlier draft: %s)", async earlierDraft => {
     const operations = createCompetitionOperations(store.db, undefined, { allowInternalInitialize: true });

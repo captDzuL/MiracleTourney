@@ -2,12 +2,94 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
+import { runAndSettleServerActionRedirect } from "./helpers/server-action";
+import { waitForServerActionResult } from "./helpers/server-action";
 import { TOURNAMENT_FORMAT_PRESETS } from "../../src/lib/tournament/formats/types";
 
 const prisma = new PrismaClient();
 
 test.afterAll(async () => {
   await prisma.$disconnect();
+});
+
+const OVERNIGHT_INITIAL_DESCRIPTION = "New event created from admin panel.";
+const OVERNIGHT_FINAL_DESCRIPTION = "Ready legacy admin event for V3 publish readiness coverage.";
+const OVERNIGHT_ORGANIZER_EMAIL = "organizer-a@miraclefc.gg";
+const OVERNIGHT_CLEANUP_TIMEOUT = 30_000;
+const OVERNIGHT_PREPARATION_TIMEOUT = 120_000;
+
+type OvernightEventIdentity = { name: string; slug: string };
+type OvernightEventTracker = (event: OvernightEventIdentity) => void;
+
+async function cleanupCreatedOvernightEvent(event: OvernightEventIdentity) {
+  const rows = await prisma.event.findMany({
+    where: { slug: event.slug, name: event.name },
+    select: { id: true, slug: true, name: true, description: true, organizerUserId: true },
+  });
+  if (rows.length === 0) return;
+  if (rows.length > 1) {
+    throw new Error(`Refusing to clean ${event.slug}: found ${rows.length} exact name/slug matches`);
+  }
+
+  const created = rows[0];
+  if (!created) throw new Error(`Refusing to clean ${event.slug}: exact event row was not readable`);
+  const organizer = await prisma.user.findUnique({
+    where: { email: OVERNIGHT_ORGANIZER_EMAIL },
+    select: { id: true },
+  });
+  const isInitialState =
+    created.description === OVERNIGHT_INITIAL_DESCRIPTION && created.organizerUserId === null;
+  const isFinalState =
+    organizer !== null &&
+    created.description === OVERNIGHT_FINAL_DESCRIPTION &&
+    created.organizerUserId === organizer.id;
+  if (!isInitialState && !isFinalState) {
+    throw new Error(`Refusing to clean ${event.slug}: unexpected description/owner lifecycle state`);
+  }
+
+  const exactWhere = {
+    id: created.id,
+    slug: event.slug,
+    name: event.name,
+    description: created.description,
+    organizerUserId: created.organizerUserId,
+  };
+  const result = await prisma.event.deleteMany({ where: exactWhere });
+  if (result.count !== 1) {
+    throw new Error(`Expected to clean exactly one overnight event, deleted ${result.count}`);
+  }
+  const remaining = await prisma.event.count({ where: exactWhere });
+  if (remaining !== 0) throw new Error(`Overnight event ${event.slug} remained after cleanup`);
+}
+
+const overnightTest = test.extend<{ trackOvernightEvent: OvernightEventTracker }>({
+  trackOvernightEvent: [async ({}, use) => {
+    let trackedEvent: OvernightEventIdentity | undefined;
+    const trackOvernightEvent: OvernightEventTracker = (event) => {
+      trackedEvent = event;
+    };
+    await use(trackOvernightEvent);
+    if (trackedEvent) await cleanupCreatedOvernightEvent(trackedEvent);
+  }, { timeout: OVERNIGHT_CLEANUP_TIMEOUT }],
+});
+
+let seededKurokoEventId: string;
+
+test.beforeAll(async ({}, testInfo) => {
+  testInfo.setTimeout(OVERNIGHT_PREPARATION_TIMEOUT);
+  const event = await prisma.event.findUnique({ where: { slug: "kuroko-summer-cup" } });
+  expect(event, "Expected the seeded Kuroko event to exist").not.toBeNull();
+  if (!event) throw new Error("Expected the seeded Kuroko event to exist");
+  seededKurokoEventId = event.id;
+
+  await prisma.match.deleteMany({ where: { eventId: event.id } });
+  await prisma.eventRoundConfig.deleteMany({ where: { eventId: event.id } });
+  await prisma.team.deleteMany({
+    where: {
+      eventId: event.id,
+      OR: [{ tag: "ST5" }, { name: "Smoke Test Five" }],
+    },
+  });
 });
 
 const csvHeader = "event_slug,team_name,team_tag,captain_name,captain_contact,captain_ign,captain_uid,Player 1 Nickname,Player 2 Nickname";
@@ -76,18 +158,6 @@ async function commitPreviewedRegistration(page: import("@playwright/test").Page
 
 test("admin can publish, import, enter a result, and see bracket advancement publicly", async ({ page }) => {
   test.setTimeout(90_000);
-  const event = await prisma.event.findUnique({ where: { slug: "kuroko-summer-cup" } });
-  expect(event, "Expected the seeded Kuroko event to exist").not.toBeNull();
-  if (!event) return;
-
-  await prisma.match.deleteMany({ where: { eventId: event.id } });
-  await prisma.eventRoundConfig.deleteMany({ where: { eventId: event.id } });
-  await prisma.team.deleteMany({
-    where: {
-      eventId: event.id,
-      OR: [{ tag: "ST5" }, { name: "Smoke Test Five" }],
-    },
-  });
 
   await loginAsAdmin(page, "en");
   await page.goto("/en/admin?phase=prepare");
@@ -99,10 +169,23 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   await expect(eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i })).toBeEnabled();
   await eventStatusForm.getByLabel("Event").selectOption({ label: "Kuroko Street Rival Summer Cup" });
   await eventStatusForm.getByLabel("Status").selectOption("Published");
-  await eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i }).click();
+  await runAndSettleServerActionRedirect(page, {
+    request: (request) => {
+      const requestUrl = new URL(request.url());
+      return requestUrl.pathname === "/en/admin"
+        && requestUrl.searchParams.get("phase") === "prepare"
+        && requestUrl.search === "?phase=prepare";
+    },
+    expectedActionRedirect: "/en/admin?success=event-status-updated&event=kuroko-summer-cup;push",
+    destination: (url) => url.pathname === "/en/admin"
+      && url.searchParams.get("success") === "event-status-updated"
+      && url.searchParams.get("event") === "kuroko-summer-cup"
+      && url.search === "?success=event-status-updated&event=kuroko-summer-cup",
+    trigger: () => eventStatusForm.getByRole("button", { name: /save event status|simpan status event/i }).click(),
+  });
   await expect(page).toHaveURL(/\/admin\?success=event-status-updated/);
 
-  await page.goto(`/en/admin?phase=import&activeEventId=${event.id}`);
+  await page.goto(`/en/admin?phase=import&activeEventId=${seededKurokoEventId}`);
   await previewRegistrationCsv(page, {
     name: "overnight-smoke.csv",
     buffer: Buffer.from(
@@ -111,7 +194,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   });
   await commitPreviewedRegistration(page, 1);
 
-  await page.goto(`/id/admin?phase=run&activeEventId=${event.id}&matchEventId=${event.id}`);
+  await page.goto(`/id/admin?phase=run&activeEventId=${seededKurokoEventId}&matchEventId=${seededKurokoEventId}`);
   const firstMatch = page.locator("a[href*='matchId=']").first();
   await expect(firstMatch).toBeVisible();
   await firstMatch.click();
@@ -134,7 +217,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   await expect(page.getByRole("main")).toBeVisible();
 });
 
-test("registration order stays private and imports stop after drawing publication", async ({ page }) => {
+overnightTest("registration order stays private and imports stop after drawing publication", async ({ page, trackOvernightEvent }) => {
   test.setTimeout(240_000);
   const suffix = randomUUID().slice(0, 8);
   const eventName = `Flashpeak 24 ${suffix}`;
@@ -152,7 +235,20 @@ test("registration order stays private and imports stop after drawing publicatio
   await createEventForm.getByLabel("Game and mode").selectOption("mode-flashpeak-5v5");
   await createEventForm.getByLabel("Format").selectOption("Single Elimination");
   await createEventForm.getByLabel("Participant cap").selectOption("24");
-  await createEventForm.getByRole("button", { name: /create draft event|buat draft event/i }).click();
+  trackOvernightEvent({ name: eventName, slug });
+  await runAndSettleServerActionRedirect(page, {
+    request: (request) => {
+      const requestUrl = new URL(request.url());
+      return requestUrl.pathname === "/en/admin"
+        && requestUrl.searchParams.get("phase") === "prepare"
+        && requestUrl.search === "?phase=prepare";
+    },
+    expectedActionRedirect: "/en/admin?success=event-created;push",
+    destination: (url) => url.pathname === "/en/admin"
+      && url.searchParams.get("success") === "event-created"
+      && url.search === "?success=event-created",
+    trigger: () => createEventForm.getByRole("button", { name: /create draft event|buat draft event/i }).click(),
+  });
   await expect(page).toHaveURL(/\/admin\?success=event-created/);
 
   await page.getByLabel(/active event|event aktif/i).selectOption({ label: eventName });
@@ -170,7 +266,7 @@ test("registration order stays private and imports stop after drawing publicatio
   await prisma.event.update({
     where: { id: eventId },
     data: {
-      description: "Ready legacy admin event for V3 publish readiness coverage.",
+      description: OVERNIGHT_FINAL_DESCRIPTION,
       formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination,
       registrationOpensAt: new Date("2026-10-01T02:00:00.000Z"),
       registrationClosesAt: new Date("2026-10-07T14:00:00.000Z"),
@@ -217,7 +313,20 @@ test("registration order stays private and imports stop after drawing publicatio
     data: { status: "Registration Closed" },
   });
   await page.goto(`/en/organizer/events/${eventId}/competition`);
+  const drawingResponsePromise = waitForServerActionResult<{ status: string; code?: string; correlationId?: string }>(page, (request, requestUrl) => {
+    const postData = request.postData() ?? "";
+    return request.method() === "POST"
+      && requestUrl.pathname === `/en/organizer/events/${encodeURIComponent(eventId)}/competition`
+      && Boolean(request.headers()["next-action"])
+      && postData.includes(eventId)
+      && postData.includes('"drawing_save"');
+  });
   await page.getByRole("button", { name: "Save drawing draft", exact: true }).click();
+  const drawingResponse = await drawingResponsePromise;
+  if (drawingResponse.result.status !== "saved") {
+    throw new Error(`Save drawing failed with ${drawingResponse.result.code ?? "unknown"} (correlation ${drawingResponse.result.correlationId ?? "missing"}).`);
+  }
+  expect(drawingResponse.result.status, "Save drawing action result").toBe("saved");
   await expect.poll(
     async () => (await prisma.competitionPhase.findFirst({ where: { eventId, sequence: 1 } }))?.status,
     { timeout: 60_000 },

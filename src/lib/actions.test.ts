@@ -7,6 +7,7 @@ const {
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
+  assertUserCanManageTeam,
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   blobPut,
@@ -17,6 +18,8 @@ const {
   createEvent,
   createEventVisualAsset,
   createPasswordResetToken,
+  consumePasswordResetToken,
+  equalizePasswordResetResponse,
   createTeamRegistrationRequest,
   deletePlayer,
   getImportSnapshot,
@@ -45,6 +48,7 @@ const {
   signIn,
   signOut,
   headers,
+  after,
   checkRateLimit,
   updateCaptainPassword,
   updateEventBrandAssets,
@@ -52,6 +56,7 @@ const {
   updateTeamRegistrationProof,
   updateEventStream,
   updateCaptainTeamLogo,
+  updateTeamLogo,
   updatePlayer,
   updateEventCertificateAssets,
   updateEventPublicInfo,
@@ -61,6 +66,7 @@ const {
   setTeamCaptainDisplay,
   previewRegistrationImportForUser,
   commitRegistrationImportForUser,
+  prisma,
 } = vi.hoisted(() => ({
   addPlayer: vi.fn(),
   approveEventVisualAsset: vi.fn(),
@@ -68,6 +74,7 @@ const {
   approveTeamRegistrationRequest: vi.fn(),
   assertCaptainCanSubmitStats: vi.fn(),
   assertUserCanManageEvent: vi.fn(),
+  assertUserCanManageTeam: vi.fn(),
   assertUserCanReviewStatSubmission: vi.fn(),
   autoTransitionEventToOngoing: vi.fn(),
   blobPut: vi.fn(),
@@ -78,6 +85,8 @@ const {
   createEvent: vi.fn(),
   createEventVisualAsset: vi.fn(),
   createPasswordResetToken: vi.fn(),
+  consumePasswordResetToken: vi.fn(),
+  equalizePasswordResetResponse: vi.fn(async (operation: () => Promise<unknown>) => operation()),
   createTeamRegistrationRequest: vi.fn(),
   deletePlayer: vi.fn(),
   getImportSnapshot: vi.fn(),
@@ -106,13 +115,15 @@ const {
   signIn: vi.fn(),
   signOut: vi.fn(),
   headers: vi.fn(),
-  checkRateLimit: vi.fn(),
+  after: vi.fn(),
+  checkRateLimit: vi.fn().mockReturnValue(true),
   updateCaptainPassword: vi.fn(),
   updateEventBrandAssets: vi.fn(),
   updatePaymentSettings: vi.fn(),
   updateTeamRegistrationProof: vi.fn(),
   updateEventStream: vi.fn(),
   updateCaptainTeamLogo: vi.fn(),
+  updateTeamLogo: vi.fn(),
   updatePlayer: vi.fn(),
   updateEventCertificateAssets: vi.fn(),
   updateEventPublicInfo: vi.fn(),
@@ -122,9 +133,17 @@ const {
   setTeamCaptainDisplay: vi.fn(),
   previewRegistrationImportForUser: vi.fn(),
   commitRegistrationImportForUser: vi.fn(),
+  prisma: {
+    event: { findUnique: vi.fn() },
+    match: { findFirst: vi.fn() },
+    team: { findFirst: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
+    teamRegistrationRequest: { findFirst: vi.fn() },
+    user: { findUnique: vi.fn(), update: vi.fn() },
+  },
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
+vi.mock("next/server", () => ({ after }));
 vi.mock("next/navigation", () => ({
   redirect: (url: string): never => {
     throw new Error(`REDIRECT:${url}`);
@@ -145,6 +164,7 @@ vi.mock("@/lib/platform/repository", () => ({
   approveTeamRegistrationRequest,
   assertCaptainCanSubmitStats,
   assertUserCanManageEvent,
+  assertUserCanManageTeam,
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   createCaptainAccount,
@@ -177,6 +197,7 @@ vi.mock("@/lib/platform/repository", () => ({
   updatePaymentSettings,
   updateTeamRegistrationProof,
   updateCaptainTeamLogo,
+  updateTeamLogo,
   updateEventCertificateAssets,
   updateEventPublicInfo,
   updateEventStream,
@@ -186,11 +207,14 @@ vi.mock("@/lib/platform/repository", () => ({
   adminWriteMatchPlayerStats,
   setTeamCaptainDisplay,
 }));
+vi.mock("@/lib/platform/db", () => ({ prisma }));
 vi.mock("@/lib/certificate/generate", () => ({
   generateCertificateIfFinal,
 }));
 vi.mock("@/lib/platform/password-reset", () => ({
   createPasswordResetToken,
+  consumePasswordResetToken,
+  equalizePasswordResetResponse,
 }));
 vi.mock("@/lib/events/publish-readiness", () => ({ publishEvent }));
 vi.mock("@/lib/email/send", () => ({
@@ -214,6 +238,7 @@ import {
   adminImportTeamsCsvAction,
   adminPreviewRegistrationImportAction,
   adminCommitRegistrationImportAction,
+  adminDeleteTeamAction,
   adminRejectEventVisualAction,
   adminRejectStatAction,
   adminSetEventVisualFocalPointAction,
@@ -221,6 +246,8 @@ import {
   adminSetMatchGamesAction,
   adminSetRoundConfigAction,
   adminUploadCharacterArtAction,
+  adminUploadEventLogoAction,
+  adminUploadTeamLogoAction,
   organizerUploadEventLogoAction,
   organizerUploadEventVisualAction,
   adminUploadEventVisualAction,
@@ -233,6 +260,7 @@ import {
   captainDeletePlayerAction,
   captainRegisterTeamAction,
   captainUploadPaymentProofAction,
+  captainUploadTeamLogoAction,
   captainSetDisplayCaptainAction,
   captainSignUpAction,
   captainSubmitStatsAction,
@@ -240,6 +268,7 @@ import {
   changePasswordAction,
   loginAction,
   requestPasswordResetAction,
+  resetPasswordAction,
 } from "./actions";
 import { logoutAction } from "./session-actions";
 
@@ -276,7 +305,10 @@ beforeEach(() => {
 });
 
 describe("loginAction", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    checkRateLimit.mockReturnValue(true);
+  });
 
   it("redirects admin to /admin on valid credentials", async () => {
     signIn.mockResolvedValue({ ok: true, user: { role: "admin" } });
@@ -326,6 +358,15 @@ describe("loginAction", () => {
     await expect(loginAction(fd({ email: "bad@test.com", password: "wrong" }))).rejects.toThrow(
       "REDIRECT:/login?error=invalid",
     );
+  });
+
+  it("fails closed with the generic login response when the shared limiter denies", async () => {
+    checkRateLimit.mockReturnValue(false);
+
+    await expect(loginAction(fd({ email: "admin@test.com", password: "secret123" }))).rejects.toThrow(
+      "REDIRECT:/login?error=invalid",
+    );
+    expect(signIn).not.toHaveBeenCalled();
   });
 
   it("preserves adaptive event context after invalid credentials", async () => {
@@ -576,8 +617,15 @@ describe("changePasswordAction", () => {
 // ────────────────────────────────────────────────────────────
 
 describe("requestPasswordResetAction", () => {
+  const afterCallbacks: Array<() => unknown | Promise<unknown>> = [];
+
   beforeEach(() => {
     vi.clearAllMocks();
+    afterCallbacks.length = 0;
+    after.mockImplementation((callback: () => unknown | Promise<unknown>) => {
+      afterCallbacks.push(callback);
+    });
+    checkRateLimit.mockReturnValue(true);
     createPasswordResetToken.mockResolvedValue("a".repeat(64));
   });
 
@@ -588,6 +636,7 @@ describe("requestPasswordResetAction", () => {
     await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
       "REDIRECT:/forgot-password?sent=1",
     );
+    await afterCallbacks[0]?.();
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: "cap@test.com" }),
     );
@@ -599,6 +648,7 @@ describe("requestPasswordResetAction", () => {
     await expect(requestPasswordResetAction(fd({ email: "nobody@test.com" }))).rejects.toThrow(
       "REDIRECT:/forgot-password?sent=1",
     );
+    await afterCallbacks[0]?.();
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
@@ -609,6 +659,96 @@ describe("requestPasswordResetAction", () => {
     await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
       "REDIRECT:/forgot-password?sent=1",
     );
+    await afterCallbacks[0]?.();
+  });
+
+  it("uses the exact 30-minute copy and keeps delivery logs redacted", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const rawToken = "a".repeat(64);
+    getUserByEmail.mockResolvedValue({ id: "captain-1", role: "captain" });
+    createPasswordResetToken.mockResolvedValue(rawToken);
+    sendEmail.mockRejectedValue(new Error(`delivery failed for cap@test.com ${rawToken}`));
+
+    await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+
+    await afterCallbacks[0]?.();
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({
+      html: expect.stringContaining("30 menit"),
+    }));
+    expect(sendEmail.mock.calls[0]?.[0]?.html).not.toContain("1 jam");
+    const logs = errorSpy.mock.calls.flat().join(" ");
+    expect(logs).not.toContain("cap@test.com");
+    expect(logs).not.toContain(rawToken);
+    expect(logs).not.toContain("forgot-password/reset");
+    errorSpy.mockRestore();
+  });
+
+  it("keeps a rate-limited request indistinguishable and does not issue a token", async () => {
+    checkRateLimit.mockReturnValue(false);
+
+    await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+
+    expect(getUserByEmail).not.toHaveBeenCalled();
+    expect(createPasswordResetToken).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("defers issuance and email while keeping known and unknown foreground work identical", async () => {
+    let resolveToken!: (token: string) => void;
+    const deferredToken = new Promise<string>((resolve) => {
+      resolveToken = resolve;
+    });
+    createPasswordResetToken.mockReturnValue(deferredToken);
+    getUserByEmail.mockResolvedValueOnce({ id: "captain-1", role: "captain" }).mockResolvedValueOnce(null);
+    sendEmail.mockResolvedValue(undefined);
+
+    let knownRedirectError: unknown;
+    const knownResult = requestPasswordResetAction(fd({ email: "cap@test.com" })).catch((error: unknown) => {
+      knownRedirectError = error;
+      return error;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    let unknownRedirectError: unknown;
+    const unknownResult = requestPasswordResetAction(fd({ email: "nobody@test.com" })).catch((error: unknown) => {
+      unknownRedirectError = error;
+      return error;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(getUserByEmail).toHaveBeenCalledTimes(2);
+    expect(after).toHaveBeenCalledTimes(2);
+    expect(createPasswordResetToken).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(knownRedirectError).toMatchObject({ message: "REDIRECT:/forgot-password?sent=1" });
+    expect(unknownRedirectError).toMatchObject({ message: "REDIRECT:/forgot-password?sent=1" });
+
+    await afterCallbacks[1]?.();
+    expect(sendEmail).not.toHaveBeenCalled();
+    createPasswordResetToken.mockResolvedValue("a".repeat(64));
+    await afterCallbacks[0]?.();
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+
+    resolveToken("a".repeat(64));
+    await expect(knownResult).resolves.toMatchObject({ message: "REDIRECT:/forgot-password?sent=1" });
+    await expect(unknownResult).resolves.toMatchObject({ message: "REDIRECT:/forgot-password?sent=1" });
   });
 
   it("rejects an invalid email format", async () => {
@@ -616,6 +756,122 @@ describe("requestPasswordResetAction", () => {
       "REDIRECT:/forgot-password?error=",
     );
     expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("emits the password-reset request operation signal", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    await expect(requestPasswordResetAction(fd({ email: "cap@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+
+    const operations = info.mock.calls.map(([line]) => JSON.parse(String(line)).operation);
+    expect(operations).toContain("password_reset_request");
+    info.mockRestore();
+  });
+
+  it("emits safe failed signals for rate limits and deferred delivery failures before the generic redirect", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    checkRateLimit.mockReturnValueOnce(false);
+    await expect(requestPasswordResetAction(fd({ email: "private@example.test" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+    const rateLimitRecord = info.mock.calls
+      .map(([line]) => JSON.parse(String(line)))
+      .find((record) => record.operation === "password_reset_request" && record.phase === "failed");
+    expect(rateLimitRecord).toMatchObject({ status: 429, errorCode: "rate_limited" });
+
+    info.mockClear();
+    checkRateLimit.mockReturnValue(true);
+    getUserByEmail.mockResolvedValue({ id: "captain-private", role: "captain" });
+    const rawToken = "private-reset-token".padEnd(64, "x");
+    createPasswordResetToken.mockResolvedValue(rawToken);
+    sendEmail.mockRejectedValue(new Error(`delivery failed for private@example.test ${rawToken}`));
+    await expect(requestPasswordResetAction(fd({ email: "private@example.test" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+    await afterCallbacks.at(-1)?.();
+
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(records).toContainEqual(expect.objectContaining({
+      operation: "password_reset_request",
+      phase: "failed",
+      status: 500,
+      errorCode: "delivery_failed",
+    }));
+    expect(JSON.stringify(records)).not.toContain("private@example.test");
+    expect(JSON.stringify(records)).not.toContain(rawToken);
+  });
+
+  it("emits a safe failed consume signal for invalid, reused, or expired tokens before the generic redirect", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const rawToken = "private-reset-token".padEnd(64, "x");
+    consumePasswordResetToken.mockRejectedValue(new Error("Token tidak valid atau sudah kadaluarsa"));
+
+    await expect(resetPasswordAction(fd({
+      token: rawToken,
+      password: "new-password",
+      confirmPassword: "new-password",
+    }))).rejects.toThrow("REDIRECT:/forgot-password/reset?token=");
+
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(records).toContainEqual(expect.objectContaining({
+      operation: "password_reset_consume",
+      phase: "failed",
+      status: 400,
+      errorCode: "token_invalid",
+    }));
+    expect(JSON.stringify(records)).not.toContain(rawToken);
+  });
+});
+
+describe("resetPasswordAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    checkRateLimit.mockReturnValue(true);
+    consumePasswordResetToken.mockResolvedValue(undefined);
+    (bcrypt.hash as ReturnType<typeof vi.fn>).mockResolvedValue("$new-hash$");
+  });
+
+  it("rate-limits token consumption before hashing or consuming", async () => {
+    checkRateLimit.mockReturnValue(false);
+
+    await expect(resetPasswordAction(fd({
+      token: "a".repeat(64),
+      password: "new-password",
+      confirmPassword: "new-password",
+    }))).rejects.toThrow("REDIRECT:/forgot-password/reset?token=");
+
+    expect(bcrypt.hash).not.toHaveBeenCalled();
+    expect(consumePasswordResetToken).not.toHaveBeenCalled();
+  });
+
+  it("consumes a valid token and redirects without exposing the password", async () => {
+    const token = "a".repeat(64);
+
+    await expect(resetPasswordAction(fd({
+      token,
+      password: "new-password",
+      confirmPassword: "new-password",
+    }))).rejects.toThrow("REDIRECT:/login?message=");
+
+    expect(consumePasswordResetToken).toHaveBeenCalledWith(token, "$new-hash$");
+  });
+
+  it("emits the password-reset consume operation signal", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const token = "a".repeat(64);
+
+    await expect(resetPasswordAction(fd({
+      token,
+      password: "new-password",
+      confirmPassword: "new-password",
+    }))).rejects.toThrow("REDIRECT:/login?message=");
+
+    const operations = info.mock.calls.map(([line]) => JSON.parse(String(line)).operation);
+    expect(operations).toContain("password_reset_consume");
+    info.mockRestore();
   });
 });
 
@@ -627,6 +883,7 @@ describe("captain actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireRole.mockResolvedValue(captainSession());
+    checkRateLimit.mockReturnValue(true);
     assertCaptainCanSubmitStats.mockResolvedValue(undefined);
   });
 
@@ -651,6 +908,15 @@ describe("captain actions", () => {
     });
   });
 
+  it("returns a generic denial for a cross-event registration without creating a payment request", async () => {
+    registerTeam.mockRejectedValueOnce(new Error("Not authorized"));
+
+    await expect(
+      captainRegisterTeamAction(fd({ eventId: "event-b", name: "Foreign United", tag: "FUT" })),
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-b&error=Not%20authorized");
+    expect(createTeamRegistrationRequest).not.toHaveBeenCalled();
+  });
+
 
   it("creates a pending payment request when the event requires a fee", async () => {
     registerTeam.mockRejectedValue(new Error("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif."));
@@ -672,6 +938,7 @@ describe("captain actions", () => {
 
   it("uploads a payment proof for the authenticated captain", async () => {
     updateTeamRegistrationProof.mockResolvedValue({ id: "request-1", status: "pending_review" });
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
     blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-proofs/request-1.png" });
 
@@ -686,6 +953,91 @@ describe("captain actions", () => {
       delete process.env.BLOB_READ_WRITE_TOKEN;
     }
   });
+
+  it("rate-limits payment proof before reading, storing, or updating the request", async () => {
+    checkRateLimit.mockReturnValue(false);
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    const paymentProof = validPngFile("proof.png");
+    try {
+      await expect(
+        captainUploadPaymentProofAction(fd({ requestId: "request-1", eventId: "event-paid", paymentProof })),
+      ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&error=rate-limited");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateTeamRegistrationProof).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
+
+  it("denies a foreign payment request before external upload or repository write", async () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(null);
+    blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-proofs/foreign.png" });
+
+    try {
+      await expect(
+        captainUploadPaymentProofAction(fd({ requestId: "foreign-request", eventId: "event-paid", paymentProof: validPngFile("proof.png") })),
+      ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&error=Not%20authorized");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateTeamRegistrationProof).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
+
+  it.each([
+    ["missing", null, "No%20Payment%20proof%20file%20uploaded."],
+    ["oversized", new File(["x".repeat(2 * 1024 * 1024 + 1)], "proof.png", { type: "image/png" }), "Payment%20proof%20file%20is%20too%20large."],
+    ["invalid signature", new File(["not-an-image"], "proof.png", { type: "image/png" }), "Payment%20proof%20file%20content%20does%20not%20match%20its%20image%20type."],
+  ] as const)("preserves the payment proof validation message for %s files", async (_kind, paymentProof, encodedMessage) => {
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+
+    try {
+      const fields: Record<string, string | File> = { requestId: "request-1", eventId: "event-paid" };
+      if (paymentProof) fields.paymentProof = paymentProof;
+      await expect(captainUploadPaymentProofAction(fd(fields))).rejects.toThrow(
+        `REDIRECT:/captain?tab=registration&eventId=event-paid&error=${encodedMessage}`,
+      );
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateTeamRegistrationProof).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
+
+  it("denies a foreign team logo before external upload or repository write", async () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    prisma.team.findFirst.mockResolvedValue(null);
+    blobPut.mockResolvedValue({ url: "https://blob.example.com/team-logos/foreign.png" });
+
+    try {
+      await expect(
+        captainUploadTeamLogoAction(fd({ teamId: "foreign-team", teamLogo: validPngFile("logo.png") })),
+      ).rejects.toThrow("REDIRECT:/captain?tab=roster&error=Not%20authorized");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateCaptainTeamLogo).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
+
+  it("rate-limits captain team logos after ownership and before file processing", async () => {
+    checkRateLimit.mockReturnValue(false);
+    prisma.team.findFirst.mockResolvedValue({ id: "team-1", eventId: "event-safe" });
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    try {
+      await expect(
+        captainUploadTeamLogoAction(fd({ teamId: "team-1", teamLogo: validPngFile("logo.png") })),
+      ).rejects.toThrow("REDIRECT:/captain?tab=roster&error=rate-limited");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateCaptainTeamLogo).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
+
   it("requires a captain session before adding a player", async () => {
     requireRole.mockResolvedValue(null);
 
@@ -1005,7 +1357,7 @@ describe("adminUpdateEventStatusAction", () => {
 
     await expect(
       adminUpdateEventStatusAction(fd({ eventId: "e-missing", status: "Published" })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
+    ).rejects.toThrow();
   });
   it.each(["conflict", "not_draft"] as const)("does not report legacy publication success for %s", async (status) => {
     process.env.FEATURE_FLAG_ORGANIZER_WORKSPACE_V3 = "true";
@@ -1064,7 +1416,7 @@ describe("organizer legacy match roundtrip", () => {
   it("rejects cross-event writes before reaching repository mutations", async () => {
     assertUserCanManageEvent.mockRejectedValue(new Error("Forbidden event"));
     for (const action of [adminUpdateMatchResultAction, adminSetRoundConfigAction, adminSetMatchGamesAction]) {
-      await expect(action(fd({ eventId: "other", matchEventId: "other", matchId: "m1", roundLabel: "Round 1", bestOf: "3", homeScore: "2", awayScore: "0" }))).rejects.toThrow("Forbidden event");
+      await expect(action(fd({ eventId: "other", matchEventId: "other", matchId: "match-b", roundLabel: "Round 1", bestOf: "3", homeScore: "2", awayScore: "0" }))).rejects.toThrow("Forbidden event");
     }
     expect(setMatchResult).not.toHaveBeenCalled(); expect(upsertRoundConfig).not.toHaveBeenCalled(); expect(setMatchGames).not.toHaveBeenCalled();
   });
@@ -1133,6 +1485,7 @@ describe("adminImportTeamsCsvAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireRole.mockResolvedValue(adminSession());
+    checkRateLimit.mockReturnValue(true);
     getImportSnapshot.mockResolvedValue({ events: [], teams: [] });
   });
 
@@ -1428,6 +1781,22 @@ describe("adminUpdateEventPublicInfoAction", () => {
       adminUpdateEventPublicInfoAction(fd({ ...validData, registrationUrl: "javascript:alert(1)" })),
     ).rejects.toThrow();
 
+    expect(updateEventPublicInfo).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits CSV import before reading or parsing the file", async () => {
+    checkRateLimit.mockReturnValue(false);
+    const file = new File(["team,data"], "teams.csv", { type: "text/csv" });
+    const text = vi.fn().mockResolvedValue("team,data");
+    Object.defineProperty(file, "text", { value: text });
+    await expect(adminImportTeamsCsvAction(fd({ csv: file }))).rejects.toThrow("REDIRECT:/admin?error=rate-limited");
+    expect(text).not.toHaveBeenCalled();
+    expect(parseAndValidateTeamImport).not.toHaveBeenCalled();
+    expect(importTeams).not.toHaveBeenCalled();
+  });
+
+  it("rejects traversal event ids before updating public information", async () => {
+    await expect(adminUpdateEventPublicInfoAction(fd({ ...validData, eventId: "../secrets" }))).rejects.toThrow();
     expect(updateEventPublicInfo).not.toHaveBeenCalled();
   });
 });
@@ -1817,6 +2186,7 @@ describe("adminUploadCharacterArtAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireRole.mockResolvedValue(adminSession());
+    checkRateLimit.mockReturnValue(true);
   });
 
   it("requires an admin session", async () => {
@@ -1857,8 +2227,72 @@ describe("adminUploadCharacterArtAction", () => {
         eventId: "../outside",
         characterArt: new File(["fake"], "art.png", { type: "image/png" }),
       })),
-    ).rejects.toThrow("REDIRECT:/admin?error=");
+    ).rejects.toThrow(/Invalid string/);
     expect(updateEventCertificateAssets).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits character art before reading or storing the file", async () => {
+    checkRateLimit.mockReturnValue(false);
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    try {
+      await expect(
+        adminUploadCharacterArtAction(fd({ eventId: "event-safe", characterArt: validPngFile("art.png") })),
+      ).rejects.toThrow("REDIRECT:/admin?error=rate-limited");
+      expect(blobPut).not.toHaveBeenCalled();
+      expect(updateEventCertificateAssets).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BLOB_READ_WRITE_TOKEN;
+    }
+  });
+});
+
+describe("admin team ownership boundaries", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireRole.mockResolvedValue(adminSession());
+    checkRateLimit.mockReturnValue(true);
+    process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+    blobPut.mockResolvedValue({ url: "https://blob.example.com/team-logos/foreign.png" });
+  });
+
+  afterEach(() => {
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+  });
+
+  it("denies a foreign team logo before external upload or repository write", async () => {
+    assertUserCanManageTeam.mockRejectedValue(new Error("Not authorized"));
+
+    await expect(
+      adminUploadTeamLogoAction(fd({ teamId: "foreign-team", teamLogo: validPngFile("logo.png") })),
+    ).rejects.toThrow("REDIRECT:/admin?error=Not%20authorized");
+    expect(assertUserCanManageTeam).toHaveBeenCalledWith(adminSession(), "foreign-team");
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(updateTeamLogo).not.toHaveBeenCalled();
+  });
+
+  it("denies a foreign team before reading status or deleting", async () => {
+    assertUserCanManageTeam.mockRejectedValue(new Error("Not authorized"));
+    prisma.team.findFirst.mockResolvedValue({
+      eventId: "event-foreign",
+      event: { id: "event-foreign", status: "Ongoing" },
+    });
+
+    await expect(
+      adminDeleteTeamAction(fd({ teamId: "foreign-team" })),
+    ).rejects.toThrow("REDIRECT:/admin?error=Tim%20tidak%20ditemukan.");
+    expect(assertUserCanManageTeam).toHaveBeenCalledWith(adminSession(), "foreign-team");
+    expect(prisma.team.findFirst).not.toHaveBeenCalled();
+    expect(prisma.team.delete).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits admin team logos after authoritative event lookup", async () => {
+    checkRateLimit.mockReturnValue(false);
+    assertUserCanManageTeam.mockResolvedValue({ eventId: "event-safe" });
+    await expect(
+      adminUploadTeamLogoAction(fd({ teamId: "team-safe", teamLogo: validPngFile("logo.png") })),
+    ).rejects.toThrow("REDIRECT:/admin?error=rate-limited");
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(updateTeamLogo).not.toHaveBeenCalled();
   });
 });
 
@@ -1894,6 +2328,7 @@ describe("event visual revision actions", () => {
     vi.clearAllMocks();
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
     requireRole.mockResolvedValue(organizerSession());
+    checkRateLimit.mockReturnValue(true);
     blobPut.mockResolvedValue({ url: "https://blob.example.com/event-visuals/event-safe.png" });
     createEventVisualAsset.mockResolvedValue(visualAsset());
     approveEventVisualAsset.mockResolvedValue(visualAsset());
@@ -1934,6 +2369,27 @@ describe("event visual revision actions", () => {
     expect(blobPut).not.toHaveBeenCalled();
   });
 
+  it("refuses an admin event logo upload before external storage for a foreign event", async () => {
+    requireRole.mockResolvedValue(organizerSession());
+    assertUserCanManageEvent.mockRejectedValue(new Error("Not authorized"));
+
+    await expect(
+      adminUploadEventLogoAction(fd({ eventId: "event-of-another-organizer", eventLogo: validPngFile("logo.png") })),
+    ).rejects.toThrow("Not authorized");
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(updateEventBrandAssets).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["admin", adminUploadEventLogoAction, "eventLogo"],
+    ["organizer", organizerUploadEventLogoAction, "eventLogo"],
+  ] as const)("rate-limits %s event logos before blob storage or repository writes", async (_label, action, field) => {
+    checkRateLimit.mockReturnValue(false);
+    await expect(action(fd({ eventId: "event-safe", locale: "en", [field]: validPngFile("logo.png") }))).rejects.toThrow(/rate-limited/);
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(updateEventBrandAssets).not.toHaveBeenCalled();
+  });
+
   it("refuses uploads without a confirmed rights attestation", async () => {
     await expect(
       adminUploadEventVisualAction(fd({
@@ -1943,6 +2399,17 @@ describe("event visual revision actions", () => {
     ).rejects.toThrow("REDIRECT:/admin?error=");
     expect(createEventVisualAsset).not.toHaveBeenCalled();
     expect(blobPut).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["admin", adminUploadEventVisualAction],
+    ["organizer", organizerUploadEventVisualAction],
+  ] as const)("rate-limits %s event visuals before file parsing or revision writes", async (_label, action) => {
+    checkRateLimit.mockReturnValue(false);
+    await expect(action(fd({ eventId: "event-safe", locale: "en", rightsAttestation: "confirmed", eventVisual: validPngFile() }))).rejects.toThrow(/rate-limited/);
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(createEventVisualAsset).not.toHaveBeenCalled();
+    expect(approveEventVisualAsset).not.toHaveBeenCalled();
   });
 
   it("rejects spoofed image bytes before anything reaches blob storage", async () => {

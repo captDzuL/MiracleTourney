@@ -16,8 +16,10 @@ async function expectNoDocumentOverflow(page: import("@playwright/test").Page) {
   expect(geometry.scrollWidth, page.url()).toBeLessThanOrEqual(geometry.clientWidth);
 }
 
-test("homepage and Event Center expose the live-first discovery experience without overflow", async ({ page }) => {
-  await page.goto("/id");
+test("homepage geometry remains stable without overflow", async ({ page }) => {
+  const homeResponse = await page.goto("/id");
+  expect(homeResponse?.status()).toBeLessThan(400);
+  await expect(page.locator("[data-public-v3-event]")).toHaveCount(1);
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
@@ -41,7 +43,9 @@ test("homepage and Event Center expose the live-first discovery experience witho
     }
     await expectNoDocumentOverflow(page);
   }
+});
 
+test("Event Center geometry and filter history remain stable without overflow", async ({ page }) => {
   await page.goto("/id/events");
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
@@ -80,7 +84,9 @@ test("homepage and Event Center expose the live-first discovery experience witho
   await page.goto(sharedUrl);
   await expect(finished).toHaveAttribute("aria-current", "page");
   await expect(flashpeak).toHaveAttribute("aria-current", "page");
+});
 
+test("English query normalization preserves localized discovery filters", async ({ page }) => {
   await page.goto("/en/events");
   await expect(page.getByText("Find live events, upcoming registrations, and the official results archive.")).toBeVisible();
   await page.goto("/en/events?game=unknown&game=game-flashpeak&game=game-other&status=&status=finished&status=ongoing");

@@ -18,6 +18,7 @@ describe("uploadImageAsset immutable storage", () => {
   it.each([
     ["text/plain", "not an image", "unsupported_type"],
     ["image/png", "not an image", "signature_mismatch"],
+    ["image/jpeg", "\\x89PNG\\r\\n\\x1a\\n", "signature_mismatch"],
     ["image/png", "\\x89PNG\\r\\n\\x1a\\n", "decode_failed"],
   ])("rejects QRIS %s invalid content before storage", async (type, content, code) => {
     process.env.BLOB_READ_WRITE_TOKEN = "test-token";

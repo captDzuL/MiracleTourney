@@ -4,28 +4,21 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { routing } from "./i18n/routing";
+import { checkLocalRateLimit } from "./lib/rate-limit-local";
 
 const JWT_COOKIE = "mfl_token";
 const DEFAULT_JWT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32chars-min";
 
-// In-memory rate limiter for login — per edge instance.
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 10;
 const LOCALE_SEGMENT = /^\/(id|en)(?=\/|$)/;
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const HTTP_PROTOCOLS = new Set(["http:", "https:"]);
 
 function checkLoginRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = loginAttempts.get(ip);
-
-  if (!entry || entry.resetAt < now) {
-    loginAttempts.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= RATE_MAX) return false;
-  entry.count += 1;
-  return true;
+  // This edge-local check is only a conservative early deny. The login
+  // action performs the authoritative shared database check as well.
+  return checkLocalRateLimit(`login:${ip}`, RATE_MAX, RATE_WINDOW_MS);
 }
 
 async function getRole(request: NextRequest): Promise<string | null> {
@@ -44,27 +37,93 @@ async function getRole(request: NextRequest): Promise<string | null> {
 
 const intlMiddleware = createMiddleware(routing);
 
+function parseOrigin(value: string | null): string | null {
+  if (!value) return null;
+
+  const candidate = value.trim();
+  if (!candidate || /[\\\u0000-\u001f\u007f]/.test(candidate)) return null;
+
+  try {
+    const url = new URL(candidate);
+    if (!HTTP_PROTOCOLS.has(url.protocol) || !url.hostname || url.hostname === "." || url.hostname === ".."
+      || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function parseAuthority(value: string | null, protocol: string): string | null {
+  if (!value) return null;
+
+  const authority = value.trim();
+  if (!authority || /[,\\/?#@\u0000-\u001f\u007f]/.test(authority)) return null;
+
+  try {
+    const url = new URL(`${protocol}//${authority}`);
+    if (!HTTP_PROTOCOLS.has(url.protocol) || !url.hostname || url.hostname === "." || url.hostname === ".."
+      || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+      return null;
+    }
+    return url.host;
+  } catch {
+    return null;
+  }
+}
+
+function parseForwardedProtocol(value: string | null): string | null {
+  if (!value) return null;
+
+  const protocol = value.trim().toLowerCase();
+  if (protocol === "http" || protocol === "https") return `${protocol}:`;
+  return null;
+}
+
+function isLoopbackHostname(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "[::1]" || normalized === "::1";
+}
+
+/**
+ * Production trusts only the framework-normalized URL authority. Next dev can
+ * expose an internal framework authority while the browser uses a loopback
+ * port, so non-production permits that one loopback shape. Forwarded metadata
+ * is never authoritative; when present in the loopback fallback it must agree
+ * with the browser-visible Host and Origin or the request fails closed.
+ */
+function getEffectiveOrigin(request: NextRequest): string | null {
+  const origin = parseOrigin(request.headers.get("origin"));
+  if (!origin) return null;
+
+  if (origin === request.nextUrl.origin) return origin;
+  if (process.env.NODE_ENV === "production") return null;
+
+  const originUrl = new URL(origin);
+  if (!isLoopbackHostname(originUrl.hostname)) return null;
+
+  const hostHeader = request.headers.get("host");
+  const host = parseAuthority(hostHeader, originUrl.protocol);
+  if (!hostHeader || !host || host !== originUrl.host) return null;
+
+  const forwardedHostHeader = request.headers.get("x-forwarded-host");
+  const forwardedProtocolHeader = request.headers.get("x-forwarded-proto");
+  if (Boolean(forwardedHostHeader) !== Boolean(forwardedProtocolHeader)) return null;
+  if (forwardedHostHeader && forwardedProtocolHeader) {
+    const forwardedHost = parseAuthority(forwardedHostHeader, originUrl.protocol);
+    const forwardedProtocol = parseForwardedProtocol(forwardedProtocolHeader);
+    if (forwardedHost !== originUrl.host || forwardedProtocol !== originUrl.protocol) return null;
+  }
+
+  return origin;
+}
+
 function isCrossSiteUnsafeRequest(request: NextRequest) {
   if (!UNSAFE_METHODS.has(request.method)) return false;
 
-  // Sec-Fetch-Site is set by the browser itself and cannot be spoofed by a
-  // page's own script, so trust it whenever present instead of falling
-  // through to the Origin comparison below. Comparing Origin against
-  // request.nextUrl.origin is unreliable behind hostname aliases (e.g.
-  // "127.0.0.1" vs "localhost" both point at the same dev server but
-  // produce different origin strings), which previously rejected same-site
-  // requests as cross-site.
-  const fetchSite = request.headers.get("sec-fetch-site");
-  if (fetchSite) return fetchSite === "cross-site";
-
-  const origin = request.headers.get("origin");
-  if (!origin) return false;
-
-  try {
-    return new URL(origin).origin !== request.nextUrl.origin;
-  } catch {
-    return true;
-  }
+  if (!getEffectiveOrigin(request)) return true;
+  return request.headers.get("sec-fetch-site") === "cross-site";
 }
 
 export async function middleware(request: NextRequest) {
@@ -122,10 +181,7 @@ export async function middleware(request: NextRequest) {
 
   // Temporary debug endpoint
   if (process.env.NODE_ENV === "development" && normalizedPath === "/_debug_locale") {
-    return NextResponse.json({
-      cookie: request.cookies.get("NEXT_LOCALE")?.value ?? "(not set)",
-      allCookies: request.headers.get("cookie"),
-    });
+    return NextResponse.json({ locale: activeLocale });
   }
 
   // Locale detection + cookie management (sets NEXT_LOCALE cookie)

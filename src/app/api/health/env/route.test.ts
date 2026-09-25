@@ -1,60 +1,51 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { requireRole } = vi.hoisted(() => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/auth/session", () => ({ requireRole }));
 
 import { GET } from "./route";
 
-const ORIGINAL_ENV = process.env;
-const DEFAULT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32chars-min";
-const TEST_SECRET = "unit-test-secret-with-32-characters!!";
-
 describe("environment health API", () => {
-  afterEach(() => {
-    process.env = { ...ORIGINAL_ENV };
+  beforeEach(() => {
+    requireRole.mockResolvedValue({ id: "platform-1", role: "platform_admin" });
   });
 
-  it("reports when JWT_SECRET is missing without exposing secret values", async () => {
-    delete process.env.JWT_SECRET;
-    process.env.VERCEL_ENV = "production";
+  afterEach(() => vi.clearAllMocks());
 
+  it("denies non-platform actors without exposing environment details", async () => {
+    requireRole.mockResolvedValue(null);
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body).toMatchObject({ code: "forbidden", requestId: expect.any(String) });
+    expect(JSON.stringify(body)).not.toContain("JWT_SECRET");
+    expect(response.headers.get("Cache-Control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("Vary")).toBe("Cookie");
+  });
+
+  it("maps auth-provider failures to a generic private error", async () => {
+    requireRole.mockRejectedValue(new Error("database password stack"));
+
+    const response = await GET(new Request("https://app.example/api/health/env", {
+      headers: { "x-vercel-id": "req-health-auth-failure" },
+    }));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ code: "internal_error", requestId: "req-health-auth-failure" });
+    expect(response.headers.get("Cache-Control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("Vary")).toBe("Cookie");
+  });
+
+  it("returns only a stable health status without exposing environment details", async () => {
     const response = await GET();
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({
-      jwtSecret: {
-        status: "missing",
-        isConfigured: false,
-        length: 0,
-      },
-      vercelEnv: "production",
-    });
-    expect(JSON.stringify(body)).not.toContain("JWT_SECRET");
-  });
-
-  it("reports when JWT_SECRET still uses the rejected default value", async () => {
-    process.env.JWT_SECRET = DEFAULT_SECRET;
-
-    const response = await GET();
-    const body = await response.json();
-
-    expect(body.jwtSecret).toEqual({
-      status: "default",
-      isConfigured: false,
-      length: DEFAULT_SECRET.length,
-    });
-  });
-
-  it("reports configured JWT_SECRET length without exposing its value", async () => {
-    process.env.JWT_SECRET = TEST_SECRET;
-
-    const response = await GET();
-    const body = await response.json();
-
-    expect(body.jwtSecret).toEqual({
-      status: "set",
-      isConfigured: true,
-      length: TEST_SECRET.length,
-    });
-    expect(JSON.stringify(body)).not.toContain("unit-test-secret");
+    expect(body).toEqual({ status: "ok" });
+    expect(JSON.stringify(body)).not.toMatch(/JWT_SECRET|VERCEL_ENV|NODE_ENV|secret|length/i);
     expect(response.headers.get("Cache-Control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("Vary")).toBe("Cookie");
   });
 });

@@ -1280,7 +1280,7 @@
     "set": {"title":"Set sertifikat terpilih","ready":"siap","incomplete":"Pilih satu versi siap untuk setiap jenis.","published":"Seluruh set terpilih sudah diterbitkan.","notPublished":"Set terpilih belum diterbitkan seluruhnya."},
     "assets": {"title":"Penempatan aset yang disetujui","assetId":"Aset yang disetujui","help":"Pilih gambar milik event yang telah disetujui. Upload divalidasi dan disimpan dengan asal-usul immutable.","kind":"Peran penempatan","x":"Posisi X","y":"Posisi Y","width":"Lebar","height":"Tinggi","safeZone":"Zona aman editor","none":"Gunakan aset bawaan template","upload":"Unggah aset yang disetujui","uploadLabel":"PNG, JPEG, atau WebP (maks 5 MB)","uploaded":"Aset yang disetujui berhasil diunggah.","invalidPlacement":"Pastikan setiap koordinat dan ukuran berada di dalam zona aman.","uploadErrors":{"invalid_entity_id":"Referensi event tidak valid.","missing_file":"Pilih gambar untuk diunggah.","file_too_large":"Ukuran gambar maksimal 5 MB.","unsupported_type":"Gunakan gambar PNG, JPEG, atau WebP.","signature_mismatch":"Isi file tidak sesuai dengan jenis gambar yang dipilih.","decode_failed":"Gambar tidak dapat dibaca.","invalid_dimensions":"Dimensi gambar harus antara 32 dan 4096 piksel.","upload_failed":"Aset gagal diunggah. Silakan coba lagi."},"roles":{"team_logo_hero":"Logo tim utama","character_art":"Ilustrasi karakter","team_logo_badge":"Lencana logo tim"}},
     "actions": {"title":"Kontrol sertifikat","regenerate":"Buat versi baru","publish":"Terbitkan set terpilih"},
-    "feedback": {"generated":"Versi sertifikat baru berhasil dibuat.","generation_in_progress":"Sertifikat ini masih sedang dibuat.","published":"Set tujuh sertifikat diterbitkan dengan aman.","alreadyApplied":"Permintaan ini sudah diterapkan dengan aman.","integrationRequired":"Integrasi Match Day diperlukan sebelum aksi ini dapat dijalankan.","failed":"Pembuatan gagal. Versi siap dan terbit tetap dipertahankan.","conflict":"Status sertifikat berubah di sesi lain. Menunggu revisi server terbaru.","invalid_input":"Permintaan berisi nilai yang tidak valid.","unauthorized":"Sesi Anda berakhir. Silakan masuk lagi.","password_change_required":"Ubah kata sandi sebelum mengelola sertifikat.","forbidden":"Anda tidak memiliki izin mengelola event ini.","feature_disabled":"Studio Sertifikat belum diaktifkan.","completion_required":"Selesaikan turnamen sebelum membuat sertifikat.","invalid_asset":"Aset atau penempatan yang dipilih tidak disetujui.","required_logo_unavailable":"Pilih logo tim yang disetujui sebelum membuat sertifikat ini.","set_not_ready":"Pilih satu artefak siap untuk setiap jenis sertifikat."}
+    "feedback": {"generated":"Versi sertifikat baru berhasil dibuat.","generation_in_progress":"Sertifikat ini masih sedang dibuat.","published":"Set tujuh sertifikat diterbitkan dengan aman.","alreadyApplied":"Permintaan ini sudah diterapkan dengan aman.","integrationRequired":"Integrasi Match Day diperlukan sebelum aksi ini dapat dijalankan.","failed":"Pembuatan gagal. Versi siap dan terbit tetap dipertahankan.","conflict":"Status sertifikat berubah di sesi lain. Menunggu revisi server terbaru.","invalid_input":"Permintaan berisi nilai yang tidak valid.","unauthorized":"Sesi Anda berakhir. Silakan masuk lagi.","password_change_required":"Ubah kata sandi sebelum mengelola sertifikat.","forbidden":"Anda tidak memiliki izin mengelola event ini.","feature_disabled":"Studio Sertifikat belum diaktifkan.","completion_required":"Selesaikan turnamen sebelum membuat sertifikat.","invalid_asset":"Aset atau penempatan yang dipilih tidak disetujui.","required_logo_unavailable":"Pilih logo tim yang disetujui sebelum membuat sertifikat ini.","set_not_ready":"Pilih satu artefak siap untuk setiap jenis sertifikat.","rate_limited":"Terlalu banyak percobaan. Coba lagi nanti."}
   },
   "completionWorkspace": {
     "title": "Penyelesaian Turnamen",
@@ -1738,14 +1738,45 @@
     "announcements": {
       "title": "Pengumuman",
       "description": "Sampaikan pembaruan event kepada peserta dan penonton.",
-      "publish": "Terbitkan pengumuman",
-      "empty": "Belum ada pengumuman."
+      "empty": "Belum ada pengumuman.",
+      "create": "Buat pengumuman",
+      "list": "Daftar pengumuman",
+      "audit": "Riwayat pengumuman",
+      "auditEmpty": "Belum ada riwayat pengumuman.",
+      "unknownActor": "Aktor tidak diketahui",
+      "titleLabel": "Judul",
+      "bodyLabel": "Pesan",
+      "urgencyLabel": "Tingkat urgensi",
+      "info": "Informasi",
+      "important": "Penting",
+      "urgent": "Mendesak",
+      "saveDraft": "Simpan draf",
+      "saveChanges": "Simpan perubahan",
+      "publish": "Terbitkan",
+      "unpublish": "Tarik publikasi",
+      "published": "Terbit",
+      "draft": "Draf",
+      "edit": "Ubah pengumuman",
+      "saved": "Pengumuman tersimpan.",
+      "conflict": "Data pengumuman berubah di sesi lain. Muat ulang dan tinjau versi terbaru.",
+      "unauthorized": "Sesi Anda tidak dapat mengubah pengumuman. Masuk dengan akun yang berwenang.",
+      "failed": "Pengumuman tidak dapat disimpan."
     },
     "settings": {
       "title": "Pengaturan",
       "description": "Kelola identitas event, publikasi, kontak organizer, dan preferensi operasional.",
       "editEvent": "Edit event",
-      "save": "Simpan perubahan"
+      "save": "Simpan perubahan",
+      "eventDetails": "Detail event",
+      "unnamed": "Event tanpa nama",
+      "publication": "Publikasi",
+      "contact": "Kontak organizer",
+      "preferences": "Preferensi aman",
+      "preferencesBody": "Preferensi operasional tetap berada di editor event yang sudah ada.",
+      "contactMissing": "Kontak belum ditambahkan.",
+      "openPublication": "Buka pengaturan publikasi",
+      "openContact": "Buka pengaturan kontak",
+      "openPreferences": "Buka preferensi aman"
     },
     "guide": {
       "draft": "Lengkapi identitas event, format, dan rincian registrasi sebelum menerbitkan.",

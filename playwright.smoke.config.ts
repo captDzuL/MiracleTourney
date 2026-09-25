@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
-process.env.FEATURE_FLAG_UI_V3_FOUNDATION ??= "true";
+process.env.FEATURE_FLAG_UI_V3_FOUNDATION = "true";
+process.env.FEATURE_FLAG_PUBLIC_VISUAL_V2 = "false";
 
 const port = process.env.PLAYWRIGHT_SMOKE_PORT ?? "3101";
 const baseURL = `http://127.0.0.1:${port}`;
@@ -12,7 +13,11 @@ const webServer =
     ? undefined
     : {
         command: `node .\\node_modules\\next\\dist\\bin\\next dev --hostname 127.0.0.1 --port ${port}`,
-        env: { ...process.env, FEATURE_FLAG_UI_V3_FOUNDATION: "true" },
+        env: {
+          ...process.env,
+          FEATURE_FLAG_UI_V3_FOUNDATION: "true",
+          FEATURE_FLAG_PUBLIC_VISUAL_V2: "false",
+        },
         url: `${baseURL}/id/login`,
         reuseExistingServer: !process.env.CI,
       };
@@ -20,6 +25,9 @@ const webServer =
 export default defineConfig({
   testDir: "./tests/e2e-smoke",
   workers: 1,
+  retries: 0,
+  outputDir: "test-results/visual-v3",
+  testIgnore: [/public-visual-v2\.smoke\.spec\.ts$/],
   webServer,
   use: {
     baseURL,

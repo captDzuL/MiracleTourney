@@ -1,5 +1,5 @@
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import sharp from "sharp";
 
 import { buildMiracleV3CertificateHtml } from "../../src/lib/certificate/templates/miracle-v3";
@@ -8,37 +8,74 @@ import {
   MIRACLE_V3_SAFE_ZONES,
   MIRACLE_V3_CERTIFICATE_TYPES,
 } from "../../src/lib/certificate/templates/miracle-v3-contract";
-import { loginAsOrganizer } from "./helpers/auth";
+import { loginAsOrganizer, normalizeReleasePage, waitForReleaseFonts } from "./helpers/auth";
 import {
   completionDb,
   prepareCertificateFixture,
   type CertificateFixture,
 } from "./helpers/completion";
 
-let fixture: CertificateFixture | undefined;
+test.describe.configure({ mode: "serial" });
+
+let fixture: Pick<CertificateFixture, "cleanup"> | undefined;
 test.afterEach(async () => {
   await fixture?.cleanup();
   fixture = undefined;
 });
 
+async function prepareTestCertificateFixture(namespace?: string) {
+  const scenario = await prepareCertificateFixture(namespace, {
+    onBaseFixtureReady: (baseFixture) => {
+      fixture = baseFixture;
+    },
+  });
+  fixture = scenario;
+  return scenario;
+}
+
+function waitForCertificatePublicationResponse(page: Page, locale: "en" | "id", eventId: string) {
+  const certificatePath = `/${locale}/organizer/events/${encodeURIComponent(eventId)}/certificates`;
+  return page.waitForResponse((response) => {
+    const request = response.request();
+    const responseUrl = new URL(response.url());
+    const requestData = request.postData() ?? "";
+    return request.method() === "POST"
+      && responseUrl.pathname === certificatePath
+      && Boolean(request.headers()["next-action"])
+      && requestData.includes(eventId);
+  });
+}
+
 test("publishes all seven certificates and preserves superseded verification history", async ({ page }) => {
   test.slow();
-  const scenario = await prepareCertificateFixture();
-  fixture = scenario;
-  await loginAsOrganizer(page, "en");
-  await page.goto(`/en/organizer/events/${scenario.id}/certificates`);
+  const scenario = await test.step("fixture setup", () => prepareTestCertificateFixture());
+  await test.step("organizer login", () => loginAsOrganizer(page, "en"));
+  await test.step("certificate navigation", () => page.goto(`/en/organizer/events/${scenario.id}/certificates`));
 
   await expect(page.locator("[data-certificate-type]")).toHaveCount(7);
+  await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
   await expect(page.locator("[data-publish-certificate-set]")).toBeEnabled();
   await expect.poll(() => completionDb.certificateGenerationMutation.count({ where: { eventId: scenario.id } })).toBe(scenario.generatedMutationCount);
-  await page.locator("[data-publish-certificate-set]").click();
-  await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
+  await test.step("publication", async () => {
+    const publicationResponsePromise = waitForCertificatePublicationResponse(page, "en", scenario.id);
+    const [publicationResponse] = await Promise.all([
+      publicationResponsePromise,
+      page.locator("[data-publish-certificate-set]").click(),
+    ]);
+    expect(publicationResponse.status()).toBe(200);
+    await expect(page.locator('[role="status"]')).toContainText("The seven-certificate set was published safely.");
+    await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
+    await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({ where: { eventId: scenario.id }, select: { certificateRevision: true } })).certificateRevision).toBe(2);
+    await expect(page.locator("[data-certificate-publication-revision], [data-publication-revision]").first()).toHaveText(/\d+/);
+  });
 
   const certificates = await completionDb.certificate.findMany({
     where: { eventId: scenario.id },
     orderBy: [{ type: "asc" }, { version: "asc" }],
   });
-  expect(new Set(certificates.filter(({ publishedAt }) => publishedAt).map(({ type }) => type))).toEqual(new Set(MIRACLE_V3_CERTIFICATE_TYPES));
+  const currentPublishedCertificates = certificates.filter(({ publishedAt, publishedUrl, supersededByVersion }) => publishedAt && publishedUrl && supersededByVersion === null);
+  expect(new Set(currentPublishedCertificates.map(({ type }) => type))).toEqual(new Set(MIRACLE_V3_CERTIFICATE_TYPES));
+  expect(currentPublishedCertificates).toHaveLength(7);
   const oldChampion = certificates.find(({ type, version }) => type === "champion" && version === 1)!;
   expect(oldChampion).toMatchObject({
     status: "superseded",
@@ -47,14 +84,146 @@ test("publishes all seven certificates and preserves superseded verification his
     publishedUrl: scenario.historicalPublishedUrl,
   });
 
-  await page.goto(`/certificates/verify/${scenario.historicalVerificationCode}`);
-  await expect(page).toHaveURL(new RegExp(`/(id|en)/certificates/verify/${scenario.historicalVerificationCode}$`));
+  await page.goto(`/id/certificates/verify/${scenario.historicalVerificationCode}`);
+  await expect(page).toHaveURL(new RegExp(`/id/certificates/verify/${scenario.historicalVerificationCode}$`));
   await expect(page.locator('[data-certificate-verification="superseded"]')).toBeVisible();
   await expect(page.getByText(/remains valid|tetap valid/i)).toBeVisible();
 
   await page.goto(`/en/certificates/verify/${scenario.currentVerificationCode}`);
   await expect(page.locator('[data-certificate-verification="current"]')).toBeVisible();
   await expect(page.getByText(scenario.eventName, { exact: true })).toBeVisible();
+});
+
+test("publishes once in Indonesian and announces the localized revision", async ({ page }) => {
+  test.slow();
+  const scenario = await prepareTestCertificateFixture();
+  await loginAsOrganizer(page, "id");
+  await page.goto(`/id/organizer/events/${scenario.id}/certificates`);
+
+  await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
+  const publish = page.locator("[data-publish-certificate-set]");
+  await expect(publish).toBeEnabled();
+  const publicationResponsePromise = waitForCertificatePublicationResponse(page, "id", scenario.id);
+  const [publicationResponse] = await Promise.all([publicationResponsePromise, publish.click()]);
+  expect(publicationResponse.status()).toBe(200);
+  await expect(page.locator('[role="status"]')).toContainText("Set tujuh sertifikat diterbitkan dengan aman.");
+  await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
+  await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({ where: { eventId: scenario.id }, select: { certificateRevision: true } })).certificateRevision).toBe(2);
+});
+
+test("keeps the certificate studio reachable and usable at desktop and mobile geometry", async ({ page }) => {
+  test.slow();
+  const scenario = await prepareTestCertificateFixture();
+  await loginAsOrganizer(page, "en");
+
+  for (const viewport of [
+    { width: 360, height: 800 },
+    { width: 390, height: 844 },
+    { width: 768, height: 900 },
+    { width: 1024, height: 900 },
+    { width: 1440, height: 900 },
+  ]) {
+    await normalizeReleasePage(page);
+    await page.setViewportSize(viewport);
+    await page.goto(`/en/organizer/events/${scenario.id}/certificates`);
+    await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
+    await expect(page.locator("[data-certificate-studio]")).toBeVisible();
+    await expect(page.locator("[data-certificate-studio] > header")).toBeVisible();
+    await expect(page.locator("[data-certificate-recipient-selection]")).toBeVisible();
+    await expect(page.locator("[data-regenerate-certificate]")).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const root = document.querySelector<HTMLElement>("[data-certificate-studio]")!;
+      const rect = (selector: string) => document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+      return {
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        document: { clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth },
+        root: { clientWidth: root.clientWidth, scrollWidth: root.scrollWidth },
+        header: rect("[data-certificate-studio] > header"),
+        recipient: rect("[data-certificate-recipient-selection]"),
+        actions: rect("[data-certificate-primary-actions]"),
+        preview: rect("[data-certificate-preview-sticky]"),
+        controls: [...root.querySelectorAll<HTMLElement>("button, a, input, textarea, select, summary")]
+          .map((control) => ({ label: control.textContent?.trim() || control.getAttribute("name") || control.tagName, height: control.getBoundingClientRect().height }))
+          .filter(({ height }) => height > 0),
+      };
+    });
+
+    expect(geometry.document.scrollWidth, `document overflow at ${viewport.width}px`).toBeLessThanOrEqual(geometry.document.clientWidth);
+    expect(geometry.root.scrollWidth, `studio overflow at ${viewport.width}px`).toBeLessThanOrEqual(geometry.root.clientWidth);
+    for (const [name, box] of Object.entries({ header: geometry.header, recipient: geometry.recipient, actions: geometry.actions })) {
+      expect(box.width, `${name} has no width at ${viewport.width}px`).toBeGreaterThan(0);
+      expect(box.height, `${name} has no height at ${viewport.width}px`).toBeGreaterThan(0);
+    }
+    expect(geometry.preview.width, `preview exceeds mobile viewport`).toBeLessThanOrEqual(viewport.width);
+    for (const control of geometry.controls) {
+      expect(control.height, `${control.label} is below the 44px target at ${viewport.width}px`).toBeGreaterThanOrEqual(44);
+    }
+    expect(await page.locator("body").innerText()).not.toMatch(/Miracle2026!|organizer-a@miraclefc\.gg/i);
+    expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+    await waitForReleaseFonts(page);
+    await page.screenshot({
+      path: test.info().outputPath(`certificate-studio-en-${viewport.width}.png`),
+      animations: "disabled",
+    });
+
+    const preview = page.locator("[data-certificate-preview-sticky]");
+    const previewPosition = await preview.evaluate((element) => getComputedStyle(element).position);
+    if (viewport.width >= 1100) {
+      expect(previewPosition).toBe("sticky");
+      await preview.evaluate((element) => window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY - 96));
+      const topBeforeScroll = await preview.evaluate((element) => element.getBoundingClientRect().top);
+      await page.evaluate(() => window.scrollBy(0, 120));
+      const topAfterScroll = await preview.evaluate((element) => element.getBoundingClientRect().top);
+      expect(Math.abs(topAfterScroll - topBeforeScroll), "desktop preview does not remain sticky while scrolling").toBeLessThanOrEqual(2);
+    } else {
+      expect(previewPosition).toBe("static");
+    }
+    await page.locator("[data-certificate-primary-actions]").scrollIntoViewIfNeeded();
+    await expect(page.locator("[data-regenerate-certificate]")).toBeVisible();
+    await expect(page.locator("[data-publish-certificate-set]")).toBeVisible();
+  }
+});
+
+test("certificate studio preserves ID/EN publication and verification parity", async ({ page }) => {
+  test.slow();
+  const scenario = await prepareTestCertificateFixture("release-certificate-parity");
+  for (const locale of ["id", "en"] as const) {
+    await normalizeReleasePage(page);
+    await page.setViewportSize({ width: 768, height: 900 });
+    await loginAsOrganizer(page, locale);
+    await page.goto(`/${locale}/organizer/events/${scenario.id}/certificates`);
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    await expect(page.locator('[data-certificate-type]')).toHaveCount(7);
+    await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
+    await expect(page.locator("[data-certificate-publication-revision], [data-publication-revision]").first()).toHaveText(/\d+/);
+    if (locale === "id") {
+      const publish = page.locator("[data-publish-certificate-set]");
+      await expect(publish).toBeEnabled();
+      const publicationResponsePromise = waitForCertificatePublicationResponse(page, locale, scenario.id);
+      const [publicationResponse] = await Promise.all([publicationResponsePromise, publish.click()]);
+      expect(publicationResponse.status()).toBe(200);
+      await expect(page.locator('[role="status"]')).toContainText("Set tujuh sertifikat diterbitkan dengan aman.");
+      await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
+      await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({
+        where: { eventId: scenario.id },
+        select: { certificateRevision: true },
+      })).certificateRevision).toBe(2);
+    }
+    await page.goto(`/${locale}/certificates/verify/${scenario.historicalVerificationCode}`);
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    await expect(page.locator('[data-certificate-verification="superseded"]')).toBeVisible();
+    await page.goto(`/${locale}/certificates/verify/${scenario.currentVerificationCode}`);
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    await expect(page.locator('[data-certificate-verification="current"]')).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("Miracle2026!");
+    expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+    await waitForReleaseFonts(page);
+    await page.screenshot({
+      path: test.info().outputPath(`certificate-studio-${locale}-768.png`),
+      animations: "disabled",
+    });
+  }
 });
 
 test("renders the 1080x1920 protected-zone certificate with fallback and immutable QR target", async ({ page }) => {

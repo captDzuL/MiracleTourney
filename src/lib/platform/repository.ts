@@ -45,8 +45,17 @@ import type { BracketMatch, MatchResultInput, PlayerMatchStatInput } from "@/lib
 import { Prisma } from "@prisma/client";
 import * as demoStore from "./demo-store";
 import { prisma } from "./db";
+import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
 
 const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration Closed", "Ongoing", "Finished"]);
+
+// Organizer list readers keep the existing response shapes while preventing an
+// event-sized request from turning into an unbounded database read.
+const ORGANIZER_READER_ROW_LIMIT = 500;
+const ORGANIZER_READER_HISTORY_LIMIT = 100;
+const ORGANIZER_READER_IMPORT_BATCH_LIMIT = 8;
+const ORGANIZER_READER_IMPORT_ITEM_LIMIT = 512;
+const ORGANIZER_READER_PAYMENT_PROBE_LIMIT = ORGANIZER_READER_HISTORY_LIMIT + 1;
 
 
 type RegistrationWindowEvent = {
@@ -311,12 +320,21 @@ function mapPlayer(row: {
   };
 }
 
-function mapUser(row: { id: string; email: string; name: string; role: string; deactivatedAt?: Date | null; mustChangePassword?: boolean }): AppUser {
+function mapUser(row: {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  sessionVersion?: number;
+  deactivatedAt?: Date | null;
+  mustChangePassword?: boolean;
+}): AppUser {
   return {
     id: row.id,
     email: row.email,
     name: row.name,
     role: row.role as AppUser["role"],
+    ...(row.sessionVersion !== undefined ? { sessionVersion: row.sessionVersion } : {}),
     ...(row.deactivatedAt ? { deactivatedAt: row.deactivatedAt } : {}),
     ...(row.mustChangePassword ? { mustChangePassword: true } : {}),
   };
@@ -2417,12 +2435,15 @@ export async function saveRegistrationImportPreviewBatch(input: {
 
 export async function getRegistrationImportBatchesForEvent(user: AppUser, eventId: string) {
   await assertUserCanManageEvent(user, eventId);
-  return prisma.registrationImportBatch.findMany({
+  const rows = await prisma.registrationImportBatch.findMany({
     where: { eventId },
     orderBy: { createdAt: "desc" },
-    take: 8,
-    include: { items: { select: { id: true, status: true, teamId: true } } },
+    take: readerProbeLimit(ORGANIZER_READER_IMPORT_BATCH_LIMIT),
+    include: { items: { select: { id: true, status: true, teamId: true }, take: readerProbeLimit(ORGANIZER_READER_IMPORT_ITEM_LIMIT) } },
   });
+  const latestRows = rows.slice(0, ORGANIZER_READER_IMPORT_BATCH_LIMIT);
+  for (const row of latestRows) assertReaderResultWithinLimit("organizer.importBatches.items", row.items, ORGANIZER_READER_IMPORT_ITEM_LIMIT);
+  return latestRows;
 }
 
 export type RegistrationImportHistoryEntry = {
@@ -2456,6 +2477,14 @@ export type PaymentReviewEntry = {
   updatedAt: Date;
   captain?: { id: string; name: string; email?: string } | null;
 };
+
+export class PaymentReviewOverflowError extends ReaderResultOverflowError {
+  constructor() {
+    super("payment review", ORGANIZER_READER_HISTORY_LIMIT);
+    this.name = "PaymentReviewOverflowError";
+    this.message = `Payment review contains more than ${ORGANIZER_READER_HISTORY_LIMIT} entries; use a paginated review reader.`;
+  }
+}
 
 export type RegistrationImportEventContext = {
   id: string;
@@ -2497,10 +2526,11 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
     prisma.team.findMany({
       where: { eventId },
       include: {
-        players: { select: { id: true } },
+        players: { select: { id: true }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) },
         captain: { select: { id: true, name: true, email: true } },
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT),
     }),
     prisma.teamRegistrationRequest.findMany({
       where: {
@@ -2509,6 +2539,7 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
       },
       include: { captain: { select: { id: true, name: true, email: true } } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT),
     }),
   ]);
 
@@ -2519,7 +2550,12 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
         where: { teamId: { in: teamIds } },
         select: { teamId: true, batch: { select: { sourceKind: true } } },
         orderBy: { createdAt: "desc" },
+        take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT),
       });
+  assertReaderResultWithinLimit("organizer.registration.teams", teams, ORGANIZER_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("organizer.registration.requests", requests, ORGANIZER_READER_ROW_LIMIT);
+  for (const team of teams) assertReaderResultWithinLimit("organizer.registration.players", team.players, ORGANIZER_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("organizer.registration.importItems", importedItems, ORGANIZER_READER_ROW_LIMIT);
   const importKindByTeam = new Map<string, string>();
   for (const item of importedItems) {
     if (item.teamId && !importKindByTeam.has(item.teamId)) importKindByTeam.set(item.teamId, item.batch.sourceKind);
@@ -2568,10 +2604,23 @@ export async function getRegistrationImportHistoryForEvent(user: AppUser, eventI
   const rows = await prisma.registrationImportBatch.findMany({
     where: { eventId },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 50,
-    include: { items: { select: { id: true, status: true, teamId: true }, orderBy: { sourceRow: "asc" } } },
+    take: readerProbeLimit(ORGANIZER_READER_HISTORY_LIMIT),
+    select: {
+      id: true,
+      eventId: true,
+      sourceKind: true,
+      sourceLabel: true,
+      worksheetName: true,
+      status: true,
+      summary: true,
+      expiresAt: true,
+      committedAt: true,
+      createdAt: true,
+      updatedAt: true,
+      _count: { select: { items: true } },
+    },
   });
-  return rows.map((row) => ({
+  return rows.slice(0, ORGANIZER_READER_HISTORY_LIMIT).map((row) => ({
     id: row.id,
     eventId: row.eventId,
     sourceKind: row.sourceKind,
@@ -2583,8 +2632,8 @@ export async function getRegistrationImportHistoryForEvent(user: AppUser, eventI
     committedAt: row.committedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    itemCount: row.items.length,
-    items: row.items.map((item) => ({ id: item.id, status: item.status, teamId: item.teamId })),
+    itemCount: row._count.items,
+    items: [],
   }));
 }
 
@@ -2599,7 +2648,9 @@ export async function getPaymentReviewForEvent(user: AppUser, eventId: string, s
     },
     include: { captain: { select: { id: true, name: true, email: true } } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: ORGANIZER_READER_PAYMENT_PROBE_LIMIT,
   });
+  if (rows.length > ORGANIZER_READER_HISTORY_LIMIT) throw new PaymentReviewOverflowError();
   return rows.map((row) => ({
     id: row.id,
     eventId: row.eventId,
@@ -2625,14 +2676,17 @@ export async function getRegistrationImportEventContext(user: AppUser, eventId: 
       id: true, slug: true, name: true, gameModeId: true, participantCap: true, format: true,
       teams: {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT),
         select: {
           id: true, name: true, tag: true, captainName: true, captainContact: true,
-          players: { select: { nickname: true, displayName: true, position: true }, orderBy: { createdAt: "asc" } },
+          players: { select: { nickname: true, displayName: true, position: true }, orderBy: { createdAt: "asc" }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) },
         },
       },
     },
   });
   if (!row) return null;
+  assertReaderResultWithinLimit("organizer.importContext.teams", row.teams, ORGANIZER_READER_ROW_LIMIT);
+  for (const team of row.teams) assertReaderResultWithinLimit("organizer.importContext.players", team.players, ORGANIZER_READER_ROW_LIMIT);
   return row;
 }
 
@@ -3445,7 +3499,11 @@ async function managePlayerStats(input: {
       reason: reason || null, idempotencyKey: guard.operationId,
       payload: { fingerprint, teamId, submissionId: submission?.id ?? null, previousVersion: guard.expectedVersion, version: guard.expectedVersion + 1, resultVersion: guard.expectedResultVersion, source: submission ? "captain" : "organizer" },
     } });
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, {
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    maxWait: 5_000,
+    timeout: 20_000,
+  });
 }
 
 /**

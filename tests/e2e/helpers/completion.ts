@@ -2,29 +2,66 @@ import { randomUUID } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 import { validateE2eDatabaseConfiguration } from "../../../scripts/e2e-db-configuration.mjs";
-import {
-  publishCertificateSet,
-  regenerateCertificate,
-  type CertificateStudioDependencies,
-} from "../../../src/lib/certificate/service";
-import {
-  CERTIFICATE_STUDIO_TRANSACTION_OPTIONS,
-  createCertificateStudioTransaction,
-} from "../../../src/lib/certificate/studio-repository";
 import { completeTournament } from "../../../src/lib/completion/complete";
 import { createPrismaCompletionDependencies } from "../../../src/lib/completion/prisma-adapter";
-import { MIRACLE_V3_CERTIFICATE_TYPES } from "../../../src/lib/certificate/templates/miracle-v3-contract";
+import {
+  MIRACLE_V3_BRANDING,
+  MIRACLE_V3_CERTIFICATE_TYPES,
+  type MiracleV3CertificateType,
+} from "../../../src/lib/certificate/templates/miracle-v3-contract";
+import { getMiracleV3CertificateFingerprint, getMiracleV3CertificateManifest } from "../../../src/lib/certificate/templates/miracle-v3";
 import { generateCompetitionGraph, type CompetitionGraph } from "../../../src/lib/tournament/competition";
 import type { TournamentFormatConfig } from "../../../src/lib/tournament/formats/types";
 import { competitionProjection } from "../../../src/lib/tournament/operations/result-projection";
 
 export const completionDb = new PrismaClient();
 export type CompletionFixtureKind = "single_elimination" | "double_elimination" | "round_robin" | "group_playoffs";
+export type CompletionFixtureReady = { cleanup: () => Promise<void> };
 export type CompletionFixture = Awaited<ReturnType<typeof prepareCompletionFixture>> & {
   historicalVerificationCode?: string;
   currentVerificationCode?: string;
 };
 export type CertificateFixture = Awaited<ReturnType<typeof prepareCertificateFixture>>;
+export type CertificateFixtureReady = Pick<CompletionFixture, "cleanup">;
+export type CompletionFixtureOptions = {
+  readonly pendingFirstPlayerMatch?: boolean;
+  readonly onBaseFixtureReady?: (fixture: CompletionFixtureReady) => void | Promise<void>;
+};
+export type CertificateFixtureOptions = {
+  readonly onBaseFixtureReady?: (fixture: CertificateFixtureReady) => void | Promise<void>;
+};
+
+const CERTIFICATE_FIXTURE_NOW = new Date("2026-09-13T04:20:00.000Z");
+const certificateTeamPlacement = { assetKind: "team_logo_hero" as const, x: 360, y: 748, width: 560, height: 540 };
+const certificatePlayerPlacement = { assetKind: "team_logo_badge" as const, x: 80, y: 1052, width: 160, height: 160 };
+const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+type CertificateRecipient = { id: string; name: string; kind: "team" | "player"; teamId: string; teamName: string };
+type CertificateFixtureRow = {
+  id: string;
+  eventId: string;
+  teamId: string;
+  type: MiracleV3CertificateType;
+  recipientKind: "team" | "player";
+  recipientId: string;
+  recipientName: string;
+  version: number;
+  templateVersion: "miracle-v3";
+  assetManifest: Prisma.InputJsonValue;
+  renderManifest: Prisma.InputJsonValue;
+  imageUrl: string;
+  status: "ready";
+  verificationCode: string;
+  publishedUrl: string | null;
+  generatedAt: Date;
+  publishedAt: Date | null;
+  attemptCount: number;
+  generationIdempotencyKey: string;
+  generationFingerprint: string;
+  mutationFingerprint: string;
+  generationActorUserId: string;
+  completionId: string;
+  completionVersion: number;
+};
 
 const configs: Record<CompletionFixtureKind, TournamentFormatConfig> = {
   single_elimination: {
@@ -264,6 +301,7 @@ function assertGuardedTestDatabase() {
 export async function prepareCompletionFixture(
   kind: CompletionFixtureKind = "single_elimination",
   namespace = randomUUID().slice(0, 12),
+  options: CompletionFixtureOptions = {},
 ) {
   assertGuardedTestDatabase();
   if (!/^[a-z0-9-]{1,48}$/.test(namespace)) throw new Error("Invalid fixture namespace");
@@ -274,6 +312,13 @@ export async function prepareCompletionFixture(
     select: { id: true, role: true },
   });
   await completionDb.event.deleteMany({ where: { id, slug: id } });
+  let cleanupPromise: Promise<void> | undefined;
+  const cleanup: CompletionFixtureReady = {
+    cleanup: async () => {
+      cleanupPromise ??= completionDb.event.deleteMany({ where: { id, slug: id } }).then(() => undefined);
+      await cleanupPromise;
+    },
+  };
   try {
     const config = configs[kind];
     const phaseId = `${id}-phase`;
@@ -287,6 +332,12 @@ export async function prepareCompletionFixture(
       createdAt: new Date(1700000000000 + index),
     }));
     const { graph, matches } = fixtureGraph(id, phaseId, kind, teams.map(({ id: teamId }) => teamId));
+    const pendingFirstPlayerMatchId = options.pendingFirstPlayerMatch
+      ? matches.find((match) => [match.homeTeamId, match.awayTeamId].includes(teams[0].id))?.id
+      : undefined;
+    if (options.pendingFirstPlayerMatch && !pendingFirstPlayerMatchId) {
+      throw new Error("Unable to prepare a pending match for the first Completion player");
+    }
     await completionDb.event.create({
       data: {
         id,
@@ -309,6 +360,7 @@ export async function prepareCompletionFixture(
         publishedAt: new Date("2026-09-13T00:00:00.000Z"),
       },
     });
+    await options.onBaseFixtureReady?.(cleanup);
     await completionDb.team.createMany({ data: teams });
     for (const phase of graph.phases) {
       await completionDb.competitionPhase.create({
@@ -334,6 +386,7 @@ export async function prepareCompletionFixture(
       });
     }
     for (const match of matches) {
+      const isPendingFirstPlayerMatch = match.id === pendingFirstPlayerMatchId;
       await completionDb.match.create({
         data: {
           id: match.id,
@@ -345,31 +398,35 @@ export async function prepareCompletionFixture(
           slot: match.slot,
           homeTeamId: match.homeTeamId,
           awayTeamId: match.awayTeamId,
-          homeScore: match.homeScore,
-          awayScore: match.awayScore,
-          winnerTeamId: match.winnerTeamId,
-          resultVersion: 1,
-          resultSnapshot: { games: [{ gameNumber: 1, homeScore: match.homeScore, awayScore: match.awayScore }] },
-          status: "Completed",
-          scheduleStatus: "completed",
-          resultConfirmedAt: new Date("2026-09-13T03:00:00.000Z"),
+          homeScore: isPendingFirstPlayerMatch ? 0 : match.homeScore,
+          awayScore: isPendingFirstPlayerMatch ? 0 : match.awayScore,
+          winnerTeamId: isPendingFirstPlayerMatch ? null : match.winnerTeamId,
+          resultVersion: isPendingFirstPlayerMatch ? 0 : 1,
+          resultSnapshot: isPendingFirstPlayerMatch
+            ? Prisma.JsonNull
+            : { games: [{ gameNumber: 1, homeScore: match.homeScore, awayScore: match.awayScore }] },
+          status: isPendingFirstPlayerMatch ? "Scheduled" : "Completed",
+          scheduleStatus: isPendingFirstPlayerMatch ? "confirmed" : "completed",
+          resultConfirmedAt: isPendingFirstPlayerMatch ? null : new Date("2026-09-13T03:00:00.000Z"),
         },
       });
-      await completionDb.matchResultRevision.create({
-        data: {
-          id: `${match.id}-revision-1`,
-          eventId: id,
-          matchId: match.id,
-          version: 1,
-          homeScore: match.homeScore,
-          awayScore: match.awayScore,
-          winnerTeamId: match.winnerTeamId,
-          scoreSnapshot: { games: [{ gameNumber: 1, homeScore: match.homeScore, awayScore: match.awayScore }] },
-          actorUserId: actor.id,
-          reason: "Completion E2E official result",
-          idempotencyKey: `${match.id}-official-1`,
-        },
-      });
+      if (!isPendingFirstPlayerMatch) {
+        await completionDb.matchResultRevision.create({
+          data: {
+            id: `${match.id}-revision-1`,
+            eventId: id,
+            matchId: match.id,
+            version: 1,
+            homeScore: match.homeScore,
+            awayScore: match.awayScore,
+            winnerTeamId: match.winnerTeamId,
+            scoreSnapshot: { games: [{ gameNumber: 1, homeScore: match.homeScore, awayScore: match.awayScore }] },
+            actorUserId: actor.id,
+            reason: "Completion E2E official result",
+            idempotencyKey: `${match.id}-official-1`,
+          },
+        });
+      }
     }
     const players = [
       {
@@ -420,7 +477,7 @@ export async function prepareCompletionFixture(
       ],
     });
 
-    return {
+    const fixture = {
       id,
       slug: id,
       eventName,
@@ -429,19 +486,23 @@ export async function prepareCompletionFixture(
       players,
       actor,
       graph,
-      cleanup: async () => {
-        await completionDb.event.deleteMany({ where: { id, slug: id } });
-      },
+      pendingFirstPlayerMatchId,
+      cleanup: cleanup.cleanup,
     };
+    return fixture;
   } catch (error) {
-    await completionDb.event.deleteMany({ where: { id, slug: id } });
+    await cleanup.cleanup();
     throw error;
   }
 }
 
-export async function prepareCertificateFixture(namespace = randomUUID().slice(0, 12)) {
+export async function prepareCertificateFixture(
+  namespace = randomUUID().slice(0, 12),
+  options: CertificateFixtureOptions = {},
+) {
   const fixture = await prepareCompletionFixture("single_elimination", namespace);
   try {
+    await options.onBaseFixtureReady?.(fixture);
     const decisions = [
       { award: "mvp" as const, playerId: fixture.players[0].id },
       { award: "top_scorer" as const, playerId: fixture.players[0].id },
@@ -471,89 +532,234 @@ export async function prepareCertificateFixture(namespace = randomUUID().slice(0
         storageProvider: "local",
         storageKey: `certificate-assets/${fixture.id}-logo.png`,
         contentSha256: "a".repeat(64),
-        rightsAttestedAt: new Date("2026-09-13T04:00:00.000Z"),
-        approvedAt: new Date("2026-09-13T04:00:00.000Z"),
+        rightsAttestedAt: CERTIFICATE_FIXTURE_NOW,
+        approvedAt: CERTIFICATE_FIXTURE_NOW,
       },
     });
-    const studioActor = { id: fixture.actor.id, role: fixture.actor.role as "organizer" };
-    const studioDependencies: CertificateStudioDependencies = {
-      transaction: (eventId, work) => completionDb.$transaction(
-        (tx) => work(createCertificateStudioTransaction(tx, eventId, studioActor, {
-          materializeAssetUrl: async () => "data:image/png;base64,iVBORw0KGgo=",
-        })),
-        CERTIFICATE_STUDIO_TRANSACTION_OPTIONS,
-      ),
-      generate: async (data) => {
-        const imageUrl = `/certificates/${data.eventId}-${data.certificateType}-v${data.version}.png`;
-        await completionDb.certificate.update({
-          where: { id: data.certificateId },
-          data: {
-            imageUrl,
-            status: "ready",
-            generatedAt: new Date("2026-09-13T04:10:00.000Z"),
-            attemptCount: { increment: 1 },
-          },
-        });
-        return imageUrl;
+    // The publication-history journey starts at revision 1; persist that authoritative
+    // prerequisite state once so the browser action under test remains the only publication workflow.
+    const completion = await completionDb.tournamentCompletion.findUniqueOrThrow({
+      where: { eventId: fixture.id },
+      include: {
+        podiumPlacements: { orderBy: { rank: "asc" } },
+        awards: { include: { decision: true }, orderBy: { type: "asc" } },
       },
+    });
+    const podiumRecipient = (rank: number): CertificateRecipient => {
+      const placement = completion.podiumPlacements.find((row) => row.rank === rank);
+      if (!placement) throw new Error(`Certificate fixture is missing podium rank ${rank}`);
+      return { id: placement.teamId, name: placement.teamName, kind: "team" as const, teamId: placement.teamId, teamName: placement.teamName };
     };
-    const generated = [];
-    for (const type of MIRACLE_V3_CERTIFICATE_TYPES) {
-      const teamType = ["champion", "runner_up", "third_place"].includes(type);
-      const generatedResult = await regenerateCertificate({
+    const awardRecipient = (type: string): CertificateRecipient => {
+      const decision = completion.awards.find((award) => award.type === type)?.decision;
+      if (!decision) throw new Error(`Certificate fixture is missing award ${type}`);
+      return { id: decision.recipientId, name: decision.recipientName, kind: "player" as const, teamId: decision.teamId, teamName: decision.teamName };
+    };
+    const recipients: Record<MiracleV3CertificateType, CertificateRecipient> = {
+      champion: podiumRecipient(1),
+      runner_up: podiumRecipient(2),
+      third_place: podiumRecipient(3),
+      mvp: awardRecipient("mvp"),
+      top_scorer: awardRecipient("top_scorer"),
+      top_defender: awardRecipient("top_defender"),
+      top_assist: awardRecipient("top_assist"),
+    };
+    const teamCertificate = (type: MiracleV3CertificateType) => ["champion", "runner_up", "third_place"].includes(type);
+    const certificateRows: CertificateFixtureRow[] = MIRACLE_V3_CERTIFICATE_TYPES.flatMap((type): CertificateFixtureRow[] => {
+      const recipient = recipients[type];
+      const version = 1;
+      const id = `${fixture.id}-certificate-${type}-v${version}`;
+      const verificationCode = `${fixture.id}-verification-${type}-v${version}`;
+      const imageUrl = `/certificates/${fixture.id}-${type}-v${version}.png`;
+      const placement = teamCertificate(type) ? certificateTeamPlacement : certificatePlayerPlacement;
+      const asset = {
+        assetId: logoAsset.id,
+        placement,
+        asset: {
+          url: logoAsset.url!,
+          detectedMimeType: logoAsset.mimeType!,
+          bytes: logoAsset.byteSize!,
+          width: logoAsset.width!,
+          height: logoAsset.height!,
+          storageProvider: logoAsset.storageProvider!,
+          storageKey: logoAsset.storageKey!,
+          contentSha256: logoAsset.contentSha256!,
+          purpose: logoAsset.purpose!,
+        },
+      };
+      const renderManifest = getMiracleV3CertificateManifest({
         eventId: fixture.id,
+        eventName: fixture.eventName,
+        gameId: "game-flashpeak",
+        gameName: "game-flashpeak",
+        certificateId: id,
+        certificateType: type,
+        version,
+        templateVersion: "miracle-v3",
+        recipientId: recipient.id,
+        recipientName: recipient.name,
+        recipientKind: recipient.kind,
+        teamId: recipient.teamId,
+        teamName: recipient.teamName,
+        teamLogoUrl: logoAsset.url,
+        characterArtUrl: null,
+        issueDate: "2026-09-13",
+        verificationCode,
+        verificationBaseUrl: "https://miracle-league.fun",
+        branding: MIRACLE_V3_BRANDING,
+        assetPlacements: [placement],
+      });
+      const mutationFingerprint = JSON.stringify({
+        action: "regenerate",
         certificateType: type,
         expectedVersion: result.version,
-        idempotencyKey: randomUUID(),
-        assets: [{
-          assetId: logoAsset.id,
-          placement: teamType
-            ? { assetKind: "team_logo_hero", x: 360, y: 748, width: 560, height: 540 }
-            : { assetKind: "team_logo_badge", x: 80, y: 1052, width: 160, height: 160 },
-        }],
-      }, studioDependencies);
-      if (generatedResult.status !== "generated") {
-        throw new Error(`Unable to generate ${type} fixture certificate: ${JSON.stringify(generatedResult)}`);
-      }
-      generated.push(generatedResult);
-    }
-    const initialPublication = await publishCertificateSet({
-      eventId: fixture.id,
-      expectedVersion: result.version,
-      expectedCertificateRevision: 0,
-      idempotencyKey: randomUUID(),
-      selection: generated.map(({ certificateType, certificateId }) => ({ certificateType, certificateId })),
-    }, studioDependencies);
-    if (initialPublication.status !== "published") {
-      throw new Error(`Unable to publish initial certificate fixture: ${JSON.stringify(initialPublication)}`);
-    }
-    const historicalChampion = await completionDb.certificate.findFirstOrThrow({
-      where: { eventId: fixture.id, type: "champion", version: 1 },
+        assets: [{ assetId: logoAsset.id, placement }],
+      });
+      return [{
+        id,
+        eventId: fixture.id,
+        teamId: recipient.teamId,
+        type,
+        recipientKind: recipient.kind,
+        recipientId: recipient.id,
+        recipientName: recipient.name,
+        version,
+        templateVersion: "miracle-v3",
+        assetManifest: json({ assets: [asset] }),
+        renderManifest: json({ schemaVersion: 1, data: renderManifest, assets: [asset] }),
+        imageUrl,
+        status: "ready",
+        verificationCode,
+        publishedUrl: imageUrl,
+        generatedAt: CERTIFICATE_FIXTURE_NOW,
+        publishedAt: CERTIFICATE_FIXTURE_NOW,
+        attemptCount: 1,
+        generationIdempotencyKey: randomUUID(),
+        generationFingerprint: getMiracleV3CertificateFingerprint(renderManifest),
+        mutationFingerprint,
+        generationActorUserId: fixture.actor.id,
+        completionId: completion.id,
+        completionVersion: result.version,
+      }];
     });
-    const regeneration = await regenerateCertificate({
+    const currentChampionId = `${fixture.id}-certificate-champion-v2`;
+    const currentChampionCode = `${fixture.id}-verification-champion-v2`;
+    const currentChampionPlacement = certificateTeamPlacement;
+    const currentChampionAsset = {
+      assetId: logoAsset.id,
+      placement: currentChampionPlacement,
+      asset: {
+        url: logoAsset.url!,
+        detectedMimeType: logoAsset.mimeType!,
+        bytes: logoAsset.byteSize!,
+        width: logoAsset.width!,
+        height: logoAsset.height!,
+        storageProvider: logoAsset.storageProvider!,
+        storageKey: logoAsset.storageKey!,
+        contentSha256: logoAsset.contentSha256!,
+        purpose: logoAsset.purpose!,
+      },
+    };
+    const currentChampionManifest = getMiracleV3CertificateManifest({
       eventId: fixture.id,
+      eventName: fixture.eventName,
+      gameId: "game-flashpeak",
+      gameName: "game-flashpeak",
+      certificateId: currentChampionId,
+      certificateType: "champion",
+      version: 2,
+      templateVersion: "miracle-v3",
+      recipientId: recipients.champion.id,
+      recipientName: recipients.champion.name,
+      recipientKind: "team",
+      teamId: recipients.champion.teamId,
+      teamName: recipients.champion.teamName,
+      teamLogoUrl: logoAsset.url,
+      characterArtUrl: null,
+      issueDate: "2026-09-13",
+      verificationCode: currentChampionCode,
+      verificationBaseUrl: "https://miracle-league.fun",
+      branding: MIRACLE_V3_BRANDING,
+      assetPlacements: [currentChampionPlacement],
+    });
+    const mutationFingerprint = JSON.stringify({
+      action: "regenerate",
       certificateType: "champion",
       expectedVersion: result.version,
-      idempotencyKey: randomUUID(),
-      assets: [{
-        assetId: logoAsset.id,
-        placement: { assetKind: "team_logo_hero", x: 360, y: 748, width: 560, height: 540 },
-      }],
-    }, studioDependencies);
-    if (regeneration.status !== "generated") {
-      throw new Error(`Unable to regenerate champion fixture certificate: ${JSON.stringify(regeneration)}`);
-    }
-    const currentChampion = await completionDb.certificate.findUniqueOrThrow({
-      where: { id: regeneration.certificateId },
+      assets: [{ assetId: logoAsset.id, placement: currentChampionPlacement }],
+    });
+    certificateRows.push({
+      id: currentChampionId,
+      eventId: fixture.id,
+      teamId: recipients.champion.teamId,
+      type: "champion",
+      recipientKind: "team",
+      recipientId: recipients.champion.id,
+      recipientName: recipients.champion.name,
+      version: 2,
+      templateVersion: "miracle-v3",
+      assetManifest: json({ assets: [currentChampionAsset] }),
+      renderManifest: json({ schemaVersion: 1, data: currentChampionManifest, assets: [currentChampionAsset] }),
+      imageUrl: `/certificates/${fixture.id}-champion-v2.png`,
+      status: "ready",
+      verificationCode: currentChampionCode,
+      publishedUrl: null,
+      generatedAt: CERTIFICATE_FIXTURE_NOW,
+      publishedAt: null,
+      attemptCount: 1,
+      generationIdempotencyKey: randomUUID(),
+      generationFingerprint: getMiracleV3CertificateFingerprint(currentChampionManifest),
+      mutationFingerprint,
+      generationActorUserId: fixture.actor.id,
+      completionId: completion.id,
+      completionVersion: result.version,
+    });
+    const initialSelection = certificateRows
+      .filter(({ version }) => version === 1)
+      .map(({ type, id }) => ({ certificateType: type, certificateId: id }));
+    const publicationKey = randomUUID();
+    await completionDb.$transaction(async (tx) => {
+      await tx.certificate.createMany({
+        data: certificateRows.map(({ mutationFingerprint, ...row }) => {
+          if (!mutationFingerprint) throw new Error("Certificate fixture mutation fingerprint is missing");
+          return row;
+        }),
+      });
+      await tx.certificateGenerationMutation.createMany({
+        data: certificateRows.map((row) => ({
+          eventId: fixture.id,
+          type: row.type,
+          idempotencyKey: row.generationIdempotencyKey,
+          fingerprint: row.mutationFingerprint,
+          actorUserId: fixture.actor.id,
+          certificateId: row.id,
+          status: "succeeded",
+          result: json({ status: "generated", certificateId: row.id, certificateType: row.type, version: row.version, imageUrl: row.imageUrl }),
+        })),
+      });
+      await tx.certificatePublication.create({
+        data: {
+          eventId: fixture.id,
+          completionId: completion.id,
+          version: 1,
+          completionVersion: result.version,
+          certificateIds: json(initialSelection.map(({ certificateId }) => certificateId)),
+          idempotencyKey: publicationKey,
+          fingerprint: JSON.stringify({ action: "publish", expectedVersion: result.version, expectedCertificateRevision: 0, selection: initialSelection }),
+          actorUserId: fixture.actor.id,
+          publishedAt: CERTIFICATE_FIXTURE_NOW,
+        },
+      });
+      await tx.tournamentCompletion.update({ where: { id: completion.id }, data: { certificateRevision: 1 } });
     });
     return {
       ...fixture,
-      historicalVerificationCode: historicalChampion.verificationCode,
-      historicalPublishedUrl: historicalChampion.publishedUrl!,
-      currentVerificationCode: currentChampion.verificationCode,
-      initialPublicationVersion: initialPublication.publicationVersion,
-      generatedMutationCount: generated.length + 1,
-      currentChampionId: currentChampion.id,
+      historicalVerificationCode: `${fixture.id}-verification-champion-v1`,
+      historicalPublishedUrl: `/certificates/${fixture.id}-champion-v1.png`,
+      currentVerificationCode: currentChampionCode,
+      initialPublicationVersion: 1,
+      generatedMutationCount: certificateRows.length,
+      currentChampionId,
     };
   } catch (error) {
     await fixture.cleanup();

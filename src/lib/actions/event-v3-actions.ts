@@ -11,21 +11,24 @@ import { publishEvent } from "@/lib/events/publish-readiness";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { assertUserCanManageEvent, createEvent, createOrganizerAndEventDraft, getOrganizerUserById, updateEventOrganizerContact } from "@/lib/platform/repository";
 import { getLegacyTournamentFormat, TOURNAMENT_FORMAT_PRESETS, tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { safeEntityIdSchema } from "@/lib/security/request-guard";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 const saveDraftActionSchema = z.object({
-  eventId: z.string().min(1),
+  eventId: safeEntityIdSchema,
   expectedRevision: z.number().int().nonnegative(),
   mutationId: z.string().uuid(),
   draft: eventDraftSchema,
 });
-const publishActionSchema = z.object({ eventId: z.string().min(1) });
+const publishActionSchema = z.object({ eventId: safeEntityIdSchema });
 const createPreviewActionSchema = z.object({
-  eventId: z.string().min(1),
+  eventId: safeEntityIdSchema,
   locale: z.enum(["id", "en"]),
 });
-const revokePreviewActionSchema = z.object({ eventId: z.string().min(1) });
+const revokePreviewActionSchema = z.object({ eventId: safeEntityIdSchema });
 const organizerContactActionSchema = z.object({
-  eventId: z.string().min(1),
+  eventId: safeEntityIdSchema,
   contactChannel: z.string().trim().min(1).max(40),
   contactValue: z.string().trim().min(1).max(200),
 });
@@ -33,13 +36,13 @@ const createEventActionSchema = z.object({
   locale: z.enum(["id", "en"]),
   name: z.string().trim().min(3),
   slug: z.string().trim().min(3).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-  gameModeId: z.string().min(1),
+  gameModeId: safeEntityIdSchema,
   formatKind: z.enum(["single_elimination", "double_elimination", "round_robin", "group_playoffs"]),
   participantCap: z.union([z.literal(8), z.literal(12), z.literal(16), z.literal(24), z.literal(32), z.literal(64), z.literal(128), z.literal(256)]),
   groupCount: z.coerce.number().int().min(2).max(16).optional(),
   qualifiersPerGroup: z.coerce.number().int().min(1).max(8).optional(),
   ownerKind: z.enum(["platform", "existing_organizer", "new_organizer"]).optional(),
-  organizerUserId: z.string().min(1).optional(),
+  organizerUserId: safeEntityIdSchema.optional(),
   organizerName: z.string().trim().min(2).optional(),
   organizerAccountName: z.string().trim().min(2).optional(),
   organizerEmail: z.string().email().optional(),
@@ -59,6 +62,15 @@ async function requireEventManager() {
   };
 }
 
+function assertEventWorkspaceAccess(user: WorkspaceActor, eventId: string) {
+  const access = authorizeWorkspaceResource(
+    user as WorkspaceActor,
+    { eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
+    user.role === "organizer" ? user.id : null,
+  );
+  if (!access.ok) throw new Error("Not authorized");
+}
+
 function isUniqueConstraint(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002";
 }
@@ -74,7 +86,7 @@ async function createEventOrReturnToForm(input: Parameters<typeof createEvent>[0
     throw error;
   }
 }
-export async function createEventV3Action(formData: FormData) {
+async function createEventV3ActionImpl(formData: FormData) {
   const { user } = await requireEventManager();
   const parsed = createEventActionSchema.parse({
     locale: formData.get("locale"), name: formData.get("name"), slug: formData.get("slug"), gameModeId: formData.get("gameModeId"),
@@ -116,7 +128,7 @@ export async function createEventV3Action(formData: FormData) {
   }
 
   if (ownerKind === "existing_organizer") {
-    const organizerId = z.string().min(1).parse(parsed.organizerUserId);
+    const organizerId = safeEntityIdSchema.parse(parsed.organizerUserId);
     const organizer = await getOrganizerUserById(organizerId);
     if (!organizer) throw new Error("Organizer not found");
     const event = await createEventOrReturnToForm({ name: parsed.name, slug: parsed.slug, gameModeId: parsed.gameModeId, format: getLegacyTournamentFormat(formatConfig), formatConfig, participantCap: parsed.participantCap, organizerUserId: organizer.id, organizerName: organizer.name, organizerVerified: false }, parsed.locale, eventManagerRoleSchema.parse(user.role));
@@ -128,9 +140,10 @@ export async function createEventV3Action(formData: FormData) {
   revalidateTag("events");
   redirect(`/${parsed.locale}/admin/events/${event.id}/overview`);
 }
-export async function saveEventDraftAction(input: unknown) {
+async function saveEventDraftActionImpl(input: unknown) {
   const { actor } = await requireEventManager();
   const parsed = saveDraftActionSchema.parse(input);
+  assertEventWorkspaceAccess(actor, parsed.eventId);
   if (parsed.draft.formatConfig?.kind !== undefined && parsed.draft.formatConfig.kind !== "single_elimination" && !isFeatureEnabled("competition_operations_v3")) {
     throw new Error("Competition operations are unavailable");
   }
@@ -149,9 +162,10 @@ export async function saveEventDraftAction(input: unknown) {
   return result;
 }
 
-export async function publishEventV3Action(input: unknown) {
+async function publishEventV3ActionImpl(input: unknown) {
   const { user, actor } = await requireEventManager();
   const parsed = publishActionSchema.parse(input);
+  assertEventWorkspaceAccess(actor, parsed.eventId);
   await assertUserCanManageEvent(user, parsed.eventId);
   const result = await publishEvent(parsed.eventId, actor);
 
@@ -163,20 +177,22 @@ export async function publishEventV3Action(input: unknown) {
   return result;
 }
 
-export async function updateEventOrganizerContactAction(formData: FormData) {
+async function updateEventOrganizerContactActionImpl(formData: FormData) {
   const { user } = await requireEventManager();
   const parsed = organizerContactActionSchema.parse({
     eventId: formData.get("eventId"),
     contactChannel: formData.get("contactChannel"),
     contactValue: formData.get("contactValue"),
   });
+  assertEventWorkspaceAccess(user, parsed.eventId);
   await updateEventOrganizerContact(user, parsed);
   revalidatePath("/organizer/events/" + parsed.eventId);
 }
 
-export async function createEventPreviewAction(input: unknown) {
+async function createEventPreviewActionImpl(input: unknown) {
   const { user, actor } = await requireEventManager();
   const parsed = createPreviewActionSchema.parse(input);
+  assertEventWorkspaceAccess(actor, parsed.eventId);
   await assertUserCanManageEvent(user, parsed.eventId);
   const result = await createEventPreviewToken({ eventId: parsed.eventId, actor });
 
@@ -189,14 +205,39 @@ export async function createEventPreviewAction(input: unknown) {
   };
 }
 
-export async function revokeEventPreviewAction(input: unknown) {
+async function revokeEventPreviewActionImpl(input: unknown) {
   const { user, actor } = await requireEventManager();
   const parsed = revokePreviewActionSchema.parse(input);
+  assertEventWorkspaceAccess(actor, parsed.eventId);
   await assertUserCanManageEvent(user, parsed.eventId);
   const result = await revokeEventPreviewTokens({ eventId: parsed.eventId, actor });
 
   if (result.status === "revoked") revalidatePath("/organizer/events/" + parsed.eventId);
   return result;
+}
+
+export async function createEventV3Action(formData: FormData) {
+  return withServerActionLog("event_create", "/server-actions/event/create", () => createEventV3ActionImpl(formData));
+}
+
+export async function saveEventDraftAction(input: unknown) {
+  return withServerActionLog("event_draft_save", "/server-actions/event/draft", () => saveEventDraftActionImpl(input));
+}
+
+export async function publishEventV3Action(input: unknown) {
+  return withServerActionLog("event_publish", "/server-actions/event/publish", () => publishEventV3ActionImpl(input));
+}
+
+export async function updateEventOrganizerContactAction(formData: FormData) {
+  return withServerActionLog("event_contact_update", "/server-actions/event/contact", () => updateEventOrganizerContactActionImpl(formData));
+}
+
+export async function createEventPreviewAction(input: unknown) {
+  return withServerActionLog("event_preview_create", "/server-actions/event/preview", () => createEventPreviewActionImpl(input));
+}
+
+export async function revokeEventPreviewAction(input: unknown) {
+  return withServerActionLog("event_preview_revoke", "/server-actions/event/preview/revoke", () => revokeEventPreviewActionImpl(input));
 }
 
 

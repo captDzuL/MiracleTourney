@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { requireAnyRole } from "@/lib/auth/session";
 import { updatePlatformProfile } from "@/lib/platform/repository";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 const platformProfileSchema = z.object({
   locale: z.enum(["id", "en"]),
@@ -14,7 +15,7 @@ const platformProfileSchema = z.object({
   contactValue: z.string().trim().min(3).max(200),
 });
 
-export async function updatePlatformProfileAction(formData: FormData) {
+async function updatePlatformProfileActionImpl(formData: FormData) {
   const user = await requireAnyRole(["platform_admin", "admin"]);
   if (!user) throw new Error("Unauthorized");
   const input = platformProfileSchema.parse({ locale: formData.get("locale"), displayName: formData.get("displayName"), contactChannel: formData.get("contactChannel"), contactValue: formData.get("contactValue") });
@@ -22,4 +23,8 @@ export async function updatePlatformProfileAction(formData: FormData) {
   revalidateTag("events");
   revalidatePath("/admin");
   redirect(`/${input.locale}/admin/platform-profile?saved=1`);
+}
+
+export async function updatePlatformProfileAction(formData: FormData) {
+  return withServerActionLog("platform_profile_update", "/server-actions/platform-profile/update", () => updatePlatformProfileActionImpl(formData));
 }

@@ -30,6 +30,8 @@ import {
   saveEventPaymentSettingsDraft,
 } from "@/lib/registration/event-payment-settings";
 import type { AppUser, TeamRegistrationRequestStatus } from "@/lib/platform/types";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { createServerMilestoneLogger, withServerActionLog, type ServerMilestoneEvent } from "@/lib/observability/logger";
 
 type Locale = "id" | "en";
 type BlockedCode =
@@ -38,7 +40,8 @@ type BlockedCode =
   | "password_change_required"
   | "forbidden"
   | "not_found"
-  | "operation_failed";
+  | "operation_failed"
+  | "rate_limited";
 
 export type RegistrationActionBlocked = {
   status: "blocked";
@@ -100,6 +103,7 @@ const copy: Record<Locale, Record<string, string>> = {
     forbidden: "Kamu tidak memiliki akses ke event ini.",
     not_found: "Data registrasi tidak ditemukan.",
     operation_failed: "Perubahan registrasi tidak dapat disimpan.",
+    rate_limited: "Terlalu banyak percobaan. Coba lagi nanti.",
     stale_mutation: "Data registrasi sudah berubah. Muat ulang lalu coba lagi.",
     preview_ready: "Preview import siap ditinjau.",
     imported: "Registrasi berhasil diimport.",
@@ -115,6 +119,7 @@ const copy: Record<Locale, Record<string, string>> = {
     forbidden: "You do not have access to this event.",
     not_found: "The registration data was not found.",
     operation_failed: "The registration change could not be saved.",
+    rate_limited: "Too many attempts. Try again later.",
     stale_mutation: "The registration changed. Reload and try again.",
     preview_ready: "The import preview is ready for review.",
     imported: "Registration import completed.",
@@ -230,6 +235,16 @@ type PreviewInput = {
   file: File;
 };
 
+type RegistrationImportTrace = (stage: string, event?: ServerMilestoneEvent) => void;
+
+const REGISTRATION_IMPORT_ACTION_OPERATION = "registration_import_preview";
+const REGISTRATION_IMPORT_ACTION_ROUTE = "/server-actions/registration/import/preview";
+
+function actionResultMilestone(result: RegistrationActionResult): ServerMilestoneEvent {
+  const failed = result.status === "blocked" && result.code === "operation_failed";
+  return failed ? { status: 500, terminal: "failed", errorCode: "operation_failed" } : { status: 200 };
+}
+
 function readPreviewInput(formData: FormData): PreviewInput | RegistrationActionBlocked {
   const locale = localeFrom(formData);
   const parsed = z.object({
@@ -250,13 +265,23 @@ export async function previewRegistrationImportForUser(
   user: AppUser,
   formData: FormData,
   options: RegistrationActionOptions = {},
+  trace?: RegistrationImportTrace,
 ): Promise<RegistrationActionResult> {
   const input = readPreviewInput(formData);
   if ("status" in input) return input;
   const { locale, eventId, file } = input;
   const redirectTo = canonicalRegistrationPath(locale, eventId, input.returnTo, "import");
+  const rateLimitAllowed = await checkRateLimit(`registration-import:${user.id}:${eventId}`, 5, 15 * 60 * 1000);
+  trace?.("rate_limit_done", { locale, resourceId: eventId, status: rateLimitAllowed ? 200 : 429 });
+  if (!rateLimitAllowed) {
+    return withLegacyFailure(blocked(locale, "rate_limited", redirectTo), options, {
+      phase: "import", message: localizedMessage(locale, "rate_limited"), behavior: "redirect",
+    });
+  }
   try {
     await assertUserCanManageEvent(user, eventId);
+    trace?.("ownership_done", { locale, resourceId: eventId, status: 200 });
+    trace?.("access_gate_done", { locale, resourceId: eventId, status: 200 });
     if (file.size > MAX_REGISTRATION_INTAKE_BYTES) {
       return withLegacyFailure(blocked(locale, "invalid_input", redirectTo), options, {
         phase: "import", message: "File registrasi maksimal 5 MiB.", behavior: "redirect",
@@ -271,6 +296,7 @@ export async function previewRegistrationImportForUser(
     }
 
     const event = await getRegistrationImportEventContext(user, eventId);
+    trace?.("event_context_done", { locale, resourceId: eventId, status: event ? 200 : 404 });
     if (!event) {
       return withLegacyFailure(blocked(locale, "not_found", redirectTo), options, {
         phase: "import", message: "Event tidak ditemukan.", behavior: "redirect", includeActiveEventId: false,
@@ -285,6 +311,7 @@ export async function previewRegistrationImportForUser(
         buffer: Buffer.from(await file.arrayBuffer()),
         worksheetName: input.worksheetName,
       });
+      trace?.("source_parsed", { locale, resourceId: eventId, counts: { rowCount: parsed.worksheets[0]?.rows.length ?? 0 } });
     } catch (error) {
       if (options.legacyCompatibility) {
         return withLegacyFailure(blocked(locale, "invalid_input", redirectTo), options, {
@@ -350,13 +377,16 @@ export async function previewRegistrationImportForUser(
     const existingUsers = emailValues.length && typeof getRegistrationImportUsersByEmails === "function"
       ? await getRegistrationImportUsersByEmails(user, eventId, emailValues)
       : [];
+    trace?.("users_resolved", { locale, resourceId: eventId, counts: { userCount: existingUsers.length } });
+    const bracketLocked = await isEventBracketLocked(event.id);
+    trace?.("bracket_lock_done", { locale, resourceId: eventId, counts: { locked: bracketLocked ? 1 : 0 } });
     const preview = buildRegistrationPreview({
       event: {
         id: event.id,
         name: event.name,
         slug: event.slug,
         participantCap: event.participantCap,
-        bracketLocked: await isEventBracketLocked(event.id),
+        bracketLocked,
         maxRosterSize: mode.maxRosterSize,
         minRosterSize: mode.teamSize,
       },
@@ -383,6 +413,7 @@ export async function previewRegistrationImportForUser(
       items: preview.items,
       summary: preview.summary,
     });
+    trace?.("preview_batch_saved", { locale, resourceId: eventId, counts: { itemCount: batch.items?.length ?? preview.items.length } });
     if (options.legacyCompatibility) return { status: "preview_ready", batchId: batch.id, redirectTo, summary: preview.summary };
     return {
       status: "preview_ready", batchId: batch.id, redirectTo, summary: preview.summary,
@@ -425,6 +456,11 @@ export async function commitRegistrationImportForUser(
   if (!parsed.input) return blocked(parsed.locale, "invalid_input");
   const { eventId, batchId, selectedItemIds, returnTo } = parsed.input;
   const redirectTo = canonicalRegistrationPath(parsed.locale, eventId, returnTo ?? "", "import");
+  if (!(await checkRateLimit(`registration-import:${user.id}:${eventId}`, 5, 15 * 60 * 1000))) {
+    return withLegacyFailure(blocked(parsed.locale, "rate_limited", redirectTo), options, {
+      phase: "registration", message: localizedMessage(parsed.locale, "rate_limited"), behavior: "redirect",
+    });
+  }
   if (selectedItemIds.length === 0) {
     return withLegacyFailure(blocked(parsed.locale, "invalid_input", redirectTo), options, {
       phase: "registration",
@@ -520,7 +556,6 @@ export async function approveEventPaymentAction(formData: FormData): Promise<Act
     });
     revalidateTag("teams");
     revalidateTag("events");
-    revalidatePath(registrationPath(input.locale, input.eventId));
     return { status: "approved", team, redirectTo };
   } catch (error) {
     const result = asErrorResult(input.locale, error);
@@ -543,7 +578,6 @@ export async function rejectEventPaymentAction(formData: FormData): Promise<Acti
     });
     revalidateTag("teams");
     revalidateTag("events");
-    revalidatePath(registrationPath(input.locale, input.eventId));
     return { status: "rejected", request, redirectTo };
   } catch (error) {
     const result = asErrorResult(input.locale, error);
@@ -592,6 +626,9 @@ export async function saveEventQrisDraftAction(formData: FormData): Promise<Acti
   const access = await gate(input.eventId);
   if ("status" in access) return { ...access, message: localizedMessage(input.locale, access.code) };
   const redirectTo = canonicalRegistrationPath(input.locale, input.eventId, input.returnTo, "qris");
+  if (!(await checkRateLimit(`registration-qris:${access.id}:${input.eventId}`, 5, 15 * 60 * 1000))) {
+    return blocked(input.locale, "rate_limited", redirectTo);
+  }
   let uploaded: Awaited<ReturnType<typeof import("@/lib/actions").uploadImageAsset>> | undefined;
   let stored = false;
   try {
@@ -614,7 +651,6 @@ export async function saveEventQrisDraftAction(formData: FormData): Promise<Acti
     });
     if (result.status === "conflict") return { status: "conflict", code: "stale_mutation", version: result.version, message: localizedMessage(input.locale, "stale_mutation"), redirectTo };
     stored = true;
-    revalidatePath(registrationPath(input.locale, input.eventId));
     return { status: "saved", version: result.settings.version ?? input.expectedVersion + 1, settings: result.settings, redirectTo };
   } catch (error) {
     const result = asErrorResult(input.locale, error);
@@ -646,7 +682,6 @@ export async function publishEventQrisAction(formData: FormData): Promise<Action
     if (current.eventId !== input.eventId) return blocked(input.locale, "forbidden", redirectTo);
     const result = await publishEventPaymentSettings({ eventId: input.eventId, actor: access, expectedVersion: input.expectedVersion });
     if (result.status === "conflict") return { status: "conflict", code: "stale_mutation", version: result.version, message: localizedMessage(input.locale, "stale_mutation"), redirectTo };
-    revalidatePath(registrationPath(input.locale, input.eventId));
     return { status: "published", version: result.settings.version ?? input.expectedVersion + 1, settings: result.settings, redirectTo };
   } catch (error) {
     const result = asErrorResult(input.locale, error);
@@ -654,14 +689,53 @@ export async function publishEventQrisAction(formData: FormData): Promise<Action
   }
 }
 
-export async function previewEventRegistrationImportAction(formData: FormData): Promise<ActionResult> {
+async function previewEventRegistrationImportActionImpl(formData: FormData, requestId: string): Promise<ActionResult> {
+  const locale = localeFrom(formData);
+  const rawEventId = value(formData, "eventId");
+  const trace = createServerMilestoneLogger({
+    operation: REGISTRATION_IMPORT_ACTION_OPERATION,
+    route: REGISTRATION_IMPORT_ACTION_ROUTE,
+    requestId,
+  });
+  trace("action_enter", { locale, resourceId: rawEventId || undefined });
   const input = readPreviewInput(formData);
-  if ("status" in input) return input;
-  const access = await gate(input.eventId);
-  if ("status" in access) return { ...access, message: localizedMessage(input.locale, access.code) };
-  const result = await previewRegistrationImportForUser(access, formData);
-  if (result.status === "preview_ready") revalidatePath(registrationPath(input.locale, input.eventId));
+  if ("status" in input) {
+    trace("action_return", { locale, resourceId: rawEventId || undefined, ...actionResultMilestone(input) });
+    return input;
+  }
+  let access: AppUser | RegistrationActionBlocked;
+  try {
+    access = await gate(input.eventId);
+  } catch (error) {
+    trace("action_return", { locale: input.locale, resourceId: input.eventId, status: 500, terminal: "failed", errorCode: "internal_error" });
+    throw error;
+  }
+  trace("initial_gate_done", { locale: input.locale, resourceId: input.eventId, status: "status" in access ? 403 : 200 });
+  if ("status" in access) {
+    trace("action_return", { locale: input.locale, resourceId: input.eventId, ...actionResultMilestone(access) });
+    return { ...access, message: localizedMessage(input.locale, access.code) };
+  }
+  let result: ActionResult;
+  try {
+    result = await previewRegistrationImportForUser(access, formData, {}, trace);
+    if (result.status === "preview_ready") {
+      revalidatePath(registrationPath(input.locale, input.eventId));
+      trace("revalidation_requested", { locale: input.locale, resourceId: input.eventId });
+    }
+  } catch (error) {
+    trace("action_return", { locale: input.locale, resourceId: input.eventId, status: 500, terminal: "failed", errorCode: "internal_error" });
+    throw error;
+  }
+  trace("action_return", { locale: input.locale, resourceId: input.eventId, ...actionResultMilestone(result) });
   return result;
+}
+
+export async function previewEventRegistrationImportAction(formData: FormData): Promise<ActionResult> {
+  return withServerActionLog(
+    REGISTRATION_IMPORT_ACTION_OPERATION,
+    REGISTRATION_IMPORT_ACTION_ROUTE,
+    ({ requestId }) => previewEventRegistrationImportActionImpl(formData, requestId),
+  );
 }
 
 export async function commitEventRegistrationImportAction(formData: FormData): Promise<ActionResult> {

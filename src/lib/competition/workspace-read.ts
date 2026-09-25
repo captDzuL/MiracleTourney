@@ -8,6 +8,9 @@ import { competitionProjection } from "@/lib/tournament/operations/result-projec
 import type { StoredSchedule } from "@/lib/tournament/operations/state";
 import type { CompetitionWorkspaceState } from "./workspace-types";
 import { diagnoseLegacyCompetition } from "@/lib/tournament/operations/legacy-compatibility";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 export const COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS = {
   isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
@@ -15,29 +18,45 @@ export const COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS = {
   timeout: 20_000,
 };
 
-export async function readCompetitionWorkspace(eventId: string): Promise<CompetitionWorkspaceState> {
+const COMPETITION_READER_ROW_LIMIT = 1_000;
+const COMPETITION_READER_HISTORY_LIMIT = 100;
+
+async function readCompetitionWorkspaceImpl(eventId: string): Promise<CompetitionWorkspaceState> {
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
   if (!user) throw new Error("Unauthorized");
   if (user.role === "organizer" && user.mustChangePassword) throw new Error("Password change required");
   if (!isFeatureEnabled("competition_operations_v3") || !isFeatureEnabled("organizer_workspace_v3")) throw new Error("Competition operations are unavailable");
   const authorized = <T>(read: (tx: Prisma.TransactionClient, event: NonNullable<Awaited<ReturnType<typeof prisma.event.findUnique>>>) => Promise<T>) => prisma.$transaction(async tx => {
     const event = await tx.event.findUnique({ where: { id: eventId } });
-    if (!event || user.role === "organizer" && event.organizerUserId !== user.id) throw new Error("Not authorized");
+    if (!event) throw new Error("Not authorized");
+    const access = authorizeWorkspaceResource(
+      user as WorkspaceActor,
+      { eventId: event.id, ownerUserId: event.organizerUserId },
+      event.organizerUserId,
+    );
+    if (!access.ok) throw new Error("Not authorized");
     return read(tx, event);
   }, COMPETITION_WORKSPACE_READ_TRANSACTION_OPTIONS);
   const core = await authorized(async (tx, event) => {
     const [matches, phases, teams, readiness, actions, revisions, published, roundConfigs, matchGames, resultRevisionCount] = await Promise.all([
-      tx.match.findMany({ where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }] }),
-      tx.competitionPhase.findMany({ where: { eventId }, orderBy: { sequence: "asc" } }),
-      tx.team.findMany({ where: { eventId }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
-      tx.matchReadiness.findMany({ where: { eventId } }),
-      tx.competitionActionItem.findMany({ where: { eventId, resolvedAt: null }, orderBy: { createdAt: "asc" } }),
+      tx.match.findMany({ where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }], take: readerProbeLimit(COMPETITION_READER_ROW_LIMIT) }),
+      tx.competitionPhase.findMany({ where: { eventId }, orderBy: { sequence: "asc" }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) }),
+      tx.team.findMany({ where: { eventId }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(COMPETITION_READER_ROW_LIMIT) }),
+      tx.matchReadiness.findMany({ where: { eventId }, take: readerProbeLimit(COMPETITION_READER_ROW_LIMIT) }),
+      tx.competitionActionItem.findMany({ where: { eventId, resolvedAt: null }, orderBy: { createdAt: "asc" }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) }),
       tx.scheduleRevision.findMany({ where: { eventId, status: "draft", version: { gt: event.publishedScheduleVersion ?? -1 } }, orderBy: { version: "desc" }, take: 1 }),
       event.publishedScheduleVersion == null ? Promise.resolve(null) : tx.scheduleRevision.findFirst({ where: { eventId, version: event.publishedScheduleVersion, status: "published" } }),
-      tx.eventRoundConfig.findMany({ where: { eventId }, select: { eventId: true, roundLabel: true, bestOf: true } }),
-      tx.matchGame.findMany({ where: { match: { eventId } }, select: { matchId: true } }),
+      tx.eventRoundConfig.findMany({ where: { eventId }, select: { eventId: true, roundLabel: true, bestOf: true }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) }),
+      tx.matchGame.findMany({ where: { match: { eventId } }, select: { matchId: true }, take: readerProbeLimit(COMPETITION_READER_ROW_LIMIT) }),
       tx.matchResultRevision.count({ where: { eventId } }),
     ]);
+    assertReaderResultWithinLimit("competition.matches", matches, COMPETITION_READER_ROW_LIMIT);
+    assertReaderResultWithinLimit("competition.phases", phases, COMPETITION_READER_HISTORY_LIMIT);
+    assertReaderResultWithinLimit("competition.teams", teams, COMPETITION_READER_ROW_LIMIT);
+    assertReaderResultWithinLimit("competition.readiness", readiness, COMPETITION_READER_ROW_LIMIT);
+    assertReaderResultWithinLimit("competition.actions", actions, COMPETITION_READER_HISTORY_LIMIT);
+    assertReaderResultWithinLimit("competition.roundConfigs", roundConfigs, COMPETITION_READER_HISTORY_LIMIT);
+    assertReaderResultWithinLimit("competition.matchGames", matchGames, COMPETITION_READER_ROW_LIMIT);
     const firstPhase = phases.find(p => p.sequence === 1);
     const drawingConfiguration = firstPhase?.configuration as unknown as {
       graph?: CompetitionGraph;
@@ -72,10 +91,27 @@ export async function readCompetitionWorkspace(eventId: string): Promise<Competi
   });
   // Auxiliary transactions recheck ownership and isolate partial failures.
   const [incidents, announcements, audit] = await Promise.allSettled([
-    authorized(async tx => (await tx.competitionIncident.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: 100 })).map(i => ({ id: i.id, matchId: i.matchId ?? null, kind: i.kind, description: i.description, resolvedAt: i.resolvedAt?.toISOString() ?? null }))),
-    authorized(async tx => (await tx.eventAnnouncement.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: 100 })).map(a => ({ id: a.id, title: a.title, body: a.body, status: a.status, urgency: a.urgency ?? "info" }))),
-    authorized(async tx => (await tx.competitionAuditLog.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: 100 })).map(a => ({ id: a.id, matchId: a.matchId ?? null, action: a.action, reason: a.reason ?? null, actor: a.actorUserId ?? null, at: a.createdAt?.toISOString() ?? null }))),
+    authorized(async tx => {
+      const rows = await tx.competitionIncident.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) });
+      return assertReaderResultWithinLimit("competition.incidents", rows, COMPETITION_READER_HISTORY_LIMIT).map(i => ({ id: i.id, matchId: i.matchId ?? null, kind: i.kind, description: i.description, resolvedAt: i.resolvedAt?.toISOString() ?? null }));
+    }),
+    authorized(async tx => {
+      const rows = await tx.eventAnnouncement.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) });
+      return assertReaderResultWithinLimit("competition.announcements", rows, COMPETITION_READER_HISTORY_LIMIT).map(a => ({ id: a.id, title: a.title, body: a.body, status: a.status, urgency: a.urgency ?? "info" }));
+    }),
+    authorized(async tx => {
+      const rows = await tx.competitionAuditLog.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, take: readerProbeLimit(COMPETITION_READER_HISTORY_LIMIT) });
+      return assertReaderResultWithinLimit("competition.audit", rows, COMPETITION_READER_HISTORY_LIMIT).map(a => ({ id: a.id, matchId: a.matchId ?? null, action: a.action, reason: a.reason ?? null, actor: a.actorUserId ?? null, at: a.createdAt?.toISOString() ?? null }));
+    }),
   ]);
-  for (const result of [incidents, announcements, audit]) if (result.status === "rejected" && result.reason instanceof Error && result.reason.message === "Not authorized") throw result.reason;
+  for (const result of [incidents, announcements, audit]) {
+    if (result.status === "rejected" && result.reason instanceof Error && (result.reason.message === "Not authorized" || result.reason instanceof ReaderResultOverflowError)) {
+      throw result.reason;
+    }
+  }
   return { ...core, incidents: incidents.status === "fulfilled" ? incidents.value : [], announcements: announcements.status === "fulfilled" ? announcements.value : [], audit: audit.status === "fulfilled" ? audit.value : [], unavailableSections: [incidents.status === "rejected" ? "incidents" : "", announcements.status === "rejected" ? "announcements" : "", audit.status === "rejected" ? "audit" : ""].filter(Boolean) };
+}
+
+export function readCompetitionWorkspace(eventId: string): Promise<CompetitionWorkspaceState> {
+  return withServerActionLog("competition_workspace_read", "/server-readers/competition-workspace", () => readCompetitionWorkspaceImpl(eventId));
 }

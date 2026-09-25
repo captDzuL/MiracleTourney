@@ -9,5 +9,5 @@ it("serves ETags and bodyless conditional responses without leaking server failu
   const conditional = await GET(new Request("https://test/api/events/cup/ongoing", { headers: { "If-None-Match": '"abc"' } }), context);
   expect(conditional.status).toBe(304); expect(await conditional.text()).toBe("");
   boundary.view = null; expect((await GET(new Request("https://test"), context)).status).toBe(404);
-  boundary.error = true; const failure = await GET(new Request("https://test"), context); expect(failure.status).toBe(503); expect(await failure.text()).not.toContain("database");
+  boundary.error = true; const failure = await GET(new Request("https://test/api/events/cup/ongoing"), context); expect(failure.status).toBe(503); expect(failure.headers.get("Retry-After")).toBe("30"); expect(await failure.text()).not.toContain("database");
 });

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { signIn, signOut } from "@/lib/auth/session";
 import { prisma } from "@/lib/platform/db";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 import {
   buildCaptainEventDestination,
@@ -27,6 +28,17 @@ export async function captainEventLoginAction(
   _previousState: CaptainEventLoginState,
   formData: FormData,
 ): Promise<CaptainEventLoginState> {
+  return withServerActionLog(
+    "captain_event_login",
+    "/server-actions/captain-event-login",
+    () => captainEventLoginActionImpl(_previousState, formData),
+  );
+}
+
+async function captainEventLoginActionImpl(
+  _previousState: CaptainEventLoginState,
+  formData: FormData,
+): Promise<CaptainEventLoginState> {
   const parsed = loginInputSchema.safeParse({
     locale: String(formData.get("locale") ?? ""),
     eventId: String(formData.get("eventId") ?? ""),
@@ -37,7 +49,7 @@ export async function captainEventLoginAction(
 
   const forwarded = (await headers()).get("x-forwarded-for") ?? "unknown";
   const ip = forwarded.split(",")[0]?.trim() || "unknown";
-  if (!checkRateLimit(`captain-event-login:${ip}`, 10, 60_000)) {
+  if (!(await checkRateLimit(`captain-event-login:${ip}`, 10, 60_000))) {
     return { status: "error", code: "rate_limited" };
   }
 

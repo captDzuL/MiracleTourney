@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Response } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
 
 const prisma = new PrismaClient();
@@ -137,28 +137,70 @@ test.describe("admin event management", () => {
 
     await page.goto(`/en/admin?phase=import&activeEventId=${lockedEventId}`);
     const lateImportFile = "tests/fixtures/late-import-after-lock.csv";
-    await expect(page.getByRole("button", { name: /check and preview|cek dan preview/i })).toBeEnabled();
+    const previewButton = page.getByRole("button", { name: /check and preview|cek dan preview/i });
+    await expect(previewButton).toBeEnabled();
     await page.locator('input[name="registrationFile"]').setInputFiles(lateImportFile);
-    await page.getByRole("button", { name: /check and preview|cek dan preview/i }).click();
 
-    await expect(page).toHaveURL(/registrationBatchId=/, { timeout: 30_000 });
+    function isLockedRosterPreviewSettlement(response: Response, eventId: string) {
+      const request = response.request();
+      const url = new URL(response.url());
+      return response.status() === 200
+        && request.method() === "GET"
+        && url.pathname === "/en/admin"
+        && url.searchParams.get("phase") === "registration"
+        && url.searchParams.get("activeEventId") === eventId
+        && url.searchParams.has("registrationBatchId")
+        && Boolean(url.searchParams.get("registrationBatchId"))
+        && url.searchParams.get("success") === "registration-preview-ready"
+        && (request.headers()["rsc"] === "1" || request.resourceType() === "document");
+    }
+
+    const settledPreviewUrl = page.waitForURL(
+      (url) => url.pathname === "/en/admin"
+        && url.searchParams.get("phase") === "registration"
+        && url.searchParams.get("activeEventId") === lockedEventId
+        && url.searchParams.has("registrationBatchId")
+        && Boolean(url.searchParams.get("registrationBatchId"))
+        && url.searchParams.get("success") === "registration-preview-ready",
+      { waitUntil: "domcontentloaded" },
+    );
+    const settledPreviewResponse = page.waitForEvent("requestfinished", {
+      predicate: async (request) => {
+        const response = await request.response();
+        return response !== null && isLockedRosterPreviewSettlement(response, lockedEventId);
+      },
+    }).then(async (request) => {
+      const response = await request.response();
+      if (!response) throw new Error("Locked-roster preview response disappeared after requestfinished.");
+      return response;
+    });
+    const [, settlementResponse] = await Promise.all([
+      settledPreviewUrl,
+      settledPreviewResponse,
+      previewButton.click(),
+    ]);
+    expect(await settlementResponse.finished()).toBeNull();
     await expect(page.getByText(/drawing.*dipublikasikan|roster.*terkunci|turnamen.*berjalan/i)).toBeVisible();
   });
 
   test("admin can update live stream URL", async ({ page }) => {
-    // Stream form: hidden eventId, label "Stream label", label "Stream URL"
+    await page.goto("/en/admin?phase=prepare", { waitUntil: "domcontentloaded" });
     const streamForm = page.locator("form").filter({
-      has: page.getByRole("button", { name: /Update stream metadata/i }),
+      has: page.locator('input[name="url"]'),
     });
 
-    if (await streamForm.count() === 0) {
-      test.skip();
-      return;
-    }
+    await expect(streamForm, "Expected the active event stream form to be available").toBeVisible();
 
     await streamForm.getByLabel(/stream url/i).fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     await streamForm.getByLabel(/stream label/i).fill("Day 1 Stream");
-    await streamForm.getByRole("button", { name: /Update stream metadata/i }).click();
+    const redirected = page.waitForURL(
+      (url) => url.pathname === "/en/admin" && url.searchParams.get("success") === "stream-updated",
+      { waitUntil: "domcontentloaded" },
+    );
+    await Promise.all([
+      redirected,
+      streamForm.getByRole("button", { name: /save|simpan/i }).click(),
+    ]);
 
     await expect(page).toHaveURL(/success=stream-updated/);
   });

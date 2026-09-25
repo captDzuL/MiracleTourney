@@ -3,6 +3,7 @@
 import * as React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { flushSync } from "react-dom";
 import { renderToStaticMarkup } from "react-dom/server";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -132,12 +133,49 @@ describe("CertificateStudio", () => {
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
   });
 
+  it("announces a localized regeneration rate limit", async () => {
+    const regenerate = vi.fn().mockResolvedValue({ status: "blocked", code: "rate_limited" });
+    await act(async () => root.render(provider("en", <CertificateStudio regenerateAction={regenerate} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!.click());
+    expect(container.querySelector("[role=status]")?.textContent).toContain("Too many attempts");
+  });
+
   it("publishes the selected ready seven-version set and announces success", async () => {
-    const publish = vi.fn().mockResolvedValue({ status: "published", publicationVersion: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
+    const publish = vi.fn().mockResolvedValue({ status: "published", revision: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
     await act(async () => root.render(provider("en", <CertificateStudio publishAction={publish} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey="22222222-2222-4222-8222-222222222222" state={available} />)));
     await act(async () => container.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")!.click());
     expect(publish).toHaveBeenCalledWith(expect.objectContaining({ expectedCertificateRevision: 2, selection: expect.arrayContaining([expect.objectContaining({ certificateType: "champion", certificateId: "cert-champion-2" })]) }));
     expect(container.querySelector("[role=status]")?.textContent).toContain("published safely");
+    expect(container.querySelector("[data-certificate-publication-revision]")?.textContent).toBe("2");
+  });
+
+  it("announces a localized publication rate limit", async () => {
+    const publish = vi.fn().mockResolvedValue({ status: "blocked", code: "rate_limited" });
+    await act(async () => root.render(provider("id", <CertificateStudio publishAction={publish} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")!.click());
+    expect(container.querySelector("[role=status]")?.textContent).toContain("Terlalu banyak percobaan");
+  });
+
+  it("renders publication disabled in pre-hydration markup", () => {
+    const html = renderToStaticMarkup(provider("en", <CertificateStudio publishAction={vi.fn()} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />));
+    const document = new DOMParser().parseFromString(html, "text/html");
+    expect(document.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")?.disabled).toBe(true);
+  });
+
+  it("does not submit publication when clicked before hydration readiness", async () => {
+    const publish = vi.fn().mockResolvedValue({ status: "published", revision: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
+    const hydrationState: CertificateStudioState = { ...available, publication: null, records: available.records.map((record) => ({ ...record, versions: [record.versions![1]], selectedCertificateId: record.versions![1].id })) };
+    const element = provider("en", <CertificateStudio publishAction={publish} generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={hydrationState} />);
+    const hydrationContainer = document.createElement("div");
+    document.body.append(hydrationContainer);
+    const root = createRoot(hydrationContainer);
+    flushSync(() => root.render(element));
+    const button = hydrationContainer.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")!;
+    expect(button.disabled).toBe(true);
+    button.click();
+    expect(publish).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+    hydrationContainer.remove();
   });
 
   it("refreshes persisted failure and rotates the idempotency key for a deliberate retry", async () => {
@@ -160,6 +198,20 @@ describe("CertificateStudio", () => {
     await act(async () => button.click());
     expect(regenerate).toHaveBeenCalledTimes(2);
     expect((regenerate.mock.calls[1][0] as { idempotencyKey: string }).idempotencyKey).not.toBe((regenerate.mock.calls[0][0] as { idempotencyKey: string }).idempotencyKey);
+  });
+
+  it("selects the generated certificate and publishes it after authoritative props refresh", async () => {
+    const regenerate = vi.fn().mockResolvedValue({ status: "generated", certificateId: "cert-champion-3", certificateType: "champion", version: 3, imageUrl: "/certificates/3.png" });
+    const publish = vi.fn().mockResolvedValue({ status: "published", revision: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
+    const props = { regenerateAction: regenerate, publishAction: publish, generationKeys: Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, `key-${type}`])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>, publicationKey: crypto.randomUUID() };
+    await act(async () => root.render(provider("en", <CertificateStudio {...props} state={available} />)));
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!.click());
+
+    const refreshed: CertificateStudioState = { ...available, certificateRevision: 3, records: available.records.map((record) => record.certificateType === "champion" ? { ...record, selectedCertificateId: "cert-champion-2", versions: [...record.versions!, { ...record.versions![1], id: "cert-champion-3", version: 3, imageUrl: "/certificates/3.png", status: "ready" as const }] } : record) };
+    await act(async () => root.render(provider("en", <CertificateStudio {...props} state={refreshed} />)));
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")!.click());
+
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ selection: expect.arrayContaining([{ certificateType: "champion", certificateId: "cert-champion-3" }]) }));
   });
 
   it("returns localized upload validation failures to the file field and Studio live region", async () => {
@@ -212,5 +264,35 @@ describe("CertificateStudio", () => {
     expect(html).toContain("min-w-0");
     expect(html).toContain("min-[1100px]:grid-cols");
     expect(html).not.toContain("min-w-[1080px]");
+  });
+
+  it("keeps the recipient/status/action surface visible while compacting the organizer layout", () => {
+    const html = renderToStaticMarkup(provider("en", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />));
+    expect(html).toContain("data-certificate-recipient-selection");
+    expect(html).toContain("data-certificate-preview-sticky");
+    expect(html).toContain("data-certificate-primary-actions");
+    expect(html).toContain("data-certificate-set-status");
+    expect(html).toContain("data-certificate-assets");
+    expect(html).toContain("data-certificate-history");
+    expect(html).not.toContain("data-certificate-event-banner");
+  });
+
+  it("keeps the compact studio controls keyboard reachable at the project target size", () => {
+    const html = renderToStaticMarkup(provider("en", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />));
+    expect((html.match(/min-h-11/g) ?? []).length).toBeGreaterThanOrEqual(9);
+    expect(html).toContain("miracle-focus-ring");
+    const document = new DOMParser().parseFromString(html, "text/html");
+    expect(document.querySelectorAll("details").length).toBeGreaterThan(0);
+    for (const summary of document.querySelectorAll("summary")) {
+      expect(summary.classList.contains("min-h-11")).toBe(true);
+    }
+  });
+
+  it("keeps every visible interactive control at the 44px target size", () => {
+    const html = renderToStaticMarkup(provider("en", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />));
+    const document = new DOMParser().parseFromString(html, "text/html");
+    for (const control of document.querySelectorAll("button, a, input:not([type=hidden]), select, summary")) {
+      expect(control.classList.contains("min-h-11"), `${control.tagName} ${control.textContent?.trim() || control.getAttribute("name") || "control"}`).toBe(true);
+    }
   });
 });

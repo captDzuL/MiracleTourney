@@ -6,6 +6,8 @@ import { applyEventLifecycleSideEffects } from "@/lib/events/event-lifecycle";
 import type { CompetitionGraph } from "@/lib/tournament/competition";
 import { tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { competitionProjection } from "@/lib/tournament/operations/result-projection";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
 import {
   CompletionVersionConflictError,
   type CompletionActor,
@@ -110,6 +112,17 @@ export interface PrismaCompletionWorkspaceData {
     details: Prisma.JsonValue;
   }[];
 }
+
+type CompletionWorkspaceReadTransactionOptions = NonNullable<Parameters<PrismaClient["$transaction"]>[1]>;
+
+export const COMPLETION_WORKSPACE_READ_TRANSACTION_OPTIONS: CompletionWorkspaceReadTransactionOptions = {
+  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+  maxWait: 5_000,
+  timeout: 20_000,
+};
+
+const COMPLETION_READER_ROW_LIMIT = 1_000;
+const COMPLETION_READER_HISTORY_LIMIT = 100;
 
 const AWARDS = ["mvp", "top_scorer", "top_defender", "top_assist"] as const;
 
@@ -315,13 +328,15 @@ export function buildCompletionSource(rows: CompletionSourceRows): CompletionSou
   };
 }
 
-export async function loadPrismaCompletionWorkspaceData(eventId: string): Promise<PrismaCompletionWorkspaceData> {
+export async function loadPrismaCompletionWorkspaceData(eventId: string, actor: WorkspaceActor): Promise<PrismaCompletionWorkspaceData> {
   return prisma.$transaction(async (tx) => {
     const event = await tx.event.findUnique({
       where: { id: eventId },
-      select: { id: true, competitionVersion: true, formatConfig: true, gameId: true, gameModeId: true },
+      select: { id: true, organizerUserId: true, competitionVersion: true, formatConfig: true, gameId: true, gameModeId: true },
     });
     if (!event) throw new Error("Event not found");
+    const access = authorizeWorkspaceResource(actor, { eventId: event.id, ownerUserId: event.organizerUserId }, event.organizerUserId);
+    if (!access.ok) throw new Error("Not authorized");
     const [completion, certificates, publication, auditRows] = await Promise.all([
       tx.tournamentCompletion.findUnique({
         where: { eventId },
@@ -344,6 +359,7 @@ export async function loadPrismaCompletionWorkspaceData(eventId: string): Promis
         where: { eventId },
         select: { id: true, type: true, version: true, completionId: true, completionVersion: true, status: true, publishedAt: true },
         orderBy: [{ type: "asc" }, { version: "asc" }],
+        take: readerProbeLimit(COMPLETION_READER_HISTORY_LIMIT),
       }),
       tx.certificatePublication.findFirst({
         where: { eventId },
@@ -354,9 +370,11 @@ export async function loadPrismaCompletionWorkspaceData(eventId: string): Promis
         where: { completion: { eventId } },
         select: { action: true, actorUserId: true, createdAt: true, details: true },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: 100,
+        take: readerProbeLimit(COMPLETION_READER_HISTORY_LIMIT),
       }),
     ]);
+    assertReaderResultWithinLimit("completion.certificates", certificates, COMPLETION_READER_HISTORY_LIMIT);
+    assertReaderResultWithinLimit("completion.audit", auditRows, COMPLETION_READER_HISTORY_LIMIT);
     const actorIds = [...new Set(auditRows.map(({ actorUserId }) => actorUserId))];
     const actors = actorIds.length
       ? await tx.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })
@@ -375,7 +393,7 @@ export async function loadPrismaCompletionWorkspaceData(eventId: string): Promis
         details,
       })),
     };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }, COMPLETION_WORKSPACE_READ_TRANSACTION_OPTIONS);
 }
 
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
@@ -388,10 +406,10 @@ async function loadSourceRows(
   if (!format.success) throw new Error("Competition format is unavailable");
   const [phase, matches, revisions, incidents, teams, playerStats, approvedSubmissions] = await Promise.all([
     tx.competitionPhase.findFirst({ where: { eventId: event.id, sequence: 1 }, select: { configuration: true } }),
-    tx.match.findMany({ where: { eventId: event.id } }),
-    tx.matchResultRevision.findMany({ where: { eventId: event.id }, orderBy: [{ matchId: "asc" }, { version: "desc" }] }),
-    tx.competitionIncident.findMany({ where: { eventId: event.id, resolvedAt: null }, select: { id: true, matchId: true, resolvedAt: true } }),
-    tx.team.findMany({ where: { eventId: event.id }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
+    tx.match.findMany({ where: { eventId: event.id }, take: readerProbeLimit(COMPLETION_READER_ROW_LIMIT) }),
+    tx.matchResultRevision.findMany({ where: { eventId: event.id }, orderBy: [{ matchId: "asc" }, { version: "desc" }], take: readerProbeLimit(COMPLETION_READER_ROW_LIMIT) }),
+    tx.competitionIncident.findMany({ where: { eventId: event.id, resolvedAt: null }, select: { id: true, matchId: true, resolvedAt: true }, take: readerProbeLimit(COMPLETION_READER_HISTORY_LIMIT) }),
+    tx.team.findMany({ where: { eventId: event.id }, select: { id: true, name: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(COMPLETION_READER_ROW_LIMIT) }),
     tx.playerStat.findMany({
       where: { match: { eventId: event.id } },
       select: {
@@ -403,9 +421,16 @@ async function loadSourceRows(
         stats: true,
         player: { select: { id: true, teamId: true, eventId: true, displayName: true, nickname: true } },
       },
+      take: readerProbeLimit(COMPLETION_READER_ROW_LIMIT),
     }),
-    tx.statSubmission.findMany({ where: { eventId: event.id, status: "approved" }, select: { matchId: true, teamId: true } }),
+    tx.statSubmission.findMany({ where: { eventId: event.id, status: "approved" }, select: { matchId: true, teamId: true }, take: readerProbeLimit(COMPLETION_READER_ROW_LIMIT) }),
   ]);
+  assertReaderResultWithinLimit("completion.matches", matches, COMPLETION_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("completion.revisions", revisions, COMPLETION_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("completion.incidents", incidents, COMPLETION_READER_HISTORY_LIMIT);
+  assertReaderResultWithinLimit("completion.teams", teams, COMPLETION_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("completion.playerStats", playerStats, COMPLETION_READER_ROW_LIMIT);
+  assertReaderResultWithinLimit("completion.approvedSubmissions", approvedSubmissions, COMPLETION_READER_ROW_LIMIT);
   const graph = (phase?.configuration as unknown as { graph?: CompetitionGraph } | null)?.graph ?? null;
   if (graph && graph.eventId !== event.id) throw new Error("Invalid competition state");
   return {
@@ -598,7 +623,13 @@ export function createPrismaCompletionDependencies(
             if (!row || !currentActor || currentActor.deactivatedAt
               || currentActor.role !== actor.role
               || !["organizer", "platform_admin", "admin"].includes(currentActor.role)
-              || currentActor.role === "organizer" && (currentActor.mustChangePassword || row.organizerUserId !== currentActor.id)) return null;
+              || currentActor.role === "organizer" && currentActor.mustChangePassword) return null;
+            const access = authorizeWorkspaceResource(
+              { id: currentActor.id, role: currentActor.role as WorkspaceActor["role"] },
+              { eventId: row.id, ownerUserId: row.organizerUserId },
+              row.organizerUserId,
+            );
+            if (!access.ok) return null;
             return structuredClone(actor);
           },
           loadState: async (): Promise<CompletionState> => {

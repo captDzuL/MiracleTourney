@@ -16,7 +16,7 @@ export function EventQrisPanel({ locale, eventId, returnTo, settings }: { locale
   const data = actionForm(locale, eventId, returnTo); data.set("expectedVersion", String(version));
   if (!publish) { data.set("instructions", instructions); data.set("qrisImageUrl", safeImage(settings.qrisImageUrl) ?? ""); if (file) data.set("qrisImage", file); }
   try { const result = await (publish ? publishEventQrisAction(data) : saveEventQrisDraftAction(data));
-   if (result.status === "saved" || result.status === "published") { setVersion(result.version); setStatus(result.status === "published" ? "published" : "draft"); setDirty(false); setFeedback({ message: t(result.status === "saved" ? "draftSaved" : "publishedSaved") }); router.refresh(); }
+   if (result.status === "saved" || result.status === "published") { setVersion(result.version); setStatus(result.status === "published" ? "published" : "draft"); setDirty(false); setFeedback({ message: t(result.status === "saved" ? "draftSaved" : "publishedSaved") }); }
    else { const stale = result.status === "conflict"; setConflict(stale); setFeedback({ message: t(stale ? "conflict" : "operationFailed"), error: true }); if (stale) router.refresh(); }
   } catch { setFeedback({ message: t("operationFailed"), error: true }); } finally { setBusy(false); }
  }

@@ -56,4 +56,17 @@ describe("Miracle V3 design tokens", () => {
       expect(contrastRatio(inherited(source, "--color-border-strong"), inherited(source, "--color-surface"))).toBeGreaterThanOrEqual(3);
     }
   });
+
+  it("disables motion only within V3 scopes for reduced-motion users", () => {
+    const reducedMotion = tokenSource.slice(tokenSource.indexOf("@media (prefers-reduced-motion: reduce)"));
+
+    expect(reducedMotion).toContain(".miracle-v3,");
+    expect(reducedMotion).toContain(".miracle-v3 *,");
+    expect(reducedMotion).toContain(".miracle-v3 *::before,");
+    expect(reducedMotion).toContain(".miracle-v3 *::after");
+    expect(reducedMotion).toContain("transition: none !important;");
+    expect(reducedMotion).toContain("animation: none !important;");
+    expect(reducedMotion).toContain("scroll-behavior: auto !important;");
+    expect(reducedMotion).not.toMatch(/(^|\n)\s*\*,/);
+  });
 });

@@ -150,7 +150,13 @@ function CompletionWorkspaceForm({
   const canReopen = state.status === "completed"
     && refreshRequired?.action !== "reopen"
     && terminalRefreshPending !== "reopen";
-  const displayedStatus = refreshRequired ? "blocked" : canComplete && state.status === "blocked" ? "ready" : state.status;
+  const terminalDisplayedStatus = terminalRefreshPending === "complete"
+    ? "completed"
+    : terminalRefreshPending === "reopen"
+      ? "reopened"
+      : null;
+  const displayedStatus = terminalDisplayedStatus
+    ?? (refreshRequired ? "blocked" : canComplete && state.status === "blocked" ? "ready" : state.status);
 
   function updateAwardDecision(award: CompletionAwardStatistic, decision: AwardReviewDecision) {
     setAwardDecisions((current) => ({ ...current, [award]: decision }));

@@ -11,6 +11,8 @@ import { scheduleBaseline } from "./schedule-source";
 import { diagnoseLegacyCompetition } from "./legacy-compatibility";
 import { applyDelay } from "./delay";
 import { outstandingDelayEstimates } from "./delay-estimates";
+import { withOperationStage, type OperationStageReporter } from "./observability";
+import { CompetitionExpectedError } from "./errors";
 
 function requireReason(value: string | undefined) { if (!value?.trim()) throw new Error("An override or resolution reason is required"); }
 
@@ -34,74 +36,83 @@ async function persistDrawing(
   eventId: string,
   command: DrawingInput,
   status: "draft" | "active",
+  reporter?: OperationStageReporter,
 ) {
-  validateDrawingTeams(command.teams);
-  const teams = await tx.team.findMany({
+  await withOperationStage(reporter, "drawing_validate", { teamCount: command.teams.length }, () => validateDrawingTeams(command.teams));
+  const teams = await withOperationStage(reporter, "drawing_roster", { requestedTeamCount: command.teams.length }, () => tx.team.findMany({
     where: { eventId },
     select: { id: true },
-  });
+  }));
   const authoritativeIds = new Set(teams.map((team) => team.id));
   if (teams.length !== command.teams.length
     || command.teams.some((team) => !authoritativeIds.has(team.id))) {
     throw new Error("Teams must match the complete authoritative roster for the event");
   }
-  const graph = generateCompetitionGraph({ eventId, ...command });
-  for (const phase of graph.phases) await tx.competitionPhase.create({ data: {
-    id: phase.id,
-    eventId,
-    label: phase.kind,
-    sequence: phase.sequence,
-    status,
-    configuration: json({
-      ...phase,
-      ...(phase.sequence === 1 ? {
-        graph,
-        drawing: { teams: command.teams.map((team) => ({ id: team.id, seed: team.seed })) },
-      } : {}),
-    }),
-  } });
-  for (const group of graph.groups) {
-    await tx.competitionGroup.create({ data: {
-      id: group.id,
+  const graph = await withOperationStage(reporter, "drawing_graph", { teamCount: command.teams.length }, () => generateCompetitionGraph({ eventId, ...command }));
+  await withOperationStage(reporter, "drawing_phases", { phaseCount: graph.phases.length }, async () => {
+    for (const phase of graph.phases) await tx.competitionPhase.create({ data: {
+      id: phase.id,
       eventId,
-      phaseId: group.phaseId,
-      label: group.label,
-      sequence: group.sequence,
+      label: phase.kind,
+      sequence: phase.sequence,
+      status,
+      configuration: json({
+        ...phase,
+        ...(phase.sequence === 1 ? {
+          graph,
+          drawing: { teams: command.teams.map((team) => ({ id: team.id, seed: team.seed })) },
+        } : {}),
+      }),
     } });
-    for (const team of group.teams) await tx.competitionGroupMember.create({ data: {
-      eventId,
-      groupId: group.id,
-      teamId: team.id,
-      seed: team.seed,
-    } });
-  }
+  });
+  await withOperationStage(reporter, "drawing_groups", { groupCount: graph.groups.length, memberCount: graph.groups.reduce((total, group) => total + group.teams.length, 0) }, async () => {
+    for (const group of graph.groups) {
+      await tx.competitionGroup.create({ data: {
+        id: group.id,
+        eventId,
+        phaseId: group.phaseId,
+        label: group.label,
+        sequence: group.sequence,
+      } });
+      for (const team of group.teams) await tx.competitionGroupMember.create({ data: {
+        eventId,
+        groupId: group.id,
+        teamId: team.id,
+        seed: team.seed,
+      } });
+    }
+  });
   const rounds = new Map<string, number>();
-  for (const [index, match] of graph.matches.entries()) {
-    const key = `${match.phaseId}:${match.bracket}:${match.round}:${match.leg}`;
-    if (!rounds.has(key)) rounds.set(key, rounds.size + 1);
-    await tx.match.create({ data: {
-      id: match.id,
-      eventId,
-      phaseId: match.phaseId,
-      groupId: match.groupId,
-      roundLabel: `${match.bracket} ${match.round}`,
-      round: rounds.get(key),
-      slot: index + 1,
-      homeTeamId: match.home.kind === "team" ? match.home.teamId : "",
-      awayTeamId: match.away.kind === "team" ? match.away.teamId : "",
-      status: match.status === "pending" ? "Scheduled" : "Bye",
-      scheduleStatus: "estimated",
-      resultVersion: 0,
-      scheduleMetadata: json({ graphMatch: match }),
-    } });
-  }
-  for (const dependency of graph.dependencies) {
-    await tx.matchDependency.create({ data: { ...dependency, eventId } });
-  }
-  await tx.event.update({ where: { id: eventId }, data: {
+  await withOperationStage(reporter, "drawing_matches", { matchCount: graph.matches.length }, async () => {
+    for (const [index, match] of graph.matches.entries()) {
+      const key = `${match.phaseId}:${match.bracket}:${match.round}:${match.leg}`;
+      if (!rounds.has(key)) rounds.set(key, rounds.size + 1);
+      await tx.match.create({ data: {
+        id: match.id,
+        eventId,
+        phaseId: match.phaseId,
+        groupId: match.groupId,
+        roundLabel: `${match.bracket} ${match.round}`,
+        round: rounds.get(key),
+        slot: index + 1,
+        homeTeamId: match.home.kind === "team" ? match.home.teamId : "",
+        awayTeamId: match.away.kind === "team" ? match.away.teamId : "",
+        status: match.status === "pending" ? "Scheduled" : "Bye",
+        scheduleStatus: "estimated",
+        resultVersion: 0,
+        scheduleMetadata: json({ graphMatch: match }),
+      } });
+    }
+  });
+  await withOperationStage(reporter, "drawing_dependencies", { dependencyCount: graph.dependencies.length }, async () => {
+    for (const dependency of graph.dependencies) {
+      await tx.matchDependency.create({ data: { ...dependency, eventId } });
+    }
+  });
+  await withOperationStage(reporter, "drawing_event", undefined, () => tx.event.update({ where: { id: eventId }, data: {
     formatConfig: json(graph.config),
     format: getLegacyTournamentFormat(graph.config),
-  } });
+  } }));
   return graph.phases[0].id;
 }
 
@@ -139,7 +150,7 @@ async function requirePublishedDrawing(tx: Prisma.TransactionClient, eventId: st
 }
 
 /** Internal: must run only after authorization and event CAS in execute(). */
-export async function applyCommand(tx: Prisma.TransactionClient, eventId: string, actorId: string, command: ParsedCommand, version: number, idempotencyKey: string, now: Date, readinessActor: "organizer" | "captain" = "organizer"): Promise<string | undefined> {
+export async function applyCommand(tx: Prisma.TransactionClient, eventId: string, actorId: string, command: ParsedCommand, version: number, idempotencyKey: string, now: Date, readinessActor: "organizer" | "captain" = "organizer", reporter?: OperationStageReporter): Promise<string | undefined> {
   if (["schedule_publish", "match_start", "result_submit", "result_correct"].includes(command.kind)) {
     await requirePublishedDrawing(tx, eventId);
   }
@@ -163,7 +174,7 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       const diagnosis = diagnoseLegacyCompetition(event, seeded, matches, { roundConfigs, matchGames, resultRevisionCount: resultRevisions });
       if (!diagnosis.graph) throw new Error(`Legacy competition cannot be upgraded: ${diagnosis.reason}`);
       const graph = diagnosis.graph;
-      if (!matches.length) return applyCommand(tx, eventId, actorId, { kind: "initialize", config: graph.config, teams: seeded }, version, idempotencyKey, now);
+      if (!matches.length) return applyCommand(tx, eventId, actorId, { kind: "initialize", config: graph.config, teams: seeded }, version, idempotencyKey, now, readinessActor, reporter);
       for (const phase of graph.phases) await tx.competitionPhase.create({ data: { id: phase.id, eventId, label: phase.kind, sequence: phase.sequence, status: "active", configuration: json({ ...phase, graph }) } });
       for (const match of graph.matches) await tx.match.update({ where: { id: match.id }, data: { phaseId: match.phaseId, scheduleMetadata: json({ graphMatch: match }) } });
       for (const dependency of graph.dependencies) await tx.matchDependency.create({ data: { ...dependency, eventId } });
@@ -174,9 +185,9 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
     case "result_correct":
       return applyResult(tx, eventId, actorId, command, version, idempotencyKey, now);
     case "drawing_save": {
-      await assertDrawingMutable(tx, eventId);
-      await clearDrawingDraft(tx, eventId);
-      return persistDrawing(tx, eventId, command, "draft");
+      await withOperationStage(reporter, "drawing_assert_mutable", undefined, () => assertDrawingMutable(tx, eventId));
+      await withOperationStage(reporter, "drawing_clear_draft", undefined, () => clearDrawingDraft(tx, eventId));
+      return persistDrawing(tx, eventId, command, "draft", reporter);
     }
     case "drawing_publish": {
       const phases = await tx.competitionPhase.findMany({ where: { eventId } });
@@ -206,13 +217,13 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       return String(firstPhase.id);
     }
     case "drawing_reset":
-      await assertDrawingMutable(tx, eventId);
-      await clearDrawingDraft(tx, eventId);
+      await withOperationStage(reporter, "drawing_assert_mutable", undefined, () => assertDrawingMutable(tx, eventId));
+      await withOperationStage(reporter, "drawing_clear_draft", undefined, () => clearDrawingDraft(tx, eventId));
       return undefined;
     case "initialize": {
       if (await tx.matchResultRevision.count({ where: { eventId } }) || await tx.match.count({ where: { eventId, resultVersion: { gt: 0 } } })) throw new Error("Competition has official results");
       if (await tx.match.count({ where: { eventId } }) || await tx.competitionPhase.count({ where: { eventId } })) throw new Error("Competition already initialized");
-      return persistDrawing(tx, eventId, command, "active");
+      return persistDrawing(tx, eventId, command, "active", reporter);
     }
     case "schedule_save": {
       if (command.input.manualOverrides?.length) requireReason(command.reason);
@@ -247,11 +258,11 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       const latest = (await tx.scheduleRevision.findMany({ where: { eventId, status: "draft" } })).sort((a, b) => b.version - a.version)[0];
       const selectedEvent = await tx.event.findUniqueOrThrow({ where: { id: eventId } });
       const hasPendingDelay = !!(latest?.snapshot as unknown as StoredSchedule | undefined)?.delayEstimates || !!(revision.snapshot as unknown as StoredSchedule).delayEstimates;
-      if (hasPendingDelay && latest?.id !== revision.id || revision.version <= (selectedEvent.publishedScheduleVersion ?? -1)) throw new Error("Schedule draft is superseded or stale: review the latest revision");
+      if (hasPendingDelay && latest?.id !== revision.id || revision.version <= (selectedEvent.publishedScheduleVersion ?? -1)) throw new CompetitionExpectedError("conflict", "Schedule draft is superseded or stale: review the latest revision");
       const { draft, baseMatches, delayEstimates } = revision.snapshot as unknown as StoredSchedule;
-      if (!draft.feasible || draft.conflicts.length) throw new Error("Schedule has unresolved conflicts");
+      if (!draft.feasible || draft.conflicts.length) throw new CompetitionExpectedError("conflict", "Schedule has unresolved conflicts");
       const matches = await tx.match.findMany({ where: { eventId } });
-      if (!isDeepStrictEqual(baseMatches, matchSnapshot(matches))) throw new Error("Schedule review is stale: save a new draft");
+      if (!isDeepStrictEqual(baseMatches, matchSnapshot(matches))) throw new CompetitionExpectedError("conflict", "Schedule review is stale: save a new draft");
       const requiredEstimates = await outstandingDelayEstimates(tx, eventId);
       for (const [id, end] of Object.entries(requiredEstimates)) {
         if (!draft.assignments.some(a => a.matchId === id && Date.parse(a.end) >= Date.parse(end))) throw new Error("An active delay estimate is missing or shortened: preserve it or explicitly resolve the delay before publishing");

@@ -1,4 +1,5 @@
 import type { CompletionAwardStatistic } from "./readiness";
+import { getSessionUser } from "@/lib/auth/session";
 import { tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { deriveAwardCandidates } from "./awards";
 import { evaluateCompletionReadiness, type CompletionBlocker } from "./readiness";
@@ -6,6 +7,8 @@ import {
   loadPrismaCompletionWorkspaceData,
   type PrismaCompletionWorkspaceData,
 } from "./prisma-adapter";
+import type { WorkspaceActor } from "@/lib/security/authorization";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 export type CompletionWorkspaceStatus =
   | "integration_required"
@@ -151,8 +154,20 @@ const AWARDS: readonly CompletionAwardStatistic[] = [
 ];
 
 export interface CompletionWorkspaceDependencies {
-  load(eventId: string): Promise<PrismaCompletionWorkspaceData>;
+  load(eventId: string, actor?: WorkspaceActor): Promise<PrismaCompletionWorkspaceData>;
 }
+
+const defaultCompletionWorkspaceDependencies: CompletionWorkspaceDependencies = {
+  load: async (eventId) => {
+    const user = await getSessionUser();
+    if (!user || !["organizer", "platform_admin", "admin"].includes(user.role)
+      || user.role === "organizer" && user.mustChangePassword) throw new Error("Not authorized");
+    return loadPrismaCompletionWorkspaceData(eventId, {
+      id: user.id,
+      role: user.role as WorkspaceActor["role"],
+    });
+  },
+};
 
 function formatLabel(kind: string | undefined, locale: "id" | "en"): string {
   const labels = locale === "id"
@@ -172,7 +187,7 @@ function formatLabel(kind: string | undefined, locale: "id" | "en"): string {
 }
 
 const awardName = (award: CompletionAwardStatistic, locale: "id" | "en") => ({
-  mvp: "MVP",
+  mvp: locale === "id" ? "MVP Turnamen" : "MVP Tournament",
   top_scorer: locale === "id" ? "Top Scorer" : "Top Scorer",
   top_defender: locale === "id" ? "Top Defender" : "Top Defender",
   top_assist: locale === "id" ? "Top Assist" : "Top Assist",
@@ -194,7 +209,7 @@ function workspaceBlocker(
     case "UNRESOLVED_FINAL_TIE":
       return { code: blocker.code, subject: blocker.teamIds.join(", "), repairHref: `${eventRoot}/competition` };
     case "MISSING_VALIDATED_AWARD_STATISTICS":
-      return { code: blocker.code, subject: awardName(blocker.award, locale), repairHref: `${eventRoot}/legacy-match-day` };
+      return { code: blocker.code, subject: awardName(blocker.award, locale), repairHref: `${eventRoot}/competition` };
     case "INSUFFICIENT_PODIUM_STRUCTURE": {
       const details = [...blocker.missingStages ?? [], ...blocker.matchIds ?? [], ...blocker.teamIds ?? []];
       return { code: blocker.code, subject: details.join(", ") || (locale === "id" ? "Struktur podium" : "Podium structure"), repairHref: `${eventRoot}/competition` };
@@ -261,10 +276,10 @@ function lockedCandidates(value: unknown): CompletionAwardCandidateSummary[] {
   });
 }
 
-export async function loadCompletionWorkspace(
+async function loadCompletionWorkspaceImpl(
   event: CompletionWorkspaceEvent,
   locale: "id" | "en",
-  dependencies: CompletionWorkspaceDependencies = { load: loadPrismaCompletionWorkspaceData },
+  dependencies: CompletionWorkspaceDependencies = defaultCompletionWorkspaceDependencies,
 ): Promise<CompletionWorkspaceState> {
   if (!tournamentFormatConfigSchema.safeParse(event.formatConfig).success) {
     return integrationState(event, locale);
@@ -414,4 +429,12 @@ export async function loadCompletionWorkspace(
       history: auditHistory,
     },
   };
+}
+
+export function loadCompletionWorkspace(
+  event: CompletionWorkspaceEvent,
+  locale: "id" | "en",
+  dependencies: CompletionWorkspaceDependencies = defaultCompletionWorkspaceDependencies,
+): Promise<CompletionWorkspaceState> {
+  return withServerActionLog("completion_workspace_read", "/server-readers/completion-workspace", () => loadCompletionWorkspaceImpl(event, locale, dependencies));
 }

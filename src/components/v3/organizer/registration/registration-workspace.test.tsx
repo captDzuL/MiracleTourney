@@ -84,6 +84,29 @@ describe("registration workspace behavior", () => {
     await click('[data-approve]'); expect(host.querySelector<HTMLButtonElement>('[data-approve]')?.disabled).toBe(true);
     expect(host.textContent).toContain("Approved");
   });
+  it.each([
+    ["en", "approve", "Review decision saved.", "Approved"],
+    ["en", "reject", "Review decision saved.", "Rejected"],
+    ["id", "approve", "Keputusan pemeriksaan disimpan.", "Disetujui"],
+    ["id", "reject", "Keputusan pemeriksaan disimpan.", "Ditolak"],
+  ] as const)("keeps %s payment %s success feedback visible after the reviewed row disappears", async (locale, decision, feedback, status) => {
+    (decision === "approve" ? actions.approve : actions.reject).mockResolvedValue({ status: decision === "approve" ? "approved" : "rejected" });
+    await render({ locale, query: { ...base.query, view: "payments" }, payments: [payment] });
+    if (decision === "reject") {
+      const reason = host.querySelector<HTMLTextAreaElement>("textarea")!;
+      act(() => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(reason, "Unreadable receipt"); reason.dispatchEvent(new Event("input", { bubbles: true })); });
+      await click("[data-reject]");
+    } else {
+      await click("[data-approve]");
+    }
+
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(feedback);
+    expect(host.querySelector("aside")?.textContent).toContain(status);
+    await render({ locale, query: { ...base.query, view: "payments" }, payments: [] });
+    expect(host.querySelector('[data-approve]')).toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(feedback);
+    expect(actions.refresh).not.toHaveBeenCalled();
+  });
   it("does not render unsafe proof URLs", async () => { await render({ query: { ...base.query, view: "payments" }, payments: [{ ...payment, proofImageUrl: "javascript:alert(1)" }] }); expect(host.querySelector("img")).toBeNull(); });
   it("prevents QRIS publication until the edited draft is saved and then uses the new version", async () => {
     actions.save.mockResolvedValue({ status: "saved", version: 3 }); actions.publish.mockResolvedValue({ status: "published", version: 4 });
@@ -91,6 +114,39 @@ describe("registration workspace behavior", () => {
     const text = host.querySelector<HTMLTextAreaElement>("textarea")!; act(() => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(text, "Updated"); text.dispatchEvent(new Event("input", { bubbles: true })); });
     expect(host.querySelector<HTMLButtonElement>('[data-publish]')!.disabled).toBe(true); await click('[data-save]'); expect(host.querySelector<HTMLButtonElement>('[data-publish]')!.disabled).toBe(false); await click('[data-publish]');
     expect((actions.publish.mock.calls[0][0] as FormData).get("expectedVersion")).toBe("3"); expect(host.textContent).toContain("Visible to captains");
+  });
+  it.each([
+    ["en", "QRIS draft saved.", "QRIS published.", "Unsaved changes", "Version 3 · Draft", "Version 4 · Published"],
+    ["id", "Draf QRIS disimpan.", "QRIS diterbitkan.", "Perubahan belum disimpan", "Versi 3 · Draf", "Versi 4 · Diterbitkan"],
+  ] as const)("keeps authoritative QRIS success feedback observable without redundant refreshes in %s", async (locale, draftFeedback, publishFeedback, unsaved, draftState, publishedState) => {
+    actions.save.mockResolvedValue({ status: "saved", version: 3 });
+    actions.publish.mockResolvedValue({ status: "published", version: 4 });
+    await render({ locale, query: { ...base.query, view: "qris" }, qris: { id: "qris", eventId: "cup", source: "event", version: 2, status: "draft", qrisImageUrl: "/event-payment-qris/q.png", instructions: "Pay here" } });
+    const text = host.querySelector<HTMLTextAreaElement>("textarea")!;
+    act(() => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(text, "Updated"); text.dispatchEvent(new Event("input", { bubbles: true })); });
+    expect(host.textContent).toContain(unsaved);
+    expect(host.querySelector<HTMLButtonElement>('[data-publish]')?.disabled).toBe(true);
+
+    await click('[data-save]');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(draftFeedback);
+    expect(host.textContent).toContain(draftState);
+    expect(host.textContent).not.toContain(unsaved);
+    expect(host.querySelector<HTMLButtonElement>('[data-publish]')?.disabled).toBe(false);
+
+    await click('[data-publish]');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(publishFeedback);
+    expect(host.textContent).toContain(publishedState);
+    expect(host.querySelector<HTMLButtonElement>('[data-publish]')?.disabled).toBe(true);
+    expect(actions.refresh).not.toHaveBeenCalled();
+  });
+  it("refreshes authoritative QRIS data after a version conflict", async () => {
+    actions.save.mockResolvedValue({ status: "conflict", code: "stale_mutation", version: 3 });
+    await render({ query: { ...base.query, view: "qris" }, qris: { id: "qris", eventId: "cup", source: "event", version: 2, status: "draft", qrisImageUrl: "/event-payment-qris/q.png", instructions: "Pay here" } });
+
+    await click('[data-save]');
+
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("This data has changed. Reload the latest version before trying again.");
+    expect(actions.refresh).toHaveBeenCalledOnce();
   });
   it("uploads a file, previews row selection, commits only valid selected rows and retains history", async () => {
     actions.preview.mockResolvedValue({ status: "preview_ready", batchId: "batch-1", headers: ["Team"], mapping: { columns: { teamName: 0 }, players: [] }, maxRosterSize: 1, expiresAt: "2099-01-01T00:00:00Z", items: [{ id: "valid", sourceRow: 2, teamName: "Alpha", status: "new", selected: true, issueCount: 0 }, { id: "bad", sourceRow: 3, teamName: "Beta", status: "error", selected: false, issueCount: 1 }] });

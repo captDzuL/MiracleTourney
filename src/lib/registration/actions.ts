@@ -7,14 +7,20 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireRole } from "@/lib/auth/session";
 import {
   createTeamRegistrationRequest,
+  getEventBySlug,
   registerTeam,
 } from "@/lib/platform/repository";
 import { saveCaptainRegistrationDraft } from "@/lib/registration/captain-repository";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { toSafeActionMessage } from "@/lib/security/public-error";
+import { safeEntityIdSchema } from "@/lib/security/request-guard";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 const registrationSchema = z.object({
-  eventId: z.string().trim().min(1),
+  eventId: safeEntityIdSchema,
   eventSlug: z.string().trim().regex(/^[a-z0-9-]+$/),
-  draftTeamId: z.string().trim().min(1).optional(),
+  draftTeamId: safeEntityIdSchema.optional(),
   name: z.string().trim().min(2),
   tag: z.string().trim().min(2).max(5),
   captainIgn: z.string().trim().min(2),
@@ -45,7 +51,7 @@ function registrationErrorPath(eventSlug: string, error: string) {
   return `/events/${eventSlug}/register?error=${encodeURIComponent(error)}`;
 }
 
-export async function captainRegisterEventTeamAction(formData: FormData) {
+async function captainRegisterEventTeamActionImpl(formData: FormData) {
   const captain = await requireRole("captain");
 
   if (!captain) {
@@ -63,6 +69,14 @@ export async function captainRegisterEventTeamAction(formData: FormData) {
     return redirectToActiveLocale(`/events?error=${encodeURIComponent("invalid-registration")}`);
   }
 
+  const eventId = safeEntityIdSchema.safeParse(formData.get("eventId"));
+  if (!eventId.success) {
+    return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
+  }
+  if (!(await checkRateLimit(`registration:${captainId}:${eventId.data}`, 5, 15 * 60 * 1000))) {
+    return redirectToActiveLocale(registrationErrorPath(safeSlug, "rate-limited"));
+  }
+
   const parsed = registrationSchema.safeParse({
     eventId: formData.get("eventId"),
     eventSlug: safeSlug,
@@ -77,6 +91,32 @@ export async function captainRegisterEventTeamAction(formData: FormData) {
   if (!parsed.success) {
     return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
   }
+
+  const registrationText = [
+    parsed.data.name,
+    parsed.data.tag,
+    parsed.data.captainIgn,
+    parsed.data.captainUid,
+    parsed.data.captainContact,
+    ...getStringValues(formData, "playerIgn"),
+    ...getStringValues(formData, "playerUid"),
+    ...getStringValues(formData, "playerPosition"),
+  ];
+  if (registrationText.some((value) => /[<>]/.test(value))) {
+    return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
+  }
+
+  const event = await getEventBySlug(safeSlug);
+  if (!event || event.id !== parsed.data.eventId) {
+    return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
+  }
+
+  const access = authorizeWorkspaceResource(
+    { id: captainId, role: "captain" } satisfies WorkspaceActor,
+    { eventId: parsed.data.eventId, ownerUserId: captainId },
+    null,
+  );
+  if (!access.ok) return redirectToActiveLocale(registrationErrorPath(safeSlug, "invalid-registration"));
 
   const playerIgn = getStringValues(formData, "playerIgn");
   const playerUid = getStringValues(formData, "playerUid");
@@ -134,7 +174,7 @@ export async function captainRegisterEventTeamAction(formData: FormData) {
     }
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Pendaftaran gagal disimpan.";
+    const message = toSafeActionMessage(error, "Pendaftaran gagal disimpan.");
     return redirectToActiveLocale(registrationErrorPath(safeSlug, message));
   }
 
@@ -145,4 +185,8 @@ export async function captainRegisterEventTeamAction(formData: FormData) {
   redirectToActiveLocale(
     `/events/${safeSlug}/register?${successPath}`,
   );
+}
+
+export async function captainRegisterEventTeamAction(formData: FormData) {
+  return withServerActionLog("captain_registration", "/server-actions/registration/captain", () => captainRegisterEventTeamActionImpl(formData));
 }

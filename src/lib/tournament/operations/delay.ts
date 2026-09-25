@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { recalculateSchedule } from "../scheduling";
 import type { ParsedCommand } from "./schema";
 import { eventMatch, isTerminal, json, matchSnapshot, readGraph, type StoredSchedule } from "./state";
+import { CompetitionExpectedError } from "./errors";
 
 export async function applyDelay(tx: Prisma.TransactionClient, eventId: string, actorId: string, command: Extract<ParsedCommand, { kind: "delay_preview" }>, version: number, idempotencyKey: string) {
   const graph = await readGraph(tx, eventId);
@@ -11,7 +12,7 @@ export async function applyDelay(tx: Prisma.TransactionClient, eventId: string, 
   const actionable = revisions.filter(r => r.status === "draft" && r.version > (event.publishedScheduleVersion ?? -1)).sort((a, b) => b.version - a.version)[0];
   const source = command.sourceRevision;
   const revision = source && revisions.find(r => r.id === source.id && r.version === source.version && r.status === source.status);
-  if (!source || !revision || source.version >= version || (source.status === "draft" ? actionable?.id !== source.id : actionable || event.publishedScheduleVersion !== source.version)) throw new Error("Schedule source revision is stale: reload the current preview");
+  if (!source || !revision || source.version >= version || (source.status === "draft" ? actionable?.id !== source.id : actionable || event.publishedScheduleVersion !== source.version)) throw new CompetitionExpectedError("conflict", "Schedule source revision is stale: reload the current preview");
   const stored = revision.snapshot as unknown as StoredSchedule;
   const original = stored.draft.assignments.find(a => a.matchId === match.id);
   if (!stored.input || !original || event.publishedScheduleVersion == null) throw new Error("Publish an initial schedule before reviewing a delay");

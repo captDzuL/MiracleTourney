@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
   redirect: vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`); }),
+  checkRateLimit: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
@@ -33,20 +34,43 @@ vi.mock("@/lib/platform/repository", () => ({
 vi.mock("@/lib/actions", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath, revalidateTag: mocks.revalidateTag }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 
 import {
+  applyPublishedEventRevisionAction,
   createPublishedRevisionPreviewAction,
+  discardPublishedEventRevisionAction,
+  revokePublishedRevisionPreviewAction,
   savePublishedEventRevisionAction,
+  uploadPublishedRevisionVisualAction,
   updatePublishedEventSlugAction,
 } from "./event-revision-actions";
 
 const organizer = { id: "organizer-1", role: "organizer", name: "Organizer", email: "org@example.com", mustChangePassword: false };
 const mutationId = "11111111-1111-4111-8111-111111111111";
+const ownedRevision = {
+  id: "revision-1",
+  eventId: "event-1",
+  status: "Draft",
+  revision: 1,
+  event: { organizerUserId: "organizer-1" },
+};
+
+describe("event revision identifier boundary", () => {
+  it("rejects traversal revision ids before loading a revision", async () => {
+    mocks.requireAnyRole.mockResolvedValue(organizer);
+
+    await expect(applyPublishedEventRevisionAction({ revisionId: "../secrets" })).rejects.toThrow();
+    expect(mocks.getEventEditRevision).not.toHaveBeenCalled();
+  });
+});
 
 describe("published event revision actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAnyRole.mockResolvedValue(organizer);
+    mocks.getEventEditRevision.mockResolvedValue(ownedRevision);
+    mocks.checkRateLimit.mockReturnValue(true);
   });
 
   it("passes the authenticated organizer actor to the owner-scoped autosave service", async () => {
@@ -66,6 +90,49 @@ describe("published event revision actions", () => {
       mutationId,
       patch: { description: "Private update" },
     });
+  });
+
+  it("denies a revision whose resolved parent event belongs to another organizer", async () => {
+    mocks.getEventEditRevision.mockResolvedValue({
+      ...ownedRevision,
+      eventId: "event-other",
+      event: { organizerUserId: "organizer-other" },
+    });
+
+    await expect(savePublishedEventRevisionAction({
+      eventId: "revision-1",
+      expectedRevision: 1,
+      mutationId,
+      draft: { description: "Private update" },
+    })).rejects.toThrow("Not authorized");
+    expect(mocks.saveEventEditRevision).not.toHaveBeenCalled();
+  });
+
+  it("denies apply for a revision whose resolved parent event belongs to another organizer", async () => {
+    mocks.getEventEditRevision.mockResolvedValue({
+      ...ownedRevision,
+      eventId: "event-other",
+      event: { organizerUserId: "organizer-other" },
+    });
+
+    await expect(applyPublishedEventRevisionAction({ revisionId: "revision-1" })).rejects.toThrow("Not authorized");
+    expect(mocks.applyEventEditRevision).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["discard", () => discardPublishedEventRevisionAction({ revisionId: "revision-b" }), mocks.discardEventEditRevision],
+    ["preview create", () => createPublishedRevisionPreviewAction({ revisionId: "revision-b", locale: "en" }), mocks.createEventRevisionPreviewToken],
+    ["preview revoke", () => revokePublishedRevisionPreviewAction({ revisionId: "revision-b" }), mocks.revokeEventRevisionPreviewTokens],
+  ] as const)("denies a manipulated %s revision ID before the service can read or write", async (_label, call, service) => {
+    mocks.getEventEditRevision.mockResolvedValue({
+      ...ownedRevision,
+      id: "revision-b",
+      eventId: "event-other",
+      event: { organizerUserId: "organizer-other" },
+    });
+
+    await expect(call()).rejects.toThrow("Not authorized");
+    expect(service).not.toHaveBeenCalled();
   });
 
   it("blocks a new organizer until the temporary password has been replaced", async () => {
@@ -91,6 +158,39 @@ describe("published event revision actions", () => {
       revisionId: "revision-1",
       actor: { id: "organizer-1", role: "organizer" },
     });
+  });
+
+  it("denies revision visual uploads when the supplied event does not match the resolved parent", async () => {
+    mocks.getEventEditRevision.mockResolvedValue(ownedRevision);
+    mocks.uploadImageAsset.mockResolvedValue({ url: "https://blob.example.com/foreign.png" });
+
+    const formData = new FormData();
+    formData.set("eventId", "event-other");
+    formData.set("revisionId", "revision-1");
+    formData.set("locale", "id");
+    formData.set("kind", "logo");
+    formData.set("revisionLogo", new File(["image"], "logo.png", { type: "image/png" }));
+
+    await expect(uploadPublishedRevisionVisualAction(formData)).rejects.toThrow("Not authorized");
+    expect(mocks.uploadImageAsset).not.toHaveBeenCalled();
+    expect(mocks.createEventVisualAsset).not.toHaveBeenCalled();
+  });
+
+  it("blocks a rate-limited revision visual upload before storage or revision writes", async () => {
+    mocks.checkRateLimit.mockReturnValue(false);
+    const formData = new FormData();
+    formData.set("eventId", "event-1");
+    formData.set("revisionId", "revision-1");
+    formData.set("locale", "id");
+    formData.set("kind", "logo");
+    formData.set("revisionLogo", new File(["image"], "logo.png", { type: "image/png" }));
+
+    await expect(uploadPublishedRevisionVisualAction(formData)).rejects.toThrow(
+      "REDIRECT:/id/organizer/events/event-1/edit?error=rate-limited#section-public",
+    );
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith("revision-visual:organizer-1:event-1", 3, 900000);
+    expect(mocks.uploadImageAsset).not.toHaveBeenCalled();
+    expect(mocks.saveEventEditRevision).not.toHaveBeenCalled();
   });
 
   it("allows only Platform Admin to change a published slug", async () => {

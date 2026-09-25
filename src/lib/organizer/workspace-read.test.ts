@@ -4,7 +4,7 @@ vi.mock("@/lib/platform/db", () => ({ prisma: { event: { findFirst } } }));
 import { readOrganizerWorkspaceSummary } from "./workspace-read";
 
 const row = {
-  id: "cup", name: "Miracle Cup", gameId: "mlbb", format: "Single Elimination", status: "Ongoing",
+  id: "cup", organizerUserId: "owner", name: "Miracle Cup", gameId: "mlbb", format: "Single Elimination", status: "Ongoing",
   publishedAt: new Date("2026-09-01T00:00:00Z"), updatedAt: new Date("2026-09-14T10:00:00Z"),
   publishedScheduleVersion: null, completion: null,
   _count: { teams: 16, teamRegistrationRequests: 3, matches: 2, statSubmissions: 4, competitionActionItems: 1 },
@@ -54,7 +54,13 @@ describe("readOrganizerWorkspaceSummary", () => {
     vi.stubEnv("FEATURE_FLAG_COMPETITION_OPERATIONS_V3", "false");
     vi.stubEnv("FEATURE_FLAG_COMPLETION_WORKSPACE_V3", "false");
     const view = await readOrganizerWorkspaceSummary("cup", { id: "owner", role: "organizer" });
-    expect(view?.capabilities).toEqual({ overview: true, registration: true, participants: false, competition: false, schedule: false, "match-control": false, completion: false, announcements: false, settings: false });
+    expect(view?.capabilities).toEqual({ overview: true, registration: true, participants: false, competition: false, schedule: false, "match-control": false, completion: false, announcements: true, settings: true });
     expect(view?.blockers.every(b => view.capabilities[b.section])).toBe(true);
+  });
+
+  it("exposes announcements and settings because their physical event routes exist", async () => {
+    const view = await readOrganizerWorkspaceSummary("cup", { id: "owner", role: "organizer" });
+    expect(view?.capabilities.announcements).toBe(true);
+    expect(view?.capabilities.settings).toBe(true);
   });
 });

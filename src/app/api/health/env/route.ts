@@ -1,45 +1,35 @@
 import { NextResponse } from "next/server";
-
-const DEFAULT_JWT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32chars-min";
+import { requireRole } from "@/lib/auth/session";
+import { requireSameOrigin } from "@/lib/security/request-guard";
+import { getRequestId, withRouteLog } from "@/lib/observability/logger";
 
 export const dynamic = "force-dynamic";
 
-function getJwtSecretStatus() {
-  const secret = process.env.JWT_SECRET?.trim() ?? "";
-
-  if (!secret) {
-    return {
-      status: "missing",
-      isConfigured: false,
-      length: 0,
-    };
-  }
-
-  if (secret === DEFAULT_JWT_SECRET) {
-    return {
-      status: "default",
-      isConfigured: false,
-      length: secret.length,
-    };
-  }
-
-  return {
-    status: "set",
-    isConfigured: true,
-    length: secret.length,
-  };
+export function GET(): Promise<Response>;
+export function GET(request: Request): Promise<Response>;
+export async function GET(request?: Request) {
+  const resolvedRequest = request ?? new Request("http://localhost/api/health/env");
+  return withRouteLog(resolvedRequest, "api_health_env", (tracedRequest) => handleGet(tracedRequest));
 }
 
-export async function GET() {
+async function handleGet(request: Request) {
+  const originFailure = requireSameOrigin(request);
+  if (originFailure) return originFailure;
+  const requestId = getRequestId(request);
+  const privateHeaders = { "Cache-Control": "no-store, max-age=0", "Vary": "Cookie" };
+
+  let user;
+  try {
+    user = await requireRole("platform_admin");
+  } catch {
+    return NextResponse.json({ code: "internal_error", requestId }, { status: 500, headers: privateHeaders });
+  }
+  if (!user) return NextResponse.json({ code: "forbidden", requestId }, { status: 403, headers: privateHeaders });
   return NextResponse.json(
-    {
-      jwtSecret: getJwtSecretStatus(),
-      nodeEnv: process.env.NODE_ENV ?? "unknown",
-      vercelEnv: process.env.VERCEL_ENV ?? "unknown",
-    },
+    { status: "ok" },
     {
       headers: {
-        "Cache-Control": "no-store, max-age=0",
+        ...privateHeaders,
         "X-Robots-Tag": "noindex, nofollow, noarchive",
       },
     },

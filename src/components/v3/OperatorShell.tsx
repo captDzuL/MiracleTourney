@@ -30,7 +30,7 @@ export function OperatorShell({ actions, children, footer, homeHref, mobileMenuL
     </header>
     <div className="mx-auto grid w-full max-w-[var(--content-width-operator)] flex-1 min-[980px]:grid-cols-[var(--sidebar-width-operator)_minmax(0,1fr)]">
       <aside className="hidden border-r border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4 min-[980px]:block"><ShellNavigation navigation={navigation} label={t("operatorNavigation")} /></aside>
-      <main className="min-w-0 scroll-mt-24 px-4 py-6 min-[620px]:px-6 min-[980px]:px-8" id="main-content" tabIndex={-1}>{children}</main>
+      <main className="min-w-0 scroll-mt-24 px-4 py-6 min-[620px]:px-6 min-[980px]:px-8 [&_:focus-visible]:scroll-m-24" id="main-content" tabIndex={-1}>{children}</main>
     </div>
     {footer}
   </div>;

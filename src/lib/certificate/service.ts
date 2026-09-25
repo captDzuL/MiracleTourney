@@ -5,6 +5,8 @@ import { MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3Cert
 import { prisma } from "@/lib/platform/db";
 import { getCertificateByEvent } from "@/lib/platform/repository";
 import { z } from "zod";
+import { safeEntityIdSchema } from "@/lib/security/request-guard";
+import { redactIdentifier, writeServerLog } from "@/lib/observability/logger";
 
 export type CertificateNotReadyReason =
   | "final-not-completed"
@@ -111,14 +113,46 @@ const defaultDependencies: CertificateGenerationDependencies = {
  * Resolve the completed Final winner on the server and generate its certificate.
  * This is the single entry point used by automatic generation and manual retries.
  */
+export function generateCertificateForEvent(
+  eventId: string,
+  locale: "id" | "en",
+  dependencies?: CertificateGenerationDependencies,
+): Promise<CertificateGenerationResult>;
+export function generateCertificateForEvent(
+  eventId: string,
+  dependencies: CertificateGenerationDependencies,
+): Promise<CertificateGenerationResult>;
+export function generateCertificateForEvent(
+  eventId: string,
+  dependencies: CertificateGenerationDependencies,
+  locale: "id" | "en",
+): Promise<CertificateGenerationResult>;
 export async function generateCertificateForEvent(
   eventId: string,
-  dependencies: CertificateGenerationDependencies = defaultDependencies,
+  localeOrDependencies: "id" | "en" | CertificateGenerationDependencies,
+  dependenciesOrLocale?: CertificateGenerationDependencies | "id" | "en",
 ): Promise<CertificateGenerationResult> {
+  let locale: "id" | "en" | undefined;
+  let dependencies: CertificateGenerationDependencies;
+  if (typeof localeOrDependencies === "string") {
+    locale = localeOrDependencies;
+    dependencies = typeof dependenciesOrLocale === "object"
+      ? dependenciesOrLocale
+      : defaultDependencies;
+  } else {
+    dependencies = localeOrDependencies;
+    locale = typeof dependenciesOrLocale === "string"
+      ? dependenciesOrLocale
+      : undefined;
+  }
+
   if (await dependencies.findV3Completion(eventId)) {
+    if (typeof locale !== "string") {
+      throw new Error("Route locale is required to build the Certificate Studio URL");
+    }
     return {
       status: "studio-required",
-      studioHref: `/organizer/events/${eventId}/certificates`,
+      studioHref: `/${locale}/organizer/events/${eventId}/certificates`,
     };
   }
   const finalMatch = await dependencies.findCompletedFinal(eventId);
@@ -179,10 +213,33 @@ export async function generateCertificateForEvent(
  * Automatic trigger guard: only a completed Final with a winner may start the
  * event-level service. Manual retries call generateCertificateForEvent directly.
  */
+export function generateCertificateIfFinal(
+  matchId: string,
+  eventId: string,
+): Promise<CertificateGenerationResult>;
+export function generateCertificateIfFinal(
+  matchId: string,
+  eventId: string,
+  dependencies: CertificateGenerationDependencies,
+): Promise<CertificateGenerationResult>;
+export function generateCertificateIfFinal(
+  matchId: string,
+  eventId: string,
+  locale: "id" | "en" | undefined,
+  dependencies?: CertificateGenerationDependencies,
+): Promise<CertificateGenerationResult>;
 export async function generateCertificateIfFinal(
   matchId: string,
   eventId: string,
+  localeOrDependencies?: "id" | "en" | CertificateGenerationDependencies,
+  dependencies?: CertificateGenerationDependencies,
 ): Promise<CertificateGenerationResult> {
+  const locale = typeof localeOrDependencies === "string"
+    ? localeOrDependencies
+    : undefined;
+  const generationDependencies = typeof localeOrDependencies === "object"
+    ? localeOrDependencies
+    : dependencies ?? defaultDependencies;
   const triggerMatch = await prisma.match.findFirst({
     where: {
       id: matchId,
@@ -201,7 +258,9 @@ export async function generateCertificateIfFinal(
     };
   }
 
-  return generateCertificateForEvent(eventId);
+  return locale
+    ? generateCertificateForEvent(eventId, locale, generationDependencies)
+    : generateCertificateForEvent(eventId, generationDependencies);
 }
 
 export const CERTIFICATE_ASSET_LIMITS = Object.freeze({
@@ -299,7 +358,7 @@ export function validateCertificateAssetPlacement(
   return within ? { success: true } : { success: false, code: "out_of_zone" };
 }
 
-const idSchema = z.string().trim().min(1).max(200);
+const idSchema = safeEntityIdSchema;
 const idempotencySchema = z.string().uuid();
 const placementSchema = z.object({
   assetKind: z.enum(["team_logo_hero", "team_logo_badge", "character_art"]),
@@ -353,15 +412,19 @@ export type RegenerateCertificateResult =
   | { readonly status: "failed"; readonly code: "generation_failed"; readonly certificateId: string; readonly certificateType: MiracleV3CertificateType; readonly version: number }
   | { readonly status: "generation_in_progress"; readonly certificateId: string; readonly certificateType: MiracleV3CertificateType; readonly version: number }
   | { readonly status: "already_applied"; readonly result: RegenerateCertificateResult }
-  | { readonly status: "blocked"; readonly code: "invalid_input" | "unauthorized" | "password_change_required" | "forbidden" | "feature_disabled" | "completion_required" | "invalid_asset" | "required_logo_unavailable" }
+  | { readonly status: "blocked"; readonly code: "invalid_input" | "unauthorized" | "password_change_required" | "forbidden" | "feature_disabled" | "rate_limited" | "completion_required" | "invalid_asset" | "required_logo_unavailable" }
   | { readonly status: "conflict"; readonly code: "stale_version" | "idempotency_key_reused"; readonly version: number }
   | { readonly status: "integration_required" };
 export type PublishCertificateSetResult =
   | { readonly status: "published"; readonly publicationVersion: number; readonly publishedAt: string }
   | { readonly status: "already_applied"; readonly result: PublishCertificateSetResult }
-  | { readonly status: "blocked"; readonly code: "invalid_input" | "unauthorized" | "password_change_required" | "forbidden" | "feature_disabled" | "completion_required" | "set_not_ready" }
+  | { readonly status: "blocked"; readonly code: "invalid_input" | "unauthorized" | "password_change_required" | "forbidden" | "feature_disabled" | "rate_limited" | "completion_required" | "set_not_ready" }
   | { readonly status: "conflict"; readonly code: "stale_version" | "stale_certificate_revision" | "idempotency_key_reused"; readonly version: number }
   | { readonly status: "integration_required" };
+export type CertificatePublicationActionResult =
+  | { readonly status: "published"; readonly revision: number; readonly publishedAt: string }
+  | { readonly status: "already_applied"; readonly result: CertificatePublicationActionResult }
+  | Exclude<PublishCertificateSetResult, { readonly status: "published" | "already_applied" }>;
 export type CertificateStudioMutation =
   | { readonly status: "terminal"; readonly fingerprint: string; readonly actorId: string; readonly result: RegenerateCertificateResult | PublishCertificateSetResult }
   | { readonly status: "in_progress"; readonly fingerprint: string; readonly actorId: string; readonly stale: boolean; readonly updatedAt: string; readonly certificateId: string; readonly certificateType: MiracleV3CertificateType; readonly version: number };
@@ -384,6 +447,19 @@ export interface CertificateStudioDependencies {
 }
 
 function mutationFingerprint(value: object): string { return JSON.stringify(value); }
+
+function logCertificateFailure(operation: string, errorCode: string, requestId: string, resourceId: string) {
+  writeServerLog({
+    phase: "failed",
+    operation,
+    route: "certificate-service",
+    requestId: redactIdentifier(requestId),
+    durationMs: 0,
+    status: 500,
+    errorCode,
+    resourceId: redactIdentifier(resourceId),
+  });
+}
 
 export async function regenerateCertificate(input: unknown, dependencies: CertificateStudioDependencies): Promise<RegenerateCertificateResult> {
   const parsed = regenerateCertificateInputSchema.safeParse(input);
@@ -448,8 +524,8 @@ export async function regenerateCertificate(input: unknown, dependencies: Certif
       return { status: "generation_in_progress", certificateId: prepared.record.id,
         certificateType: prepared.record.certificateType, version: prepared.record.version };
     }
-    catch (persistenceError) {
-      console.error("Certificate failure mutation persistence failed", { certificateId: prepared.record.id, leaseToken: prepared.leaseToken, primaryError: error, persistenceError });
+    catch {
+      logCertificateFailure("certificate_mutation_finalize", "certificate_failure_finalization_failed", value.idempotencyKey, prepared.record.id);
       return { status: "generation_in_progress", certificateId: prepared.record.id,
         certificateType: prepared.record.certificateType, version: prepared.record.version };
     }
@@ -460,8 +536,8 @@ export async function regenerateCertificate(input: unknown, dependencies: Certif
     const finalized = await dependencies.transaction(value.eventId, async (tx) => tx.finalizeMutation(value.idempotencyKey, prepared.leaseToken, result));
     if (finalized.status === "finalized") return result;
     if (finalized.result) return { status: "already_applied", result: finalized.result };
-  } catch (persistenceError) {
-    console.error("Certificate success mutation persistence failed", { certificateId: prepared.record.id, leaseToken: prepared.leaseToken, persistenceError });
+  } catch {
+    logCertificateFailure("certificate_mutation_finalize", "certificate_success_finalization_failed", value.idempotencyKey, prepared.record.id);
   }
   return { status: "generation_in_progress", certificateId: prepared.record.id,
     certificateType: prepared.record.certificateType, version: prepared.record.version };
@@ -528,7 +604,14 @@ export function createMiracleV3GenerationAdapter(
     recordSuccess: (result) => repository.recordSuccess(result),
     recordFailure: async (result) => {
       try { await repository.recordFailure(result); }
-      catch (error) { console.error("Certificate failure persistence failed", { ...result.identity, attemptId: result.attemptId, error }); }
+      catch {
+        logCertificateFailure(
+          "certificate_generation_failure_persist",
+          "certificate_failure_persistence_failed",
+          result.attemptId,
+          `${result.identity.eventId}:${result.identity.recipientId}:${result.identity.certificateType}`,
+        );
+      }
     },
   };
 }

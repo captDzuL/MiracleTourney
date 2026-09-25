@@ -165,6 +165,7 @@ import {
   getPublicVisibleBracketPreview,
   commitRegistrationImportBatch,
   getRegistrationRecordsForEvent,
+  getRegistrationImportBatchesForEvent,
   getRegistrationImportHistoryForEvent,
   getPaymentReviewForEvent,
   getRegistrationImportEventContext,
@@ -896,13 +897,205 @@ describe("event-local registration workspace repository", () => {
       committedAt: new Date("2026-09-10T00:00:00.000Z"),
       createdAt: new Date("2026-09-10T00:00:00.000Z"),
       updatedAt: new Date("2026-09-10T00:00:00.000Z"),
-      items: [{ id: "item-1", status: "imported", teamId: "team-1" }],
+      _count: { items: 1 },
     }]);
 
     await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1")).resolves.toEqual([
       expect.objectContaining({ id: "batch-1", eventId: "event-1", itemCount: 1 }),
     ]);
-    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: "event-1" } }));
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { eventId: "event-1" },
+      select: expect.objectContaining({ _count: { select: { items: true } } }),
+    }));
+  });
+
+  it("rejects import-batch item overflow above the accepted 512-row import cap", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue([{
+      id: "batch-1",
+      eventId: "event-1",
+      items: Array.from({ length: 513 }, (_, index) => ({ id: `item-${index + 1}`, status: "new", teamId: null })),
+    }]);
+
+    await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 512 });
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ items: expect.objectContaining({ take: 513 }) }),
+    }));
+  });
+
+  it("supports exactly 512 stored import-batch items", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue([{
+      id: "batch-1",
+      eventId: "event-1",
+      items: Array.from({ length: 512 }, (_, index) => ({ id: `item-${index + 1}`, status: "new", teamId: null })),
+    }]);
+
+    await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
+      .resolves.toHaveLength(1);
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ items: expect.objectContaining({ take: 513 }) }),
+    }));
+  });
+
+  it("returns the latest eight import batches when a ninth historical batch exists", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue(Array.from({ length: 9 }, (_, index) => ({
+      id: `batch-${index + 1}`,
+      eventId: "event-1",
+      items: [],
+    })));
+
+    await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
+      .resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: "batch-1" }),
+        expect.objectContaining({ id: "batch-8" }),
+      ]));
+    await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
+      .resolves.toHaveLength(8);
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      take: 9,
+      include: expect.objectContaining({ items: expect.objectContaining({ take: 513 }) }),
+    }));
+  });
+
+  it("supports exactly the import-batch outer cap independently of nested items", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue(Array.from({ length: 8 }, (_, index) => ({
+      id: `batch-${index + 1}`,
+      eventId: "event-1",
+      items: [],
+    })));
+
+    await expect(getRegistrationImportBatchesForEvent(platformAdmin, "event-1"))
+      .resolves.toHaveLength(8);
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 9 }));
+  });
+
+  it("returns the latest 100 import-history batches when older history exists", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue(Array.from({ length: 101 }, (_, index) => ({
+      id: `batch-${index + 1}`,
+      eventId: "event-1",
+      sourceKind: "xlsx",
+      sourceLabel: "teams.xlsx",
+      worksheetName: "Sheet1",
+      status: "committed",
+      summary: {},
+      expiresAt: new Date("2026-09-20T00:00:00.000Z"),
+      committedAt: null,
+      createdAt: new Date("2026-09-10T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-10T00:00:00.000Z"),
+      _count: { items: 0 },
+    })));
+    await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1"))
+      .resolves.toHaveLength(100);
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      take: 101,
+      select: expect.objectContaining({ _count: { select: { items: true } } }),
+    }));
+  });
+
+  it("supports exactly 100 import-history batches independently of nested items", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue(Array.from({ length: 100 }, (_, index) => ({
+      id: `batch-${index + 1}`,
+      eventId: "event-1",
+      sourceKind: "xlsx",
+      sourceLabel: "teams.xlsx",
+      worksheetName: "Sheet1",
+      status: "committed",
+      summary: {},
+      expiresAt: new Date("2026-09-20T00:00:00.000Z"),
+      committedAt: null,
+      createdAt: new Date("2026-09-10T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-10T00:00:00.000Z"),
+      _count: { items: 0 },
+    })));
+
+    await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1"))
+      .resolves.toHaveLength(100);
+  });
+
+  it("uses the stored item count without loading nested import-history items", async () => {
+    prisma.registrationImportBatch.findMany.mockResolvedValue([{
+      id: "batch-1",
+      eventId: "event-1",
+      sourceKind: "xlsx",
+      sourceLabel: "teams.xlsx",
+      worksheetName: "Sheet1",
+      status: "committed",
+      summary: {},
+      expiresAt: new Date("2026-09-20T00:00:00.000Z"),
+      committedAt: null,
+      createdAt: new Date("2026-09-10T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-10T00:00:00.000Z"),
+      _count: { items: 512 },
+    }]);
+
+    await expect(getRegistrationImportHistoryForEvent(platformAdmin, "event-1"))
+      .resolves.toEqual([expect.objectContaining({ itemCount: 512, items: [] })]);
+    expect(prisma.registrationImportBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ _count: { select: { items: true } } }),
+    }));
+  });
+
+  it("rejects import-context team and nested player overflow independently", async () => {
+    const team = (index: number, players: number) => ({
+      id: `team-${index}`,
+      name: `Team ${index}`,
+      tag: `T${index}`,
+      captainName: "Captain",
+      captainContact: "081",
+      players: Array.from({ length: players }, (_, playerIndex) => ({ nickname: `p-${playerIndex}`, displayName: `Player ${playerIndex}`, position: "Forward" })),
+    });
+    prisma.event.findUnique.mockResolvedValue({
+      id: "event-1", slug: "event", name: "Event", gameModeId: "mode", participantCap: 500, format: "Single Elimination",
+      teams: Array.from({ length: 501 }, (_, index) => team(index + 1, 0)),
+    });
+    await expect(getRegistrationImportEventContext(platformAdmin, "event-1"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 500 });
+    expect(prisma.event.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ teams: expect.objectContaining({ take: 501, select: expect.objectContaining({ players: expect.objectContaining({ take: 501 }) }) }) }),
+    }));
+
+    prisma.event.findUnique.mockResolvedValue({
+      id: "event-1", slug: "event", name: "Event", gameModeId: "mode", participantCap: 1, format: "Single Elimination",
+      teams: [team(1, 501)],
+    });
+    await expect(getRegistrationImportEventContext(platformAdmin, "event-1"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 500 });
+  });
+
+  it("supports exactly 500 import-context teams independently of nested players", async () => {
+    const team = (index: number) => ({
+      id: `team-${index}`,
+      name: `Team ${index}`,
+      tag: `T${index}`,
+      captainName: "Captain",
+      captainContact: "081",
+      players: [],
+    });
+    prisma.event.findUnique.mockResolvedValue({
+      id: "event-1", slug: "event", name: "Event", gameModeId: "mode", participantCap: 500, format: "Single Elimination",
+      teams: Array.from({ length: 500 }, (_, index) => team(index + 1)),
+    });
+
+    const result = await getRegistrationImportEventContext(platformAdmin, "event-1");
+    expect(result?.teams).toHaveLength(500);
+  });
+
+  it("supports exactly 500 import-context players independently of outer teams", async () => {
+    prisma.event.findUnique.mockResolvedValue({
+      id: "event-1", slug: "event", name: "Event", gameModeId: "mode", participantCap: 1, format: "Single Elimination",
+      teams: [{
+        id: "team-1",
+        name: "Team 1",
+        tag: "T1",
+        captainName: "Captain",
+        captainContact: "081",
+        players: Array.from({ length: 500 }, (_, index) => ({ nickname: `p-${index}`, displayName: `Player ${index}`, position: "Forward" })),
+      }],
+    });
+
+    const result = await getRegistrationImportEventContext(platformAdmin, "event-1");
+    expect(result?.teams).toHaveLength(1);
+    expect(result?.teams[0]?.players).toHaveLength(500);
   });
 
   it("reads payment proofs only for the event and requested review status", async () => {
@@ -928,6 +1121,66 @@ describe("event-local registration workspace repository", () => {
     ]);
     expect(prisma.teamRegistrationRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { eventId: "event-1", status: "pending_review" },
+    }));
+  });
+
+  it("rejects registration-reader overflow even when the delegate ignores take", async () => {
+    prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
+    prisma.event.findUnique.mockResolvedValue({ id: "event-1" });
+    const teams = Array.from({ length: 501 }, (_, index) => ({
+      id: `team-${index + 1}`,
+      eventId: "event-1",
+      name: `Team ${index + 1}`,
+      tag: `T${index + 1}`,
+      source: "registration-intake",
+      captainId: "captain-1",
+      captainName: "Captain",
+      captainContact: "081",
+      captainIgn: null,
+      captainUid: null,
+      captainIsPlayer: true,
+      createdAt: new Date("2026-09-10T00:00:00.000Z"),
+      players: [],
+      captain: { id: "captain-1", name: "Captain", email: "captain@example.com" },
+    }));
+    prisma.team.findMany.mockResolvedValue(teams);
+    prisma.teamRegistrationRequest.findMany.mockResolvedValue([]);
+    prisma.registrationImportItem.findMany.mockResolvedValue([]);
+
+    await expect(getRegistrationRecordsForEvent(organizer, "event-1"))
+      .rejects.toMatchObject({ name: "ReaderResultOverflowError", limit: 500 });
+    expect(prisma.team.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      take: 501,
+      include: expect.objectContaining({ players: expect.objectContaining({ take: 501 }) }),
+    }));
+
+    prisma.team.findMany.mockResolvedValue(teams.slice(0, 500));
+    await expect(getRegistrationRecordsForEvent(organizer, "event-1")).resolves.toHaveLength(500);
+  });
+
+  it("detects payment-review overflow instead of silently truncating the capped list", async () => {
+    prisma.teamRegistrationRequest.updateMany.mockResolvedValue({ count: 0 });
+    prisma.teamRegistrationRequest.findMany.mockResolvedValue(Array.from({ length: 101 }, (_, index) => ({
+      id: `request-${index + 1}`,
+      eventId: "event-1",
+      captainId: "captain-1",
+      teamId: null,
+      teamName: `Proof Team ${index + 1}`,
+      teamTag: `PR${index + 1}`,
+      status: "pending_review",
+      proofImageUrl: null,
+      rejectReason: null,
+      expiresAt: new Date("2026-09-20T00:00:00.000Z"),
+      createdAt: new Date(2026, 0, index + 1),
+      updatedAt: new Date(2026, 0, index + 1),
+      captain: { id: "captain-1", name: "Captain", email: "captain@example.com" },
+    })));
+
+    await expect(getPaymentReviewForEvent(organizer, "event-1", "pending_review"))
+      .rejects.toThrow(/payment review.*more than|overflow/i);
+    expect(prisma.teamRegistrationRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: expect.any(Number),
     }));
   });
 
@@ -2382,8 +2635,20 @@ describe("authoritative player-stat write boundary", () => {
   });
   it("rejects foreign event readers before fetching sensitive statistics",async()=>{
     prisma.user.findUnique.mockResolvedValue({id:"stranger",role:"organizer"});
-    await expect(readEventMatchStatistics("event-1","match-1","stranger")).rejects.toThrow("authorized");
+    await expect(readEventMatchStatistics("event-1","match-b","stranger")).rejects.toThrow("authorized");
+    expect(prisma.match.findFirst).not.toHaveBeenCalled();
     expect(prisma.statSubmission.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns a generic missing result for a manipulated match ID before nested reads", async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: "admin-1", role: "admin", mustChangePassword: false });
+    prisma.event.findUnique.mockResolvedValue({ id: "event-1", organizerUserId: "owner-1", competitionVersion: 7 });
+    prisma.match.findFirst.mockResolvedValue(null);
+
+    await expect(readEventMatchStatistics("event-1", "match-b", "admin-1")).rejects.toThrow("Match not found");
+    expect(prisma.statSubmission.findMany).not.toHaveBeenCalled();
+    expect(prisma.player.findMany).not.toHaveBeenCalled();
+    expect(prisma.matchResultRevision.findMany).not.toHaveBeenCalled();
   });
 
   it("rejects a captain calling the organizer repository directly", async () => {
@@ -2409,6 +2674,15 @@ describe("authoritative player-stat write boundary", () => {
     expect(prisma.statSubmission.updateMany).not.toHaveBeenCalled();
   });
 
+  it("returns a generic missing denial for a manipulated submission ID before any write", async () => {
+    prisma.statSubmission.findUnique.mockResolvedValue(null);
+
+    await expect(approveStatSubmission("submission-b", "admin-1", guard)).rejects.toThrow("Submission not found");
+    expect(prisma.statSubmission.updateMany).not.toHaveBeenCalled();
+    expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
+    expect(prisma.competitionAuditLog.create).not.toHaveBeenCalled();
+  });
+
   it("requires a nonblank rejection reason at the shared boundary", async () => {
     prisma.statSubmission.findUnique.mockResolvedValue(pending());
     await expect(rejectStatSubmission("submission-1", "admin-1", "  ", guard)).rejects.toThrow("reason");
@@ -2427,6 +2701,16 @@ describe("authoritative player-stat write boundary", () => {
     expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
     expect(prisma.event.updateMany).not.toHaveBeenCalled();
     await expect(adminWriteMatchPlayerStats({ ...input, stats: { "player-1": { ...canonicalStats["player-1"], goal: 4 } } })).rejects.toThrow("conflict");
+  });
+
+  it("allows the guarded player-stat transaction to finish under CI database load", async () => {
+    await adminWriteMatchPlayerStats({ matchId: "match-1", teamId: "team-1", eventId: "event-1", adminId: "admin-1", stats: canonicalStats, guard });
+
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+      maxWait: 5_000,
+      timeout: 20_000,
+    });
   });
 
   it("rejects a captain payload containing a player from another team", async () => {
@@ -2650,15 +2934,20 @@ describe("captain roster edits respect the event lifecycle", () => {
     },
   );
 
-  it("still enforces ownership before checking the event status", async () => {
+  it("still enforces ownership for a manipulated player ID before checking status or writing", async () => {
     prisma.player.findUnique.mockResolvedValue({
-      id: "player-1",
+      id: "player-b",
       team: { captainId: "other-captain", eventId: "event-1" },
     });
 
-    await expect(updatePlayer("player-1", "captain-1", { displayName: "Updated" })).rejects.toThrow(
+    await expect(updatePlayer("player-b", "captain-1", { displayName: "Updated" })).rejects.toThrow(
       "Not authorized to edit this player.",
     );
+    await expect(deletePlayer("player-b", "captain-1")).rejects.toThrow(
+      "Not authorized to delete this player.",
+    );
     expect(prisma.event.findUnique).not.toHaveBeenCalled();
+    expect(prisma.player.update).not.toHaveBeenCalled();
+    expect(prisma.player.delete).not.toHaveBeenCalled();
   });
 });

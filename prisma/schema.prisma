@@ -15,6 +15,7 @@ model User {
   role                             String
   passwordHash                     String
   tempPassword                     String?
+  sessionVersion                   Int                         @default(0)
   mustChangePassword               Boolean                     @default(false)
   deactivatedAt                    DateTime?
   organizedEvents                  Event[]                     @relation("EventOrganizer")
@@ -616,12 +617,24 @@ model CompletionAuditEntry {
 
 model PasswordResetToken {
   id        String    @id @default(cuid())
-  userId    String
+  userId    String    @unique
   token     String    @unique
+  tokenFormat String   @default("legacy_raw")
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RateLimitBucket {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  count     Int
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
 }
 
 // ── Paid Features Foundation (hidden, not exposed in UI) ─────────────────────

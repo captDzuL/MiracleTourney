@@ -14,6 +14,38 @@ type ContractState = {
   raceOnRequestClaim: boolean;
 };
 
+type MockWhereArgs = {
+  where?: Record<string, unknown>;
+  include?: Record<string, unknown>;
+  select?: Record<string, unknown>;
+  take?: number;
+  orderBy?: unknown;
+};
+type MockUpdateManyArgs = { where?: Record<string, unknown>; data: Record<string, unknown> };
+type MockUpdateArgs = { where: Record<string, unknown>; data: Record<string, unknown>; include?: Record<string, unknown> };
+type MockModel = {
+  findFirst: (args: MockWhereArgs) => Promise<Record<string, unknown> | null>;
+  findUnique: (args: MockWhereArgs) => Promise<Record<string, unknown> | null>;
+  findMany: (args: MockWhereArgs) => Promise<Array<Record<string, unknown>>>;
+  count: (args: MockWhereArgs) => Promise<number>;
+  updateMany?: (args: MockUpdateManyArgs) => Promise<{ count: number }>;
+  update?: (args: MockUpdateArgs) => Promise<Record<string, unknown>>;
+  create?: (args: { data: Record<string, unknown> }) => Promise<Record<string, unknown>>;
+};
+type MockPrisma = {
+  event: MockModel;
+  user: MockModel;
+  team: MockModel;
+  player: MockModel;
+  teamRegistrationRequest: MockModel;
+  registrationImportBatch: MockModel;
+  registrationImportItem: MockModel;
+  eventPaymentSettings: MockModel;
+  competitionPhase: MockModel;
+  match: MockModel;
+  $transaction: (callback: (transaction: MockPrisma) => Promise<unknown>) => Promise<unknown>;
+};
+
 const { state, prisma, resetState } = vi.hoisted(() => {
   const clone = <T>(value: T): T => {
     if (value instanceof Date) return new Date(value.getTime()) as T;
@@ -128,54 +160,78 @@ const { state, prisma, resetState } = vi.hoisted(() => {
     return true;
   };
 
-  const withRelations = (model: string, row: Record<string, unknown>, include: Record<string, unknown> | undefined) => {
-    const result = clone(row);
-    if (model === "team" && include?.players) {
-      result.players = state.players.filter((player) => player.teamId === row.id);
+  const selectFields = (row: Record<string, unknown>, select: Record<string, unknown> | undefined) => {
+    if (!select) return clone(row);
+    return Object.fromEntries(Object.entries(select)
+      .filter(([key, value]) => value === true && Object.prototype.hasOwnProperty.call(row, key))
+      .map(([key]) => [key, clone(row[key])]));
+  };
+
+  const withRelations = (
+    model: string,
+    row: Record<string, unknown>,
+    include: Record<string, unknown> | undefined,
+    select: Record<string, unknown> | undefined,
+  ) => {
+    const result = selectFields(row, select);
+    const relations = select ?? include;
+    if (model === "team" && relations?.players) {
+      const config = relations.players as Record<string, unknown>;
+      const playerSelect = config.select as Record<string, unknown> | undefined;
+      const players = state.players.filter((player) => player.teamId === row.id);
+      result.players = players.map((player) => selectFields(player, playerSelect));
     }
-    if (model === "team" && include?.captain) {
+    if (model === "team" && relations?.captain) {
       const captain = state.users.find((user) => user.id === row.captainId);
       result.captain = captain ? { id: captain.id, name: captain.name, email: captain.email } : null;
     }
-    if (model === "request" && include?.captain) {
+    if (model === "request" && relations?.captain) {
       const captain = state.users.find((user) => user.id === row.captainId);
       result.captain = captain ? { id: captain.id, name: captain.name, email: captain.email } : null;
     }
-    if (model === "request" && include?.event) {
+    if (model === "request" && relations?.event) {
       const event = state.events.find((item) => item.id === row.eventId);
       result.event = event ? { ...clone(event), stream: null } : null;
     }
-    if (model === "batch" && include?.items) {
+    if (model === "batch" && relations?.items) {
       result.items = state.items.filter((item) => item.batchId === row.id).map((item) => clone(item));
     }
-    if (model === "event" && include?.teams) {
-      result.teams = state.teams.filter((team) => team.eventId === row.id).map((team) => ({
-        ...clone(team),
-        players: state.players.filter((player) => player.teamId === team.id).map((player) => ({
-          nickname: player.nickname, displayName: player.displayName, position: player.position,
-        })),
-      }));
+    if (model === "batch" && relations?._count) {
+      result._count = { items: state.items.filter((item) => item.batchId === row.id).length };
+    }
+    if (model === "event" && relations?.teams) {
+      const teamConfig = relations.teams as Record<string, unknown>;
+      const teamSelect = teamConfig.select as Record<string, unknown> | undefined;
+      const playerConfig = teamSelect?.players as Record<string, unknown> | undefined;
+      const playerSelect = playerConfig?.select as Record<string, unknown> | undefined;
+      result.teams = state.teams.filter((team) => team.eventId === row.id).map((team) => {
+        const selectedTeam = selectFields(team, teamSelect);
+        selectedTeam.players = state.players
+          .filter((player) => player.teamId === team.id)
+          .map((player) => selectFields(player, playerSelect));
+        return selectedTeam;
+      });
     }
     return result;
   };
 
-  const makePrisma = (target: ContractState): Record<string, any> => {
+  const makePrisma = (target: ContractState): MockPrisma => {
     const model = (name: string, rows: () => Array<Record<string, unknown>>) => ({
-      findFirst: async (args: { where?: Record<string, unknown>; include?: Record<string, unknown> }) => {
+      findFirst: async (args: MockWhereArgs) => {
         const row = rows().find((item) => matches(item, args?.where));
-        return row ? withRelations(name, row, args?.include) : null;
+        return row ? withRelations(name, row, args?.include, args?.select) : null;
       },
-      findUnique: async (args: { where?: Record<string, unknown>; include?: Record<string, unknown> }) => {
+      findUnique: async (args: MockWhereArgs) => {
         const row = rows().find((item) => matches(item, args?.where));
-        return row ? withRelations(name, row, args?.include) : null;
+        return row ? withRelations(name, row, args?.include, args?.select) : null;
       },
-      findMany: async (args: { where?: Record<string, unknown>; include?: Record<string, unknown> }) => rows()
+      findMany: async (args: MockWhereArgs) => rows()
         .filter((item) => matches(item, args?.where))
-        .map((item) => withRelations(name, item, args?.include)),
+        .map((item) => withRelations(name, item, args?.include, args?.select)),
       count: async (args: { where?: Record<string, unknown> }) => rows().filter((item) => matches(item, args?.where)).length,
     });
 
-    const db: Record<string, any> = {
+    const db: MockPrisma = {
       event: model("event", () => target.events),
       user: model("user", () => target.users),
       team: model("team", () => target.teams),
@@ -186,6 +242,15 @@ const { state, prisma, resetState } = vi.hoisted(() => {
       eventPaymentSettings: model("payment", () => target.paymentSettings),
       competitionPhase: model("phase", () => target.competitionPhases),
       match: model("match", () => target.matches),
+      $transaction: async (callback) => {
+        const snapshot = clone(target) as ContractState;
+        const transaction = makePrisma(snapshot);
+        const result = await callback(transaction);
+        for (const key of Object.keys(target) as Array<keyof ContractState>) {
+          (target[key] as never) = clone(snapshot[key]) as never;
+        }
+        return result;
+      },
     };
 
     db.event.updateMany = async (args: { where?: Record<string, unknown>; data: Record<string, unknown> }) => {
@@ -212,7 +277,7 @@ const { state, prisma, resetState } = vi.hoisted(() => {
       const row = target.requests.find((item) => matches(item, args.where));
       if (!row) throw new Error("Request not found");
       Object.assign(row, args.data);
-      return withRelations("request", row, args.include);
+      return withRelations("request", row, args.include, undefined);
     };
     db.team.create = async (args: { data: Record<string, unknown> }) => {
       const row = {
@@ -235,15 +300,6 @@ const { state, prisma, resetState } = vi.hoisted(() => {
       for (const row of found) Object.assign(row, args.data);
       return { count: found.length };
     };
-    db.$transaction = async (callback: (transaction: Record<string, any>) => Promise<unknown>) => {
-      const snapshot = clone(target) as ContractState;
-      const transaction = makePrisma(snapshot);
-      const result = await callback(transaction);
-      for (const key of Object.keys(target) as Array<keyof ContractState>) {
-        (target[key] as never) = clone(snapshot[key]) as never;
-      }
-      return result;
-    };
     return db;
   };
 
@@ -252,7 +308,12 @@ const { state, prisma, resetState } = vi.hoisted(() => {
   return { state, prisma, resetState };
 });
 
+const { checkRateLimit } = vi.hoisted(() => ({
+  checkRateLimit: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock("../platform/db", () => ({ prisma }));
+vi.mock("../rate-limit", () => ({ checkRateLimit }));
 vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn, revalidateTag: vi.fn() }));
 
 import { parseRegistrationSource, suggestRegistrationMapping, buildRegistrationPreview } from "../imports/registration-intake";
@@ -273,7 +334,10 @@ const unrelated = { id: "organizer-2", role: "organizer" as const, email: "organ
 const admin = { id: "admin-1", role: "admin" as const, email: "admin@example.test", name: "Admin" };
 const platformAdmin = { id: "platform-1", role: "platform_admin" as const, email: "platform@example.test", name: "Platform" };
 
-beforeEach(() => resetState());
+beforeEach(() => {
+  resetState();
+  checkRateLimit.mockResolvedValue(true);
+});
 
 describe("registration V3 real-contract evidence", () => {
   it("runs the real CSV parser, mapping, validation, and event-local readers", async () => {

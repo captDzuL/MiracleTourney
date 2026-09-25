@@ -223,6 +223,14 @@ describe("CompletionWorkspace", () => {
     expect(award.querySelector('[role="radiogroup"]')?.getAttribute("aria-label")).toContain("Top Assist");
   });
 
+  it.each([
+    ["en", ["MVP Tournament", "Top Scorer", "Top Defender", "Top Assist"]],
+    ["id", ["MVP Turnamen", "Top Scorer", "Top Defender", "Top Assist"]],
+  ] as const)("renders the four localized award labels for %s", (locale, labels) => {
+    const html = staticWorkspace("ready", locale);
+    for (const label of labels) expect(html).toContain(label);
+  });
+
   it("labels podium source and lock state in text instead of color alone", () => {
     expect(staticWorkspace("blocked")).toContain("Official Grand Final and third-place match");
     expect(staticWorkspace("blocked")).toContain("Draft podium");
@@ -334,6 +342,8 @@ describe("CompletionWorkspace", () => {
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
     const completeButton = container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!;
     expect(completeButton.disabled).toBe(true);
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).toBe("completed");
+    expect(container.querySelector<HTMLButtonElement>("[data-reopen-tournament]")?.disabled).toBe(true);
     await act(async () => completeButton.click());
     expect(complete).toHaveBeenCalledTimes(1);
   });
@@ -353,6 +363,8 @@ describe("CompletionWorkspace", () => {
     await act(async () => button.click());
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
     expect(button.disabled).toBe(true);
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).toBe("completed");
+    expect(container.querySelector<HTMLButtonElement>("[data-reopen-tournament]")?.disabled).toBe(true);
     await act(async () => button.click());
     expect(complete).toHaveBeenCalledTimes(1);
 
@@ -494,6 +506,8 @@ describe("CompletionWorkspace", () => {
     expect(container.querySelector("[data-refresh-action-blocker]")?.textContent).toContain(expected);
     expect(container.querySelector("[data-refresh-action-blocker]")?.getAttribute("role")).toBeNull();
     expect(container.querySelector('[role="tabpanel"]:not([hidden])')?.textContent).not.toContain("All required gates are clear");
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).not.toBe("completed");
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).not.toBe("reopened");
     expect(button.disabled).toBe(true);
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
     await act(async () => button.click());
@@ -526,6 +540,8 @@ describe("CompletionWorkspace", () => {
 
     await act(async () => button.click());
     expect(container.querySelector("[data-action-result]")?.textContent).toContain(expected);
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).not.toBe("completed");
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).not.toBe("reopened");
     expect(button.disabled).toBe(true);
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
     await act(async () => button.click());
@@ -630,6 +646,8 @@ describe("CompletionWorkspace", () => {
     expect(reopen).toHaveBeenCalledTimes(1);
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-action-result]')?.textContent).toContain("Tournament reopened for a recorded correction");
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).toBe("reopened");
+    expect(container.querySelector<HTMLButtonElement>("[data-complete-tournament]")?.disabled).toBe(true);
     const reopenButton = container.querySelector<HTMLButtonElement>("[data-reopen-tournament]")!;
     expect(reopenButton.disabled).toBe(true);
     await act(async () => reopenButton.click());
@@ -656,6 +674,8 @@ describe("CompletionWorkspace", () => {
     await act(async () => button.click());
     expect(navigation.refresh).toHaveBeenCalledTimes(1);
     expect(button.disabled).toBe(true);
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).toBe("reopened");
+    expect(container.querySelector<HTMLButtonElement>("[data-complete-tournament]")?.disabled).toBe(true);
     await act(async () => button.click());
     expect(reopen).toHaveBeenCalledTimes(1);
 

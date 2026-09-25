@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
+const { matchFindFirst } = vi.hoisted(() => ({ matchFindFirst: vi.fn() }));
+
+vi.mock("@/lib/platform/db", () => ({ prisma: { match: { findFirst: matchFindFirst } } }));
+
 import {
   CERTIFICATE_ASSET_LIMITS,
   createMiracleV3GenerationAdapter,
   generateCertificateForEvent,
+  generateCertificateIfFinal,
   publishCertificateSet,
   regenerateCertificate,
   validateCertificateAssetPlacement,
@@ -35,13 +40,36 @@ function createDependencies(
 }
 
 describe("generateCertificateForEvent", () => {
+  it("preserves dependency-only legacy generation for non-V3 events", async () => {
+    const dependencies = createDependencies();
+
+    await expect(
+      generateCertificateForEvent("event-mfl-s2", dependencies),
+    ).resolves.toEqual({
+      status: "generated",
+      imageUrl: "/uploads/certificates/mfl-s2.png",
+      matchId: "match-final",
+      winnerTeamId: "team-winner",
+    });
+  });
+
+  it("rejects dependency-only V3 handoff when the route locale is missing", async () => {
+    const dependencies = createDependencies({
+      findV3Completion: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(
+      generateCertificateForEvent("event-mfl-s2", dependencies),
+    ).rejects.toThrow("Route locale is required to build the Certificate Studio URL");
+  });
+
   it("returns not-ready when there is no completed Final", async () => {
     const dependencies = createDependencies({
       findCompletedFinal: vi.fn().mockResolvedValue(null),
     });
 
     await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
+      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
     ).resolves.toEqual({
       status: "not-ready",
       reason: "final-not-completed",
@@ -58,7 +86,7 @@ describe("generateCertificateForEvent", () => {
     });
 
     await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
+      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
     ).resolves.toEqual({
       status: "not-ready",
       reason: "winner-missing",
@@ -72,7 +100,7 @@ describe("generateCertificateForEvent", () => {
     const dependencies = createDependencies({ findWinnerTeamForEvent });
 
     await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
+      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
     ).resolves.toEqual({
       status: "not-ready",
       reason: "winner-not-in-event",
@@ -94,7 +122,7 @@ describe("generateCertificateForEvent", () => {
     });
 
     await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
+      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
     ).resolves.toEqual({
       status: "already-exists",
       imageUrl: "/uploads/certificates/existing.png",
@@ -109,7 +137,7 @@ describe("generateCertificateForEvent", () => {
     const dependencies = createDependencies({ generateCertificate });
 
     await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
+      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
     ).resolves.toEqual({
       status: "generated",
       imageUrl: "/uploads/certificates/generated.png",
@@ -124,11 +152,72 @@ describe("generateCertificateForEvent", () => {
       findV3Completion: vi.fn().mockResolvedValue(true),
     });
 
-    await expect(generateCertificateForEvent("event-mfl-s2", dependencies)).resolves.toEqual({
+    await expect(generateCertificateForEvent("event-mfl-s2", "en", dependencies)).resolves.toEqual({
       status: "studio-required",
-      studioHref: "/organizer/events/event-mfl-s2/certificates",
+      studioHref: "/en/organizer/events/event-mfl-s2/certificates",
     });
     expect(dependencies.generateCertificate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the legacy adapter link locale-aware when it hands off to Certificate Studio", async () => {
+    const dependencies = Object.assign(createDependencies(), {
+      findV3Completion: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(generateCertificateForEvent("event-mfl-s2", dependencies, "id")).resolves.toEqual({
+      status: "studio-required",
+      studioHref: "/id/organizer/events/event-mfl-s2/certificates",
+    });
+  });
+
+  it("uses the explicitly supplied route locale for the preferred API", async () => {
+    const dependencies = Object.assign(createDependencies(), {
+      findV3Completion: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(generateCertificateForEvent("event-mfl-s2", "id", dependencies)).resolves.toEqual({
+      status: "studio-required",
+      studioHref: "/id/organizer/events/event-mfl-s2/certificates",
+    });
+  });
+
+  it("passes the explicit Indonesian locale from the final trigger to Certificate Studio", async () => {
+    matchFindFirst.mockResolvedValue({ id: "match-final" });
+    const dependencies = Object.assign(createDependencies(), {
+      findV3Completion: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(
+      generateCertificateIfFinal("match-final", "event-mfl-s2", "id", dependencies),
+    ).resolves.toEqual({
+      status: "studio-required",
+      studioHref: "/id/organizer/events/event-mfl-s2/certificates",
+    });
+  });
+
+  it("preserves dependency-injected two-arg legacy final triggers for non-V3 events", async () => {
+    matchFindFirst.mockResolvedValue({ id: "match-final" });
+    const dependencies = createDependencies();
+
+    await expect(
+      generateCertificateIfFinal("match-final", "event-mfl-s2", dependencies),
+    ).resolves.toEqual({
+      status: "generated",
+      imageUrl: "/uploads/certificates/mfl-s2.png",
+      matchId: "match-final",
+      winnerTeamId: "team-winner",
+    });
+  });
+
+  it("rejects a V3 final trigger when the route locale is omitted", async () => {
+    matchFindFirst.mockResolvedValue({ id: "match-final" });
+    const dependencies = createDependencies({
+      findV3Completion: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(
+      generateCertificateIfFinal("match-final", "event-mfl-s2", undefined, dependencies),
+    ).rejects.toThrow("Route locale is required to build the Certificate Studio URL");
   });
 });
 
@@ -206,28 +295,65 @@ describe("durable v3 generation adapter", () => {
 
   it("preserves the primary generation error when failure persistence also fails", async () => {
     const primary = new Error("renderer failed");
-    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const adapter = createMiracleV3GenerationAdapter({
       claim: vi.fn().mockResolvedValue({ status: "claimed", attemptId: "attempt-1" }),
       recordSuccess: vi.fn(), recordFailure: vi.fn().mockRejectedValue(new Error("database unavailable")),
     }, { put: vi.fn() }, { idempotencyKey: "11111111-1111-4111-8111-111111111111", now: new Date() });
     await expect(generateMiracleV3Certificate({ data: data("mvp") }, { ...adapter, render: vi.fn().mockRejectedValue(primary) })).rejects.toBe(primary);
-    expect(log).toHaveBeenCalled();
+    expect(log.mock.calls.some(([line]) => String(line).includes('"errorCode":"certificate_failure_persistence_failed"'))).toBe(true);
   });
 
   it("does not rewrite a stored artifact as failed when success persistence is transiently unavailable", async () => {
     const persistenceError = new Error("database unavailable");
     const recordFailure = vi.fn();
-    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const adapter = createMiracleV3GenerationAdapter({
       claim: vi.fn().mockResolvedValue({ status: "claimed", attemptId: "attempt-1" }),
       recordSuccess: vi.fn().mockRejectedValue(persistenceError), recordFailure,
     }, { put: vi.fn().mockResolvedValue("/certificates/generated.png") }, { idempotencyKey: crypto.randomUUID(), now: new Date() });
     await expect(generateMiracleV3Certificate({ data: data("mvp") }, { ...adapter, render: vi.fn().mockResolvedValue(Buffer.from("png")) })).rejects.toMatchObject({ name: "CertificateArtifactFinalizationError", imageUrl: "/certificates/generated.png" });
     expect(recordFailure).not.toHaveBeenCalled();
-    expect(log).toHaveBeenCalledWith("Certificate success persistence failed", expect.any(Object));
+    expect(log.mock.calls.some(([line]) => String(line).includes('"errorCode":"certificate_failure_persistence_failed"'))).toBe(true);
+  });
+
+  it("emits a structured redacted log when certificate finalization fails", async () => {
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { tx, deps } = studioDependencies({ generate: vi.fn().mockResolvedValue("https://store.public.blob.vercel-storage.com/certificates/generated.png") });
+    vi.mocked(tx.finalizeMutation).mockRejectedValue(new Error("database-secret"));
+
+    await expect(regenerateCertificate({ eventId: "event-1", certificateType: "champion", expectedVersion: 4, idempotencyKey: "11111111-1111-4111-8111-111111111111", assets: [teamLogoRequestForLogging] }, deps))
+      .resolves.toMatchObject({ status: "generation_in_progress" });
+
+    const lines = log.mock.calls.map(([line]) => String(line));
+    expect(lines.some((line) => line.includes('"errorCode":"certificate_success_finalization_failed"'))).toBe(true);
+    expect(lines.join("\n")).not.toContain("database-secret");
+    expect(lines.join("\n")).not.toContain("lease-new");
+  });
+
+  it("emits a structured redacted log when durable failure persistence fails", async () => {
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const adapter = createMiracleV3GenerationAdapter({
+      claim: vi.fn(),
+      recordSuccess: vi.fn(),
+      recordFailure: vi.fn().mockRejectedValue(new Error("durable-database-secret")),
+    }, { put: vi.fn() }, { idempotencyKey: "11111111-1111-4111-8111-111111111111", now: new Date() });
+
+    await adapter.recordFailure({
+      identity: { certificateId: "certificate-secret", eventId: "event-secret", certificateType: "mvp", recipientId: "recipient-secret", version: 2 },
+      attemptId: "attempt-secret",
+      message: "renderer-secret",
+    });
+
+    const lines = log.mock.calls.map(([line]) => String(line));
+    expect(lines.some((line) => line.includes('"errorCode":"certificate_failure_persistence_failed"'))).toBe(true);
+    expect(lines.join("\n")).not.toContain("durable-database-secret");
+    expect(lines.join("\n")).not.toContain("attempt-secret");
+    expect(lines.join("\n")).not.toContain("event-secret");
   });
 });
+
+const teamLogoRequestForLogging = { assetId: "team-logo", placement: { assetKind: "team_logo_hero" as const, x: 360, y: 748, width: 560, height: 540 } };
 
 function studioDependencies(overrides: Partial<CertificateStudioDependencies> = {}) {
   const history = MIRACLE_V3_CERTIFICATE_TYPES.map((type) => ({
@@ -287,22 +413,22 @@ const generationInput = (certificateType: "champion" | "mvp", idempotencyKey: st
   });
 
   it("leaves a successful artifact resumable when terminal success persistence is transiently unavailable", async () => {
-    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const { tx, deps } = studioDependencies();
     vi.mocked(tx.finalizeMutation).mockRejectedValue(new Error("database unavailable"));
     await expect(regenerateCertificate(generationInput("champion", crypto.randomUUID()), deps)).resolves.toMatchObject({ status: "generation_in_progress", certificateType: "champion", version: 2 });
     expect(deps.generate).toHaveBeenCalledTimes(1);
     expect(tx.finalizeMutation).toHaveBeenCalledTimes(1);
-    expect(log).toHaveBeenCalledWith("Certificate success mutation persistence failed", expect.any(Object));
+    expect(log.mock.calls.some(([line]) => String(line).includes('"errorCode":"certificate_success_finalization_failed"'))).toBe(true);
   });
 
   it("preserves a primary generation failure when terminal failure persistence also fails", async () => {
-    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const { tx, deps } = studioDependencies({ generate: vi.fn().mockRejectedValue(new Error("renderer failed")) });
 
     vi.mocked(tx.finalizeMutation).mockRejectedValue(new Error("database unavailable"));
     await expect(regenerateCertificate(generationInput("mvp", crypto.randomUUID()), deps)).resolves.toMatchObject({ status: "generation_in_progress", certificateType: "mvp", version: 2 });
-    expect(log).toHaveBeenCalledWith("Certificate failure mutation persistence failed", expect.any(Object));
+    expect(log.mock.calls.some(([line]) => String(line).includes('"errorCode":"certificate_failure_finalization_failed"'))).toBe(true);
   });
   it("does not report a stale worker failure after its mutation lease is lost", async () => {
     const { tx, deps } = studioDependencies({ generate: vi.fn().mockRejectedValue(new Error("stale renderer failed")) });
@@ -365,6 +491,20 @@ const generationInput = (certificateType: "champion" | "mvp", idempotencyKey: st
 
     vi.mocked(tx.loadCertificates).mockResolvedValue(vi.mocked(tx.loadCertificates).mock.results[0]?.value ? (await vi.mocked(tx.loadCertificates).mock.results[0].value).slice(0, 6) : []);
     await expect(publishCertificateSet({ eventId: "event-1", expectedVersion: 4, expectedCertificateRevision: 2, idempotencyKey: "33333333-3333-4333-8333-333333333333", selection }, deps)).resolves.toEqual({ status: "blocked", code: "set_not_ready" });
+  });
+
+  it("does not publish a manipulated certificate ID from another relationship", async () => {
+    const { tx, deps } = studioDependencies();
+    const selection = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => ({
+      certificateType,
+      certificateId: certificateType === "champion" ? "certificate-b" : `cert-${certificateType}-1`,
+    }));
+
+    await expect(publishCertificateSet({
+      eventId: "event-1", expectedVersion: 4, expectedCertificateRevision: 2,
+      idempotencyKey: "66666666-6666-4666-8666-666666666666", selection,
+    }, deps)).resolves.toEqual({ status: "blocked", code: "set_not_ready" });
+    expect(tx.commitPublication).not.toHaveBeenCalled();
   });
 
   it.each([

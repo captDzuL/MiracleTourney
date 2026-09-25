@@ -4,38 +4,91 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { requireAnyRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { prisma } from "@/lib/platform/db";
-import { createCompetitionOperations } from "@/lib/tournament/operations";
+import { createCompetitionOperations, type OperationReceipt } from "@/lib/tournament/operations";
+import { CompetitionExpectedError, isCompetitionExpectedError } from "@/lib/tournament/operations/errors";
+import { classifyCompetitionFailure, isCompetitionSerializationConflict, type CompetitionFailureCode } from "@/lib/tournament/operations/observability";
 import { correctionPreviewSchema, operationRequestSchema } from "@/lib/tournament/operations/schema";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { withServerActionLog, type ServerActionLogContext } from "@/lib/observability/logger";
+
+type CompetitionActionContext = ServerActionLogContext & Readonly<{
+  operation: string;
+  route: string;
+}>;
+
+export type CompetitionMutationActionResult =
+  | { status: "saved"; receipt: OperationReceipt }
+  | { status: "conflict" }
+  | { status: "unauthorized" }
+  | { status: "failed"; code: CompetitionFailureCode; correlationId: string };
 
 export async function executeCompetitionOperationAction(input: unknown) {
-  const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
-  if (!user) throw new Error("Unauthorized");
-  if (user.role === "organizer" && user.mustChangePassword) throw new Error("Password change required");
-  if (!isFeatureEnabled("competition_operations_v3")) throw new Error("Competition operations are unavailable");
+  return withServerActionLog("competition_execute", "/server-actions/competition/execute", ({ requestId }) => executeCompetitionOperationActionImpl(input, {
+    requestId,
+    operation: "competition_execute",
+    route: "/server-actions/competition/execute",
+  }));
+}
+
+async function executeCompetitionOperationActionImpl(input: unknown, context?: CompetitionActionContext) {
   const request = operationRequestSchema.parse(input);
-  const receipt = await createCompetitionOperations(prisma).execute({ ...request, actor: { id: user.id, role: user.role } });
+  const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
+  if (!user) throw new CompetitionExpectedError("unauthorized", "Unauthorized");
+  if (user.role === "organizer" && user.mustChangePassword) throw new CompetitionExpectedError("password_change_required", "Password change required");
+  if (!isFeatureEnabled("competition_operations_v3")) throw new CompetitionExpectedError("unavailable", "Competition operations are unavailable");
+  const access = authorizeWorkspaceResource(
+    user as WorkspaceActor,
+    { eventId: request.eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
+    user.role === "organizer" ? user.id : null,
+  );
+  if (!access.ok) throw new CompetitionExpectedError("unauthorized", "Not authorized");
+  const receipt = await createCompetitionOperations(prisma, undefined, {
+    ...(context ? { requestId: context.requestId, logOperation: context.operation, logRoute: context.route } : {}),
+  }).execute({ ...request, actor: { id: user.id, role: user.role } });
   revalidateTag("events");
   revalidatePath("/", "layout");
   return receipt;
 }
 
 export async function previewCompetitionResultCorrectionAction(input: unknown) {
-  const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
-  if (!user) throw new Error("Unauthorized");
-  if (user.role === "organizer" && user.mustChangePassword) throw new Error("Password change required");
-  if (!isFeatureEnabled("competition_operations_v3")) throw new Error("Competition operations are unavailable");
+  return withServerActionLog("competition_preview_correction", "/server-actions/competition/preview", () => previewCompetitionResultCorrectionActionImpl(input));
+}
+
+async function previewCompetitionResultCorrectionActionImpl(input: unknown) {
   const request = correctionPreviewSchema.parse(input);
+  const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
+  if (!user) throw new CompetitionExpectedError("unauthorized", "Unauthorized");
+  if (user.role === "organizer" && user.mustChangePassword) throw new CompetitionExpectedError("password_change_required", "Password change required");
+  if (!isFeatureEnabled("competition_operations_v3")) throw new CompetitionExpectedError("unavailable", "Competition operations are unavailable");
+  const access = authorizeWorkspaceResource(
+    user as WorkspaceActor,
+    { eventId: request.eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
+    user.role === "organizer" ? user.id : null,
+  );
+  if (!access.ok) throw new CompetitionExpectedError("unauthorized", "Not authorized");
   return createCompetitionOperations(prisma).previewResultCorrection({ ...request, actor: { id: user.id, role: user.role } });
 }
 
 /** Expected failures must cross the production Server Action boundary as data;
  * Next.js intentionally masks thrown server exception messages in production. */
-export async function mutateCompetitionWorkspaceAction(input: unknown) {
-  try { return { status: "saved" as const, receipt: await executeCompetitionOperationAction(input) }; }
+export async function mutateCompetitionWorkspaceAction(input: unknown): Promise<CompetitionMutationActionResult> {
+  return withServerActionLog<CompetitionMutationActionResult>("competition_mutate_workspace", "/server-actions/competition/mutate", ({ requestId }) => mutateCompetitionWorkspaceActionImpl(input, {
+    requestId,
+    operation: "competition_mutate_workspace",
+    route: "/server-actions/competition/mutate",
+  }));
+}
+
+async function mutateCompetitionWorkspaceActionImpl(input: unknown, context: CompetitionActionContext) {
+  try { return { status: "saved" as const, receipt: await executeCompetitionOperationActionImpl(input, context) }; }
   catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (/conflict|stale/i.test(message)) return { status: "conflict" as const };
-    if (/authorized|password|unavailable/i.test(message)) return { status: "unauthorized" as const };
-    return { status: "failed" as const };
+    if (isCompetitionSerializationConflict(error)) return { status: "conflict" as const };
+    if (isCompetitionExpectedError(error)) {
+      if (error.code === "conflict") return { status: "conflict" as const };
+      if (error.code === "unauthorized" || error.code === "unavailable" || error.code === "password_change_required") {
+        return { status: "unauthorized" as const };
+      }
+    }
+    return { status: "failed" as const, code: classifyCompetitionFailure(error), correlationId: context.requestId };
   }
 }

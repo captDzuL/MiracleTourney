@@ -1,8 +1,390 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, open, readFile, unlink } from "node:fs/promises";
+import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
+import { prepareCompletionFixture } from "./completion";
+
 const prisma = new PrismaClient();
+export const RELEASE_FIXTURE_NOW = new Date("2026-09-13T04:00:00.000Z");
+const RELEASE_CERTIFICATE_LOGO_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAARElEQVRYhe3XMREAUQxCQfwbw0pc8F3cNVukz0wIPJLefp1YoE5wRDhvGEZUVnzCaOI4gKSQ7EDpYHkUk6pmp5zuax08ZFa4l4EKcmAAAAAASUVORK5CYII=",
+  "base64",
+);
+
+type ReleaseAssetFileHandle = Readonly<{
+  writeFile: (bytes: Uint8Array) => Promise<void>;
+  close: () => Promise<void>;
+}>;
+
+export type ReleaseAssetFileSystem = Readonly<{
+  open: (filePath: string, flags: "wx") => Promise<ReleaseAssetFileHandle>;
+  readFile: (filePath: string) => Promise<Uint8Array>;
+  unlink: (filePath: string) => Promise<void>;
+}>;
+
+export type MaterializedReleaseCertificateAsset = Readonly<{
+  byteSize: number;
+  contentSha256: string;
+  cleanup: () => Promise<void>;
+}>;
+
+const releaseAssetFileSystem: ReleaseAssetFileSystem = {
+  open: async (filePath, flags) => open(filePath, flags),
+  readFile,
+  unlink,
+};
+
+function errorCode(error: unknown): string | undefined {
+  return error && typeof error === "object" && "code" in error && typeof error.code === "string"
+    ? error.code
+    : undefined;
+}
+
+/** Test-only owner for one deterministic release certificate asset path. */
+export async function materializeReleaseCertificateAsset(
+  filePath: string,
+  bytes: Uint8Array,
+  fileSystem: ReleaseAssetFileSystem = releaseAssetFileSystem,
+): Promise<MaterializedReleaseCertificateAsset> {
+  const handle = await fileSystem.open(filePath, "wx");
+  let ownsFile = true;
+  const cleanup = async () => {
+    if (!ownsFile) return;
+    try {
+      await fileSystem.unlink(filePath);
+      ownsFile = false;
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") {
+        ownsFile = false;
+        return;
+      }
+      throw error;
+    }
+  };
+
+  try {
+    try {
+      await handle.writeFile(bytes);
+    } finally {
+      await handle.close();
+    }
+    const persistedBytes = await fileSystem.readFile(filePath);
+    return {
+      byteSize: persistedBytes.byteLength,
+      contentSha256: createHash("sha256").update(persistedBytes).digest("hex"),
+      cleanup,
+    };
+  } catch (error) {
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Release certificate asset setup failed");
+    }
+    throw error;
+  }
+}
+
+export async function runReleaseFixtureCleanup(steps: ReadonlyArray<() => Promise<void>>): Promise<void> {
+  const errors: unknown[] = [];
+  for (const step of steps) {
+    try {
+      await step();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length > 0) throw new AggregateError(errors, "Release fixture cleanup failed");
+}
+
+/**
+ * The completed lifecycle fixture stays authoritative for competition and
+ * certificates. Registration, import, payment, and QRIS use a separate fresh
+ * event so its roster remains mutable through the intake journey.
+ */
+export async function prepareOrganizerReleaseFixture(namespace = randomUUID().slice(0, 12), mode: "on" | "off" = "on") {
+  if (!/^[a-z0-9-]{1,48}$/.test(namespace)) throw new Error("Invalid fixture namespace");
+  const base = await prepareCompletionFixture("single_elimination", namespace, { pendingFirstPlayerMatch: true });
+  const expiresAt = new Date(RELEASE_FIXTURE_NOW.getTime() + 9 * 24 * 60 * 60 * 1000);
+  const importSourceLabel = `release-${namespace}-ui.csv`;
+  const deterministicRegistrationEventId = `e2e-release-registration-${namespace}`;
+  const importCaptainEmail = `release-import-${deterministicRegistrationEventId}@example.test`;
+  const certificateLogoStorageKey = `certificate-assets/${base.id}-logo.png`;
+  const certificateLogoPath = path.resolve(process.cwd(), "public", certificateLogoStorageKey);
+  let cleanupCertificateLogo: () => Promise<void> = async () => undefined;
+  let registrationEventId: string | undefined;
+  let createdCaptainId: string | undefined;
+  let statSubmissionId: string | undefined;
+  try {
+    const registrationEvent = await prisma.event.create({
+      data: {
+        id: deterministicRegistrationEventId,
+        slug: deterministicRegistrationEventId,
+        name: "Release Registration Fixture",
+        description: "Deterministic organizer release registration fixture",
+        gameId: "game-flashpeak",
+        gameModeId: "mode-flashpeak-5v5",
+        organizerUserId: base.actor.id,
+        organizerName: "Completion Organizer",
+        status: "Published",
+        format: "Single Elimination",
+        participantCap: 8,
+        registrationWindow: "Open",
+        registrationOpensAt: new Date(RELEASE_FIXTURE_NOW.getTime() - 24 * 60 * 60 * 1000),
+        registrationClosesAt: expiresAt,
+        startsAt: "2026-09-22",
+        eventStartsAt: new Date(RELEASE_FIXTURE_NOW.getTime() + 10 * 24 * 60 * 60 * 1000),
+        timezone: "Asia/Jakarta",
+        venue: "Release Registration Arena",
+        publishedAt: RELEASE_FIXTURE_NOW,
+        publishedRevision: 1,
+      },
+      select: { id: true, slug: true },
+    });
+    registrationEventId = registrationEvent.id;
+    const captain = await prisma.user.findUnique({ where: { email: "captain@miraclefc.gg" }, select: { id: true } })
+      ?? await prisma.user.create({
+        data: {
+          email: `release-captain-${namespace}@example.test`,
+          name: "Release Fixture Captain",
+          role: "captain",
+          passwordHash: await bcrypt.hash("FixtureOnly2026!", 10),
+        },
+        select: { id: true },
+      });
+    if (captain.id !== (await prisma.user.findUnique({ where: { email: "captain@miraclefc.gg" }, select: { id: true } }))?.id) {
+      createdCaptainId = captain.id;
+    }
+    await prisma.event.update({
+      where: { id: base.id },
+      data: {
+        status: "Ongoing",
+        participantCap: 8,
+        registrationFeeRequired: true,
+        registrationFeeAmount: 25000,
+        registrationFeeLabel: "Rp25.000 / team",
+        publishedRevision: 3,
+      },
+    });
+    await prisma.eventPaymentSettings.upsert({
+      where: { eventId: registrationEvent.id },
+      update: {
+        qrisImageUrl: "/e2e/release-qris.png",
+        instructions: "Scan the deterministic release QRIS fixture.",
+        status: "draft",
+        version: 1,
+        publishedAt: null,
+        updatedById: base.actor.id,
+      },
+      create: {
+        eventId: registrationEvent.id,
+        qrisImageUrl: "/e2e/release-qris.png",
+        instructions: "Scan the deterministic release QRIS fixture.",
+        status: "draft",
+        version: 1,
+        publishedAt: null,
+        updatedById: base.actor.id,
+      },
+    });
+    const paymentRequest = await prisma.teamRegistrationRequest.create({
+      data: {
+        eventId: registrationEvent.id,
+        captainId: captain.id,
+        teamId: null,
+        teamName: "Release Fixture Team",
+        teamTag: "RFT",
+        status: "pending_review",
+        proofImageUrl: "/e2e/release-payment-proof.png",
+        expiresAt,
+      },
+    });
+    await prisma.registrationImportProfile.create({
+      data: {
+        eventId: registrationEvent.id,
+        createdById: base.actor.id,
+        sourceKind: "csv",
+        sourceLabel: importSourceLabel,
+        worksheetName: null,
+        headerSignature: `release-${namespace}`,
+        mapping: { columns: { teamName: 0, teamTag: 1 }, players: [] } satisfies Prisma.InputJsonValue,
+      },
+    });
+    const firstPlayer = base.players[0];
+    const releaseMatchId = base.pendingFirstPlayerMatchId;
+    if (!releaseMatchId) throw new Error("Release fixture requires a pending match for the first player");
+    const releaseMatchPhaseId = base.graph.matches.find((match) => match.id === releaseMatchId)?.phaseId;
+    if (!releaseMatchPhaseId) throw new Error("Release fixture requires the exact phase for the pending match");
+    if (mode === "on") {
+      await prisma.playerStat.deleteMany({ where: { matchId: releaseMatchId } });
+    }
+    await prisma.match.update({
+      where: { id: releaseMatchId },
+      data: {
+        homeScore: 0,
+        awayScore: 0,
+        status: "Scheduled",
+        scheduleStatus: "confirmed",
+        winnerTeamId: null,
+        resultVersion: 0,
+        resultSnapshot: Prisma.JsonNull,
+        resultConfirmedAt: null,
+        actualStartedAt: null,
+        actualEndedAt: null,
+      },
+    });
+    if (mode === "on") {
+      const statSubmission = await prisma.statSubmission.create({
+        data: {
+          matchId: releaseMatchId,
+          eventId: base.id,
+          teamId: firstPlayer.teamId,
+          submittedBy: `release-captain-${namespace}`,
+          status: "pending",
+          stats: { [firstPlayer.id]: { scores: [8.5], goal: 2, assist: 1, passing: 3, defense: 2 } } satisfies Prisma.InputJsonValue,
+          submittedAt: RELEASE_FIXTURE_NOW,
+        },
+        select: { id: true },
+      });
+      statSubmissionId = statSubmission.id;
+    }
+    await mkdir(path.dirname(certificateLogoPath), { recursive: true });
+    const certificateLogo = await materializeReleaseCertificateAsset(certificateLogoPath, RELEASE_CERTIFICATE_LOGO_PNG);
+    cleanupCertificateLogo = certificateLogo.cleanup;
+    const certificateLogoStats = { size: certificateLogo.byteSize };
+    const certificateLogoSha256 = certificateLogo.contentSha256;
+    const logoAsset = await prisma.eventVisualAsset.create({
+      data: {
+        eventId: base.id,
+        createdByUserId: base.actor.id,
+        source: "organizer_upload",
+        status: "approved",
+        purpose: "certificate_team_logo",
+        url: `/certificate-assets/${base.id}-logo.png`,
+        mimeType: "image/png",
+        width: 32,
+        height: 32,
+        byteSize: certificateLogoStats.size,
+        storageProvider: "local",
+        storageKey: certificateLogoStorageKey,
+        contentSha256: certificateLogoSha256,
+        rightsAttestedAt: RELEASE_FIXTURE_NOW,
+        approvedAt: RELEASE_FIXTURE_NOW,
+      },
+    });
+    const releaseFixture = {
+      ...base,
+      registrationEventId: registrationEvent.id,
+      importCaptainEmail,
+      paymentRequestId: paymentRequest.id,
+      importBatchId: undefined as string | undefined,
+      importSourceLabel,
+      qrisVersion: 1,
+      statSubmissionId,
+      releaseMatchId,
+      releasePlayerId: firstPlayer.id,
+      releasePlayerTeamId: firstPlayer.teamId,
+      certificateLogoAssetId: logoAsset.id,
+      fixtureNow: RELEASE_FIXTURE_NOW.toISOString(),
+      captureImportBatchId: async () => {
+        const batch = await prisma.registrationImportBatch.findFirst({
+          where: { eventId: registrationEvent.id, sourceLabel: importSourceLabel },
+          orderBy: { createdAt: "desc" },
+          select: { id: true },
+        });
+        releaseFixture.importBatchId = batch?.id;
+        return releaseFixture.importBatchId;
+      },
+      readState: async () => {
+        const [event, registrationEventState, paymentRequestState, importBatchState, qris, match, completion, certificates] = await Promise.all([
+          prisma.event.findUnique({ where: { id: base.id }, select: { id: true, status: true, publishedRevision: true, organizerUserId: true } }),
+          prisma.event.findUnique({ where: { id: registrationEvent.id }, select: { id: true, status: true, organizerUserId: true } }),
+          prisma.teamRegistrationRequest.findUnique({ where: { id: paymentRequest.id }, select: { id: true, eventId: true, status: true, proofImageUrl: true } }),
+          releaseFixture.importBatchId
+            ? prisma.registrationImportBatch.findUnique({ where: { id: releaseFixture.importBatchId }, select: { id: true, eventId: true, status: true, committedAt: true } })
+            : prisma.registrationImportBatch.findFirst({ where: { eventId: registrationEvent.id, sourceLabel: importSourceLabel }, orderBy: { createdAt: "desc" }, select: { id: true, eventId: true, status: true, committedAt: true } }),
+          prisma.eventPaymentSettings.findUnique({ where: { eventId: registrationEvent.id }, select: { eventId: true, version: true, status: true } }),
+          prisma.match.findUnique({
+            where: { id: releaseMatchId },
+            select: {
+              id: true,
+              eventId: true,
+              homeTeamId: true,
+              awayTeamId: true,
+              homeScore: true,
+              awayScore: true,
+              status: true,
+              scheduleStatus: true,
+              scheduledAt: true,
+              scheduledEndsAt: true,
+              scheduleRoom: true,
+              actualStartedAt: true,
+              resultVersion: true,
+              resultRevisions: { select: { id: true, version: true } },
+              playerStats: { select: { id: true, source: true } },
+              statSubmissions: { select: { id: true, status: true, reviewedAt: true } },
+            },
+          }),
+          prisma.tournamentCompletion.findUnique({ where: { eventId: base.id }, select: { id: true, status: true, certificateRevision: true, completedAt: true } }),
+          prisma.certificate.findMany({ where: { eventId: base.id }, orderBy: [{ type: "asc" }, { version: "asc" }], select: { id: true, type: true, version: true, status: true, verificationCode: true } }),
+        ]);
+        const [certificateCount, publicationCount, latestPublication] = await Promise.all([
+          prisma.certificate.count({ where: { eventId: base.id } }),
+          prisma.certificatePublication.count({ where: { eventId: base.id } }),
+          prisma.certificatePublication.findFirst({ where: { eventId: base.id }, orderBy: { version: "desc" }, select: { version: true } }),
+        ]);
+        return { event, registrationEvent: registrationEventState, paymentRequest: paymentRequestState, importBatch: importBatchState, qris, match, completion, certificates, certificateCount, publicationCount, publicationVersion: latestPublication?.version ?? 0 };
+      },
+      resetMatchForReleaseJourney: async () => {
+        await prisma.competitionPhase.update({
+          where: { id: releaseMatchPhaseId, eventId: base.id },
+          data: { status: "active" },
+        });
+        await prisma.match.update({
+          where: { id: releaseMatchId },
+          data: {
+            status: "Live",
+            scheduleStatus: "live",
+            scheduledAt: RELEASE_FIXTURE_NOW,
+            scheduledEndsAt: new Date(RELEASE_FIXTURE_NOW.getTime() + 30 * 60 * 1000),
+            scheduleRoom: "Release Arena",
+            actualStartedAt: RELEASE_FIXTURE_NOW,
+            actualEndedAt: null,
+          },
+        });
+      },
+      cleanup: async () => {
+        await runReleaseFixtureCleanup([
+          async () => { await prisma.event.deleteMany({ where: { id: registrationEvent.id, slug: registrationEvent.slug } }); },
+          async () => { await prisma.user.deleteMany({ where: { email: importCaptainEmail } }); },
+          async () => { await base.cleanup(); },
+          async () => {
+            if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
+          },
+          cleanupCertificateLogo,
+        ]);
+      },
+    };
+    return releaseFixture;
+  } catch (error) {
+    try {
+      await runReleaseFixtureCleanup([
+        cleanupCertificateLogo,
+        async () => {
+          if (registrationEventId) {
+            await prisma.event.deleteMany({ where: { id: registrationEventId } });
+            await prisma.user.deleteMany({ where: { email: importCaptainEmail } });
+          }
+          await base.cleanup();
+          if (createdCaptainId) await prisma.user.delete({ where: { id: createdCaptainId } }).catch(() => undefined);
+        },
+      ]);
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Release fixture setup failed and cleanup also failed");
+    }
+    throw error;
+  }
+}
 
 export async function preparePublishedEventRevisionFixture() {
   const suffix = randomUUID().slice(0, 8);

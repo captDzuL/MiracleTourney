@@ -65,6 +65,22 @@ afterEach(() => {
 });
 
 describe("V3 shell integration", () => {
+  it("keeps focused operator descendants below the sticky header", async () => {
+    await render(
+      <OperatorShell
+        footer={<footer>Footer</footer>}
+        homeHref="/organizer"
+        navigation={[]}
+      >
+        <button type="button">Match Day</button>
+      </OperatorShell>,
+    );
+
+    const main = container.querySelector("main")!;
+    expect(main.className).toContain("scroll-mt-24");
+    expect(main.className).toContain("[&_:focus-visible]:scroll-m-24");
+  });
+
   it("localizes the Indonesian setup competition action", async () => {
     route.locale = "id";
     route.pathname = "/id/organizer/events/cup/edit";
@@ -82,10 +98,22 @@ describe("V3 shell integration", () => {
     click(link); expect(prevented).toBe(false);
     expect(link.getAttribute("href")).toBe("/en/organizer/events/other/edit#section-identity");
   });
+  it("applies an intercepted same-route setup hash", async () => {
+    route.pathname = "/en/organizer/events/cup/edit";
+    window.history.replaceState(null, "", "/en/organizer/events/cup/edit");
+    await render(<EventWorkspaceShell eventTitle="Cup" organizerLabel="Owner" navigation={[
+      { href: "/organizer/events/cup/overview#section-identity", label: "Identity", active: true },
+      { href: "/organizer/events/cup/overview#section-review", label: "Review" },
+    ]}><p>Content</p></EventWorkspaceShell>);
+    const review = container.querySelector<HTMLAnchorElement>('nav a[href$="#section-review"]')!;
+    review.addEventListener("click", event => event.preventDefault(), { once: true });
+    click(review);
+    expect(window.location.hash).toBe("#section-review");
+  });
   it.each(["true", "false"])("uses one event-owned rail when master shell flag is %s", async flag => {
     vi.stubEnv("FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3", flag);
     route.pathname = "/en/organizer/events/cup/overview";
-    await render(<AppShell><PanelShell><aside><nav aria-label="Event-owned rail"><a href="/en/organizer/events/cup/overview">Overview</a></nav></aside></PanelShell></AppShell>);
+    await render(<AppShell><PanelShell><aside><nav aria-label="Event-owned rail"><a href="#overview">Overview</a></nav></aside></PanelShell></AppShell>);
     expect(container.querySelectorAll("aside nav")).toHaveLength(flag === "true" ? 1 : 2);
     expect(container.querySelector(".panel-scope") === null).toBe(flag === "true");
     expect(container.querySelector('nav[aria-label="Operator navigation"]') === null).toBe(flag === "true");

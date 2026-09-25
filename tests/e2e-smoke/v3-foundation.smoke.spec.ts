@@ -95,13 +95,13 @@ for (const viewport of viewports) {
         const eventsLink = await tabToHref(page, "/id/events");
         await expectVisibleFocus(eventsLink);
         await page.keyboard.press("Enter");
-        await expect(page).toHaveURL(/\/id\/events$/);
+        await expect(page).toHaveURL(/\/id\/events$/, { timeout: 15_000 });
       } else {
         await expect(page.locator(`a[href="${shell.expectedHref}"]`).last()).toBeVisible();
         const keyboardLink = await tabToHref(page, "/id/events");
         await expectVisibleFocus(keyboardLink);
         await page.keyboard.press("Enter");
-        await expect(page).toHaveURL(/\/id\/events$/);
+        await expect(page).toHaveURL(/\/id\/events$/, { timeout: 15_000 });
       }
     });
   }

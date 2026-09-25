@@ -3,7 +3,160 @@
 Tanggal snapshot: 2026-09-16, Asia/Jakarta
 Status kandidat: BLOCKED untuk release/deploy; implementasi Organizer Master Workspace sudah sampai Task 8, tetapi verifikasi dan review belum selesai.
 
-## Repo dan worktree
+## Release-readiness snapshot — 2026-09-21
+
+This continuation supersedes the stale “Task 8 in progress” status below for
+release coordination while preserving the historical handoff details.
+
+- Isolated worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`.
+- Branch: `codex/organizer-release-readiness`.
+- Source/product SHA before evidence-doc commit: `79e62cddc77beae4913529d471b493c6e56335b3`.
+- Evidence-doc commit: `7cdb39df8810045ebdddf8384a55d9f147608fb9` (`docs: finalize organizer release readiness evidence`); this docs SHA is intentionally separate from the source/product SHA.
+- Release target: `feature/ui/release/1.0`; no PR, push, deploy, migration, restore, or production flag activation was performed.
+- Verification report: [`2026-09-14-release-1.0-verification.md`](../../../2026-09-14-release-1.0-verification.md).
+- Task 12 report: `.superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/task-12-report.md` (ignored SDD artifact; the final-review fix wave is recorded in the ledger addendum).
+- Current decision: `BLOCKED`.
+
+### Required external evidence still absent
+
+The report and progress handoff are authoritative for the exact blockers:
+guarded `.env.test`/Neon Delicate or preview access; live shared-Neon E2E and
+performance results; Delicate/preview migration diff and restore rehearsal;
+final-SHA GitHub Actions result; Vercel preview URL/deployment ID and Runtime
+Logs scan; saved-view/PIC/notification access; deployed Speed Insights/RUM; and
+Neon snapshot/PITR/retention/RPO/RTO/PIC/switchover/integrity-query evidence.
+Fresh gpt-5.6-sol/high review is separately attested below.
+
+## Final-review fix wave — 2026-09-24
+
+- Final-fix base: `b97b9e80aa92806e23cfb93752f2cf4c630cbe09`; branch remains
+  `codex/organizer-release-readiness` in the isolated worktree above.
+- The two whole-branch P2s are remediated in the working tree: shared
+  fail-closed Prisma rate limiting with digest-only keys and bounded local
+  deny tracking, plus mixed-version session/reset handling with version-zero
+  session compatibility, digest reset writes, and bounded explicit legacy
+  compatibility. Stale official evidence is corrected in the current records.
+- Authoritative pre-fix local gates at `b97b9e8`: Prisma valid, tsc 0,
+  ESLint 0 errors/56 warnings, unit 207 passed/2 skipped files and 2,433
+  passed/6 intentional skips, smoke 24/24, pressure p95 2,370/414/52 ms with
+  zero failures, audit clean, and build 46/46.
+- Terminal gates remain CLOSED rather than blockers: legacy 4/4; visual V3
+  24/24 plus V2 9/9 with zero skips/retries/flakes; quick-load warmups HTTP
+  200 and p97.5 2,945/2,069/1,582 ms with zero errors.
+- Fresh bounded verification is recorded in the ignored
+  `whole-branch-final-fix-report.md`. Its historical pressure rerun recorded
+  `/id/login` p95 values of 4,387 ms and 3,783 ms with zero failures; those
+  samples are superseded by the exact final RED record below without weakening
+  the 3,000 ms contract. Fresh gpt-5.6-sol/high review range
+  `5d2b688..2cda371`, head `2cda371`, is approved with P2-1/P2-2/P2-3
+  **ADDRESSED**, P0=0/P1=0/P2=0, code verdict `APPROVED_NO_P0_P1_P2`.
+- Overall status remains **BLOCKED** by the local pressure RED (`/id/login`
+  p95 `4197ms`, max `4199ms`, failures `0`, exit `1`) plus final-SHA GitHub
+  CI; Vercel preview/logs/RUM/rollback/PIC; Neon recovery console, restore
+  rehearsal, and migration integration; and the live 64-team query/p95.
+
+## Final bounded migration-safety correction — 2026-09-24
+
+- Security implementation base: `44a3068a7e7296c1da50a6fcd5b4e08241bb1860`;
+  migration guard/docs correction: `76f62641693c8287896140f6d566fdd2a794d92f`.
+- `20260921000000_add_user_session_version/migration.sql` now fails closed
+  when duplicate `PasswordResetToken.userId` rows exist, before creating the
+  unique index. It performs no legacy-row deletion, deduplication, update,
+  insert, truncate, or merge; the static contract test proves the guard and
+  ordering (TDD GREEN 2/2 after the intentional RED).
+- Focused checks passed: migration contract 2/2, nonincremental TypeScript,
+  no-DB Prisma validate, changed-file ESLint, and diff hygiene. The valid
+  final fix-wave suite evidence is 209 passed / 2 skipped files and 2,445
+  passed / 6 skipped tests, exit 0, and was not rerun here. The final pressure
+  record is exact and was not retried: 80 requests at concurrency 20 against
+  `/id/login`, p95 `4197ms`, max `4199ms`, failures `0`, exit `1`; later
+  scenarios stopped. No threshold was weakened.
+- No pressure/full-suite/E2E, database migration, reset, seed, deployment,
+  push, or PR was run. Status remains **BLOCKED** on final-SHA CI,
+  Vercel/preview/log/RUM/PIC, Neon recovery/restore/migration integration,
+  live 64-team query/p95/load evidence. Release remains **NOT_READY / BLOCKED**
+  and **NOT_READY_FOR_PUSH**; no push or PR was run.
+
+### Human-gated password-reset migration and digest rollback procedure
+
+The six skipped final-suite tests are intentional: one guarded migration-DB
+integration and five opt-in installed-browser renderer tests. Pause
+password-reset issuance and obtain a named release/security/data owner. Run
+these as separate human-gated commands; never silently deduplicate or issue an
+immediate commit. First run this exact read-only diagnostic:
+
+```sql
+SELECT "userId", COUNT(*) AS "duplicateCount"
+FROM "PasswordResetToken"
+GROUP BY "userId"
+HAVING COUNT(*) > 1
+ORDER BY "duplicateCount" DESC, "userId";
+```
+
+Wait until `MAX(LEAST("createdAt" + INTERVAL '30 minutes', "expiresAt"))` for
+the affected rows has passed. Then begin, lock candidates, and delete only used
+or effectively expired rows:
+
+```sql
+BEGIN;
+WITH duplicate_users AS (
+  SELECT "userId" FROM "PasswordResetToken" GROUP BY "userId" HAVING COUNT(*) > 1
+)
+SELECT t."id", t."userId", t."createdAt", t."expiresAt", t."usedAt"
+FROM "PasswordResetToken" AS t
+JOIN duplicate_users AS d ON d."userId" = t."userId"
+WHERE t."usedAt" IS NOT NULL
+   OR LEAST(t."expiresAt", t."createdAt" + INTERVAL '30 minutes') <= CURRENT_TIMESTAMP
+FOR UPDATE;
+
+WITH duplicate_users AS (
+  SELECT "userId" FROM "PasswordResetToken" GROUP BY "userId" HAVING COUNT(*) > 1
+)
+DELETE FROM "PasswordResetToken" AS t
+USING duplicate_users AS d
+WHERE t."userId" = d."userId"
+  AND (t."usedAt" IS NOT NULL OR LEAST(t."expiresAt", t."createdAt" + INTERVAL '30 minutes') <= CURRENT_TIMESTAMP)
+RETURNING t."id", t."userId", t."tokenFormat", t."createdAt", t."expiresAt", t."usedAt";
+```
+
+Stop with the transaction open for named-owner review. Only after explicit
+approval run separate `COMMIT;`; otherwise run separate `ROLLBACK;`. After a
+committed cleanup, re-run the exact diagnostic and require zero rows, then and
+only then apply the migration.
+
+For digest rollback after issuance, keep issuance paused and run:
+
+```sql
+BEGIN;
+SELECT "id", "userId", "createdAt", "expiresAt", "usedAt"
+FROM "PasswordResetToken"
+WHERE "tokenFormat" = 'sha256' AND "usedAt" IS NULL
+FOR UPDATE;
+
+UPDATE "PasswordResetToken"
+SET "usedAt" = CURRENT_TIMESTAMP
+WHERE "tokenFormat" = 'sha256' AND "usedAt" IS NULL
+RETURNING "id", "userId", "tokenFormat", "createdAt", "expiresAt", "usedAt";
+```
+
+Stop for named-owner review with the transaction open; separately `COMMIT;`
+only after explicit approval, otherwise separately `ROLLBACK;`. After commit,
+confirm zero active SHA-256 rows with `SELECT COUNT(*) ... WHERE
+"tokenFormat" = 'sha256' AND "usedAt" IS NULL`; only then perform app rollback
+and require users to request fresh resets. Never interpret a digest as a raw
+token or weaken the legacy fallback.
+
+## Historical handoff details — 2026-09-16 (non-operative)
+
+The repository/worktree, commit-map, resume-command, and release-gate text
+below is preserved for audit history only. It is not current operating
+guidance. The old `E:\dev\MiracleTourney-gitnative` paths, stale Task 8–12
+status, and the historical instruction not to touch the report are
+non-operative; current work is restricted to the isolated worktree named in
+the release-readiness snapshot above, whose evidence report is already
+committed.
+
+## Repo dan worktree (historical, non-operative)
 
 - Repository root: E:\dev\MiracleTourney-gitnative
 - Worktree yang wajib dipakai: E:\dev\MiracleTourney-gitnative\.worktrees\miracle-ui-release-1.0-full

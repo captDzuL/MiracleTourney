@@ -11,4 +11,7 @@ export function startE2eDevServer(options?: {
   env?: Record<string, string | undefined>;
   args?: string[];
   spawnImpl?: SpawnImplementation;
+  systemMemoryBytes?: number | null;
+  constrainedMemoryBytes?: number | null;
+  logger?: (message: string) => void;
 }): Pick<ChildProcess, "on">;

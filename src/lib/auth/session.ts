@@ -10,6 +10,12 @@ const JWT_COOKIE = "mfl_token";
 const DEFAULT_JWT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32chars-min";
 const ADMIN_SESSION_MAX_AGE = 60 * 60 * 12;
 const CAPTAIN_SESSION_MAX_AGE = 60 * 60 * 24 * 7;
+type SessionRole = Exclude<UserRole, "public">;
+const SESSION_ROLES = new Set<SessionRole>(["captain", "organizer", "admin", "platform_admin"]);
+
+function isSessionRole(role: unknown): role is SessionRole {
+  return typeof role === "string" && SESSION_ROLES.has(role as SessionRole);
+}
 
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET?.trim();
@@ -25,7 +31,7 @@ function getSessionMaxAge(role: string) {
   return role === "admin" || role === "platform_admin" ? ADMIN_SESSION_MAX_AGE : CAPTAIN_SESSION_MAX_AGE;
 }
 
-async function signToken(payload: { sub: string; role: string }, maxAge: number): Promise<string> {
+export async function signToken(payload: { sub: string; role: string; sv: number }, maxAge: number): Promise<string> {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -33,11 +39,21 @@ async function signToken(payload: { sub: string; role: string }, maxAge: number)
     .sign(getJwtSecret());
 }
 
-async function verifyToken(token: string): Promise<{ sub: string; role: string } | null> {
+export async function verifyToken(token: string): Promise<{ sub: string; role: SessionRole; sv: number } | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret());
-    if (typeof payload.sub !== "string" || typeof payload.role !== "string") return null;
-    return { sub: payload.sub, role: payload.role };
+    // During the bounded rollout, pre-sessionVersion tokens are version zero.
+    // The row comparison below still revokes them as soon as the account is
+    // incremented, so this does not weaken nonzero session invalidation.
+    const sessionVersion = payload.sv === undefined ? 0 : payload.sv;
+    if (
+      typeof payload.sub !== "string"
+      || !isSessionRole(payload.role)
+      || typeof sessionVersion !== "number"
+      || !Number.isInteger(sessionVersion)
+      || sessionVersion < 0
+    ) return null;
+    return { sub: payload.sub, role: payload.role, sv: sessionVersion };
   } catch {
     return null;
   }
@@ -53,10 +69,14 @@ export const getSessionUser = cache(async (): Promise<AppUser | null> => {
   if (!claims) return null;
 
   const captain = await getCaptainById(claims.sub);
-  if (captain) return captain.deactivatedAt ? null : captain;
+  if (captain) {
+    return captain.deactivatedAt || claims.role !== captain.role || claims.sv !== (captain.sessionVersion ?? 0)
+      ? null
+      : captain;
+  }
 
   const user = await getUserByEmail(claims.sub);
-  if (!user || user.deactivatedAt) return null;
+  if (!user || user.deactivatedAt || claims.role !== user.role || claims.sv !== (user.sessionVersion ?? 0)) return null;
   return user;
 });
 
@@ -80,7 +100,7 @@ export async function signIn(email: string, password: string) {
   }
 
   const maxAge = getSessionMaxAge(user.role);
-  const token = await signToken({ sub: user.id, role: user.role }, maxAge);
+  const token = await signToken({ sub: user.id, role: user.role, sv: user.sessionVersion ?? 0 }, maxAge);
   const store = await cookies();
   store.set(JWT_COOKIE, token, {
     httpOnly: true,

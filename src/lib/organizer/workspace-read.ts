@@ -2,15 +2,17 @@ import type { AppUser } from "@/lib/platform/types";
 import { prisma } from "@/lib/platform/db";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { findGameConfig } from "@/lib/platform/config";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { withServerActionLog } from "@/lib/observability/logger";
 import type { OrganizerWorkspaceLifecycle, OrganizerWorkspaceSummary } from "./workspace-types";
 
 /** One ownership-scoped query: scalar facts and filtered counts, never route payloads. */
-export async function readOrganizerWorkspaceSummary(eventId: string, actor: Pick<AppUser, "id" | "role">): Promise<OrganizerWorkspaceSummary | null> {
+async function readOrganizerWorkspaceSummaryImpl(eventId: string, actor: Pick<AppUser, "id" | "role">): Promise<OrganizerWorkspaceSummary | null> {
   if (!["organizer", "admin", "platform_admin"].includes(actor.role)) return null;
   const event = await prisma.event.findFirst({
     where: { id: eventId, ...(actor.role === "organizer" ? { organizerUserId: actor.id } : {}) },
     select: {
-      id: true, name: true, gameId: true, format: true, status: true, publishedAt: true,
+      id: true, organizerUserId: true, name: true, gameId: true, format: true, status: true, publishedAt: true,
       updatedAt: true, publishedScheduleVersion: true,
       completion: { select: { status: true } },
       _count: { select: {
@@ -23,6 +25,12 @@ export async function readOrganizerWorkspaceSummary(eventId: string, actor: Pick
     },
   });
   if (!event) return null;
+  const access = authorizeWorkspaceResource(
+    actor as WorkspaceActor,
+    { eventId: event.id, ownerUserId: event.organizerUserId },
+    event.organizerUserId,
+  );
+  if (!access.ok) return null;
   const lifecycles: Record<string, OrganizerWorkspaceLifecycle> = {
     Draft: "draft", Published: "registration", "Registration Closed": "drawing", Ongoing: "ongoing", Finished: "finished",
   };
@@ -32,7 +40,7 @@ export async function readOrganizerWorkspaceSummary(eventId: string, actor: Pick
   const capabilities: OrganizerWorkspaceSummary["capabilities"] = {
     overview: true, registration: true,
     // These destinations are enabled by their owning migration tasks.
-    participants: isFeatureEnabled("registration_workspace_v3"), announcements: false, settings: false,
+    participants: isFeatureEnabled("registration_workspace_v3"), announcements: true, settings: true,
     competition: operations, schedule: operations, "match-control": operations, completion,
   };
   const counts = event._count;
@@ -52,4 +60,8 @@ export async function readOrganizerWorkspaceSummary(eventId: string, actor: Pick
     badges: { participants: counts.teams, registration: counts.teamRegistrationRequests, "match-control": counts.competitionActionItems, completion: counts.matches + counts.statSubmissions },
     blockers, updatedAt: event.updatedAt.toISOString(),
   };
+}
+
+export function readOrganizerWorkspaceSummary(eventId: string, actor: Pick<AppUser, "id" | "role">): Promise<OrganizerWorkspaceSummary | null> {
+  return withServerActionLog("organizer_workspace_read", "/server-readers/organizer-workspace", () => readOrganizerWorkspaceSummaryImpl(eventId, actor));
 }

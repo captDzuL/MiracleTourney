@@ -47,22 +47,22 @@ test.describe.serial("seeded public V3 lifecycle", () => {
   }
 
   async function clearEventCompetition(eventId: string) {
-    await prisma.$transaction(async (tx) => {
-      await tx.tournamentCompletion.deleteMany({ where: { eventId } });
-      await tx.scheduleRevision.deleteMany({ where: { eventId } });
-      await tx.matchReadiness.deleteMany({ where: { eventId } });
-      await tx.matchGame.deleteMany({ where: { match: { eventId } } });
-      await tx.matchResultRevision.deleteMany({ where: { eventId } });
-      await tx.matchDependency.deleteMany({ where: { eventId } });
-      await tx.competitionActionItem.deleteMany({ where: { eventId } });
-      await tx.competitionIncident.deleteMany({ where: { eventId } });
-      await tx.competitionAuditLog.deleteMany({ where: { eventId } });
-      await tx.match.deleteMany({ where: { eventId } });
-      await tx.competitionGroupMember.deleteMany({ where: { eventId } });
-      await tx.competitionGroup.deleteMany({ where: { eventId } });
-      await tx.competitionPhase.deleteMany({ where: { eventId } });
-      await tx.event.update({ where: { id: eventId }, data: { status: "Registration Closed", publishedScheduleVersion: null } });
-    });
+    await prisma.$transaction([
+      prisma.tournamentCompletion.deleteMany({ where: { eventId } }),
+      prisma.scheduleRevision.deleteMany({ where: { eventId } }),
+      prisma.matchReadiness.deleteMany({ where: { eventId } }),
+      prisma.matchGame.deleteMany({ where: { match: { eventId } } }),
+      prisma.matchResultRevision.deleteMany({ where: { eventId } }),
+      prisma.matchDependency.deleteMany({ where: { eventId } }),
+      prisma.competitionActionItem.deleteMany({ where: { eventId } }),
+      prisma.competitionIncident.deleteMany({ where: { eventId } }),
+      prisma.competitionAuditLog.deleteMany({ where: { eventId } }),
+      prisma.match.deleteMany({ where: { eventId } }),
+      prisma.competitionGroupMember.deleteMany({ where: { eventId } }),
+      prisma.competitionGroup.deleteMany({ where: { eventId } }),
+      prisma.competitionPhase.deleteMany({ where: { eventId } }),
+      prisma.event.update({ where: { id: eventId }, data: { status: "Registration Closed", publishedScheduleVersion: null } }),
+    ]);
   }
 
   async function installUnknownPhaseLessMatch() {
