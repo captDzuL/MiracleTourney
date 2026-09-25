@@ -88,7 +88,10 @@ export async function loginWithCredentials(
   await emailField.fill(email);
   await passwordField.fill(password);
   await submit.click({ timeout: 20_000 });
-  await page.waitForURL(destination, { timeout: 60_000 });
+  await page.waitForURL(destination, {
+    waitUntil: "domcontentloaded",
+    timeout: 60_000,
+  });
 }
 
 export async function loginAsAdmin(page: Page, locale: "id" | "en" = "id") {
