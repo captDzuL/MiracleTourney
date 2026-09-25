@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Page, type Request, type Response } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext, type Page, type Request, type Response, type TestInfo } from "@playwright/test";
 
 import { loginAsOrganizer, normalizeReleasePage, waitForReleaseFonts } from "./helpers/auth";
 import {
@@ -17,45 +17,67 @@ function assertCompletionReadHealthy() {
   expect(errors.some(({ message }) => /P2028/.test(message ?? ""))).toBe(false);
 }
 
-let fixture: CompletionFixture | undefined;
-let fixtureCleanup: CompletionFixtureReady | undefined;
-let completionActionResponse: Promise<Response> | undefined;
-let completionActionResponsePending = false;
-let activeCompletionContext: BrowserContext | undefined;
-
-async function cleanupCompletionResources() {
-  if (completionActionResponsePending && completionActionResponse) {
-    await completionActionResponse.catch(() => undefined);
-  }
-  if (activeCompletionContext) {
-    await activeCompletionContext.close().catch(() => undefined);
-    activeCompletionContext = undefined;
-  }
-  const cleanup = fixtureCleanup ?? fixture;
-  await cleanup?.cleanup();
-  fixture = undefined;
-  fixtureCleanup = undefined;
-  completionActionResponse = undefined;
-  completionActionResponsePending = false;
-}
-
-test.afterEach(async () => {
-  await test.step("fixture cleanup", cleanupCompletionResources);
-});
-
-async function prepareTestCompletionFixture(kind: CompletionFixtureKind) {
-  const scenario = await prepareCompletionFixture(kind, undefined, {
-    onBaseFixtureReady: (baseFixture) => {
-      fixtureCleanup = baseFixture;
-    },
-  });
-  fixture = scenario;
-  fixtureCleanup = scenario;
-  return scenario;
-}
+type CompletionReleaseRuntime = {
+  kind: CompletionFixtureKind;
+  fixture?: CompletionFixture;
+  fixtureCleanup?: CompletionFixtureReady;
+  context?: BrowserContext;
+  page?: Page;
+  completionActionResponse?: Promise<Response>;
+  completionActionResponsePending: boolean;
+};
 
 function completionPath(locale: "en" | "id", eventId: string) {
   return `/${locale}/organizer/events/${encodeURIComponent(eventId)}/completion`;
+}
+
+async function cleanupCompletionReleaseCase(runtime: CompletionReleaseRuntime) {
+  if (runtime.completionActionResponsePending && runtime.completionActionResponse) {
+    await runtime.completionActionResponse.catch(() => undefined);
+  }
+  if (runtime.page) {
+    await runtime.page.close().catch(() => undefined);
+    runtime.page = undefined;
+  }
+  if (runtime.context) {
+    await runtime.context.close().catch(() => undefined);
+    runtime.context = undefined;
+  }
+  const cleanup = runtime.fixtureCleanup ?? runtime.fixture;
+  await cleanup?.cleanup();
+  runtime.fixture = undefined;
+  runtime.fixtureCleanup = undefined;
+  runtime.completionActionResponse = undefined;
+  runtime.completionActionResponsePending = false;
+}
+
+async function prepareCompletionReleaseCase(browser: Browser, runtime: CompletionReleaseRuntime, testInfo: TestInfo) {
+  const startedAt = performance.now();
+  const { kind } = runtime;
+  const scenario = await prepareCompletionFixture(kind, undefined, {
+    onBaseFixtureReady: (baseFixture) => {
+      runtime.fixtureCleanup = baseFixture;
+    },
+  });
+  runtime.fixture = scenario;
+  runtime.fixtureCleanup = scenario;
+  const context = await browser.newContext();
+  runtime.context = context;
+  const page = await context.newPage();
+  runtime.page = page;
+  await loginAsOrganizer(page, "en");
+  const completionUrl = completionPath("en", scenario.id);
+  await page.goto(completionUrl);
+  await expect(page).toHaveURL((url) => url.pathname === completionUrl && url.search === "" && url.hash === "");
+  await expect(page.locator('[data-completion-status="ready"]')).toBeVisible();
+  await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
+  assertCompletionReadHealthy();
+  const durationMs = Math.round(performance.now() - startedAt);
+  console.info(`[completion-prerequisites] kind=${kind} durationMs=${durationMs}`);
+  await testInfo.attach(`completion-prerequisites-${kind}`, {
+    body: `durationMs=${durationMs}\nfixture=before-timed-test\nauthentication=prepared-context\nroute=exact-event-completion\n`,
+    contentType: "text/plain",
+  });
 }
 
 function isCompletionActionRequest(request: Request, locale: "en" | "id", eventId: string) {
@@ -79,10 +101,14 @@ async function runCompletionJourney(
   page: Page,
   scenario: CompletionFixture,
   kind: CompletionFixtureKind,
-  options: { holdTerminalRefresh?: boolean } = {},
+  runtime: CompletionReleaseRuntime,
+  options: { holdTerminalRefresh?: boolean; pagePrepared?: boolean } = {},
 ) {
   await test.step("completion navigation and readiness", async () => {
-    await page.goto(`/en/organizer/events/${scenario.id}/completion`);
+    if (!options.pagePrepared) throw new Error("Completion journey requires a prepared page.");
+    const completionUrl = completionPath("en", scenario.id);
+    await expect(page).toHaveURL((url) => url.pathname === completionUrl && url.search === "" && url.hash === "");
+    await expect(page.locator('[data-completion-status="ready"]')).toBeVisible();
     await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
     assertCompletionReadHealthy();
     await page.getByRole("tab", { name: "Awards", exact: true }).click();
@@ -140,11 +166,11 @@ async function runCompletionJourney(
     let completionResponse: Response;
     await test.step("completion action response", async () => {
       const completionResponsePromise = waitForCompletionActionResponse(page, "en", scenario.id);
-      completionActionResponse = completionResponsePromise;
-      completionActionResponsePending = true;
+      runtime.completionActionResponse = completionResponsePromise;
+      runtime.completionActionResponsePending = true;
       void completionResponsePromise.then(
-        () => { completionActionResponsePending = false; },
-        () => { completionActionResponsePending = false; },
+        () => { runtime.completionActionResponsePending = false; },
+        () => { runtime.completionActionResponsePending = false; },
       );
       const completeButton = page.locator("[data-complete-tournament]");
       const startedAt = performance.now();
@@ -226,100 +252,94 @@ async function runCompletionJourney(
   }
 }
 
-let singleEliminationStorageState: Awaited<ReturnType<BrowserContext["storageState"]>> | undefined;
-
-test.describe("single-elimination Completion budget", () => {
-  test.beforeAll(async ({ browser }, testInfo) => {
-    const startedAt = performance.now();
-    const scenario = await prepareTestCompletionFixture("single_elimination");
-    const prewarmContext = await browser.newContext();
-    try {
-      const prewarmPage = await prewarmContext.newPage();
-      await loginAsOrganizer(prewarmPage, "en");
-      const completionUrl = `/en/organizer/events/${scenario.id}/completion`;
-      await prewarmPage.goto(completionUrl);
-      await expect(prewarmPage.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
-      assertCompletionReadHealthy();
-      singleEliminationStorageState = await prewarmContext.storageState();
-    } finally {
-      await prewarmContext.close();
-    }
-    const durationMs = Math.round(performance.now() - startedAt);
-    console.info(`[completion-prerequisites] kind=single_elimination durationMs=${durationMs}`);
-    await testInfo.attach("completion-single-elimination-prerequisites", {
-      body: `durationMs=${durationMs}\nfixture=before-timed-test\nauthentication=prewarm-context\nroute=exact-event-completion\n`,
-      contentType: "text/plain",
-    });
-  });
-
-  test.afterAll(async () => {
-    await cleanupCompletionResources();
-  });
-
-  test("completes the authoritative single_elimination release format with an audited tied award", async ({ browser }) => {
-    const timedBodyStartedAt = performance.now();
-    const scenario = fixture;
-    const storageState = singleEliminationStorageState;
-    if (!scenario || !storageState) throw new Error("Single-elimination Completion prerequisites were not prepared.");
-
-    const completionContext = await browser.newContext({ storageState: singleEliminationStorageState });
-    activeCompletionContext = completionContext;
-    try {
-      const page = await completionContext.newPage();
-      await runCompletionJourney(page, scenario, "single_elimination", { holdTerminalRefresh: true });
-    } finally {
-      if (!completionActionResponsePending) {
-        await completionContext.close();
-        activeCompletionContext = undefined;
-      }
-    }
-    const testBodyDurationMs = Math.round(performance.now() - timedBodyStartedAt);
-    console.info(`[completion-test-body] kind=single_elimination measuredFrom=first-test-line attachment=excluded durationMs=${testBodyDurationMs}`);
-    await test.info().attach("completion-single-elimination-test-body", {
-      body: `testBodyDurationMs=${testBodyDurationMs}\nmeasuredFrom=first-test-line\nattachment=excluded\nfixture=pre-created\nauthentication=prewarmed-storage-state\n`,
-      contentType: "text/plain",
-    });
-  });
-});
-
-for (const kind of ["double_elimination", "round_robin", "group_playoffs"] as const satisfies readonly CompletionFixtureKind[]) {
-  test(`completes the authoritative ${kind} release format with an audited tied award`, async ({ page }) => {
-    const scenario = await test.step("fixture setup", () => prepareTestCompletionFixture(kind));
-    await test.step("organizer authentication", () => loginAsOrganizer(page, "en"));
-    await runCompletionJourney(page, scenario, kind);
+async function attachCompletionBodyTiming(kind: CompletionFixtureKind, startedAt: number) {
+  const testBodyDurationMs = Math.round(performance.now() - startedAt);
+  console.info(`[completion-test-body] kind=${kind} measuredFrom=first-test-line attachment=excluded durationMs=${testBodyDurationMs}`);
+  await test.info().attach(`completion-${kind}-test-body`, {
+    body: `testBodyDurationMs=${testBodyDurationMs}\nmeasuredFrom=first-test-line\nattachment=excluded\nfixture=pre-created\nauthentication=prepared-context\n`,
+    contentType: "text/plain",
   });
 }
 
-test("completion workspace keeps localized parity and bounded mobile controls", async ({ page }) => {
-  test.slow();
-  fixture = await prepareCompletionFixture("single_elimination", "release-completion-parity");
-  for (const locale of ["id", "en"] as const) {
-    await normalizeReleasePage(page);
-    await page.setViewportSize({ width: locale === "id" ? 390 : 1440, height: locale === "id" ? 844 : 900 });
-    await loginAsOrganizer(page, locale);
-    await page.goto(`/${locale}/organizer/events/${fixture.id}/completion`);
-    await expect(page.locator("html")).toHaveAttribute("lang", locale);
-    await expect(page.locator("[data-completion-workspace]")).toBeVisible();
-    await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
-    const geometry = await page.locator("[data-completion-workspace]").evaluate((root) => ({
-      clientWidth: (root as HTMLElement).clientWidth,
-      scrollWidth: (root as HTMLElement).scrollWidth,
-      controls: Array.from(root.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, summary'))
-        .filter((element) => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0)
-        .map((element) => ({ label: element.textContent?.trim() || element.getAttribute("aria-label") || element.tagName, height: element.getBoundingClientRect().height })),
-    }));
-    expect(geometry.scrollWidth, `${locale} completion workspace overflows`).toBeLessThanOrEqual(geometry.clientWidth);
-    expect(geometry.controls.filter(({ height }) => height < 44), `${locale} completion control below 44px`).toEqual([]);
-    const tabs = page.getByRole("tab");
-    await expect(tabs).toHaveCount(4);
-    await tabs.first().focus();
-    await page.keyboard.press("ArrowRight");
-    await expect(tabs.nth(1)).toBeFocused();
-    expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
-    await waitForReleaseFonts(page);
-    await page.screenshot({
-      path: test.info().outputPath(`completion-${locale}-${locale === "id" ? "390" : "1440"}.png`),
-      animations: "disabled",
+const RELEASE_FORMATS = [
+  "single_elimination",
+  "double_elimination",
+  "round_robin",
+  "group_playoffs",
+] as const satisfies readonly CompletionFixtureKind[];
+
+function defineCompletionReleaseFormatCase(kind: CompletionFixtureKind) {
+  const runtime: CompletionReleaseRuntime = {
+    kind,
+    completionActionResponsePending: false,
+  };
+
+  test.describe(`${kind} Completion budget`, () => {
+    test.beforeAll(async ({ browser }, testInfo) => {
+      try {
+        await prepareCompletionReleaseCase(browser, runtime, testInfo);
+      } catch (error) {
+        await cleanupCompletionReleaseCase(runtime);
+        throw error;
+      }
     });
+
+    test.afterAll(async () => {
+      await test.step("fixture cleanup", () => cleanupCompletionReleaseCase(runtime));
+    });
+
+    test(`completes the authoritative ${kind} release format with an audited tied award`, async () => {
+      const startedAt = performance.now();
+      if (!runtime.fixture || !runtime.page) throw new Error(`${kind} Completion prerequisites were not prepared.`);
+      await runCompletionJourney(runtime.page, runtime.fixture, kind, runtime, {
+        holdTerminalRefresh: kind === "single_elimination",
+        pagePrepared: true,
+      });
+      await attachCompletionBodyTiming(kind, startedAt);
+    });
+  });
+}
+
+for (const kind of RELEASE_FORMATS) defineCompletionReleaseFormatCase(kind);
+
+test("completion workspace keeps localized parity and bounded mobile controls", async ({ browser }) => {
+  test.slow();
+  const parityFixture = await prepareCompletionFixture("single_elimination", "release-completion-parity");
+  let parityContext: BrowserContext | undefined;
+  try {
+    parityContext = await browser.newContext();
+    const parityPage = await parityContext.newPage();
+    for (const locale of ["id", "en"] as const) {
+      await normalizeReleasePage(parityPage);
+      await parityPage.setViewportSize({ width: locale === "id" ? 390 : 1440, height: locale === "id" ? 844 : 900 });
+      await loginAsOrganizer(parityPage, locale);
+      await parityPage.goto(`/${locale}/organizer/events/${parityFixture.id}/completion`);
+      await expect(parityPage.locator("html")).toHaveAttribute("lang", locale);
+      await expect(parityPage.locator("[data-completion-workspace]")).toBeVisible();
+      await expect(parityPage.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
+      const geometry = await parityPage.locator("[data-completion-workspace]").evaluate((root) => ({
+        clientWidth: (root as HTMLElement).clientWidth,
+        scrollWidth: (root as HTMLElement).scrollWidth,
+        controls: Array.from(root.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, summary'))
+          .filter((element) => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0)
+          .map((element) => ({ label: element.textContent?.trim() || element.getAttribute("aria-label") || element.tagName, height: element.getBoundingClientRect().height })),
+      }));
+      expect(geometry.scrollWidth, `${locale} completion workspace overflows`).toBeLessThanOrEqual(geometry.clientWidth);
+      expect(geometry.controls.filter(({ height }) => height < 44), `${locale} completion control below 44px`).toEqual([]);
+      const tabs = parityPage.getByRole("tab");
+      await expect(tabs).toHaveCount(4);
+      await tabs.first().focus();
+      await parityPage.keyboard.press("ArrowRight");
+      await expect(tabs.nth(1)).toBeFocused();
+      expect(await parityPage.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+      await waitForReleaseFonts(parityPage);
+      await parityPage.screenshot({
+        path: test.info().outputPath(`completion-${locale}-${locale === "id" ? "390" : "1440"}.png`),
+        animations: "disabled",
+      });
+    }
+  } finally {
+    if (parityContext) await parityContext.close().catch(() => undefined);
+    await parityFixture.cleanup();
   }
 });
