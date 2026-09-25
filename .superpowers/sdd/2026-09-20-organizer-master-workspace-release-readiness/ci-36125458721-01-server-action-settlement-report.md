@@ -4,7 +4,8 @@ Date: 2026-09-25 (Asia/Jakarta)
 Worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTourney-gitnative`
 Branch: `codex/organizer-release-readiness`
 Base SHA for this work: `e4b2903`
-Status: `DONE_WITH_CONCERNS`
+Review-round status: `DONE_WITH_CONCERNS`; clean-database publish evidence is
+deferred to the next CI run, so this local work is not an acceptance pass.
 
 ## Outcome
 
@@ -23,12 +24,15 @@ settlement contract:
 - The destination waiter has an immediate no-op rejection observer so a
   header/status mismatch cannot create a secondary unhandled `page.waitForURL`
   rejection during test teardown.
+- The trigger is normalized through a microtask and immediately observed for
+  rejection, covering both synchronous throws and rejected trigger promises
+  without changing the successful `Promise.all` path.
 - The two overnight admin actions, all three public-lifecycle status
   transitions, and both organizer preview locales retain their existing
   product assertions and use exact route/query predicates.
 
 No product source, Server Action, database, seed/reset path, timeout budget,
-retry policy, or assertion was changed.
+retry policy, or product assertion was changed.
 
 ## Root cause and bounded correction
 
@@ -44,6 +48,11 @@ During focused verification, a deliberately conflicting publish response
 also showed that the pre-armed destination waiter could reject after the
 primary exact-header error. The no-op rejection observer handles that pending
 promise without hiding the primary failure or changing the successful path.
+
+The review also identified that a rejected trigger could be unhandled while
+the exact response waiter was still pending. `Promise.resolve().then(...)`
+captures synchronous throws as a promise rejection, and the immediate no-op
+catch observes it until the normal `Promise.all` settlement path reports it.
 
 ## TDD RED/GREEN evidence
 
@@ -69,12 +78,43 @@ Result: exit 0; 6 passed
 Time: 19:44:06
 ```
 
+Review round 1 added mutation-resistant static assertions for the explicit
+preview await, exact request query strings, exact redirect destinations,
+forbidden timing/retry constructs, retained localized/database receipts, and
+the no-`src/` scope contract. The trigger-observation assertion was written
+first and failed against the previous helper:
+
+```text
+Command: pnpm exec vitest run tests/competition/ci-36125458721-server-action-settlement.static.test.ts
+Result: exit 1; 1 failed, 6 passed (trigger promise was not normalized/observed)
+Time: 19:58:38
+```
+
+After the minimal trigger normalization and catch observer:
+
+```text
+Command: pnpm exec vitest run tests/competition/ci-36125458721-server-action-settlement.static.test.ts
+Result: exit 0; 7 passed
+Time: 19:59:02
+```
+
+After adding the final exact public redirect assertion, the unchanged static
+contract was rerun:
+
+```text
+Command: pnpm exec vitest run tests/competition/ci-36125458721-server-action-settlement.static.test.ts
+Result: exit 0; 7 passed
+Time: 20:00:48
+```
+
 ## Focused browser evidence
 
 The local Windows package shim did not resolve through `pnpm exec` for
 Playwright, so the equivalent checked-in `node_modules/.bin/playwright.cmd`
 entry point was used. Every command used one worker and zero retries; no seed,
-reset, retry, sleep, or timeout override was run.
+reset, retry, sleep, or timeout override was run. These local results are
+diagnostic evidence only; the clean-database publish acceptance result is
+deferred to the next CI run.
 
 ### Overnight smoke pair
 
@@ -88,7 +128,9 @@ the exact `/en/admin?phase=prepare` POST and then failed at the new exact-header
 check because the already-prepared shared database had been contaminated by a
 prior interrupted run: the real response was
 `/en/admin?error=event-publish-conflict;push`, not the expected success
-redirect. The case was not rerun and the database was not reset or reseeded.
+redirect. The case was not rerun and the database was not reset or reseeded;
+its clean-database acceptance evidence is explicitly deferred to the next CI
+run.
 
 ### Organizer release journey locales
 
@@ -115,10 +157,10 @@ non-failing warnings.
 
 | Gate | Result |
 | --- | --- |
-| Static settlement contract | exit 0; 6 passed |
+| Static settlement contract | exit 0; 7 passed |
 | Organizer focused browser cases | exit 0; 2 passed |
 | Public lifecycle focused browser case | exit 0; 1 passed |
-| Overnight focused pair | 1 passed; 1 contaminated-database failure |
+| Overnight focused pair | 1 passed; publish clean-DB evidence deferred to next CI |
 | Changed-file ESLint | exit 0 |
 | TypeScript (`--noEmit --incremental false`) | exit 0 |
 | `git diff --check` | exit 0; only normal LF/CRLF conversion warnings |
@@ -141,7 +183,7 @@ unstaged:
 - `public/certificates/e2e-completion-single_elimination-release-journey-en/`
 - `public/certificates/e2e-completion-single_elimination-release-journey-id/`
 
-The remaining concern is limited to the contaminated overnight publish
-precondition. It must be revalidated only in a clean already-prepared CI
-database; this work intentionally does not mutate that database to manufacture
-a pass.
+The remaining concern is the contaminated overnight publish precondition. Its
+clean-database acceptance result must be revalidated in the next CI run; this
+work intentionally does not mutate that database or claim a local acceptance
+pass.

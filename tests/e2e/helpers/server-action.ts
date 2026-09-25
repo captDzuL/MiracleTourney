@@ -38,7 +38,8 @@ export async function runAndSettleServerActionRedirect(
   const responsePromise = waitForServerActionResponseHeaders(page, options.request);
   const destinationPromise = page.waitForURL(options.destination, { waitUntil: "domcontentloaded" });
   void destinationPromise.catch(() => undefined);
-  const triggerPromise = options.trigger();
+  const triggerPromise = Promise.resolve().then(() => options.trigger());
+  void triggerPromise.catch(() => undefined);
   const response = await responsePromise;
   if (!(response.status() < 400)) throw new Error(`Server Action failed with HTTP ${response.status()}.`);
   const actionRedirect = response.headers()["x-action-redirect"];
