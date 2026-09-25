@@ -17,11 +17,21 @@ import {
 
 test.describe.configure({ mode: "serial" });
 
-let fixture: CertificateFixture | undefined;
+let fixture: Pick<CertificateFixture, "cleanup"> | undefined;
 test.afterEach(async () => {
   await fixture?.cleanup();
   fixture = undefined;
 });
+
+async function prepareTestCertificateFixture(namespace?: string) {
+  const scenario = await prepareCertificateFixture(namespace, {
+    onBaseFixtureReady: (baseFixture) => {
+      fixture = baseFixture;
+    },
+  });
+  fixture = scenario;
+  return scenario;
+}
 
 function waitForCertificatePublicationResponse(page: Page, locale: "en" | "id", eventId: string) {
   const certificatePath = `/${locale}/organizer/events/${encodeURIComponent(eventId)}/certificates`;
@@ -38,25 +48,26 @@ function waitForCertificatePublicationResponse(page: Page, locale: "en" | "id", 
 
 test("publishes all seven certificates and preserves superseded verification history", async ({ page }) => {
   test.slow();
-  const scenario = await prepareCertificateFixture();
-  fixture = scenario;
-  await loginAsOrganizer(page, "en");
-  await page.goto(`/en/organizer/events/${scenario.id}/certificates`);
+  const scenario = await test.step("fixture setup", () => prepareTestCertificateFixture());
+  await test.step("organizer login", () => loginAsOrganizer(page, "en"));
+  await test.step("certificate navigation", () => page.goto(`/en/organizer/events/${scenario.id}/certificates`));
 
   await expect(page.locator("[data-certificate-type]")).toHaveCount(7);
   await expect(page.locator('[data-hydration-ready="true"]')).toHaveCount(1);
   await expect(page.locator("[data-publish-certificate-set]")).toBeEnabled();
   await expect.poll(() => completionDb.certificateGenerationMutation.count({ where: { eventId: scenario.id } })).toBe(scenario.generatedMutationCount);
-  const publicationResponsePromise = waitForCertificatePublicationResponse(page, "en", scenario.id);
-  const [publicationResponse] = await Promise.all([
-    publicationResponsePromise,
-    page.locator("[data-publish-certificate-set]").click(),
-  ]);
-  expect(publicationResponse.status()).toBe(200);
-  await expect(page.locator('[role="status"]')).toContainText("The seven-certificate set was published safely.");
-  await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
-  await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({ where: { eventId: scenario.id }, select: { certificateRevision: true } })).certificateRevision).toBe(2);
-  await expect(page.locator("[data-certificate-publication-revision], [data-publication-revision]").first()).toHaveText(/\d+/);
+  await test.step("publication", async () => {
+    const publicationResponsePromise = waitForCertificatePublicationResponse(page, "en", scenario.id);
+    const [publicationResponse] = await Promise.all([
+      publicationResponsePromise,
+      page.locator("[data-publish-certificate-set]").click(),
+    ]);
+    expect(publicationResponse.status()).toBe(200);
+    await expect(page.locator('[role="status"]')).toContainText("The seven-certificate set was published safely.");
+    await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
+    await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({ where: { eventId: scenario.id }, select: { certificateRevision: true } })).certificateRevision).toBe(2);
+    await expect(page.locator("[data-certificate-publication-revision], [data-publication-revision]").first()).toHaveText(/\d+/);
+  });
 
   const certificates = await completionDb.certificate.findMany({
     where: { eventId: scenario.id },
@@ -85,8 +96,7 @@ test("publishes all seven certificates and preserves superseded verification his
 
 test("publishes once in Indonesian and announces the localized revision", async ({ page }) => {
   test.slow();
-  const scenario = await prepareCertificateFixture();
-  fixture = scenario;
+  const scenario = await prepareTestCertificateFixture();
   await loginAsOrganizer(page, "id");
   await page.goto(`/id/organizer/events/${scenario.id}/certificates`);
 
@@ -103,8 +113,7 @@ test("publishes once in Indonesian and announces the localized revision", async 
 
 test("keeps the certificate studio reachable and usable at desktop and mobile geometry", async ({ page }) => {
   test.slow();
-  const scenario = await prepareCertificateFixture();
-  fixture = scenario;
+  const scenario = await prepareTestCertificateFixture();
   await loginAsOrganizer(page, "en");
 
   for (const viewport of [
@@ -178,8 +187,7 @@ test("keeps the certificate studio reachable and usable at desktop and mobile ge
 
 test("certificate studio preserves ID/EN publication and verification parity", async ({ page }) => {
   test.slow();
-  const scenario = await prepareCertificateFixture("release-certificate-parity");
-  fixture = scenario;
+  const scenario = await prepareTestCertificateFixture("release-certificate-parity");
   for (const locale of ["id", "en"] as const) {
     await normalizeReleasePage(page);
     await page.setViewportSize({ width: 768, height: 900 });
