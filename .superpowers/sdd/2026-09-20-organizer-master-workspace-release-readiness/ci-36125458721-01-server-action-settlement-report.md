@@ -8,6 +8,9 @@ Review-round commit: `450ca7b`
 Review-round status: `DONE_WITH_CONCERNS`; clean-database publish evidence is
 deferred to the next CI run, so this local work is not an acceptance pass.
 
+Review round 2: static-contract hardening pending commit; browser evidence was
+not rerun by design.
+
 ## Outcome
 
 The five release-readiness observations now use one split Server Action
@@ -107,6 +110,30 @@ Command: pnpm exec vitest run tests/competition/ci-36125458721-server-action-set
 Result: exit 0; 7 passed
 Time: 20:00:48
 ```
+
+Review round 2 added three durable contract checks: exact organizer
+`requestUrl.search === "?view=import"`, the shared header waiter's absence of
+custom timeout options, and a Windows-safe committed-range guard that rejects
+any `src/` change in `e4b2903..HEAD`. The organizer equality mutation was
+removed temporarily and the contract failed as expected:
+
+```text
+Mutation: remove `requestUrl.search === "?view=import"`
+Command: pnpm exec vitest run tests/competition/ci-36125458721-server-action-settlement.static.test.ts
+Result: exit 1; 1 failed, 6 passed
+Time: 20:06:39
+```
+
+After restoring the exact matcher:
+
+```text
+Command: pnpm exec vitest run tests/competition/ci-36125458721-server-action-settlement.static.test.ts
+Result: exit 0; 7 passed
+Time: 20:07:05
+```
+
+The committed-range source guard reports no changed `src/` paths for
+`e4b2903..HEAD`; no product source was edited in this review round.
 
 ## Focused browser evidence
 

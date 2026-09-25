@@ -32,6 +32,7 @@ describe("server action settlement contract", () => {
     expect(headerWaiter).not.toContain('page.on("requestfinished"');
     expect(headerWaiter).not.toContain('page.on("requestfailed"');
     expect(headerWaiter).not.toContain("new Promise<Response>");
+    expect(headerWaiter).not.toMatch(/\btimeout\s*:/);
   });
 
   it("keeps non-redirect body completion after exact response selection", () => {
@@ -192,6 +193,7 @@ describe("server action settlement contract", () => {
     expect(previewBlock).toContain("waitForServerActionResponse(page,");
     expect(previewBlock).toContain('requestUrl.pathname === `/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration`');
     expect(previewBlock).toContain('requestUrl.searchParams.get("view") === "import"');
+    expect(previewBlock).toContain('requestUrl.search === "?view=import"');
     expect(previewBlock).toContain("const previewResponse");
     expect(previewBlock).toContain("await previewResponse;");
     expect(previewBlock).toContain('await expect(page.locator("[data-commit]")).toBeEnabled();');
@@ -212,10 +214,11 @@ describe("server action settlement contract", () => {
   });
 
   it("keeps settlement changes out of product source", () => {
-    const changedSourceFiles = execFileSync("git", ["diff", "--name-only", "HEAD", "--", "src"], {
+    const taskBaseSha = "e4b2903";
+    const changedSourceFiles = execFileSync("git", ["diff", "--name-only", `${taskBaseSha}..HEAD`, "--", "src"], {
       cwd: root,
       encoding: "utf8",
-    });
-    expect(changedSourceFiles.trim()).toBe("");
+    }).split(/\r?\n/).filter(Boolean);
+    expect(changedSourceFiles).toEqual([]);
   });
 });
