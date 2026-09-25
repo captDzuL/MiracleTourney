@@ -37,7 +37,9 @@ test.describe("admin player stats entry", () => {
     await prisma.statSubmission.deleteMany({ where: { matchId: fixture.matchId } });
 
     await loginAsAdmin(page, "id");
-    await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
+    await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page).toHaveURL(new RegExp(`activeEventId=${fixture.eventId}`), { timeout: 15_000 });
   });
 
@@ -120,10 +122,21 @@ test.describe("admin player stats entry", () => {
       has: page.locator(`input[name="teamId"][value="${fixture.homeTeamId}"]`),
     });
     await fillGoal(homeForm, fixture.homePlayers[0].id, "7");
-    await homeForm.getByRole("button", { name: /simpan statistik/i }).click();
-    await expect(page).toHaveURL(/success=player-stats-saved/, { timeout: 30_000 });
+    const saved = page.waitForURL((url) =>
+      url.pathname === "/id/admin"
+      && url.searchParams.get("activeEventId") === fixture.eventId
+      && url.searchParams.get("matchId") === fixture.matchId
+      && url.searchParams.get("success") === "player-stats-saved",
+      { waitUntil: "domcontentloaded" },
+    );
+    await Promise.all([
+      saved,
+      homeForm.getByRole("button", { name: /simpan statistik/i }).click(),
+    ]);
 
-    await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
+    await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page.getByText("Statistik Pemain", { exact: true })).toBeVisible({ timeout: 15_000 });
 
     const homeFormAgain = page.locator("form").filter({
