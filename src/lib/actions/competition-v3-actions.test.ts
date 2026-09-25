@@ -61,6 +61,25 @@ describe("authenticated competition actions", () => {
     });
     expect(JSON.stringify(records)).not.toMatch(/P2028|secret@example\.test|db\.example\.test|SQL connection/);
   });
+  it("preserves an exhausted P2034 as a public conflict without leaking a failed result", async () => {
+    const request = twentyFourTeamDrawing();
+    const failure = Object.assign(new Error("database unavailable after stale conflict secret@example.test"), { code: "P2034" });
+    boundary.db = { $transaction: () => Promise.reject(failure) } as unknown as ReturnType<typeof operationStore>["db"];
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const result = await mutateCompetitionWorkspaceAction(request);
+
+    expect(result).toEqual({ status: "conflict" });
+    expect(JSON.stringify(result)).not.toMatch(/P2034|secret@example\.test|internal_error|correlationId/);
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
+    expect(records).toContainEqual(expect.objectContaining({
+      stage: "competition_transaction",
+      phase: "failed",
+      errorCode: "serialization_conflict",
+      terminal: "failed",
+    }));
+    expect(JSON.stringify(records)).not.toMatch(/P2034|secret@example\.test/);
+  });
   it("previews an official correction through the authenticated owner without writing", async () => {
     const call = (version: number, command: unknown) => executeCompetitionOperationAction({ eventId: "event", expectedVersion: version, idempotencyKey: `k${version}`, command });
     await call(0, { kind: "drawing_save", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] });

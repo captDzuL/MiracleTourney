@@ -48,7 +48,7 @@ export function parseServerActionResult<T extends { status: string }>(body: stri
 
   const framedResults: Array<{ status: string }> = [];
   for (const line of body.split(/\r?\n/)) {
-    const frame = line.match(/^\d+:(.*)$/);
+    const frame = line.match(/^[0-9a-f]+:(.*)$/i);
     if (!frame) continue;
     const payload = frame[1].trim();
     const parsed = parseJsonCandidate(payload);

@@ -8,6 +8,7 @@ import { correctionPreview, type ResultGame } from "./results";
 import { CompetitionExpectedError } from "./errors";
 import {
   classifyCompetitionFailure,
+  isCompetitionSerializationConflict,
   makeOperationStageReporter,
   reportOperationStage,
   withOperationStage,
@@ -26,17 +27,7 @@ export type {
 export { CompetitionExpectedError, isCompetitionExpectedError } from "./errors";
 export type { CompetitionExpectedErrorCode } from "./errors";
 
-type JsonError = { code?: string };
 const SERIALIZATION_RETRIES = 6;
-
-function isSerializationConflict(error: unknown): boolean {
-  if (error && typeof error === "object" && "code" in error) {
-    const prismaError = error as JsonError;
-    return prismaError.code === "P2034";
-  }
-
-  return false;
-}
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -116,7 +107,7 @@ export function createCompetitionOperations(
             stage: "competition_transaction",
             durationMs: Date.now() - startedAt,
             counts: { attempt: attempt + 1 },
-            ...(isSerializationConflict(error)
+            ...(isCompetitionSerializationConflict(error)
               ? { errorCode: "serialization_conflict" as const, terminal: attempt === SERIALIZATION_RETRIES - 1 ? "failed" as const : "retry" as const }
               : { errorCode: classifyCompetitionFailure(error), terminal: "failed" as const }),
           });
@@ -128,7 +119,7 @@ export function createCompetitionOperations(
       try {
         return await transact(attempt);
       } catch (error) {
-        if (!isSerializationConflict(error)) {
+        if (!isCompetitionSerializationConflict(error)) {
           throw error;
         }
 

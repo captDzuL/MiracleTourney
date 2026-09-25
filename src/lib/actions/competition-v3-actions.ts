@@ -6,7 +6,7 @@ import { isFeatureEnabled } from "@/lib/feature-flags";
 import { prisma } from "@/lib/platform/db";
 import { createCompetitionOperations, type OperationReceipt } from "@/lib/tournament/operations";
 import { CompetitionExpectedError, isCompetitionExpectedError } from "@/lib/tournament/operations/errors";
-import { classifyCompetitionFailure, type CompetitionFailureCode } from "@/lib/tournament/operations/observability";
+import { classifyCompetitionFailure, isCompetitionSerializationConflict, type CompetitionFailureCode } from "@/lib/tournament/operations/observability";
 import { correctionPreviewSchema, operationRequestSchema } from "@/lib/tournament/operations/schema";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { withServerActionLog, type ServerActionLogContext } from "@/lib/observability/logger";
@@ -82,6 +82,7 @@ export async function mutateCompetitionWorkspaceAction(input: unknown): Promise<
 async function mutateCompetitionWorkspaceActionImpl(input: unknown, context: CompetitionActionContext) {
   try { return { status: "saved" as const, receipt: await executeCompetitionOperationActionImpl(input, context) }; }
   catch (error) {
+    if (isCompetitionSerializationConflict(error)) return { status: "conflict" as const };
     if (isCompetitionExpectedError(error)) {
       if (error.code === "conflict") return { status: "conflict" as const };
       if (error.code === "unauthorized" || error.code === "unavailable" || error.code === "password_change_required") {

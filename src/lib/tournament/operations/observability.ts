@@ -23,6 +23,12 @@ export type OperationObservabilityOptions = Readonly<{
 
 type ErrorLike = { message?: unknown; cause?: unknown; meta?: unknown };
 
+/** Recognizes only the provider's explicit serialization-conflict code. */
+export function isCompetitionSerializationConflict(error: unknown): boolean {
+  return !!error && typeof error === "object" && "code" in error
+    && (error as { code?: unknown }).code === "P2034";
+}
+
 /** Classifies storage failures without exposing provider messages to callers. */
 export function classifyCompetitionFailure(error: unknown): CompetitionFailureCode {
   if (isTransactionTimeout(error)) return "transaction_timeout";
@@ -39,7 +45,7 @@ function isTransactionTimeout(error: unknown): boolean {
 
 function hasTransactionTimeoutEvidence(value: unknown, depth = 0, seen = new Set<object>()): boolean {
   if (typeof value === "string") {
-    return /(?:interactive\s+)?transaction[\s\S]*(?:timed\s+out|timeout|expired|already\s+closed|given\s+time)|(?:timed\s+out|timeout|expired|already\s+closed|given\s+time)[\s\S]*transaction/i.test(value);
+    return /(?:interactive\s+)?transaction[\s\S]*(?:timed\s+out|timeout|expired|given\s+time)|(?:timed\s+out|timeout|expired|given\s+time)[\s\S]*transaction/i.test(value);
   }
   if (!value || typeof value !== "object" || depth >= 3 || seen.has(value)) return false;
   seen.add(value);

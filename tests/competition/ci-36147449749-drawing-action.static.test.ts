@@ -54,6 +54,12 @@ describe("drawing action settlement contract", () => {
     expect(parseServerActionResult<{ status: string; code: string; correlationId: string }>(
       '1:{"status":"failed","code":"internal_error","correlationId":"req-7"}\n',
     )).toMatchObject({ status: "failed", code: "internal_error", correlationId: "req-7" });
+    expect(parseServerActionResult<{ status: string; receipt: { version: number } }>(
+      'a:{"status":"saved","receipt":{"version":8}}\n',
+    )).toEqual({ status: "saved", receipt: { version: 8 } });
+    expect(parseServerActionResult<{ status: string; code: string; correlationId: string }>(
+      'A:{"status":"failed","code":"internal_error","correlationId":"req-8"}\n',
+    )).toMatchObject({ status: "failed", code: "internal_error", correlationId: "req-8" });
 
     expect(() => parseServerActionResult('0:{"status":"pending"}\n1:{"status":"saved"}\n')).toThrow(/ambiguous/i);
     expect(() => parseServerActionResult('1:{"status":"saved"\n')).toThrow();
