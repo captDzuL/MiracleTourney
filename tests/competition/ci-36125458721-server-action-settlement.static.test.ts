@@ -73,6 +73,60 @@ describe("server action settlement contract", () => {
     expect(responseHelper).not.toContain("requestfailed");
   });
 
+  it("settles a UI-bound action from exact response headers and a caller UI-ready callback", () => {
+    const uiSettlement = sliceBetween(
+      helper,
+      "export async function runAndSettleServerActionUi(",
+      "function parseJsonCandidate",
+    );
+
+    expect(helper).toContain("export type ServerActionUiSettlementOptions =");
+    expect(helper).toContain("export async function runAndSettleServerActionUi(");
+    expect(uiSettlement).toContain("const responsePromise = waitForServerActionResponseHeaders(page, options.request);");
+    expect(uiSettlement).toContain("const triggerPromise = Promise.resolve().then(() => options.trigger());");
+    expect(uiSettlement).toContain("const [response] = await Promise.all([responsePromise, triggerPromise]);");
+    expect(uiSettlement).toContain("response.status() < 400");
+    expect(uiSettlement).toContain("await options.uiReady();");
+    expect(uiSettlement).not.toContain("response.finished()");
+    expect(uiSettlement).not.toContain("response.text()");
+    expect(uiSettlement).not.toContain("requestfinished");
+    expect(uiSettlement).not.toContain("requestfailed");
+    expect(uiSettlement).not.toMatch(/\btimeout\s*:/);
+
+    const responseIndex = uiSettlement.indexOf("const responsePromise = waitForServerActionResponseHeaders");
+    const triggerIndex = uiSettlement.indexOf("const triggerPromise = Promise.resolve().then(() => options.trigger());");
+    const settledIndex = uiSettlement.indexOf("const [response] = await Promise.all([responsePromise, triggerPromise]);");
+    const statusIndex = uiSettlement.indexOf("response.status() < 400");
+    const uiReadyIndex = uiSettlement.indexOf("await options.uiReady();");
+    expect(responseIndex).toBeGreaterThanOrEqual(0);
+    expect(triggerIndex).toBeGreaterThan(responseIndex);
+    expect(settledIndex).toBeGreaterThan(triggerIndex);
+    expect(statusIndex).toBeGreaterThan(settledIndex);
+    expect(uiReadyIndex).toBeGreaterThan(statusIndex);
+  });
+
+  it("rejects status, UI-ready, and EOF-based settlement mutations", () => {
+    const uiSettlement = sliceBetween(
+      helper,
+      "export async function runAndSettleServerActionUi(",
+      "function parseJsonCandidate",
+    );
+    const assertUiSettlement = (source: string) => {
+      expect(source).toContain("const responsePromise = waitForServerActionResponseHeaders(page, options.request);");
+      expect(source).toContain("const triggerPromise = Promise.resolve().then(() => options.trigger());");
+      expect(source).toContain("const [response] = await Promise.all([responsePromise, triggerPromise]);");
+      expect(source).toContain("response.status() < 400");
+      expect(source).toContain("await options.uiReady();");
+      expect(source).not.toContain("response.finished()");
+      expect(source).not.toContain("response.text()");
+    };
+
+    expect(() => assertUiSettlement(uiSettlement)).not.toThrow();
+    expect(() => assertUiSettlement(uiSettlement.replace("response.status() < 400", "response.status() >= 400"))).toThrow();
+    expect(() => assertUiSettlement(uiSettlement.replace("await options.uiReady();", "return response;"))).toThrow();
+    expect(() => assertUiSettlement(uiSettlement.replace("await options.uiReady();", "await response.finished();"))).toThrow();
+  });
+
   it("pre-arms redirect headers and destination, then validates status and action redirect", () => {
     const redirectHelper = helper.slice(helper.indexOf("export async function runAndSettleServerActionRedirect("));
 
@@ -187,8 +241,8 @@ describe("server action settlement contract", () => {
     );
     const statusSettlement = sliceBetween(
       updateStatus,
-      "      await runAndSettleServerActionRedirect(page, {",
-      "      await expect(page).toHaveURL(/success=event-status-updated/);",
+      "    await runAndSettleServerActionRedirect(page, {",
+      "    await expect(page).toHaveURL(/success=event-status-updated/);",
     );
 
     expect(publicLifecycleSpec).toContain('import { runAndSettleServerActionRedirect } from "./helpers/server-action";');
@@ -219,17 +273,17 @@ describe("server action settlement contract", () => {
       "  await expectLocalizedRegistrationSurface(page, registrationFixture, locale, \"payments\");",
     );
 
-    expect(organizerSpec).toContain('import { waitForServerActionResponse } from "./helpers/server-action";');
-    expect(previewBlock).toContain("waitForServerActionResponse(page,");
+    expect(organizerSpec).toContain('import { runAndSettleServerActionUi } from "./helpers/server-action";');
+    expect(previewBlock).toContain("runAndSettleServerActionUi(page, {");
     expect(previewBlock).toContain('requestUrl.pathname === `/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration`');
     expect(previewBlock).toContain('requestUrl.searchParams.get("view") === "import"');
     expect(previewBlock).toContain('requestUrl.search === "?view=import"');
-    expect(previewBlock).toContain("const previewResponse");
-    expect(previewBlock).toContain("await previewResponse;");
+    expect(previewBlock).toContain("trigger: () => page.locator(\"[data-preview]\").click(),");
+    expect(previewBlock).toContain("uiReady: async () => {");
     expect(previewBlock).toContain('await expect(page.locator("[data-commit]")).toBeEnabled();');
-    expect(previewBlock.indexOf("waitForServerActionResponse")).toBeLessThan(previewBlock.indexOf('page.locator("[data-preview]").click()'));
-    expect(previewBlock.indexOf("await previewResponse;")).toBeGreaterThan(previewBlock.indexOf('page.locator("[data-preview]").click()'));
-    expect(previewBlock.indexOf("await previewResponse;")).toBeLessThan(previewBlock.indexOf('await expect(page.locator("[data-commit]")).toBeEnabled();'));
+    expect(previewBlock.indexOf("runAndSettleServerActionUi")).toBeLessThan(previewBlock.indexOf('trigger: () => page.locator("[data-preview]").click()'));
+    expect(previewBlock.indexOf('trigger: () => page.locator("[data-preview]").click()')).toBeLessThan(previewBlock.indexOf("uiReady: async () => {"));
+    expect(previewBlock.indexOf("uiReady: async () => {")).toBeLessThan(previewBlock.indexOf('await expect(page.locator("[data-commit]")).toBeEnabled();'));
     expect(previewBlock).toContain("await expectLocalizedText(page, copy.importCompleted, copy.opposite.importCompleted, 15_000);");
     expect(previewBlock).toContain("await fixture.captureImportBatchId();");
     expect(previewBlock).toContain("expect(fixture.importBatchId).toBeTruthy();");

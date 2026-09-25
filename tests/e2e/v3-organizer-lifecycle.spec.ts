@@ -3,7 +3,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 import { loginAsOrganizer, loginWithCredentials, probeReleaseReducedMotion, suppressAnimationsForScreenshot, waitForReleaseFonts } from "./helpers/auth";
 import { prepareOrganizerReleaseFixture } from "./helpers/fixtures";
-import { waitForServerActionResponse } from "./helpers/server-action";
+import { runAndSettleServerActionUi } from "./helpers/server-action";
 
 export const VIEWPORTS = [
   { name: "360", width: 360, height: 800 },
@@ -443,15 +443,18 @@ async function runOrganizerReleaseJourneyPartA(page: Page, fixture: ReleaseFixtu
   ].join("\n");
   await expectLocalizedRegistrationSurface(page, registrationFixture, locale, "import");
   await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({ name: fixture.importSourceLabel, mimeType: "text/csv", buffer: Buffer.from(csv) });
-  const previewResponse = waitForServerActionResponse(page, (request) => {
-    const requestUrl = new URL(request.url());
-    return requestUrl.pathname === `/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration`
-      && requestUrl.searchParams.get("view") === "import"
-      && requestUrl.search === "?view=import";
+  await runAndSettleServerActionUi(page, {
+    request: (request) => {
+      const requestUrl = new URL(request.url());
+      return requestUrl.pathname === `/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration`
+        && requestUrl.searchParams.get("view") === "import"
+        && requestUrl.search === "?view=import";
+    },
+    trigger: () => page.locator("[data-preview]").click(),
+    uiReady: async () => {
+      await expect(page.locator("[data-commit]")).toBeEnabled();
+    },
   });
-  await page.locator("[data-preview]").click();
-  await previewResponse;
-  await expect(page.locator("[data-commit]")).toBeEnabled();
   await page.locator("[data-commit]").click();
   await expectLocalizedText(page, copy.importCompleted, copy.opposite.importCompleted, 15_000);
   await fixture.captureImportBatchId();

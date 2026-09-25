@@ -115,21 +115,20 @@ jobs:
           ${{
             github.event_name != 'push' ||
             github.ref != 'refs/heads/codex/organizer-release-readiness' ||
-            !contains(github.event.head_commit.message, '[ci:shard2-only]')
+            !contains(github.event.head_commit.message, '[ci:failing4-only]')
           }}
         run: pnpm test:e2e:ci
-      - name: Run default shard 2 diagnostic fast lane
+      - name: Run failing4-only diagnostic fast lane
         if: >-
           ${{
             github.event_name == 'push' &&
             github.ref == 'refs/heads/codex/organizer-release-readiness' &&
-            contains(github.event.head_commit.message, '[ci:shard2-only]')
+            contains(github.event.head_commit.message, '[ci:failing4-only]')
           }}
         shell: bash
         run: |
           pnpm test:e2e:preflight
-          pnpm test:e2e:prepare
-          pnpm exec playwright test --config playwright.ci-default.config.ts --shard=2/2 --fail-on-flaky-tests
+          pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep "@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and finished" --fail-on-flaky-tests
       - name: Upload Playwright report evidence
         if: >-
           ${{
@@ -137,7 +136,7 @@ jobs:
             (
               github.event_name == 'push' &&
               github.ref == 'refs/heads/codex/organizer-release-readiness' &&
-              contains(github.event.head_commit.message, '[ci:shard2-only]')
+              contains(github.event.head_commit.message, '[ci:failing4-only]')
             )
           }}
         uses: actions/upload-artifact@v6

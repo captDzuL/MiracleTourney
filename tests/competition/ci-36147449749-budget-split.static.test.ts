@@ -47,33 +47,41 @@ function assertOvernightPreparationBudgetContract(source: string) {
 }
 
 function assertAdaptiveLifecycleLoadBearing(source: string) {
-  const body = sliceBetween(
+  const registration = sliceBetween(
     source,
-    'test("keeps one permanent URL across registration, drawing, ongoing, and finished"',
-    "\n  });",
+    'test("keeps one permanent URL through registration and drawing"',
+    '\n  test("keeps the same permanent URL through ongoing and finished"',
   );
-  const registration = sliceBetween(body, 'await test.step("registration and drawing"', "\n    let winner");
-  const ongoing = sliceBetween(body, 'await test.step("ongoing and result"', 'await test.step("finished and public verification"');
-  const finished = sliceBetween(body, 'await test.step("finished and public verification"', "\n    });");
+  const ongoingAndFinished = sliceBetween(
+    source,
+    'test("keeps the same permanent URL through ongoing and finished"',
+    "\n});",
+  );
+  const ongoing = sliceBetween(ongoingAndFinished, 'await test.step("ongoing and result"', 'await test.step("finished and public verification"');
+  const finished = sliceBetween(ongoingAndFinished, 'await test.step("finished and public verification"', "\n    });");
 
-  expect(body).toContain("const url = `/id/events/${slug}`;");
-  expect(countLiteral(body, "await page.goto(url);"), "the permanent URL must be revisited at every phase").toBe(6);
-  expect(countLiteral(body, "await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));")).toBe(5);
+  expect(countLiteral(source, 'test("keeps one permanent URL through registration and drawing"')).toBe(1);
+  expect(countLiteral(source, 'test("keeps the same permanent URL through ongoing and finished"')).toBe(1);
+  expect(registration).toContain("const url = `/id/events/${slug}`;");
+  expect(countLiteral(registration, "await page.goto(url);")).toBe(3);
+  expect(countLiteral(ongoingAndFinished, "await page.goto(url);")).toBe(3);
+  expect(countLiteral(source, "await page.goto(url);")).toBe(6);
+  expect(countLiteral(source, "await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));")).toBe(5);
   expect(registration).toContain('await expect(page.getByRole("heading", { level: 1, name: `Public Lifecycle ${namespace}` })).toBeVisible();');
   expect(countLiteral(registration, 'getByRole("region", { name: "Template bracket" })')).toBe(2);
   expect(countLiteral(registration, 'getByText("TBD", { exact: true })).toHaveCount(4)')).toBe(2);
   expect(countLiteral(registration, 'getByText(teams[0].name, { exact: true })).toHaveCount(0)')).toBe(2);
-  expect(registration).toContain('await updateStatus("Registration Closed");');
+  expect(registration).toContain('await updateStatus(page, "Registration Closed");');
   expect(registration).toContain('await expect(page.getByText("Drawing resmi", { exact: true })).toBeVisible();');
   expect(registration).toContain('await expect(page.getByText(teams[0].name, { exact: true }).first()).toBeVisible();');
   expect(registration).toContain('await expect(page.getByText(teams[1].name, { exact: true }).first()).toBeVisible();');
 
-  expect(ongoing).toContain('await updateStatus("Ongoing");');
+  expect(ongoing).toContain('await updateStatus(page, "Ongoing");');
   expect(ongoing).toContain('await expect(page.getByText("Event berlangsung", { exact: true })).toBeVisible();');
   expect(ongoing).toContain('await expect(page.getByRole("heading", { name: "Pertandingan berikutnya" })).toBeVisible();');
   expect(ongoing).toContain('expect(await prisma.match.count({ where: { eventId, resultVersion: 0 } })).toBe(0);');
 
-  expect(finished).toContain('await updateStatus("Finished");');
+  expect(finished).toContain('await updateStatus(page, "Finished");');
   expect(finished).toContain('await expect(page.getByText("Hasil akhir resmi", { exact: true })).toBeVisible();');
   expect(finished).toContain('await expect(page.getByRole("heading", { name: "Podium akhir" })).toBeVisible();');
   expect(finished).toContain('await expect(page.getByText(winner.name, { exact: true }).first()).toBeVisible();');
@@ -108,12 +116,15 @@ function assertAdaptiveLifecycleOrdering(source: string) {
 function assertAdaptiveLifecycleContract(source: string) {
   expect(source).toContain('test.describe.serial("Adaptive public event lifecycle", () => {');
   expect(source).toContain("test.describe.configure({ timeout: 120_000 });");
-  expect(source).toContain('test("keeps one permanent URL across registration, drawing, ongoing, and finished"');
+  expect(source).toContain('test("keeps one permanent URL through registration and drawing"');
+  expect(source).toContain('test("keeps the same permanent URL through ongoing and finished"');
+  expect(countLiteral(source, "test.setTimeout(120_000);")).toBe(2);
   for (const marker of ["Template bracket", "Drawing resmi", "Event berlangsung", "Hasil akhir resmi"]) {
     expect(source).toContain(marker);
   }
 
-  expect(source).toContain("let operationVersion = (await prisma.event.findUniqueOrThrow({");
+  expect(source).toContain("let operationVersion = 0;");
+  expect(source).toContain("operationVersion = (await prisma.event.findUniqueOrThrow({");
   expect(source).toContain("expectedVersion: operationVersion");
   expect(source).toContain("operationVersion = receipt.version;");
   expect(source).toContain("const inFlightOperations = new Set<Promise<unknown>>();");
@@ -274,6 +285,12 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
 
   it("caches lifecycle receipts and drains in-flight operations before exact teardown", () => {
     assertAdaptiveLifecycleContract(lifecycle);
+    for (const title of [
+      'test("keeps one permanent URL through registration and drawing"',
+      'test("keeps the same permanent URL through ongoing and finished"',
+    ]) {
+      expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(title, ""))).toThrow();
+    }
     expect(() => assertAdaptiveLifecycleContract(lifecycle.replace("operationVersion = receipt.version;", "operationVersion = operationVersion;"))).toThrow();
     expect(() => assertAdaptiveLifecycleContract(lifecycle.replace("await Promise.allSettled([...inFlightOperations]);", "await Promise.all([]);"))).toThrow();
     for (const removedAssertion of [
@@ -281,7 +298,7 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
       'await expect(page.getByRole("heading", { level: 1, name: `Public Lifecycle ${namespace}` })).toBeVisible();',
       'await expect(template.getByText("TBD", { exact: true })).toHaveCount(4);',
       'await expect(privateDrawing.getByText("TBD", { exact: true })).toHaveCount(4);',
-      'await updateStatus("Registration Closed");',
+      'await updateStatus(page, "Registration Closed");',
       'await expect(page.getByText("Drawing resmi", { exact: true })).toBeVisible();',
       'await expect(page.getByText("Event berlangsung", { exact: true })).toBeVisible();',
       'await expect(page.getByRole("heading", { name: "Pertandingan berikutnya" })).toBeVisible();',
@@ -301,12 +318,12 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
       'expect(await prisma.match.count({ where: { eventId, resultVersion: 1 } })).toBe(0);',
     ))).toThrow();
     expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(
-      "inFlightOperations.add(operation);\n      try {\n        const receipt = await operation;",
-      "try {\n        const receipt = await operation;\n        inFlightOperations.add(operation);",
+      "inFlightOperations.add(operation);\n    try {\n      const receipt = await operation;",
+      "try {\n      const receipt = await operation;\n      inFlightOperations.add(operation);",
     ))).toThrow();
     expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(
-      "const receipt = await operation;\n        operationVersion = receipt.version;",
-      "inFlightOperations.delete(operation);\n        const receipt = await operation;\n        operationVersion = receipt.version;",
+      "const receipt = await operation;\n      operationVersion = receipt.version;",
+      "inFlightOperations.delete(operation);\n      const receipt = await operation;\n      operationVersion = receipt.version;",
     ))).toThrow();
     expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(
       "while (inFlightOperations.size > 0) {\n      await Promise.allSettled([...inFlightOperations]);\n    }\n    await prisma.event.deleteMany({ where: { id: eventId } });",
@@ -326,10 +343,11 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
     expect(organizer).toContain('for (const locale of ["id", "en"] as const)');
     expect(organizer).toContain("@task11-release-journey-part-a organizer release journey ${locale} covers registration through Completion");
     for (const marker of [
-      "const previewResponse = waitForServerActionResponse(page, (request) => {",
+      "await runAndSettleServerActionUi(page, {",
       'requestUrl.searchParams.get("view") === "import"',
       'requestUrl.search === "?view=import"',
-      "await previewResponse;",
+      'trigger: () => page.locator("[data-preview]").click(),',
+      "uiReady: async () => {",
       'await expect(page.locator("[data-commit]")).toBeEnabled();',
       "await fixture.captureImportBatchId();",
       'expect(receipt.importBatch).toMatchObject({ id: fixture.importBatchId, eventId: fixture.registrationEventId, status: "committed" });',

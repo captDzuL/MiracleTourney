@@ -24,6 +24,26 @@ export async function waitForServerActionResponse(
   return response;
 }
 
+export type ServerActionUiSettlementOptions = {
+  request: ServerActionRequestMatcher;
+  trigger: () => Promise<unknown> | unknown;
+  uiReady: () => Promise<unknown> | unknown;
+};
+
+export async function runAndSettleServerActionUi(
+  page: Page,
+  options: ServerActionUiSettlementOptions,
+): Promise<Response> {
+  const responsePromise = waitForServerActionResponseHeaders(page, options.request);
+  const triggerPromise = Promise.resolve().then(() => options.trigger());
+  const [response] = await Promise.all([responsePromise, triggerPromise]);
+  if (!(response.status() < 400)) {
+    throw new Error(`Server Action failed with HTTP ${response.status()} at ${response.url()}.`);
+  }
+  await options.uiReady();
+  return response;
+}
+
 function parseJsonCandidate(value: string): unknown {
   try {
     return JSON.parse(value);

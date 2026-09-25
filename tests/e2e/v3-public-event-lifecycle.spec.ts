@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { validateE2eDatabaseConfiguration } from "../../scripts/e2e-db-configuration.mjs";
 import { createCompetitionOperations, type OperationCommand } from "../../src/lib/tournament/operations";
@@ -31,6 +31,58 @@ test.describe.serial("Adaptive public event lifecycle", () => {
     { id: `${eventId}-delta`, name: `Delta ${namespace}`, tag: "DEL", logoText: "D" },
   ];
   const inFlightOperations = new Set<Promise<unknown>>();
+  const operations = createCompetitionOperations(prisma);
+  const actor = { id: organizerId, role: "organizer" };
+  let operationSequence = 0;
+  let operationVersion = 0;
+  let winner = teams[0]!;
+  let runnerUp = teams[0]!;
+  let third = teams[0]!;
+  let completionId = "";
+  let completionVersion = 0;
+
+  const run = async (command: OperationCommand) => {
+    const operation = operations.execute({
+      eventId,
+      actor,
+      expectedVersion: operationVersion,
+      idempotencyKey: `public-lifecycle-${++operationSequence}`,
+      command,
+    });
+    inFlightOperations.add(operation);
+    try {
+      const receipt = await operation;
+      operationVersion = receipt.version;
+      return receipt;
+    } finally {
+      inFlightOperations.delete(operation);
+    }
+  };
+
+  const updateStatus = async (page: Page, status: "Registration Closed" | "Ongoing" | "Finished") => {
+    await page.goto(`/en/admin?phase=prepare&activeEventId=${eventId}`);
+    const form = page.locator("form").filter({
+      has: page.getByRole("button", { name: "Save event status" }),
+    });
+    await form.getByLabel("Event").selectOption(eventId);
+    await form.getByLabel("Status").selectOption(status);
+    await runAndSettleServerActionRedirect(page, {
+      request: (request) => {
+        const requestUrl = new URL(request.url());
+        return requestUrl.pathname === "/en/admin"
+          && requestUrl.searchParams.get("phase") === "prepare"
+          && requestUrl.searchParams.get("activeEventId") === eventId
+          && requestUrl.search === `?phase=prepare&activeEventId=${eventId}`;
+      },
+      expectedActionRedirect: `/en/admin?success=event-status-updated&event=${eventId};push`,
+      destination: (url) => url.pathname === "/en/admin"
+        && url.searchParams.get("success") === "event-status-updated"
+        && url.searchParams.get("event") === eventId
+        && url.search === `?success=event-status-updated&event=${eventId}`,
+      trigger: () => form.getByRole("button", { name: "Save event status" }).click(),
+    });
+    await expect(page).toHaveURL(/success=event-status-updated/);
+  };
 
   test.beforeAll(async () => {
     const safe = validateE2eDatabaseConfiguration(process.env);
@@ -84,6 +136,10 @@ test.describe.serial("Adaptive public event lifecycle", () => {
         createdAt: new Date(1_700_000_000_000 + index),
       })),
     });
+    operationVersion = (await prisma.event.findUniqueOrThrow({
+      where: { id: eventId },
+      select: { competitionVersion: true },
+    })).competitionVersion;
   });
 
   test.afterAll(async () => {
@@ -95,56 +151,9 @@ test.describe.serial("Adaptive public event lifecycle", () => {
     await prisma.$disconnect();
   });
 
-  test("keeps one permanent URL across registration, drawing, ongoing, and finished", async ({ page }) => {
+  test("keeps one permanent URL through registration and drawing", async ({ page }) => {
+    test.setTimeout(120_000);
     const url = `/id/events/${slug}`;
-    const operations = createCompetitionOperations(prisma);
-    const actor = { id: organizerId, role: "organizer" };
-    let operationSequence = 0;
-    let operationVersion = (await prisma.event.findUniqueOrThrow({
-      where: { id: eventId },
-      select: { competitionVersion: true },
-    })).competitionVersion;
-    const run = async (command: OperationCommand) => {
-      const operation = operations.execute({
-        eventId,
-        actor,
-        expectedVersion: operationVersion,
-        idempotencyKey: `public-lifecycle-${++operationSequence}`,
-        command,
-      });
-      inFlightOperations.add(operation);
-      try {
-        const receipt = await operation;
-        operationVersion = receipt.version;
-        return receipt;
-      } finally {
-        inFlightOperations.delete(operation);
-      }
-    };
-    const updateStatus = async (status: "Registration Closed" | "Ongoing" | "Finished") => {
-      await page.goto(`/en/admin?phase=prepare&activeEventId=${eventId}`);
-      const form = page.locator("form").filter({
-        has: page.getByRole("button", { name: "Save event status" }),
-      });
-      await form.getByLabel("Event").selectOption(eventId);
-      await form.getByLabel("Status").selectOption(status);
-      await runAndSettleServerActionRedirect(page, {
-        request: (request) => {
-          const requestUrl = new URL(request.url());
-          return requestUrl.pathname === "/en/admin"
-            && requestUrl.searchParams.get("phase") === "prepare"
-            && requestUrl.searchParams.get("activeEventId") === eventId
-            && requestUrl.search === `?phase=prepare&activeEventId=${eventId}`;
-        },
-        expectedActionRedirect: `/en/admin?success=event-status-updated&event=${eventId};push`,
-        destination: (url) => url.pathname === "/en/admin"
-          && url.searchParams.get("success") === "event-status-updated"
-          && url.searchParams.get("event") === eventId
-          && url.search === `?success=event-status-updated&event=${eventId}`,
-        trigger: () => form.getByRole("button", { name: "Save event status" }).click(),
-      });
-      await expect(page).toHaveURL(/success=event-status-updated/);
-    };
 
     await test.step("registration and drawing", async () => {
       await page.goto(url);
@@ -155,7 +164,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       await expect(template.getByText(teams[0].name, { exact: true })).toHaveCount(0);
 
       await loginAsAdmin(page, "en");
-      await updateStatus("Registration Closed");
+      await updateStatus(page, "Registration Closed");
       await run({
         kind: "drawing_save",
         config,
@@ -176,13 +185,12 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       await expect(page.getByText(teams[0].name, { exact: true }).first()).toBeVisible();
       await expect(page.getByText(teams[1].name, { exact: true }).first()).toBeVisible();
     });
+  });
 
-    let winner = teams[0]!;
-    let runnerUp = teams[0]!;
-    let third = teams[0]!;
-    let completionId = "";
-    let completionVersion = 0;
-
+  test("keeps the same permanent URL through ongoing and finished", async ({ page }) => {
+    test.setTimeout(120_000);
+    const url = `/id/events/${slug}`;
+    await loginAsAdmin(page, "en");
     await test.step("ongoing and result", async () => {
       const scheduleDraft = await run({
         kind: "schedule_save",
@@ -197,7 +205,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       });
       await run({ kind: "schedule_publish", revisionId: scheduleDraft.resourceId! });
 
-      await updateStatus("Ongoing");
+      await updateStatus(page, "Ongoing");
       await page.goto(url);
       await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));
       await expect(page.getByText("Event berlangsung", { exact: true })).toBeVisible();
@@ -272,7 +280,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
     });
 
     await test.step("finished and public verification", async () => {
-      await updateStatus("Finished");
+      await updateStatus(page, "Finished");
 
       await page.goto(url);
       await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));

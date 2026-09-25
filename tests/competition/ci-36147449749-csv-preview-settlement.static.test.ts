@@ -24,11 +24,27 @@ function sliceBetween(source: string, startMarker: string, endMarker: string) {
   return source.slice(start, end === -1 ? source.length : end);
 }
 
-function assertNonRedirectResponseEof(source: string) {
+function assertUiSettledServerAction(source: string) {
+  expect(source).toContain("const responsePromise = waitForServerActionResponseHeaders(page, options.request);");
+  expect(source).toContain("const triggerPromise = Promise.resolve().then(() => options.trigger());");
+  expect(source).toContain("const [response] = await Promise.all([responsePromise, triggerPromise]);");
   expect(source).toContain("response.status() < 400");
-  expect(source).toContain("await response.finished()");
-  expect(source).toContain("response.finished() !== null");
-  expect(source.indexOf("response.status() < 400")).toBeLessThan(source.indexOf("await response.finished()"));
+  expect(source).toContain("await options.uiReady();");
+  expect(source).not.toContain("response.finished()");
+  expect(source).not.toContain("response.text()");
+  expect(source).not.toContain("requestfinished");
+  expect(source).not.toContain("requestfailed");
+  expect(source).not.toMatch(/\btimeout\s*:/);
+  expect(source.indexOf("const responsePromise = waitForServerActionResponseHeaders")).toBeLessThan(
+    source.indexOf("const triggerPromise = Promise.resolve().then(() => options.trigger());"),
+  );
+  expect(source.indexOf("const triggerPromise = Promise.resolve().then(() => options.trigger());")).toBeLessThan(
+    source.indexOf("const [response] = await Promise.all([responsePromise, triggerPromise]);"),
+  );
+  expect(source.indexOf("const [response] = await Promise.all([responsePromise, triggerPromise]);")).toBeLessThan(
+    source.indexOf("response.status() < 400"),
+  );
+  expect(source.indexOf("response.status() < 400")).toBeLessThan(source.indexOf("await options.uiReady();"));
 }
 
 function assertRedirectHelperExcludesEof(source: string) {
@@ -38,15 +54,14 @@ function assertRedirectHelperExcludesEof(source: string) {
 }
 
 describe("CSV preview settlement observability contract", () => {
-  it("keeps non-redirect preview settlement at status plus response EOF", () => {
-    const responseHelper = sliceBetween(
+  it("settles CSV preview through exact headers, status, and a UI-ready callback", () => {
+    const uiSettlement = sliceBetween(
       helper,
-      "export async function waitForServerActionResponse(",
-      "export type ServerActionRedirectOptions =",
+      "export async function runAndSettleServerActionUi(",
+      "function parseJsonCandidate",
     );
-    assertNonRedirectResponseEof(responseHelper);
-    expect(responseHelper).not.toContain("requestfinished");
-    expect(responseHelper).not.toContain("requestfailed");
+    assertUiSettledServerAction(uiSettlement);
+    expect(helper).toContain("export async function runAndSettleServerActionUi(");
   });
 
   it("keeps redirect settlement independent from response EOF", () => {
@@ -54,15 +69,17 @@ describe("CSV preview settlement observability contract", () => {
     assertRedirectHelperExcludesEof(redirectHelper);
   });
 
-  it("rejects status-only, EOF-only, and redirect-EOF mutations", () => {
-    const responseHelper = sliceBetween(
+  it("rejects missing status, UI-ready, or EOF-free settlement guards", () => {
+    const uiSettlement = sliceBetween(
       helper,
-      "export async function waitForServerActionResponse(",
-      "export type ServerActionRedirectOptions =",
+      "export async function runAndSettleServerActionUi(",
+      "function parseJsonCandidate",
     );
     const redirectHelper = helper.slice(helper.indexOf("export async function runAndSettleServerActionRedirect("));
-    expect(() => assertNonRedirectResponseEof(responseHelper.replace("response.status() < 400", "response.status() >= 400"))).toThrow();
-    expect(() => assertNonRedirectResponseEof(responseHelper.replace("await response.finished()", "await response.text()"))).toThrow();
+    expect(() => assertUiSettledServerAction(uiSettlement)).not.toThrow();
+    expect(() => assertUiSettledServerAction(uiSettlement.replace("response.status() < 400", "response.status() >= 400"))).toThrow();
+    expect(() => assertUiSettledServerAction(uiSettlement.replace("await options.uiReady();", "return response;"))).toThrow();
+    expect(() => assertUiSettledServerAction(uiSettlement.replace("await options.uiReady();", "await response.finished();"))).toThrow();
     expect(() => assertRedirectHelperExcludesEof(redirectHelper.replace("const actionRedirect", "await response.finished();\n  const actionRedirect"))).toThrow();
   });
 

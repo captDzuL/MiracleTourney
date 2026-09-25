@@ -49,7 +49,7 @@ describe("CI E2E release sequence", () => {
       const job = extractJob(workflow, jobId);
       expect(job).not.toMatch(/^    if:/m);
       expect(job).not.toContain("github.event_name");
-      expect(job).not.toContain("[ci:shard2-only]");
+      expect(job).not.toContain("[ci:failing4-only]");
     }
   });
 
@@ -75,14 +75,14 @@ describe("CI E2E release sequence", () => {
 
     expect(fullStep).toContain("github.event_name != 'push'");
     expect(fullStep).toContain("github.ref != 'refs/heads/codex/organizer-release-readiness'");
-    expect(fullStep).toContain("!contains(github.event.head_commit.message, '[ci:shard2-only]')");
+    expect(fullStep).toContain("!contains(github.event.head_commit.message, '[ci:failing4-only]')");
     expect(fullStep.match(/run: pnpm test:e2e:ci/g)).toHaveLength(1);
   });
 
-  it("runs exactly the ordered default shard 2 diagnostic commands", async () => {
+  it("runs exactly the ordered failing-four-case diagnostic commands", async () => {
     const diagnosticStep = extractStep(
       extractJob(await readWorkflow(), "e2e-tests"),
-      "Run default shard 2 diagnostic fast lane",
+      "Run failing4-only diagnostic fast lane",
     );
     const commandLines = diagnosticStep
       .split(/\r?\n/)
@@ -91,22 +91,19 @@ describe("CI E2E release sequence", () => {
 
     expect(diagnosticStep).toContain("github.event_name == 'push'");
     expect(diagnosticStep).toContain("github.ref == 'refs/heads/codex/organizer-release-readiness'");
-    expect(diagnosticStep).toContain("contains(github.event.head_commit.message, '[ci:shard2-only]')");
+    expect(diagnosticStep).toContain("contains(github.event.head_commit.message, '[ci:failing4-only]')");
     expect(commandLines.filter((line) => line === "pnpm test:e2e:preflight")).toHaveLength(1);
-    expect(commandLines.filter((line) => line === "pnpm test:e2e:prepare")).toHaveLength(1);
     expect(
       commandLines.filter(
         (line) =>
           line ===
-          "pnpm exec playwright test --config playwright.ci-default.config.ts --shard=2/2 --fail-on-flaky-tests",
+          "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and finished\" --fail-on-flaky-tests",
       ),
     ).toHaveLength(1);
+    expect(commandLines.filter((line) => line === "pnpm test:e2e:prepare")).toHaveLength(0);
     expect(commandLines.indexOf("pnpm test:e2e:preflight")).toBeLessThan(
-      commandLines.indexOf("pnpm test:e2e:prepare"),
-    );
-    expect(commandLines.indexOf("pnpm test:e2e:prepare")).toBeLessThan(
       commandLines.indexOf(
-        "pnpm exec playwright test --config playwright.ci-default.config.ts --shard=2/2 --fail-on-flaky-tests",
+        "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and finished\" --fail-on-flaky-tests",
       ),
     );
   });
@@ -114,12 +111,14 @@ describe("CI E2E release sequence", () => {
   it("keeps the diagnostic lane free of full-run profiles", async () => {
     const diagnosticStep = extractStep(
       extractJob(await readWorkflow(), "e2e-tests"),
-      "Run default shard 2 diagnostic fast lane",
+      "Run failing4-only diagnostic fast lane",
     );
 
     for (const forbidden of [
       "test:e2e:ci",
+      "test:e2e:prepare",
       "--shard=1/2",
+      "--shard=2/2",
       "v3-matchday",
       "playwright.smoke.config.ts",
       "playwright.visual-v2.config.ts",
@@ -142,14 +141,14 @@ describe("CI E2E release sequence", () => {
 
     expect(artifactStep).toContain("failure()");
     expect(artifactStep).toContain("github.event_name == 'push'");
-    expect(artifactStep).toContain("contains(github.event.head_commit.message, '[ci:shard2-only]')");
+    expect(artifactStep).toContain("contains(github.event.head_commit.message, '[ci:failing4-only]')");
     expect(paths).toEqual(["playwright-report/", "test-results/"]);
     expect(artifactStep).toContain("retention-days: 7");
   });
 
   it("keeps every marker predicate push- and branch-scoped", async () => {
     const workflow = await readWorkflow();
-    const marker = "contains(github.event.head_commit.message, '[ci:shard2-only]')";
+    const marker = "contains(github.event.head_commit.message, '[ci:failing4-only]')";
     const markerMatches = [...workflow.matchAll(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))];
 
     expect(markerMatches.length).toBeGreaterThan(0);
