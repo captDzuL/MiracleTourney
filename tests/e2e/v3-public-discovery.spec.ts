@@ -17,7 +17,9 @@ async function expectNoDocumentOverflow(page: import("@playwright/test").Page) {
 }
 
 test("homepage geometry remains stable without overflow", async ({ page }) => {
-  await page.goto("/id");
+  const homeResponse = await page.goto("/id");
+  expect(homeResponse?.status()).toBeLessThan(400);
+  await expect(page.locator("[data-public-v3-event]")).toHaveCount(1);
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);

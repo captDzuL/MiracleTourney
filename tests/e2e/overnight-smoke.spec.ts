@@ -71,6 +71,24 @@ const overnightTest = test.extend<{ trackOvernightEvent: OvernightEventTracker }
   }, { timeout: OVERNIGHT_CLEANUP_TIMEOUT }],
 });
 
+let seededKurokoEventId: string;
+
+test.beforeAll(async () => {
+  const event = await prisma.event.findUnique({ where: { slug: "kuroko-summer-cup" } });
+  expect(event, "Expected the seeded Kuroko event to exist").not.toBeNull();
+  if (!event) throw new Error("Expected the seeded Kuroko event to exist");
+  seededKurokoEventId = event.id;
+
+  await prisma.match.deleteMany({ where: { eventId: event.id } });
+  await prisma.eventRoundConfig.deleteMany({ where: { eventId: event.id } });
+  await prisma.team.deleteMany({
+    where: {
+      eventId: event.id,
+      OR: [{ tag: "ST5" }, { name: "Smoke Test Five" }],
+    },
+  });
+});
+
 const csvHeader = "event_slug,team_name,team_tag,captain_name,captain_contact,captain_ign,captain_uid,Player 1 Nickname,Player 2 Nickname";
 
 function teamImportCsv(slug: string, teamNumbers: number[]) {
@@ -137,18 +155,6 @@ async function commitPreviewedRegistration(page: import("@playwright/test").Page
 
 test("admin can publish, import, enter a result, and see bracket advancement publicly", async ({ page }) => {
   test.setTimeout(90_000);
-  const event = await prisma.event.findUnique({ where: { slug: "kuroko-summer-cup" } });
-  expect(event, "Expected the seeded Kuroko event to exist").not.toBeNull();
-  if (!event) return;
-
-  await prisma.match.deleteMany({ where: { eventId: event.id } });
-  await prisma.eventRoundConfig.deleteMany({ where: { eventId: event.id } });
-  await prisma.team.deleteMany({
-    where: {
-      eventId: event.id,
-      OR: [{ tag: "ST5" }, { name: "Smoke Test Five" }],
-    },
-  });
 
   await loginAsAdmin(page, "en");
   await page.goto("/en/admin?phase=prepare");
@@ -176,7 +182,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   });
   await expect(page).toHaveURL(/\/admin\?success=event-status-updated/);
 
-  await page.goto(`/en/admin?phase=import&activeEventId=${event.id}`);
+  await page.goto(`/en/admin?phase=import&activeEventId=${seededKurokoEventId}`);
   await previewRegistrationCsv(page, {
     name: "overnight-smoke.csv",
     buffer: Buffer.from(
@@ -185,7 +191,7 @@ test("admin can publish, import, enter a result, and see bracket advancement pub
   });
   await commitPreviewedRegistration(page, 1);
 
-  await page.goto(`/id/admin?phase=run&activeEventId=${event.id}&matchEventId=${event.id}`);
+  await page.goto(`/id/admin?phase=run&activeEventId=${seededKurokoEventId}&matchEventId=${seededKurokoEventId}`);
   const firstMatch = page.locator("a[href*='matchId=']").first();
   await expect(firstMatch).toBeVisible();
   await firstMatch.click();
