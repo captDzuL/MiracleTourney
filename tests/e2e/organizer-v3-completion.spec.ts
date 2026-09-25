@@ -207,7 +207,6 @@ for (const kind of ["double_elimination", "round_robin", "group_playoffs"] as co
 }
 
 test("completion workspace keeps localized parity and bounded mobile controls", async ({ page }) => {
-  test.slow();
   fixture = await prepareCompletionFixture("single_elimination", "release-completion-parity");
   for (const locale of ["id", "en"] as const) {
     await normalizeReleasePage(page);

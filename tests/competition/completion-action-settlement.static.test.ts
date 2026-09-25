@@ -61,12 +61,14 @@ describe("Completion action settlement contract", () => {
     const cleanupResources = extractBracedBlock(completionSpec, "async function cleanupCompletionResources() {");
     const responseWaiter = extractBracedBlock(completionSpec, "function waitForCompletionActionResponse(");
     const completionJourney = extractBracedBlock(completionSpec, "async function runCompletionJourney(");
+    const cleanupDefinition = extractBracedBlock(completionHelper, "const cleanup: CompletionFixtureReady = {");
     expect(singleDescribe).not.toBe("");
     expect(beforeAll).not.toBe("");
     expect(timedCase).not.toBe("");
     expect(cleanupResources).not.toBe("");
     expect(responseWaiter).not.toBe("");
     expect(completionJourney).not.toBe("");
+    expect(cleanupDefinition).not.toBe("");
 
     expect(beforeAll).toContain('prepareTestCompletionFixture("single_elimination")');
     expect(beforeAll).toContain('await loginAsOrganizer(prewarmPage, "en")');
@@ -78,9 +80,18 @@ describe("Completion action settlement contract", () => {
 
     expect(timedCase).not.toMatch(/\b(?:prepareTestCompletionFixture|prepareCompletionFixture)\s*\(/);
     expect(timedCase).not.toMatch(/\blogin[A-Za-z]*\s*\(/);
+    expect(completionJourney).not.toMatch(/\b(?:prepareTestCompletionFixture|prepareCompletionFixture)\s*\(/);
+    expect(completionJourney).not.toMatch(/\b(?:login|auth)[A-Za-z]*\s*\(/);
+    expect(completionJourney).not.toMatch(/\btest\.setTimeout\s*\(/);
+    expect(completionJourney).not.toMatch(/\btest\.slow\s*\(/);
+    expect(completionJourney).not.toMatch(/\bretries\b/);
+    expect(completionJourney).not.toMatch(/\btimeout\s*:/);
     expect(singleDescribe).not.toMatch(/\btest\.setTimeout\s*\(/);
     expect(singleDescribe).not.toMatch(/\btest\.slow\s*\(/);
     expect(singleDescribe).not.toMatch(/\bretries\b/);
+    expect(completionSpec).not.toMatch(/\btest\.setTimeout\s*\(/);
+    expect(completionSpec).not.toMatch(/\btest\.slow\s*\(/);
+    expect(completionSpec).not.toMatch(/\bretries\b/);
 
     const callbackOpen = timedCase.indexOf("=> {");
     expect(callbackOpen).toBeGreaterThan(-1);
@@ -98,6 +109,15 @@ describe("Completion action settlement contract", () => {
     expect(cleanupResources).toContain("completionActionResponsePending");
     expect(cleanupResources).toContain("await completionActionResponse.catch(() => undefined)");
     expect(cleanupResources).toContain("await cleanup?.cleanup();");
+    const settlementAwaitIndex = cleanupResources.indexOf("await completionActionResponse.catch(() => undefined)");
+    const contextCloseIndex = cleanupResources.indexOf("await activeCompletionContext.close().catch(() => undefined)");
+    const fixtureCleanupIndex = cleanupResources.indexOf("await cleanup?.cleanup();");
+    expect(settlementAwaitIndex).toBeGreaterThan(-1);
+    expect(contextCloseIndex).toBeGreaterThan(-1);
+    expect(fixtureCleanupIndex).toBeGreaterThan(-1);
+    expect(settlementAwaitIndex).toBeLessThan(contextCloseIndex);
+    expect(contextCloseIndex).toBeLessThan(fixtureCleanupIndex);
+    expect(cleanupDefinition).toContain("where: { id, slug: id }");
     const eventCreateIndex = completionHelper.indexOf("await completionDb.event.create({");
     const cleanupRegistrationIndex = completionHelper.indexOf("await options.onBaseFixtureReady?.(cleanup)");
     const firstDependentWriteIndex = completionHelper.indexOf("await completionDb.team.createMany({", eventCreateIndex);
