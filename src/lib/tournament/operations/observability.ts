@@ -1,6 +1,7 @@
 import { writeServerLog } from "@/lib/observability/logger";
+import { isCompetitionExpectedError } from "./errors";
 
-export type CompetitionFailureCode = "transaction_timeout" | "internal_error";
+export type CompetitionFailureCode = "transaction_timeout" | "internal_error" | "conflict" | "unauthorized";
 export type OperationStageErrorCode = CompetitionFailureCode | "serialization_conflict";
 
 export type OperationStageEvent = Readonly<{
@@ -31,6 +32,9 @@ export function isCompetitionSerializationConflict(error: unknown): boolean {
 
 /** Classifies storage failures without exposing provider messages to callers. */
 export function classifyCompetitionFailure(error: unknown): CompetitionFailureCode {
+  if (isCompetitionExpectedError(error) && (error.code === "conflict" || error.code === "unauthorized")) {
+    return error.code;
+  }
   if (isTransactionTimeout(error)) return "transaction_timeout";
   return "internal_error";
 }

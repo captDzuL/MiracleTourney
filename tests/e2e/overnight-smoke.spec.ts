@@ -16,6 +16,7 @@ const OVERNIGHT_INITIAL_DESCRIPTION = "New event created from admin panel.";
 const OVERNIGHT_FINAL_DESCRIPTION = "Ready legacy admin event for V3 publish readiness coverage.";
 const OVERNIGHT_ORGANIZER_EMAIL = "organizer-a@miraclefc.gg";
 const OVERNIGHT_CLEANUP_TIMEOUT = 30_000;
+const OVERNIGHT_PREPARATION_TIMEOUT = 120_000;
 
 type OvernightEventIdentity = { name: string; slug: string };
 type OvernightEventTracker = (event: OvernightEventIdentity) => void;
@@ -74,7 +75,8 @@ const overnightTest = test.extend<{ trackOvernightEvent: OvernightEventTracker }
 
 let seededKurokoEventId: string;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, testInfo) => {
+  testInfo.setTimeout(OVERNIGHT_PREPARATION_TIMEOUT);
   const event = await prisma.event.findUnique({ where: { slug: "kuroko-summer-cup" } });
   expect(event, "Expected the seeded Kuroko event to exist").not.toBeNull();
   if (!event) throw new Error("Expected the seeded Kuroko event to exist");

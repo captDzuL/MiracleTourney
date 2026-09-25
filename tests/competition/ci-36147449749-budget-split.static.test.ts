@@ -25,6 +25,27 @@ function countLiteral(source: string, literal: string) {
   return source.split(literal).length - 1;
 }
 
+function assertOvernightPreparationBudgetContract(source: string) {
+  const preparationHook = sliceBetween(
+    source,
+    "test.beforeAll(async ({}, testInfo) => {",
+    '\ntest("admin can publish',
+  );
+  const resultCase = sliceBetween(
+    source,
+    'test("admin can publish, import, enter a result, and see bracket advancement publicly"',
+    '\novernightTest("registration order stays private',
+  );
+
+  expect(source).toContain("const OVERNIGHT_PREPARATION_TIMEOUT = 120_000;");
+  expect(preparationHook).toContain("testInfo.setTimeout(OVERNIGHT_PREPARATION_TIMEOUT);");
+  expect(countLiteral(preparationHook, "testInfo.setTimeout(OVERNIGHT_PREPARATION_TIMEOUT);")).toBe(1);
+  const hookWithoutBudget = preparationHook.replace("testInfo.setTimeout(OVERNIGHT_PREPARATION_TIMEOUT);", "");
+  expect(hookWithoutBudget).not.toMatch(/\btest\.(?:setTimeout|slow|skip|fixme)\b|\b(?:setTimeout|waitForTimeout|sleep)\s*\(|\bretr(?:y|ies)\b/i);
+  expect(resultCase).toContain("test.setTimeout(90_000);");
+  expect(resultCase).not.toContain("OVERNIGHT_PREPARATION_TIMEOUT");
+}
+
 function assertAdaptiveLifecycleLoadBearing(source: string) {
   const body = sliceBetween(
     source,
@@ -145,8 +166,9 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
       'test("admin can publish, import, enter a result, and see bracket advancement publicly"',
       '\novernightTest("registration order stays private',
     );
-    const preparationHook = sliceBetween(overnight, "test.beforeAll(async () => {", '\ntest("admin can publish');
+    const preparationHook = sliceBetween(overnight, "test.beforeAll(async ({}, testInfo) => {", '\ntest("admin can publish');
 
+    assertOvernightPreparationBudgetContract(overnight);
     expect(resultCase).toContain("test.setTimeout(90_000);");
     expect(resultCase).not.toContain('prisma.event.findUnique({ where: { slug: "kuroko-summer-cup" } });');
     expect(resultCase).not.toMatch(/prisma\.(?:match|eventRoundConfig|team)\.deleteMany/);
@@ -164,6 +186,25 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
     expect(eventLookup).toBeLessThan(matchCleanup);
     expect(matchCleanup).toBeLessThan(roundCleanup);
     expect(roundCleanup).toBeLessThan(teamCleanup);
+  });
+
+  it("rejects missing, body-scoped, blanket, retry, skip, and sleep preparation-budget mutations", () => {
+    const hookBudget = "  testInfo.setTimeout(OVERNIGHT_PREPARATION_TIMEOUT);";
+    const resultTitle = 'test("admin can publish, import, enter a result, and see bracket advancement publicly", async ({ page }) => {';
+    const mutations = [
+      overnight.replace(`${hookBudget}\n`, ""),
+      overnight.replace(`${hookBudget}\n`, "").replace(resultTitle, `${resultTitle}\n${hookBudget}`),
+      overnight.replace(hookBudget, "  test.setTimeout(OVERNIGHT_PREPARATION_TIMEOUT);"),
+      overnight.replace(hookBudget, `${hookBudget}\n  test.describe.configure({ retries: 1 });`),
+      overnight.replace(hookBudget, `${hookBudget}\n  test.skip();`),
+      overnight.replace(hookBudget, `${hookBudget}\n  await new Promise((resolve) => setTimeout(resolve, 1_000));`),
+    ];
+
+    expect(() => assertOvernightPreparationBudgetContract(overnight)).not.toThrow();
+    for (const mutation of mutations) {
+      expect(mutation).not.toBe(overnight);
+      expect(() => assertOvernightPreparationBudgetContract(mutation)).toThrow();
+    }
   });
 
   it("keeps the overnight result journey load-bearing and rejects budget bypasses", () => {

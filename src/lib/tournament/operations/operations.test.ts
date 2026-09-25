@@ -380,6 +380,7 @@ describe("competition operation transactions", () => {
 
   it("fails a stale CAS immediately without retrying the same expected version", async () => {
     const store = operationStore();
+    const stages: OperationStageEvent[] = [];
     let transactionCalls = 0;
     const db = {
       $transaction: (...args: unknown[]) => {
@@ -387,7 +388,10 @@ describe("competition operation transactions", () => {
         return Reflect.apply(store.db.$transaction, store.db, args);
       },
     } as typeof store.db;
-    const service = createCompetitionOperations(db, () => now, { allowInternalInitialize: true });
+    const service = createCompetitionOperations(db, () => now, {
+      allowInternalInitialize: true,
+      onStage: (event) => stages.push(event),
+    });
 
     await expect(service.execute({
       eventId: "event",
@@ -398,6 +402,9 @@ describe("competition operation transactions", () => {
     })).rejects.toThrow("refresh competition state");
 
     expect(transactionCalls).toBe(1);
+    expect(stages.filter((stage) => stage.stage === "competition_transaction" && stage.phase === "failed")).toEqual([
+      expect.objectContaining({ errorCode: "conflict", terminal: "failed", counts: { attempt: 1 } }),
+    ]);
     expect(store.rows("event")[0].competitionVersion).toBe(0);
     expect(store.rows("match")).toEqual([]);
     expect(store.rows("competitionAuditLog")).toEqual([]);
@@ -452,6 +459,37 @@ describe("competition operation transactions", () => {
     expect(f.rows("competitionPhase")).toEqual([]);
     expect(f.rows("match")).toEqual([]);
     expect(f.rows("event")[0].competitionVersion).toBe(0);
+  });
+
+  it("reports an owner mismatch as a terminal unauthorized transaction without retrying", async () => {
+    const store = operationStore();
+    const stages: OperationStageEvent[] = [];
+    let transactionCalls = 0;
+    const db = {
+      $transaction: (...args: unknown[]) => {
+        transactionCalls += 1;
+        return Reflect.apply(store.db.$transaction, store.db, args);
+      },
+    } as typeof store.db;
+    const service = createCompetitionOperations(db, () => now, {
+      allowInternalInitialize: true,
+      onStage: (event) => stages.push(event),
+    });
+
+    await expect(service.execute({
+      eventId: "event",
+      actor: { id: "other", role: "organizer" },
+      expectedVersion: 0,
+      idempotencyKey: "owner-mismatch",
+      command: initialize,
+    })).rejects.toThrow("Not authorized");
+
+    expect(transactionCalls).toBe(1);
+    expect(stages.filter((stage) => stage.stage === "competition_transaction" && stage.phase === "failed")).toEqual([
+      expect.objectContaining({ errorCode: "unauthorized", terminal: "failed", counts: { attempt: 1 } }),
+    ]);
+    expect(store.rows("event")[0].competitionVersion).toBe(0);
+    expect(store.rows("competitionAuditLog")).toEqual([]);
   });
 
   it("reports bounded 24-team drawing stages and preserves rollback on a match write failure", async () => {
