@@ -155,7 +155,14 @@ test.describe("admin event management", () => {
 
     await streamForm.getByLabel(/stream url/i).fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     await streamForm.getByLabel(/stream label/i).fill("Day 1 Stream");
-    await streamForm.getByRole("button", { name: /save|simpan/i }).click();
+    const redirected = page.waitForURL(
+      (url) => url.pathname === "/en/admin" && url.searchParams.get("success") === "stream-updated",
+      { waitUntil: "domcontentloaded" },
+    );
+    await Promise.all([
+      redirected,
+      streamForm.getByRole("button", { name: /save|simpan/i }).click(),
+    ]);
 
     await expect(page).toHaveURL(/success=stream-updated/);
   });
