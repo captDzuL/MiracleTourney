@@ -12,6 +12,30 @@ function sliceBetween(source: string, startMarker: string, endMarker: string) {
   return source.slice(start, end);
 }
 
+const overnightCreateTrackerMarker = "trackOvernightEvent({ name: eventName, slug });";
+const overnightCreateSettlementMarker = "await runAndSettleServerActionRedirect(page, {";
+const overnightCreateTriggerMarker =
+  'trigger: () => createEventForm.getByRole("button", { name: /create draft event|buat draft event/i }).click(),';
+
+function countLiteral(source: string, literal: string) {
+  return source.split(literal).length - 1;
+}
+
+function assertOvernightCreateOrderContract(scenario: string) {
+  const trackerIndex = scenario.indexOf(overnightCreateTrackerMarker);
+  const settlementIndex = scenario.indexOf(overnightCreateSettlementMarker);
+  const triggerIndex = scenario.indexOf(overnightCreateTriggerMarker);
+
+  expect(trackerIndex).toBeGreaterThanOrEqual(0);
+  expect(settlementIndex).toBeGreaterThanOrEqual(0);
+  expect(triggerIndex).toBeGreaterThanOrEqual(0);
+  expect(countLiteral(scenario, overnightCreateTrackerMarker)).toBe(1);
+  expect(countLiteral(scenario, overnightCreateSettlementMarker)).toBe(1);
+  expect(countLiteral(scenario, overnightCreateTriggerMarker)).toBe(1);
+  expect(trackerIndex).toBeLessThan(settlementIndex);
+  expect(settlementIndex).toBeLessThan(triggerIndex);
+}
+
 function assertExactOvernightCleanupContract(cleanup: string) {
   const normalizedCleanup = cleanup.replace(/\s+/g, " ").trim();
   const exactWhereStart = cleanup.indexOf("const exactWhere = {");
@@ -54,15 +78,50 @@ function assertExactOvernightCleanupContract(cleanup: string) {
 
 describe("overnight smoke fixture cleanup contracts", () => {
   it("tracks the unique event before create and preserves the body timeout", () => {
-    const scenario = overnightSpec.slice(overnightSpec.indexOf("registration order stays private and imports stop after drawing publication"));
-    const createClick = scenario.indexOf("create draft event|buat draft event/i }).click();");
-    const trackerCall = scenario.indexOf("trackOvernightEvent({ name: eventName, slug });");
+    const scenario = sliceBetween(
+      overnightSpec,
+      'overnightTest("registration order stays private and imports stop after drawing publication"',
+      "\n});",
+    );
 
-    expect(overnightSpec).toContain('test.setTimeout(240_000);');
+    expect(scenario).toContain('test.setTimeout(240_000);');
     expect(overnightSpec).toContain("const overnightTest = test.extend");
-    expect(overnightSpec).toContain("trackOvernightEvent");
-    expect(trackerCall).toBeGreaterThanOrEqual(0);
-    expect(createClick).toBeGreaterThan(trackerCall);
+    assertOvernightCreateOrderContract(scenario);
+  });
+
+  it("rejects mutations to the scoped create settlement contract", () => {
+    const scenario = sliceBetween(
+      overnightSpec,
+      'overnightTest("registration order stays private and imports stop after drawing publication"',
+      "\n});",
+    );
+
+    const trackingAfterSettlement = scenario
+      .replace(overnightCreateTrackerMarker, "")
+      .replace(overnightCreateSettlementMarker, `${overnightCreateSettlementMarker}\n  ${overnightCreateTrackerMarker}`);
+    const trackingAfterTrigger = scenario
+      .replace(overnightCreateTrackerMarker, "")
+      .replace(overnightCreateTriggerMarker, `${overnightCreateTriggerMarker}\n  ${overnightCreateTrackerMarker}`);
+    const triggerRemoved = scenario.replace(overnightCreateTriggerMarker, "");
+    const differentTrigger = scenario.replace(
+      overnightCreateTriggerMarker,
+      'trigger: () => createEventForm.getByRole("button", { name: /save event status|simpan status event/i }).click(),',
+    );
+    const directClickBypass = scenario.replace(
+      overnightCreateSettlementMarker,
+      'await createEventForm.getByRole("button", { name: /create draft event|buat draft event/i }).click();',
+    );
+
+    expect(() => assertOvernightCreateOrderContract(scenario)).not.toThrow();
+    for (const mutation of [
+      trackingAfterSettlement,
+      trackingAfterTrigger,
+      triggerRemoved,
+      differentTrigger,
+      directClickBypass,
+    ]) {
+      expect(() => assertOvernightCreateOrderContract(mutation)).toThrow();
+    }
   });
 
   it("uses timeout-isolated teardown with the exact lifecycle fingerprint", () => {
