@@ -271,13 +271,17 @@ export async function previewRegistrationImportForUser(
   if ("status" in input) return input;
   const { locale, eventId, file } = input;
   const redirectTo = canonicalRegistrationPath(locale, eventId, input.returnTo, "import");
-  if (!(await checkRateLimit(`registration-import:${user.id}:${eventId}`, 5, 15 * 60 * 1000))) {
+  const rateLimitAllowed = await checkRateLimit(`registration-import:${user.id}:${eventId}`, 5, 15 * 60 * 1000);
+  trace?.("rate_limit_done", { locale, resourceId: eventId, status: rateLimitAllowed ? 200 : 429 });
+  if (!rateLimitAllowed) {
     return withLegacyFailure(blocked(locale, "rate_limited", redirectTo), options, {
       phase: "import", message: localizedMessage(locale, "rate_limited"), behavior: "redirect",
     });
   }
   try {
     await assertUserCanManageEvent(user, eventId);
+    trace?.("ownership_done", { locale, resourceId: eventId, status: 200 });
+    trace?.("access_gate_done", { locale, resourceId: eventId, status: 200 });
     if (file.size > MAX_REGISTRATION_INTAKE_BYTES) {
       return withLegacyFailure(blocked(locale, "invalid_input", redirectTo), options, {
         phase: "import", message: "File registrasi maksimal 5 MiB.", behavior: "redirect",
@@ -706,7 +710,7 @@ async function previewEventRegistrationImportActionImpl(formData: FormData, requ
     trace("action_return", { locale: input.locale, resourceId: input.eventId, status: 500, terminal: "failed", errorCode: "internal_error" });
     throw error;
   }
-  trace("access_gate_done", { locale: input.locale, resourceId: input.eventId, status: "status" in access ? 403 : 200 });
+  trace("initial_gate_done", { locale: input.locale, resourceId: input.eventId, status: "status" in access ? 403 : 200 });
   if ("status" in access) {
     trace("action_return", { locale: input.locale, resourceId: input.eventId, ...actionResultMilestone(access) });
     return { ...access, message: localizedMessage(input.locale, access.code) };

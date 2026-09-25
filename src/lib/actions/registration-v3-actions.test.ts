@@ -247,6 +247,64 @@ describe("registration V3 actions", () => {
     expect(stages.indexOf("revalidation_requested")).toBeLessThan(stages.indexOf("action_return"));
   });
 
+  it("does not emit access or later milestones while the shared rate limiter is deferred", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const limiter = deferred<boolean>();
+    mocks.checkRateLimit.mockReturnValue(limiter.promise);
+
+    const action = previewEventRegistrationImportAction(form({
+      locale: "en",
+      eventId: "event-1",
+      registrationFile: new File(["Team Name\nAlpha"], "registrations.csv"),
+    }));
+
+    await vi.waitFor(() => expect(mocks.checkRateLimit).toHaveBeenCalled());
+    const stalledStages = stageRecords(info).map(record => record.stage);
+    expect(stalledStages).toEqual(expect.arrayContaining(["action_enter", "initial_gate_done"]));
+    expect(stalledStages).not.toContain("rate_limit_done");
+    expect(stalledStages).not.toContain("ownership_done");
+    expect(stalledStages).not.toContain("access_gate_done");
+    expect(stalledStages).not.toContain("event_context_done");
+    expect(stalledStages).not.toContain("preview_batch_saved");
+
+    limiter.resolve(true);
+    await expect(action).resolves.toMatchObject({ status: "preview_ready" });
+    const stages = stageRecords(info).map(record => record.stage);
+    expect(stages.indexOf("rate_limit_done")).toBeGreaterThan(stages.indexOf("initial_gate_done"));
+    expect(stages.indexOf("ownership_done")).toBeGreaterThan(stages.indexOf("rate_limit_done"));
+    expect(stages.indexOf("access_gate_done")).toBeGreaterThan(stages.indexOf("ownership_done"));
+  });
+
+  it("does not emit access or later milestones while the worker ownership check is deferred", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const ownership = deferred<void>();
+    let ownershipCalls = 0;
+    mocks.assertUserCanManageEvent.mockImplementation(() => {
+      ownershipCalls += 1;
+      return ownershipCalls === 2 ? ownership.promise : Promise.resolve();
+    });
+
+    const action = previewEventRegistrationImportAction(form({
+      locale: "en",
+      eventId: "event-1",
+      registrationFile: new File(["Team Name\nAlpha"], "registrations.csv"),
+    }));
+
+    await vi.waitFor(() => expect(ownershipCalls).toBe(2));
+    const stalledStages = stageRecords(info).map(record => record.stage);
+    expect(stalledStages).toEqual(expect.arrayContaining(["action_enter", "initial_gate_done", "rate_limit_done"]));
+    expect(stalledStages).not.toContain("ownership_done");
+    expect(stalledStages).not.toContain("access_gate_done");
+    expect(stalledStages).not.toContain("event_context_done");
+    expect(stalledStages).not.toContain("preview_batch_saved");
+
+    ownership.resolve();
+    await expect(action).resolves.toMatchObject({ status: "preview_ready" });
+    const stages = stageRecords(info).map(record => record.stage);
+    expect(stages.indexOf("ownership_done")).toBeGreaterThan(stages.indexOf("rate_limit_done"));
+    expect(stages.indexOf("access_gate_done")).toBeGreaterThan(stages.indexOf("ownership_done"));
+  });
+
   it("emits a terminal failed milestone when preview persistence rejects", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     mocks.saveRegistrationImportPreviewBatch.mockRejectedValue(new Error("P2028 private@example.test"));

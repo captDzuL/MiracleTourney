@@ -24,25 +24,55 @@ function sliceBetween(source: string, startMarker: string, endMarker: string) {
   return source.slice(start, end === -1 ? source.length : end);
 }
 
+function assertNonRedirectResponseEof(source: string) {
+  expect(source).toContain("response.status() < 400");
+  expect(source).toContain("await response.finished()");
+  expect(source).toContain("response.finished() !== null");
+  expect(source.indexOf("response.status() < 400")).toBeLessThan(source.indexOf("await response.finished()"));
+}
+
+function assertRedirectHelperExcludesEof(source: string) {
+  expect(source).toContain("x-action-redirect");
+  expect(source).toContain("waitForURL");
+  expect(source).not.toContain("response.finished()");
+}
+
 describe("CSV preview settlement observability contract", () => {
   it("keeps non-redirect preview settlement at status plus response EOF", () => {
-    expect(helper).toContain("await response.finished()");
-    expect(helper).toContain("response.finished() !== null");
-    expect(helper).not.toContain("requestfinished");
-    expect(helper).not.toContain("requestfailed");
+    const responseHelper = sliceBetween(
+      helper,
+      "export async function waitForServerActionResponse(",
+      "export type ServerActionRedirectOptions =",
+    );
+    assertNonRedirectResponseEof(responseHelper);
+    expect(responseHelper).not.toContain("requestfinished");
+    expect(responseHelper).not.toContain("requestfailed");
   });
 
   it("keeps redirect settlement independent from response EOF", () => {
     const redirectHelper = helper.slice(helper.indexOf("export async function runAndSettleServerActionRedirect("));
-    expect(redirectHelper).toContain("x-action-redirect");
-    expect(redirectHelper).toContain("waitForURL");
-    expect(redirectHelper).not.toContain("response.finished()");
+    assertRedirectHelperExcludesEof(redirectHelper);
+  });
+
+  it("rejects status-only, EOF-only, and redirect-EOF mutations", () => {
+    const responseHelper = sliceBetween(
+      helper,
+      "export async function waitForServerActionResponse(",
+      "export type ServerActionRedirectOptions =",
+    );
+    const redirectHelper = helper.slice(helper.indexOf("export async function runAndSettleServerActionRedirect("));
+    expect(() => assertNonRedirectResponseEof(responseHelper.replace("response.status() < 400", "response.status() >= 400"))).toThrow();
+    expect(() => assertNonRedirectResponseEof(responseHelper.replace("await response.finished()", "await response.text()"))).toThrow();
+    expect(() => assertRedirectHelperExcludesEof(redirectHelper.replace("const actionRedirect", "await response.finished();\n  const actionRedirect"))).toThrow();
   });
 
   it("records every action milestone around the existing preview awaits", () => {
     for (const marker of [
       'trace("action_enter"',
-      'trace("access_gate_done"',
+      'trace("initial_gate_done"',
+      'trace?.("rate_limit_done"',
+      'trace?.("ownership_done"',
+      'trace?.("access_gate_done"',
       'trace?.("event_context_done"',
       'trace?.("source_parsed"',
       'trace?.("users_resolved"',
@@ -54,13 +84,16 @@ describe("CSV preview settlement observability contract", () => {
     const actionImpl = sliceBetween(action, "async function previewEventRegistrationImportActionImpl(", "export async function previewEventRegistrationImportAction(");
     expectOrdered(actionImpl, [
       'trace("action_enter"',
-      'trace("access_gate_done"',
+      'trace("initial_gate_done"',
       'trace("revalidation_requested"',
     ]);
     const revalidationIndex = actionImpl.indexOf('trace("revalidation_requested"');
     const actionReturnIndex = actionImpl.lastIndexOf('trace("action_return"');
     expect(actionReturnIndex).toBeGreaterThan(revalidationIndex);
     expectOrdered(sliceBetween(action, "export async function previewRegistrationImportForUser(", "async function previewEventRegistrationImportActionImpl("), [
+      'trace?.("rate_limit_done"',
+      'trace?.("ownership_done"',
+      'trace?.("access_gate_done"',
       'trace?.("event_context_done"',
       'trace?.("source_parsed"',
       'trace?.("users_resolved"',
@@ -86,6 +119,7 @@ describe("CSV preview settlement observability contract", () => {
       'trace("route_return"',
     ]);
     expect(route).toContain("createServerMilestoneLogger");
+    expect(route).toContain("return <RegistrationWorkspace {...base} capacity={0} acceptedCount={0} error />;");
     expect(route).not.toContain("waitForTimeout");
     expect(route).not.toContain("revalidatePath");
   });

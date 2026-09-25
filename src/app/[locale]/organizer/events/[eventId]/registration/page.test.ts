@@ -64,6 +64,37 @@ describe("event registration route", () => {
     expect(JSON.stringify(info.mock.calls)).not.toContain("secret@example.test");
   });
 
+  it("preserves the fallback render when event context resolution rejects", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    m.context.mockRejectedValue(new Error("database context-secret@example.test"));
+
+    const result = await Page({ params: Promise.resolve({ locale: "en", eventId: "cup" }) });
+    const html = renderToStaticMarkup(result);
+    expect(html).toContain("&quot;error&quot;:true");
+    const failedRoute = info.mock.calls
+      .map((call: unknown[]) => JSON.parse(String(call[0])) as Record<string, unknown>)
+      .find((record: Record<string, unknown>) => record.stage === "route_return");
+    expect(failedRoute).toMatchObject({ phase: "failed", terminal: "failed", status: 500 });
+    expect(JSON.stringify(info.mock.calls)).not.toContain("context-secret@example.test");
+  });
+
+  it("preserves the import fallback render when history resolution rejects", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    m.history.mockRejectedValue(new Error("database history-secret@example.test"));
+
+    const result = await Page({
+      params: Promise.resolve({ locale: "en", eventId: "cup" }),
+      searchParams: Promise.resolve({ view: "import" }),
+    });
+    const html = renderToStaticMarkup(result);
+    expect(html).toContain("&quot;error&quot;:true");
+    const failedRoute = info.mock.calls
+      .map((call: unknown[]) => JSON.parse(String(call[0])) as Record<string, unknown>)
+      .find((record: Record<string, unknown>) => record.stage === "route_return");
+    expect(failedRoute).toMatchObject({ phase: "failed", terminal: "failed", status: 500 });
+    expect(JSON.stringify(info.mock.calls)).not.toContain("history-secret@example.test");
+  });
+
   it("does not return the import route before history resolves", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const history = deferred<never[]>();
