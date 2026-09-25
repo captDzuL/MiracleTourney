@@ -35,7 +35,7 @@ export function AnnouncementsWorkspace({ eventId, version, announcements, audit,
         return result;
       } catch {
         setFeedback(t("failed"));
-        return { status: "failed" as const };
+        return { status: "failed" as const } as MutationResult;
       }
     })();
     startTransition(async () => { await operation; });

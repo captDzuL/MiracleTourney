@@ -5,15 +5,25 @@ import { requireAnyRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { prisma } from "@/lib/platform/db";
 import { createCompetitionOperations } from "@/lib/tournament/operations";
+import { classifyCompetitionFailure } from "@/lib/tournament/operations/observability";
 import { correctionPreviewSchema, operationRequestSchema } from "@/lib/tournament/operations/schema";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
-import { withServerActionLog } from "@/lib/observability/logger";
+import { withServerActionLog, type ServerActionLogContext } from "@/lib/observability/logger";
+
+type CompetitionActionContext = ServerActionLogContext & Readonly<{
+  operation: string;
+  route: string;
+}>;
 
 export async function executeCompetitionOperationAction(input: unknown) {
-  return withServerActionLog("competition_execute", "/server-actions/competition/execute", () => executeCompetitionOperationActionImpl(input));
+  return withServerActionLog("competition_execute", "/server-actions/competition/execute", ({ requestId }) => executeCompetitionOperationActionImpl(input, {
+    requestId,
+    operation: "competition_execute",
+    route: "/server-actions/competition/execute",
+  }));
 }
 
-async function executeCompetitionOperationActionImpl(input: unknown) {
+async function executeCompetitionOperationActionImpl(input: unknown, context?: CompetitionActionContext) {
   const request = operationRequestSchema.parse(input);
   const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
   if (!user) throw new Error("Unauthorized");
@@ -25,7 +35,9 @@ async function executeCompetitionOperationActionImpl(input: unknown) {
     user.role === "organizer" ? user.id : null,
   );
   if (!access.ok) throw new Error("Not authorized");
-  const receipt = await createCompetitionOperations(prisma).execute({ ...request, actor: { id: user.id, role: user.role } });
+  const receipt = await createCompetitionOperations(prisma, undefined, {
+    ...(context ? { requestId: context.requestId, logOperation: context.operation, logRoute: context.route } : {}),
+  }).execute({ ...request, actor: { id: user.id, role: user.role } });
   revalidateTag("events");
   revalidatePath("/", "layout");
   return receipt;
@@ -53,15 +65,19 @@ async function previewCompetitionResultCorrectionActionImpl(input: unknown) {
 /** Expected failures must cross the production Server Action boundary as data;
  * Next.js intentionally masks thrown server exception messages in production. */
 export async function mutateCompetitionWorkspaceAction(input: unknown) {
-  return withServerActionLog("competition_mutate_workspace", "/server-actions/competition/mutate", () => mutateCompetitionWorkspaceActionImpl(input));
+  return withServerActionLog("competition_mutate_workspace", "/server-actions/competition/mutate", ({ requestId }) => mutateCompetitionWorkspaceActionImpl(input, {
+    requestId,
+    operation: "competition_mutate_workspace",
+    route: "/server-actions/competition/mutate",
+  }));
 }
 
-async function mutateCompetitionWorkspaceActionImpl(input: unknown) {
-  try { return { status: "saved" as const, receipt: await executeCompetitionOperationAction(input) }; }
+async function mutateCompetitionWorkspaceActionImpl(input: unknown, context: CompetitionActionContext) {
+  try { return { status: "saved" as const, receipt: await executeCompetitionOperationActionImpl(input, context) }; }
   catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (/conflict|stale/i.test(message)) return { status: "conflict" as const };
     if (/authorized|password|unavailable/i.test(message)) return { status: "unauthorized" as const };
-    return { status: "failed" as const };
+    return { status: "failed" as const, code: classifyCompetitionFailure(error), correlationId: context.requestId };
   }
 }

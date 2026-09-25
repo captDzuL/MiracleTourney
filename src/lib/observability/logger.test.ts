@@ -105,6 +105,26 @@ describe("structured server logger", () => {
     expect(records[1]).toMatchObject({ status: expectedStatus, errorCode: status });
   });
 
+  it("preserves a safe transaction timeout code while correlating the returned action", async () => {
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("drawing-correlation-id");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const result = await withServerActionLog("competition_mutate_workspace", "/server-actions/competition/mutate", async () => ({
+      status: "failed" as const,
+      code: "transaction_timeout" as const,
+      correlationId: "drawing-correlation-id",
+    }));
+
+    expect(result).toEqual({ status: "failed", code: "transaction_timeout", correlationId: "drawing-correlation-id" });
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
+    expect(records[1]).toMatchObject({
+      phase: "failed",
+      requestId: "drawing-correlation-id",
+      status: 500,
+      errorCode: "transaction_timeout",
+    });
+  });
+
   it("classifies a blocked forbidden action result as a safe failed record", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
@@ -226,6 +246,26 @@ describe("structured server logger", () => {
       resourceId: redactIdentifier("resource-1"),
     });
     expect(JSON.stringify(record)).not.toMatch(/private@example\.test|secret-token|stack secret/);
+  });
+
+  it("bounds stage timing and count fields without serializing untrusted values", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    writeServerLog({
+      phase: "done",
+      operation: "competition_execute",
+      route: "/server-actions/competition/execute",
+      requestId: "req-stage",
+      durationMs: 12.4,
+      status: 200,
+      stage: "drawing_matches",
+      counts: { matchCount: 31, "team@example.test": 12, tooLarge: Number.POSITIVE_INFINITY },
+    });
+
+    const record = JSON.parse(String(info.mock.calls[0]?.[0]));
+    expect(record).toMatchObject({ stage: "drawing_matches", counts: { matchCount: 31 } });
+    expect(record.counts).not.toHaveProperty("team@example.test");
+    expect(record.counts).not.toHaveProperty("tooLarge");
   });
 
   it("uses the canonical event route template when a dynamic slug equals a static segment", () => {

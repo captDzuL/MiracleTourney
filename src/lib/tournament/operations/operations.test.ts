@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCompetitionOperations, type OperationCommand } from "./index";
+import { createCompetitionOperations, type OperationCommand, type OperationStageEvent } from "./index";
 import { operationStore } from "./test-store";
 import { TOURNAMENT_FORMAT_PRESETS } from "../formats/types";
 
@@ -423,6 +423,43 @@ describe("competition operation transactions", () => {
     expect(f.rows("competitionPhase")).toEqual([]);
     expect(f.rows("match")).toEqual([]);
     expect(f.rows("event")[0].competitionVersion).toBe(0);
+  });
+
+  it("reports bounded 24-team drawing stages and preserves rollback on a match write failure", async () => {
+    const store = operationStore();
+    const teams = Array.from({ length: 24 }, (_, index) => ({
+      id: index === 0 ? "a" : index === 1 ? "b" : `team-${String(index + 1).padStart(2, "0")}`,
+      seed: index + 1,
+    }));
+    for (const team of teams.slice(2)) store.seed("team", { id: team.id, eventId: "event" });
+    const stages: OperationStageEvent[] = [];
+    const service = createCompetitionOperations(store.db, () => now, {
+      allowInternalInitialize: true,
+      onStage: (event) => stages.push(event),
+    });
+    store.failWritesAfter("match", 1);
+
+    await expect(service.execute({
+      eventId: "event",
+      actor: owner,
+      expectedVersion: 0,
+      idempotencyKey: "drawing-stage-failure",
+      command: { kind: "drawing_save", config: TOURNAMENT_FORMAT_PRESETS.singleElimination, teams },
+    })).rejects.toThrow("storage failure");
+
+    expect(stages.find((stage) => stage.stage === "drawing_matches" && stage.phase === "failed")).toMatchObject({
+      errorCode: "internal_error",
+      counts: { matchCount: 31 },
+    });
+    expect(stages.find((stage) => stage.stage === "competition_transaction" && stage.phase === "failed")).toMatchObject({
+      errorCode: "internal_error",
+    });
+    expect(stages.every((stage) => stage.durationMs >= 0)).toBe(true);
+    expect(store.rows("event")[0]).toMatchObject({ competitionVersion: 0 });
+    expect(store.rows("competitionPhase")).toEqual([]);
+    expect(store.rows("match")).toEqual([]);
+    expect(store.rows("matchDependency")).toEqual([]);
+    expect(store.rows("competitionAuditLog")).toEqual([]);
   });
 
   it("persists graph metadata and refuses foreign teams or replacing existing competition", async () => {

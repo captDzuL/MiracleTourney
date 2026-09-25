@@ -24,6 +24,39 @@ export async function waitForServerActionResponse(
   return response;
 }
 
+function parseJsonCandidate(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Extracts the action return value from a completed React Flight response. */
+export function parseServerActionResult<T>(body: string): T {
+  const candidates = [body.trim(), ...body.split("\n").map((line) => {
+    const separator = line.indexOf(":");
+    return separator >= 0 ? line.slice(separator + 1).trim() : line.trim();
+  })];
+  for (const candidate of candidates) {
+    const parsed = parseJsonCandidate(candidate);
+    if (parsed && typeof parsed === "object" && "status" in parsed) return parsed as T;
+    if (typeof parsed === "string") {
+      const nested = parseJsonCandidate(parsed);
+      if (nested && typeof nested === "object" && "status" in nested) return nested as T;
+    }
+  }
+  throw new Error("Server Action response did not contain a settled result.");
+}
+
+export async function waitForServerActionResult<T>(
+  page: Page,
+  matcher: ServerActionRequestMatcher,
+): Promise<{ response: Response; result: T }> {
+  const response = await waitForServerActionResponse(page, matcher);
+  return { response, result: parseServerActionResult<T>(await response.text()) };
+}
+
 export type ServerActionRedirectOptions = {
   request: ServerActionRequestMatcher;
   expectedActionRedirect: string;

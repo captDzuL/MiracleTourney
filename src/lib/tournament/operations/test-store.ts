@@ -14,6 +14,7 @@ export function operationStore() {
     tournamentCompletion: [],
   };
   let failTable: string | undefined;
+  let writesBeforeFailure = 0;
   let reverseReadOrder = false;
   const matches = (row: Row, where: Row = {}): boolean => Object.entries(where).every(([key, value]) => {
     if (value && typeof value === "object" && !(value instanceof Date)) {
@@ -34,7 +35,11 @@ export function operationStore() {
     return structuredClone(row);
   };
   const delegates = (tables: Record<string, Row[]>) => Object.fromEntries(Object.keys(tables).map(table => {
-    const write = () => { if (table === failTable) throw new Error("storage failure"); };
+    const write = () => {
+      if (table !== failTable) return;
+      if (writesBeforeFailure > 0) { writesBeforeFailure -= 1; return; }
+      throw new Error("storage failure");
+    };
     const find = ({ where }: Query = {}) => tables[table].filter(row => {
       const scoped = { ...where };
       if (table === "matchGame" && scoped.match && typeof scoped.match === "object") {
@@ -102,7 +107,8 @@ export function operationStore() {
       if (!row) throw new Error(`missing ${table} row ${id}`);
       update(row, data);
     },
-    failWrites: (table: string) => { failTable = table; },
+    failWrites: (table: string) => { failTable = table; writesBeforeFailure = 0; },
+    failWritesAfter: (table: string, successfulWrites: number) => { failTable = table; writesBeforeFailure = successfulWrites; },
     reverseReadOrder: (reverse: boolean) => { reverseReadOrder = reverse; },
   };
 }

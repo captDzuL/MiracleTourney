@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { operationStore } from "../tournament/operations/test-store";
 import { TOURNAMENT_FORMAT_PRESETS } from "../tournament/formats/types";
 
@@ -17,6 +17,47 @@ describe("authenticated competition actions", () => {
   let store: ReturnType<typeof operationStore>;
   const request = { eventId: "event", expectedVersion: 0, idempotencyKey: "action", command: { kind: "announcement_save", title: "Hello", body: "Welcome" } };
   beforeEach(() => { store = operationStore(); boundary.db = store.db; boundary.session.user = { id: "owner", role: "organizer" }; boundary.enabled = true; });
+  afterEach(() => vi.restoreAllMocks());
+
+  function twentyFourTeamDrawing() {
+    const teams = Array.from({ length: 24 }, (_, index) => ({
+      id: `team-${String(index + 1).padStart(2, "0")}`,
+      seed: index + 1,
+    }));
+    return {
+      eventId: "event",
+      expectedVersion: 0,
+      idempotencyKey: "drawing-24",
+      command: { kind: "drawing_save" as const, config: TOURNAMENT_FORMAT_PRESETS.singleElimination, teams },
+    };
+  }
+
+  it.each([
+    ["transaction timeout", Object.assign(new Error("Prisma P2028 transaction timeout for secret@example.test"), { code: "P2028" }), "transaction_timeout"],
+    ["unexpected storage failure", new Error("SQL connection secret@example.test https://db.example.test"), "internal_error"],
+  ] as const)("returns a safe discriminated result for a 24-team drawing %s", async (_label, failure, code) => {
+    const request = twentyFourTeamDrawing();
+    for (const team of request.command.teams) store.seed("team", { id: team.id, eventId: "event" });
+    boundary.db = { $transaction: () => Promise.reject(failure) } as unknown as ReturnType<typeof operationStore>["db"];
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const result = await mutateCompetitionWorkspaceAction(request);
+
+    expect(result).toMatchObject({ status: "failed", code, correlationId: expect.any(String) });
+    expect(JSON.stringify(result)).not.toMatch(/P2028|secret@example\.test|db\.example\.test|SQL connection/);
+    expect(store.rows("event")[0]).toMatchObject({ competitionVersion: 0 });
+    expect(store.rows("competitionPhase")).toEqual([]);
+    expect(store.rows("match")).toEqual([]);
+    expect(store.rows("matchDependency")).toEqual([]);
+    const records = info.mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
+    const failureRecord = records.find((record) => record.phase === "failed");
+    expect(failureRecord).toMatchObject({
+      requestId: (result as { correlationId: string }).correlationId,
+      errorCode: code,
+      status: 500,
+    });
+    expect(JSON.stringify(records)).not.toMatch(/P2028|secret@example\.test|db\.example\.test|SQL connection/);
+  });
   it("previews an official correction through the authenticated owner without writing", async () => {
     const call = (version: number, command: unknown) => executeCompetitionOperationAction({ eventId: "event", expectedVersion: version, idempotencyKey: `k${version}`, command });
     await call(0, { kind: "drawing_save", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] });

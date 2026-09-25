@@ -14,6 +14,8 @@ export type ServerLogEvent = Readonly<{
   errorCode?: string;
   actorId?: string;
   resourceId?: string;
+  stage?: string;
+  counts?: Readonly<Record<string, number>>;
 }>;
 
 type ServerLogResult<T> = Readonly<{
@@ -28,6 +30,15 @@ function safeText(value: string, maxLength = 160): string {
 
 function safeCode(value: string): string {
   return safeText(value).toLowerCase().replace(/[^a-z0-9_:-]/g, "_");
+}
+
+function safeCounts(value: Readonly<Record<string, number>> | undefined): Readonly<Record<string, number>> | undefined {
+  if (!value) return undefined;
+  const entries = Object.entries(value)
+    .filter(([key, count]) => /^[A-Za-z][A-Za-z0-9_]*$/.test(key) && Number.isFinite(count))
+    .slice(0, 16)
+    .map(([key, count]) => [key, Math.max(0, Math.min(Math.round(count), 1_000_000_000))] as const);
+  return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
 const STATIC_ROUTE_SEGMENTS = new Set([
@@ -52,6 +63,7 @@ export function redactIdentifier(value: string): string {
 }
 
 function safeEvent(event: ServerLogEvent): ServerLogEvent {
+  const counts = safeCounts(event.counts);
   const result: ServerLogEvent = {
     phase: event.phase,
     operation: safeCode(event.operation),
@@ -62,6 +74,8 @@ function safeEvent(event: ServerLogEvent): ServerLogEvent {
     ...(event.errorCode ? { errorCode: safeCode(event.errorCode) } : {}),
     ...(event.actorId ? { actorId: redactIdentifier(event.actorId) } : {}),
     ...(event.resourceId ? { resourceId: redactIdentifier(event.resourceId) } : {}),
+    ...(event.stage ? { stage: safeCode(event.stage) } : {}),
+    ...(counts ? { counts } : {}),
   };
   return result;
 }
@@ -174,6 +188,7 @@ function actionResultStatus(value: unknown): Pick<ServerLogResult<unknown>, "sta
   const code = result.code;
   const safeActionCodes = new Set([
     "failed", "forbidden", "unauthorized", "rate_limited", "delivery_failed", "token_invalid", "upload_failed",
+    "transaction_timeout", "internal_error",
   ]);
   const safeCodeValue = typeof code === "string" && safeActionCodes.has(code) ? code : undefined;
   const explicitStatus = typeof result.statusCode === "number"
@@ -226,10 +241,12 @@ function logServerActionFailure(
 }
 
 /** Wraps a server action or reader without adding an extra foreground await. */
+export type ServerActionLogContext = Readonly<{ requestId: string }>;
+
 export function withServerActionLog<T>(
   operation: string,
   route: string,
-  work: () => Promise<T>,
+  work: (context: ServerActionLogContext) => Promise<T>,
 ): Promise<T> {
   const request = new Request(`https://internal.invalid${route}`);
   const requestId = getRequestId(request);
@@ -238,7 +255,7 @@ export function withServerActionLog<T>(
 
   let result: Promise<T>;
   try {
-    result = work();
+    result = work({ requestId });
   } catch (error) {
     logServerActionFailure(operation, route, requestId, startedAt, error);
     return Promise.reject(error);

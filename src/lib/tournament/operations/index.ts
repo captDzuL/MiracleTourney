@@ -5,10 +5,22 @@ import { correctionPreviewSchema, internalCorrectionPreviewSchema, internalOpera
 import type { ParsedCommand } from "./schema";
 import { applyCommand } from "./commands";
 import { correctionPreview, type ResultGame } from "./results";
+import {
+  classifyCompetitionFailure,
+  makeOperationStageReporter,
+  reportOperationStage,
+  withOperationStage,
+  type OperationObservabilityOptions,
+} from "./observability";
 
 export type OperationCommand = ParsedCommand;
 export type OperationInput = { eventId: string; actor: { id: string; role: string }; expectedVersion: number; idempotencyKey: string; command: OperationCommand };
 export type OperationReceipt = { version: number; resourceId?: string };
+export type {
+  CompetitionFailureCode,
+  OperationStageEvent,
+  OperationStageReporter,
+} from "./observability";
 
 type JsonError = { code?: string };
 const SERIALIZATION_RETRIES = 6;
@@ -33,8 +45,9 @@ function wait(ms: number): Promise<void> {
 export function createCompetitionOperations(
   db: PrismaClient,
   clock: () => Date = () => new Date(),
-  options: { allowInternalInitialize?: boolean } = {},
+  options: OperationObservabilityOptions & { allowInternalInitialize?: boolean } = {},
 ) {
+  const stageReporter = makeOperationStageReporter(options);
   async function execute(input: OperationInput): Promise<OperationReceipt> {
     const { actor } = input;
     const request = (options.allowInternalInitialize ? internalOperationRequestSchema : operationRequestSchema)
@@ -43,43 +56,75 @@ export function createCompetitionOperations(
     const isCaptainReadiness = actor?.role === "captain" && command.kind === "readiness_update";
     if (!actor?.id || !isCaptainReadiness && !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new Error("Not authorized");
     const mutation = JSON.parse(JSON.stringify({ ...request, actorId: actor.id }));
-    const transact = () => db.$transaction(async tx => {
-      const event = await tx.event.findUnique({ where: { id: eventId } });
-      if (!event || actor.role === "organizer" && event.organizerUserId !== actor.id) throw new Error("Not authorized");
-      if (isCaptainReadiness && !await tx.team.findFirst({ where: { id: command.teamId, eventId, captainId: actor.id } })) throw new Error("Not authorized");
-      const previous = await tx.competitionAuditLog.findFirst({ where: { eventId, idempotencyKey } });
-      if (previous) {
-        const payload = previous.payload as { request: Prisma.JsonValue; receipt: OperationReceipt };
-        if (!isDeepStrictEqual(payload.request, mutation)) throw new Error("Idempotency key already used for a different request");
-        return payload.receipt;
-      }
-      const completion = await tx.tournamentCompletion.findUnique({
-        where: { eventId },
-        select: { status: true },
+    const transact = (attempt: number) => {
+      const startedAt = Date.now();
+      reportOperationStage(stageReporter, {
+        phase: "start",
+        stage: "competition_transaction",
+        durationMs: 0,
+        counts: { attempt: attempt + 1 },
       });
-      const isAnnouncementUtility = ["announcement_save", "announcement_publish", "announcement_unpublish"].includes(command.kind);
-      if (completion?.status === "completed" && !isAnnouncementUtility) {
-        throw new Error("Tournament completion locks competitive writes");
-      }
-      const updated = await tx.event.updateMany({
-        where: { id: eventId, organizerUserId: event.organizerUserId, competitionVersion: expectedVersion },
-        data: { competitionVersion: { increment: 1 } },
-      });
-      if (updated.count !== 1) throw new Error("Version conflict: refresh competition state");
-      const resourceId = await applyCommand(tx, eventId, actor.id, command, expectedVersion + 1, idempotencyKey, clock(), isCaptainReadiness ? "captain" : "organizer");
-      const receipt: OperationReceipt = { version: expectedVersion + 1, ...(resourceId ? { resourceId } : {}) };
-      await tx.competitionAuditLog.create({ data: {
-        eventId, actorUserId: actor.id, action: command.kind, idempotencyKey,
-        matchId: "matchId" in command ? command.matchId : undefined,
-        reason: "reason" in command ? command.reason || null : null,
-        payload: JSON.parse(JSON.stringify({ request: mutation, receipt })),
-      } });
-      return receipt;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 20000 });
+      return db.$transaction(async tx => {
+        const event = await tx.event.findUnique({ where: { id: eventId } });
+        if (!event || actor.role === "organizer" && event.organizerUserId !== actor.id) throw new Error("Not authorized");
+        if (isCaptainReadiness && !await tx.team.findFirst({ where: { id: command.teamId, eventId, captainId: actor.id } })) throw new Error("Not authorized");
+        const previous = await tx.competitionAuditLog.findFirst({ where: { eventId, idempotencyKey } });
+        if (previous) {
+          const payload = previous.payload as { request: Prisma.JsonValue; receipt: OperationReceipt };
+          if (!isDeepStrictEqual(payload.request, mutation)) throw new Error("Idempotency key already used for a different request");
+          return payload.receipt;
+        }
+        const completion = await tx.tournamentCompletion.findUnique({
+          where: { eventId },
+          select: { status: true },
+        });
+        const isAnnouncementUtility = ["announcement_save", "announcement_publish", "announcement_unpublish"].includes(command.kind);
+        if (completion?.status === "completed" && !isAnnouncementUtility) {
+          throw new Error("Tournament completion locks competitive writes");
+        }
+        const updated = await tx.event.updateMany({
+          where: { id: eventId, organizerUserId: event.organizerUserId, competitionVersion: expectedVersion },
+          data: { competitionVersion: { increment: 1 } },
+        });
+        if (updated.count !== 1) throw new Error("Version conflict: refresh competition state");
+        const resourceId = await applyCommand(tx, eventId, actor.id, command, expectedVersion + 1, idempotencyKey, clock(), isCaptainReadiness ? "captain" : "organizer", stageReporter);
+        const receipt: OperationReceipt = { version: expectedVersion + 1, ...(resourceId ? { resourceId } : {}) };
+        await withOperationStage(stageReporter, "competition_audit", { auditCount: 1 }, () => tx.competitionAuditLog.create({ data: {
+          eventId, actorUserId: actor.id, action: command.kind, idempotencyKey,
+          matchId: "matchId" in command ? command.matchId : undefined,
+          reason: "reason" in command ? command.reason || null : null,
+          payload: JSON.parse(JSON.stringify({ request: mutation, receipt })),
+        } }));
+        return receipt;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 20000 })
+        .then((receipt) => {
+          reportOperationStage(stageReporter, {
+            phase: "done",
+            stage: "competition_transaction",
+            durationMs: Date.now() - startedAt,
+            counts: { attempt: attempt + 1 },
+          });
+          return receipt;
+        })
+        .catch((error: unknown) => {
+          // Serialization conflicts are intentionally retried below and are
+          // not terminal storage failures in the observability stream.
+          if (!isSerializationConflict(error)) {
+            reportOperationStage(stageReporter, {
+              phase: "failed",
+              stage: "competition_transaction",
+              durationMs: Date.now() - startedAt,
+              counts: { attempt: attempt + 1 },
+              errorCode: classifyCompetitionFailure(error),
+            });
+          }
+          throw error;
+        });
+    };
     // Re-read a committed retry receipt after a PostgreSQL serialization race.
     for (let attempt = 0; attempt < SERIALIZATION_RETRIES; attempt++) {
       try {
-        return await transact();
+        return await transact(attempt);
       } catch (error) {
         if (!isSerializationConflict(error)) {
           throw error;

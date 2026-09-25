@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
 import { runAndSettleServerActionRedirect } from "./helpers/server-action";
+import { waitForServerActionResult } from "./helpers/server-action";
 import { TOURNAMENT_FORMAT_PRESETS } from "../../src/lib/tournament/formats/types";
 
 const prisma = new PrismaClient();
@@ -310,7 +311,20 @@ overnightTest("registration order stays private and imports stop after drawing p
     data: { status: "Registration Closed" },
   });
   await page.goto(`/en/organizer/events/${eventId}/competition`);
+  const drawingResponsePromise = waitForServerActionResult<{ status: string; code?: string; correlationId?: string }>(page, (request, requestUrl) => {
+    const postData = request.postData() ?? "";
+    return request.method() === "POST"
+      && requestUrl.pathname === `/en/organizer/events/${encodeURIComponent(eventId)}/competition`
+      && Boolean(request.headers()["next-action"])
+      && postData.includes(eventId)
+      && postData.includes('"drawing_save"');
+  });
   await page.getByRole("button", { name: "Save drawing draft", exact: true }).click();
+  const drawingResponse = await drawingResponsePromise;
+  expect(drawingResponse.result.status, "Save drawing action result").toBe("saved");
+  if (drawingResponse.result.status !== "saved") {
+    throw new Error(`Save drawing failed with ${drawingResponse.result.code ?? "unknown"} (correlation ${drawingResponse.result.correlationId ?? "missing"}).`);
+  }
   await expect.poll(
     async () => (await prisma.competitionPhase.findFirst({ where: { eventId, sequence: 1 } }))?.status,
     { timeout: 60_000 },
