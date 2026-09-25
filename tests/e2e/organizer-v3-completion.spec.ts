@@ -26,7 +26,8 @@ test.afterEach(async () => {
     if (completionActionResponsePending && completionActionResponse) {
       await completionActionResponse.catch(() => undefined);
     }
-    await fixtureCleanup?.cleanup();
+    const cleanup = fixtureCleanup ?? fixture;
+    await cleanup?.cleanup();
     fixture = undefined;
     fixtureCleanup = undefined;
     completionActionResponse = undefined;
@@ -35,7 +36,7 @@ test.afterEach(async () => {
 });
 
 async function prepareTestCompletionFixture(kind: CompletionFixtureKind) {
-  const scenario = await prepareCompletionFixture(kind, `completion-action-${kind.replaceAll("_", "-")}`, {
+  const scenario = await prepareCompletionFixture(kind, undefined, {
     onBaseFixtureReady: (baseFixture) => {
       fixtureCleanup = baseFixture;
     },

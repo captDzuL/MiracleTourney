@@ -29,4 +29,11 @@ describe("Completion action settlement contract", () => {
     expect(completionSpec).toContain("completionActionResponsePending");
     expect(completionSpec).toContain('test.step("fixture cleanup"');
   });
+
+  it("keeps focused fixtures uniquely scoped and cleans parity fixtures without double deletion", () => {
+    expect(completionSpec).toContain("prepareCompletionFixture(kind, undefined, {");
+    expect(completionSpec).not.toContain("completion-action-${kind");
+    expect(completionSpec).toContain("const cleanup = fixtureCleanup ?? fixture;");
+    expect(completionSpec).toContain("await cleanup?.cleanup();");
+  });
 });
