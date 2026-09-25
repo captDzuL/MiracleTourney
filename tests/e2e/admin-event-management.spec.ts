@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Request, type Response } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
 
 const prisma = new PrismaClient();
@@ -137,11 +137,48 @@ test.describe("admin event management", () => {
 
     await page.goto(`/en/admin?phase=import&activeEventId=${lockedEventId}`);
     const lateImportFile = "tests/fixtures/late-import-after-lock.csv";
-    await expect(page.getByRole("button", { name: /check and preview|cek dan preview/i })).toBeEnabled();
+    const previewButton = page.getByRole("button", { name: /check and preview|cek dan preview/i });
+    await expect(previewButton).toBeEnabled();
     await page.locator('input[name="registrationFile"]').setInputFiles(lateImportFile);
-    await page.getByRole("button", { name: /check and preview|cek dan preview/i }).click();
 
-    await expect(page).toHaveURL(/registrationBatchId=/, { timeout: 30_000 });
+    function isLockedRosterPreviewSettlement(response: Response, eventId: string) {
+      const request = response.request();
+      const url = new URL(response.url());
+      return response.status() === 200
+        && request.method() === "GET"
+        && url.pathname === "/en/admin"
+        && url.searchParams.get("phase") === "registration"
+        && url.searchParams.get("activeEventId") === eventId
+        && url.searchParams.has("registrationBatchId")
+        && Boolean(url.searchParams.get("registrationBatchId"))
+        && url.searchParams.get("success") === "registration-preview-ready"
+        && (request.headers()["rsc"] === "1" || request.resourceType() === "document");
+    }
+
+    const settledPreviewUrl = page.waitForURL(
+      (url) => url.pathname === "/en/admin"
+        && url.searchParams.get("phase") === "registration"
+        && url.searchParams.get("activeEventId") === lockedEventId
+        && url.searchParams.has("registrationBatchId")
+        && Boolean(url.searchParams.get("registrationBatchId"))
+        && url.searchParams.get("success") === "registration-preview-ready",
+      { waitUntil: "domcontentloaded" },
+    );
+    const settledPreviewResponse = new Promise<Response>((resolve) => {
+      const onRequestFinished = async (request: Request) => {
+        const response = await request.response();
+        if (!response || !isLockedRosterPreviewSettlement(response, lockedEventId)) return;
+        page.off("requestfinished", onRequestFinished);
+        resolve(response);
+      };
+      page.on("requestfinished", onRequestFinished);
+    });
+    const [, settlementResponse] = await Promise.all([
+      settledPreviewUrl,
+      settledPreviewResponse,
+      previewButton.click(),
+    ]);
+    expect(await settlementResponse.finished()).toBeNull();
     await expect(page.getByText(/drawing.*dipublikasikan|roster.*terkunci|turnamen.*berjalan/i)).toBeVisible();
   });
 
