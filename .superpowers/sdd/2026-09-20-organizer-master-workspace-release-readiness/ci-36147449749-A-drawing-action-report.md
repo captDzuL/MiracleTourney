@@ -209,3 +209,20 @@ shape, safe logging, and product behavior. No browser, live database,
 seed/reset, timeout increase, or retry broadening was used. The review-2
 implementation commit is `9c1c91f`; protected untracked roots remain untouched
 and unstaged.
+
+## Whole-delta review round 4 correction
+
+Commit `ba7b87ca616266ef459e5ed0a0aba0372100545f` corrects terminal transaction
+observability for domain failures. A `CompetitionExpectedError` with code
+`conflict` now emits terminal `errorCode: "conflict"`, and code `unauthorized`
+emits terminal `errorCode: "unauthorized"`; neither is mislabeled as
+`internal_error`. Other expected-error codes and unknown/storage failures keep
+the `internal_error` fallback, while timeout and `P2034` classification remain
+unchanged.
+
+Focused classifier and transaction tests prove both domain categories, one
+transaction attempt, `terminal: "failed"`, no retry, and unchanged rollback.
+The focused three-file run passed 87/87 tests, and the expanded A/B/C
+regression run passed 140/140 tests. TypeScript, changed-file ESLint, and
+`git diff --check` exited 0. No browser, database, seed, reset, timeout, or
+retry behavior was exercised or changed.

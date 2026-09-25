@@ -6,6 +6,7 @@ Implementation commit: `1f7cecd` (`test: split shard 2 harness budgets`)
 Review-round static contract commit: `de2486c90fe16b6a3f5a11987fbedd0d309d216d` (`test: harden shard 2 contract mutations`)
 Review-round-2 lifecycle contract commit: `2ca7cdcf6812eb3c8e543a6306f590d52f04b647` (`test: enforce lifecycle assertion ordering`)
 Review-round-3 lifecycle DB assertion commit: `ec74880c830110fc9e98b91ad225af9549331f71` (`test: protect lifecycle result completion assertion`)
+Review-round-4 final correction commit: `ba7b87ca616266ef459e5ed0a0aba0372100545f` (`fix: close final shard 2 review gaps`)
 
 ## Scope and result
 
@@ -48,3 +49,26 @@ The following pre-existing untracked paths were not staged, edited, or deleted:
 - `public/certificates/e2e-completion-single_elimination-release-journey-id/`
 
 The seven affected test identities, current budgets (90s, 240s, 180s, 120s, and existing defaults), `workers: 1`, `retries: 0`, shard membership, fail-closed CI ordering, exact redirects, public routes, six sort transitions, organizer response matcher/settlement, import receipt, Completion assertion, and existing cleanup allowlists remain intact.
+
+## Review-round-4 supersession and evidence
+
+The final whole-delta review found that the browser-independent overnight
+preparation hook still inherited a budget that was not explicit for its one
+remote lookup and three sequential remote deletes. Commit
+`ba7b87ca616266ef459e5ed0a0aba0372100545f` adds a conservative, bounded
+120,000 ms hook-only budget with `testInfo.setTimeout`. The named result test
+remains exactly 90,000 ms, and no Playwright config/global timeout, retry,
+skip, sleep, or browser interaction changed.
+
+The new static contract rejects missing, test-body-scoped, blanket, retry,
+skip, and sleep mutations. Its focused RED participated in a six-failure run
+across the hook and terminal-observability findings. After the correction, the
+focused three-file run passed 87/87 tests and the expanded A/B/C regression
+run passed 140/140 tests. TypeScript with `--noEmit --incremental false`,
+changed-file ESLint, and `git diff --check` all exited 0. No browser, database,
+seed, reset, or CI command was run.
+
+This section supersedes the earlier report sentence that no timeout was added:
+no test-body, global, or config timeout was added, but the preparation hook now
+has its own explicit bounded budget. The combined runtime and shard-2 gates
+remain pending exactly as recorded above.

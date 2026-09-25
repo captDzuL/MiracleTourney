@@ -5,6 +5,8 @@ Worktree: `C:\Users\dzulf\.codex\worktrees\organizer-release-readiness\MiracleTo
 Branch: `codex/organizer-release-readiness`
 Base SHA: `994c9ce9ed2cea3628b811cdee5b1c07755fd123`
 Review code/tests SHA: `25e303f63d18c5a286b7ec048a82e977a9c0ba27`
+Review documentation SHA: `7381cbac297139707636832a5a2acc7029239152`
+Whole-delta round-4 correction SHA: `ba7b87ca616266ef459e5ed0a0aba0372100545f`
 
 ## Outcome
 
@@ -149,6 +151,10 @@ Base implementation: `994c9ce9ed2cea3628b811cdee5b1c07755fd123`
 
 Review code/tests: `25e303f63d18c5a286b7ec048a82e977a9c0ba27`
 
-The report commit is the following documentation-only commit on top of the
-review SHA; its exact SHA is included in the final handoff after `git show
---stat --oneline` and `git status --short` verification.
+Review documentation: `7381cbac297139707636832a5a2acc7029239152`
+
+Whole-delta round-4 correction:
+`ba7b87ca616266ef459e5ed0a0aba0372100545f`
+
+The round-4 SHA closes the final hook-budget and competition terminal-category
+findings. It does not change Brief B's CSV preview behavior or evidence.
