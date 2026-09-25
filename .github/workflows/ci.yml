@@ -111,9 +111,35 @@ jobs:
           echo "::add-mask::$JWT_SECRET"
           echo "JWT_SECRET=$JWT_SECRET" >> "$GITHUB_ENV"
       - name: Run guarded Match Day, default, and flags-off E2E profiles
+        if: >-
+          ${{
+            github.event_name != 'push' ||
+            github.ref_name != 'codex/organizer-release-readiness' ||
+            !contains(github.event.head_commit.message, '[ci:shard2-only]')
+          }}
         run: pnpm test:e2e:ci
-      - name: Upload Playwright report on failure
-        if: failure()
+      - name: Run default shard 2 diagnostic fast lane
+        if: >-
+          ${{
+            github.event_name == 'push' &&
+            github.ref_name == 'codex/organizer-release-readiness' &&
+            contains(github.event.head_commit.message, '[ci:shard2-only]')
+          }}
+        shell: bash
+        run: |
+          pnpm test:e2e:preflight
+          pnpm test:e2e:prepare
+          pnpm exec playwright test --config playwright.ci-default.config.ts --shard=2/2 --fail-on-flaky-tests
+      - name: Upload Playwright report evidence
+        if: >-
+          ${{
+            failure() ||
+            (
+              github.event_name == 'push' &&
+              github.ref_name == 'codex/organizer-release-readiness' &&
+              contains(github.event.head_commit.message, '[ci:shard2-only]')
+            )
+          }}
         uses: actions/upload-artifact@v6
         with:
           name: playwright-report

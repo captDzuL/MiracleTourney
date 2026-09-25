@@ -20,17 +20,145 @@ type CiModule = {
 };
 
 const ciModulePath = "../scripts/e2e-ci.mjs";
+const workflowPath = new URL("../.github/workflows/ci.yml", import.meta.url);
+
+const readWorkflow = () => readFile(workflowPath, "utf8");
+
+const extractJob = (workflow: string, jobId: string) =>
+  workflow.match(new RegExp(`  ${jobId}:\\r?\\n([\\s\\S]*?)(?=\\r?\\n  [a-z][\\w-]*:|$)`))?.[0] ?? "";
+
+const extractStep = (job: string, stepName: string) =>
+  job.match(new RegExp(`      - name: ${stepName}\\r?\\n([\\s\\S]*?)(?=\\r?\\n      - name:|$)`))?.[0] ?? "";
 
 describe("CI E2E release sequence", () => {
   it("runs a real fail-closed ESLint gate on the pinned CI runtime", async () => {
-    const workflow = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
-    const e2eJob = workflow.match(/  e2e-tests:\r?\n([\s\S]*?)(?=\r?\n  [a-z][\w-]*:|$)/)?.[0];
+    const workflow = await readWorkflow();
+    const e2eJob = extractJob(workflow, "e2e-tests");
     expect(workflow).toContain('node-version: "24"');
     expect(workflow).toContain("version: 10");
     expect(workflow).toContain("run: pnpm exec eslint . --quiet");
     expect(e2eJob).toContain("timeout-minutes: 90");
     expect(e2eJob).not.toContain("timeout-minutes: 60");
     expect(workflow).not.toMatch(/eslint[^\n]*\|\|\s*true/i);
+  });
+
+  it("keeps lint and unit jobs unconditional", async () => {
+    const workflow = await readWorkflow();
+
+    for (const jobId of ["lint-and-typecheck", "unit-tests"]) {
+      const job = extractJob(workflow, jobId);
+      expect(job).not.toMatch(/^    if:/m);
+      expect(job).not.toContain("github.event_name");
+      expect(job).not.toContain("[ci:shard2-only]");
+    }
+  });
+
+  it("keeps the E2E dependency, lock, timeout, and fail-closed job gate", async () => {
+    const e2eJob = extractJob(await readWorkflow(), "e2e-tests");
+
+    expect(e2eJob).toContain("needs: [lint-and-typecheck, unit-tests]");
+    expect(e2eJob).toContain("timeout-minutes: 90");
+    expect(e2eJob).toContain("group: e2e-neon-test-db");
+    expect(e2eJob).toContain("cancel-in-progress: false");
+    expect(e2eJob).toContain("if: ${{ vars.E2E_ENABLED == 'true' }}");
+    expect(e2eJob).not.toContain("always()");
+    expect(e2eJob).not.toContain("!cancelled()");
+    expect(e2eJob).not.toContain("needs.lint-and-typecheck.result");
+    expect(e2eJob).not.toContain("needs.unit-tests.result");
+  });
+
+  it("keeps the full E2E command behind the inverse marker condition", async () => {
+    const fullStep = extractStep(
+      extractJob(await readWorkflow(), "e2e-tests"),
+      "Run guarded Match Day, default, and flags-off E2E profiles",
+    );
+
+    expect(fullStep).toContain("github.event_name != 'push'");
+    expect(fullStep).toContain("github.ref_name != 'codex/organizer-release-readiness'");
+    expect(fullStep).toContain("!contains(github.event.head_commit.message, '[ci:shard2-only]')");
+    expect(fullStep.match(/run: pnpm test:e2e:ci/g)).toHaveLength(1);
+  });
+
+  it("runs exactly the ordered default shard 2 diagnostic commands", async () => {
+    const diagnosticStep = extractStep(
+      extractJob(await readWorkflow(), "e2e-tests"),
+      "Run default shard 2 diagnostic fast lane",
+    );
+    const commandLines = diagnosticStep
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    expect(diagnosticStep).toContain("github.event_name == 'push'");
+    expect(diagnosticStep).toContain("github.ref_name == 'codex/organizer-release-readiness'");
+    expect(diagnosticStep).toContain("contains(github.event.head_commit.message, '[ci:shard2-only]')");
+    expect(commandLines.filter((line) => line === "pnpm test:e2e:preflight")).toHaveLength(1);
+    expect(commandLines.filter((line) => line === "pnpm test:e2e:prepare")).toHaveLength(1);
+    expect(
+      commandLines.filter(
+        (line) =>
+          line ===
+          "pnpm exec playwright test --config playwright.ci-default.config.ts --shard=2/2 --fail-on-flaky-tests",
+      ),
+    ).toHaveLength(1);
+    expect(commandLines.indexOf("pnpm test:e2e:preflight")).toBeLessThan(
+      commandLines.indexOf("pnpm test:e2e:prepare"),
+    );
+    expect(commandLines.indexOf("pnpm test:e2e:prepare")).toBeLessThan(
+      commandLines.indexOf(
+        "pnpm exec playwright test --config playwright.ci-default.config.ts --shard=2/2 --fail-on-flaky-tests",
+      ),
+    );
+  });
+
+  it("keeps the diagnostic lane free of full-run profiles", async () => {
+    const diagnosticStep = extractStep(
+      extractJob(await readWorkflow(), "e2e-tests"),
+      "Run default shard 2 diagnostic fast lane",
+    );
+
+    for (const forbidden of [
+      "test:e2e:ci",
+      "--shard=1/2",
+      "v3-matchday",
+      "playwright.smoke.config.ts",
+      "playwright.visual-v2.config.ts",
+      "playwright.legacy.config.ts",
+    ]) {
+      expect(diagnosticStep).not.toContain(forbidden);
+    }
+  });
+
+  it("uploads only Playwright evidence for failures or marked diagnostics", async () => {
+    const artifactStep = extractStep(
+      extractJob(await readWorkflow(), "e2e-tests"),
+      "Upload Playwright report evidence",
+    );
+    const pathBlock = artifactStep.match(/path:\s*\|([\s\S]*?)(?=\r?\n\s+if-no-files-found)/)?.[1] ?? "";
+    const paths = pathBlock
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    expect(artifactStep).toContain("failure()");
+    expect(artifactStep).toContain("github.event_name == 'push'");
+    expect(artifactStep).toContain("contains(github.event.head_commit.message, '[ci:shard2-only]')");
+    expect(paths).toEqual(["playwright-report/", "test-results/"]);
+    expect(artifactStep).toContain("retention-days: 7");
+  });
+
+  it("keeps every marker predicate push- and branch-scoped", async () => {
+    const workflow = await readWorkflow();
+    const marker = "contains(github.event.head_commit.message, '[ci:shard2-only]')";
+    const markerMatches = [...workflow.matchAll(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))];
+
+    expect(markerMatches.length).toBeGreaterThan(0);
+    for (const match of markerMatches) {
+      const conditionStart = workflow.lastIndexOf("if:", match.index);
+      const condition = workflow.slice(conditionStart, (match.index ?? 0) + marker.length);
+      expect(condition).toMatch(/github\.event_name\s*(?:==|!=)\s*'push'/);
+      expect(condition).toMatch(/github\.ref_name\s*(?:==|!=)\s*'codex\/organizer-release-readiness'/);
+    }
   });
 
   it("records elapsed time for every release phase and the total sequence", async () => {
