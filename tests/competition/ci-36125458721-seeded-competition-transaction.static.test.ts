@@ -54,7 +54,7 @@ function extractCleanupBlock(spec: string) {
 }
 
 function operationSequence(block: string) {
-  return [...block.matchAll(/prisma\.([A-Za-z]\w*)\.(deleteMany|update)\(/g)].map(
+  return [...block.matchAll(/^ {6}prisma\.([A-Za-z]\w*)\.([A-Za-z]\w*)\(/gm)].map(
     ([, model, method]) => `${model}.${method}`,
   );
 }
@@ -73,7 +73,9 @@ function assertOrderedBatchTransaction(block: string) {
   expect(block).not.toMatch(/\b(?:timeout|maxWait)\s*:/);
   expect(block).not.toMatch(/Promise\.all|\$executeRaw|\$queryRaw/);
 
-  expect(operationSequence(block)).toEqual(expectedOperationSequence);
+  const operations = operationSequence(block);
+  expect(operations).toHaveLength(14);
+  expect(operations).toEqual(expectedOperationSequence);
   for (const statement of deleteStatements) {
     expect(countLiteral(block, statement)).toBe(1);
   }
@@ -84,7 +86,7 @@ function buildCleanupBlock(statements: readonly string[]) {
   return [
     cleanupStart,
     "    await prisma.$transaction([",
-    ...statements.map((statement) => `    ${statement},`),
+    ...statements.map((statement) => `      ${statement},`),
     "    ]);",
     "  }",
   ].join("\n");
@@ -125,6 +127,15 @@ describe("seeded competition cleanup transaction contract", () => {
     statements[1] = "prisma.scheduleRevision.deleteMany({ where: {} })";
 
     expect(() => assertOrderedBatchTransaction(buildCleanupBlock(statements))).toThrow();
+  });
+
+  it("rejects an extra top-level Prisma operation", () => {
+    const extraOperation = validCleanupBlock.replace(
+      `      ${eventUpdateStatement},`,
+      `      ${eventUpdateStatement},\n      prisma.event.updateMany({ where: { id: eventId }, data: { status: "Registration Closed" } }),`,
+    );
+
+    expect(() => assertOrderedBatchTransaction(extraOperation)).toThrow();
   });
 
   it("rejects transaction timeout options and non-transactional escapes", () => {
