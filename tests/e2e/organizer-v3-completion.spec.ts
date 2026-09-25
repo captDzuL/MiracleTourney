@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Response } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page, type Response } from "@playwright/test";
 
 import { loginAsOrganizer, normalizeReleasePage, waitForReleaseFonts } from "./helpers/auth";
 import {
@@ -21,18 +21,26 @@ let fixture: CompletionFixture | undefined;
 let fixtureCleanup: CompletionFixtureReady | undefined;
 let completionActionResponse: Promise<Response> | undefined;
 let completionActionResponsePending = false;
+let activeCompletionContext: BrowserContext | undefined;
+
+async function cleanupCompletionResources() {
+  if (completionActionResponsePending && completionActionResponse) {
+    await completionActionResponse.catch(() => undefined);
+  }
+  if (activeCompletionContext) {
+    await activeCompletionContext.close().catch(() => undefined);
+    activeCompletionContext = undefined;
+  }
+  const cleanup = fixtureCleanup ?? fixture;
+  await cleanup?.cleanup();
+  fixture = undefined;
+  fixtureCleanup = undefined;
+  completionActionResponse = undefined;
+  completionActionResponsePending = false;
+}
+
 test.afterEach(async () => {
-  await test.step("fixture cleanup", async () => {
-    if (completionActionResponsePending && completionActionResponse) {
-      await completionActionResponse.catch(() => undefined);
-    }
-    const cleanup = fixtureCleanup ?? fixture;
-    await cleanup?.cleanup();
-    fixture = undefined;
-    fixtureCleanup = undefined;
-    completionActionResponse = undefined;
-    completionActionResponsePending = false;
-  });
+  await test.step("fixture cleanup", cleanupCompletionResources);
 });
 
 async function prepareTestCompletionFixture(kind: CompletionFixtureKind) {
@@ -59,82 +67,142 @@ function waitForCompletionActionResponse(page: Page, locale: "en" | "id", eventI
   });
 }
 
-for (const kind of ["single_elimination", "double_elimination", "round_robin", "group_playoffs"] as const satisfies readonly CompletionFixtureKind[]) {
+async function runCompletionJourney(page: Page, scenario: CompletionFixture, kind: CompletionFixtureKind) {
+  await test.step("completion navigation and readiness", async () => {
+    await page.goto(`/en/organizer/events/${scenario.id}/completion`);
+    await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
+    assertCompletionReadHealthy();
+    await page.getByRole("tab", { name: "Awards", exact: true }).click();
+    for (const award of ["mvp", "top_scorer", "top_defender", "top_assist"]) {
+      await page.locator(`[data-award="${award}"] input[type="radio"]`).first().check();
+    }
+    await page.getByLabel("Decision reason").fill("Equal assists; selected for decisive final contribution.");
+  });
+
+  let completionResponse: Response;
+  await test.step("completion action response", async () => {
+    const completionResponsePromise = waitForCompletionActionResponse(page, "en", scenario.id);
+    completionActionResponse = completionResponsePromise;
+    completionActionResponsePending = true;
+    void completionResponsePromise.then(
+      () => { completionActionResponsePending = false; },
+      () => { completionActionResponsePending = false; },
+    );
+    const completeButton = page.locator("[data-complete-tournament]");
+    const startedAt = performance.now();
+    [completionResponse] = await Promise.all([completionResponsePromise, completeButton.click()]);
+    const responseDurationMs = Math.round(performance.now() - startedAt);
+    console.info(`[completion-action] kind=${kind} status=${completionResponse.status()} durationMs=${responseDurationMs}`);
+    await test.info().attach(`completion-action-response-${kind}`, {
+      body: `status=${completionResponse.status()}\ndurationMs=${responseDurationMs}\n`,
+      contentType: "text/plain",
+    });
+    expect(completionResponse.status()).toBe(200);
+  });
+
+  await test.step("persistence", async () => {
+    const persisted = await completionDb.tournamentCompletion.findUniqueOrThrow({
+      where: { eventId: scenario.id },
+      include: { podiumPlacements: true, awards: { include: { decision: true } }, auditEntries: true },
+    });
+    assertCompletionReadHealthy();
+    expect(persisted.status).toBe("completed");
+    expect(persisted.podiumPlacements).toHaveLength(3);
+    const expectedSource = kind === "round_robin" ? "locked_standings" : "official_playoff";
+    const titleMatchId = kind === "round_robin"
+      ? null
+      : (() => {
+          const source = scenario.graph.placements.find(({ rank }) => rank === 1)?.source;
+          return source?.kind === "match" ? source.matchId : null;
+        })();
+    const thirdMatchId = kind === "round_robin"
+      ? null
+      : (() => {
+          const source = scenario.graph.placements.find(({ rank }) => rank === 3)?.source;
+          return source?.kind === "match" ? source.matchId : null;
+        })();
+    expect(persisted.podiumPlacements.sort((left, right) => left.rank - right.rank).map((row) => ({
+      rank: row.rank,
+      teamId: row.teamId,
+      source: row.source,
+      sourceMatchId: row.sourceMatchId,
+    }))).toEqual([
+      { rank: 1, teamId: scenario.teams[0].id, source: expectedSource, sourceMatchId: titleMatchId },
+      { rank: 2, teamId: scenario.teams[1].id, source: expectedSource, sourceMatchId: titleMatchId },
+      { rank: 3, teamId: scenario.teams[kind === "double_elimination" ? 3 : 2].id, source: expectedSource, sourceMatchId: thirdMatchId },
+    ]);
+    expect(persisted.awards).toHaveLength(4);
+    expect(persisted.awards.find(({ type }) => type === "top_assist")?.decision?.reason).toContain("Equal assists");
+    expect(persisted.auditEntries).toHaveLength(1);
+  });
+
+  await test.step("completion refresh", async () => {
+    await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "completed");
+    assertCompletionReadHealthy();
+  });
+}
+
+let singleEliminationStorageState: Awaited<ReturnType<BrowserContext["storageState"]>> | undefined;
+
+test.describe("single-elimination Completion budget", () => {
+  test.beforeAll(async ({ browser }, testInfo) => {
+    const startedAt = performance.now();
+    const scenario = await prepareTestCompletionFixture("single_elimination");
+    const prewarmContext = await browser.newContext();
+    try {
+      const prewarmPage = await prewarmContext.newPage();
+      await loginAsOrganizer(prewarmPage, "en");
+      const completionUrl = `/en/organizer/events/${scenario.id}/completion`;
+      await prewarmPage.goto(completionUrl);
+      await expect(prewarmPage.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
+      assertCompletionReadHealthy();
+      singleEliminationStorageState = await prewarmContext.storageState();
+    } finally {
+      await prewarmContext.close();
+    }
+    const durationMs = Math.round(performance.now() - startedAt);
+    console.info(`[completion-prerequisites] kind=single_elimination durationMs=${durationMs}`);
+    await testInfo.attach("completion-single-elimination-prerequisites", {
+      body: `durationMs=${durationMs}\nfixture=before-timed-test\nauthentication=prewarm-context\nroute=exact-event-completion\n`,
+      contentType: "text/plain",
+    });
+  });
+
+  test.afterAll(async () => {
+    await cleanupCompletionResources();
+  });
+
+  test("completes the authoritative single_elimination release format with an audited tied award", async ({ browser }) => {
+    const scenario = fixture;
+    const storageState = singleEliminationStorageState;
+    if (!scenario || !storageState) throw new Error("Single-elimination Completion prerequisites were not prepared.");
+
+    const completionContext = await browser.newContext({ storageState: singleEliminationStorageState });
+    activeCompletionContext = completionContext;
+    try {
+      const page = await completionContext.newPage();
+      const startedAt = performance.now();
+      await runCompletionJourney(page, scenario, "single_elimination");
+      const durationMs = Math.round(performance.now() - startedAt);
+      console.info(`[completion-timed-path] kind=single_elimination durationMs=${durationMs}`);
+      await test.info().attach("completion-single-elimination-timed-path", {
+        body: `durationMs=${durationMs}\nfixture=pre-created\nauthentication=prewarmed-storage-state\n`,
+        contentType: "text/plain",
+      });
+    } finally {
+      if (!completionActionResponsePending) {
+        await completionContext.close();
+        activeCompletionContext = undefined;
+      }
+    }
+  });
+});
+
+for (const kind of ["double_elimination", "round_robin", "group_playoffs"] as const satisfies readonly CompletionFixtureKind[]) {
   test(`completes the authoritative ${kind} release format with an audited tied award`, async ({ page }) => {
     const scenario = await test.step("fixture setup", () => prepareTestCompletionFixture(kind));
     await test.step("organizer authentication", () => loginAsOrganizer(page, "en"));
-    await test.step("completion navigation and readiness", async () => {
-      await page.goto(`/en/organizer/events/${scenario.id}/completion`);
-      await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
-      assertCompletionReadHealthy();
-      await page.getByRole("tab", { name: "Awards", exact: true }).click();
-      for (const award of ["mvp", "top_scorer", "top_defender", "top_assist"]) {
-        await page.locator(`[data-award="${award}"] input[type="radio"]`).first().check();
-      }
-      await page.getByLabel("Decision reason").fill("Equal assists; selected for decisive final contribution.");
-    });
-
-    let completionResponse: Response;
-    await test.step("completion action response", async () => {
-      const completionResponsePromise = waitForCompletionActionResponse(page, "en", scenario.id);
-      completionActionResponse = completionResponsePromise;
-      completionActionResponsePending = true;
-      void completionResponsePromise.then(
-        () => { completionActionResponsePending = false; },
-        () => { completionActionResponsePending = false; },
-      );
-      const completeButton = page.locator("[data-complete-tournament]");
-      const startedAt = performance.now();
-      [completionResponse] = await Promise.all([completionResponsePromise, completeButton.click()]);
-      const responseDurationMs = Math.round(performance.now() - startedAt);
-      console.info(`[completion-action] status=${completionResponse.status()} durationMs=${responseDurationMs}`);
-      await test.info().attach("completion-action-response", {
-        body: `status=${completionResponse.status()}\ndurationMs=${responseDurationMs}\n`,
-        contentType: "text/plain",
-      });
-      expect(completionResponse.status()).toBe(200);
-    });
-
-    await test.step("persistence", async () => {
-      const persisted = await completionDb.tournamentCompletion.findUniqueOrThrow({
-        where: { eventId: scenario.id },
-        include: { podiumPlacements: true, awards: { include: { decision: true } }, auditEntries: true },
-      });
-      assertCompletionReadHealthy();
-      expect(persisted.status).toBe("completed");
-      expect(persisted.podiumPlacements).toHaveLength(3);
-      const expectedSource = kind === "round_robin" ? "locked_standings" : "official_playoff";
-      const titleMatchId = kind === "round_robin"
-        ? null
-        : (() => {
-            const source = scenario.graph.placements.find(({ rank }) => rank === 1)?.source;
-            return source?.kind === "match" ? source.matchId : null;
-          })();
-      const thirdMatchId = kind === "round_robin"
-        ? null
-        : (() => {
-            const source = scenario.graph.placements.find(({ rank }) => rank === 3)?.source;
-            return source?.kind === "match" ? source.matchId : null;
-          })();
-      expect(persisted.podiumPlacements.sort((left, right) => left.rank - right.rank).map((row) => ({
-        rank: row.rank,
-        teamId: row.teamId,
-        source: row.source,
-        sourceMatchId: row.sourceMatchId,
-      }))).toEqual([
-        { rank: 1, teamId: scenario.teams[0].id, source: expectedSource, sourceMatchId: titleMatchId },
-        { rank: 2, teamId: scenario.teams[1].id, source: expectedSource, sourceMatchId: titleMatchId },
-        { rank: 3, teamId: scenario.teams[kind === "double_elimination" ? 3 : 2].id, source: expectedSource, sourceMatchId: thirdMatchId },
-      ]);
-      expect(persisted.awards).toHaveLength(4);
-      expect(persisted.awards.find(({ type }) => type === "top_assist")?.decision?.reason).toContain("Equal assists");
-      expect(persisted.auditEntries).toHaveLength(1);
-    });
-
-    await test.step("completion refresh", async () => {
-      await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "completed");
-      assertCompletionReadHealthy();
-    });
+    await runCompletionJourney(page, scenario, kind);
   });
 }
 

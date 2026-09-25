@@ -312,6 +312,13 @@ export async function prepareCompletionFixture(
     select: { id: true, role: true },
   });
   await completionDb.event.deleteMany({ where: { id, slug: id } });
+  let cleanupPromise: Promise<void> | undefined;
+  const cleanup: CompletionFixtureReady = {
+    cleanup: async () => {
+      cleanupPromise ??= completionDb.event.deleteMany({ where: { id, slug: id } }).then(() => undefined);
+      await cleanupPromise;
+    },
+  };
   try {
     const config = configs[kind];
     const phaseId = `${id}-phase`;
@@ -353,6 +360,7 @@ export async function prepareCompletionFixture(
         publishedAt: new Date("2026-09-13T00:00:00.000Z"),
       },
     });
+    await options.onBaseFixtureReady?.(cleanup);
     await completionDb.team.createMany({ data: teams });
     for (const phase of graph.phases) {
       await completionDb.competitionPhase.create({
@@ -479,14 +487,11 @@ export async function prepareCompletionFixture(
       actor,
       graph,
       pendingFirstPlayerMatchId,
-      cleanup: async () => {
-        await completionDb.event.deleteMany({ where: { id, slug: id } });
-      },
+      cleanup: cleanup.cleanup,
     };
-    await options.onBaseFixtureReady?.(fixture);
     return fixture;
   } catch (error) {
-    await completionDb.event.deleteMany({ where: { id, slug: id } });
+    await cleanup.cleanup();
     throw error;
   }
 }
