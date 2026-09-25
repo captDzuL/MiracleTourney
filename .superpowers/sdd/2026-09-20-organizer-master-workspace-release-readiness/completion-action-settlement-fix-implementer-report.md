@@ -98,3 +98,21 @@ The response was awaited and status-checked first; the direct database read prov
   - `public/certificates/e2e-completion-single_elimination-release-journey-id/`
 - No production defect was exposed by the response-settled run; no production fix was attempted.
 - No push was performed.
+
+## Round 1/5 — review corrections
+
+Review findings addressed in local implementation commit `bb4c9db` (`test: restore Completion fixture isolation`):
+
+1. The focused Completion helper no longer passes a deterministic per-format namespace. It passes `undefined` for the namespace, restoring `prepareCompletionFixture()`'s existing random, hyphen-safe default so concurrent or repeated runs cannot delete or mutate another run's event.
+2. `afterEach` now selects exactly one cleanup object with `fixtureCleanup ?? fixture`. Action tests still register `fixtureCleanup` before authentication/navigation and await any pending exact action response before this selection; the localized-parity test, which only assigns `fixture`, now receives its fallback cleanup without double deletion.
+
+### TDD and gate evidence
+
+- RED review-contract run: `& .\\node_modules\\.bin\\vitest.CMD run tests/competition/completion-action-settlement.static.test.ts` — exit 1; 1 of 3 tests failed in 422ms on the missing random namespace and parity-cleanup fallback contract. The two existing settlement contracts remained green.
+- GREEN review-contract run: the same command — exit 0; 1 file / 3 tests passed in 256ms.
+- Focused browser gate: `pnpm exec playwright test tests/e2e/organizer-v3-completion.spec.ts --config=playwright.ci-default.config.ts --grep "completes the authoritative single_elimination release format with an audited tied award" --workers=1 --retries=0` — exit 0; exactly 1 test passed, test body 16.9s, wall 53.0s. The real action response reported `status=200 durationMs=1287`. Persistence was asserted before terminal UI refresh, and no cleanup began while the action response was pending.
+- TypeScript: `& .\\node_modules\\.bin\\tsc.CMD --noEmit` — exit 0 (4.80s).
+- Changed-file ESLint: `& .\\node_modules\\.bin\\eslint.CMD tests/e2e/helpers/completion.ts tests/e2e/organizer-v3-completion.spec.ts tests/competition/completion-action-settlement.static.test.ts` — exit 0 (3.84s).
+- Diff check: `git diff --check` — exit 0 (0.25s); no whitespace errors.
+
+No reset, seed, timeout/retry change, sleep, full file/profile, production change, push, or protected-root edit was performed for this review correction.
