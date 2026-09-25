@@ -149,3 +149,63 @@ transaction options, the existing six-attempt retry policy, payload shape, and
 product behavior. No browser, live database, seed/reset, timeout increase, or
 retry broadening was used. The review implementation commit is `346d577`; the
 protected untracked roots above remain untouched and unstaged.
+
+## Review round 2 evidence (base `8b5e01e`)
+
+### RED
+
+The three review-2 regression tests were added before the production changes
+and run against the round-1 implementation:
+
+```text
+.\\node_modules\\.bin\\vitest.cmd run src/lib/actions/competition-v3-actions.test.ts src/lib/tournament/operations/observability.test.ts tests/competition/ci-36147449749-drawing-action.static.test.ts --reporter=dot
+Result: 3 files failed; 5 tests failed and 27 passed.
+```
+
+The failures reproduced the exhausted `P2034` action result becoming
+`failed/internal_error` with a correlation ID, closed/committed `P2028`
+messages being mislabeled as timeouts, and hexadecimal React Flight frames
+being ignored.
+
+### GREEN
+
+```text
+.\\node_modules\\.bin\\vitest.cmd run src/lib/actions/competition-v3-actions.test.ts src/lib/tournament/operations/observability.test.ts tests/competition/ci-36147449749-drawing-action.static.test.ts --reporter=dot
+Result: 3 files passed; 32 tests passed.
+
+.\\node_modules\\.bin\\vitest.cmd run src/lib/actions/competition-v3-actions.test.ts src/lib/tournament/operations/operations.test.ts src/lib/tournament/operations/observability.test.ts src/lib/observability/logger.test.ts tests/competition/ci-36125458721-server-action-settlement.static.test.ts tests/competition/ci-36147449749-drawing-action.static.test.ts --reporter=dot --silent
+Result: 6 files passed; 121 tests passed.
+
+.\\node_modules\\.bin\\tsc.cmd --noEmit --incremental false
+Result: passed.
+
+.\\node_modules\\.bin\\eslint.cmd <round-2 changed implementation and focused test paths>
+Result: passed.
+
+git diff --check
+Result: passed.
+```
+
+### Review corrections
+
+- Added an explicit `P2034` code classifier shared by the operation retry
+  boundary and action boundary. Exhaustion now remains public
+  `{ status: "conflict" }`, with no `internal_error`, correlation ID, or raw
+  provider data in the action result; stage logs retain only
+  `serialization_conflict`. Action tests cover exhaustion and messages that
+  contain unavailable/conflict/stale words.
+- Removed `already closed` as standalone timeout evidence. `P2028` now needs
+  explicit timeout, timed-out, expired, or given-time evidence; closed and
+  committed transaction messages remain `internal_error`.
+- React Flight frame parsing now accepts hexadecimal IDs, case-insensitively,
+  with executable lower- and upper-case saved/failed result tests. Existing
+  malformed and ambiguous-frame rejection remains unchanged.
+
+### Invariants and scope
+
+The review-2 changes preserve the public conflict/authorization semantics,
+atomic transaction, six-attempt retry count, transaction options, payload
+shape, safe logging, and product behavior. No browser, live database,
+seed/reset, timeout increase, or retry broadening was used. The review-2
+implementation commit is `9c1c91f`; protected untracked roots remain untouched
+and unstaged.
