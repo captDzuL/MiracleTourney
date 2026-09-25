@@ -61,6 +61,10 @@ describe("Completion action settlement contract", () => {
     const cleanupResources = extractBracedBlock(completionSpec, "async function cleanupCompletionResources() {");
     const responseWaiter = extractBracedBlock(completionSpec, "function waitForCompletionActionResponse(");
     const completionJourney = extractBracedBlock(completionSpec, "async function runCompletionJourney(");
+    const parityCase = extractBracedBlock(
+      completionSpec,
+      'test("completion workspace keeps localized parity and bounded mobile controls", async ({ page }) => {',
+    );
     const cleanupDefinition = extractBracedBlock(completionHelper, "const cleanup: CompletionFixtureReady = {");
     expect(singleDescribe).not.toBe("");
     expect(beforeAll).not.toBe("");
@@ -68,7 +72,10 @@ describe("Completion action settlement contract", () => {
     expect(cleanupResources).not.toBe("");
     expect(responseWaiter).not.toBe("");
     expect(completionJourney).not.toBe("");
+    expect(parityCase).not.toBe("");
     expect(cleanupDefinition).not.toBe("");
+
+    expect(parityCase).toContain("test.slow();");
 
     expect(beforeAll).toContain('prepareTestCompletionFixture("single_elimination")');
     expect(beforeAll).toContain('await loginAsOrganizer(prewarmPage, "en")');
@@ -89,9 +96,13 @@ describe("Completion action settlement contract", () => {
     expect(singleDescribe).not.toMatch(/\btest\.setTimeout\s*\(/);
     expect(singleDescribe).not.toMatch(/\btest\.slow\s*\(/);
     expect(singleDescribe).not.toMatch(/\bretries\b/);
-    expect(completionSpec).not.toMatch(/\btest\.setTimeout\s*\(/);
-    expect(completionSpec).not.toMatch(/\btest\.slow\s*\(/);
-    expect(completionSpec).not.toMatch(/\bretries\b/);
+    const fileLevelTimeoutEscapes = completionSpec.match(/^test\.(?:setTimeout|slow)\s*\([^;]*\)\s*;?/gm) ?? [];
+    expect(fileLevelTimeoutEscapes).toEqual([]);
+    const fileLevelConfigureCalls = completionSpec.match(/^test\.describe\.configure\s*\([^;]*\)\s*;?/gm) ?? [];
+    const fileLevelUseCalls = completionSpec.match(/^test\.use\s*\([^;]*\)\s*;?/gm) ?? [];
+    expect([...fileLevelConfigureCalls, ...fileLevelUseCalls].join("\n")).not.toMatch(
+      /\b(?:timeout|actionTimeout|navigationTimeout|retries)\s*:/,
+    );
 
     const callbackOpen = timedCase.indexOf("=> {");
     expect(callbackOpen).toBeGreaterThan(-1);

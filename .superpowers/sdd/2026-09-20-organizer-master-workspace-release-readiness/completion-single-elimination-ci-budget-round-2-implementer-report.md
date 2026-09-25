@@ -8,14 +8,15 @@ Branch: `codex/organizer-release-readiness`
 
 Implemented the narrow Completion `single_elimination` CI-budget fix. The
 30-second test deadline, `workers=1`, and `retries=0` remain unchanged. The
-focused browser case passed with the measured test-body span at **5.663 s**,
+focused browser case passed with the measured test-body span at **5.400 s**,
 below the 24-second target, and the exact completion action response settled
-HTTP 200 in **1.313 s**. The body measurement starts at the first executable
+HTTP 200 in **1.236 s**. The body measurement starts at the first executable
 line of the Playwright test and ends after the isolated completion context is
 closed; the timing attachment itself is explicitly excluded.
-The pre-existing parity `test.slow()` escape was removed so the whole
-Completion spec has one consistent no-timeout/no-retry contract; no replacement
-budget escape was added.
+The pre-existing parity `test.slow()` remains scoped to that unrelated
+localized parity test; the single-elimination describe, timed case, shared
+journey, and file-level configuration remain free of timeout/slow/retry
+escapes.
 
 The requested retained browser journey is unchanged inside the timed case:
 exact event navigation and readiness, tied award selection and reason, real
@@ -85,25 +86,29 @@ The protected untracked roots were not touched or staged:
 
 ## TDD and verification evidence
 
-The review-round-2 static contract was first run RED against commit `9f6b6f8`:
-the whole Completion spec still contained the pre-existing parity `test.slow()`
-escape. After removing that escape, the contract passed. Its prerequisite
-assertions now extract the single-elimination `describe`, `beforeAll`, and
-timed-test blocks; direct fixture/auth helpers are rejected in both the timed
-case and `runCompletionJourney`, timeout/retry escapes are rejected in the
-entire spec and enclosing describe, and fixture/login/prewarm/storage-state
-placement is proven in `beforeAll`. The cleanup block is also checked for
-pending-response settlement → context close → fixture cleanup ordering and
+The review-round-3 static contract was first run RED after adding the required
+parity-marker assertion: commit `7abc3b3` had removed the pre-existing
+`test.slow()` line. After restoring that line, the previous whole-file guard
+also failed on the unrelated parity test. The final contract allows only that
+scoped marker while using anchored file-level checks; it still rejects
+timeout/slow/retry escapes in the single-elimination `describe`, timed case,
+shared `runCompletionJourney`, and truly global configuration. It continues to
+prove fixture/login/prewarm/storage-state placement in `beforeAll`, and checks
+pending-response settlement → context close → fixture cleanup ordering with
 exact `{ id, slug }` scope.
 
 | Command | Result |
 | --- | --- |
-| `pnpm exec vitest run tests/competition/completion-action-settlement.static.test.ts -t "keeps single-elimination prerequisites outside the timed Completion contract"` | The Windows pnpm shim could not resolve the local binary; the equivalent checked-in `node_modules/.bin/vitest.CMD` runner produced the required RED, then GREEN: **1 passed, 3 skipped**, exit 0, ~0.27 s. |
+| `pnpm exec vitest run tests/competition/completion-action-settlement.static.test.ts -t "keeps single-elimination prerequisites outside the timed Completion contract"` | The Windows pnpm shim could not resolve the local binary; the equivalent checked-in `node_modules/.bin/vitest.CMD` runner produced round-3 RED for the missing/restored parity marker and the over-broad whole-file guard, then GREEN: **1 passed, 3 skipped**, exit 0, ~0.27 s. |
 | `node_modules/.bin/playwright.CMD test tests/e2e/organizer-v3-completion.spec.ts --config=playwright.ci-default.config.ts --grep "completes the authoritative single_elimination release format with an audited tied award" --workers=1 --retries=0` | **1 passed**, exit 0; measured test body 5.400 s from first test line through context close (attachment excluded); action 1.236 s / HTTP 200; 54.9 s wall including startup. |
 | `node_modules/.bin/tsc.CMD --noEmit` | exit 0 (elevated only because the repository's incremental build-info write was sandbox-blocked). |
 | `node_modules/.bin/eslint.CMD tests/competition/completion-action-settlement.static.test.ts tests/e2e/helpers/completion.ts tests/e2e/organizer-v3-completion.spec.ts` | exit 0; no diagnostics. |
 | Focused static contract rerun | exit 0; **1 passed, 3 skipped**. |
 | `git diff --check` | exit 0; only normal LF/CRLF conversion warnings. |
+
+Round 3 did not rerun the browser case because the runtime edit only restores
+the pre-existing parity-test marker; the target single-elimination path is
+unchanged.
 
 No full Playwright file, full E2E profile, CI rerun, seed, or reset command was
 run.
