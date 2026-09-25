@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Page, type Response } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page, type Request, type Response } from "@playwright/test";
 
 import { loginAsOrganizer, normalizeReleasePage, waitForReleaseFonts } from "./helpers/auth";
 import {
@@ -54,20 +54,33 @@ async function prepareTestCompletionFixture(kind: CompletionFixtureKind) {
   return scenario;
 }
 
+function completionPath(locale: "en" | "id", eventId: string) {
+  return `/${locale}/organizer/events/${encodeURIComponent(eventId)}/completion`;
+}
+
+function isCompletionActionRequest(request: Request, locale: "en" | "id", eventId: string) {
+  const requestUrl = new URL(request.url());
+  return request.method() === "POST"
+    && requestUrl.pathname === completionPath(locale, eventId)
+    && Boolean(request.headers()["next-action"])
+    && (request.postData() ?? "").includes(eventId);
+}
+
 function waitForCompletionActionResponse(page: Page, locale: "en" | "id", eventId: string) {
-  const completionPath = `/${locale}/organizer/events/${encodeURIComponent(eventId)}/completion`;
+  const expectedPath = completionPath(locale, eventId);
   return page.waitForResponse((response) => {
     const request = response.request();
     const responseUrl = new URL(response.url());
-    const requestData = request.postData() ?? "";
-    return request.method() === "POST"
-      && responseUrl.pathname === completionPath
-      && Boolean(request.headers()["next-action"])
-      && requestData.includes(eventId);
+    return responseUrl.pathname === expectedPath && isCompletionActionRequest(request, locale, eventId);
   });
 }
 
-async function runCompletionJourney(page: Page, scenario: CompletionFixture, kind: CompletionFixtureKind) {
+async function runCompletionJourney(
+  page: Page,
+  scenario: CompletionFixture,
+  kind: CompletionFixtureKind,
+  options: { holdTerminalRefresh?: boolean } = {},
+) {
   await test.step("completion navigation and readiness", async () => {
     await page.goto(`/en/organizer/events/${scenario.id}/completion`);
     await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "ready");
@@ -79,67 +92,138 @@ async function runCompletionJourney(page: Page, scenario: CompletionFixture, kin
     await page.getByLabel("Decision reason").fill("Equal assists; selected for decisive final contribution.");
   });
 
-  let completionResponse: Response;
-  await test.step("completion action response", async () => {
-    const completionResponsePromise = waitForCompletionActionResponse(page, "en", scenario.id);
-    completionActionResponse = completionResponsePromise;
-    completionActionResponsePending = true;
-    void completionResponsePromise.then(
-      () => { completionActionResponsePending = false; },
-      () => { completionActionResponsePending = false; },
-    );
-    const completeButton = page.locator("[data-complete-tournament]");
-    const startedAt = performance.now();
-    [completionResponse] = await Promise.all([completionResponsePromise, completeButton.click()]);
-    const responseDurationMs = Math.round(performance.now() - startedAt);
-    console.info(`[completion-action] kind=${kind} status=${completionResponse.status()} durationMs=${responseDurationMs}`);
-    await test.info().attach(`completion-action-response-${kind}`, {
-      body: `status=${completionResponse.status()}\ndurationMs=${responseDurationMs}\n`,
-      contentType: "text/plain",
-    });
-    expect(completionResponse.status()).toBe(200);
-  });
+  const expectedPath = completionPath("en", scenario.id);
+  const matchingActionPosts: Request[] = [];
+  const actionRequestListener = (request: Request) => {
+    if (isCompletionActionRequest(request, "en", scenario.id)) matchingActionPosts.push(request);
+  };
+  let releaseTerminalRefresh: (() => void) | undefined;
+  let terminalRefreshStartedResolve!: () => void;
+  let terminalRefreshFinishedResolve!: () => void;
+  const terminalRefreshStarted = new Promise<void>((resolve) => { terminalRefreshStartedResolve = resolve; });
+  const terminalRefreshFinished = new Promise<void>((resolve) => { terminalRefreshFinishedResolve = resolve; });
+  const terminalRefreshGate = new Promise<void>((resolve) => { releaseTerminalRefresh = resolve; });
+  let heldTerminalRefreshCount = 0;
+  let pendingTerminalRefreshCount = 0;
+  let terminalRefreshRouteInstalled = false;
+  const terminalRefreshRouteMatcher = (url: URL) => url.pathname === expectedPath;
+  const terminalRefreshRouteHandler = async (route: { request: () => Request; continue: () => Promise<void> }) => {
+    const request = route.request();
+    const headers = request.headers();
+    const isAuthoritativeRefresh = request.method() === "GET"
+      && new URL(request.url()).pathname === expectedPath
+      && headers.rsc === "1"
+      && Boolean(headers["next-router-state-tree"]);
+    if (!options.holdTerminalRefresh || !isAuthoritativeRefresh) {
+      await route.continue();
+      return;
+    }
+    heldTerminalRefreshCount += 1;
+    pendingTerminalRefreshCount += 1;
+    terminalRefreshStartedResolve();
+    try {
+      await terminalRefreshGate;
+      await route.continue();
+    } finally {
+      pendingTerminalRefreshCount -= 1;
+      if (pendingTerminalRefreshCount === 0) terminalRefreshFinishedResolve();
+    }
+  };
 
-  await test.step("persistence", async () => {
-    const persisted = await completionDb.tournamentCompletion.findUniqueOrThrow({
-      where: { eventId: scenario.id },
-      include: { podiumPlacements: true, awards: { include: { decision: true } }, auditEntries: true },
-    });
-    assertCompletionReadHealthy();
-    expect(persisted.status).toBe("completed");
-    expect(persisted.podiumPlacements).toHaveLength(3);
-    const expectedSource = kind === "round_robin" ? "locked_standings" : "official_playoff";
-    const titleMatchId = kind === "round_robin"
-      ? null
-      : (() => {
-          const source = scenario.graph.placements.find(({ rank }) => rank === 1)?.source;
-          return source?.kind === "match" ? source.matchId : null;
-        })();
-    const thirdMatchId = kind === "round_robin"
-      ? null
-      : (() => {
-          const source = scenario.graph.placements.find(({ rank }) => rank === 3)?.source;
-          return source?.kind === "match" ? source.matchId : null;
-        })();
-    expect(persisted.podiumPlacements.sort((left, right) => left.rank - right.rank).map((row) => ({
-      rank: row.rank,
-      teamId: row.teamId,
-      source: row.source,
-      sourceMatchId: row.sourceMatchId,
-    }))).toEqual([
-      { rank: 1, teamId: scenario.teams[0].id, source: expectedSource, sourceMatchId: titleMatchId },
-      { rank: 2, teamId: scenario.teams[1].id, source: expectedSource, sourceMatchId: titleMatchId },
-      { rank: 3, teamId: scenario.teams[kind === "double_elimination" ? 3 : 2].id, source: expectedSource, sourceMatchId: thirdMatchId },
-    ]);
-    expect(persisted.awards).toHaveLength(4);
-    expect(persisted.awards.find(({ type }) => type === "top_assist")?.decision?.reason).toContain("Equal assists");
-    expect(persisted.auditEntries).toHaveLength(1);
-  });
+  page.on("request", actionRequestListener);
+  try {
+    if (options.holdTerminalRefresh) {
+      await page.route(terminalRefreshRouteMatcher, terminalRefreshRouteHandler);
+      terminalRefreshRouteInstalled = true;
+    }
 
-  await test.step("completion refresh", async () => {
-    await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "completed");
-    assertCompletionReadHealthy();
-  });
+    let completionResponse: Response;
+    await test.step("completion action response", async () => {
+      const completionResponsePromise = waitForCompletionActionResponse(page, "en", scenario.id);
+      completionActionResponse = completionResponsePromise;
+      completionActionResponsePending = true;
+      void completionResponsePromise.then(
+        () => { completionActionResponsePending = false; },
+        () => { completionActionResponsePending = false; },
+      );
+      const completeButton = page.locator("[data-complete-tournament]");
+      const startedAt = performance.now();
+      [completionResponse] = await Promise.all([completionResponsePromise, completeButton.click()]);
+      const responseDurationMs = Math.round(performance.now() - startedAt);
+      console.info(`[completion-action] kind=${kind} status=${completionResponse.status()} durationMs=${responseDurationMs}`);
+      await test.info().attach(`completion-action-response-${kind}`, {
+        body: `status=${completionResponse.status()}\ndurationMs=${responseDurationMs}\n`,
+        contentType: "text/plain",
+      });
+      expect(completionResponse.status()).toBe(200);
+      expect(matchingActionPosts).toHaveLength(1);
+    });
+
+    if (options.holdTerminalRefresh) {
+      await test.step("terminal projection before authoritative refresh", async () => {
+        await terminalRefreshStarted;
+        expect(heldTerminalRefreshCount).toBe(1);
+        await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "completed");
+        const reopenButton = page.locator("[data-reopen-tournament]");
+        await expect(reopenButton).toBeDisabled();
+        expect(await reopenButton.isEnabled()).toBe(false);
+        await test.info().attach("completion-terminal-projection", {
+          body: `matchingActionPostCount=${matchingActionPosts.length}\nheldAuthoritativeRefreshCount=${heldTerminalRefreshCount}\nstatus=completed\nreopenDisabled=true\n`,
+          contentType: "text/plain",
+        });
+      });
+      releaseTerminalRefresh?.();
+      await terminalRefreshFinished;
+      await page.unroute(terminalRefreshRouteMatcher, terminalRefreshRouteHandler);
+      terminalRefreshRouteInstalled = false;
+    }
+
+    await test.step("persistence", async () => {
+      const persisted = await completionDb.tournamentCompletion.findUniqueOrThrow({
+        where: { eventId: scenario.id },
+        include: { podiumPlacements: true, awards: { include: { decision: true } }, auditEntries: true },
+      });
+      assertCompletionReadHealthy();
+      expect(persisted.status).toBe("completed");
+      expect(persisted.podiumPlacements).toHaveLength(3);
+      const expectedSource = kind === "round_robin" ? "locked_standings" : "official_playoff";
+      const titleMatchId = kind === "round_robin"
+        ? null
+        : (() => {
+            const source = scenario.graph.placements.find(({ rank }) => rank === 1)?.source;
+            return source?.kind === "match" ? source.matchId : null;
+          })();
+      const thirdMatchId = kind === "round_robin"
+        ? null
+        : (() => {
+            const source = scenario.graph.placements.find(({ rank }) => rank === 3)?.source;
+            return source?.kind === "match" ? source.matchId : null;
+          })();
+      expect(persisted.podiumPlacements.sort((left, right) => left.rank - right.rank).map((row) => ({
+        rank: row.rank,
+        teamId: row.teamId,
+        source: row.source,
+        sourceMatchId: row.sourceMatchId,
+      }))).toEqual([
+        { rank: 1, teamId: scenario.teams[0].id, source: expectedSource, sourceMatchId: titleMatchId },
+        { rank: 2, teamId: scenario.teams[1].id, source: expectedSource, sourceMatchId: titleMatchId },
+        { rank: 3, teamId: scenario.teams[kind === "double_elimination" ? 3 : 2].id, source: expectedSource, sourceMatchId: thirdMatchId },
+      ]);
+      expect(persisted.awards).toHaveLength(4);
+      expect(persisted.awards.find(({ type }) => type === "top_assist")?.decision?.reason).toContain("Equal assists");
+      expect(persisted.auditEntries).toHaveLength(1);
+    });
+
+    await test.step("completion refresh", async () => {
+      await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", "completed");
+      assertCompletionReadHealthy();
+    });
+  } finally {
+    releaseTerminalRefresh?.();
+    if (heldTerminalRefreshCount > 0) await terminalRefreshFinished;
+    if (terminalRefreshRouteInstalled) await page.unroute(terminalRefreshRouteMatcher, terminalRefreshRouteHandler).catch(() => undefined);
+    page.off("request", actionRequestListener);
+  }
 }
 
 let singleEliminationStorageState: Awaited<ReturnType<BrowserContext["storageState"]>> | undefined;
@@ -182,7 +266,7 @@ test.describe("single-elimination Completion budget", () => {
     activeCompletionContext = completionContext;
     try {
       const page = await completionContext.newPage();
-      await runCompletionJourney(page, scenario, "single_elimination");
+      await runCompletionJourney(page, scenario, "single_elimination", { holdTerminalRefresh: true });
     } finally {
       if (!completionActionResponsePending) {
         await completionContext.close();
