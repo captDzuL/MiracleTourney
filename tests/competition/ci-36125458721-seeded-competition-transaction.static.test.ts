@@ -28,6 +28,8 @@ const deleteStatements = [
 
 const eventUpdateStatement =
   'prisma.event.update({ where: { id: eventId }, data: { status: "Registration Closed", publishedScheduleVersion: null } })';
+const extraOperationStatement =
+  'prisma.event.updateMany({ where: { id: eventId }, data: { status: "Registration Closed" } })';
 
 const expectedOperationSequence = [
   "tournamentCompletion.deleteMany",
@@ -53,10 +55,101 @@ function extractCleanupBlock(spec: string) {
   return spec.slice(start, end);
 }
 
+function matchingDelimiter(sourceText: string, openingIndex: number) {
+  const pairs = { "(": ")", "{": "}", "[": "]" } as const;
+  const openings = Object.keys(pairs) as Array<keyof typeof pairs>;
+  const stack: Array<keyof typeof pairs> = [sourceText[openingIndex] as keyof typeof pairs];
+  let quote: '"' | "'" | "`" | null = null;
+  let escaped = false;
+
+  for (let index = openingIndex + 1; index < sourceText.length; index += 1) {
+    const character = sourceText[index];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'" || character === "`") {
+      quote = character;
+    } else if (openings.includes(character as keyof typeof pairs)) {
+      stack.push(character as keyof typeof pairs);
+    } else if (character === pairs[stack[stack.length - 1]]) {
+      stack.pop();
+      if (stack.length === 0) return index;
+    }
+  }
+
+  return -1;
+}
+
+function splitTopLevelEntries(sourceText: string) {
+  const entries: string[] = [];
+  const stack: Array<keyof typeof pairs> = [];
+  const pairs = { "(": ")", "{": "}", "[": "]" } as const;
+  const openings = Object.keys(pairs) as Array<keyof typeof pairs>;
+  let entryStart = 0;
+  let quote: '"' | "'" | "`" | null = null;
+  let escaped = false;
+
+  for (let index = 0; index < sourceText.length; index += 1) {
+    const character = sourceText[index];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'" || character === "`") {
+      quote = character;
+    } else if (openings.includes(character as keyof typeof pairs)) {
+      stack.push(character as keyof typeof pairs);
+    } else if (character === pairs[stack[stack.length - 1]]) {
+      stack.pop();
+    } else if (character === "," && stack.length === 0) {
+      const entry = sourceText.slice(entryStart, index).trim();
+      if (entry) entries.push(entry);
+      entryStart = index + 1;
+    }
+  }
+
+  const finalEntry = sourceText.slice(entryStart).trim();
+  if (finalEntry) entries.push(finalEntry);
+  return entries;
+}
+
+function transactionEntries(block: string) {
+  const transaction = /prisma\.\$transaction\s*\(\s*\[/.exec(block);
+  if (!transaction) return [];
+  const arrayStart = block.indexOf("[", transaction.index);
+  const arrayEnd = matchingDelimiter(block, arrayStart);
+  if (arrayEnd < 0) return [];
+  return splitTopLevelEntries(block.slice(arrayStart + 1, arrayEnd));
+}
+
+function unwrapParenthesized(entry: string) {
+  let candidate = entry.trim();
+  while (candidate.startsWith("(")) {
+    const closingIndex = matchingDelimiter(candidate, 0);
+    if (closingIndex !== candidate.length - 1) break;
+    candidate = candidate.slice(1, -1).trim();
+  }
+  return candidate;
+}
+
 function operationSequence(block: string) {
-  return [...block.matchAll(/^ {6}prisma\.([A-Za-z]\w*)\.([A-Za-z]\w*)\(/gm)].map(
-    ([, model, method]) => `${model}.${method}`,
-  );
+  return transactionEntries(block).map((entry) => {
+    const operation = /^prisma\.([A-Za-z]\w*)\.([A-Za-z]\w*)\s*\(/.exec(unwrapParenthesized(entry));
+    return operation ? `${operation[1]}.${operation[2]}` : "<non-prisma-entry>";
+  });
 }
 
 function countLiteral(text: string, literal: string) {
@@ -73,6 +166,8 @@ function assertOrderedBatchTransaction(block: string) {
   expect(block).not.toMatch(/\b(?:timeout|maxWait)\s*:/);
   expect(block).not.toMatch(/Promise\.all|\$executeRaw|\$queryRaw/);
 
+  const entries = transactionEntries(block);
+  expect(entries).toHaveLength(14);
   const operations = operationSequence(block);
   expect(operations).toHaveLength(14);
   expect(operations).toEqual(expectedOperationSequence);
@@ -132,7 +227,25 @@ describe("seeded competition cleanup transaction contract", () => {
   it("rejects an extra top-level Prisma operation", () => {
     const extraOperation = validCleanupBlock.replace(
       `      ${eventUpdateStatement},`,
-      `      ${eventUpdateStatement},\n      prisma.event.updateMany({ where: { id: eventId }, data: { status: "Registration Closed" } }),`,
+      `      ${eventUpdateStatement},\n      ${extraOperationStatement},`,
+    );
+
+    expect(() => assertOrderedBatchTransaction(extraOperation)).toThrow();
+  });
+
+  it("rejects an extra operation despite changed indentation", () => {
+    const extraOperation = validCleanupBlock.replace(
+      `      ${eventUpdateStatement},`,
+      `      ${eventUpdateStatement},\n  ${extraOperationStatement},`,
+    );
+
+    expect(() => assertOrderedBatchTransaction(extraOperation)).toThrow();
+  });
+
+  it("rejects a parenthesized extra operation", () => {
+    const extraOperation = validCleanupBlock.replace(
+      `      ${eventUpdateStatement},`,
+      `      ${eventUpdateStatement},\n(\n        ${extraOperationStatement}\n      ),`,
     );
 
     expect(() => assertOrderedBatchTransaction(extraOperation)).toThrow();
