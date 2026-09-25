@@ -260,10 +260,12 @@ describe("structured server logger", () => {
       status: 200,
       stage: "drawing_matches",
       counts: { matchCount: 31, "team@example.test": 12, tooLarge: Number.POSITIVE_INFINITY },
+      terminal: "retry",
+      errorCode: "serialization_conflict",
     });
 
     const record = JSON.parse(String(info.mock.calls[0]?.[0]));
-    expect(record).toMatchObject({ stage: "drawing_matches", counts: { matchCount: 31 } });
+    expect(record).toMatchObject({ stage: "drawing_matches", counts: { matchCount: 31 }, terminal: "retry", errorCode: "serialization_conflict" });
     expect(record.counts).not.toHaveProperty("team@example.test");
     expect(record.counts).not.toHaveProperty("tooLarge");
   });

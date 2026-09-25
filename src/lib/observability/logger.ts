@@ -16,6 +16,7 @@ export type ServerLogEvent = Readonly<{
   resourceId?: string;
   stage?: string;
   counts?: Readonly<Record<string, number>>;
+  terminal?: "retry" | "failed";
 }>;
 
 type ServerLogResult<T> = Readonly<{
@@ -76,6 +77,7 @@ function safeEvent(event: ServerLogEvent): ServerLogEvent {
     ...(event.resourceId ? { resourceId: redactIdentifier(event.resourceId) } : {}),
     ...(event.stage ? { stage: safeCode(event.stage) } : {}),
     ...(counts ? { counts } : {}),
+    ...(event.terminal ? { terminal: event.terminal } : {}),
   };
   return result;
 }
@@ -188,7 +190,7 @@ function actionResultStatus(value: unknown): Pick<ServerLogResult<unknown>, "sta
   const code = result.code;
   const safeActionCodes = new Set([
     "failed", "forbidden", "unauthorized", "rate_limited", "delivery_failed", "token_invalid", "upload_failed",
-    "transaction_timeout", "internal_error",
+    "transaction_timeout", "internal_error", "serialization_conflict",
   ]);
   const safeCodeValue = typeof code === "string" && safeActionCodes.has(code) ? code : undefined;
   const explicitStatus = typeof result.statusCode === "number"

@@ -349,6 +349,35 @@ describe("competition operation transactions", () => {
     expect(store.rows("match")).toHaveLength(1);
   });
 
+  it("closes every serialization retry attempt with a safe terminal stage", async () => {
+    const stages: OperationStageEvent[] = [];
+    const failure = { code: "P2034" };
+    const db = { $transaction: () => Promise.reject(failure) } as unknown as ReturnType<typeof operationStore>["db"];
+    const service = createCompetitionOperations(db, () => now, {
+      allowInternalInitialize: true,
+      onStage: (event) => stages.push(event),
+    });
+
+    await expect(service.execute({
+      eventId: "event",
+      actor: owner,
+      expectedVersion: 0,
+      idempotencyKey: "retry-exhausted",
+      command: initialize,
+    })).rejects.toEqual(failure);
+
+    const transactions = stages.filter((stage) => stage.stage === "competition_transaction");
+    expect(transactions.filter((stage) => stage.phase === "start")).toHaveLength(6);
+    expect(transactions.filter((stage) => stage.phase === "failed")).toHaveLength(6);
+    expect(transactions.filter((stage) => stage.phase === "done")).toHaveLength(0);
+    expect(transactions.filter((stage) => stage.phase === "failed").map((stage) => stage.errorCode)).toEqual(
+      Array.from({ length: 6 }, () => "serialization_conflict"),
+    );
+    expect(transactions.filter((stage) => stage.phase === "failed").map((stage) => stage.terminal)).toEqual([
+      "retry", "retry", "retry", "retry", "retry", "failed",
+    ]);
+  });
+
   it("fails a stale CAS immediately without retrying the same expected version", async () => {
     const store = operationStore();
     let transactionCalls = 0;

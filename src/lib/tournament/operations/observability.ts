@@ -1,13 +1,15 @@
 import { writeServerLog } from "@/lib/observability/logger";
 
 export type CompetitionFailureCode = "transaction_timeout" | "internal_error";
+export type OperationStageErrorCode = CompetitionFailureCode | "serialization_conflict";
 
 export type OperationStageEvent = Readonly<{
   phase: "start" | "done" | "failed";
   stage: string;
   durationMs: number;
   counts?: Readonly<Record<string, number>>;
-  errorCode?: CompetitionFailureCode;
+  errorCode?: OperationStageErrorCode;
+  terminal?: "retry" | "failed";
 }>;
 
 export type OperationStageReporter = (event: OperationStageEvent) => void;
@@ -19,7 +21,7 @@ export type OperationObservabilityOptions = Readonly<{
   onStage?: OperationStageReporter;
 }>;
 
-type ErrorLike = { code?: unknown; message?: unknown };
+type ErrorLike = { message?: unknown; cause?: unknown; meta?: unknown };
 
 /** Classifies storage failures without exposing provider messages to callers. */
 export function classifyCompetitionFailure(error: unknown): CompetitionFailureCode {
@@ -30,9 +32,22 @@ export function classifyCompetitionFailure(error: unknown): CompetitionFailureCo
 function isTransactionTimeout(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const candidate = error as ErrorLike;
-  if (candidate.code === "P2028") return true;
-  if (typeof candidate.message !== "string") return false;
-  return /(?:interactive\s+)?transaction[\s\S]*(?:timed\s+out|timeout|expired|already\s+closed)|(?:timed\s+out|timeout|expired|already\s+closed)[\s\S]*transaction/i.test(candidate.message);
+  return hasTransactionTimeoutEvidence(candidate.message)
+    || hasTransactionTimeoutEvidence(candidate.meta)
+    || hasTransactionTimeoutEvidence(candidate.cause);
+}
+
+function hasTransactionTimeoutEvidence(value: unknown, depth = 0, seen = new Set<object>()): boolean {
+  if (typeof value === "string") {
+    return /(?:interactive\s+)?transaction[\s\S]*(?:timed\s+out|timeout|expired|already\s+closed|given\s+time)|(?:timed\s+out|timeout|expired|already\s+closed|given\s+time)[\s\S]*transaction/i.test(value);
+  }
+  if (!value || typeof value !== "object" || depth >= 3 || seen.has(value)) return false;
+  seen.add(value);
+  const candidate = value as ErrorLike;
+  return hasTransactionTimeoutEvidence(candidate.message, depth + 1, seen)
+    || hasTransactionTimeoutEvidence(candidate.meta, depth + 1, seen)
+    || hasTransactionTimeoutEvidence(candidate.cause, depth + 1, seen)
+    || hasTransactionTimeoutEvidence((value as { error?: unknown }).error, depth + 1, seen);
 }
 
 export function makeOperationStageReporter(options: OperationObservabilityOptions): OperationStageReporter | undefined {
@@ -49,6 +64,7 @@ export function makeOperationStageReporter(options: OperationObservabilityOption
       durationMs: event.durationMs,
       status: event.phase === "start" ? 0 : event.phase === "done" ? 200 : 500,
       ...(event.errorCode ? { errorCode: event.errorCode } : {}),
+      ...(event.terminal ? { terminal: event.terminal } : {}),
       stage: event.stage,
       ...(event.counts ? { counts: event.counts } : {}),
     });
@@ -83,6 +99,7 @@ export async function withOperationStage<T>(
       durationMs: Date.now() - startedAt,
       ...(counts ? { counts } : {}),
       errorCode: classifyCompetitionFailure(error),
+      terminal: "failed",
     });
     throw error;
   }

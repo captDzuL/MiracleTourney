@@ -5,6 +5,7 @@ import { correctionPreviewSchema, internalCorrectionPreviewSchema, internalOpera
 import type { ParsedCommand } from "./schema";
 import { applyCommand } from "./commands";
 import { correctionPreview, type ResultGame } from "./results";
+import { CompetitionExpectedError } from "./errors";
 import {
   classifyCompetitionFailure,
   makeOperationStageReporter,
@@ -19,8 +20,11 @@ export type OperationReceipt = { version: number; resourceId?: string };
 export type {
   CompetitionFailureCode,
   OperationStageEvent,
+  OperationStageErrorCode,
   OperationStageReporter,
 } from "./observability";
+export { CompetitionExpectedError, isCompetitionExpectedError } from "./errors";
+export type { CompetitionExpectedErrorCode } from "./errors";
 
 type JsonError = { code?: string };
 const SERIALIZATION_RETRIES = 6;
@@ -54,7 +58,7 @@ export function createCompetitionOperations(
       .parse({ eventId: input.eventId, expectedVersion: input.expectedVersion, idempotencyKey: input.idempotencyKey, command: input.command });
     const { eventId, expectedVersion, idempotencyKey, command } = request;
     const isCaptainReadiness = actor?.role === "captain" && command.kind === "readiness_update";
-    if (!actor?.id || !isCaptainReadiness && !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new Error("Not authorized");
+    if (!actor?.id || !isCaptainReadiness && !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new CompetitionExpectedError("unauthorized", "Not authorized");
     const mutation = JSON.parse(JSON.stringify({ ...request, actorId: actor.id }));
     const transact = (attempt: number) => {
       const startedAt = Date.now();
@@ -66,8 +70,8 @@ export function createCompetitionOperations(
       });
       return db.$transaction(async tx => {
         const event = await tx.event.findUnique({ where: { id: eventId } });
-        if (!event || actor.role === "organizer" && event.organizerUserId !== actor.id) throw new Error("Not authorized");
-        if (isCaptainReadiness && !await tx.team.findFirst({ where: { id: command.teamId, eventId, captainId: actor.id } })) throw new Error("Not authorized");
+        if (!event || actor.role === "organizer" && event.organizerUserId !== actor.id) throw new CompetitionExpectedError("unauthorized", "Not authorized");
+        if (isCaptainReadiness && !await tx.team.findFirst({ where: { id: command.teamId, eventId, captainId: actor.id } })) throw new CompetitionExpectedError("unauthorized", "Not authorized");
         const previous = await tx.competitionAuditLog.findFirst({ where: { eventId, idempotencyKey } });
         if (previous) {
           const payload = previous.payload as { request: Prisma.JsonValue; receipt: OperationReceipt };
@@ -86,7 +90,7 @@ export function createCompetitionOperations(
           where: { id: eventId, organizerUserId: event.organizerUserId, competitionVersion: expectedVersion },
           data: { competitionVersion: { increment: 1 } },
         });
-        if (updated.count !== 1) throw new Error("Version conflict: refresh competition state");
+        if (updated.count !== 1) throw new CompetitionExpectedError("conflict", "Version conflict: refresh competition state");
         const resourceId = await applyCommand(tx, eventId, actor.id, command, expectedVersion + 1, idempotencyKey, clock(), isCaptainReadiness ? "captain" : "organizer", stageReporter);
         const receipt: OperationReceipt = { version: expectedVersion + 1, ...(resourceId ? { resourceId } : {}) };
         await withOperationStage(stageReporter, "competition_audit", { auditCount: 1 }, () => tx.competitionAuditLog.create({ data: {
@@ -107,17 +111,15 @@ export function createCompetitionOperations(
           return receipt;
         })
         .catch((error: unknown) => {
-          // Serialization conflicts are intentionally retried below and are
-          // not terminal storage failures in the observability stream.
-          if (!isSerializationConflict(error)) {
-            reportOperationStage(stageReporter, {
-              phase: "failed",
-              stage: "competition_transaction",
-              durationMs: Date.now() - startedAt,
-              counts: { attempt: attempt + 1 },
-              errorCode: classifyCompetitionFailure(error),
-            });
-          }
+          reportOperationStage(stageReporter, {
+            phase: "failed",
+            stage: "competition_transaction",
+            durationMs: Date.now() - startedAt,
+            counts: { attempt: attempt + 1 },
+            ...(isSerializationConflict(error)
+              ? { errorCode: "serialization_conflict" as const, terminal: attempt === SERIALIZATION_RETRIES - 1 ? "failed" as const : "retry" as const }
+              : { errorCode: classifyCompetitionFailure(error), terminal: "failed" as const }),
+          });
           throw error;
         });
     };
@@ -149,10 +151,10 @@ export function createCompetitionOperations(
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
   async function readScheduleDraft(eventId: string, revisionId: string, actor: OperationInput["actor"]) {
-    if (!actor?.id || !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new Error("Not authorized");
+    if (!actor?.id || !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new CompetitionExpectedError("unauthorized", "Not authorized");
     return db.$transaction(async tx => {
       const event = await tx.event.findUnique({ where: { id: eventId } });
-      if (!event || actor.role === "organizer" && event.organizerUserId !== actor.id) throw new Error("Not authorized");
+      if (!event || actor.role === "organizer" && event.organizerUserId !== actor.id) throw new CompetitionExpectedError("unauthorized", "Not authorized");
       const revision = await tx.scheduleRevision.findFirst({ where: { eventId, id: revisionId, status: "draft" } });
       if (!revision) return null;
       const { draft } = revision.snapshot as unknown as { draft: ScheduleDraft };
@@ -163,10 +165,10 @@ export function createCompetitionOperations(
     const { actor } = input;
     const request = (options.allowInternalInitialize ? internalCorrectionPreviewSchema : correctionPreviewSchema)
       .parse({ eventId: input.eventId, matchId: input.matchId, games: input.games });
-    if (!actor?.id || !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new Error("Not authorized");
+    if (!actor?.id || !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new CompetitionExpectedError("unauthorized", "Not authorized");
     return db.$transaction(async tx => {
       const event = await tx.event.findUnique({ where: { id: request.eventId } });
-      if (!event || actor.role === "organizer" && event.organizerUserId !== actor.id) throw new Error("Not authorized");
+      if (!event || actor.role === "organizer" && event.organizerUserId !== actor.id) throw new CompetitionExpectedError("unauthorized", "Not authorized");
       return correctionPreview(tx, request.eventId, request.matchId, request.games, event.competitionVersion);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }

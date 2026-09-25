@@ -35,6 +35,9 @@ describe("authenticated competition actions", () => {
   it.each([
     ["transaction timeout", Object.assign(new Error("Prisma P2028 transaction timeout for secret@example.test"), { code: "P2028" }), "transaction_timeout"],
     ["unexpected storage failure", new Error("SQL connection secret@example.test https://db.example.test"), "internal_error"],
+    ["unavailable-looking storage failure", new Error("database unavailable"), "internal_error"],
+    ["conflict-looking storage failure", new Error("constraint conflict"), "internal_error"],
+    ["stale-looking storage failure", new Error("stale connection lease"), "internal_error"],
   ] as const)("returns a safe discriminated result for a 24-team drawing %s", async (_label, failure, code) => {
     const request = twentyFourTeamDrawing();
     for (const team of request.command.teams) store.seed("team", { id: team.id, eventId: "event" });

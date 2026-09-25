@@ -321,10 +321,10 @@ overnightTest("registration order stays private and imports stop after drawing p
   });
   await page.getByRole("button", { name: "Save drawing draft", exact: true }).click();
   const drawingResponse = await drawingResponsePromise;
-  expect(drawingResponse.result.status, "Save drawing action result").toBe("saved");
   if (drawingResponse.result.status !== "saved") {
     throw new Error(`Save drawing failed with ${drawingResponse.result.code ?? "unknown"} (correlation ${drawingResponse.result.correlationId ?? "missing"}).`);
   }
+  expect(drawingResponse.result.status, "Save drawing action result").toBe("saved");
   await expect.poll(
     async () => (await prisma.competitionPhase.findFirst({ where: { eventId, sequence: 1 } }))?.status,
     { timeout: 60_000 },

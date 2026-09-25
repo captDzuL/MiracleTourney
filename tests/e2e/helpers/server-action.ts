@@ -32,24 +32,40 @@ function parseJsonCandidate(value: string): unknown {
   }
 }
 
+function isServerActionResult(value: unknown): value is { status: string } {
+  if (value === null || typeof value !== "object" || !("status" in value)) return false;
+  return typeof (value as { status?: unknown }).status === "string";
+}
+
 /** Extracts the action return value from a completed React Flight response. */
-export function parseServerActionResult<T>(body: string): T {
-  const candidates = [body.trim(), ...body.split("\n").map((line) => {
-    const separator = line.indexOf(":");
-    return separator >= 0 ? line.slice(separator + 1).trim() : line.trim();
-  })];
-  for (const candidate of candidates) {
-    const parsed = parseJsonCandidate(candidate);
-    if (parsed && typeof parsed === "object" && "status" in parsed) return parsed as T;
-    if (typeof parsed === "string") {
-      const nested = parseJsonCandidate(parsed);
-      if (nested && typeof nested === "object" && "status" in nested) return nested as T;
-    }
+export function parseServerActionResult<T extends { status: string }>(body: string): T {
+  const direct = parseJsonCandidate(body.trim());
+  if (isServerActionResult(direct)) return direct as T;
+  if (typeof direct === "string") {
+    const nested = parseJsonCandidate(direct);
+    if (isServerActionResult(nested)) return nested as T;
   }
+
+  const framedResults: Array<{ status: string }> = [];
+  for (const line of body.split(/\r?\n/)) {
+    const frame = line.match(/^\d+:(.*)$/);
+    if (!frame) continue;
+    const payload = frame[1].trim();
+    const parsed = parseJsonCandidate(payload);
+    if (parsed === undefined) {
+      if (/^[\[{]/.test(payload)) throw new Error("Malformed Server Action response frame.");
+      continue;
+    }
+    const candidate = typeof parsed === "string" ? parseJsonCandidate(parsed) : parsed;
+    if (isServerActionResult(candidate)) framedResults.push(candidate);
+  }
+
+  if (framedResults.length > 1) throw new Error("Server Action response contained ambiguous settled results.");
+  if (framedResults.length === 1) return framedResults[0] as T;
   throw new Error("Server Action response did not contain a settled result.");
 }
 
-export async function waitForServerActionResult<T>(
+export async function waitForServerActionResult<T extends { status: string }>(
   page: Page,
   matcher: ServerActionRequestMatcher,
 ): Promise<{ response: Response; result: T }> {

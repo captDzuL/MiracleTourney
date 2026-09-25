@@ -12,6 +12,7 @@ import { diagnoseLegacyCompetition } from "./legacy-compatibility";
 import { applyDelay } from "./delay";
 import { outstandingDelayEstimates } from "./delay-estimates";
 import { withOperationStage, type OperationStageReporter } from "./observability";
+import { CompetitionExpectedError } from "./errors";
 
 function requireReason(value: string | undefined) { if (!value?.trim()) throw new Error("An override or resolution reason is required"); }
 
@@ -257,11 +258,11 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       const latest = (await tx.scheduleRevision.findMany({ where: { eventId, status: "draft" } })).sort((a, b) => b.version - a.version)[0];
       const selectedEvent = await tx.event.findUniqueOrThrow({ where: { id: eventId } });
       const hasPendingDelay = !!(latest?.snapshot as unknown as StoredSchedule | undefined)?.delayEstimates || !!(revision.snapshot as unknown as StoredSchedule).delayEstimates;
-      if (hasPendingDelay && latest?.id !== revision.id || revision.version <= (selectedEvent.publishedScheduleVersion ?? -1)) throw new Error("Schedule draft is superseded or stale: review the latest revision");
+      if (hasPendingDelay && latest?.id !== revision.id || revision.version <= (selectedEvent.publishedScheduleVersion ?? -1)) throw new CompetitionExpectedError("conflict", "Schedule draft is superseded or stale: review the latest revision");
       const { draft, baseMatches, delayEstimates } = revision.snapshot as unknown as StoredSchedule;
-      if (!draft.feasible || draft.conflicts.length) throw new Error("Schedule has unresolved conflicts");
+      if (!draft.feasible || draft.conflicts.length) throw new CompetitionExpectedError("conflict", "Schedule has unresolved conflicts");
       const matches = await tx.match.findMany({ where: { eventId } });
-      if (!isDeepStrictEqual(baseMatches, matchSnapshot(matches))) throw new Error("Schedule review is stale: save a new draft");
+      if (!isDeepStrictEqual(baseMatches, matchSnapshot(matches))) throw new CompetitionExpectedError("conflict", "Schedule review is stale: save a new draft");
       const requiredEstimates = await outstandingDelayEstimates(tx, eventId);
       for (const [id, end] of Object.entries(requiredEstimates)) {
         if (!draft.assignments.some(a => a.matchId === id && Date.parse(a.end) >= Date.parse(end))) throw new Error("An active delay estimate is missing or shortened: preserve it or explicitly resolve the delay before publishing");

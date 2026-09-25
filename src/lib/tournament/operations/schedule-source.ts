@@ -2,6 +2,7 @@ import type { Match, Prisma } from "@prisma/client";
 import type { ScheduleAssignment } from "../scheduling";
 import type { ParsedCommand } from "./schema";
 import { isTerminal, type StoredSchedule } from "./state";
+import { CompetitionExpectedError } from "./errors";
 
 /** Called inside the authorized event CAS transaction; revision snapshots are immutable. */
 export async function scheduleBaseline(tx: Prisma.TransactionClient, eventId: string, version: number, input: Extract<ParsedCommand, { kind: "schedule_save" }>["input"], matches: Match[]): Promise<ScheduleAssignment[]> {
@@ -24,7 +25,7 @@ export async function scheduleBaseline(tx: Prisma.TransactionClient, eventId: st
   if (!revision || source.version >= version || (source.status === "draft"
     ? latestDraft?.id !== source.id
     : event?.publishedScheduleVersion !== source.version || !!latestDraft)) {
-    throw new Error("Schedule source revision is stale: reload the current preview");
+    throw new CompetitionExpectedError("conflict", "Schedule source revision is stale: reload the current preview");
   }
   const stored = revision.snapshot as unknown as StoredSchedule;
   const reviewed = stored.draft.assignments;

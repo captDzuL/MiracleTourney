@@ -6,6 +6,7 @@ import { competitionProjection, dependentMatchIds } from "./result-projection";
 import type { ParsedCommand } from "./schema";
 import { eventMatch, isTerminal, json, matchSnapshot, readGraph, type StoredSchedule } from "./state";
 import { reconcileReadinessActions } from "./readiness";
+import { CompetitionExpectedError } from "./errors";
 
 export type ResultGame = { gameNumber: number; homeScore: number; awayScore: number };
 type ResultCommand = Extract<ParsedCommand, { kind: "result_submit" | "result_correct" }>;
@@ -99,7 +100,7 @@ export async function applyResult(tx: Prisma.TransactionClient, eventId: string,
   if (command.kind === "result_correct") {
     const preview = await correctionPreview(tx, eventId, match.id, command.games, version - 1);
     if (preview.blockedMatchIds.length) throw new Error("Cannot correct a result with a live or completed dependent match");
-    if (preview.token !== command.previewToken) throw new Error("Correction preview is missing or stale: review the impact again");
+    if (preview.token !== command.previewToken) throw new CompetitionExpectedError("conflict", "Correction preview is missing or stale: review the impact again");
   } else {
     if (match.resultVersion > 0 || match.status === "Completed") throw new Error("Official result already exists: use correction");
     if (!match.actualStartedAt || match.status !== "Live" || !["live", "delayed"].includes(match.scheduleStatus)) throw new Error("Official result requires a started match");
