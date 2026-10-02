@@ -21,4 +21,23 @@ describe("PublicScheduleBoard", () => {
     const html = renderToStaticMarkup(<PublicScheduleBoard locale="en" timezone="Asia/Jakarta" matches={[]} unpublished />);
     expect(html).toContain("The organizer has not published the schedule yet");
   });
+
+  it("localizes every published match status in Indonesian and English", () => {
+    const matches = [
+      { id: "scheduled", roundLabel: "R1", home: "Alpha", away: "Beta", status: "scheduled" as const, homeScore: null, awayScore: null, start: null, room: null, bestOf: 1 },
+      { id: "delayed", roundLabel: "R1", home: "Alpha", away: "Beta", status: "delayed" as const, homeScore: null, awayScore: null, start: null, room: null, bestOf: 1 },
+      { id: "postponed", roundLabel: "R1", home: "Alpha", away: "Beta", status: "postponed" as const, homeScore: null, awayScore: null, start: null, room: null, bestOf: 1 },
+      { id: "live", roundLabel: "R1", home: "Alpha", away: "Beta", status: "live" as const, homeScore: 1, awayScore: 0, start: null, room: null, bestOf: 1 },
+      { id: "completed", roundLabel: "R1", home: "Alpha", away: "Beta", status: "completed" as const, homeScore: 2, awayScore: 1, start: null, room: null, bestOf: 1 },
+    ];
+    const indonesian = renderToStaticMarkup(<PublicScheduleBoard locale="id" timezone="Asia/Jakarta" matches={matches} />);
+    const english = renderToStaticMarkup(<PublicScheduleBoard locale="en" timezone="Asia/Jakarta" matches={matches} />);
+
+    for (const label of ["Dijadwalkan", "Tertunda", "Ditunda", "Sedang berlangsung", "Selesai"]) expect(indonesian).toContain(label);
+    for (const label of ["Scheduled", "Delayed", "Postponed", "Live", "Completed"]) expect(english).toContain(label);
+    for (const raw of ["scheduled", "delayed", "postponed"]) {
+      expect(indonesian).not.toContain(`>${raw}<`);
+      expect(english).not.toContain(`>${raw}<`);
+    }
+  });
 });

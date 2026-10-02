@@ -75,6 +75,32 @@ async function renderBracket(slug: string) {
   return renderToStaticMarkup(page);
 }
 
+function publishedDrawingView(event: ReturnType<typeof createEvent>) {
+  return {
+    mode: "drawing" as const,
+    event: {
+      id: event.id,
+      slug: event.slug,
+      name: event.name,
+      description: event.description,
+      timezone: "Asia/Jakarta",
+      format: "single_elimination",
+    },
+    organizer: { name: "Miracle Organizer", verified: true },
+    facts: { startsAt: "TBD", venue: "Online", prize: null, participants: 2, participantCap: event.participantCap },
+    statusExplanation: "Drawing resmi telah diterbitkan organizer.",
+    cta: { label: "Lihat bracket", href: `/events/${event.slug}/bracket` },
+    navigation: { overview: true, participants: true, schedule: true, bracket: true, leaderboard: true },
+    drawing: { published: true as const, seeds: [{ teamId: "team-alpha", teamName: "Alpha", seed: 1 }] },
+    matches: [
+      { id: "drawn-final", roundLabel: "Final", home: "Alpha", away: null, status: "scheduled" as const, homeScore: null, awayScore: null, start: null, room: null, bestOf: 3 },
+      { id: "drawn-semifinal", roundLabel: "Semifinal", home: "Alpha", away: "Beta", status: "completed" as const, homeScore: 2, awayScore: 1, start: null, room: null, bestOf: 3 },
+    ],
+    schedule: null,
+    standings: [],
+  };
+}
+
 describe("public bracket page", () => {
   let roundConfigsByEvent: Map<string, EventRoundConfig[]>;
   let matchGamesByEvent: Map<string, Map<string, MatchGame[]>>;
@@ -100,6 +126,42 @@ describe("public bracket page", () => {
       matchOverridesByEvent.get(eventId) ?? store.getMatchesForEvent(eventId)
     ));
   });
+
+  function configureSeriesFallback(event: ReturnType<typeof createEvent>) {
+    const visibleMatches = getPublicVisibleBracketPreview(event.id) as Array<{
+      id: string;
+      round: number;
+      slot: number;
+      roundLabel: string;
+      homeTeamId: string;
+      awayTeamId: string;
+    }>;
+    const firstMatch = visibleMatches.find((match) => match.homeTeamId && match.awayTeamId);
+    if (!firstMatch) throw new Error("Expected a drawn match for the series fixture");
+
+    roundConfigsByEvent.set(event.id, [{ id: "cfg-bo3-v3", eventId: event.id, roundLabel: firstMatch.roundLabel, bestOf: 3 }]);
+    matchOverridesByEvent.set(event.id, [{
+      id: firstMatch.id,
+      eventId: event.id,
+      roundLabel: firstMatch.roundLabel,
+      homeTeamId: firstMatch.homeTeamId,
+      awayTeamId: firstMatch.awayTeamId,
+      homeScore: 2,
+      awayScore: 1,
+      status: "Completed" as const,
+      winnerTeamId: firstMatch.homeTeamId,
+      round: firstMatch.round,
+      slot: firstMatch.slot,
+    }]);
+    matchGamesByEvent.set(event.id, new Map([[
+      firstMatch.id,
+      [
+        { id: "v3-g1", matchId: firstMatch.id, gameNumber: 1, homeScore: 21, awayScore: 15 },
+        { id: "v3-g2", matchId: firstMatch.id, gameNumber: 2, homeScore: 10, awayScore: 21 },
+        { id: "v3-g3", matchId: firstMatch.id, gameNumber: 3, homeScore: 21, awayScore: 18 },
+      ],
+    ]]));
+  }
 
   test("uses the public-visible projection for rendering and full projection for labels", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./bracket-page-content.tsx"), "utf8");
@@ -175,6 +237,113 @@ describe("public bracket page", () => {
 
     expect(markup).toContain("pv-section-card");
     expect(markup).toContain("bg-white");
+    expect(markup).not.toContain("miracle-public-v3");
+  });
+
+  it("renders a published adaptive drawing in the dark V3 composition", async () => {
+    const event = createEvent({
+      name: "Drawn adaptive V3 bracket",
+      slug: "drawn-adaptive-v3-bracket",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Published");
+    featureEnabledMock.mockImplementation((flag: string) => flag === "adaptive_public_event_v3" || flag === "ui_v3_foundation");
+    drawingEventMock.mockResolvedValue(publishedDrawingView(event));
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain('class="miracle-public-v3 mpv3-bracket-page"');
+    expect(markup).toContain("mpv3-panel");
+    expect(markup).toContain("mpv3-bracket-scroll");
+    expect(markup).toContain("overflow-x-auto");
+    expect(markup).toContain("TBD");
+    expect(markup).toContain("2 – 1");
+    expect(markup).not.toContain("pv-section-card");
+    expect(markup).not.toContain("bg-white");
+  });
+
+  it("preserves the published adaptive drawing legacy composition when V3 is disabled", async () => {
+    const event = createEvent({
+      name: "Drawn adaptive legacy bracket",
+      slug: "drawn-adaptive-legacy-bracket",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Published");
+    featureEnabledMock.mockImplementation((flag: string) => flag === "adaptive_public_event_v3");
+    drawingEventMock.mockResolvedValue(publishedDrawingView(event));
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain("pv-section-card");
+    expect(markup).toContain("bg-white");
+    expect(markup).toContain("Menunggu hasil");
+    expect(markup).not.toContain("miracle-public-v3");
+  });
+
+  it("renders the non-adaptive single-elimination fallback with V3 series, bye, and bounded-board semantics", async () => {
+    const event = createEvent({
+      name: "V3 fallback series bracket",
+      slug: "v3-fallback-series-bracket",
+      gameModeId: "mode-kuroko-3v3",
+      format: "Single Elimination",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Ongoing");
+    importTeams(Array.from({ length: 6 }, (_, index) => ({
+      eventId: event.id,
+      teamName: `V3 Team ${index + 1}`,
+      teamTag: `V${index + 1}`,
+      captainName: `V3 Captain ${index + 1}`,
+      captainContact: `v3-captain-${index + 1}@example.test`,
+    })));
+    featureEnabledMock.mockImplementation((flag: string) => flag === "ui_v3_foundation");
+    configureSeriesFallback(event);
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain('class="miracle-public-v3 mpv3-bracket-page"');
+    expect(markup).toContain("mpv3-bracket-scroll");
+    expect(markup).toContain("mpv3-bracket-match");
+    expect(markup).toContain("2 - 1 (BO3)");
+    expect(markup).toContain("G1");
+    expect(markup).toContain("Series");
+    expect(markup).toContain("Auto-advance");
+    expect(markup).toContain("TBD");
+    expect(markup).not.toContain("pv-section-card");
+    expect(markup).not.toContain("bg-white");
+  });
+
+  it("preserves the non-adaptive single-elimination fallback legacy composition", async () => {
+    const event = createEvent({
+      name: "Legacy fallback series bracket",
+      slug: "legacy-fallback-series-bracket",
+      gameModeId: "mode-kuroko-3v3",
+      format: "Single Elimination",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Ongoing");
+    importTeams(Array.from({ length: 6 }, (_, index) => ({
+      eventId: event.id,
+      teamName: `Legacy Team ${index + 1}`,
+      teamTag: `L${index + 1}`,
+      captainName: `Legacy Captain ${index + 1}`,
+      captainContact: `legacy-captain-${index + 1}@example.test`,
+    })));
+    featureEnabledMock.mockReturnValue(false);
+    configureSeriesFallback(event);
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain("pv-section-card");
+    expect(markup).toContain("bg-white");
+    expect(markup).toContain("pv-match-card");
+    expect(markup).toContain("2 - 1 (BO3)");
+    expect(markup).toContain("Auto-advance");
+    expect(markup).toContain("TBD");
     expect(markup).not.toContain("miracle-public-v3");
   });
 
