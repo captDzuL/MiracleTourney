@@ -1113,7 +1113,7 @@ async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now
   const gameSlug = findGameConfig(text(event.gameId))?.slug;
   const playerRows = publicReaderRows("public.compatibility.players", players);
   const playerIds = playerRows.map((value) => text(record(value).id)).filter(Boolean);
-  const playerStats = gameSlug && playerIds.length
+  const playerStats = gameSlug === "flashpeak" && playerIds.length
     ? await callOptional("playerStat", "findMany", { where: { gameSlug, playerId: { in: playerIds } }, take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) })
     : null;
   return {
@@ -1123,7 +1123,7 @@ async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now
     teams: publicTeams,
     matches: matchRows.map(compatibleMatch),
     registrations: registrationRows.map(compatibleRegistration),
-    leaderboard: gameSlug ? compatibleLeaderboardRows(playerStats, playerRows, publicTeams, gameSlug) : [],
+    leaderboard: gameSlug === "flashpeak" ? compatibleLeaderboardRows(playerStats, playerRows, publicTeams, gameSlug) : [],
     completion: completion && typeof completion === "object" ? completion as CompatiblePublicEventInput["completion"] : null,
     publication: publication && typeof publication === "object" ? publication as CompatiblePublicEventInput["publication"] : null,
     certificates: certificateRows.flatMap((value) => {

@@ -203,6 +203,19 @@ describe("normalized public V3 event reader", () => {
     expect(view.leaderboard).toMatchObject([{ playerId: "p1", nickname: "Nyx", game: 1, score: 8, goal: 2, assist: 1, passing: 3, defense: 4 }]);
   });
 
+  it("does not project non-Flashpeak persisted stats into a compatible leaderboard", async () => {
+    mocks.eventFindUnique.mockResolvedValue({ ...baseEvent, status: "Ongoing", gameId: "game-mobile-legends" });
+    mocks.ongoing.mockResolvedValue(null);
+    mocks.playerFindMany.mockResolvedValue([{ id: "p1", displayName: "Nyx", nickname: "Nyx", teamId: "team-a", position: "Mid Lane" }]);
+    mocks.playerStatFindMany.mockResolvedValue([{ matchId: "match-1", playerId: "p1", playerName: "Nyx", teamId: "team-a", position: "Mid Lane", gameSlug: "mobile-legends", stats: { kills: 9, assists: 4, deaths: 1 } }]);
+
+    const view = await readPublicV3Event("miracle-cup", viewer);
+
+    if (view?.mode !== "ongoing") throw new Error("Expected ongoing projection");
+    expect(view.leaderboard).toEqual([]);
+    expect(mocks.playerStatFindMany).not.toHaveBeenCalled();
+  });
+
   it("propagates authoritative and event read failures", async () => {
     const readFailure = new Error("authoritative read failed");
     mocks.ongoing.mockRejectedValueOnce(readFailure);
