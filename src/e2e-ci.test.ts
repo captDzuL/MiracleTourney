@@ -79,7 +79,7 @@ describe("CI E2E release sequence", () => {
     expect(fullStep.match(/run: pnpm test:e2e:ci/g)).toHaveLength(1);
   });
 
-  it("runs exactly the ordered failing-four-case diagnostic commands", async () => {
+  it("runs exactly the ordered two-case organizer diagnostic commands", async () => {
     const diagnosticStep = extractStep(
       extractJob(await readWorkflow(), "e2e-tests"),
       "Run failing4-only diagnostic fast lane",
@@ -93,18 +93,12 @@ describe("CI E2E release sequence", () => {
     expect(diagnosticStep).toContain("github.ref == 'refs/heads/codex/organizer-release-readiness'");
     expect(diagnosticStep).toContain("contains(github.event.head_commit.message, '[ci:failing4-only]')");
     expect(commandLines.filter((line) => line === "pnpm test:e2e:preflight")).toHaveLength(1);
-    expect(
-      commandLines.filter(
-        (line) =>
-          line ===
-          "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and result|keeps the same permanent URL through finished and certificates\" --fail-on-flaky-tests",
-      ),
-    ).toHaveLength(1);
+    const diagnosticCommand =
+      "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a\" --fail-on-flaky-tests";
+    expect(commandLines.filter((line) => line.startsWith("pnpm "))).toEqual(["pnpm test:e2e:preflight", diagnosticCommand]);
     expect(commandLines.filter((line) => line === "pnpm test:e2e:prepare")).toHaveLength(0);
     expect(commandLines.indexOf("pnpm test:e2e:preflight")).toBeLessThan(
-      commandLines.indexOf(
-        "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and result|keeps the same permanent URL through finished and certificates\" --fail-on-flaky-tests",
-      ),
+      commandLines.indexOf(diagnosticCommand),
     );
   });
 
@@ -117,9 +111,18 @@ describe("CI E2E release sequence", () => {
     for (const forbidden of [
       "test:e2e:ci",
       "test:e2e:prepare",
+      "test:e2e:seed",
+      "test:e2e:reset",
+      "test:e2e:reseed",
       "--shard=1/2",
       "--shard=2/2",
+      "--retries",
+      "retry",
+      "seed",
+      "reset",
+      "reseed",
       "v3-matchday",
+      "v3-public-event-lifecycle",
       "playwright.smoke.config.ts",
       "playwright.visual-v2.config.ts",
       "playwright.legacy.config.ts",

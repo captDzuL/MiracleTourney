@@ -18,35 +18,77 @@ const partA = sliceBetween(
   "async function runOrganizerReleaseJourneyPartB",
 );
 
-function assertQrisSettlement(source: string) {
-  const qris = sliceBetween(
+function qrisBlock(source: string) {
+  return sliceBetween(
     source,
     'await expectLocalizedRegistrationSurface(page, registrationFixture, locale, "qris");',
     "await expectDialogEscapeRestoresFocus",
   );
-  expect(qris).toContain("await runAndSettleServerActionUi(page, {");
-  expect(qris).toContain(
+}
+
+function qrisSettlementParts(source: string) {
+  const qris = qrisBlock(source);
+  const firstSettlement = qris.indexOf("await runAndSettleServerActionUi(page, {");
+  const publicationSettlement = qris.indexOf("await runAndSettleServerActionUi(page, {", firstSettlement + 1);
+  if (firstSettlement < 0 || publicationSettlement < 0) throw new Error("QRIS draft and publication settlements must both be explicit");
+  return { draft: qris.slice(0, publicationSettlement), publication: qris.slice(publicationSettlement) };
+}
+
+function assertQrisDraftSettlement(source: string) {
+  const { draft } = qrisSettlementParts(source);
+  expect(draft).toContain("await runAndSettleServerActionUi(page, {");
+  expect(draft).toContain(
     'requestUrl.pathname === `/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration`',
   );
-  expect(qris).toContain('requestUrl.search === "?view=qris"');
-  expect(qris).toContain('trigger: () => page.locator("[data-publish]").click(),');
-  expect(qris).toContain(
+  expect(draft).toContain('requestUrl.search === "?view=qris"');
+  expect(draft).toContain('trigger: () => page.locator("[data-save]").click(),');
+  expect(draft).toContain(
+    "uiReady: () => expectLocalizedText(page, copy.qrisDraftSaved, copy.opposite.qrisDraftSaved),",
+  );
+  expect(draft).toContain('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("draft");');
+  expect(draft).toContain('expect(savedQris.qris?.version).toBe(fixture.qrisVersion + 1);');
+  expect(draft.indexOf("await runAndSettleServerActionUi(page, {")).toBeLessThan(
+    draft.indexOf('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("draft");'),
+  );
+  expect(draft.indexOf("uiReady: () => expectLocalizedText(page, copy.qrisDraftSaved, copy.opposite.qrisDraftSaved),")).toBeLessThan(
+    draft.indexOf('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("draft");'),
+  );
+  expect(draft.indexOf('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("draft");')).toBeLessThan(
+    draft.indexOf('expect(savedQris.qris?.version).toBe(fixture.qrisVersion + 1);'),
+  );
+  expect(draft).not.toMatch(/waitForTimeout|\bretr(?:y|ies)\b|response\.(?:finished|text)\(\)|request(?:finished|failed)/);
+}
+
+function assertQrisPublicationSettlement(source: string) {
+  const { publication } = qrisSettlementParts(source);
+  expect(publication).toContain("await runAndSettleServerActionUi(page, {");
+  expect(publication).toContain(
+    'requestUrl.pathname === `/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration`',
+  );
+  expect(publication).toContain('requestUrl.search === "?view=qris"');
+  expect(publication).toContain('trigger: () => page.locator("[data-publish]").click(),');
+  expect(publication).toContain(
     "uiReady: () => expectLocalizedText(page, copy.qrisPublished, copy.opposite.qrisPublished),",
   );
-  expect(qris).toContain('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");');
-  expect(qris).toContain(
+  expect(publication).toContain('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");');
+  expect(publication).toContain(
     'expect(receipt.qris).toMatchObject({ eventId: fixture.registrationEventId, status: "published", version: fixture.qrisVersion + 2 });',
   );
-  expect(qris.indexOf("await runAndSettleServerActionUi(page, {")).toBeLessThan(
-    qris.indexOf('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");'),
+  expect(publication.indexOf("await runAndSettleServerActionUi(page, {")).toBeLessThan(
+    publication.indexOf('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");'),
   );
-  expect(qris.indexOf('uiReady: () => expectLocalizedText(page, copy.qrisPublished, copy.opposite.qrisPublished),')).toBeLessThan(
-    qris.indexOf('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");'),
+  expect(publication.indexOf('uiReady: () => expectLocalizedText(page, copy.qrisPublished, copy.opposite.qrisPublished),')).toBeLessThan(
+    publication.indexOf('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");'),
   );
-  expect(qris.indexOf('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");')).toBeLessThan(
-    qris.indexOf('expect(receipt.qris).toMatchObject({ eventId: fixture.registrationEventId, status: "published", version: fixture.qrisVersion + 2 });'),
+  expect(publication.indexOf('expect.poll(async () => (await fixture.readState()).qris?.status).toBe("published");')).toBeLessThan(
+    publication.indexOf('expect(receipt.qris).toMatchObject({ eventId: fixture.registrationEventId, status: "published", version: fixture.qrisVersion + 2 });'),
   );
-  expect(qris).not.toMatch(/waitForTimeout|\bretr(?:y|ies)\b|response\.(?:finished|text)\(\)|request(?:finished|failed)/);
+  expect(publication).not.toMatch(/waitForTimeout|\bretr(?:y|ies)\b|response\.(?:finished|text)\(\)|request(?:finished|failed)/);
+}
+
+function assertQrisSettlement(source: string) {
+  assertQrisDraftSettlement(source);
+  assertQrisPublicationSettlement(source);
 }
 
 function assertResultSettlement(source: string) {
@@ -93,6 +135,10 @@ describe("CI 36191361055 semantic organizer settlement contracts", () => {
 
   it("rejects QRIS settlement mutations", () => {
     assertQrisSettlement(partA);
+    expect(() => assertQrisDraftSettlement(partA.replace('trigger: () => page.locator("[data-save]").click(),', 'await page.locator("[data-save]").click();'))).toThrow();
+    expect(() => assertQrisDraftSettlement(partA.replace('requestUrl.search === "?view=qris"', 'requestUrl.search === ""'))).toThrow();
+    expect(() => assertQrisDraftSettlement(partA.replace("uiReady: () => expectLocalizedText(page, copy.qrisDraftSaved, copy.opposite.qrisDraftSaved),", "uiReady: () => undefined,"))).toThrow();
+    expect(() => assertQrisDraftSettlement(partA.replace('expect(savedQris.qris?.version).toBe(fixture.qrisVersion + 1);', 'expect(savedQris.qris?.version).toBe(fixture.qrisVersion);'))).toThrow();
     expect(() => assertQrisSettlement(partA.replace('requestUrl.search === "?view=qris"', 'requestUrl.search === ""'))).toThrow();
     expect(() => assertQrisSettlement(partA.replace("uiReady: () => expectLocalizedText(page, copy.qrisPublished, copy.opposite.qrisPublished),", "uiReady: () => undefined,"))).toThrow();
     expect(() => assertQrisSettlement(partA.replace('status: "published", version: fixture.qrisVersion + 2', 'status: "draft", version: fixture.qrisVersion + 2'))).toThrow();

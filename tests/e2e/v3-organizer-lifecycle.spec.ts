@@ -488,8 +488,12 @@ async function runOrganizerReleaseJourneyPartA(page: Page, fixture: ReleaseFixtu
 
   await expectLocalizedRegistrationSurface(page, registrationFixture, locale, "qris");
   await page.locator("textarea").fill(locale === "id" ? "Gunakan QRIS rilis deterministik." : "Use the deterministic release QRIS.");
-  await page.locator("[data-save]").click();
-  await expectLocalizedText(page, copy.qrisDraftSaved, copy.opposite.qrisDraftSaved);
+  await runAndSettleServerActionUi(page, {
+    request: (_request, requestUrl) => requestUrl.pathname === `/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration`
+      && requestUrl.search === "?view=qris",
+    trigger: () => page.locator("[data-save]").click(),
+    uiReady: () => expectLocalizedText(page, copy.qrisDraftSaved, copy.opposite.qrisDraftSaved),
+  });
   await expect.poll(async () => (await fixture.readState()).qris?.status).toBe("draft");
   const savedQris = await fixture.readState();
   expect(savedQris.qris?.version).toBe(fixture.qrisVersion + 1);
