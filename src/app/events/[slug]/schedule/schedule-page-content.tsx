@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { BackToEvent } from "@/components/public-v2/BackToEvent";
+import { PublicV3DetailFrame } from "@/components/v3/public-event/PublicV3DetailFrame";
 import { PublicScheduleBoard, type PublicScheduleMatch } from "@/components/v3/public-event/PublicScheduleBoard";
 import { Section } from "@/components/ui";
 import { isFeatureEnabled } from "@/lib/feature-flags";
@@ -55,10 +56,20 @@ export async function renderSchedulePage(slug: string, locale: "id" | "en" = "id
     }));
   }
 
+  const title = `${locale === "id" ? "Jadwal" : "Schedule"} ${event.name}`;
+  const description = locale === "id" ? "Fixture dan hasil resmi. Seluruh waktu ditampilkan dalam WIB." : "Official fixtures and results. All times are shown in WIB.";
+  const board = <PublicScheduleBoard matches={matches} locale={locale} timezone="Asia/Jakarta" unpublished={unpublished} />;
+
+  if (isFeatureEnabled("ui_v3_foundation")) {
+    return (
+      <PublicV3DetailFrame backLabel={locale === "id" ? "Kembali ke Event" : "Back to Event"} description={description} event={event} locale={locale} title={title}>
+        <section className="mpv3-section" aria-label={title}>{board}</section>
+      </PublicV3DetailFrame>
+    );
+  }
+
   return <>
     <BackToEvent slug={slug} locale={locale} label={locale === "id" ? "Kembali ke Event" : "Back to Event"} />
-    <Section title={`${locale === "id" ? "Jadwal" : "Schedule"} ${event.name}`} description={locale === "id" ? "Fixture dan hasil resmi. Seluruh waktu ditampilkan dalam WIB." : "Official fixtures and results. All times are shown in WIB."}>
-      <PublicScheduleBoard matches={matches} locale={locale} timezone="Asia/Jakarta" unpublished={unpublished} />
-    </Section>
+    <Section title={title} description={description}>{board}</Section>
   </>;
 }

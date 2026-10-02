@@ -138,6 +138,83 @@ describe("public bracket page", () => {
     expect(source).toContain("AdaptiveBracketBoard");
   });
 
+  it("uses the dark V3 composition for the adaptive bracket when the visual foundation is enabled", async () => {
+    const event = createEvent({
+      name: "V3 adaptive bracket",
+      slug: "v3-adaptive-bracket",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Published");
+    featureEnabledMock.mockImplementation((flag: string) => flag === "adaptive_public_event_v3" || flag === "ui_v3_foundation");
+    drawingEventMock.mockResolvedValue(null);
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain('class="miracle-public-v3 mpv3-bracket-page"');
+    expect(markup).toContain("mpv3-action--text");
+    expect(markup).toContain("overflow-x-auto");
+    expect(markup).not.toContain("pv-section-card");
+    expect(markup).not.toContain("bg-white");
+  });
+
+  it("preserves the adaptive legacy composition when only the adaptive flag is enabled", async () => {
+    const event = createEvent({
+      name: "Adaptive legacy bracket",
+      slug: "adaptive-legacy-bracket",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Published");
+    featureEnabledMock.mockImplementation((flag: string) => flag === "adaptive_public_event_v3");
+    drawingEventMock.mockResolvedValue(null);
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain("pv-section-card");
+    expect(markup).toContain("bg-white");
+    expect(markup).not.toContain("miracle-public-v3");
+  });
+
+  it("uses the dark V3 table composition for the legacy league fallback", async () => {
+    const event = createEvent({
+      name: "V3 league fallback",
+      slug: "v3-league-fallback",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "League",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Published");
+    featureEnabledMock.mockImplementation((flag: string) => flag === "ui_v3_foundation");
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain('class="miracle-public-v3 mpv3-bracket-page"');
+    expect(markup).toContain("mpv3-table-wrap");
+    expect(markup).not.toContain("pv-section-card");
+    expect(markup).not.toContain("bg-white");
+  });
+
+  it("preserves the legacy fallback composition when the visual foundation is disabled", async () => {
+    const event = createEvent({
+      name: "Legacy bracket fallback",
+      slug: "legacy-bracket-fallback",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "League",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Published");
+    featureEnabledMock.mockReturnValue(false);
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain("pv-section-card");
+    expect(markup).toContain("pv-data-table");
+    expect(markup).not.toContain("miracle-public-v3");
+  });
+
   test("bracket routes stay dynamic so production builds do not query the database", () => {
     const publicRouteSource = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
     const localizedRouteSource = fs.readFileSync(

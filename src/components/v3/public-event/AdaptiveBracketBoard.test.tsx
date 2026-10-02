@@ -41,4 +41,23 @@ describe("AdaptiveBracketBoard", () => {
     expect(html).toContain('class="mt-4 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2"');
     expect(html).toContain("flex min-w-max items-stretch");
   });
+
+  it("localizes adaptive match status labels for Indonesian and English viewers", () => {
+    const indonesian = renderToStaticMarkup(<AdaptiveBracketBoard
+      locale="id"
+      format="single_elimination"
+      standings={[]}
+      matches={[{ id: "scheduled", roundLabel: "R1", home: "Alpha", away: "Beta", status: "scheduled", homeScore: null, awayScore: null }]}
+    />);
+    const english = renderToStaticMarkup(<AdaptiveBracketBoard
+      locale="en"
+      format="single_elimination"
+      standings={[]}
+      matches={[{ id: "scheduled", roundLabel: "R1", home: "Alpha", away: "Beta", status: "scheduled", homeScore: null, awayScore: null }]}
+    />);
+
+    expect(indonesian).toContain("Dijadwalkan");
+    expect(indonesian).not.toContain(">scheduled<");
+    expect(english).toContain("Scheduled");
+  });
 });
