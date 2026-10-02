@@ -96,4 +96,25 @@ describe("public V3 event overview route", () => {
     expect(finishedHtml).toContain('data-certificates="preparing"');
     expect(finishedHtml).not.toContain("https://certificate");
   });
+
+  it("renders published group standings and playoff context without inventing a league final", () => {
+    const ongoing = view("ongoing");
+    const groupPlayoffs = {
+      ...ongoing,
+      identity: { ...ongoing.identity, format: "group_playoffs" },
+      event: { ...ongoing.event, format: "group_playoffs" },
+      matches: [{ id: "playoff-1", roundLabel: "Semifinal", home: "Alpha", away: "Beta", status: "scheduled" as const, homeScore: null, awayScore: null, start: null, end: null, room: null, bestOf: 3, official: false, isPlayoff: true }],
+      nextMatches: [{ id: "playoff-1", roundLabel: "Semifinal", home: "Alpha", away: "Beta", status: "scheduled" as const, homeScore: null, awayScore: null, start: null, end: null, room: null, bestOf: 3, official: false, isPlayoff: true }],
+      standings: [{ phaseId: "phase-groups", groupId: "group-a", rows: [{ teamId: "team-a", name: "Alpha", rank: 1, played: 1, points: 3 }] }],
+    } as PublicV3EventViewModel;
+    const html = renderToStaticMarkup(<PublicV3EventPage view={groupPlayoffs} locale="en" />);
+    expect(html).toContain('data-public-competition-context="group_playoffs"');
+    expect(html).toContain("Alpha");
+    expect(html).toContain("Semifinal");
+
+    const league = { ...ongoing, identity: { ...ongoing.identity, format: "round_robin" }, event: { ...ongoing.event, format: "round_robin" } } as PublicV3EventViewModel;
+    const leagueHtml = renderToStaticMarkup(<PublicV3EventPage view={league} locale="en" />);
+    expect(leagueHtml).toContain('data-public-competition-context="round_robin"');
+    expect(leagueHtml).not.toContain("Grand Final");
+  });
 });

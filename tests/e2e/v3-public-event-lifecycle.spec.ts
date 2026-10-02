@@ -161,6 +161,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       await expect(page.getByRole("heading", { level: 1, name: `Public Lifecycle ${namespace}` })).toBeVisible();
       const template = page.locator('[data-bracket-state="tbd"]');
       await expect(template).toContainText("TBD");
+      await expect(template.locator("li")).toHaveCount(4);
       await expect(template.getByText(teams[0].name, { exact: true })).toHaveCount(0);
 
       await loginAsAdmin(page, "en");

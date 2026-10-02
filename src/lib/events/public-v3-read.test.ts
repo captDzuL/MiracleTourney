@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   eventFindUnique: vi.fn(),
   playerFindMany: vi.fn(),
   playerStatFindMany: vi.fn(),
+  eventAnnouncementFindMany: vi.fn(),
   registration: vi.fn(),
   drawing: vi.fn(),
   ongoing: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock("@/lib/platform/db", () => ({
     event: { findUnique: mocks.eventFindUnique },
     player: { findMany: mocks.playerFindMany },
     playerStat: { findMany: mocks.playerStatFindMany },
+    eventAnnouncement: { findMany: mocks.eventAnnouncementFindMany },
   },
 }));
 vi.mock("./public-registration", () => ({ readPublicRegistration: mocks.registration }));
@@ -58,6 +60,7 @@ beforeEach(() => {
   mocks.eventFindUnique.mockResolvedValue(baseEvent);
   mocks.playerFindMany.mockResolvedValue([]);
   mocks.playerStatFindMany.mockResolvedValue([]);
+  mocks.eventAnnouncementFindMany.mockResolvedValue([]);
   for (const reader of [mocks.registration, mocks.drawing, mocks.ongoing, mocks.finished]) reader.mockResolvedValue(null);
 });
 
@@ -103,6 +106,17 @@ describe("normalized public V3 event reader", () => {
     expect(view.drawing.published).toBe(false);
     expect(view.drawing.slots.every((slot) => slot.home === "TBD" && slot.away === "TBD")).toBe(true);
     expect(view.drawing.seeds).toEqual([]);
+  });
+
+  it("projects participant-cap-sized TBD positions for compatible registration", () => {
+    const view = projectCompatiblePublicV3Event({
+      event: { ...baseEvent, status: "Published", participantCap: 8 },
+    });
+
+    expect(view).toMatchObject({ source: "compatible", mode: "registration" });
+    if (view.mode !== "registration") throw new Error("Expected registration projection");
+    expect(view.registration.bracket.slots).toHaveLength(8);
+    expect(view.registration.bracket.slots.every((slot) => slot.home === "TBD" && slot.away === "TBD" && slot.status === "tbd")).toBe(true);
   });
 
   it("keeps finished certificates in preparing state when the current publication is missing", () => {
@@ -190,6 +204,76 @@ describe("normalized public V3 event reader", () => {
     expect(view.leaderboard[0]).toMatchObject({ playerId: "p1", score: 8, goal: 2, assist: 1, passing: 3, defense: 4 });
     expect(view.schedule).toEqual({ version: 2, publishedAt: "2026-09-19T12:00:00.000Z", changes: [] });
     expect(view.standings[0]).toMatchObject({ phaseId: "phase-1", rows: [{ teamId: "team-a", name: "Alpha" }] });
+  });
+
+  it("preserves published match context for group standings and playoff brackets", async () => {
+    mocks.ongoing.mockResolvedValue({
+      mode: "ongoing",
+      event: { id: "event-1", slug: "miracle-cup", name: "Miracle Cup", description: "A public event", timezone: "Asia/Jakarta", format: "group_playoffs" },
+      matches: [
+        { id: "group-1", home: "Alpha", away: "Beta", round: 1, phaseId: "phase-groups", groupId: "group-a", groupNumber: 1, isPlayoff: false, bracket: "round_robin", status: "completed", start: "2026-09-20T03:00:00.000Z", end: "2026-09-20T04:00:00.000Z", homeScore: 2, awayScore: 0, resultVersion: 1 },
+        { id: "playoff-1", home: "Alpha", away: "Gamma", round: 1, phaseId: "phase-playoffs", groupId: null, groupNumber: null, isPlayoff: true, bracket: "single", status: "scheduled", start: "2026-09-21T03:00:00.000Z", end: null, homeScore: null, awayScore: null, resultVersion: 0 },
+      ],
+      liveMatches: [], nextMatches: [], recentResults: [], schedule: null,
+      standings: [{ phaseId: "phase-groups", groupId: "group-a", groupNumber: 1, label: "Group A", complete: true, qualificationCutline: 2, rows: [{ teamId: "team-a", name: "Alpha", rank: 1, played: 1, points: 3 }] }],
+      leaderboard: [], stream: null, stateVersion: "state-1", lastUpdatedAt: "2026-09-20T04:00:00.000Z",
+    });
+
+    const view = await readPublicV3Event("miracle-cup", viewer);
+
+    if (view?.mode !== "ongoing") throw new Error("Expected ongoing projection");
+    expect(view.matches).toMatchObject([
+      { id: "group-1", round: 1, phaseId: "phase-groups", groupId: "group-a", groupNumber: 1, isPlayoff: false, bracket: "round_robin" },
+      { id: "playoff-1", round: 1, phaseId: "phase-playoffs", groupId: null, isPlayoff: true, bracket: "single" },
+    ]);
+    expect(view.standings[0]).toMatchObject({ groupId: "group-a", groupNumber: 1, label: "Group A" });
+  });
+
+  it("preserves published match context for finished bracket output", async () => {
+    mocks.eventFindUnique.mockResolvedValue({ ...baseEvent, status: "Finished" });
+    mocks.finished.mockResolvedValue({
+      mode: "finished",
+      event: { id: "event-1", slug: "miracle-cup", name: "Miracle Cup", description: "A public event", timezone: "Asia/Jakarta", format: "single_elimination" },
+      certificates: { status: "preparing", publishedCount: 0, expectedCount: 7 },
+      podium: [], awards: [],
+      matches: [{ id: "final-1", round: 3, phaseId: "phase-final", groupId: null, isPlayoff: true, bracket: "grand_final", home: "Alpha", away: "Beta", status: "completed", start: "2026-09-20T03:00:00.000Z", end: "2026-09-20T04:00:00.000Z", homeScore: 3, awayScore: 1, resultVersion: 1 }],
+      standings: [],
+    });
+
+    const view = await readPublicV3Event("miracle-cup", viewer);
+
+    if (view?.mode !== "finished") throw new Error("Expected finished projection");
+    expect(view.matches[0]).toMatchObject({ round: 3, phaseId: "phase-final", isPlayoff: true, bracket: "grand_final" });
+  });
+
+  it.each(["Published", "Registration Closed", "Ongoing", "Finished"] as const)("maps only active published announcements for %s", async status => {
+    mocks.eventFindUnique.mockResolvedValue({ ...baseEvent, status });
+    mocks.eventAnnouncementFindMany.mockResolvedValue([
+      { id: "published", status: "published", title: "Published notice", body: "Visible body", publishedAt: new Date("2026-09-20T01:00:00.000Z"), startsAt: null, endsAt: null },
+      { id: "draft", status: "draft", title: "Draft notice", body: "Hidden draft", publishedAt: null, startsAt: null, endsAt: null },
+      { id: "future", status: "published", title: "Future notice", body: "Hidden future", publishedAt: new Date("2026-09-20T01:00:00.000Z"), startsAt: new Date("2026-09-21T00:00:00.000Z"), endsAt: null },
+    ]);
+    if (status === "Published") mocks.registration.mockResolvedValue({ mode: "registration", registration: {} });
+    if (status === "Registration Closed") mocks.drawing.mockResolvedValue({ mode: "drawing", drawing: {}, matches: [], standings: [] });
+    if (status === "Ongoing") mocks.ongoing.mockResolvedValue({ mode: "ongoing", matches: [], liveMatches: [], nextMatches: [], recentResults: [], standings: [], schedule: null, leaderboard: [], announcements: [], stream: null, stateVersion: "1", lastUpdatedAt: "2026-09-20T02:00:00.000Z" });
+    if (status === "Finished") mocks.finished.mockResolvedValue({ mode: "finished", certificates: { status: "preparing", publishedCount: 0, expectedCount: 7 }, podium: [], awards: [], matches: [], standings: [] });
+
+    const view = await readPublicV3Event("miracle-cup", viewer, new Date("2026-09-20T02:00:00.000Z"));
+
+    expect(view?.updates).toEqual([{ id: "published", title: "Published notice", body: "Visible body", publishedAt: "2026-09-20T01:00:00.000Z" }]);
+  });
+
+  it("carries only persisted published announcements into a compatible overview", async () => {
+    mocks.ongoing.mockResolvedValue(null);
+    mocks.eventAnnouncementFindMany.mockResolvedValue([
+      { id: "published", status: "published", title: "Saved notice", body: "Visible body", publishedAt: new Date("2026-09-20T01:00:00.000Z"), startsAt: null, endsAt: null },
+      { id: "draft", status: "draft", title: "Draft notice", body: "Hidden draft", publishedAt: null, startsAt: null, endsAt: null },
+    ]);
+
+    const view = await readPublicV3Event("miracle-cup", viewer, new Date("2026-09-20T02:00:00.000Z"));
+
+    expect(view?.source).toBe("compatible");
+    expect(view?.updates).toEqual([{ id: "published", title: "Saved notice", body: "Visible body", publishedAt: "2026-09-20T01:00:00.000Z" }]);
   });
 
   it("loads persisted player statistics for a compatible ongoing overview", async () => {
@@ -309,7 +393,7 @@ describe("normalized public V3 event reader", () => {
       matches: [{ id: "match-1", status: "Completed", homeScore: null, awayScore: null }],
     });
     if (view.mode !== "drawing") throw new Error("Expected drawing projection");
-    expect(view.cta).toMatchObject({ kind: "link", label: "view_leaderboard", href: "/id/events/miracle-cup/leaderboards" });
+    expect(view.cta).toMatchObject({ kind: "link", label: "view_standings", href: "/id/events/miracle-cup/standings" });
     expect(view.navigation).toMatchObject({ bracket: false, leaderboard: true });
     expect(view.identity.organizer.name).toBe("TBD");
     expect(view.identity.facts.venue).toBe("TBD");
@@ -393,10 +477,10 @@ describe("normalized public V3 event reader", () => {
       id: "/id/events/miracle-cup/leaderboards",
       en: "/en/events/miracle-cup/leaderboards",
     });
-    expect(view.cta.href).toBe("/id/events/miracle-cup/leaderboards");
+    expect(view.cta.href).toBe("/id/events/miracle-cup/standings");
     expect(view.cta.hrefByLocale).toEqual({
-      id: "/id/events/miracle-cup/leaderboards",
-      en: "/en/events/miracle-cup/leaderboards",
+      id: "/id/events/miracle-cup/standings",
+      en: "/en/events/miracle-cup/standings",
     });
   });
 

@@ -73,8 +73,13 @@ export default async function LocalizedEventDetailPage({
   }
 
   if (event && isFeatureEnabled("adaptive_public_event_v3") && ["Published", "Registration Closed", "Ongoing", "Finished"].includes(event.status)) {
-    const viewer = await getSessionUser();
     try {
+      let viewer: Awaited<ReturnType<typeof getSessionUser>> = null;
+      try {
+        viewer = await getSessionUser();
+      } catch {
+        // Public event data remains readable when the optional session lookup is unavailable.
+      }
       const view = await readPublicV3Event(slug, viewer);
       if (view) {
         const jsonLd = {

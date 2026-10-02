@@ -160,6 +160,12 @@ export type PublicV3Team = {
 export type PublicV3Match = {
   id: string;
   roundLabel: string;
+  round?: number | null;
+  phaseId?: string | null;
+  groupId?: string | null;
+  groupNumber?: number | null;
+  isPlayoff?: boolean;
+  bracket?: "single" | "upper" | "lower" | "grand_final" | "third_place" | "round_robin" | null;
   home: string | null;
   away: string | null;
   status: "scheduled" | "live" | "completed" | "delayed" | "postponed";
@@ -264,7 +270,7 @@ export type PublicV3DrawingEventViewModel = PublicV3Shared & {
     slots: PublicV3BracketSlot[];
   };
   matches: PublicV3Match[];
-  standings: Array<{ phaseId: string; groupId: string | null; rows: Array<Record<string, unknown>> }>;
+  standings: Array<{ phaseId: string; groupId: string | null; groupNumber?: number | null; label?: string; complete?: boolean; qualificationCutline?: number | null; rows: Array<Record<string, unknown>> }>;
   schedule: { version: number; publishedAt: string | null } | null;
   leaderboard: PublicV3LeaderboardEntry[];
 };
@@ -302,7 +308,7 @@ export type PublicV3FinishedEventViewModel = PublicV3Shared & {
     certificate: PublicV3Certificate | null;
   }>;
   matches: PublicV3Match[];
-  standings: Array<{ phaseId: string; groupId: string | null; rows: Array<Record<string, unknown>> }>;
+  standings: Array<{ phaseId: string; groupId: string | null; groupNumber?: number | null; label?: string; complete?: boolean; qualificationCutline?: number | null; rows: Array<Record<string, unknown>> }>;
   leaderboard: PublicV3LeaderboardEntry[];
 };
 
@@ -362,6 +368,11 @@ export type CompatiblePublicMatch = {
   id: string;
   roundLabel?: string | null;
   round?: number | null;
+  phaseId?: string | null;
+  groupId?: string | null;
+  groupNumber?: number | null;
+  isPlayoff?: boolean;
+  bracket?: PublicV3Match["bracket"];
   homeTeamId?: string | null;
   awayTeamId?: string | null;
   homeScore?: number | null;
@@ -399,6 +410,8 @@ export type CompatiblePublicEventInput = {
   teams?: CompatiblePublicTeam[];
   registrations?: Array<{ status?: string; team?: CompatiblePublicTeam | null; teamId?: string | null; [key: string]: unknown }>;
   matches?: CompatiblePublicMatch[];
+  announcements?: Array<{ id?: string; title?: string; body?: string; publishedAt?: Date | string | null; [key: string]: unknown }>;
+  updates?: Array<{ id?: string; title?: string; body?: string; publishedAt?: Date | string | null; [key: string]: unknown }>;
   completion?: {
     id?: string;
     status?: string;

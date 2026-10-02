@@ -9,6 +9,7 @@ type Match = {
   status: "scheduled" | "delayed" | "postponed" | "live" | "completed";
   homeScore: number | null;
   awayScore: number | null;
+  isPlayoff?: boolean;
 };
 
 function statusLabel(status: Match["status"], id: boolean) {
@@ -36,11 +37,22 @@ function legacyStatusLabel(status: Match["status"], id: boolean) {
   return id ? "Menunggu hasil" : "Awaiting result";
 }
 
+function standingCaption(table: AdaptivePhaseStanding, index: number, id: boolean): string {
+  if (!table.groupId) return id ? "Klasemen umum" : "Overall standings";
+  const label = typeof table.label === "string" ? table.label.trim() : "";
+  if (/^(?:group|grup)\b/i.test(label)) return label;
+  const group = label || (typeof table.groupNumber === "number" && table.groupNumber > 0 ? String(table.groupNumber) : String(index + 1));
+  return `${id ? "Grup" : "Group"} ${group}`;
+}
+
 export function AdaptiveBracketBoard({ locale, format, matches, standings, registrationSlots = 0, presentation = "legacy" }: { locale: "id" | "en"; format: string; matches: Match[]; standings: AdaptivePhaseStanding[]; registrationSlots?: number; presentation?: "legacy" | "v3" }) {
   const id = locale === "id";
-  const league = format === "round_robin";
+  const normalizedFormat = format.toLowerCase().replace(/[\s-]+/g, "_");
+  const league = normalizedFormat.includes("round_robin") || normalizedFormat.includes("league");
+  const groupPlayoffs = normalizedFormat.includes("group") && normalizedFormat.includes("playoff");
   const v3 = presentation === "v3";
-  const rounds = [...Map.groupBy(matches, (match) => match.roundLabel).entries()];
+  const visibleMatches = league ? [] : groupPlayoffs ? matches.filter((match) => match.isPlayoff === true) : matches;
+  const rounds = [...Map.groupBy(visibleMatches, (match) => match.roundLabel).entries()];
 
   if (registrationSlots > 0 && !league) {
     return <section className="min-w-0" aria-labelledby="bracket-template-heading">
@@ -51,7 +63,7 @@ export function AdaptiveBracketBoard({ locale, format, matches, standings, regis
   }
 
   return <div className="grid min-w-0 gap-6">
-    {standings.length ? <section aria-labelledby="adaptive-standings-heading"><h2 id="adaptive-standings-heading" className="text-xl font-extrabold">{id ? "Klasemen" : "Standings"}</h2><div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2">{standings.map((table, tableIndex) => <div key={`${table.phaseId}:${table.groupId}`} className="min-w-0 overflow-x-auto rounded-[var(--radius-control)] border border-[var(--color-border)]"><table className="w-full min-w-[32rem] text-sm"><caption className="p-3 text-left font-bold">{table.groupId ? `${id ? "Grup" : "Group"} ${tableIndex + 1}` : (id ? "Klasemen umum" : "Overall standings")}</caption><thead><tr className="border-y border-[var(--color-border)] text-left"><th className="p-3">#</th><th className="p-3">{id ? "Tim" : "Team"}</th><th className="p-3">{id ? "Main" : "Played"}</th><th className="p-3">{id ? "Poin" : "Points"}</th></tr></thead><tbody>{table.rows.map((row) => <tr key={row.teamId} className="border-b border-[var(--color-border)] last:border-0"><td className="p-3 tabular-nums">{row.rank}</td><td className="p-3 font-bold">{row.name}</td><td className="p-3 tabular-nums">{row.played}</td><td className="p-3 tabular-nums">{row.points}</td></tr>)}</tbody></table></div>)}</div></section> : null}
+    {standings.length ? <section aria-labelledby="adaptive-standings-heading"><h2 id="adaptive-standings-heading" className="text-xl font-extrabold">{id ? "Klasemen" : "Standings"}</h2><div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2">{standings.map((table, tableIndex) => <div key={`${table.phaseId}:${table.groupId}`} className="min-w-0 overflow-x-auto rounded-[var(--radius-control)] border border-[var(--color-border)]"><table className="w-full min-w-[32rem] text-sm"><caption className="p-3 text-left font-bold">{standingCaption(table, tableIndex, id)}</caption><thead><tr className="border-y border-[var(--color-border)] text-left"><th className="p-3">#</th><th className="p-3">{id ? "Tim" : "Team"}</th><th className="p-3">{id ? "Main" : "Played"}</th><th className="p-3">{id ? "Poin" : "Points"}</th></tr></thead><tbody>{table.rows.map((row) => <tr key={row.teamId} className="border-b border-[var(--color-border)] last:border-0"><td className="p-3 tabular-nums">{row.rank}</td><td className="p-3 font-bold">{row.name}</td><td className="p-3 tabular-nums">{row.played}</td><td className="p-3 tabular-nums">{row.points}</td></tr>)}</tbody></table></div>)}</div></section> : null}
 
     {!league && rounds.length ? <section aria-labelledby="adaptive-bracket-heading" className="min-w-0"><h2 id="adaptive-bracket-heading" className="text-xl font-extrabold">Bracket</h2><div className={`mt-4 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2${v3 ? " mpv3-bracket-scroll" : ""}`}><div className="flex min-w-max items-stretch gap-5">{rounds.map(([roundLabel, roundMatches]) => <section key={roundLabel} className="flex w-72 shrink-0 flex-col rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4"><h3 className="font-extrabold">{roundLabel}</h3><div className="mt-4 flex flex-1 flex-col justify-around gap-4">{roundMatches.map((match) => <article key={match.id} className="rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"><p className="break-words font-bold">{match.home ?? "TBD"}</p><p className="my-2 text-sm text-[var(--color-text-muted)]">vs</p><p className="break-words font-bold">{match.away ?? "TBD"}</p>{match.status === "completed" ? <p className="mt-3 border-t border-[var(--color-border)] pt-3 text-xl font-extrabold tabular-nums">{match.homeScore} – {match.awayScore}</p> : <p className="mt-3 text-sm text-[var(--color-text-muted)]">{v3 ? statusLabel(match.status, id) : legacyStatusLabel(match.status, id)}</p>}</article>)}</div></section>)}</div></div></section> : null}
 

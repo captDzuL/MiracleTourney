@@ -36,6 +36,7 @@ const AWARD_ORDER = ["mvp", "top_scorer", "top_defender", "top_assist"] as const
 const CERTIFICATE_TYPES = new Set(["champion", "runner_up", "third_place", ...AWARD_ORDER]);
 const EXPECTED_CERTIFICATE_COUNT = 7;
 const PUBLIC_READER_ROW_LIMIT = 500;
+const MAX_REGISTRATION_TEMPLATE_SLOTS = 256;
 
 type AnyRecord = Record<string, unknown>;
 
@@ -139,7 +140,7 @@ function identityFor(
   const ctaTarget = mode === "registration"
     ? routes.register
     : mode === "drawing"
-      ? roundRobin ? routes.leaderboard : routes.bracket
+      ? roundRobin ? routes.standings : routes.bracket
       : mode === "ongoing"
         ? routes.overview
         : routes.leaderboard;
@@ -148,7 +149,7 @@ function identityFor(
     label: mode === "registration"
       ? "register_team"
       : mode === "drawing"
-        ? roundRobin ? "view_leaderboard" : "view_bracket"
+        ? roundRobin ? "view_standings" : "view_bracket"
         : mode === "ongoing"
           ? "view_live_event"
           : "view_leaderboard",
@@ -220,6 +221,15 @@ function shared(
   };
 }
 
+function compatibleUpdates(input: CompatiblePublicEventInput): PublicV3Shared["updates"] {
+  const source = input.announcements ?? input.updates;
+  const now = input.now ?? new Date();
+  return authoritativeUpdates(Array.isArray(source) ? source.filter((value) => {
+    const row = record(value);
+    return !text(row.status) || isPublishedAnnouncement(value, now);
+  }) : source);
+}
+
 function teamsFor(input: CompatiblePublicEventInput): PublicV3Team[] {
   const explicit = Array.isArray(input.teams) ? input.teams : [];
   const fromRegistrations = (Array.isArray(input.registrations) ? input.registrations : [])
@@ -264,9 +274,16 @@ function publicMatch(match: CompatiblePublicMatch, names: Map<string, string>, m
   const homeId = text(match.homeTeamId);
   const awayId = text(match.awayTeamId);
   const revealParticipants = mode !== "drawing";
+  const round = Math.floor(nonNegative(match.round));
   return {
     id: text(match.id),
     roundLabel: text(match.roundLabel, match.round ? "Round " + match.round : "Match"),
+    round: round > 0 ? round : null,
+    phaseId: text(match.phaseId) || null,
+    groupId: text(match.groupId) || null,
+    groupNumber: publicScore(match.groupNumber),
+    ...(typeof match.isPlayoff === "boolean" ? { isPlayoff: match.isPlayoff } : {}),
+    bracket: publicBracketKind(match.bracket),
     home: revealParticipants && homeId ? names.get(homeId) ?? homeId : null,
     away: revealParticipants && awayId ? names.get(awayId) ?? awayId : null,
     status,
@@ -287,6 +304,20 @@ function tbdSlots(matches: PublicV3Match[]): PublicV3BracketSlot[] {
     home: match.home ?? "TBD",
     away: match.away ?? "TBD",
     status: "tbd",
+    homeScore: null,
+    awayScore: null,
+    official: false,
+  }));
+}
+
+function registrationTemplateSlots(participantCap: number): PublicV3BracketSlot[] {
+  const count = Math.min(MAX_REGISTRATION_TEMPLATE_SLOTS, Math.max(0, Math.floor(participantCap)));
+  return Array.from({ length: count }, (_, index) => ({
+    id: `registration-slot-${index + 1}`,
+    roundLabel: `Slot ${index + 1}`,
+    home: "TBD",
+    away: "TBD",
+    status: "tbd" as const,
     homeScore: null,
     awayScore: null,
     official: false,
@@ -385,7 +416,7 @@ function registrationInput(event: CompatiblePublicEventRecord, input: Compatible
     participantCap,
     now,
   });
-  const sharedView = shared(event, mode, source, teams, [], activeTeamCount);
+  const sharedView = shared(event, mode, source, teams, compatibleUpdates(input), activeTeamCount);
   const fallbackCta = buildRegistrationCta({
     state: "anonymous",
     availability,
@@ -415,7 +446,7 @@ function registrationInput(event: CompatiblePublicEventRecord, input: Compatible
       feeLabel: text(rawRegistration.feeLabel, text(event.registrationFeeLabel, "")),
       minimumRoster: Math.max(1, Math.floor(nonNegative(rawRegistration.minimumRoster, 1))),
       maximumRoster: Math.max(1, Math.floor(nonNegative(rawRegistration.maximumRoster, nonNegative(findGameModeConfig(text(event.gameModeId))?.maxRosterSize, 1)))),
-      bracket: { status: "tbd", slots: tbdSlots(matches) },
+      bracket: { status: "tbd", slots: registrationTemplateSlots(participantCap) },
     },
     viewer: { state: registrationState((input as AnyRecord).viewerState), cta: registrationCta },
     matches,
@@ -427,7 +458,7 @@ function drawingInput(event: CompatiblePublicEventRecord, input: CompatiblePubli
   const mode = "drawing" as const;
   const names = teamNames(input);
   const matches = (Array.isArray(input.matches) ? input.matches : []).map((match) => publicMatch(match, names, mode));
-  const sharedView = shared(event, mode, source, teams);
+  const sharedView = shared(event, mode, source, teams, compatibleUpdates(input));
   const seeds: Array<{ teamId: string; teamName: string; seed: number }> = [];
   return {
     ...sharedView,
@@ -444,7 +475,7 @@ function ongoingInput(event: CompatiblePublicEventRecord, input: CompatiblePubli
   const mode = "ongoing" as const;
   const names = teamNames(input);
   const matches = (Array.isArray(input.matches) ? input.matches : []).map((match) => publicMatch(match, names, mode));
-  const sharedView = shared(event, mode, source, teams);
+  const sharedView = shared(event, mode, source, teams, compatibleUpdates(input));
   const liveMatches = matches.filter((match) => match.status === "live");
   const recentResults = matches.filter((match) => match.official).slice().reverse();
   const serialized = JSON.stringify({ event: sharedView.identity, matches });
@@ -560,7 +591,7 @@ function finishedInput(event: CompatiblePublicEventRecord, input: CompatiblePubl
   const mode = "finished" as const;
   const names = teamNames(input);
   const matches = (Array.isArray(input.matches) ? input.matches : []).map((match) => publicMatch(match, names, mode));
-  const sharedView = shared(event, mode, source, teams);
+  const sharedView = shared(event, mode, source, teams, compatibleUpdates(input));
   const completion = input.completion;
   const rows = certificateRows(input, completion);
   const byType = new Map(rows.items.map((certificate) => [certificate.type, certificate]));
@@ -714,9 +745,16 @@ function authoritativeMatch(value: unknown): PublicV3Match {
   const round = Math.floor(nonNegative(row.round));
   const home = text(row.home, text(row.homeTeamId)) || null;
   const away = text(row.away, text(row.awayTeamId)) || null;
+  const bracket = publicBracketKind(row.bracket);
   return {
     id: text(row.id, "TBD"),
     roundLabel: text(row.roundLabel, round > 0 ? "Round " + round : "Match"),
+    round: round > 0 ? round : null,
+    phaseId: text(row.phaseId) || null,
+    groupId: text(row.groupId) || null,
+    groupNumber: publicScore(row.groupNumber),
+    ...(typeof row.isPlayoff === "boolean" ? { isPlayoff: row.isPlayoff } : {}),
+    bracket,
     home,
     away,
     status,
@@ -728,6 +766,12 @@ function authoritativeMatch(value: unknown): PublicV3Match {
     bestOf: Math.max(1, Math.floor(nonNegative(row.bestOf, 1))),
     official,
   };
+}
+
+function publicBracketKind(value: unknown): PublicV3Match["bracket"] {
+  return value === "single" || value === "upper" || value === "lower" || value === "grand_final" || value === "third_place" || value === "round_robin"
+    ? value
+    : null;
 }
 
 function authoritativeMatches(value: unknown): PublicV3Match[] {
@@ -762,10 +806,17 @@ function authoritativeDrawingStandings(value: unknown): Array<{ phaseId: string;
   if (!Array.isArray(value)) return [];
   return value.map((entry) => {
     const row = record(entry);
-    return {
+    const output = {
       phaseId: text(row.phaseId, "TBD"),
       groupId: typeof row.groupId === "string" ? row.groupId : null,
       rows: Array.isArray(row.rows) ? row.rows.map((standing) => ({ ...record(standing) })) : [],
+    };
+    return {
+      ...output,
+      ...(publicScore(row.groupNumber) !== null ? { groupNumber: publicScore(row.groupNumber) } : {}),
+      ...(typeof row.label === "string" && row.label.trim() ? { label: row.label } : {}),
+      ...(typeof row.complete === "boolean" ? { complete: row.complete } : {}),
+      ...(publicScore(row.qualificationCutline) !== null ? { qualificationCutline: publicScore(row.qualificationCutline) } : {}),
     };
   });
 }
@@ -876,11 +927,16 @@ function authoritativeRegistrationCta(value: unknown): { state: RegistrationView
   return { state, cta: mapRegistrationCta(row.cta, fallback) };
 }
 
+function normalizedUpdates(raw: AnyRecord, persisted: PublicV3Shared["updates"]): PublicV3Shared["updates"] {
+  return persisted.length ? persisted : authoritativeUpdates(raw.announcements ?? raw.updates);
+}
+
 function normalizeAuthoritative(
   event: AnyRecord,
   view: unknown,
   source: "authoritative",
   snapshotTeams: CompatiblePublicTeam[] = [],
+  persistedUpdates: PublicV3Shared["updates"] = [],
 ): PublicV3EventViewModel | null {
   const raw = record(view);
   const mode = text(raw.mode);
@@ -899,7 +955,7 @@ function normalizeAuthoritative(
       viewerCta: viewer.cta,
     }, teams, source);
     if (output.mode !== "registration") return output;
-    return { ...output, updates: authoritativeUpdates(raw.announcements ?? raw.updates), viewer: { state: viewer.state, cta: viewer.cta } };
+    return { ...output, updates: normalizedUpdates(raw, persistedUpdates), viewer: { state: viewer.state, cta: viewer.cta } };
   }
   if (mode === "drawing") {
     const matches = authoritativeMatches(raw.matches);
@@ -921,7 +977,7 @@ function normalizeAuthoritative(
       standings: authoritativeDrawingStandings(raw.standings),
       schedule: authoritativeDrawingSchedule(raw.schedule),
       leaderboard: authoritativeLeaderboard(raw.leaderboard),
-      updates: authoritativeUpdates(raw.announcements ?? raw.updates),
+      updates: normalizedUpdates(raw, persistedUpdates),
     };
   }
   if (mode === "ongoing") {
@@ -943,7 +999,7 @@ function normalizeAuthoritative(
       standings: authoritativeOngoingStandings(raw.standings),
       stream: authoritativeStream(raw.stream),
       leaderboard: authoritativeLeaderboard(raw.leaderboard),
-      updates: authoritativeUpdates(raw.announcements ?? raw.updates),
+      updates: normalizedUpdates(raw, persistedUpdates),
       stateVersion: text(raw.stateVersion, serialized),
       lastUpdatedAt: isoDate(raw.lastUpdatedAt, output.lastUpdatedAt),
     };
@@ -1006,7 +1062,7 @@ function normalizeAuthoritative(
     matches,
     standings: authoritativeDrawingStandings(raw.standings),
     leaderboard: authoritativeLeaderboard(raw.leaderboard),
-    updates: authoritativeUpdates(raw.announcements ?? raw.updates),
+    updates: normalizedUpdates(raw, persistedUpdates),
   };
 }
 
@@ -1022,12 +1078,40 @@ function publicReaderRows(resource: string, value: unknown): unknown[] {
   return assertReaderResultWithinLimit(resource, value, PUBLIC_READER_ROW_LIMIT) as unknown[];
 }
 
+function isPublishedAnnouncement(value: unknown, now: Date): boolean {
+  const row = record(value);
+  if (text(row.status).toLowerCase() !== "published") return false;
+  const publishedAt = dateText(row.publishedAt);
+  if (!publishedAt) return false;
+  const publishedDate = new Date(publishedAt);
+  if (Number.isNaN(publishedDate.getTime()) || publishedDate > now) return false;
+  const startsAt = dateText(row.startsAt);
+  const endsAt = dateText(row.endsAt);
+  if (startsAt && new Date(startsAt) > now) return false;
+  if (endsAt && new Date(endsAt) <= now) return false;
+  return true;
+}
+
+async function readPublishedAnnouncements(eventId: string, now: Date): Promise<PublicV3Shared["updates"]> {
+  const rows = await callOptional("eventAnnouncement", "findMany", {
+    where: { eventId, status: "published" },
+    orderBy: [{ publishedAt: "desc" }, { id: "asc" }],
+    take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT),
+  });
+  return authoritativeUpdates(publicReaderRows("public.eventAnnouncements", rows).filter((value) => isPublishedAnnouncement(value, now)));
+}
+
 function compatibleMatch(value: unknown): CompatiblePublicMatch {
   const row = record(value);
   return {
     id: text(row.id, "TBD"),
     roundLabel: typeof row.roundLabel === "string" ? row.roundLabel : null,
     round: publicScore(row.round),
+    phaseId: typeof row.phaseId === "string" ? row.phaseId : null,
+    groupId: typeof row.groupId === "string" ? row.groupId : null,
+    groupNumber: publicScore(row.groupNumber),
+    ...(typeof row.isPlayoff === "boolean" ? { isPlayoff: row.isPlayoff } : {}),
+    bracket: publicBracketKind(row.bracket),
     homeTeamId: typeof row.homeTeamId === "string" ? row.homeTeamId : null,
     awayTeamId: typeof row.awayTeamId === "string" ? row.awayTeamId : null,
     homeScore: publicScore(row.homeScore),
@@ -1085,7 +1169,7 @@ function compatibleLeaderboardRows(
   return aggregateFlashpeakLeaderboard(source);
 }
 
-async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now: Date): Promise<CompatiblePublicEventInput> {
+async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now: Date, persistedUpdates: PublicV3Shared["updates"] = []): Promise<CompatiblePublicEventInput> {
   const eventId = text(event.id);
   const [teams, matches, registrations, completion, publication, players] = await Promise.all([
     callOptional("team", "findMany", { where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) }),
@@ -1121,6 +1205,7 @@ async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now
     viewer,
     now,
     teams: publicTeams,
+    announcements: persistedUpdates,
     matches: matchRows.map(compatibleMatch),
     registrations: registrationRows.map(compatibleRegistration),
     leaderboard: gameSlug === "flashpeak" ? compatibleLeaderboardRows(playerStats, playerRows, publicTeams, gameSlug) : [],
@@ -1155,6 +1240,7 @@ async function readPublicV3EventImpl(slug: string, viewer: PublicViewer, now = n
   const row = record(event);
   const status = text(row.status);
   if (!PUBLIC_STATUSES.has(status)) return null;
+  const persistedUpdates = await readPublishedAnnouncements(text(row.id), now);
   let authoritative: unknown = null;
   if (status === "Ongoing") authoritative = await readPublicOngoing(slug, now);
   else if (status === "Finished") authoritative = await readPublicFinished(slug);
@@ -1168,9 +1254,9 @@ async function readPublicV3EventImpl(slug: string, viewer: PublicViewer, now = n
   const snapshotTeams = ["registration", "drawing", "ongoing", "finished"].includes(authoritativeMode)
     ? teamsFromRaw(publicReaderRows("public.snapshot.teams", await callOptional("team", "findMany", { where: { eventId: text(row.id) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) })))
     : [];
-  const normalized = normalizeAuthoritative(row, authoritative, "authoritative", snapshotTeams);
+  const normalized = normalizeAuthoritative(row, authoritative, "authoritative", snapshotTeams, persistedUpdates);
   if (normalized) return normalized;
-  return projectCompatiblePublicV3Event(await compatibilitySnapshot(row, viewer, now));
+  return projectCompatiblePublicV3Event(await compatibilitySnapshot(row, viewer, now, persistedUpdates));
 }
 
 export function readPublicV3Event(slug: string, viewer: PublicViewer, now = new Date()): Promise<PublicV3EventViewModel | null> {

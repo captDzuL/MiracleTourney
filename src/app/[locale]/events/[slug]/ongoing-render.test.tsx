@@ -2,10 +2,10 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const boundary = vi.hoisted(() => ({ status: "Ongoing", adaptive: true, fail: false }));
+const boundary = vi.hoisted(() => ({ status: "Ongoing", adaptive: true, fail: false, sessionFail: false }));
 vi.stubGlobal("React", React);
 vi.mock("next-intl/server", () => ({ setRequestLocale: () => {} }));
-vi.mock("@/lib/auth/session", () => ({ getSessionUser: async () => null }));
+vi.mock("@/lib/auth/session", () => ({ getSessionUser: async () => { if (boundary.sessionFail) throw new Error("session unavailable"); return null; } }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: (flag: string) => flag === "adaptive_public_event_v3" ? boundary.adaptive : false }));
 vi.mock("@/lib/platform/repository", () => ({ getPublicEventBySlug: async () => ({ id: "e", status: boundary.status, name: "Cup", description: "Community </script> event", venue: "Online", organizerName: "Miracle Community", startsAt: "2026-09-12T09:00:00Z", prizePoolLabel: "Rp1.000.000", privateReason: "never public" }), getPublicEventSlugRedirect: async () => null }));
 vi.mock("../../../events/[slug]/event-detail-page", () => ({ renderEventDetailPage: () => "legacy" }));
@@ -14,7 +14,7 @@ vi.mock("@/components/v3/public-event/PublicV3EventPage", () => ({ PublicV3Event
 import Page from "./page";
 import { PublicV3EventPage } from "@/components/v3/public-event/PublicV3EventPage";
 
-beforeEach(() => { boundary.status = "Ongoing"; boundary.adaptive = true; boundary.fail = false; });
+beforeEach(() => { boundary.status = "Ongoing"; boundary.adaptive = true; boundary.fail = false; boundary.sessionFail = false; });
 
 it("selects the normalized V3 overview on the canonical localized route", async () => {
   const result = await Page({ params: Promise.resolve({ slug: "cup", locale: "id" }) });
@@ -48,4 +48,11 @@ it.each(["flag-off", "failure"] as const)("keeps the legacy renderer out of the 
   const result = await Page({ params: Promise.resolve({ slug: "cup", locale: "en" }) });
   if (reason === "flag-off") expect(result).toBe("legacy");
   else expect(React.isValidElement(result) && result.type === PublicV3EventPage).toBe(true);
+});
+
+it("continues as an anonymous public overview when the optional session read fails", async () => {
+  boundary.sessionFail = true;
+  const result = await Page({ params: Promise.resolve({ slug: "cup", locale: "en" }) });
+  const children = React.Children.toArray((result as React.ReactElement<{ children: React.ReactNode }>).props.children);
+  expect(children.some(child => React.isValidElement(child) && child.type === PublicV3EventPage)).toBe(true);
 });

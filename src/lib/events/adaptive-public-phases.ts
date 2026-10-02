@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/platform/db";
-import type { CompetitionGraph } from "@/lib/tournament/competition";
+import type { CompetitionGraph, CompetitionMatch } from "@/lib/tournament/competition";
 import { competitionProjection, type Standing } from "@/lib/tournament/operations/result-projection";
 import type { StoredSchedule } from "@/lib/tournament/operations/state";
 
@@ -13,6 +13,12 @@ export type AdaptivePhaseNavigation = {
 
 export type AdaptivePhaseMatch = {
   id: string;
+  round?: number;
+  phaseId?: string;
+  groupId?: string | null;
+  groupNumber?: number | null;
+  isPlayoff?: boolean;
+  bracket?: CompetitionMatch["bracket"];
   roundLabel: string;
   home: string | null;
   away: string | null;
@@ -49,6 +55,10 @@ export type AdaptivePhaseShared = {
 export type AdaptivePhaseStanding = {
   phaseId: string;
   groupId: string | null;
+  groupNumber?: number | null;
+  label?: string;
+  complete?: boolean;
+  qualificationCutline?: number | null;
   rows: Array<Standing & { name: string }>;
 };
 
@@ -186,6 +196,7 @@ function projectPublicContext(
   teams: { id: string; name: string }[],
 ): { matches: AdaptivePhaseMatch[]; standings: AdaptivePhaseStanding[] } {
   const names = new Map(teams.map((team) => [team.id, team.name]));
+  const groups = new Map(graph.groups.map((group) => [group.id, group]));
   const byId = new Map(rows.map((row) => [row.id, row]));
   const matches = graph.matches
     .filter((match) => match.status === "pending")
@@ -196,6 +207,14 @@ function projectPublicContext(
       const official = Boolean(row?.resultVersion);
       return {
         id: match.id,
+        round: match.round,
+        phaseId: match.phaseId,
+        groupId: match.groupId,
+        groupNumber: groups.get(match.groupId ?? "")?.sequence ?? null,
+        isPlayoff: graph.config.kind === "group_playoffs"
+          ? graph.phases.some((phase) => phase.id === match.phaseId && phase.kind !== "groups")
+          : graph.config.kind !== "round_robin",
+        bracket: match.bracket,
         roundLabel: `${match.bracket.replaceAll("_", " ")} · R${match.round}`,
         home: homeId ? names.get(homeId) ?? homeId : null,
         away: awayId ? names.get(awayId) ?? awayId : null,
@@ -211,6 +230,10 @@ function projectPublicContext(
   const standings = projection.standings.map((table) => ({
     phaseId: table.phaseId,
     groupId: table.groupId,
+    groupNumber: table.groupId ? groups.get(table.groupId)?.sequence ?? null : null,
+    label: table.groupId ? groups.get(table.groupId)?.label : undefined,
+    complete: table.complete,
+    qualificationCutline: table.groupId ? groups.get(table.groupId)?.qualificationCutline ?? null : null,
     rows: table.rows.map((row) => ({ ...row, name: names.get(row.teamId) ?? row.teamId })),
   }));
   return { matches, standings };
