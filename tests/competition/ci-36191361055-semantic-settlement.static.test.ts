@@ -124,6 +124,44 @@ function assertResultSettlement(source: string) {
   expect(result).not.toMatch(/waitForTimeout|\bretr(?:y|ies)\b|response\.(?:finished|text)\(\)|request(?:finished|failed)/);
 }
 
+function completionBlock(source: string) {
+  const startMarker = "await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/completion`);";
+  const start = source.indexOf(startMarker);
+  if (start < 0) throw new Error(`Unable to isolate contract block: ${startMarker}`);
+  return source.slice(start);
+}
+
+function assertCompletionSettlement(source: string) {
+  const completion = completionBlock(source);
+  expect(completion).toContain("const completionPath = `/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/completion`;");
+  expect(completion).toContain("await runAndSettleServerActionUi(page, {");
+  expect(completion).toContain("requestUrl.pathname === completionPath");
+  expect(completion).toContain('requestUrl.search === ""');
+  expect(completion).toContain('Boolean(request.headers()["next-action"])');
+  expect(completion).toContain('(request.postData() ?? "").includes(fixture.id)');
+  expect(completion).toContain('trigger: () => page.locator("[data-complete-tournament]").click(),');
+  expect(completion).toContain("uiReady: () => expectLocalizedText(page, copy.completionFeedback, copy.opposite.completionFeedback),");
+  expect(completion).toContain('await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", copy.completionStatus);');
+  expect(completion).toContain('expect.poll(async () => (await fixture.readState()).completion?.status).toBe("completed");');
+  expect(completion).toContain('expect(receipt.completion).toMatchObject({ status: "completed" });');
+  expect(completion).toContain("expect(receipt.completion?.id).toBeTruthy();");
+  expect(completion).toContain("expect(receipt.completion?.completedAt).toBeTruthy();");
+  expect(completion.indexOf("const completionPath =")).toBeLessThan(completion.indexOf("await runAndSettleServerActionUi(page, {"));
+  expect(completion.indexOf("await runAndSettleServerActionUi(page, {")).toBeLessThan(
+    completion.indexOf("uiReady: () => expectLocalizedText(page, copy.completionFeedback, copy.opposite.completionFeedback),"),
+  );
+  expect(completion.indexOf("uiReady: () => expectLocalizedText(page, copy.completionFeedback, copy.opposite.completionFeedback),")).toBeLessThan(
+    completion.indexOf('await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", copy.completionStatus);'),
+  );
+  expect(completion.indexOf('await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", copy.completionStatus);')).toBeLessThan(
+    completion.indexOf('expect.poll(async () => (await fixture.readState()).completion?.status).toBe("completed");'),
+  );
+  expect(completion.indexOf('expect.poll(async () => (await fixture.readState()).completion?.status).toBe("completed");')).toBeLessThan(
+    completion.indexOf('expect(receipt.completion).toMatchObject({ status: "completed" });'),
+  );
+  expect(completion).not.toMatch(/waitForTimeout|\bretr(?:y|ies)\b|response\.(?:finished|text)\(\)|request(?:finished|failed)/);
+}
+
 describe("CI 36191361055 semantic organizer settlement contracts", () => {
   it("settles QRIS publication on the exact response and localized success before the receipt", () => {
     assertQrisSettlement(partA);
@@ -131,6 +169,10 @@ describe("CI 36191361055 semantic organizer settlement contracts", () => {
 
   it("settles official-result submission on the exact response and mode-localized success before the receipt", () => {
     assertResultSettlement(partA);
+  });
+
+  it("settles Completion on the exact response and localized success before the receipt", () => {
+    assertCompletionSettlement(partA);
   });
 
   it("rejects QRIS settlement mutations", () => {
@@ -149,5 +191,21 @@ describe("CI 36191361055 semantic organizer settlement contracts", () => {
     expect(() => assertResultSettlement(partA.replace("requestUrl.pathname === resultPath && requestUrl.search === \"\"", "requestUrl.pathname === resultPath"))).toThrow();
     expect(() => assertResultSettlement(partA.replace("uiReady: () => expectLocalizedText(page, resultSaved, oppositeResultSaved),", "uiReady: () => undefined,"))).toThrow();
     expect(() => assertResultSettlement(partA.replace('resultVersion: 1, status: "Completed"', 'resultVersion: 0, status: "Completed"'))).toThrow();
+  });
+
+  it("rejects Completion settlement mutations", () => {
+    assertCompletionSettlement(partA);
+    expect(() => assertCompletionSettlement(partA.replace(
+      "const completionPath = `/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/completion`;\n  await runAndSettleServerActionUi(page, {",
+      'const completionPath = `/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/completion`;\n  await page.locator("[data-complete-tournament]").click();',
+    ))).toThrow();
+    expect(() => assertCompletionSettlement(partA.replace("requestUrl.pathname === completionPath\n      && requestUrl.search === \"\"", "requestUrl.pathname === completionPath"))).toThrow();
+    expect(() => assertCompletionSettlement(partA.replace('&& Boolean(request.headers()["next-action"])', ""))).toThrow();
+    expect(() => assertCompletionSettlement(partA.replace('(request.postData() ?? "").includes(fixture.id)', "true"))).toThrow();
+    expect(() => assertCompletionSettlement(partA.replace("uiReady: () => expectLocalizedText(page, copy.completionFeedback, copy.opposite.completionFeedback),", "uiReady: () => undefined,"))).toThrow();
+    expect(() => assertCompletionSettlement(partA.replace('await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", copy.completionStatus);', ""))).toThrow();
+    expect(() => assertCompletionSettlement(partA.replace('expect.poll(async () => (await fixture.readState()).completion?.status).toBe("completed");', ""))).toThrow();
+    expect(() => assertCompletionSettlement(partA.replace("expect(receipt.completion?.id).toBeTruthy();", ""))).toThrow();
+    expect(() => assertCompletionSettlement(partA.replace("expect(receipt.completion?.completedAt).toBeTruthy();", ""))).toThrow();
   });
 });
