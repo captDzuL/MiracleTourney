@@ -317,8 +317,9 @@ describe("instrumented organizer reader query budgets", () => {
     expect(small.calls).toHaveLength(scale.calls.length);
     expect(small.count).toBe(scale.count);
     expect(small.calls).not.toBe(scale.calls);
-    expect(scale.calls).toHaveLength(7);
+    expect(scale.calls).toHaveLength(9);
     for (const calls of [small.calls, scale.calls]) {
+      expect(calls.find(({ model, method }) => model === "eventAnnouncement" && method === "findMany")?.args).toMatchObject({ take: 501 });
       expect(calls.find(({ model, method }) => model === "team" && method === "findMany")?.args).toMatchObject({ take: 501 });
       expect(calls.find(({ model, method }) => model === "match" && method === "findMany")?.args).toMatchObject({ take: 501 });
       expect(calls.find(({ model, method }) => model === "certificate" && method === "findMany")?.args).toMatchObject({ take: 501 });
