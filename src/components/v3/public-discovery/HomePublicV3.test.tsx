@@ -137,6 +137,12 @@ describe("final homepage composition", () => {
     expect(html.includes("data-existing-shell")).toBe(expectedShell);
     expect((html.match(/<main/g) ?? []).length).toBe(1);
   });
+  it.each([["/events/live", true], ["/events/live/participants", false], ["/events/live/schedule", false], ["/events", false]] as const)("lets only the flagged event overview own the frame at %s", (pathname, ownsFrame) => {
+    dependencies.pathname = pathname;
+    const html = renderToStaticMarkup(<PublicHomepageShellBoundary enabled={false} eventOverviewEnabled shell={<main data-existing-shell>Existing route</main>}><main data-event-frame>Event overview</main></PublicHomepageShellBoundary>);
+    expect(html.includes("data-event-frame")).toBe(ownsFrame);
+    expect((html.match(/<main/g) ?? []).length).toBe(1);
+  });
   it("loads the deterministic discovery winner through the normalized reader", async () => {
     const html = renderToStaticMarkup(await HomePageContent({}));
     expect(dependencies.read).toHaveBeenCalledWith("live", null);

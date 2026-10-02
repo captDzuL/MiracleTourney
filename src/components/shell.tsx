@@ -13,7 +13,7 @@ import { PublicHomepageShellBoundary } from "@/components/v3/public-discovery/Pu
 import { OrganizerShellBoundary } from "@/components/v3/organizer/OrganizerShellBoundary";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  return <OrganizerShellBoundary enabled={isFeatureEnabled("organizer_master_shell_v3")} shell={<PublicHomepageShellBoundary enabled={isFeatureEnabled("public_discovery_v3")} shell={<ExistingAppShell>{children}</ExistingAppShell>}>{children}</PublicHomepageShellBoundary>}>{children}</OrganizerShellBoundary>;
+  return <OrganizerShellBoundary enabled={isFeatureEnabled("organizer_master_shell_v3")} shell={<PublicHomepageShellBoundary enabled={isFeatureEnabled("public_discovery_v3")} eventOverviewEnabled={isFeatureEnabled("adaptive_public_event_v3")} shell={<ExistingAppShell>{children}</ExistingAppShell>}>{children}</PublicHomepageShellBoundary>}>{children}</OrganizerShellBoundary>;
 }
 
 function ExistingAppShell({ children }: { children: React.ReactNode }) {

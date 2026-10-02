@@ -73,16 +73,15 @@ function assertAdaptiveLifecycleLoadBearing(source: string) {
   expect(countLiteral(source, "await page.goto(url);")).toBe(6);
   expect(countLiteral(source, "await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));")).toBe(5);
   expect(registration).toContain('await expect(page.getByRole("heading", { level: 1, name: `Public Lifecycle ${namespace}` })).toBeVisible();');
-  expect(countLiteral(registration, 'getByRole("region", { name: "Template bracket" })')).toBe(2);
-  expect(countLiteral(registration, 'getByText("TBD", { exact: true })).toHaveCount(4)')).toBe(2);
+  expect(countLiteral(registration, "page.locator('[data-bracket-state=\"tbd\"]')")).toBe(2);
   expect(countLiteral(registration, 'getByText(teams[0].name, { exact: true })).toHaveCount(0)')).toBe(2);
   expect(registration).toContain('await updateStatus(page, "Registration Closed");');
-  expect(registration).toContain('await expect(page.getByText("Drawing resmi", { exact: true })).toBeVisible();');
+  expect(registration).toContain('await expect(page.locator(\'[data-drawing-publication="published"]\')).toContainText("Drawing resmi sudah terbit");');
   expect(registration).toContain('await expect(page.getByText(teams[0].name, { exact: true }).first()).toBeVisible();');
   expect(registration).toContain('await expect(page.getByText(teams[1].name, { exact: true }).first()).toBeVisible();');
 
   expect(ongoing).toContain('await updateStatus(page, "Ongoing");');
-  expect(ongoing).toContain('await expect(page.getByText("Event berlangsung", { exact: true })).toBeVisible();');
+  expect(ongoing).toContain('await expect(page.getByText("Event sedang berlangsung", { exact: true })).toBeVisible();');
   expect(ongoing).toContain('await expect(page.getByRole("heading", { name: "Pertandingan berikutnya" })).toBeVisible();');
   expect(ongoing).toContain('expect(await prisma.match.count({ where: { eventId, resultVersion: 0 } })).toBe(0);');
   expect(ongoing).toContain("completionId = completion.id;");
@@ -94,9 +93,9 @@ function assertAdaptiveLifecycleLoadBearing(source: string) {
   expect(finished).toContain('await expect(page.getByRole("heading", { name: "Podium akhir" })).toBeVisible();');
   expect(finished).toContain('await expect(page.getByText(winner.name, { exact: true }).first()).toBeVisible();');
   expect(finished).toContain('await expect(page.getByText("2 - 0", { exact: true }).first()).toBeVisible();');
-  expect(finished).toContain('await expect(page.getByText(/Certificate sedang disiapkan organizer/)).toBeVisible();');
-  expect(finished).toContain('await expect(page.getByText("Tujuh certificate resmi telah diterbitkan.")).toBeVisible();');
-  expect(finished).toContain('await expect(page.getByRole("link", { name: /Lihat certificate/ })).toHaveCount(7);');
+  expect(finished).toContain('await expect(page.locator(\'[data-certificates="preparing"]\')).toContainText("Certificate sedang disiapkan organizer.");');
+  expect(finished).toContain('await expect(certificates.getByRole("link", { name: "Lihat certificate" })).toHaveCount(7);');
+  expect(finished).toContain('await expect(certificates.getByRole("link", { name: "Verifikasi" })).toHaveCount(7);');
 }
 
 function assertAdaptiveLifecycleOrdering(source: string) {
@@ -149,7 +148,7 @@ function assertAdaptiveLifecycleContract(source: string) {
   expect(bodyWithoutApprovedTimeouts).not.toMatch(/\btest\.(?:setTimeout|slow|skip|fixme)\s*\(/);
   expect(bodyWithoutApprovedTimeouts).not.toMatch(/\b(?:setTimeout|waitForTimeout|sleep)\s*\(/);
   expect(bodyWithoutApprovedTimeouts).not.toMatch(/\bretr(?:y|ies)\b|retries\s*:/i);
-  for (const marker of ["Template bracket", "Drawing resmi", "Event berlangsung", "Hasil akhir resmi"]) {
+  for (const marker of ["data-bracket-state=\"tbd\"", "Drawing resmi sudah terbit", "Event sedang berlangsung", "Hasil akhir resmi"]) {
     expect(source).toContain(marker);
   }
 
@@ -349,11 +348,11 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
     for (const removedAssertion of [
       "const url = `/id/events/${slug}`;",
       'await expect(page.getByRole("heading", { level: 1, name: `Public Lifecycle ${namespace}` })).toBeVisible();',
-      'await expect(template.getByText("TBD", { exact: true })).toHaveCount(4);',
-      'await expect(privateDrawing.getByText("TBD", { exact: true })).toHaveCount(4);',
+      "const template = page.locator('[data-bracket-state=\"tbd\"]');",
+      "const privateDrawing = page.locator('[data-bracket-state=\"tbd\"]');",
       'await updateStatus(page, "Registration Closed");',
-      'await expect(page.getByText("Drawing resmi", { exact: true })).toBeVisible();',
-      'await expect(page.getByText("Event berlangsung", { exact: true })).toBeVisible();',
+      'await expect(page.locator(\'[data-drawing-publication="published"]\')).toContainText("Drawing resmi sudah terbit");',
+      'await expect(page.getByText("Event sedang berlangsung", { exact: true })).toBeVisible();',
       'await expect(page.getByRole("heading", { name: "Pertandingan berikutnya" })).toBeVisible();',
       'expect(await prisma.match.count({ where: { eventId, resultVersion: 0 } })).toBe(0);',
       'await expect(page.getByText("Hasil akhir resmi", { exact: true })).toBeVisible();',
@@ -361,8 +360,8 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
       'await expect(page.getByText(teams[0].name, { exact: true }).first()).toBeVisible();',
       'await expect(page.getByText(teams[1].name, { exact: true }).first()).toBeVisible();',
       'await expect(page.getByText("2 - 0", { exact: true }).first()).toBeVisible();',
-      'await expect(page.getByText(/Certificate sedang disiapkan organizer/)).toBeVisible();',
-      'await expect(page.getByRole("link", { name: /Lihat certificate/ })).toHaveCount(7);',
+      'await expect(page.locator(\'[data-certificates="preparing"]\')).toContainText("Certificate sedang disiapkan organizer.");',
+      'await expect(certificates.getByRole("link", { name: "Lihat certificate" })).toHaveCount(7);',
     ]) {
       expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(removedAssertion, ""))).toThrow();
     }

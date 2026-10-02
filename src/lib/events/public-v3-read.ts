@@ -804,6 +804,19 @@ function authoritativeStream(value: unknown): { url: string; label: string; plat
   return url ? { url, label: text(row.label, "Live stream"), platform: text(row.platform, "external"), isLive: row.isLive === true } : null;
 }
 
+function authoritativeUpdates(value: unknown): PublicV3Shared["updates"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const row = record(entry);
+    const id = text(row.id);
+    const title = text(row.title);
+    const body = text(row.body);
+    const publishedAt = dateText(row.publishedAt);
+    if (!id || !title || !body || !publishedAt) return [];
+    return [{ id, title, body, publishedAt }];
+  });
+}
+
 function authoritativeLeaderboard(value: unknown): PublicV3LeaderboardEntry[] {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => {
@@ -873,7 +886,7 @@ function normalizeAuthoritative(
       viewerCta: viewer.cta,
     }, teams, source);
     if (output.mode !== "registration") return output;
-    return { ...output, viewer: { state: viewer.state, cta: viewer.cta } };
+    return { ...output, updates: authoritativeUpdates(raw.announcements ?? raw.updates), viewer: { state: viewer.state, cta: viewer.cta } };
   }
   if (mode === "drawing") {
     const matches = authoritativeMatches(raw.matches);
@@ -895,6 +908,7 @@ function normalizeAuthoritative(
       standings: authoritativeDrawingStandings(raw.standings),
       schedule: authoritativeDrawingSchedule(raw.schedule),
       leaderboard: authoritativeLeaderboard(raw.leaderboard),
+      updates: authoritativeUpdates(raw.announcements ?? raw.updates),
     };
   }
   if (mode === "ongoing") {
@@ -916,6 +930,7 @@ function normalizeAuthoritative(
       standings: authoritativeOngoingStandings(raw.standings),
       stream: authoritativeStream(raw.stream),
       leaderboard: authoritativeLeaderboard(raw.leaderboard),
+      updates: authoritativeUpdates(raw.announcements ?? raw.updates),
       stateVersion: text(raw.stateVersion, serialized),
       lastUpdatedAt: isoDate(raw.lastUpdatedAt, output.lastUpdatedAt),
     };
@@ -978,6 +993,7 @@ function normalizeAuthoritative(
     matches,
     standings: authoritativeDrawingStandings(raw.standings),
     leaderboard: authoritativeLeaderboard(raw.leaderboard),
+    updates: authoritativeUpdates(raw.announcements ?? raw.updates),
   };
 }
 

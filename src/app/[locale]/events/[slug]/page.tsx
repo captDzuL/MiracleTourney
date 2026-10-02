@@ -1,18 +1,13 @@
 import type { Metadata } from "next";
-import { getTranslations, setRequestLocale } from "next-intl/server";
+import { setRequestLocale } from "next-intl/server";
 import { permanentRedirect } from "next/navigation";
 
-import { AdaptiveRegistrationEventPage } from "@/components/v3/public-event/AdaptiveRegistrationEventPage";
-import { AdaptiveOngoingEventPage } from "@/components/v3/public-event/AdaptiveOngoingEventPage";
-import { AdaptivePhaseEventPage } from "@/components/v3/public-event/AdaptivePhaseEventPage";
-import { getPublicDrawingEvent, getPublicFinishedEvent } from "@/lib/events/adaptive-public-phases";
-import { getPublicOngoingEvent, publicOngoingEnabled } from "@/lib/events/public-ongoing";
-import type { AdaptiveEventCopy } from "@/components/v3/public-event/PublicEventHero";
+import { PublicV3EventPage } from "@/components/v3/public-event/PublicV3EventPage";
 import { getSessionUser } from "@/lib/auth/session";
-import { getAdaptivePublicEventViewWithRetry, shouldUseAdaptiveRegistrationRenderer } from "@/lib/events/adaptive-public-event";
+import { readPublicV3Event } from "@/lib/events/public-v3-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { serializeJsonLd } from "@/lib/seo/json-ld";
-import { getGameForEvent, getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
+import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
 import { renderEventDetailPage } from "../../../events/[slug]/event-detail-page";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
@@ -29,14 +24,8 @@ export async function generateMetadata({
 
   let ogImage = event.logoUrl ?? event.gameImageUrl;
   if (isFeatureEnabled("adaptive_public_event_v3")) {
-    const adaptive = await getAdaptivePublicEventViewWithRetry(slug, null).catch(() => null);
-    if (adaptive && shouldUseAdaptiveRegistrationRenderer({
-      enabled: true,
-      status: event.status,
-      availability: adaptive.registration.availability,
-    })) {
-      ogImage = adaptive.event.posterUrl ?? adaptive.event.logoUrl ?? undefined;
-    }
+    const view = await readPublicV3Event(slug, null).catch(() => null);
+    if (view) ogImage = view.identity.poster.eventUrl ?? view.identity.poster.gameImageUrl ?? view.identity.poster.logoUrl ?? undefined;
   }
 
   const title = event.name;
@@ -69,50 +58,6 @@ export async function generateMetadata({
   };
 }
 
-async function getAdaptiveCopy(locale: "id" | "en"): Promise<AdaptiveEventCopy> {
-  const t = await getTranslations({ locale, namespace: "adaptiveEvent" });
-  return {
-    registrationOpen: t("registrationOpen"),
-    registrationUpcoming: t("registrationUpcoming"),
-    registrationFull: t("registrationFull"),
-    registrationClosed: t("registrationClosed"),
-    organizedBy: t("organizedBy"),
-    verified: t("verified"),
-    share: t("share"),
-    startsAt: t("startsAt"),
-    timezone: t("timezone"),
-    venue: t("venue"),
-    prize: t("prize"),
-    slots: t("slots"),
-    summary: t("summary"),
-    participants: t("participants"),
-    requirements: t("requirements"),
-    organizer: t("organizer"),
-    registrationPeriod: t("registrationPeriod"),
-    opens: t("opens"),
-    closes: t("closes"),
-    capacity: t("capacity"),
-    activeTeams: t("activeTeams"),
-    pendingReview: t("pendingReview"),
-    remaining: t("remaining"),
-    fee: t("fee"),
-    feeFree: t("feeFree"),
-    feePaid: t("feePaid"),
-    roster: t("roster"),
-    rosterValue: t.raw("rosterValue"),
-    uidIgn: t("uidIgn"),
-    howToTitle: t("howToTitle"),
-    steps: t.raw("steps") as string[],
-    description: t("description"),
-    format: t("format"),
-    contact: t("contact"),
-    contactHint: t("contactHint"),
-    importantInfo: t("importantInfo"),
-    teamCount: t.raw("teamCount"),
-    publicTitle: t("publicTitle"),
-  };
-}
-
 export default async function LocalizedEventDetailPage({
   params,
 }: {
@@ -127,66 +72,30 @@ export default async function LocalizedEventDetailPage({
     if (redirectSlug) permanentRedirect(`/${locale}/events/${redirectSlug}`);
   }
 
-  if (event && isFeatureEnabled("adaptive_public_event_v3")) {
-    if (["Published", "Registration Closed"].includes(event.status)) {
-      const drawing = await getPublicDrawingEvent(slug).catch(() => null);
-      if (drawing) {
-        return <AdaptivePhaseEventPage view={drawing} locale={locale} />;
-      }
-    }
-    if (event.status === "Finished") {
-      const finished = await getPublicFinishedEvent(slug).catch(() => null);
-      if (finished) {
-        return <AdaptivePhaseEventPage view={finished} locale={locale} />;
-      }
-    }
-  }
-
-  if (event?.status === "Ongoing" && publicOngoingEnabled()) {
-    const ongoing = await getPublicOngoingEvent(slug).catch(() => null);
-    if (ongoing) {
-      const jsonLd = {
-        "@context": "https://schema.org",
-        "@type": "SportsEvent",
-        name: event.name,
-        description: event.description,
-        location: { "@type": "Place", name: event.venue },
-        organizer: { "@type": "Organization", name: event.organizerName ?? "Miracle League" },
-        sport: getGameForEvent(event).name,
-        ...(event.startsAt && event.startsAt !== "TBD" ? { startDate: event.startsAt } : {}),
-        ...(event.prizePoolLabel ? { prize: event.prizePoolLabel } : {}),
-      };
-      return <>
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
-        <AdaptiveOngoingEventPage view={ongoing} locale={locale} />
-      </>;
-    }
-  }
-
-  if (event && isFeatureEnabled("adaptive_public_event_v3") && ["Published", "Registration Closed"].includes(event.status)) {
+  if (event && isFeatureEnabled("adaptive_public_event_v3") && ["Published", "Registration Closed", "Ongoing", "Finished"].includes(event.status)) {
     const viewer = await getSessionUser();
-    const adaptive = await getAdaptivePublicEventViewWithRetry(slug, viewer).catch(() => null);
-    if (adaptive && shouldUseAdaptiveRegistrationRenderer({
-      enabled: true,
-      status: event.status,
-      availability: adaptive.registration.availability,
-    })) {
-      const copy = await getAdaptiveCopy(locale);
-      const jsonLd = {
-        "@context": "https://schema.org",
-        "@type": "SportsEvent",
-        name: adaptive.event.name,
-        description: adaptive.event.description,
-        startDate: adaptive.event.eventStartsAt,
-        location: { "@type": "Place", name: adaptive.event.venue },
-        organizer: { "@type": "Organization", name: adaptive.organizer.name },
-        sport: adaptive.event.gameName,
-        ...(adaptive.event.prize ? { prize: adaptive.event.prize } : {}),
-      };
-      return <>
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
-        <AdaptiveRegistrationEventPage view={adaptive} locale={locale} copy={copy} />
-      </>;
+    try {
+      const view = await readPublicV3Event(slug, viewer);
+      if (view) {
+        const jsonLd = {
+          "@context": "https://schema.org",
+          "@type": "SportsEvent",
+          name: view.identity.title,
+          description: view.identity.description,
+          location: { "@type": "Place", name: view.identity.facts.venue },
+          organizer: { "@type": "Organization", name: view.identity.organizer.name },
+          sport: view.identity.game.name,
+          ...(view.identity.facts.startsAt !== "TBD" ? { startDate: view.identity.facts.startsAt } : {}),
+          ...(view.identity.facts.prize ? { prize: view.identity.facts.prize } : {}),
+        };
+        return <>
+          <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
+          <PublicV3EventPage view={view} locale={locale} />
+        </>;
+      }
+      return <PublicV3EventPage view={null} locale={locale} error />;
+    } catch {
+      return <PublicV3EventPage view={null} locale={locale} error />;
     }
   }
 

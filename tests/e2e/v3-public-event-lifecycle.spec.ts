@@ -159,8 +159,8 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       await page.goto(url);
       await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));
       await expect(page.getByRole("heading", { level: 1, name: `Public Lifecycle ${namespace}` })).toBeVisible();
-      const template = page.getByRole("region", { name: "Template bracket" });
-      await expect(template.getByText("TBD", { exact: true })).toHaveCount(4);
+      const template = page.locator('[data-bracket-state="tbd"]');
+      await expect(template).toContainText("TBD");
       await expect(template.getByText(teams[0].name, { exact: true })).toHaveCount(0);
 
       await loginAsAdmin(page, "en");
@@ -173,15 +173,15 @@ test.describe.serial("Adaptive public event lifecycle", () => {
 
       await page.goto(url);
       await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));
-      const privateDrawing = page.getByRole("region", { name: "Template bracket" });
-      await expect(privateDrawing.getByText("TBD", { exact: true })).toHaveCount(4);
+      const privateDrawing = page.locator('[data-bracket-state="tbd"]');
+      await expect(privateDrawing).toContainText("TBD");
       await expect(privateDrawing.getByText(teams[0].name, { exact: true })).toHaveCount(0);
 
       await run({ kind: "drawing_publish" });
 
       await page.goto(url);
       await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));
-      await expect(page.getByText("Drawing resmi", { exact: true })).toBeVisible();
+      await expect(page.locator('[data-drawing-publication="published"]')).toContainText("Drawing resmi sudah terbit");
       await expect(page.getByText(teams[0].name, { exact: true }).first()).toBeVisible();
       await expect(page.getByText(teams[1].name, { exact: true }).first()).toBeVisible();
     });
@@ -208,7 +208,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       await updateStatus(page, "Ongoing");
       await page.goto(url);
       await expect(page).toHaveURL(new RegExp(`/id/events/${slug}$`));
-      await expect(page.getByText("Event berlangsung", { exact: true })).toBeVisible();
+      await expect(page.getByText("Event sedang berlangsung", { exact: true })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Pertandingan berikutnya" })).toBeVisible();
 
       for (let wave = 0; wave < 4; wave += 1) {
@@ -293,7 +293,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       await expect(page.getByRole("heading", { name: "Podium akhir" })).toBeVisible();
       await expect(page.getByText(winner.name, { exact: true }).first()).toBeVisible();
       await expect(page.getByText("2 - 0", { exact: true }).first()).toBeVisible();
-      await expect(page.getByText(/Certificate sedang disiapkan organizer/)).toBeVisible();
+      await expect(page.locator('[data-certificates="preparing"]')).toContainText("Certificate sedang disiapkan organizer.");
 
       const certificateTypes = ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"] as const;
       const certificateIds = certificateTypes.map((type) => `${eventId}-certificate-${type}`);
@@ -337,8 +337,10 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       });
 
       await page.goto(url);
-      await expect(page.getByText("Tujuh certificate resmi telah diterbitkan.")).toBeVisible();
-      await expect(page.getByRole("link", { name: /Lihat certificate/ })).toHaveCount(7);
+      const certificates = page.locator('[data-certificates="published"]');
+      await expect(certificates).toContainText("Certificate lengkap telah diterbitkan.");
+      await expect(certificates.getByRole("link", { name: "Lihat certificate" })).toHaveCount(7);
+      await expect(certificates.getByRole("link", { name: "Verifikasi" })).toHaveCount(7);
     });
   });
 });
