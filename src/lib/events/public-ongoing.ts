@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/platform/db";
 import { isFeatureEnabled } from "@/lib/feature-flags";
+import { findGameConfig } from "@/lib/platform/config";
+import { aggregateFlashpeakLeaderboard } from "@/lib/player-stats/flashpeak";
 import type { CompetitionGraph } from "@/lib/tournament/competition/types";
 import { competitionProjection } from "@/lib/tournament/operations/result-projection";
 import type { StoredSchedule } from "@/lib/tournament/operations/state";
@@ -31,7 +33,7 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
   return prisma.$transaction(async tx => {
     const event = await tx.event.findFirst({ where: { slug, status: "Ongoing" }, include: { stream: true } });
     if (!event) return null;
-    const [phase, matches, teams, announcements, revision, preceding] = await Promise.all([
+    const [phase, matches, teams, announcements, revision, preceding, players] = await Promise.all([
       tx.competitionPhase.findFirst({ where: { eventId: event.id, sequence: 1, status: "active" } }),
       tx.match.findMany({ where: { eventId: event.id }, orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }] }),
       tx.team.findMany({ where: { eventId: event.id }, select: { id: true, name: true } }),
@@ -40,6 +42,7 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
       event.publishedScheduleVersion == null
         ? Promise.resolve([])
         : tx.scheduleRevision.findMany({ where: { eventId: event.id, version: { lt: event.publishedScheduleVersion }, status: "published" }, orderBy: { version: "desc" }, take: 1, select: { version: true, snapshot: true } }),
+      tx.player.findMany({ where: { eventId: event.id }, select: { id: true, displayName: true, nickname: true, teamId: true, position: true } }),
     ]);
     const graph = (phase?.configuration as unknown as { graph?: CompetitionGraph } | null)?.graph;
     if (!graph || graph.eventId !== event.id) return null;
@@ -47,6 +50,28 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
     const previous = preceding.sort((a, b) => b.version - a.version)[0]?.snapshot as unknown as StoredSchedule | undefined;
     const assignments = new Map(snapshot?.draft.assignments.map(a => [a.matchId, a]));
     const names = new Map(teams.map(t => [t.id, t.name ?? t.id]));
+    const game = findGameConfig(event.gameId);
+    const playerById = new Map(players.map(player => [player.id, player]));
+    const playerIds = players.map(player => player.id);
+    const playerStats = game?.slug === "flashpeak" && playerIds.length
+      ? await tx.playerStat.findMany({ where: { gameSlug: game.slug, playerId: { in: playerIds } } })
+      : [];
+    const leaderboard = game?.slug === "flashpeak"
+      ? aggregateFlashpeakLeaderboard(playerStats.map(stat => {
+        const player = playerById.get(stat.playerId);
+        const teamId = stat.teamId || player?.teamId || "";
+        return {
+          matchId: stat.matchId,
+          playerId: stat.playerId,
+          playerName: stat.playerName || player?.displayName || stat.playerId,
+          nickname: player?.nickname || stat.playerName || player?.displayName || stat.playerId,
+          teamId,
+          teamName: names.get(teamId) ?? teamId,
+          position: stat.position || player?.position || "",
+          stats: stat.stats,
+        };
+      }))
+      : [];
     const nodes = new Map(graph.matches.filter(m => m.status === "pending").map(m => [m.id, m]));
     const publicMatches: PublicOngoingMatch[] = matches.filter(m => nodes.has(m.id)).map(m => {
       const node = nodes.get(m.id)!;
@@ -72,6 +97,7 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
       recentResults: publicMatches.filter(m => m.resultVersion > 0).sort((a, b) => (b.confirmedAt ?? "").localeCompare(a.confirmedAt ?? "") || a.id.localeCompare(b.id)).slice(0, 12),
       schedule: revision ? { version: revision.version, publishedAt: revision.publishedAt?.toISOString() ?? null, changes: publishedChanges(snapshot?.draft.assignments ?? [], previous?.draft.assignments ?? null) } : null,
       standings: competitionProjection(graph, matches).standings.map(table => { const group = graph.groups.find(g => g.id === table.groupId); return { ...table, label: group?.label ?? "", groupNumber: group?.sequence ?? null, qualificationCutline: group?.qualificationCutline ?? null, rows: table.rows.map(row => ({ ...row, name: names.get(row.teamId) ?? row.teamId })) }; }),
+      leaderboard,
       announcements: activeAnnouncements, stream, leaderboardHref: `/events/${encodeURIComponent(event.slug)}/leaderboards`,
       lastUpdatedAt: new Date(Math.max(0, ...updatedTimes.map(d => d.getTime()))).toISOString(),
     };

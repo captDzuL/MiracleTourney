@@ -7,7 +7,7 @@ import { prisma } from "@/lib/platform/db";
 import { readPublicRegistration } from "./public-registration";
 import { readPublicDrawing } from "./public-drawing";
 import { readPublicFinished } from "./public-finished";
-import { readFlashpeakStatPayload } from "@/lib/player-stats/flashpeak";
+import { aggregateFlashpeakLeaderboard, readFlashpeakStatPayload } from "@/lib/player-stats/flashpeak";
 import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
 import { withServerActionLog } from "@/lib/observability/logger";
 import { publicV3LocalizedHref, publicV3RouteTargets, publicV3RouteTarget } from "./public-v3-types";
@@ -296,7 +296,13 @@ function tbdSlots(matches: PublicV3Match[]): PublicV3BracketSlot[] {
 function leaderboardFor(input: CompatiblePublicEventInput): PublicV3LeaderboardEntry[] {
   const rows = Array.isArray(input.leaderboard) ? input.leaderboard : [];
   return rows.map((row) => {
-    const stats = readFlashpeakStatPayload(row.stats);
+    const stats = readFlashpeakStatPayload(row.stats ?? {
+      scores: row.score === null || row.score === undefined ? [] : [row.score],
+      goal: row.goal,
+      assist: row.assist,
+      passing: row.passing,
+      defense: row.defense,
+    });
     const validScores = stats.scores.filter((score): score is number => score !== null);
     return {
       playerId: text(row.playerId),
@@ -558,14 +564,15 @@ function finishedInput(event: CompatiblePublicEventRecord, input: CompatiblePubl
   const completion = input.completion;
   const rows = certificateRows(input, completion);
   const byType = new Map(rows.items.map((certificate) => [certificate.type, certificate]));
-  const podiumRows = completion?.podiumPlacements ?? completion?.podium ?? [];
+  const completionCompleted = completion?.status === "completed";
+  const podiumRows = completionCompleted ? completion?.podiumPlacements ?? completion?.podium ?? [] : [];
   const podium = podiumRows.map((placement) => ({
     rank: placement.rank,
     teamId: placement.teamId,
     teamName: placement.teamName,
     certificate: byType.get(placement.rank === 1 ? "champion" : placement.rank === 2 ? "runner_up" : "third_place") ?? null,
   }));
-  const awards = rows.state.isComplete
+  const awards = completionCompleted
     ? (completion?.awards ?? []).flatMap((award) => {
       if (!AWARD_ORDER.includes(award.type as (typeof AWARD_ORDER)[number]) || award.status !== "approved" || !award.decision) return [];
       return [{
@@ -821,7 +828,13 @@ function authoritativeLeaderboard(value: unknown): PublicV3LeaderboardEntry[] {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => {
     const row = record(entry);
-    const stats = readFlashpeakStatPayload(row.stats);
+    const stats = readFlashpeakStatPayload(row.stats ?? {
+      scores: row.score === null || row.score === undefined ? [] : [row.score],
+      goal: row.goal,
+      assist: row.assist,
+      passing: row.passing,
+      defense: row.defense,
+    });
     const validScores = stats.scores.filter((score): score is number => score !== null);
     return {
       playerId: text(row.playerId),
@@ -989,7 +1002,7 @@ function normalizeAuthoritative(
       items: visibleCertificates,
     },
     podium: podiumWithCertificates.map((entry) => ({ ...entry, certificate: complete ? certificateByType.get(entry.certificate?.type ?? "") ?? null : null })),
-    awards: complete ? awardsWithCertificates.map((entry) => ({ ...entry, certificate: certificateByType.get(entry.type) ?? null })) : [],
+    awards: awardsWithCertificates.map((entry) => ({ ...entry, certificate: complete ? certificateByType.get(entry.type) ?? null : null })),
     matches,
     standings: authoritativeDrawingStandings(raw.standings),
     leaderboard: authoritativeLeaderboard(raw.leaderboard),
@@ -1039,14 +1052,48 @@ function compatibleRegistration(value: unknown): NonNullable<CompatiblePublicEve
   };
 }
 
+function compatibleLeaderboardRows(
+  values: unknown,
+  players: unknown,
+  teams: CompatiblePublicTeam[],
+  gameSlug: string,
+): NonNullable<CompatiblePublicEventInput["leaderboard"]> {
+  const playerById = new Map(publicReaderRows("public.compatibility.players", players).map((value) => {
+    const row = record(value);
+    const id = text(row.id);
+    return [id, row] as const;
+  }).filter(([id]) => Boolean(id)));
+  const teamNames = new Map(teams.map((team) => [team.id, team.name]));
+  const source = publicReaderRows("public.compatibility.playerStats", values).flatMap((value) => {
+    const row = record(value);
+    const playerId = text(row.playerId);
+    const player = playerById.get(playerId);
+    const rowGameSlug = text(row.gameSlug);
+    if (!playerId || rowGameSlug !== gameSlug) return [];
+    const teamId = text(row.teamId, text(player?.teamId));
+    return [{
+      matchId: text(row.matchId, "unknown-match"),
+      playerId,
+      playerName: text(row.playerName, text(player?.displayName, playerId)),
+      nickname: text(player?.nickname, text(row.playerName, playerId)),
+      teamId,
+      teamName: teamNames.get(teamId) ?? teamId,
+      position: text(row.position, text(player?.position)),
+      stats: row.stats,
+    }];
+  });
+  return aggregateFlashpeakLeaderboard(source);
+}
+
 async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now: Date): Promise<CompatiblePublicEventInput> {
   const eventId = text(event.id);
-  const [teams, matches, registrations, completion, publication] = await Promise.all([
+  const [teams, matches, registrations, completion, publication, players] = await Promise.all([
     callOptional("team", "findMany", { where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) }),
     callOptional("match", "findMany", { where: { eventId }, orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }], take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) }),
     callOptional("teamRegistrationRequest", "findMany", { where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) }),
     callOptional("tournamentCompletion", "findUnique", { where: { eventId }, include: { podiumPlacements: { orderBy: { rank: "asc" }, take: 3 }, awards: { include: { decision: true }, orderBy: { type: "asc" }, take: AWARD_ORDER.length } } }),
     callOptional("certificatePublication", "findFirst", { where: { eventId }, orderBy: { version: "desc" } }),
+    callOptional("player", "findMany", { where: { eventId }, select: { id: true, displayName: true, nickname: true, teamId: true, position: true }, take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) }),
   ]);
   const publicationRecord = record(publication);
   const rawCertificateIds = publicationRecord.certificateIds;
@@ -1062,13 +1109,21 @@ async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now
   const matchRows = publicReaderRows("public.compatibility.matches", matches);
   const registrationRows = publicReaderRows("public.compatibility.registrations", registrations);
   const certificateRows = publicReaderRows("public.compatibility.certificates", certificates);
+  const publicTeams = teamsFromRaw(teamRows);
+  const gameSlug = findGameConfig(text(event.gameId))?.slug;
+  const playerRows = publicReaderRows("public.compatibility.players", players);
+  const playerIds = playerRows.map((value) => text(record(value).id)).filter(Boolean);
+  const playerStats = gameSlug && playerIds.length
+    ? await callOptional("playerStat", "findMany", { where: { gameSlug, playerId: { in: playerIds } }, take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) })
+    : null;
   return {
     event: identityEvent(event),
     viewer,
     now,
-    teams: teamsFromRaw(teamRows),
+    teams: publicTeams,
     matches: matchRows.map(compatibleMatch),
     registrations: registrationRows.map(compatibleRegistration),
+    leaderboard: gameSlug ? compatibleLeaderboardRows(playerStats, playerRows, publicTeams, gameSlug) : [],
     completion: completion && typeof completion === "object" ? completion as CompatiblePublicEventInput["completion"] : null,
     publication: publication && typeof publication === "object" ? publication as CompatiblePublicEventInput["publication"] : null,
     certificates: certificateRows.flatMap((value) => {

@@ -53,6 +53,29 @@ const copy = {
   },
 } as const;
 
+const statusExplanationCopy = {
+  id: {
+    "registration.authoritative": "Detail pendaftaran resmi tersedia.",
+    "registration.compatible": "Detail pendaftaran tersedia dari data event tersimpan.",
+    "drawing.authoritative": "Drawing resmi telah diterbitkan.",
+    "drawing.compatible": "Drawing resmi belum diterbitkan.",
+    "ongoing.authoritative": "Event sedang berlangsung dengan jadwal dan hasil resmi.",
+    "ongoing.compatible": "Event sedang berlangsung menggunakan jadwal dan hasil tersimpan terbaru.",
+    "finished.authoritative": "Event selesai dengan hasil resmi dan penghargaan yang telah diterbitkan.",
+    "finished.compatible": "Event selesai; penghargaan ditampilkan setelah publikasinya diverifikasi.",
+  },
+  en: {
+    "registration.authoritative": "Official registration details are available.",
+    "registration.compatible": "Registration details are available from saved event data.",
+    "drawing.authoritative": "The official drawing is published.",
+    "drawing.compatible": "The drawing is not yet officially published.",
+    "ongoing.authoritative": "The event is in progress with official schedule and results.",
+    "ongoing.compatible": "The event is in progress using the latest saved schedule and results.",
+    "finished.authoritative": "The event is complete with official results and published awards.",
+    "finished.compatible": "The event is complete; awards appear after publication is verified.",
+  },
+} as const;
+
 function phaseLabel(view: PublicV3EventViewModel, locale: PublicV3Locale) {
   return copy[locale][view.mode];
 }
@@ -115,6 +138,10 @@ function posterUrl(view: PublicV3EventViewModel) {
   return view.identity.poster.eventUrl ?? view.identity.poster.gameImageUrl ?? view.identity.poster.logoUrl;
 }
 
+function statusExplanation(view: PublicV3EventViewModel, locale: PublicV3Locale) {
+  return statusExplanationCopy[locale][view.statusExplanationKey as keyof typeof statusExplanationCopy[typeof locale]] ?? view.statusExplanation;
+}
+
 export function PublicV3EventHero({ view, locale }: { view: PublicV3EventViewModel; locale: PublicV3Locale }) {
   const t = copy[locale];
   const identity = view.identity;
@@ -138,7 +165,7 @@ export function PublicV3EventHero({ view, locale }: { view: PublicV3EventViewMod
         </div>
         <h1>{identity.title}</h1>
         <p className="mpv3-home-description">{identity.description || t.overview}</p>
-        <p className="mt-4 max-w-xl text-xs leading-6 text-[var(--mpv3-muted)]" data-status-explanation>{view.statusExplanation}</p>
+        <p className="mt-4 max-w-xl text-xs leading-6 text-[var(--mpv3-muted)]" data-status-explanation>{statusExplanation(view, locale)}</p>
         <div className="mpv3-actions mt-6" data-event-actions>
           {heroAction(view, locale)}
           <PublicV3Action href={identity.routes.participants.hrefByLocale[locale]} variant="text">{locale === "id" ? "Peserta" : "Participants"}</PublicV3Action>

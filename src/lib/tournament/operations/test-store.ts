@@ -11,6 +11,7 @@ export function operationStore() {
     competitionPhase: [], competitionGroup: [], competitionGroupMember: [], match: [], matchDependency: [],
     matchReadiness: [], matchResultRevision: [], competitionAuditLog: [], competitionActionItem: [],
     competitionIncident: [], scheduleRevision: [], eventAnnouncement: [], matchGame: [], eventRoundConfig: [],
+    player: [], playerStat: [],
     tournamentCompletion: [],
   };
   let failTable: string | undefined;

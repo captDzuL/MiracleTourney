@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   eventFindUnique: vi.fn(),
+  playerFindMany: vi.fn(),
+  playerStatFindMany: vi.fn(),
   registration: vi.fn(),
   drawing: vi.fn(),
   ongoing: vi.fn(),
@@ -9,7 +11,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/platform/db", () => ({
-  prisma: { event: { findUnique: mocks.eventFindUnique } },
+  prisma: {
+    event: { findUnique: mocks.eventFindUnique },
+    player: { findMany: mocks.playerFindMany },
+    playerStat: { findMany: mocks.playerStatFindMany },
+  },
 }));
 vi.mock("./public-registration", () => ({ readPublicRegistration: mocks.registration }));
 vi.mock("./public-drawing", () => ({ readPublicDrawing: mocks.drawing }));
@@ -50,6 +56,8 @@ const viewer = { id: "captain-1", email: "captain@example.test", name: "Captain"
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.eventFindUnique.mockResolvedValue(baseEvent);
+  mocks.playerFindMany.mockResolvedValue([]);
+  mocks.playerStatFindMany.mockResolvedValue([]);
   for (const reader of [mocks.registration, mocks.drawing, mocks.ongoing, mocks.finished]) reader.mockResolvedValue(null);
 });
 
@@ -115,7 +123,7 @@ describe("normalized public V3 event reader", () => {
     if (view.mode !== "finished") throw new Error("Expected finished projection");
     expect(view.certificates).toMatchObject({ status: "preparing", publishedCount: 0, expectedCount: 7, isCurrent: false, isComplete: false });
     expect(view.podium[0]?.certificate).toBeNull();
-    expect(view.awards).toEqual([]);
+    expect(view.awards).toMatchObject([{ type: "mvp", recipientId: "p1", certificate: null }]);
   });
 
   it("returns null for an unknown slug without trying any lifecycle reader", async () => {
@@ -170,6 +178,7 @@ describe("normalized public V3 event reader", () => {
       liveMatches: [], nextMatches: [], recentResults: [],
       schedule: { version: 2, publishedAt: "2026-09-19T12:00:00.000Z", changes: [] },
       standings: [{ phaseId: "phase-1", groupId: null, groupNumber: null, label: "Final", complete: true, qualificationCutline: null, rows: [{ teamId: "team-a", name: "Alpha" }] }],
+      leaderboard: [{ playerId: "p1", playerName: "Nyx", nickname: "Nyx", teamId: "team-a", teamName: "Alpha", position: "Forward", game: 1, score: 8, goal: 2, assist: 1, passing: 3, defense: 4 }],
       stream: null, stateVersion: "state-1", lastUpdatedAt: "2026-09-20T04:01:00.000Z",
     });
 
@@ -178,8 +187,20 @@ describe("normalized public V3 event reader", () => {
     if (view?.mode !== "ongoing") throw new Error("Expected ongoing projection");
     expect(view.matches[0]).toMatchObject({ id: "match-1", roundLabel: "Round 2", home: "Alpha", away: "Beta", status: "completed", homeScore: 2, awayScore: 1, end: "2026-09-20T04:00:00.000Z", official: true });
     expect(view.recentResults[0]?.id).toBe("match-1");
+    expect(view.leaderboard[0]).toMatchObject({ playerId: "p1", score: 8, goal: 2, assist: 1, passing: 3, defense: 4 });
     expect(view.schedule).toEqual({ version: 2, publishedAt: "2026-09-19T12:00:00.000Z", changes: [] });
     expect(view.standings[0]).toMatchObject({ phaseId: "phase-1", rows: [{ teamId: "team-a", name: "Alpha" }] });
+  });
+
+  it("loads persisted player statistics for a compatible ongoing overview", async () => {
+    mocks.ongoing.mockResolvedValue(null);
+    mocks.playerFindMany.mockResolvedValue([{ id: "p1", displayName: "Nyx", nickname: "Nyx", teamId: "team-a", position: "Forward" }]);
+    mocks.playerStatFindMany.mockResolvedValue([{ matchId: "match-1", playerId: "p1", playerName: "Nyx", teamId: "team-a", position: "Forward", gameSlug: "flashpeak", stats: { scores: [8], goal: 2, assist: 1, passing: 3, defense: 4 } }]);
+
+    const view = await readPublicV3Event("miracle-cup", viewer);
+
+    if (view?.mode !== "ongoing") throw new Error("Expected ongoing projection");
+    expect(view.leaderboard).toMatchObject([{ playerId: "p1", nickname: "Nyx", game: 1, score: 8, goal: 2, assist: 1, passing: 3, defense: 4 }]);
   });
 
   it("propagates authoritative and event read failures", async () => {
@@ -220,6 +241,24 @@ describe("normalized public V3 event reader", () => {
     expect(view.certificates.items).toHaveLength(7);
     expect(view.podium[0]?.certificate).toMatchObject({ type: "champion", publishedUrl: "https://cert/1", verificationCode: "CERT-1" });
     expect(view.awards[0]?.certificate).toMatchObject({ type: "mvp", publishedUrl: "https://cert/4", verificationCode: "CERT-4" });
+  });
+
+  it("keeps authoritative approved awards visible while certificate links are preparing", async () => {
+    mocks.eventFindUnique.mockResolvedValue({ ...baseEvent, status: "Finished" });
+    mocks.finished.mockResolvedValue({
+      mode: "finished",
+      event: { id: "event-1", slug: "miracle-cup", name: "Miracle Cup", description: "A public event", timezone: "Asia/Jakarta", format: "single_elimination" },
+      certificates: { status: "preparing", publishedCount: 0, expectedCount: 7 },
+      podium: [{ rank: 1, teamId: "team-a", teamName: "Alpha", certificate: null }],
+      awards: [{ type: "mvp", recipientId: "p1", recipientName: "Nyx", teamId: "team-a", teamName: "Alpha", reason: null, certificate: null }],
+      matches: [], standings: [],
+    });
+
+    const view = await readPublicV3Event("miracle-cup", viewer);
+
+    if (view?.mode !== "finished") throw new Error("Expected finished projection");
+    expect(view.awards).toMatchObject([{ type: "mvp", recipientId: "p1", certificate: null }]);
+    expect(view.certificates.items).toEqual([]);
   });
 
   it("routes closed legacy registration to compatible drawing without invoking a registration projection", async () => {
@@ -264,7 +303,7 @@ describe("normalized public V3 event reader", () => {
     expect(view.matches[0]).toMatchObject({ homeScore: null, awayScore: null });
   });
 
-  it("requires every certificate record to match the current publication before exposing awards", () => {
+  it("hides certificate links when any record misses the current publication", () => {
     const certificateTypes = ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"];
     const view = projectCompatiblePublicV3Event({
       event: { ...baseEvent, status: "Finished" },
@@ -292,10 +331,10 @@ describe("normalized public V3 event reader", () => {
     if (view.mode !== "finished") throw new Error("Expected finished projection");
     expect(view.certificates).toMatchObject({ status: "preparing", isCurrent: true, isComplete: false, publishedCount: 0 });
     expect(view.certificates.items).toEqual([]);
-    expect(view.awards).toEqual([]);
+    expect(view.awards).toMatchObject([{ type: "mvp", recipientId: "p1", certificate: null }]);
   });
 
-  it("exposes compatible awards and certificates only for a complete current publication", () => {
+  it("exposes compatible certificate links only for a complete current publication", () => {
     const certificateTypes = ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"];
     const view = projectCompatiblePublicV3Event({
       event: { ...baseEvent, status: "Finished" },
@@ -383,6 +422,7 @@ describe("normalized public V3 event reader", () => {
     if (view.mode !== "finished") throw new Error("Expected finished projection");
     expect(view.certificates).toMatchObject({ status: "preparing", isCurrent: false, isComplete: false, publishedCount: 0 });
     expect(view.certificates.items).toEqual([]);
+    expect(view.podium).toEqual([]);
     expect(view.awards).toEqual([]);
   });
 });

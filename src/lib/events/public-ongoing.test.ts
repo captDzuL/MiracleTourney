@@ -12,7 +12,7 @@ describe("sanitized ongoing public state", () => {
   const now = new Date("2026-09-12T03:00:00Z");
   beforeEach(async () => {
     store = operationStore(); boundary.db = store.db; boundary.flags = true;
-    await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { slug: "cup", name: "Cup", status: "Ongoing", timezone: "Asia/Jakarta", updatedAt: now } }); });
+    await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { slug: "cup", name: "Cup", gameId: "game-flashpeak", status: "Ongoing", timezone: "Asia/Jakarta", updatedAt: now } }); });
     await createCompetitionOperations(store.db, undefined, { allowInternalInitialize: true }).execute({ eventId: "event", actor: { id: "owner", role: "organizer" }, expectedVersion: 0, idempotencyKey: "init", command: { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] } });
   });
   it("does not infer LIVE from the clock or expose draft schedules or private fields", async () => {
@@ -83,6 +83,15 @@ describe("sanitized ongoing public state", () => {
     expect(corrected?.recentResults[0]).toMatchObject({ homeScore: 2, awayScore: 0, resultVersion: 2 });
     expect(corrected?.stateVersion).not.toBe(live?.stateVersion);
     expect(JSON.stringify(corrected)).not.toContain("secretPlayerStats");
+  });
+  it("includes persisted approved player statistics in the public leaderboard", async () => {
+    const matchId = String(store.rows("match")[0].id);
+    store.seed("player", { id: "player-a", eventId: "event", teamId: "a", displayName: "Ari", nickname: "Ari", position: "Forward" });
+    store.seed("playerStat", { id: "stat-a", matchId, playerId: "player-a", playerName: "Ari", teamId: "a", position: "Forward", gameSlug: "flashpeak", stats: { scores: [8], goal: 2, assist: 1, passing: 3, defense: 4 } });
+
+    const view = await getPublicOngoingEvent("cup", now);
+
+    expect(view?.leaderboard).toMatchObject([{ playerId: "player-a", nickname: "Ari", game: 1, score: 8, goal: 2, assist: 1, passing: 3, defense: 4 }]);
   });
   it("keeps a live overrun estimate private until explicit schedule publication", async () => {
     const service = createCompetitionOperations(store.db, () => now, { allowInternalInitialize: true }); let sequence = 0;

@@ -35,6 +35,13 @@ it("uses the same V3 overview for finished and compatible events", async () => {
   expect(children.some(child => React.isValidElement(child) && child.type === PublicV3EventPage)).toBe(true);
 });
 
+it.each(["Published", "Registration Closed"] as const)("uses the same V3 overview for %s events", async status => {
+  boundary.status = status;
+  const result = await Page({ params: Promise.resolve({ slug: "cup", locale: "id" }) });
+  const children = React.Children.toArray((result as React.ReactElement<{ children: React.ReactNode }>).props.children);
+  expect(children.some(child => React.isValidElement(child) && child.type === PublicV3EventPage)).toBe(true);
+});
+
 it.each(["flag-off", "failure"] as const)("keeps the legacy renderer out of the adaptive path for %s", async reason => {
   if (reason === "flag-off") boundary.adaptive = false;
   else boundary.fail = true;

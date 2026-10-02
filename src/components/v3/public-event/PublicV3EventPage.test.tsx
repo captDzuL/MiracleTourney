@@ -78,7 +78,10 @@ describe("public V3 event overview route", () => {
   it("keeps a compatible ongoing event truthful when the V3 graph is absent", () => {
     const html = renderToStaticMarkup(<PublicV3EventPage view={view("ongoing", "compatible")} locale="id" />);
     expect(html).toContain('data-public-source="compatible"');
-    expect(html).toContain("The event is in progress using the latest saved schedule and results.");
+    expect(html).toContain("Event sedang berlangsung menggunakan jadwal dan hasil tersimpan terbaru.");
+    expect(html).not.toContain("The event is in progress using the latest saved schedule and results.");
+    const englishHtml = renderToStaticMarkup(<PublicV3EventPage view={view("ongoing", "compatible")} locale="en" />);
+    expect(englishHtml).toContain("The event is in progress using the latest saved schedule and results.");
     expect(html).toContain("Belum ada pertandingan live");
     expect(html).not.toContain("Grand Final");
     expect(html).not.toContain("North Force");

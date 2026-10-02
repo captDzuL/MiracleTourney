@@ -1,5 +1,6 @@
 import type { Standing } from "@/lib/tournament/operations/result-projection";
 import type { CompetitionMatch } from "@/lib/tournament/competition/types";
+import type { PublicV3LeaderboardEntry } from "./public-v3-types";
 
 export type PublicOngoingMatch = {
   id: string; home: string | null; away: string | null; round: number;
@@ -14,6 +15,7 @@ export type PublicOngoingEventViewModel = {
   matches: PublicOngoingMatch[]; liveMatches: PublicOngoingMatch[]; nextMatches: PublicOngoingMatch[]; recentResults: PublicOngoingMatch[];
   schedule: { version: number; publishedAt: string | null; changes: { matchId: string; before: { start: string; end: string; room: string } | null; after: { start: string; end: string; room: string } | null }[] } | null;
   standings: { phaseId: string; groupId: string | null; groupNumber: number | null; label: string; complete: boolean; qualificationCutline: number | null; rows: (Standing & { name: string })[] }[];
+  leaderboard: PublicV3LeaderboardEntry[];
   announcements: { id: string; title: string; body: string; urgency: "info" | "important" | "urgent"; publishedAt: string; endsAt: string | null }[];
   stream: { url: string; label: string; platform: string; isLive: boolean } | null;
   leaderboardHref: string; stateVersion: string; lastUpdatedAt: string;
