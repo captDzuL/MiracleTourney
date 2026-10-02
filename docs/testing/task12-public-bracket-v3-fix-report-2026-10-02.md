@@ -136,6 +136,60 @@ E:\dev\MiracleTourney-gitnative\node_modules\.bin\eslint.CMD "src/components/v3/
 
 Result: `eslint-exit=0` and 0 errors, with the same 2 unused `store`-parameter warnings in the existing bracket test mock callbacks. `git diff --check` passed.
 
+## Re-review follow-up
+
+The re-review found one remaining presentation-boundary regression: `PublicScheduleBoard` localized statuses unconditionally even though `schedule-page-content.tsx` uses the board for both flag-on and flag-off routes. The flag-off route therefore changed its established non-empty status expression (`scheduled`/`delayed`/`postponed`, `Live`, and localized completed copy) without authorization.
+
+The minimal resolution adds `presentation="v3" | "legacy"` to `PublicScheduleBoard`, defaults it to `legacy`, keeps the exact prior legacy expression for the default branch, and passes the flag-derived presentation from `schedule-page-content.tsx`. The route tests now render a non-empty published schedule in both Indonesian and English for both branches.
+
+Re-review RED command:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/app/events/[slug]/schedule/page.test.ts" "src/components/v3/public-event/PublicScheduleBoard.test.tsx"
+```
+
+RED result: 2 test files ran, 10 tests total; 2 failed and 8 passed. The failures were the new component-level legacy status assertion and the new non-empty flag-off route assertion; the V3 localized assertions passed against the unconditional formatter.
+
+Re-review GREEN command:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/app/events/[slug]/schedule/page.test.ts" "src/components/v3/public-event/PublicScheduleBoard.test.tsx"
+```
+
+GREEN result: 2 test files passed and 10 tests passed.
+
+The full focused route set was rerun with:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/app/events/[slug]/bracket/page.test.ts" "src/components/v3/public-event/AdaptiveBracketBoard.test.tsx" "src/components/v3/public-event/PublicScheduleBoard.test.tsx" "src/app/events/[slug]/schedule/page.test.ts" "src/app/events/[slug]/standings/page.test.ts" "src/app/events/[slug]/participants/page.test.ts"
+```
+
+Result: 6 test files passed and 42 tests passed.
+
+Nearby component verification:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/components/v3/public-event/PublicScheduleBoard.test.tsx" "src/components/v3/public-event/PublicParticipantsDirectory.test.tsx" "src/components/v3/public-event/AdaptiveRegistrationEventPage.test.tsx" "src/components/v3/public-event/AdaptivePhaseEventPage.test.tsx" "src/components/v3/public-event/AdaptiveOngoingEventPage.test.tsx"
+```
+
+Result: 5 test files passed and 24 tests passed.
+
+Re-review typecheck:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\tsc.CMD --noEmit; Write-Output "tsc-exit=$LASTEXITCODE"
+```
+
+Result: `tsc-exit=0`.
+
+Re-review ESLint:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\eslint.CMD "src/app/events/[slug]/schedule/schedule-page-content.tsx" "src/app/events/[slug]/schedule/page.test.ts" "src/components/v3/public-event/PublicScheduleBoard.tsx" "src/components/v3/public-event/PublicScheduleBoard.test.tsx"; Write-Output "eslint-exit=$LASTEXITCODE"
+```
+
+Result: `eslint-exit=0`, 0 errors, and no warnings. `git diff --check` passed.
+
 ## Changed files
 
 - `src/app/events/[slug]/bracket/bracket-page-content.tsx`

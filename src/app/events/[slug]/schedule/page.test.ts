@@ -4,11 +4,11 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { featureEnabledMock } = vi.hoisted(() => ({ featureEnabledMock: vi.fn() }));
+const { featureEnabledMock, drawingEventMock } = vi.hoisted(() => ({ featureEnabledMock: vi.fn(), drawingEventMock: vi.fn() }));
 
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: featureEnabledMock }));
 vi.mock("@/lib/events/adaptive-public-phases", () => ({
-  getPublicDrawingEvent: vi.fn().mockResolvedValue(null),
+  getPublicDrawingEvent: drawingEventMock,
   getPublicFinishedEvent: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@/lib/events/public-ongoing", () => ({ getPublicOngoingEvent: vi.fn().mockResolvedValue(null) }));
@@ -24,7 +24,23 @@ import { renderSchedulePage } from "./schedule-page-content";
 Object.assign(globalThis, { React });
 
 describe("public schedule route", () => {
-  beforeEach(() => featureEnabledMock.mockReturnValue(false));
+  beforeEach(() => {
+    featureEnabledMock.mockReturnValue(false);
+    drawingEventMock.mockResolvedValue(null);
+  });
+
+  function publishedSchedule() {
+    return {
+      schedule: { version: 1, publishedAt: null },
+      matches: [
+        { id: "scheduled", roundLabel: "R1", home: "Alpha", away: "Beta", status: "scheduled", homeScore: null, awayScore: null, start: null, room: null, bestOf: 1 },
+        { id: "delayed", roundLabel: "R1", home: "Alpha", away: "Beta", status: "delayed", homeScore: null, awayScore: null, start: null, room: null, bestOf: 1 },
+        { id: "postponed", roundLabel: "R1", home: "Alpha", away: "Beta", status: "postponed", homeScore: null, awayScore: null, start: null, room: null, bestOf: 1 },
+        { id: "live", roundLabel: "R1", home: "Alpha", away: "Beta", status: "live", homeScore: 1, awayScore: 0, start: null, room: null, bestOf: 1 },
+        { id: "completed", roundLabel: "R1", home: "Alpha", away: "Beta", status: "completed", homeScore: 2, awayScore: 1, start: null, room: null, bestOf: 1 },
+      ],
+    };
+  }
 
   it("uses adaptive public phase readers and the filterable WIB schedule board", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "./schedule-page-content.tsx"), "utf8");
@@ -57,5 +73,33 @@ describe("public schedule route", () => {
 
     expect(markup).toContain("pv-section-card");
     expect(markup).not.toContain("miracle-public-v3");
+  });
+
+  it("localizes every non-empty schedule status in the V3 route for Indonesian and English", async () => {
+    featureEnabledMock.mockImplementation((flag: string) => flag === "adaptive_public_event_v3" || flag === "ui_v3_foundation");
+    drawingEventMock.mockResolvedValue(publishedSchedule());
+
+    const indonesian = renderToStaticMarkup(await renderSchedulePage("schedule-event", "id"));
+    const english = renderToStaticMarkup(await renderSchedulePage("schedule-event", "en"));
+
+    for (const label of ["Dijadwalkan", "Tertunda", "Ditunda", "Sedang berlangsung", "Selesai"]) expect(indonesian).toContain(label);
+    for (const label of ["Scheduled", "Delayed", "Postponed", "Live", "Completed"]) expect(english).toContain(label);
+    expect(indonesian).toContain("miracle-public-v3");
+    expect(english).toContain("miracle-public-v3");
+  });
+
+  it("preserves the legacy status expression for a non-empty flag-off schedule", async () => {
+    featureEnabledMock.mockImplementation((flag: string) => flag === "adaptive_public_event_v3");
+    drawingEventMock.mockResolvedValue(publishedSchedule());
+
+    const indonesian = renderToStaticMarkup(await renderSchedulePage("schedule-event", "id"));
+    const english = renderToStaticMarkup(await renderSchedulePage("schedule-event", "en"));
+
+    for (const label of ["scheduled", "delayed", "postponed", "Live", "Selesai"]) expect(indonesian).toContain(label);
+    for (const label of ["scheduled", "delayed", "postponed", "Live", "Completed"]) expect(english).toContain(label);
+    expect(indonesian).not.toContain("Dijadwalkan");
+    expect(english).not.toContain("Scheduled");
+    expect(indonesian).not.toContain("miracle-public-v3");
+    expect(english).not.toContain("miracle-public-v3");
   });
 });

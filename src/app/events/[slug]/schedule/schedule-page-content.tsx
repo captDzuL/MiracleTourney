@@ -58,9 +58,10 @@ export async function renderSchedulePage(slug: string, locale: "id" | "en" = "id
 
   const title = `${locale === "id" ? "Jadwal" : "Schedule"} ${event.name}`;
   const description = locale === "id" ? "Fixture dan hasil resmi. Seluruh waktu ditampilkan dalam WIB." : "Official fixtures and results. All times are shown in WIB.";
-  const board = <PublicScheduleBoard matches={matches} locale={locale} timezone="Asia/Jakarta" unpublished={unpublished} />;
+  const visualV3 = isFeatureEnabled("ui_v3_foundation");
+  const board = <PublicScheduleBoard matches={matches} locale={locale} timezone="Asia/Jakarta" unpublished={unpublished} presentation={visualV3 ? "v3" : "legacy"} />;
 
-  if (isFeatureEnabled("ui_v3_foundation")) {
+  if (visualV3) {
     return (
       <PublicV3DetailFrame backLabel={locale === "id" ? "Kembali ke Event" : "Back to Event"} description={description} event={event} locale={locale} title={title}>
         <section className="mpv3-section" aria-label={title}>{board}</section>
