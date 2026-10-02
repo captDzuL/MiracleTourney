@@ -3144,9 +3144,14 @@ export async function getPublicDiscoveryEvents(): Promise<PublicDiscoveryEvent[]
  * This public discovery path intentionally has no demo fallback: an unavailable
  * database must produce an honest empty/error state instead of invented players.
  */
-export async function getFlashpeakLeaderboardForEvent(
+export type FlashpeakLeaderboardReadResult = {
+  status: "ready" | "empty" | "error";
+  entries: FlashpeakLeaderboardEntry[];
+};
+
+export async function getFlashpeakLeaderboardForEventResult(
   eventId: string,
-): Promise<FlashpeakLeaderboardEntry[]> {
+): Promise<FlashpeakLeaderboardReadResult> {
   try {
     const rows = await prisma.playerStat.findMany({
       where: {
@@ -3206,11 +3211,18 @@ export async function getFlashpeakLeaderboardForEvent(
         stats: row.stats,
       }];
     });
-    return aggregateFlashpeakLeaderboard(sources);
+    const entries = aggregateFlashpeakLeaderboard(sources);
+    return { status: entries.length ? "ready" : "empty", entries };
   } catch (error) {
     console.error("Failed to load Flashpeak leaderboard", { eventId, error });
-    return [];
+    return { status: "error", entries: [] };
   }
+}
+
+export async function getFlashpeakLeaderboardForEvent(
+  eventId: string,
+): Promise<FlashpeakLeaderboardEntry[]> {
+  return (await getFlashpeakLeaderboardForEventResult(eventId)).entries;
 }
 
 /**

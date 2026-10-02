@@ -153,6 +153,7 @@ import {
   getPaymentSettings,
   getLeaderboardForEvent,
   getFlashpeakLeaderboardForEvent,
+  getFlashpeakLeaderboardForEventResult,
   getPublicDiscoveryEvents,
   getManageableEventsForUser,
   getManageableEventDraft,
@@ -2576,6 +2577,16 @@ describe("Flashpeak V3 leaderboard reads", () => {
       "Failed to load Flashpeak leaderboard",
       expect.objectContaining({ eventId: "event-1", error }),
     );
+    consoleError.mockRestore();
+  });
+
+  it("reports a successful empty read separately from a database error", async () => {
+    prisma.playerStat.findMany.mockResolvedValue([]);
+    await expect(getFlashpeakLeaderboardForEventResult("event-1")).resolves.toEqual({ status: "empty", entries: [] });
+
+    prisma.playerStat.findMany.mockRejectedValue(new Error("database unavailable"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(getFlashpeakLeaderboardForEventResult("event-1")).resolves.toEqual({ status: "error", entries: [] });
     consoleError.mockRestore();
   });
 });

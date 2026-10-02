@@ -9,6 +9,10 @@ import {
   type LeaderboardSortDirection,
   type LeaderboardSortKey,
 } from "@/lib/player-stats/flashpeak";
+import { PublicV3EmptyState } from "@/components/v3/public-discovery/PublicV3Primitives";
+
+export type FlashpeakLeaderboardEmptyState = "no-data" | "no-matches" | "error";
+export type FlashpeakLeaderboardPresentation = "legacy" | "v3";
 
 const SORT_KEYS: LeaderboardSortKey[] = ["game", "score", "goal", "assist", "passing", "defense"];
 
@@ -26,7 +30,12 @@ const copy = {
     assist: "Assist",
     passing: "Umpan",
     defense: "Defense",
-    empty: "Tidak ada pemain yang cocok dengan filter.",
+    noMatchesTitle: "Tidak ada pemain yang cocok dengan filter.",
+    noMatchesDescription: "Coba ubah pencarian atau filter tim dan posisi.",
+    noDataTitle: "Belum ada statistik pemain yang selesai.",
+    noDataDescription: "Statistik pemain akan tampil setelah match selesai dan data resmi ditinjau.",
+    errorTitle: "Leaderboard tidak tersedia.",
+    errorDescription: "Data leaderboard belum dapat dimuat. Coba muat ulang halaman.",
   },
   en: {
     search: "Search players",
@@ -41,16 +50,25 @@ const copy = {
     assist: "Assists",
     passing: "Passing",
     defense: "Defense",
-    empty: "No players match the filters.",
+    noMatchesTitle: "No players match the filters.",
+    noMatchesDescription: "Try changing the search, team, or position filter.",
+    noDataTitle: "No completed player statistics yet.",
+    noDataDescription: "Player statistics will appear after matches finish and official data is reviewed.",
+    errorTitle: "Leaderboard unavailable.",
+    errorDescription: "Leaderboard data could not be loaded. Try refreshing the page.",
   },
 } as const;
 
 export function FlashpeakLeaderboardTable({
   entries,
   locale,
+  emptyState,
+  presentation = "v3",
 }: {
   entries: readonly FlashpeakLeaderboardEntry[];
   locale: "id" | "en";
+  emptyState?: FlashpeakLeaderboardEmptyState;
+  presentation?: FlashpeakLeaderboardPresentation;
 }) {
   const t = copy[locale];
   const [query, setQuery] = useState("");
@@ -74,6 +92,7 @@ export function FlashpeakLeaderboardTable({
     });
     return sortFlashpeakLeaderboard(filtered, sortKey, direction);
   }, [direction, entries, locale, position, query, sortKey, team]);
+  const resolvedEmptyState = emptyState ?? (entries.length ? "no-matches" : "no-data");
 
   function toggle(key: LeaderboardSortKey) {
     if (key === sortKey) {
@@ -162,7 +181,16 @@ export function FlashpeakLeaderboardTable({
             ))}
           </tbody>
         </table>
-        {!visible.length ? <p className="p-6 text-center text-sm text-[var(--color-text-subtle)]">{t.empty}</p> : null}
+        {!visible.length ? presentation === "legacy" ? (
+          <p className="p-6 text-center text-sm text-[var(--color-text-subtle)]">{t.noMatchesTitle}</p>
+        ) : (
+          <div role={resolvedEmptyState === "error" ? "alert" : "status"} aria-live="polite">
+            <PublicV3EmptyState
+              title={resolvedEmptyState === "error" ? t.errorTitle : resolvedEmptyState === "no-data" ? t.noDataTitle : t.noMatchesTitle}
+              description={resolvedEmptyState === "error" ? t.errorDescription : resolvedEmptyState === "no-data" ? t.noDataDescription : t.noMatchesDescription}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );
