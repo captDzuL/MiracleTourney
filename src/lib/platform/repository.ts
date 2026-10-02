@@ -3212,7 +3212,9 @@ export async function getFlashpeakLeaderboardForEventResult(
       }];
     });
     const entries = aggregateFlashpeakLeaderboard(sources);
-    return { status: entries.length ? "ready" : "empty", entries };
+    if (rows.length === 0) return { status: "empty", entries };
+    if (sources.length === 0 || entries.length === 0) return { status: "error", entries: [] };
+    return { status: "ready", entries };
   } catch (error) {
     console.error("Failed to load Flashpeak leaderboard", { eventId, error });
     return { status: "error", entries: [] };

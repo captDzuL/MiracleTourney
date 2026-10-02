@@ -57,6 +57,12 @@ const event = {
   gameModeId: "mode-flashpeak-5v5",
   status: "Finished",
 };
+const genericEvent = {
+  ...event,
+  name: "Kuroko Cup",
+  gameId: "game-kuroko",
+  gameModeId: "mode-kuroko-3v3",
+};
 
 beforeEach(() => {
   dependencies.enabled = false;
@@ -78,6 +84,7 @@ describe("renderLeaderboardsPage", () => {
     expect(html).toContain("miracle-public-v3");
     expect(html).toContain("mpv3-section-head");
     expect(html).toContain("No completed player statistics yet.");
+    expect(html).toContain("<strong>0</strong>");
     expect(html).not.toContain("pv-section-card");
     expect(dependencies.getFlashpeakLeaderboardForEventResult).toHaveBeenCalledWith("event-1");
   });
@@ -102,5 +109,49 @@ describe("renderLeaderboardsPage", () => {
 
     expect(html).toContain("Leaderboard unavailable");
     expect(html).not.toContain("No completed player statistics yet.");
+  });
+
+  it("uses the V3 composition for non-Flashpeak leaderboards when the visual foundation is enabled", async () => {
+    dependencies.enabled = true;
+    dependencies.getEventBySlug.mockResolvedValue(genericEvent);
+    dependencies.getLeaderboardForEvent.mockResolvedValue([{
+      playerId: "player-kuroko",
+      playerName: "Taiga Kagami",
+      teamId: "team-seirin",
+      position: "Forward",
+      gameSlug: "kuroko",
+      matchesPlayed: 2,
+      totalStats: { points: 18 },
+    }]);
+    dependencies.getTeamsForEvent.mockResolvedValue([]);
+
+    const html = renderToStaticMarkup(await renderLeaderboardsPage("kuroko-cup", "en"));
+
+    expect(html).toContain("miracle-public-v3");
+    expect(html).toContain("mpv3-table-wrap");
+    expect(html).toContain("Taiga Kagami");
+    expect(html).not.toContain("pv-section-card");
+    expect(dependencies.getLeaderboardForEvent).toHaveBeenCalledWith("event-1", "game-kuroko");
+  });
+
+  it("preserves the legacy non-Flashpeak leaderboard composition when V3 is disabled", async () => {
+    dependencies.getEventBySlug.mockResolvedValue(genericEvent);
+    dependencies.getLeaderboardForEvent.mockResolvedValue([{
+      playerId: "player-kuroko",
+      playerName: "Taiga Kagami",
+      teamId: "team-seirin",
+      position: "Forward",
+      gameSlug: "kuroko",
+      matchesPlayed: 2,
+      totalStats: { points: 18 },
+    }]);
+    dependencies.getTeamsForEvent.mockResolvedValue([]);
+
+    const html = renderToStaticMarkup(await renderLeaderboardsPage("kuroko-cup", "en"));
+
+    expect(html).toContain("pv-section-card");
+    expect(html).toContain("pv-data-table");
+    expect(html).toContain("pv-team-identity__name");
+    expect(html).not.toContain("miracle-public-v3");
   });
 });

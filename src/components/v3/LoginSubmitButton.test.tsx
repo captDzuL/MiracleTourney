@@ -23,6 +23,17 @@ describe("LoginSubmitButton", () => {
     expect(html).toContain('aria-busy="true"');
   });
 
+  it("keeps the pending label out of the button's accessible name duplication", () => {
+    useFormStatus.mockReturnValue({ pending: true });
+
+    const html = renderToStaticMarkup(<LoginSubmitButton label="Sign in" pendingLabel="Signing in…" />);
+    const button = html.match(/<button[\s\S]*?<\/button>/)?.[0] ?? "";
+
+    expect(button.match(/Signing in…/g)).toHaveLength(1);
+    expect(button).not.toContain("aria-live");
+    expect(html).toMatch(/<div[^>]*aria-live="polite"[^>]*>Signing in…<\/div>/);
+  });
+
   it("keeps the submit control enabled and labeled before submission", () => {
     useFormStatus.mockReturnValue({ pending: false });
 

@@ -46,6 +46,34 @@ ESLint was run over all changed TypeScript/TSX files. It completed with exit cod
 
 The focused tests include a real jsdom interaction that types a non-matching search and verifies the filter-empty state, route tests for the V3/legacy flag branches and reader error state, repository tests for empty versus error results, and pending/idle submit-button tests.
 
+## Follow-up review fixes
+
+Review found four gaps in the first commit. Tests were added before the follow-up production changes and the first RED command was:
+
+```text
+& .\node_modules\.bin\vitest.cmd run src/app/events/[slug]/leaderboards/leaderboards-page.test.tsx src/lib/platform/repository.test.ts src/components/v3/LoginSubmitButton.test.tsx
+```
+
+RED result: 3 test files failed and 5 tests failed. The failures were the missing generic V3 route, the empty count rendered as `—`, malformed-score and roster-mismatch rows reported as `empty`, and duplicated pending text inside the button.
+
+A follow-up legacy-compatibility assertion was then run separately:
+
+```text
+& .\node_modules\.bin\vitest.cmd run src/app/events/[slug]/leaderboards/leaderboards-page.test.tsx
+```
+
+It failed 1 test (5 total) because the first generic-table refactor had changed the flag-off identity class. The final implementation separates V3 tokenized row content from the exact legacy row content.
+
+The follow-up GREEN command was:
+
+```text
+& .\node_modules\.bin\vitest.cmd run src/components/v3/public-event/FlashpeakLeaderboardTable.test.tsx src/components/v3/public-event/FlashpeakLeaderboardTable.behavior.test.tsx src/app/events/[slug]/leaderboards/leaderboards-page.test.tsx src/lib/platform/repository.test.ts src/components/v3/LoginSubmitButton.test.tsx src/app/login/login-page-content.test.tsx
+```
+
+Final follow-up result: 6 test files passed and 160 tests passed. The generic non-Flashpeak V3 route now uses the established `mpv3-table-wrap`/token surface; the disabled-flag branch retains the legacy `DataTable` and identity markup. A completed query with non-empty rows but no accepted valid rows now reports `error`, while a truly zero-row query reports `empty` and renders count `0`. Pending login feedback is now a single button label plus a separate live status region.
+
+Follow-up `& .\\node_modules\\.bin\\tsc.cmd --noEmit` exited 0. Follow-up ESLint over the changed TypeScript/TSX files exited 0 with 0 errors and the same four pre-existing warnings.
+
 ## UI and accessibility decisions
 
 The V3 page uses the existing dark shell language and primitives rather than a new component system. The data table remains horizontally scrollable on narrow screens. Empty source, reader error, and filter miss have separate localized headings/descriptions. Sort buttons retain keyboard-focus treatment and `aria-sort` on all six statistic columns.

@@ -2589,6 +2589,48 @@ describe("Flashpeak V3 leaderboard reads", () => {
     await expect(getFlashpeakLeaderboardForEventResult("event-1")).resolves.toEqual({ status: "error", entries: [] });
     consoleError.mockRestore();
   });
+
+  it("reports malformed completed rows as unavailable instead of no statistics", async () => {
+    prisma.playerStat.findMany.mockResolvedValue([{
+      matchId: "match-invalid-score",
+      teamId: "team-1",
+      stats: { scores: ["not-a-score"], goal: 1, assist: 0, passing: 0, defense: 0 },
+      match: { resultSnapshot: { bestOf: 1 }, games: [{ gameNumber: 1 }] },
+      player: {
+        id: "player-1",
+        displayName: "Nadia Putri",
+        nickname: "Nyx",
+        position: "Forward",
+        team: { id: "team-1", name: "Garuda Nova", eventId: "event-1" },
+      },
+    }]);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(getFlashpeakLeaderboardForEventResult("event-1")).resolves.toEqual({ status: "error", entries: [] });
+
+    consoleError.mockRestore();
+  });
+
+  it("reports completed rows with roster mismatches as unavailable instead of no statistics", async () => {
+    prisma.playerStat.findMany.mockResolvedValue([{
+      matchId: "match-invalid-roster",
+      teamId: "team-other",
+      stats: { scores: [8], goal: 1, assist: 0, passing: 0, defense: 0 },
+      match: { resultSnapshot: { bestOf: 1 }, games: [{ gameNumber: 1 }] },
+      player: {
+        id: "player-1",
+        displayName: "Nadia Putri",
+        nickname: "Nyx",
+        position: "Forward",
+        team: { id: "team-1", name: "Garuda Nova", eventId: "event-1" },
+      },
+    }]);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(getFlashpeakLeaderboardForEventResult("event-1")).resolves.toEqual({ status: "error", entries: [] });
+
+    consoleError.mockRestore();
+  });
 });
 
 describe("authoritative player-stat write boundary", () => {
