@@ -13,12 +13,18 @@ export const PRESSURE_SCENARIOS = [
   { path: "/api/me", requests: 80, concurrency: 20, p95Ms: BUDGET, statuses: [200] },
   { path: "/id/admin", requests: 40, concurrency: 10, p95Ms: BUDGET, statuses: [200, 307] },
   ...["id", "en"].flatMap((locale) => [
-    { path: `/${locale}`, requests: 40, concurrency: 10, p95Ms: BUDGET, public: true, expected: ["mpv3-homepage", "data-featured-event=", `href="/${locale}/events/${SLUG}"`], statuses: [200] },
+    { path: `/${locale}`, requests: 40, concurrency: 10, p95Ms: BUDGET, public: true, expected: ["mpv3-homepage", "data-featured-event=", `href="/${locale}/events/${SLUG}"`], expectedIds: ["home-shell", "featured-event", "fixture-link"], statuses: [200] },
     { path: `/${locale}/events`, requests: 40, concurrency: 10, p95Ms: BUDGET, public: true, expected: ["mpv3-directory", "mpv3-directory-card", `href="/${locale}/events/${SLUG}"`], statuses: [200] },
     { path: `/${locale}/events/${SLUG}`, requests: 40, concurrency: 10, p95Ms: BUDGET, public: true, expected: ['data-public-source="authoritative"', "Flashpeak Champions 32"], statuses: [200] },
     { path: `/${locale}/events/${SLUG}/bracket`, requests: 40, concurrency: 10, p95Ms: BUDGET, public: true, expected: ["mpv3-bracket-page", 'id="adaptive-bracket-heading"', "Flashpeak Champions 32"], statuses: [200] },
   ]),
 ];
+
+export function pressureOptionsForArgs(args) {
+  if (args.length === 0) return { scenarios: PRESSURE_SCENARIOS, mode: "production-like" };
+  if (args.length === 1 && args[0] === "--homepage-only") return { scenarios: PRESSURE_SCENARIOS.filter(({ path }) => path === "/id" || path === "/en"), mode: "homepage-only" };
+  throw new Error("Unknown pressure option.");
+}
 
 const percentile = (values, percentage) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * percentage / 100) - 1] ?? 0;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -54,6 +60,17 @@ export async function measureScenario(scenario, { fetchImpl = fetch, baseUrl, cl
   const durations = [];
   const failures = [];
   const statusCounts = {};
+  const missingMarkerCounts = {};
+  const detectedMarkerCounts = {};
+  const sourceCounts = {};
+  const discoveryStateCounts = {};
+  const featuredStateCounts = {};
+  const rejectedMarkers = [
+    ["public-v3-error", /data-public-v3-error/],
+    ["public-visual-v2", /public-visual-v2/],
+    ["compatible-source", /data-public-source="compatible"/],
+    ["alert", /role="alert"/],
+  ];
   const worker = async () => {
     while (next < scenario.requests) {
       next++;
@@ -65,13 +82,27 @@ export async function measureScenario(scenario, { fetchImpl = fetch, baseUrl, cl
         statusCounts[response.status] = (statusCounts[response.status] ?? 0) + 1;
         if (!(scenario.statuses ?? [200]).includes(response.status)) failures.push("status");
         const expected = Array.isArray(scenario.expected) ? scenario.expected : [scenario.expected];
-        if (scenario.public && (expected.some((marker) => !body?.includes(marker)) || /data-public-v3-error|public-visual-v2|data-public-source="compatible"|role="alert"/.test(body))) failures.push("content");
+        if (scenario.public) {
+          const missing = expected.flatMap((marker, index) => body?.includes(marker) ? [] : [scenario.expectedIds?.[index] ?? `marker-${index + 1}`]);
+          const detected = rejectedMarkers.flatMap(([id, pattern]) => pattern.test(body) ? [id] : []);
+          if (missing.length || detected.length) {
+            failures.push("content");
+            for (const id of missing) missingMarkerCounts[id] = (missingMarkerCounts[id] ?? 0) + 1;
+            for (const id of detected) detectedMarkerCounts[id] = (detectedMarkerCounts[id] ?? 0) + 1;
+            const source = /data-public-source="authoritative"/.test(body) ? "authoritative" : /data-public-source="compatible"/.test(body) ? "compatible" : "absent";
+            sourceCounts[source] = (sourceCounts[source] ?? 0) + 1;
+            const discoveryState = /data-public-home-discovery="(ready|timeout|read_failure)"/.exec(body)?.[1] ?? "absent";
+            const featuredState = /data-public-home-featured="(none|ready|unavailable|read_failure|mismatch)"/.exec(body)?.[1] ?? "absent";
+            discoveryStateCounts[discoveryState] = (discoveryStateCounts[discoveryState] ?? 0) + 1;
+            featuredStateCounts[featuredState] = (featuredStateCounts[featuredState] ?? 0) + 1;
+          }
+        }
       } catch (error) { failures.push(error?.kind === "timeout" ? "timeout" : "request"); }
     }
   };
   await Promise.all(Array.from({ length: scenario.concurrency }, worker));
   const p95Ms = percentile(durations, 95);
-  return { path: scenario.path, requests: scenario.requests, completed: durations.length, concurrency: scenario.concurrency, statusCounts, p95Ms, maxMs: Math.max(0, ...durations), failures: failures.length, failureKinds: [...new Set(failures)], passed: durations.length === scenario.requests && failures.length === 0 && p95Ms < scenario.p95Ms };
+  return { path: scenario.path, requests: scenario.requests, completed: durations.length, concurrency: scenario.concurrency, statusCounts, p95Ms, maxMs: Math.max(0, ...durations), failures: failures.length, failureKinds: [...new Set(failures)], ...(Object.keys(sourceCounts).length ? { contentDiagnostics: { missingMarkerCounts, detectedMarkerCounts, sourceCounts, discoveryStateCounts, featuredStateCounts } } : {}), passed: durations.length === scenario.requests && failures.length === 0 && p95Ms < scenario.p95Ms };
 }
 
 export async function runPressureScenarios(scenarios, { measure, onWarm = () => undefined, onMeasured = () => undefined, onStage = () => undefined }) {
@@ -103,12 +134,12 @@ function stopOwnedServer(server) {
   else server.kill("SIGTERM");
 }
 
-export async function runPublicPressure({ env = process.env, fetchImpl = fetch, sha = process.env.PUBLIC_V3_HEAD_SHA ?? process.env.GITHUB_SHA ?? "local", now = Date.now,
+export async function runPublicPressure({ env = process.env, fetchImpl = fetch, sha = process.env.PUBLIC_V3_HEAD_SHA ?? process.env.GITHUB_SHA ?? "local", now = Date.now, mode = "production-like",
   loadEnvironment = loadE2eEnvironment, checkFixtures = checkPublicFixtures, build = command, startServer = spawn, stopServer = stopOwnedServer,
   writeEvidence = async (value) => { await mkdir("test-results/public-v3", { recursive: true }); await writeFile("test-results/public-v3/pressure.json", JSON.stringify(value, null, 2)); },
   scenarios = PRESSURE_SCENARIOS, timeoutMs = REQUEST_DEADLINE_MS,
 } = {}) {
-  const evidence = { sha, mode: "production-like", environment: "guarded E2E test database", buildMs: null, warmups: [], scenarios: [], safeServerLogCounts: {}, status: "failed" };
+  const evidence = { sha, mode, environment: "guarded E2E test database", buildMs: null, warmups: [], scenarios: [], safeServerLogCounts: {}, status: "failed" };
   let server;
   let stage = "environment";
   let route = null;
@@ -158,6 +189,6 @@ export async function runPublicPressure({ env = process.env, fetchImpl = fetch, 
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try { await runPublicPressure(); }
-  catch (error) { console.error(`[public-v3-pressure] ${error instanceof Error ? error.message : "Failed."}`); process.exitCode = 1; }
+  try { await runPublicPressure(pressureOptionsForArgs(process.argv.slice(2))); }
+  catch { console.error("[public-v3-pressure] Failed; inspect scrubbed pressure evidence when available."); process.exitCode = 1; }
 }

@@ -122,12 +122,15 @@ export async function HomePageContent({
     const entries = filterDiscoveryEvents(discovery.entries, { game: gameFilter, status: "all" });
     const featured = chooseFeaturedDiscoveryEvent(entries);
     let featuredView: PublicV3EventViewModel | null = null;
+    let featuredReadState: "none" | "ready" | "unavailable" | "read_failure" | "mismatch" = "none";
     if (featured) {
       try {
         featuredView = await readPublicV3Event(featured.event.slug, null);
-        if (!featuredView) console.error("Homepage featured event unavailable", { slug: featured.event.slug });
-      } catch (error) {
-        console.error("Homepage featured event unavailable", { slug: featured.event.slug, error });
+        featuredReadState = !featuredView ? "unavailable" : featuredView.identity.id === featured.event.id ? "ready" : "mismatch";
+        if (featuredReadState !== "ready") console.error("Homepage featured event unavailable", { code: featuredReadState });
+      } catch {
+        featuredReadState = "read_failure";
+        console.error("Homepage featured event unavailable", { code: featuredReadState });
       }
     }
     return (
@@ -138,6 +141,7 @@ export async function HomePageContent({
         gameFilter={gameFilter}
         loadState={discovery.loadState}
         featuredView={featuredView}
+        diagnostics={{ discovery: discovery.failureCode ?? "ready", featured: featuredReadState }}
       />
     );
   }

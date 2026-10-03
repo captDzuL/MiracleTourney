@@ -7,6 +7,7 @@ const CHECK = "Public V3 E2E";
 
 export function routePublicV3(input, hasEvidence = false) {
   if (input.event === "push") {
+    if (input.branch === BRANCH && input.message?.includes("[ci:public-v3-home]")) return "home";
     if (input.branch === BRANCH && input.message?.includes("[ci:public-v3-full]")) return "run";
     if (input.branch === BRANCH && input.message?.includes("[ci:public-v3-only]")) return "diagnostic";
     return "full";

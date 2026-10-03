@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 
 const routeModulePath = "../scripts/public-v3-route.mjs";
 const ciModulePath = "../scripts/public-v3-ci.mjs";
@@ -10,6 +12,8 @@ describe("public V3 CI routing", () => {
     const { routePublicV3 } = await import(routeModulePath);
     expect(routePublicV3({ event: "push", branch: "codex/public-event-overview-v3", message: "ship [ci:public-v3-full]" })).toBe("run");
     expect(routePublicV3({ event: "push", branch: "codex/public-event-overview-v3", message: "ship [ci:public-v3-only]" })).toBe("diagnostic");
+    expect(routePublicV3({ event: "push", branch: "codex/public-event-overview-v3", message: "probe [ci:public-v3-home]" })).toBe("home");
+    expect(routePublicV3({ event: "push", branch: "other", message: "probe [ci:public-v3-home]" })).toBe("full");
     expect(routePublicV3({ event: "push", branch: "other", message: "[ci:public-v3-full]" })).toBe("full");
     expect(routePublicV3({ event: "push", branch: "codex/public-event-overview-v3", message: "ship" })).toBe("full");
     expect(() => routePublicV3({ event: "mystery" })).toThrow(/unknown/i);
@@ -38,6 +42,24 @@ describe("public V3 CI routing", () => {
     expect(matchingPublicEvidence(target, [run], { 101: [{ ...job, name: "E2E Tests" }] }, artifacts)).toBe(false);
     expect(matchingPublicEvidence(target, [run], { 101: [{ ...job, conclusion: "skipped" }] }, artifacts)).toBe(false);
     expect(matchingPublicEvidence(target, [run], { 101: [job] }, { 101: [{ name: "playwright-report", expired: false }] })).toBe(false);
+    expect(matchingPublicEvidence(target, [run], { 101: [job] }, { 101: [{ name: "public-v3-home-evidence", expired: false }] })).toBe(false);
+    expect(matchingPublicEvidence(target, [{ ...run, conclusion: "success" }], { 101: [{ ...job, name: "Public V3 Homepage Check" }] }, { 101: [{ name: "public-v3-home-evidence", expired: false }] })).toBe(false);
+  });
+
+  it("binds the homepage route to a separate guarded check without broad runners", () => {
+    const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
+    const homepage = workflow.split(/^  public-v3-homepage:/m)[1];
+    expect(homepage).toBeDefined();
+    expect(homepage).toContain("name: Public V3 Homepage Check");
+    expect(homepage).toContain("timeout-minutes: 15");
+    expect(homepage).toContain("group: e2e-neon-test-db");
+    expect(homepage).toContain("needs.ci-route.outputs.route == 'home'");
+    expect(homepage).toContain("E2E_DATABASE_RESET_ALLOWED=false");
+    expect(homepage).toContain("node scripts/public-v3-pressure.mjs --homepage-only");
+    expect(homepage).toContain("name: public-v3-home-evidence");
+    expect(homepage).not.toMatch(/playwright|test:e2e:public-v3|db:seed|db:push|migrate/);
+    expect(workflow).toContain("needs.ci-route.outputs.route == 'run' || needs.ci-route.outputs.route == 'verify'");
+    expect(workflow).toContain("needs.ci-route.outputs.route == 'full' || needs.ci-route.outputs.route == 'diagnostic'");
   });
 });
 
@@ -126,6 +148,20 @@ describe("public V3 lane", () => {
 });
 
 describe("production pressure measurements", () => {
+  it("selects only both localized homepages for a bounded diagnostic CLI", async () => {
+    const { pressureOptionsForArgs } = await import(pressureModulePath);
+    const focused = pressureOptionsForArgs(["--homepage-only"]);
+    expect(focused.mode).toBe("homepage-only");
+    expect(focused.scenarios.map((scenario: { path: string }) => scenario.path)).toEqual(["/id", "/en"]);
+    expect(() => pressureOptionsForArgs(["--home"])).toThrow(/Unknown pressure option/);
+    expect(() => pressureOptionsForArgs(["--homepage-only", "--other"])).toThrow(/Unknown pressure option/);
+    expect(pressureOptionsForArgs([]).scenarios).toHaveLength(11);
+  });
+  it("rejects unknown CLI input before loading an environment or starting a server", () => {
+    const result = spawnSync(process.execPath, ["scripts/public-v3-pressure.mjs", "--unknown"], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr.trim()).toBe("[public-v3-pressure] Failed; inspect scrubbed pressure evidence when available.");
+  });
   it("rejects marker-bearing discovery errors and an empty finished bracket", async () => {
     const { measureScenario, PRESSURE_SCENARIOS } = await import(pressureModulePath);
     const bodies = [

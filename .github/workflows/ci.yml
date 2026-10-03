@@ -264,3 +264,61 @@ jobs:
             test-results/public-v3/evidence.json
           if-no-files-found: warn
           retention-days: 7
+
+  public-v3-homepage:
+    name: Public V3 Homepage Check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    needs: [ci-route, lint-and-typecheck, unit-tests]
+    concurrency:
+      group: e2e-neon-test-db
+      cancel-in-progress: false
+    if: ${{ vars.E2E_ENABLED == 'true' && github.event_name == 'push' && needs.ci-route.outputs.route == 'home' }}
+    env:
+      CI: true
+      E2E_ENV_FILE: ${{ github.workspace }}/.env.test
+      PUBLIC_V3_HEAD_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Create guarded public E2E environment
+        shell: bash
+        env:
+          TEST_DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
+          TEST_DIRECT_URL: ${{ secrets.NEON_TEST_DIRECT_URL }}
+          PRODUCTION_NEON_HOST: ${{ secrets.NEON_PROD_HOST }}
+        run: |
+          umask 077
+          for value in "$TEST_DATABASE_URL" "$TEST_DIRECT_URL" "$PRODUCTION_NEON_HOST"; do
+            if [ -n "$value" ]; then echo "::add-mask::$value"; fi
+          done
+          {
+            printf 'DATABASE_URL=%s\n' "$TEST_DATABASE_URL"
+            printf 'DIRECT_URL=%s\n' "$TEST_DIRECT_URL"
+            printf 'NEON_PROD_HOST=%s\n' "$PRODUCTION_NEON_HOST"
+            printf 'E2E_DATABASE_RESET_ALLOWED=false\n'
+          } > .env.test
+      - name: Generate JWT secret
+        shell: bash
+        run: |
+          JWT_SECRET="$(openssl rand -base64 32)"
+          echo "::add-mask::$JWT_SECRET"
+          echo "JWT_SECRET=$JWT_SECRET" >> "$GITHUB_ENV"
+      - name: Diagnose both localized homepages
+        run: node scripts/public-v3-pressure.mjs --homepage-only
+      - name: Upload scrubbed homepage evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: public-v3-home-evidence
+          path: test-results/public-v3/pressure.json
+          if-no-files-found: warn
+          retention-days: 7

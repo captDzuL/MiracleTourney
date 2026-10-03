@@ -1,0 +1,24 @@
+# Investigasi kegagalan pemeriksaan beranda publik, 3 Oktober 2026
+
+**Status: RCA belum selesai; penyebab kegagalan di Linux belum terbukti.** Pada commit `375ec469455952c1f3eaf34a88ec488baae8cdf3`, pemeriksaan awal `/id` menerima HTTP 200 dalam 2.034 ms tetapi menolak isi halaman. Karena artefak lama hanya menyimpan kategori `content`, belum diketahui penanda apa yang hilang atau keadaan galat apa yang tampil. Akibatnya, pengukuran beban dan 54 kasus publik tidak dimulai; ini belum membuktikan gangguan di produksi. Perubahan saat ini hanya menambahkan diagnosis aman dan jalur pemeriksaan khusus beranda. Perbaikan aplikasi menunggu bukti dari jalur tersebut. Secara lokal, 97 tes terkait, pemeriksaan tipe, lint, dan parsing alur CI lulus.
+
+## Bukti yang sudah ada
+
+- [Run CI 37121093003](https://github.com/captDzuL/MiracleTourney/actions/runs/37121093003) menggunakan SHA di atas. Unit Tests, Lint & Typecheck, dan CI route berhasil; Public V3 E2E gagal di tahap `Measure guarded production-build pressure`.
+- Artefak `ci-37121093003/pressure.json` mencatat build 60.292 ms. Warmup `/id/login`: HTTP 200, 1.021 ms, tanpa kegagalan; `/api/me`: HTTP 200, 19 ms; `/id/admin`: HTTP 307, 5 ms. Warmup `/id`: HTTP 200, 2.034 ms, satu kegagalan `content`. Tidak ada skenario beban terukur. Pemeriksaan 54 kasus publik belum dimulai.
+- Pemeriksaan lama menuntut `mpv3-homepage`, penanda event unggulan, dan tautan fixture `flashpeak-champions-32`. Pemeriksaan itu juga menolak penanda galat, tampilan lama, sumber kompatibel, dan `role="alert"`. Artefak lama tidak menyimpan hasil setiap pemeriksaan sehingga tidak dapat membedakan penyebabnya.
+- Berhasilnya build, status HTTP 200, dan selesainya pembacaan body menyingkirkan kegagalan build, status HTTP yang salah, serta timeout permintaan 10 detik untuk warmup tersebut. Waktu 2.034 ms masih di bawah batas p95 3.000 ms. Itu tidak menyingkirkan timeout pembaca discovery 2.000 ms, kegagalan pembaca event unggulan, data fixture yang tidak muncul di hasil discovery, atau penolakan isi yang keliru.
+
+## Alur dan hipotesis
+
+`/id` merender `HomePageContent`, yang memanggil `loadPublicDiscovery` dengan batas 2.000 ms, memilih event unggulan, lalu memanggil `readPublicV3Event`. Komponen beranda menampilkan keadaan galat bila discovery gagal atau event unggulan tidak dapat dibaca. Hasil discovery yang tersedia juga menentukan apakah tautan fixture berada pada kartu event lain. Durasi warmup sekitar 2 detik cocok dengan hipotesis batas pembaca discovery, tetapi kecocokan waktu bukan bukti. Semua hipotesis isi di atas tetap terbuka sampai keluaran pemeriksaan terfokus diperoleh.
+
+## Tindakan diagnosis dan pembatasan
+
+Pemeriksa tekanan kini menyimpan hitungan ID penanda yang hilang (`home-shell`, `featured-event`, `fixture-link`), jenis penanda yang ditolak, serta hitungan sumber `authoritative`, `compatible`, atau `absent` hanya ketika pemeriksaan isi gagal. Beranda juga mengeluarkan kode tetap untuk hasil discovery (`ready`, `timeout`, `read_failure`) dan pembacaan unggulan (`none`, `ready`, `unavailable`, `read_failure`, `mismatch`). Dengan demikian, satu probe dapat membedakan batas waktu discovery dari kegagalan pembacaan unggulan. Logger discovery/unggulan memakai kode tersebut tanpa exception mentah. Tidak ada HTML, teks halaman, URL kredensial, data pengguna, konfigurasi, atau exception yang disimpan pada artefak. Klasifikasi tetap menolak keadaan fallback/galat, sumber kompatibel, dan penanda yang hilang. Batas fetch/body 10 detik, p95 ketat di bawah 3.000 ms, serta syarat nol kegagalan tetap berlaku.
+
+Marker push `[ci:public-v3-home]` pada cabang kandidat memilih `Public V3 Homepage Check` tersendiri. Perintah `--homepage-only` hanya menjalankan skenario `/id` dan `/en` setelah pemeriksaan fixture baca saja, build, dan kesiapan server. Job dibatasi 15 menit, memakai database tes terjaga dengan reset tidak diizinkan, dan menghasilkan artefak `public-v3-home-evidence`. Artefak itu tidak memenuhi syarat penggunaan ulang bukti full-public pada SHA yang sama. Jalur ini tidak menjalankan Playwright, 54 kasus publik, default shards, seed, reset, atau migrasi.
+
+## Hasil lokal dan langkah berikutnya
+
+Tes server-rendered markup menunjukkan kedua locale dengan fixture lengkap lulus klasifikasi. Beranda fallback menghasilkan `featured-event` hilang dan `alert`; fixture yang tidak hadir menghasilkan `fixture-link` hilang; sumber kompatibel menghasilkan `compatible-source`. Ini membuktikan kemampuan diagnosis, bukan penyebab kegagalan run lama. Setelah controller meninjau dan menjalankan satu probe Linux beranda, baca artefak aman untuk menetapkan penyebab. Reproduksi keadaan yang terbukti sebagai tes RED, lakukan koreksi sumber terkecil, lalu verifikasi GREEN dan probe beranda yang sama. Gate full-public 54 kasus serta persiapan pemulihan/migrasi produksi tetap terpisah dan belum lulus.

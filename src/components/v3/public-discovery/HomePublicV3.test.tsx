@@ -148,6 +148,39 @@ describe("final homepage composition", () => {
     expect(dependencies.read).toHaveBeenCalledWith("live", null);
     expect(html).toContain("Miracle Football League S3");
     expect(html).toContain('data-public-source="authoritative"');
+    const root = document.createElement("div"); root.innerHTML = html;
+    expect(root.querySelector(".mpv3-home-intro")?.getAttribute("data-public-home-discovery")).toBe("ready");
+    expect(root.querySelector(".mpv3-home-intro")?.getAttribute("data-public-home-featured")).toBe("ready");
+  });
+  it("records safe marker diagnostics for real homepage success and fallback markup", async () => {
+    const pressureModulePath = "../../../../scripts/public-v3-pressure.mjs";
+    const { measureScenario, PRESSURE_SCENARIOS } = await import(pressureModulePath);
+    const scenario = { ...PRESSURE_SCENARIOS.find((item: { path: string }) => item.path === "/id")!, requests: 1, concurrency: 1 };
+    const fixtureEntries = [...entries, entry("flashpeak-champions-32", "Finished")];
+    const goodHtml = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale="id" entries={fixtureEntries} games={games} gameFilter="all" loadState="ready" featuredView={homepageView()} />);
+    const failedHtml = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale="id" entries={fixtureEntries} games={games} gameFilter="all" loadState="error" featuredView={null} diagnostics={{ discovery: "timeout", featured: "none" }} />);
+    const measure = (body: string) => measureScenario(scenario, {
+      fetchImpl: async () => ({ status: 200, text: async () => body }), baseUrl: "http://127.0.0.1:3102", clock: () => 0,
+    });
+    expect(await measure(goodHtml)).toMatchObject({ passed: true, failures: 0 });
+    expect(await measure(failedHtml)).toMatchObject({
+      passed: false, failureKinds: ["content"],
+      contentDiagnostics: { missingMarkerCounts: { "featured-event": 1 }, detectedMarkerCounts: { alert: 1 }, sourceCounts: { absent: 1 }, discoveryStateCounts: { timeout: 1 }, featuredStateCounts: { none: 1 } },
+    });
+    const noFixtureHtml = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale="id" entries={entries} games={games} gameFilter="all" loadState="ready" featuredView={homepageView()} />);
+    expect(await measure(noFixtureHtml)).toMatchObject({
+      passed: false, contentDiagnostics: { missingMarkerCounts: { "fixture-link": 1 }, detectedMarkerCounts: {}, sourceCounts: { authoritative: 1 } },
+    });
+    const compatibleView = { ...homepageView(), source: "compatible" as const };
+    const compatibleHtml = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale="id" entries={fixtureEntries} games={games} gameFilter="all" loadState="ready" featuredView={compatibleView} />);
+    expect(await measure(compatibleHtml)).toMatchObject({
+      passed: false, contentDiagnostics: { missingMarkerCounts: {}, detectedMarkerCounts: { "compatible-source": 1 }, sourceCounts: { compatible: 1 } },
+    });
+    const englishScenario = { ...PRESSURE_SCENARIOS.find((item: { path: string }) => item.path === "/en")!, requests: 1, concurrency: 1 };
+    const englishHtml = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale="en" entries={fixtureEntries} games={games} gameFilter="all" loadState="ready" featuredView={homepageView()} />);
+    expect(await measureScenario(englishScenario, {
+      fetchImpl: async () => ({ status: 200, text: async () => englishHtml }), baseUrl: "http://127.0.0.1:3102", clock: () => 0,
+    })).toMatchObject({ passed: true, failures: 0 });
   });
   it.each(["reject", "missing"])("logs %s featured reads and renders honest failure without demo substitution", async (failure) => {
     if (failure === "reject") dependencies.read.mockRejectedValue(new Error("database unavailable"));
@@ -155,9 +188,24 @@ describe("final homepage composition", () => {
     const logger = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const html = renderToStaticMarkup(await HomePageContent({}));
-      expect(html).toContain('role="alert"');
+      const root = document.createElement("div"); root.innerHTML = html;
+      expect(root.querySelector('[role="alert"]')).not.toBeNull();
+      expect(root.querySelector(".mpv3-home-intro")?.getAttribute("data-public-home-featured")).toBe(failure === "reject" ? "read_failure" : "unavailable");
       expect(html).not.toContain("Miracle Football League S3");
-      expect(logger).toHaveBeenCalled();
+      expect(logger).toHaveBeenCalledWith("Homepage featured event unavailable", { code: failure === "reject" ? "read_failure" : "unavailable" });
+    } finally { logger.mockRestore(); }
+  });
+  it("marks a failed discovery read without attempting the featured read", async () => {
+    dependencies.discovery.mockRejectedValue(new Error("private database detail"));
+    const logger = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const html = renderToStaticMarkup(await HomePageContent({}));
+      const root = document.createElement("div"); root.innerHTML = html;
+      expect(root.querySelector(".mpv3-home-intro")?.getAttribute("data-public-home-discovery")).toBe("read_failure");
+      expect(root.querySelector(".mpv3-home-intro")?.getAttribute("data-public-home-featured")).toBe("none");
+      expect(root.querySelector('[role="alert"]')).not.toBeNull();
+      expect(dependencies.read).not.toHaveBeenCalled();
+      expect(logger).toHaveBeenCalledWith("Public discovery events unavailable", { code: "read_failure" });
     } finally { logger.mockRestore(); }
   });
 });
