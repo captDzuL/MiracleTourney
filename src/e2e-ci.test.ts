@@ -76,11 +76,11 @@ describe("CI E2E release sequence", () => {
   it("keeps the E2E dependency, lock, timeout, and fail-closed job gate", async () => {
     const e2eJob = extractJob(await readWorkflow(), "e2e-tests");
 
-    expect(e2eJob).toContain("needs: [lint-and-typecheck, unit-tests]");
+    expect(e2eJob).toContain("needs: [ci-route, lint-and-typecheck, unit-tests]");
     expect(e2eJob).toContain("timeout-minutes: 90");
     expect(e2eJob).toContain("group: e2e-neon-test-db");
     expect(e2eJob).toContain("cancel-in-progress: false");
-    expect(e2eJob).toContain("if: ${{ vars.E2E_ENABLED == 'true' }}");
+    expect(e2eJob).toContain("if: ${{ vars.E2E_ENABLED == 'true' && (needs.ci-route.outputs.route == 'full' || needs.ci-route.outputs.route == 'diagnostic') }}");
     expect(e2eJob).not.toContain("always()");
     expect(e2eJob).not.toContain("!cancelled()");
     expect(e2eJob).not.toContain("needs.lint-and-typecheck.result");
