@@ -222,22 +222,11 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Create guarded public E2E environment
         if: ${{ needs.ci-route.outputs.route == 'run' }}
-        shell: bash
+        uses: ./.github/actions/guarded-public-e2e-env
         env:
           TEST_DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
           TEST_DIRECT_URL: ${{ secrets.NEON_TEST_DIRECT_URL }}
           PRODUCTION_NEON_HOST: ${{ secrets.NEON_PROD_HOST }}
-        run: |
-          umask 077
-          for value in "$TEST_DATABASE_URL" "$TEST_DIRECT_URL" "$PRODUCTION_NEON_HOST"; do
-            if [ -n "$value" ]; then echo "::add-mask::$value"; fi
-          done
-          {
-            printf 'DATABASE_URL=%s\n' "$TEST_DATABASE_URL"
-            printf 'DIRECT_URL=%s\n' "$TEST_DIRECT_URL"
-            printf 'NEON_PROD_HOST=%s\n' "$PRODUCTION_NEON_HOST"
-            printf 'E2E_DATABASE_RESET_ALLOWED=false\n'
-          } > .env.test
       - name: Install Playwright Chromium
         if: ${{ needs.ci-route.outputs.route == 'run' }}
         run: pnpm exec playwright install --with-deps chromium
@@ -290,22 +279,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Create guarded public E2E environment
-        shell: bash
+        uses: ./.github/actions/guarded-public-e2e-env
         env:
           TEST_DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
           TEST_DIRECT_URL: ${{ secrets.NEON_TEST_DIRECT_URL }}
           PRODUCTION_NEON_HOST: ${{ secrets.NEON_PROD_HOST }}
-        run: |
-          umask 077
-          for value in "$TEST_DATABASE_URL" "$TEST_DIRECT_URL" "$PRODUCTION_NEON_HOST"; do
-            if [ -n "$value" ]; then echo "::add-mask::$value"; fi
-          done
-          {
-            printf 'DATABASE_URL=%s\n' "$TEST_DATABASE_URL"
-            printf 'DIRECT_URL=%s\n' "$TEST_DIRECT_URL"
-            printf 'NEON_PROD_HOST=%s\n' "$PRODUCTION_NEON_HOST"
-            printf 'E2E_DATABASE_RESET_ALLOWED=false\n'
-          } > .env.test
       - name: Generate JWT secret
         shell: bash
         run: |

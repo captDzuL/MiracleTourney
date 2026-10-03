@@ -54,12 +54,27 @@ describe("public V3 CI routing", () => {
     expect(homepage).toContain("timeout-minutes: 15");
     expect(homepage).toContain("group: e2e-neon-test-db");
     expect(homepage).toContain("needs.ci-route.outputs.route == 'home'");
-    expect(homepage).toContain("E2E_DATABASE_RESET_ALLOWED=false");
+    expect(homepage).toContain("uses: ./.github/actions/guarded-public-e2e-env");
     expect(homepage).toContain("node scripts/public-v3-pressure.mjs --homepage-only");
     expect(homepage).toContain("name: public-v3-home-evidence");
     expect(homepage).not.toMatch(/playwright|test:e2e:public-v3|db:seed|db:push|migrate/);
     expect(workflow).toContain("needs.ci-route.outputs.route == 'run' || needs.ci-route.outputs.route == 'verify'");
     expect(workflow).toContain("needs.ci-route.outputs.route == 'full' || needs.ci-route.outputs.route == 'diagnostic'");
+  });
+
+  it("shares one guarded public database setup across the full and homepage jobs", () => {
+    const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
+    const full = workflow.split(/^  public-v3-e2e:/m)[1].split(/^  public-v3-homepage:/m)[0];
+    const home = workflow.split(/^  public-v3-homepage:/m)[1];
+    const setup = "uses: ./.github/actions/guarded-public-e2e-env";
+    expect(full).toContain(setup);
+    expect(home).toContain(setup);
+    expect((workflow.match(/uses: \.\/\.github\/actions\/guarded-public-e2e-env/g) ?? [])).toHaveLength(2);
+    expect(full).not.toContain("printf 'DATABASE_URL");
+    expect(home).not.toContain("printf 'DATABASE_URL");
+    const action = readFileSync(".github/actions/guarded-public-e2e-env/action.yml", "utf8");
+    expect(action).toContain("E2E_DATABASE_RESET_ALLOWED=false");
+    expect(action).toContain("::add-mask::");
   });
 });
 

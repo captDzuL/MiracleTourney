@@ -1,0 +1,17 @@
+name: Create guarded public E2E environment
+description: Write the no-reset public test database environment for guarded CI jobs.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        umask 077
+        for value in "$TEST_DATABASE_URL" "$TEST_DIRECT_URL" "$PRODUCTION_NEON_HOST"; do
+          if [ -n "$value" ]; then echo "::add-mask::$value"; fi
+        done
+        {
+          printf 'DATABASE_URL=%s\n' "$TEST_DATABASE_URL"
+          printf 'DIRECT_URL=%s\n' "$TEST_DIRECT_URL"
+          printf 'NEON_PROD_HOST=%s\n' "$PRODUCTION_NEON_HOST"
+          printf 'E2E_DATABASE_RESET_ALLOWED=false\n'
+        } > "$GITHUB_WORKSPACE/.env.test"
