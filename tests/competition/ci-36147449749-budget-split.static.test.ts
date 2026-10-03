@@ -92,7 +92,7 @@ function assertAdaptiveLifecycleLoadBearing(source: string) {
   expect(finished).toContain('await expect(page.getByText("Hasil akhir resmi", { exact: true })).toBeVisible();');
   expect(finished).toContain('await expect(page.getByRole("heading", { name: "Podium akhir" })).toBeVisible();');
   expect(finished).toContain('await expect(page.getByText(winner.name, { exact: true }).first()).toBeVisible();');
-  expect(finished).toContain('await expect(page.getByText("2 - 0", { exact: true }).first()).toBeVisible();');
+  expect(finished).toContain('await expect(page.getByText("2 – 0", { exact: true }).first()).toBeVisible();');
   expect(finished).toContain('await expect(page.locator(\'[data-certificates="preparing"]\')).toContainText("Certificate sedang disiapkan organizer.");');
   expect(finished).toContain('await expect(certificates.getByRole("link", { name: "Lihat certificate" })).toHaveCount(7);');
   expect(finished).toContain('await expect(certificates.getByRole("link", { name: "Verifikasi" })).toHaveCount(7);');
@@ -359,7 +359,7 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
       'await expect(page.getByRole("heading", { name: "Podium akhir" })).toBeVisible();',
       'await expect(page.getByText(teams[0].name, { exact: true }).first()).toBeVisible();',
       'await expect(page.getByText(teams[1].name, { exact: true }).first()).toBeVisible();',
-      'await expect(page.getByText("2 - 0", { exact: true }).first()).toBeVisible();',
+      'await expect(page.getByText("2 – 0", { exact: true }).first()).toBeVisible();',
       'await expect(page.locator(\'[data-certificates="preparing"]\')).toContainText("Certificate sedang disiapkan organizer.");',
       'await expect(certificates.getByRole("link", { name: "Lihat certificate" })).toHaveCount(7);',
     ]) {
