@@ -7,6 +7,23 @@ import { projectPublicHomeFeaturedEvent, projectPublicV3AuthoritativeMatch, proj
 import type { PublicHomeFeaturedEvent } from "./public-v3-types";
 
 const HOME_ROW_LIMIT = 500;
+const GRAPH_KINDS = new Set(["single_elimination", "double_elimination", "round_robin", "group_playoffs"]);
+
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Validate every stored graph field dereferenced by the shared homepage projections. */
+function isHomeProjectionGraph(value: unknown, eventId: string): value is CompetitionGraph {
+  if (!record(value) || value.eventId !== eventId || !record(value.config) || !GRAPH_KINDS.has(value.config.kind as string)
+    || !Array.isArray(value.matches) || !Array.isArray(value.groups) || !Array.isArray(value.phases)) return false;
+  return value.matches.every((match: unknown) => record(match) && typeof match.id === "string"
+    && ["pending", "bye", "empty"].includes(match.status as string) && typeof match.phaseId === "string"
+    && (match.groupId === null || typeof match.groupId === "string") && Number.isFinite(match.round)
+    && typeof match.bracket === "string" && Number.isFinite(match.bestOf))
+    && value.groups.every((group: unknown) => record(group) && typeof group.id === "string" && Number.isFinite(group.sequence))
+    && value.phases.every((phase: unknown) => record(phase) && typeof phase.id === "string" && typeof phase.kind === "string");
+}
 
 /** Read only homepage-visible authoritative ongoing data; other lifecycles retain the full reader. */
 export async function readPublicHomeFeaturedEvent(slug: string, now = new Date()): Promise<PublicHomeFeaturedEvent | null> {
@@ -30,8 +47,8 @@ export async function readPublicHomeFeaturedEvent(slug: string, now = new Date()
       },
     });
     if (!event || event.status !== "Ongoing" || event.matches.length > HOME_ROW_LIMIT || event.teams.length > HOME_ROW_LIMIT) return null;
-    const graph = (event.competitionPhases[0]?.configuration as { graph?: CompetitionGraph } | null)?.graph;
-    if (!graph || graph.eventId !== event.id || !Array.isArray(graph.matches) || !Array.isArray(graph.groups) || !Array.isArray(graph.phases)) return null;
+    const graph = (event.competitionPhases[0]?.configuration as { graph?: unknown } | null)?.graph;
+    if (!isHomeProjectionGraph(graph, event.id)) return null;
 
     const revision = event.publishedScheduleVersion == null ? null : await tx.scheduleRevision.findFirst({
       where: { eventId: event.id, version: event.publishedScheduleVersion, status: "published" },

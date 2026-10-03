@@ -107,6 +107,20 @@ describe("narrow public homepage featured read", () => {
     }) }));
   });
 
+  it.each([
+    ["missing config", { ...graph, config: null }],
+    ["null match", { ...graph, matches: [null] }],
+    ["null group", { ...graph, groups: [null] }],
+    ["null phase", { ...graph, config: TOURNAMENT_FORMAT_PRESETS.groupPlayoffs, phases: [null] }],
+  ])("falls back safely for a graph with %s", async (_case, malformed) => {
+    const { readPublicHomeFeaturedEvent } = await import("./public-home-read");
+    boundary.event.mockResolvedValueOnce({ ...event(), competitionPhases: [{ configuration: { graph: malformed } }] });
+    boundary.full.mockResolvedValue(null);
+    await expect(readPublicHomeFeaturedEvent("cup", now)).resolves.toBeNull();
+    expect(boundary.full).toHaveBeenCalledWith("cup", null, now);
+    expect(boundary.revision).not.toHaveBeenCalled();
+  });
+
   it("falls back instead of displaying a silently truncated public list", async () => {
     const { readPublicHomeFeaturedEvent } = await import("./public-home-read");
     boundary.event.mockResolvedValueOnce({ ...event(), teams: Array.from({ length: 501 }, (_, index) => ({ id: `team-${index}`, name: `Team ${index}` })) });
