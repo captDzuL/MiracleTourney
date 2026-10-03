@@ -79,6 +79,62 @@ describe("CI E2E release sequence", () => {
     expect(fullStep.match(/run: pnpm test:e2e:ci/g)).toHaveLength(1);
   });
 
+  it("keeps the public-v3 diagnostic marker scoped to its push branch", async () => {
+    const diagnosticStep = extractStep(
+      extractJob(await readWorkflow(), "e2e-tests"),
+      "Run public-v3-only diagnostic fast lane",
+    );
+
+    expect(diagnosticStep).toContain("github.event_name == 'push'");
+    expect(diagnosticStep).toContain("github.ref == 'refs/heads/codex/public-event-overview-v3'");
+    expect(diagnosticStep).toContain("contains(github.event.head_commit.message, '[ci:public-v3-only]')");
+  });
+
+  it("keeps the full E2E command behind the public-v3 inverse marker condition", async () => {
+    const fullStep = extractStep(
+      extractJob(await readWorkflow(), "e2e-tests"),
+      "Run guarded Match Day, default, and flags-off E2E profiles",
+    );
+
+    expect(fullStep).toContain("github.event_name != 'push'");
+    expect(fullStep).toContain("github.ref != 'refs/heads/codex/public-event-overview-v3'");
+    expect(fullStep).toContain("!contains(github.event.head_commit.message, '[ci:public-v3-only]')");
+  });
+
+  it("runs only the ordered public-v3 diagnostic subsets without reseeding or sharding", async () => {
+    const diagnosticStep = extractStep(
+      extractJob(await readWorkflow(), "e2e-tests"),
+      "Run public-v3-only diagnostic fast lane",
+    );
+    const commandLines = diagnosticStep
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const diagnosticCommand =
+      'pnpm exec playwright test tests/e2e/v3-matchday.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.config.ts --workers=1 --retries=0 --grep "official (single_elimination|double_elimination|round_robin|group_playoffs) result advances the authoritative competition and public state|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and result|keeps the same permanent URL through finished and certificates" --fail-on-flaky-tests';
+
+    expect(commandLines.filter((line) => line === "pnpm test:e2e:preflight")).toHaveLength(1);
+    expect(commandLines.filter((line) => line === diagnosticCommand)).toHaveLength(1);
+    expect(commandLines.filter((line) => line.startsWith("pnpm "))).toEqual([
+      "pnpm test:e2e:preflight",
+      diagnosticCommand,
+    ]);
+    expect(commandLines.indexOf("pnpm test:e2e:preflight")).toBeLessThan(commandLines.indexOf(diagnosticCommand));
+    expect(diagnosticStep).toContain("--workers=1");
+    expect(diagnosticStep).toContain("--retries=0");
+    expect(diagnosticStep).toContain("--fail-on-flaky-tests");
+    expect(diagnosticStep).not.toContain("test:e2e:ci");
+    expect(diagnosticStep).not.toContain("test:e2e:prepare");
+    expect(diagnosticStep).not.toContain("test:e2e:seed");
+    expect(diagnosticStep).not.toContain("test:e2e:reset");
+    expect(diagnosticStep).not.toContain("db:seed");
+    expect(diagnosticStep).not.toContain("migrate reset");
+    expect(diagnosticStep).not.toContain("--force-reset");
+    expect(diagnosticStep).not.toContain("reseed");
+    expect(diagnosticStep).not.toContain("--shard");
+    expect(diagnosticStep).not.toMatch(/--retries=(?!0\b)\d+/);
+  });
+
   it("runs exactly the ordered two-case organizer diagnostic commands", async () => {
     const diagnosticStep = extractStep(
       extractJob(await readWorkflow(), "e2e-tests"),
@@ -145,6 +201,8 @@ describe("CI E2E release sequence", () => {
     expect(artifactStep).toContain("failure()");
     expect(artifactStep).toContain("github.event_name == 'push'");
     expect(artifactStep).toContain("contains(github.event.head_commit.message, '[ci:failing4-only]')");
+    expect(artifactStep).toContain("github.ref == 'refs/heads/codex/public-event-overview-v3'");
+    expect(artifactStep).toContain("contains(github.event.head_commit.message, '[ci:public-v3-only]')");
     expect(paths).toEqual(["playwright-report/", "test-results/"]);
     expect(artifactStep).toContain("retention-days: 7");
   });
@@ -160,6 +218,20 @@ describe("CI E2E release sequence", () => {
       const condition = workflow.slice(conditionStart, (match.index ?? 0) + marker.length);
       expect(condition).toMatch(/github\.event_name\s*(?:==|!=)\s*'push'/);
       expect(condition).toMatch(/github\.ref\s*(?:==|!=)\s*'refs\/heads\/codex\/organizer-release-readiness'/);
+    }
+  });
+
+  it("keeps every public-v3 marker predicate push- and branch-scoped", async () => {
+    const workflow = await readWorkflow();
+    const marker = "contains(github.event.head_commit.message, '[ci:public-v3-only]')";
+    const markerMatches = [...workflow.matchAll(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))];
+
+    expect(markerMatches.length).toBeGreaterThan(0);
+    for (const match of markerMatches) {
+      const conditionStart = workflow.lastIndexOf("if:", match.index);
+      const condition = workflow.slice(conditionStart, (match.index ?? 0) + marker.length);
+      expect(condition).toMatch(/github\.event_name\s*(?:==|!=)\s*'push'/);
+      expect(condition).toMatch(/github\.ref\s*(?:==|!=)\s*'refs\/heads\/codex\/public-event-overview-v3'/);
     }
   });
 

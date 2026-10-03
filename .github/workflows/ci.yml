@@ -114,8 +114,14 @@ jobs:
         if: >-
           ${{
             github.event_name != 'push' ||
-            github.ref != 'refs/heads/codex/organizer-release-readiness' ||
-            !contains(github.event.head_commit.message, '[ci:failing4-only]')
+            (
+              github.ref != 'refs/heads/codex/organizer-release-readiness' ||
+              !contains(github.event.head_commit.message, '[ci:failing4-only]')
+            ) &&
+            (
+              github.ref != 'refs/heads/codex/public-event-overview-v3' ||
+              !contains(github.event.head_commit.message, '[ci:public-v3-only]')
+            )
           }}
         run: pnpm test:e2e:ci
       - name: Run failing4-only diagnostic fast lane
@@ -129,6 +135,17 @@ jobs:
         run: |
           pnpm test:e2e:preflight
           pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep "@task11-release-journey-part-a" --fail-on-flaky-tests
+      - name: Run public-v3-only diagnostic fast lane
+        if: >-
+          ${{
+            github.event_name == 'push' &&
+            github.ref == 'refs/heads/codex/public-event-overview-v3' &&
+            contains(github.event.head_commit.message, '[ci:public-v3-only]')
+          }}
+        shell: bash
+        run: |
+          pnpm test:e2e:preflight
+          pnpm exec playwright test tests/e2e/v3-matchday.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.config.ts --workers=1 --retries=0 --grep "official (single_elimination|double_elimination|round_robin|group_playoffs) result advances the authoritative competition and public state|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and result|keeps the same permanent URL through finished and certificates" --fail-on-flaky-tests
       - name: Upload Playwright report evidence
         if: >-
           ${{
@@ -137,6 +154,11 @@ jobs:
               github.event_name == 'push' &&
               github.ref == 'refs/heads/codex/organizer-release-readiness' &&
               contains(github.event.head_commit.message, '[ci:failing4-only]')
+            ) ||
+            (
+              github.event_name == 'push' &&
+              github.ref == 'refs/heads/codex/public-event-overview-v3' &&
+              contains(github.event.head_commit.message, '[ci:public-v3-only]')
             )
           }}
         uses: actions/upload-artifact@v6
