@@ -30,6 +30,26 @@ const extractJob = (workflow: string, jobId: string) =>
 const extractStep = (job: string, stepName: string) =>
   job.match(new RegExp(`      - name: ${stepName}\\r?\\n([\\s\\S]*?)(?=\\r?\\n      - name:|$)`))?.[0] ?? "";
 
+const normalizeExpression = (expression: string) =>
+  expression
+    .replace(/\$\{\{/g, "")
+    .replace(/\}\}/g, "")
+    .replace(/\r?\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const extractCondition = (step: string) =>
+  normalizeExpression(
+    step.match(/\r?\n\s+if: >-\r?\n([\s\S]*?)(?=\r?\n\s+(?:run|shell|uses):)/)?.[1] ?? "",
+  );
+
+const PUBLIC_DIAGNOSTIC_CONDITION =
+  "github.event_name == 'push' && github.ref == 'refs/heads/codex/public-event-overview-v3' && contains(github.event.head_commit.message, '[ci:public-v3-only]')";
+const FULL_GATE_CONDITION =
+  "github.event_name != 'push' || ( github.ref != 'refs/heads/codex/organizer-release-readiness' || !contains(github.event.head_commit.message, '[ci:failing4-only]') ) && ( github.ref != 'refs/heads/codex/public-event-overview-v3' || !contains(github.event.head_commit.message, '[ci:public-v3-only]') )";
+const ARTIFACT_CONDITION =
+  "failure() || ( github.event_name == 'push' && github.ref == 'refs/heads/codex/organizer-release-readiness' && contains(github.event.head_commit.message, '[ci:failing4-only]') ) || ( github.event_name == 'push' && github.ref == 'refs/heads/codex/public-event-overview-v3' && contains(github.event.head_commit.message, '[ci:public-v3-only]') )";
+
 describe("CI E2E release sequence", () => {
   it("runs a real fail-closed ESLint gate on the pinned CI runtime", async () => {
     const workflow = await readWorkflow();
@@ -85,9 +105,7 @@ describe("CI E2E release sequence", () => {
       "Run public-v3-only diagnostic fast lane",
     );
 
-    expect(diagnosticStep).toContain("github.event_name == 'push'");
-    expect(diagnosticStep).toContain("github.ref == 'refs/heads/codex/public-event-overview-v3'");
-    expect(diagnosticStep).toContain("contains(github.event.head_commit.message, '[ci:public-v3-only]')");
+    expect(extractCondition(diagnosticStep)).toBe(PUBLIC_DIAGNOSTIC_CONDITION);
   });
 
   it("keeps the full E2E command behind the public-v3 inverse marker condition", async () => {
@@ -96,9 +114,7 @@ describe("CI E2E release sequence", () => {
       "Run guarded Match Day, default, and flags-off E2E profiles",
     );
 
-    expect(fullStep).toContain("github.event_name != 'push'");
-    expect(fullStep).toContain("github.ref != 'refs/heads/codex/public-event-overview-v3'");
-    expect(fullStep).toContain("!contains(github.event.head_commit.message, '[ci:public-v3-only]')");
+    expect(extractCondition(fullStep)).toBe(FULL_GATE_CONDITION);
   });
 
   it("runs only the ordered public-v3 diagnostic subsets without reseeding or sharding", async () => {
@@ -198,11 +214,7 @@ describe("CI E2E release sequence", () => {
       .map((line) => line.trim())
       .filter(Boolean);
 
-    expect(artifactStep).toContain("failure()");
-    expect(artifactStep).toContain("github.event_name == 'push'");
-    expect(artifactStep).toContain("contains(github.event.head_commit.message, '[ci:failing4-only]')");
-    expect(artifactStep).toContain("github.ref == 'refs/heads/codex/public-event-overview-v3'");
-    expect(artifactStep).toContain("contains(github.event.head_commit.message, '[ci:public-v3-only]')");
+    expect(extractCondition(artifactStep)).toBe(ARTIFACT_CONDITION);
     expect(paths).toEqual(["playwright-report/", "test-results/"]);
     expect(artifactStep).toContain("retention-days: 7");
   });
@@ -226,13 +238,11 @@ describe("CI E2E release sequence", () => {
     const marker = "contains(github.event.head_commit.message, '[ci:public-v3-only]')";
     const markerMatches = [...workflow.matchAll(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))];
 
-    expect(markerMatches.length).toBeGreaterThan(0);
-    for (const match of markerMatches) {
-      const conditionStart = workflow.lastIndexOf("if:", match.index);
-      const condition = workflow.slice(conditionStart, (match.index ?? 0) + marker.length);
-      expect(condition).toMatch(/github\.event_name\s*(?:==|!=)\s*'push'/);
-      expect(condition).toMatch(/github\.ref\s*(?:==|!=)\s*'refs\/heads\/codex\/public-event-overview-v3'/);
-    }
+    expect(markerMatches).toHaveLength(3);
+    const e2eJob = extractJob(workflow, "e2e-tests");
+    expect(extractCondition(extractStep(e2eJob, "Run guarded Match Day, default, and flags-off E2E profiles"))).toBe(FULL_GATE_CONDITION);
+    expect(extractCondition(extractStep(e2eJob, "Run public-v3-only diagnostic fast lane"))).toBe(PUBLIC_DIAGNOSTIC_CONDITION);
+    expect(extractCondition(extractStep(e2eJob, "Upload Playwright report evidence"))).toBe(ARTIFACT_CONDITION);
   });
 
   it("records elapsed time for every release phase and the total sequence", async () => {
