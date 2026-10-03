@@ -43,7 +43,7 @@ export function operationStore() {
     };
     const find = ({ where }: Query = {}) => tables[table].filter(row => {
       const scoped = { ...where };
-      if (table === "matchGame" && scoped.match && typeof scoped.match === "object") {
+      if ((table === "matchGame" || table === "playerStat") && scoped.match && typeof scoped.match === "object") {
         const parent = tables.match.find(match => match.id === row.matchId);
         if (!parent || !matches(parent, scoped.match as Row)) return false;
         delete scoped.match;

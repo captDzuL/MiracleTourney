@@ -97,6 +97,17 @@ describe("public V3 event overview route", () => {
     expect(finishedHtml).not.toContain("https://certificate");
   });
 
+  it.each([[
+    "en", "View leaderboard", "/en/events/mlbb-rank-war-32/leaderboards",
+  ], [
+    "id", "Lihat leaderboard", "/id/events/mlbb-rank-war-32/leaderboards",
+  ]] as const)("labels the finished %s primary action for its leaderboard destination", (locale, label, href) => {
+    const finished = view("finished");
+    finished.cta = { ...finished.cta, label: "view_leaderboard", href, hrefByLocale: finished.identity.routes.leaderboard.hrefByLocale, target: finished.identity.routes.leaderboard };
+    const html = renderToStaticMarkup(<PublicV3EventPage view={finished} locale={locale} />);
+    expect(html).toContain(`class="mpv3-action mpv3-action--primary" href="${href}">${label}</a>`);
+  });
+
   it("renders published group standings and playoff context without inventing a league final", () => {
     const ongoing = view("ongoing");
     const groupPlayoffs = {

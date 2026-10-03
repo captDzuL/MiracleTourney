@@ -25,7 +25,7 @@ const copy = {
     viewBracket: "Lihat bracket",
     viewStandings: "Lihat standings",
     viewLive: "Lihat event live",
-    viewResults: "Lihat hasil akhir",
+    viewLeaderboard: "Lihat leaderboard",
     login: "Masuk untuk mendaftar",
     unavailable: "Belum tersedia",
   },
@@ -47,7 +47,7 @@ const copy = {
     viewBracket: "View bracket",
     viewStandings: "View standings",
     viewLive: "View live event",
-    viewResults: "View final results",
+    viewLeaderboard: "View leaderboard",
     login: "Sign in to register",
     unavailable: "Not available yet",
   },
@@ -95,7 +95,7 @@ function ctaLabel(view: PublicV3EventViewModel, locale: PublicV3Locale) {
   if (view.cta.kind === "login") return labels.login;
   if (view.mode === "drawing") return view.navigation.bracket ? labels.viewBracket : labels.viewStandings;
   if (view.mode === "ongoing") return labels.viewLive;
-  return labels.viewResults;
+  return labels.viewLeaderboard;
 }
 
 function heroAction(view: PublicV3EventViewModel, locale: PublicV3Locale) {

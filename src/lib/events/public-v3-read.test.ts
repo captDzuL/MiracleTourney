@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   eventFindUnique: vi.fn(),
+  teamFindMany: vi.fn(),
   playerFindMany: vi.fn(),
   playerStatFindMany: vi.fn(),
   eventAnnouncementFindMany: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/platform/db", () => ({
   prisma: {
     event: { findUnique: mocks.eventFindUnique },
+    team: { findMany: mocks.teamFindMany },
     player: { findMany: mocks.playerFindMany },
     playerStat: { findMany: mocks.playerStatFindMany },
     eventAnnouncement: { findMany: mocks.eventAnnouncementFindMany },
@@ -58,6 +60,7 @@ const viewer = { id: "captain-1", email: "captain@example.test", name: "Captain"
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.eventFindUnique.mockResolvedValue(baseEvent);
+  mocks.teamFindMany.mockResolvedValue([]);
   mocks.playerFindMany.mockResolvedValue([]);
   mocks.playerStatFindMany.mockResolvedValue([]);
   mocks.eventAnnouncementFindMany.mockResolvedValue([]);
@@ -317,15 +320,37 @@ describe("normalized public V3 event reader", () => {
     expect(view).toMatchObject({ source: "compatible", mode: "ongoing", updates: [] });
   });
 
-  it("loads persisted player statistics for a compatible ongoing overview", async () => {
+  it("publishes only completed compatible statistics for this event and a matching roster", async () => {
     mocks.ongoing.mockResolvedValue(null);
-    mocks.playerFindMany.mockResolvedValue([{ id: "p1", displayName: "Nyx", nickname: "Nyx", teamId: "team-a", position: "Forward" }]);
-    mocks.playerStatFindMany.mockResolvedValue([{ matchId: "match-1", playerId: "p1", playerName: "Nyx", teamId: "team-a", position: "Forward", gameSlug: "flashpeak", stats: { scores: [8], goal: 2, assist: 1, passing: 3, defense: 4 } }]);
+    mocks.teamFindMany.mockResolvedValue([{ id: "team-a", name: "Alpha" }, { id: "team-b", name: "Beta" }]);
+    mocks.playerFindMany.mockResolvedValue([
+      { id: "p1", displayName: "Nyx", nickname: "Nyx", teamId: "team-a", position: "Forward" },
+      { id: "p2", displayName: "Lux", nickname: "Lux", teamId: "team-b", position: "Forward" },
+    ]);
+    const matches = new Map([
+      ["completed", { eventId: "event-1", status: "Completed" }],
+      ["live", { eventId: "event-1", status: "Live" }],
+      ["scheduled", { eventId: "event-1", status: "Scheduled" }],
+      ["foreign", { eventId: "other-event", status: "Completed" }],
+    ]);
+    const stats = [
+      { matchId: "completed", playerId: "p1", playerName: "Nyx", teamId: "team-a" },
+      { matchId: "live", playerId: "p1", playerName: "Nyx", teamId: "team-a" },
+      { matchId: "scheduled", playerId: "p1", playerName: "Nyx", teamId: "team-a" },
+      { matchId: "foreign", playerId: "p1", playerName: "Nyx", teamId: "team-a" },
+      { matchId: "completed", playerId: "p2", playerName: "Lux", teamId: "team-a" },
+    ].map((row) => ({ ...row, position: "Forward", gameSlug: "flashpeak", stats: { scores: [8], goal: 2, assist: 1, passing: 3, defense: 4 } }));
+    mocks.playerStatFindMany.mockImplementation(async ({ where }: { where: { gameSlug: string; playerId: { in: string[] }; match?: { eventId: string; status: string } } }) => stats.filter((stat) => {
+      const match = matches.get(stat.matchId);
+      return stat.gameSlug === where.gameSlug && where.playerId.in.includes(stat.playerId)
+        && (!where.match || (match?.eventId === where.match.eventId && match.status === where.match.status));
+    }));
 
     const view = await readPublicV3Event("miracle-cup", viewer);
 
     if (view?.mode !== "ongoing") throw new Error("Expected ongoing projection");
     expect(view.leaderboard).toMatchObject([{ playerId: "p1", nickname: "Nyx", game: 1, score: 8, goal: 2, assist: 1, passing: 3, defense: 4 }]);
+    expect(view.leaderboard).toHaveLength(1);
   });
 
   it("does not project non-Flashpeak persisted stats into a compatible leaderboard", async () => {

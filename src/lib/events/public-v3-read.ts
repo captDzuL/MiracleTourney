@@ -1164,7 +1164,8 @@ function compatibleLeaderboardRows(
     const player = playerById.get(playerId);
     const rowGameSlug = text(row.gameSlug);
     if (!playerId || rowGameSlug !== gameSlug) return [];
-    const teamId = text(row.teamId, text(player?.teamId));
+    const teamId = text(row.teamId);
+    if (!player || teamId !== text(player.teamId) || !teamNames.has(teamId)) return [];
     return [{
       matchId: text(row.matchId, "unknown-match"),
       playerId,
@@ -1208,7 +1209,7 @@ async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now
   const playerRows = publicReaderRows("public.compatibility.players", players);
   const playerIds = playerRows.map((value) => text(record(value).id)).filter(Boolean);
   const playerStats = gameSlug === "flashpeak" && playerIds.length
-    ? await callOptional("playerStat", "findMany", { where: { gameSlug, playerId: { in: playerIds } }, take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) })
+    ? await callOptional("playerStat", "findMany", { where: { gameSlug, playerId: { in: playerIds }, match: { eventId, status: "Completed" } }, take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) })
     : null;
   return {
     event: identityEvent(event),

@@ -54,13 +54,14 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
     const playerById = new Map(players.map(player => [player.id, player]));
     const playerIds = players.map(player => player.id);
     const playerStats = game?.slug === "flashpeak" && playerIds.length
-      ? await tx.playerStat.findMany({ where: { gameSlug: game.slug, playerId: { in: playerIds } } })
+      ? await tx.playerStat.findMany({ where: { gameSlug: game.slug, playerId: { in: playerIds }, match: { eventId: event.id, status: "Completed" } } })
       : [];
     const leaderboard = game?.slug === "flashpeak"
-      ? aggregateFlashpeakLeaderboard(playerStats.map(stat => {
+      ? aggregateFlashpeakLeaderboard(playerStats.flatMap(stat => {
         const player = playerById.get(stat.playerId);
-        const teamId = stat.teamId || player?.teamId || "";
-        return {
+        if (!player || stat.teamId !== player.teamId || !names.has(stat.teamId)) return [];
+        const teamId = stat.teamId;
+        return [{
           matchId: stat.matchId,
           playerId: stat.playerId,
           playerName: stat.playerName || player?.displayName || stat.playerId,
@@ -69,7 +70,7 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
           teamName: names.get(teamId) ?? teamId,
           position: stat.position || player?.position || "",
           stats: stat.stats,
-        };
+        }];
       }))
       : [];
     const nodes = new Map(graph.matches.filter(m => m.status === "pending").map(m => [m.id, m]));
