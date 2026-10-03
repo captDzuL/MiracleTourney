@@ -9,7 +9,7 @@ import { readPublicDrawing } from "./public-drawing";
 import { readPublicFinished } from "./public-finished";
 import { aggregateFlashpeakLeaderboard, readFlashpeakStatPayload } from "@/lib/player-stats/flashpeak";
 import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
-import { withServerActionLog } from "@/lib/observability/logger";
+import { createServerMilestoneLogger, withServerActionLog } from "@/lib/observability/logger";
 import { publicV3LocalizedHref, publicV3RouteTargets, publicV3RouteTarget } from "./public-v3-types";
 import type {
   CompatiblePublicCertificate,
@@ -1092,13 +1092,23 @@ function isPublishedAnnouncement(value: unknown, now: Date): boolean {
   return true;
 }
 
-async function readPublishedAnnouncements(eventId: string, now: Date): Promise<PublicV3Shared["updates"]> {
-  const rows = await callOptional("eventAnnouncement", "findMany", {
-    where: { eventId, status: "published" },
-    orderBy: [{ publishedAt: "desc" }, { id: "asc" }],
-    take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT),
-  });
-  return authoritativeUpdates(publicReaderRows("public.eventAnnouncements", rows).filter((value) => isPublishedAnnouncement(value, now)));
+async function readPublishedAnnouncements(
+  eventId: string,
+  now: Date,
+  requestedPhase: string,
+  trace?: ReturnType<typeof createServerMilestoneLogger>,
+): Promise<PublicV3Shared["updates"]> {
+  try {
+    const rows = await callOptional("eventAnnouncement", "findMany", {
+      where: { eventId, status: "published" },
+      orderBy: [{ publishedAt: "desc" }, { id: "asc" }],
+      take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT),
+    });
+    return authoritativeUpdates(publicReaderRows("public.eventAnnouncements", rows).filter((value) => isPublishedAnnouncement(value, now)));
+  } catch {
+    trace?.(`optional_announcements_${requestedPhase}`, { status: 500, terminal: "failed", errorCode: "internal_error", resourceId: eventId });
+    return [];
+  }
 }
 
 function compatibleMatch(value: unknown): CompatiblePublicMatch {
@@ -1233,14 +1243,17 @@ async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now
   };
 }
 
-async function readPublicV3EventImpl(slug: string, viewer: PublicViewer, now = new Date()): Promise<PublicV3EventViewModel | null> {
+async function readPublicV3EventImpl(slug: string, viewer: PublicViewer, now = new Date(), requestId?: string): Promise<PublicV3EventViewModel | null> {
   let event = await callOptional("event", "findUnique", { where: { slug } });
   if (!event) event = await callOptional("event", "findFirst", { where: { slug } });
   if (!event) return null;
   const row = record(event);
   const status = text(row.status);
   if (!PUBLIC_STATUSES.has(status)) return null;
-  const persistedUpdates = await readPublishedAnnouncements(text(row.id), now);
+  const trace = requestId
+    ? createServerMilestoneLogger({ operation: "public_event_read", route: "/server-readers/public-event", requestId })
+    : undefined;
+  const persistedUpdates = await readPublishedAnnouncements(text(row.id), now, status, trace);
   let authoritative: unknown = null;
   if (status === "Ongoing") authoritative = await readPublicOngoing(slug, now);
   else if (status === "Finished") authoritative = await readPublicFinished(slug);
@@ -1260,5 +1273,5 @@ async function readPublicV3EventImpl(slug: string, viewer: PublicViewer, now = n
 }
 
 export function readPublicV3Event(slug: string, viewer: PublicViewer, now = new Date()): Promise<PublicV3EventViewModel | null> {
-  return withServerActionLog("public_event_read", "/server-readers/public-event", () => readPublicV3EventImpl(slug, viewer, now));
+  return withServerActionLog("public_event_read", "/server-readers/public-event", ({ requestId }) => readPublicV3EventImpl(slug, viewer, now, requestId));
 }

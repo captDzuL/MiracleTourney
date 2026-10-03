@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   eventFindUnique: vi.fn(),
@@ -62,6 +62,10 @@ beforeEach(() => {
   mocks.playerStatFindMany.mockResolvedValue([]);
   mocks.eventAnnouncementFindMany.mockResolvedValue([]);
   for (const reader of [mocks.registration, mocks.drawing, mocks.ongoing, mocks.finished]) reader.mockResolvedValue(null);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("normalized public V3 event reader", () => {
@@ -274,6 +278,43 @@ describe("normalized public V3 event reader", () => {
 
     expect(view?.source).toBe("compatible");
     expect(view?.updates).toEqual([{ id: "published", title: "Saved notice", body: "Visible body", publishedAt: "2026-09-20T01:00:00.000Z" }]);
+  });
+
+  it("keeps an authoritative event page available when announcements fail", async () => {
+    const announcementFailure = new Error("database unavailable secret@example.test token=announcement-token query=SELECT");
+    mocks.eventAnnouncementFindMany.mockRejectedValueOnce(announcementFailure);
+    mocks.ongoing.mockResolvedValue({
+      mode: "ongoing",
+      matches: [], liveMatches: [], nextMatches: [], recentResults: [], standings: [], leaderboard: [],
+      schedule: null, announcements: [], stream: null, stateVersion: "state-1", lastUpdatedAt: "2026-09-20T02:00:00.000Z",
+    });
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const view = await readPublicV3Event("miracle-cup", viewer);
+
+    expect(view).toMatchObject({ source: "authoritative", mode: "ongoing", updates: [] });
+    const records = info.mock.calls.map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>);
+    const degradation = records.find(record => record.stage === "optional_announcements_ongoing");
+    expect(degradation).toMatchObject({
+      phase: "failed",
+      operation: "public_event_read",
+      route: expect.any(String),
+      status: 500,
+      terminal: "failed",
+      errorCode: "internal_error",
+      requestId: expect.any(String),
+      resourceId: expect.stringMatching(/^sha256:/),
+    });
+    expect(JSON.stringify(degradation)).not.toMatch(/database unavailable|secret@example\.test|announcement-token|SELECT/);
+  });
+
+  it("keeps a compatible event page available when announcements fail", async () => {
+    mocks.eventAnnouncementFindMany.mockRejectedValueOnce(new Error("announcement query failed"));
+    mocks.ongoing.mockResolvedValue(null);
+
+    const view = await readPublicV3Event("miracle-cup", viewer);
+
+    expect(view).toMatchObject({ source: "compatible", mode: "ongoing", updates: [] });
   });
 
   it("loads persisted player statistics for a compatible ongoing overview", async () => {
