@@ -175,6 +175,20 @@ describe("production pressure measurements", () => {
       maxDurationMs: { "connect-done": 123, "query-done": 8, "map-done": 1 },
     });
   });
+  it("caps repeated discovery stage counts at 10,000", async () => {
+    const { createDiscoveryTraceCollector } = await import(pressureModulePath);
+    const collector = createDiscoveryTraceCollector();
+    for (let index = 0; index < 10_002; index += 1) collector.consume("[public-v3-discovery] query-start\n");
+    expect(collector.snapshot().stageCounts).toEqual({ "query-start": 10_000 });
+  });
+  it("normalizes diagnostic drain input to finite milliseconds within three seconds", async () => {
+    const { boundedTraceDrainMs } = await import(pressureModulePath);
+    expect(boundedTraceDrainMs(10)).toBe(10);
+    expect(boundedTraceDrainMs(4_000)).toBe(3_000);
+    expect(boundedTraceDrainMs(-1)).toBe(0);
+    expect(boundedTraceDrainMs(Number.NaN)).toBe(0);
+    expect(boundedTraceDrainMs(Number.POSITIVE_INFINITY)).toBe(0);
+  });
   it("selects only both localized homepages for a bounded diagnostic CLI", async () => {
     const { pressureOptionsForArgs } = await import(pressureModulePath);
     const focused = pressureOptionsForArgs(["--homepage-only"]);
@@ -239,6 +253,17 @@ describe("production pressure measurements", () => {
     expect(stopServer).toHaveBeenCalledWith(server);
     expect(writeEvidence.mock.calls[0][0]).toMatchObject({ status: "failed", failure: { kind: "timeout", stage: "warmup", path: "/id" }, warmups: [{ failureKinds: ["timeout"], completed: 0 }] });
   });
+  it("forces discovery tracing off when ordinary pressure inherits a trace flag", async () => {
+    const { runPublicPressure } = await import(pressureModulePath);
+    let serverEnv: Record<string, string> = {};
+    const server = { pid: 123, exitCode: null, stdout: { on: vi.fn() }, stderr: { on: vi.fn() } };
+    await runPublicPressure({ env: { PUBLIC_V3_HOME_DISCOVERY_TRACE: "1" }, loadEnvironment: vi.fn(), checkFixtures: vi.fn(), build: vi.fn(),
+      startServer: (_file: string, _args: string[], options: { env: Record<string, string> }) => { serverEnv = options.env; return server; },
+      stopServer: vi.fn(), writeEvidence: vi.fn(),
+      fetchImpl: async () => ({ status: 200, body: { cancel: async () => undefined } }), scenarios: [],
+    });
+    expect(serverEnv.PUBLIC_V3_HOME_DISCOVERY_TRACE).toBe("0");
+  });
   it("writes only safe stage evidence for a failed homepage warmup", async () => {
     const { runPublicPressure } = await import(pressureModulePath);
     const stdout = new EventEmitter();
@@ -263,6 +288,23 @@ describe("production pressure measurements", () => {
     expect(saved).toMatchObject({ failure: { kind: "content", stage: "warmup", path: "/id" },
       discoveryTrace: { stageCounts: { "connect-done": 1 }, maxDurationMs: { "connect-done": 123 } } });
     expect(JSON.stringify(saved)).not.toContain("do-not-retain");
+  });
+  it("captures late safe stage completion without turning failed homepage content green", async () => {
+    const { runPublicPressure } = await import(pressureModulePath);
+    const stdout = new EventEmitter();
+    const server = { pid: 123, exitCode: null, stdout, stderr: new EventEmitter() };
+    const writeEvidence = vi.fn();
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/id/login")) return { status: 200, body: { cancel: async () => undefined } };
+      setTimeout(() => stdout.emit("data", "[public-v3-discovery] query-done ms=2123\n"), 1);
+      return { status: 200, text: async () => "<main role='alert'>Unavailable</main>" };
+    });
+    await expect(runPublicPressure({ mode: "homepage-only", loadEnvironment: vi.fn(), checkFixtures: vi.fn(), build: vi.fn(),
+      startServer: () => server, stopServer: vi.fn(), writeEvidence, fetchImpl, traceDrainMs: 10,
+      scenarios: [{ path: "/id", requests: 1, concurrency: 1, p95Ms: 3000, public: true, expected: "data-public-v3", statuses: [200] }],
+    })).rejects.toThrow(/Warm/);
+    expect(writeEvidence.mock.calls[0][0]).toMatchObject({ status: "failed", failure: { kind: "content", path: "/id" },
+      discoveryTrace: { stageCounts: { "query-done": 1 }, maxDurationMs: { "query-done": 2123 } } });
   });
   it("consumes public bodies and rejects branded fallback and missing content", async () => {
     const { measureScenario } = await import(pressureModulePath);
