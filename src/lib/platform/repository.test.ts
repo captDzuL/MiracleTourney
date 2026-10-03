@@ -2913,6 +2913,18 @@ describe("public discovery V3 reads", () => {
         updatedAt: "2026-09-12T10:00:00.000Z",
       }),
     ]);
+    expect(prisma.event.findMany).toHaveBeenCalledWith({
+      relationLoadStrategy: "join",
+      where: { status: { in: ["Published", "Registration Closed", "Ongoing", "Finished"] } },
+      include: {
+        stream: true,
+        activeVisualAsset: true,
+        competitionPhases: { where: { sequence: 1 }, select: { status: true }, take: 1 },
+        matches: { where: { status: "Live" }, select: { id: true }, take: 1 },
+        _count: { select: { teams: true } },
+      },
+      orderBy: [{ updatedAt: "desc" }, { slug: "asc" }],
+    });
   });
 
   it("rejects database failures instead of returning fixture events", async () => {

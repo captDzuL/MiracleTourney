@@ -3126,6 +3126,7 @@ export async function getPublicDiscoveryEvents(): Promise<PublicDiscoveryEvent[]
   if (trace) console.info("[public-v3-discovery] query-start");
   const queryStarted = performance.now();
   const rows = await prisma.event.findMany({
+    relationLoadStrategy: "join",
     where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
     include: {
       ...eventPublicInclude,
