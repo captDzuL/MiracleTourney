@@ -3110,6 +3110,21 @@ export async function getPlayerStatFormContext(matchId: string, eventId: string)
  * tournament data is temporarily unavailable.
  */
 export async function getPublicDiscoveryEvents(): Promise<PublicDiscoveryEvent[]> {
+  const trace = process.env.PUBLIC_V3_HOME_DISCOVERY_TRACE === "1";
+  const elapsed = (started: number) => Math.min(99999, Math.round(performance.now() - started));
+  if (trace) {
+    console.info("[public-v3-discovery] connect-start");
+    const connectStarted = performance.now();
+    try {
+      await prisma.$connect();
+      console.info(`[public-v3-discovery] connect-done ms=${elapsed(connectStarted)}`);
+    } catch (error) {
+      console.info(`[public-v3-discovery] connect-error ms=${elapsed(connectStarted)}`);
+      throw error;
+    }
+  }
+  if (trace) console.info("[public-v3-discovery] query-start");
+  const queryStarted = performance.now();
   const rows = await prisma.event.findMany({
     where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
     include: {
@@ -3128,14 +3143,18 @@ export async function getPublicDiscoveryEvents(): Promise<PublicDiscoveryEvent[]
     },
     orderBy: [{ updatedAt: "desc" }, { slug: "asc" }],
   });
+  if (trace) console.info(`[public-v3-discovery] query-done ms=${elapsed(queryStarted)}`);
 
-  return rows.map((row) => ({
+  const mapStarted = performance.now();
+  const entries = rows.map((row) => ({
     event: mapEvent(row),
     phaseStatus: row.competitionPhases[0]?.status ?? null,
     hasLiveMatch: row.matches.length > 0,
     teamCount: row._count.teams,
     updatedAt: row.updatedAt.toISOString(),
   }));
+  if (trace) console.info(`[public-v3-discovery] map-done ms=${elapsed(mapStarted)}`);
+  return entries;
 }
 
 /**

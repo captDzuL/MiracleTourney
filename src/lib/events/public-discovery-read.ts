@@ -13,6 +13,9 @@ export async function loadPublicDiscovery(
 ): Promise<PublicDiscoveryLoadResult> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
+  const trace = process.env.PUBLIC_V3_HOME_DISCOVERY_TRACE === "1";
+  const started = performance.now();
+  if (trace) console.info("[public-v3-discovery] load-start");
   try {
     const entries = await Promise.race([
       load(),
@@ -20,9 +23,11 @@ export async function loadPublicDiscovery(
         timer = setTimeout(() => { timedOut = true; reject(new Error("Public event read timed out")); }, timeoutMs);
       }),
     ]);
+    if (trace) console.info(`[public-v3-discovery] load-done ms=${Math.min(99999, Math.round(performance.now() - started))}`);
     return { entries: sortDiscoveryEvents(entries), loadState: "ready" };
   } catch {
     const code = timedOut ? "timeout" : "read_failure";
+    if (trace) console.info(`[public-v3-discovery] ${timedOut ? "load-timeout" : "load-error"} ms=${Math.min(99999, Math.round(performance.now() - started))}`);
     logger("Public discovery events unavailable", { code });
     return { entries: [], loadState: "error", failureCode: code };
   } finally {

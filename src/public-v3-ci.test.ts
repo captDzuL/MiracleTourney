@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 
 const routeModulePath = "../scripts/public-v3-route.mjs";
 const ciModulePath = "../scripts/public-v3-ci.mjs";
@@ -163,6 +164,17 @@ describe("public V3 lane", () => {
 });
 
 describe("production pressure measurements", () => {
+  it("collects only allowlisted discovery stages and numeric durations across stream chunks", async () => {
+    const { createDiscoveryTraceCollector } = await import(pressureModulePath);
+    const collector = createDiscoveryTraceCollector();
+    collector.consume("[public-v3-discovery] connect-start\n[public-v3-disc");
+    collector.consume("overy] connect-done ms=123\nsecret=do-not-retain\n[public-v3-discovery] query-start\n");
+    collector.consume("[public-v3-discovery] query-done ms=8\n[public-v3-discovery] map-done ms=1\n");
+    expect(collector.snapshot()).toEqual({
+      stageCounts: { "connect-start": 1, "connect-done": 1, "query-start": 1, "query-done": 1, "map-done": 1 },
+      maxDurationMs: { "connect-done": 123, "query-done": 8, "map-done": 1 },
+    });
+  });
   it("selects only both localized homepages for a bounded diagnostic CLI", async () => {
     const { pressureOptionsForArgs } = await import(pressureModulePath);
     const focused = pressureOptionsForArgs(["--homepage-only"]);
@@ -226,6 +238,31 @@ describe("production pressure measurements", () => {
     })).rejects.toThrow(/Warm/);
     expect(stopServer).toHaveBeenCalledWith(server);
     expect(writeEvidence.mock.calls[0][0]).toMatchObject({ status: "failed", failure: { kind: "timeout", stage: "warmup", path: "/id" }, warmups: [{ failureKinds: ["timeout"], completed: 0 }] });
+  });
+  it("writes only safe stage evidence for a failed homepage warmup", async () => {
+    const { runPublicPressure } = await import(pressureModulePath);
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    const server = { pid: 123, exitCode: null, stdout, stderr };
+    const writeEvidence = vi.fn();
+    let serverEnv: Record<string, string> = {};
+    const fetchImpl = vi.fn(async (url: string) => url.endsWith("/id/login")
+      ? { status: 200, body: { cancel: async () => undefined } }
+      : { status: 200, text: async () => "<main role='alert'>Unavailable</main>" });
+    await expect(runPublicPressure({ mode: "homepage-only", loadEnvironment: vi.fn(), checkFixtures: vi.fn(), build: vi.fn(),
+      startServer: (_file: string, _args: string[], options: { env: Record<string, string> }) => {
+        serverEnv = options.env;
+        queueMicrotask(() => stdout.emit("data", "[public-v3-discovery] connect-done ms=123\nsecret=do-not-retain\n"));
+        return server;
+      },
+      stopServer: vi.fn(), writeEvidence, fetchImpl, traceDrainMs: 0,
+      scenarios: [{ path: "/id", requests: 1, concurrency: 1, p95Ms: 3000, public: true, expected: "data-public-v3", statuses: [200] }],
+    })).rejects.toThrow(/Warm/);
+    expect(serverEnv.PUBLIC_V3_HOME_DISCOVERY_TRACE).toBe("1");
+    const saved = writeEvidence.mock.calls[0][0];
+    expect(saved).toMatchObject({ failure: { kind: "content", stage: "warmup", path: "/id" },
+      discoveryTrace: { stageCounts: { "connect-done": 1 }, maxDurationMs: { "connect-done": 123 } } });
+    expect(JSON.stringify(saved)).not.toContain("do-not-retain");
   });
   it("consumes public bodies and rejects branded fallback and missing content", async () => {
     const { measureScenario } = await import(pressureModulePath);

@@ -29,6 +29,28 @@ export function pressureOptionsForArgs(args) {
 const percentile = (values, percentage) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * percentage / 100) - 1] ?? 0;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+export function createDiscoveryTraceCollector() {
+  const stageCounts = {};
+  const maxDurationMs = {};
+  let pending = "";
+  const stages = new Set(["load-start", "load-done", "load-timeout", "load-error", "connect-start", "connect-done", "connect-error", "query-start", "query-done", "map-done"]);
+  return {
+    consume(chunk) {
+      pending = (pending + String(chunk)).slice(-4096);
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        const match = /^\[public-v3-discovery\] ([a-z-]+)(?: ms=(\d{1,5}))?$/.exec(line);
+        if (!match || !stages.has(match[1])) continue;
+        const stage = match[1];
+        stageCounts[stage] = (stageCounts[stage] ?? 0) + 1;
+        if (match[2] !== undefined) maxDurationMs[stage] = Math.max(maxDurationMs[stage] ?? 0, Number(match[2]));
+      }
+    },
+    snapshot() { return { stageCounts: { ...stageCounts }, maxDurationMs: { ...maxDurationMs } }; },
+  };
+}
+
 async function boundedFetch(fetchImpl, url, { publicBody, timeoutMs }) {
   const controller = new AbortController();
   let timeoutId;
@@ -137,7 +159,7 @@ function stopOwnedServer(server) {
 export async function runPublicPressure({ env = process.env, fetchImpl = fetch, sha = process.env.PUBLIC_V3_HEAD_SHA ?? process.env.GITHUB_SHA ?? "local", now = Date.now, mode = "production-like",
   loadEnvironment = loadE2eEnvironment, checkFixtures = checkPublicFixtures, build = command, startServer = spawn, stopServer = stopOwnedServer,
   writeEvidence = async (value) => { await mkdir("test-results/public-v3", { recursive: true }); await writeFile("test-results/public-v3/pressure.json", JSON.stringify(value, null, 2)); },
-  scenarios = PRESSURE_SCENARIOS, timeoutMs = REQUEST_DEADLINE_MS,
+  scenarios = PRESSURE_SCENARIOS, timeoutMs = REQUEST_DEADLINE_MS, traceDrainMs = 3_000,
 } = {}) {
   const evidence = { sha, mode, environment: "guarded E2E test database", buildMs: null, warmups: [], scenarios: [], safeServerLogCounts: {}, status: "failed" };
   let server;
@@ -145,11 +167,12 @@ export async function runPublicPressure({ env = process.env, fetchImpl = fetch, 
   let route = null;
   const startedAt = now();
   const logs = [];
+  const discoveryTrace = createDiscoveryTraceCollector();
   try {
     loadEnvironment({ env });
     stage = "fixtures";
     await checkFixtures({ env });
-    const serverEnv = { ...env, NODE_ENV: "production", FEATURE_FLAG_UI_V3_FOUNDATION: "true", FEATURE_FLAG_ORGANIZER_WORKSPACE_V3: "true", FEATURE_FLAG_REGISTRATION_WORKSPACE_V3: "true", FEATURE_FLAG_COMPETITION_OPERATIONS_V3: "true", FEATURE_FLAG_COMPLETION_WORKSPACE_V3: "true", FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3: "true", FEATURE_FLAG_PUBLIC_DISCOVERY_V3: "true", FEATURE_FLAG_PUBLIC_VISUAL_V2: "false" };
+    const serverEnv = { ...env, NODE_ENV: "production", FEATURE_FLAG_UI_V3_FOUNDATION: "true", FEATURE_FLAG_ORGANIZER_WORKSPACE_V3: "true", FEATURE_FLAG_REGISTRATION_WORKSPACE_V3: "true", FEATURE_FLAG_COMPETITION_OPERATIONS_V3: "true", FEATURE_FLAG_COMPLETION_WORKSPACE_V3: "true", FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3: "true", FEATURE_FLAG_PUBLIC_DISCOVERY_V3: "true", FEATURE_FLAG_PUBLIC_VISUAL_V2: "false", ...(mode === "homepage-only" ? { PUBLIC_V3_HOME_DISCOVERY_TRACE: "1" } : {}) };
     const port = "3102";
     const baseUrl = `http://127.0.0.1:${port}`;
     const buildStart = now();
@@ -158,7 +181,7 @@ export async function runPublicPressure({ env = process.env, fetchImpl = fetch, 
     evidence.buildMs = now() - buildStart;
     stage = "readiness";
     server = startServer(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", port], { env: serverEnv, stdio: ["ignore", "pipe", "pipe"] });
-    server.stdout.on("data", (chunk) => { logs.push(...String(chunk).split(/\r?\n/).filter(Boolean).map((line) => /error|warn|fail/i.test(line) ? "diagnostic" : "normal")); });
+    server.stdout.on("data", (chunk) => { const output = String(chunk); logs.push(...output.split(/\r?\n/).filter(Boolean).map((line) => /error|warn|fail/i.test(line) ? "diagnostic" : "normal")); if (mode === "homepage-only") discoveryTrace.consume(output); });
     server.stderr.on("data", (chunk) => { logs.push(...String(chunk).split(/\r?\n/).filter(Boolean).map(() => "stderr")); });
     const deadline = now() + 45_000;
     let ready = false;
@@ -182,7 +205,9 @@ export async function runPublicPressure({ env = process.env, fetchImpl = fetch, 
     evidence.failure = { kind: resultKind ?? (stage === "fixtures" ? "fixture" : stage === "readiness" ? "readiness" : stage === "build" ? "build" : "preflight"), stage, path: route, elapsedMs: now() - startedAt };
     throw error;
   } finally {
+    if (mode === "homepage-only" && evidence.failure?.kind === "content" && traceDrainMs > 0) await sleep(traceDrainMs);
     stopServer(server);
+    if (mode === "homepage-only") evidence.discoveryTrace = discoveryTrace.snapshot();
     evidence.safeServerLogCounts = { normal: logs.filter((value) => value === "normal").length, diagnostic: logs.filter((value) => value === "diagnostic").length, stderr: logs.filter((value) => value === "stderr").length };
     await writeEvidence(evidence);
   }

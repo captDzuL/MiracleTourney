@@ -125,6 +125,7 @@ const { prisma } = vi.hoisted(() => ({
     },
     competitionAuditLog: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn() },
     $transaction: vi.fn(),
+    $connect: vi.fn(),
   },
 }));
 
@@ -2870,6 +2871,27 @@ describe("authoritative player-stat write boundary", () => {
 
 describe("public discovery V3 reads", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("separates guarded connection, query, and mapping stages without logging event data", async () => {
+    vi.stubEnv("PUBLIC_V3_HOME_DISCOVERY_TRACE", "1");
+    const lines: string[] = [];
+    const logger = vi.spyOn(console, "info").mockImplementation((line: string) => { lines.push(line); });
+    let finishConnect: (() => void) | undefined;
+    prisma.$connect.mockImplementation(() => new Promise<void>((resolve) => { finishConnect = resolve; }));
+    prisma.event.findMany.mockResolvedValue([{ ...publishedEventRow({ id: "private-event-id", name: "private-event-name" }), updatedAt: new Date("2026-09-12T10:00:00.000Z"), competitionPhases: [], matches: [], _count: { teams: 0 } }]);
+    try {
+      const pending = getPublicDiscoveryEvents();
+      expect(prisma.event.findMany).not.toHaveBeenCalled();
+      finishConnect?.();
+      await expect(pending).resolves.toHaveLength(1);
+      expect(lines.map((line) => line.split(" ms=")[0])).toEqual([
+        "[public-v3-discovery] connect-start", "[public-v3-discovery] connect-done",
+        "[public-v3-discovery] query-start", "[public-v3-discovery] query-done", "[public-v3-discovery] map-done",
+      ]);
+      expect(lines.every((line) => /^\[public-v3-discovery\] (connect-start|query-start|(connect-done|query-done|map-done) ms=\d{1,5})$/.test(line))).toBe(true);
+      expect(lines.join(" ")).not.toMatch(/private-event/);
+    } finally { logger.mockRestore(); vi.unstubAllEnvs(); }
+  });
 
   it("returns public database events with drawing, live, count, and freshness metadata", async () => {
     prisma.event.findMany.mockResolvedValue([
