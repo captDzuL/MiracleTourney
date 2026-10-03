@@ -293,7 +293,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       await expect(page.getByText("Hasil akhir resmi", { exact: true })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Podium akhir" })).toBeVisible();
       await expect(page.getByText(winner.name, { exact: true }).first()).toBeVisible();
-      await expect(page.getByText("2 - 0", { exact: true }).first()).toBeVisible();
+      await expect(page.getByText("2 – 0", { exact: true }).first()).toBeVisible();
       await expect(page.locator('[data-certificates="preparing"]')).toContainText("Certificate sedang disiapkan organizer.");
 
       const certificateTypes = ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"] as const;
