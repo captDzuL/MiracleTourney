@@ -22,6 +22,7 @@ import type {
   PublicV3Cta,
   PublicV3DataSource,
   PublicV3EventViewModel,
+  PublicHomeFeaturedEvent,
   PublicV3Identity,
   PublicV3LeaderboardEntry,
   PublicV3Match,
@@ -118,7 +119,7 @@ function navigation(mode: "registration" | "drawing" | "ongoing" | "finished", f
   };
 }
 
-function identityFor(
+export function projectPublicV3Identity(
   event: CompatiblePublicEventRecord,
   mode: "registration" | "drawing" | "ongoing" | "finished",
   source: PublicV3DataSource,
@@ -205,7 +206,7 @@ function shared(
   updates: PublicV3Shared["updates"] = [],
   participantCount = teams.length,
 ): PublicV3Shared {
-  const identity = identityFor(event, mode, source, participantCount);
+  const identity = projectPublicV3Identity(event, mode, source, participantCount);
   return {
     source,
     identity,
@@ -732,7 +733,7 @@ function teamsFromRaw(value: unknown): CompatiblePublicTeam[] {
   });
 }
 
-function authoritativeMatch(value: unknown): PublicV3Match {
+export function projectPublicV3AuthoritativeMatch(value: unknown): PublicV3Match {
   const row = record(value);
   const rawStatus = text(row.status).toLowerCase();
   const resultVersion = nonNegative(row.resultVersion);
@@ -775,7 +776,23 @@ function publicBracketKind(value: unknown): PublicV3Match["bracket"] {
 }
 
 function authoritativeMatches(value: unknown): PublicV3Match[] {
-  return Array.isArray(value) ? value.map(authoritativeMatch) : [];
+  return Array.isArray(value) ? value.map(projectPublicV3AuthoritativeMatch) : [];
+}
+
+/** Narrow pure adapter for homepage consumers; never invents missing detail fields. */
+export function projectPublicHomeFeaturedEvent(view: PublicV3EventViewModel): PublicHomeFeaturedEvent {
+  const base = {
+    source: view.source, identity: view.identity, organizer: view.organizer, facts: view.facts,
+    statusExplanation: view.statusExplanation, statusExplanationKey: view.statusExplanationKey,
+    cta: view.cta, navigation: view.navigation, teams: view.teams.map(({ id, name }) => ({ id, name })),
+  };
+  if (view.mode === "registration") return { ...base, mode: "registration", registration: {
+    activeTeamCount: view.registration.activeTeamCount, participantCap: view.registration.participantCap,
+    remainingSlots: view.registration.remainingSlots,
+  } };
+  if (view.mode === "drawing") return { ...base, mode: "drawing", drawing: { published: view.drawing.published }, matches: view.matches };
+  if (view.mode === "ongoing") return { ...base, mode: "ongoing", liveMatches: view.liveMatches, nextMatches: view.nextMatches, recentResults: view.recentResults };
+  return { ...base, mode: "finished", matches: view.matches, podium: view.podium.map(({ rank, teamName }) => ({ rank, teamName })) };
 }
 
 function authoritativeBracketSlots(matches: PublicV3Match[]): PublicV3BracketSlot[] {

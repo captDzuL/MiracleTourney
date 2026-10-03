@@ -2,7 +2,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { publicV3RouteTargets, type PublicV3EventViewModel, type PublicV3Match } from "@/lib/events/public-v3-types";
+import { publicV3RouteTargets, type PublicHomeFeaturedEvent, type PublicV3EventViewModel, type PublicV3Match } from "@/lib/events/public-v3-types";
 import type { PublicDiscoveryEvent } from "@/lib/events/public-discovery";
 import type { Game } from "@/lib/platform/types";
 import { PublicDiscoveryHomeV3 } from "./PublicDiscoveryV3";
@@ -14,6 +14,7 @@ vi.mock("next-intl/server", () => ({ getTranslations: async () => (key: string) 
 vi.mock("@/i18n/navigation", () => ({ Link: (props: React.ComponentProps<"a">) => <a {...props} />, usePathname: () => dependencies.pathname }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => true }));
 vi.mock("@/lib/events/public-v3-read", () => ({ readPublicV3Event: dependencies.read }));
+vi.mock("@/lib/events/public-home-read", () => ({ readPublicHomeFeaturedEvent: dependencies.read }));
 vi.mock("@/lib/platform/repository", () => ({ getPublicDiscoveryEvents: dependencies.discovery, getAllGames: () => games, getPublicEvents: vi.fn() }));
 import { HomePageContent } from "@/app/home-page-content";
 import { PublicHomepageShellBoundary } from "./PublicHomepageShellBoundary";
@@ -38,7 +39,7 @@ function entry(slug: string, status: PublicDiscoveryEvent["event"]["status"]): P
   return { event: { id: slug, slug, name: `Miracle ${slug}`, gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", description: "Competition", status, format: "Single Elimination", participantCap: 32, startsAt: "2026-09-18", venue: "Arena", registrationWindow: "", registrationFeeRequired: false }, teamCount: 12, hasLiveMatch: status === "Ongoing", phaseStatus: null, updatedAt: "2026-09-18" };
 }
 const entries = [entry("done", "Finished"), entry("open", "Published"), entry("live", "Ongoing"), entry("second-live", "Ongoing")];
-function render(view: PublicV3EventViewModel | null = homepageView(), locale: "id" | "en" = "id") {
+function render(view: PublicHomeFeaturedEvent | null = homepageView(), locale: "id" | "en" = "id") {
   const root = document.createElement("div");
   root.innerHTML = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale={locale} entries={entries} games={games} gameFilter="all" loadState="ready" featuredView={view} />);
   return root;
@@ -46,6 +47,17 @@ function render(view: PublicV3EventViewModel | null = homepageView(), locale: "i
 
 describe("final homepage composition", () => {
   beforeEach(() => { vi.clearAllMocks(); dependencies.locale = "id"; dependencies.discovery.mockResolvedValue(entries); dependencies.read.mockResolvedValue(homepageView()); });
+  it.each(["id", "en"] as const)("renders the narrow Ongoing hero identically to the full view in %s", (locale) => {
+    const full = homepageView();
+    if (full.mode !== "ongoing") throw new Error("expected ongoing fixture");
+    const narrow: PublicHomeFeaturedEvent = {
+      source: full.source, mode: "ongoing", identity: full.identity, organizer: full.organizer, facts: full.facts,
+      statusExplanation: full.statusExplanation, statusExplanationKey: full.statusExplanationKey,
+      cta: full.cta, navigation: full.navigation, teams: full.teams.map(({ id, name }) => ({ id, name })),
+      liveMatches: full.liveMatches, nextMatches: full.nextMatches, recentResults: full.recentResults,
+    };
+    expect(render(narrow, locale).innerHTML).toBe(render(full, locale).innerHTML);
+  });
   it("presents normalized hero, match, Pulse, five routes and lifecycle groups in that order", () => {
     const root = render();
     expect(root.querySelector("h1")?.textContent).toBe("Miracle Football League S3");
@@ -145,7 +157,7 @@ describe("final homepage composition", () => {
   });
   it("loads the deterministic discovery winner through the normalized reader", async () => {
     const html = renderToStaticMarkup(await HomePageContent({}));
-    expect(dependencies.read).toHaveBeenCalledWith("live", null);
+    expect(dependencies.read).toHaveBeenCalledWith("live");
     expect(html).toContain("Miracle Football League S3");
     expect(html).toContain('data-public-source="authoritative"');
     const root = document.createElement("div"); root.innerHTML = html;

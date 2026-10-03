@@ -1,5 +1,5 @@
 import React from "react";
-import { publicV3LocalizedHref, publicV3RouteTarget, resolvePublicV3Route, type PublicV3EventViewModel } from "@/lib/events/public-v3-types";
+import { publicV3LocalizedHref, publicV3RouteTarget, resolvePublicV3Route, type PublicHomeFeaturedEvent } from "@/lib/events/public-v3-types";
 import { PublicV3Frame } from "./PublicV3Frame";
 import { EventPosterStage } from "./EventPosterStage";
 import { FeaturedEventHero } from "./FeaturedEventHero";
@@ -29,7 +29,7 @@ function gameName(games: readonly Game[], gameId: string) {
 
 export function PublicDiscoveryHomeV3({ locale, entries, games, gameFilter, loadState, featuredView, diagnostics }: {
   locale: Locale; entries: readonly PublicDiscoveryEvent[]; games: readonly Game[];
-  gameFilter: string; loadState: LoadState; featuredView?: PublicV3EventViewModel | null;
+  gameFilter: string; loadState: LoadState; featuredView?: PublicHomeFeaturedEvent | null;
   diagnostics?: { discovery: "ready" | "timeout" | "read_failure"; featured: "none" | "ready" | "unavailable" | "read_failure" | "mismatch" };
 }) {
   const t = homeCopy[locale];

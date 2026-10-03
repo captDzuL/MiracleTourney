@@ -318,6 +318,17 @@ export type PublicV3EventViewModel =
   | PublicV3OngoingEventViewModel
   | PublicV3FinishedEventViewModel;
 
+/** Only fields rendered by the featured homepage modules; full views remain assignable. */
+type PublicHomeFeaturedBase = Pick<PublicV3Shared, "source" | "identity" | "organizer" | "facts" | "statusExplanation" | "statusExplanationKey" | "cta" | "navigation"> & {
+  teams: Array<Pick<PublicV3Team, "id" | "name">>;
+};
+export type PublicHomeFeaturedEvent = PublicHomeFeaturedBase & (
+  | { mode: "registration"; registration: Pick<PublicV3RegistrationEventViewModel["registration"], "activeTeamCount" | "participantCap" | "remainingSlots"> }
+  | { mode: "drawing"; drawing: Pick<PublicV3DrawingEventViewModel["drawing"], "published">; matches: PublicV3Match[] }
+  | { mode: "ongoing"; liveMatches: PublicV3Match[]; nextMatches: PublicV3Match[]; recentResults: PublicV3Match[] }
+  | { mode: "finished"; matches: PublicV3Match[]; podium: Array<Pick<PublicV3FinishedEventViewModel["podium"][number], "rank" | "teamName">> }
+);
+
 export type CompatiblePublicEventRecord = {
   id?: string;
   slug?: string;

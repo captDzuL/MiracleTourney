@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Prisma } from "@prisma/client";
+import { Prisma, type Match } from "@prisma/client";
 import { prisma } from "@/lib/platform/db";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { findGameConfig } from "@/lib/platform/config";
@@ -27,6 +27,26 @@ function publishedChanges(current: ScheduleAssignment[], previous: ScheduleAssig
   });
 }
 
+type OngoingMatchRow = Pick<Match, "id" | "homeTeamId" | "awayTeamId" | "status" | "scheduleStatus" | "scheduledLabel" | "homeScore" | "awayScore" | "resultVersion" | "resultConfirmedAt">;
+
+/** Shared authoritative match projection for the full reader and the homepage. */
+export function projectPublicOngoingMatches(graph: CompetitionGraph, matches: readonly OngoingMatchRow[], teams: readonly { id: string; name: string }[], snapshot?: StoredSchedule): PublicOngoingMatch[] {
+  const assignments = new Map(snapshot?.draft.assignments.map(a => [a.matchId, a]));
+  const names = new Map(teams.map(t => [t.id, t.name ?? t.id]));
+  const nodes = new Map(graph.matches.filter(m => m.status === "pending").map(m => [m.id, m]));
+  return matches.filter(m => nodes.has(m.id)).map(m => {
+    const node = nodes.get(m.id)!;
+    const assignment = assignments.get(m.id);
+    const official = m.resultVersion > 0;
+    const status: PublicOngoingMatch["status"] = official ? "completed" : m.status === "Live" || m.scheduleStatus === "live" ? "live" : m.scheduleStatus === "delayed" ? "delayed" : m.scheduleStatus === "postponed" ? "postponed" : "scheduled";
+    return { id: m.id, home: names.get(m.homeTeamId) ?? null, away: names.get(m.awayTeamId) ?? null, round: node.round, phaseId: node.phaseId, groupId: node.groupId, groupNumber: graph.groups.find(g => g.id === node.groupId)?.sequence ?? null, isPlayoff: graph.config.kind === "group_playoffs" && graph.phases.some(p => p.id === node.phaseId && p.kind !== "groups"), bracket: node.bracket, bestOf: node.bestOf,
+      status, start: assignment?.start ?? null, end: assignment?.end ?? null, room: assignment?.roomId ?? null,
+      scheduledLabel: assignment ? null : m.scheduledLabel ?? null,
+      homeScore: official ? m.homeScore : null, awayScore: official ? m.awayScore : null, resultVersion: m.resultVersion,
+      confirmedAt: official ? m.resultConfirmedAt?.toISOString() ?? null : null };
+  }).sort((a, b) => (a.start ?? "~").localeCompare(b.start ?? "~") || a.round - b.round || a.id.localeCompare(b.id));
+}
+
 /** Public allowlist projection. Never serialize an operations workspace or raw Prisma row. */
 export async function getPublicOngoingEvent(slug: string, now = new Date()): Promise<PublicOngoingEventViewModel | null> {
   if (!publicOngoingEnabled()) return null;
@@ -48,7 +68,6 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
     if (!graph || graph.eventId !== event.id) return null;
     const snapshot = revision?.snapshot as unknown as StoredSchedule | undefined;
     const previous = preceding.sort((a, b) => b.version - a.version)[0]?.snapshot as unknown as StoredSchedule | undefined;
-    const assignments = new Map(snapshot?.draft.assignments.map(a => [a.matchId, a]));
     const names = new Map(teams.map(t => [t.id, t.name ?? t.id]));
     const game = findGameConfig(event.gameId);
     const playerById = new Map(players.map(player => [player.id, player]));
@@ -73,18 +92,7 @@ export async function getPublicOngoingEvent(slug: string, now = new Date()): Pro
         }];
       }))
       : [];
-    const nodes = new Map(graph.matches.filter(m => m.status === "pending").map(m => [m.id, m]));
-    const publicMatches: PublicOngoingMatch[] = matches.filter(m => nodes.has(m.id)).map(m => {
-      const node = nodes.get(m.id)!;
-      const assignment = assignments.get(m.id);
-      const official = m.resultVersion > 0;
-      const status: PublicOngoingMatch["status"] = official ? "completed" : m.status === "Live" || m.scheduleStatus === "live" ? "live" : m.scheduleStatus === "delayed" ? "delayed" : m.scheduleStatus === "postponed" ? "postponed" : "scheduled";
-      return { id: m.id, home: names.get(m.homeTeamId) ?? null, away: names.get(m.awayTeamId) ?? null, round: node.round, phaseId: node.phaseId, groupId: node.groupId, groupNumber: graph.groups.find(g => g.id === node.groupId)?.sequence ?? null, isPlayoff: graph.config.kind === "group_playoffs" && graph.phases.some(p => p.id === node.phaseId && p.kind !== "groups"), bracket: node.bracket, bestOf: node.bestOf,
-        status, start: assignment?.start ?? null, end: assignment?.end ?? null, room: assignment?.roomId ?? null,
-        scheduledLabel: assignment ? null : m.scheduledLabel ?? null,
-        homeScore: official ? m.homeScore : null, awayScore: official ? m.awayScore : null, resultVersion: m.resultVersion,
-        confirmedAt: official ? m.resultConfirmedAt?.toISOString() ?? null : null };
-    }).sort((a, b) => (a.start ?? "~").localeCompare(b.start ?? "~") || a.round - b.round || a.id.localeCompare(b.id));
+    const publicMatches = projectPublicOngoingMatches(graph, matches, teams, snapshot);
     const activeAnnouncements = announcements.filter(a => a.publishedAt && a.publishedAt <= now && (!a.startsAt || a.startsAt <= now) && (!a.endsAt || a.endsAt > now))
       .map(a => ({ id: a.id, title: a.title, body: a.body, urgency: a.urgency ?? "info", publishedAt: a.publishedAt!.toISOString(), endsAt: a.endsAt?.toISOString() ?? null }) )
       .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id));

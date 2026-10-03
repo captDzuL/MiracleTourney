@@ -7,8 +7,8 @@ import { GameArt, StatusBadge } from "@/components/GameArt";
 import { PublicHomeV2 } from "@/components/public-v2/PublicHomeV2";
 import { PublicDiscoveryHomeV3 } from "@/components/v3/public-discovery/PublicDiscoveryV3";
 import { chooseFeaturedDiscoveryEvent, filterDiscoveryEvents } from "@/lib/events/public-discovery";
-import { readPublicV3Event } from "@/lib/events/public-v3-read";
-import type { PublicV3EventViewModel } from "@/lib/events/public-v3-types";
+import { readPublicHomeFeaturedEvent } from "@/lib/events/public-home-read";
+import type { PublicHomeFeaturedEvent } from "@/lib/events/public-v3-types";
 import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getDefaultModeLabel } from "@/lib/platform/config";
@@ -121,11 +121,11 @@ export async function HomePageContent({
     const discovery = await loadPublicDiscovery(getCachedPublicDiscoveryEvents);
     const entries = filterDiscoveryEvents(discovery.entries, { game: gameFilter, status: "all" });
     const featured = chooseFeaturedDiscoveryEvent(entries);
-    let featuredView: PublicV3EventViewModel | null = null;
+    let featuredView: PublicHomeFeaturedEvent | null = null;
     let featuredReadState: "none" | "ready" | "unavailable" | "read_failure" | "mismatch" = "none";
     if (featured) {
       try {
-        featuredView = await readPublicV3Event(featured.event.slug, null);
+        featuredView = await readPublicHomeFeaturedEvent(featured.event.slug);
         featuredReadState = !featuredView ? "unavailable" : featuredView.identity.id === featured.event.id ? "ready" : "mismatch";
         if (featuredReadState !== "ready") console.error("Homepage featured event unavailable", { code: featuredReadState });
       } catch {

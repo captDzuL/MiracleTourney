@@ -28,6 +28,7 @@ vi.mock("./public-finished", () => ({ readPublicFinished: mocks.finished }));
 
 import {
   projectCompatiblePublicV3Event,
+  projectPublicHomeFeaturedEvent,
   readPublicV3Event,
 } from "./public-v3-read";
 import type { CompatiblePublicEventInput } from "./public-v3-types";
@@ -96,6 +97,12 @@ describe("normalized public V3 event reader", () => {
     });
     expect(mocks.ongoing).toHaveBeenCalledWith("miracle-cup", expect.any(Date));
     expect(mocks.registration).not.toHaveBeenCalled();
+    if (!view) throw new Error("expected public view");
+    const home = projectPublicHomeFeaturedEvent(view);
+    expect(home).toMatchObject({ source: "authoritative", mode: "ongoing", identity: { slug: "miracle-cup" } });
+    expect(home).not.toHaveProperty("leaderboard");
+    expect(home).not.toHaveProperty("standings");
+    expect(home).not.toHaveProperty("updates");
   });
 
   it("projects a legacy event without CompetitionPhase as honest TBD drawing slots", () => {
