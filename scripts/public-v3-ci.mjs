@@ -32,6 +32,42 @@ export function parseListCount(output) {
   return Number(match[1]);
 }
 
+function selectedCases(report) {
+  if (!Array.isArray(report?.suites)) throw new Error("Selection manifest is missing suites.");
+  const cases = [];
+  const visit = (suite) => {
+    for (const spec of suite.specs ?? []) {
+      if (typeof spec.id !== "string" || typeof spec.title !== "string" || typeof spec.file !== "string" || !Number.isInteger(spec.line) || !Number.isInteger(spec.column)) throw new Error("Selection manifest has incomplete cases.");
+      cases.push({ id: spec.id, file: spec.file.replaceAll("\\", "/").split("/").at(-1), line: spec.line, column: spec.column, title: spec.title.replace(/[\x00-\x1f\x7f]/g, " ").slice(0, 200) });
+    }
+    for (const child of suite.suites ?? []) visit(child);
+  };
+  report.suites.forEach(visit);
+  cases.sort((a, b) => a.id.localeCompare(b.id));
+  if (new Set(cases.map((item) => item.id)).size !== cases.length) throw new Error("Selection manifest has duplicate cases.");
+  return cases;
+}
+
+export function assertSameSelectedCases(listReport, runReport) {
+  const listed = selectedCases(listReport);
+  if (JSON.stringify(listed) !== JSON.stringify(selectedCases(runReport))) throw new Error("Selection manifest mismatch between list and run.");
+  return listed;
+}
+
+function failedCases(report) {
+  const cases = [];
+  const visit = (suite) => {
+    for (const spec of suite.specs ?? []) {
+      if ((spec.tests ?? []).some((test) => test.status === "unexpected" || test.status === "skipped" || test.status === "flaky" || (test.results ?? []).some((result) => result.status === "failed" || result.status === "timedOut"))) {
+        cases.push({ id: String(spec.id ?? "").slice(0, 120), title: String(spec.title ?? "").replace(/[\x00-\x1f\x7f]/g, " ").slice(0, 200) });
+      }
+    }
+    for (const child of suite.suites ?? []) visit(child);
+  };
+  for (const suite of report?.suites ?? []) visit(suite);
+  return cases;
+}
+
 export function validateReport(report, expected) {
   const stats = report?.stats;
   if (!stats || ![stats.expected, stats.unexpected, stats.skipped, stats.flaky].every(Number.isInteger)) throw new Error("Playwright JSON report is incomplete.");
@@ -70,20 +106,28 @@ export async function runPublicV3Ci({ execute = executeCommand, preflight = asyn
   await writeFile("test-results/public-v3/evidence.json", JSON.stringify(evidence, null, 2));
 }, sha = process.env.PUBLIC_V3_HEAD_SHA ?? process.env.GITHUB_SHA ?? "local", now = Date.now } = {}) {
   const evidence = { sha, mode: "full-public", exclusions: ["three public-v3-seeded-events seed/reseed cases"], phases: [], status: "failed" };
+  let stage = "preflight";
+  let currentSelection = null;
+  const startedAt = now();
   try {
     await preflight();
     for (const phase of PUBLIC_PHASES) {
       const phaseEvidence = { id: phase.id, expected: phase.expected, selections: [], passed: 0 };
       evidence.phases.push(phaseEvidence);
       for (const item of phase.selections) {
-        const listed = await execute("pnpm", [...item.args, "--list"], { phase: phase.id, selection: item.id, env: { ...process.env, PUBLIC_V3_NO_RESET: "1" } });
+        currentSelection = item.id;
+        stage = "list";
+        const listed = await execute("pnpm", [...item.args, "--list", "--reporter=json"], { phase: phase.id, selection: item.id, env: { ...process.env, PUBLIC_V3_NO_RESET: "1" } });
         if (listed.exitCode !== 0) throw new Error(`Selection ${item.id} list failed.`);
-        const listedCount = parseListCount(listed.output);
-        phaseEvidence.selections.push({ id: item.id, args: item.args, listed: listedCount, passed: 0, failed: 0, skipped: 0, flaky: 0 });
+        const listReport = JSON.parse(listed.output);
+        const manifest = selectedCases(listReport);
+        const listedCount = manifest.length;
+        phaseEvidence.selections.push({ id: item.id, args: item.args, listed: listedCount, manifest, passed: 0, failed: 0, skipped: 0, flaky: 0 });
         if (listedCount !== item.expected) throw new Error(`Selection ${item.id} listed ${listedCount}; expected ${item.expected}.`);
         const reportPath = `test-results/public-v3/${item.id}.json`;
         await mkdir("test-results/public-v3", { recursive: true });
         const started = now();
+        stage = "run";
         const result = await execute("pnpm", [...item.args, "--reporter=line,json"], { phase: phase.id, selection: item.id, env: { ...process.env, PUBLIC_V3_NO_RESET: "1", PLAYWRIGHT_JSON_OUTPUT_FILE: reportPath } });
         const selectionEvidence = phaseEvidence.selections.at(-1);
         if (result.report?.stats) {
@@ -94,7 +138,9 @@ export async function runPublicV3Ci({ execute = executeCommand, preflight = asyn
           selectionEvidence.flaky = Number.isInteger(stats.flaky) ? stats.flaky : 0;
         }
         selectionEvidence.elapsedMs = now() - started;
+        selectionEvidence.failedCases = failedCases(result.report);
         if (result.exitCode !== 0) throw new Error(`Selection ${item.id} failed.`);
+        assertSameSelectedCases(listReport, result.report);
         const summary = validateReport(result.report, item.expected);
         Object.assign(selectionEvidence, summary);
         phaseEvidence.passed += summary.passed;
@@ -104,6 +150,7 @@ export async function runPublicV3Ci({ execute = executeCommand, preflight = asyn
     evidence.status = "passed";
     return evidence;
   } catch (error) {
+    evidence.failure = { kind: stage === "preflight" ? "preflight" : stage === "list" ? "selection" : "test", stage, selection: currentSelection, elapsedMs: now() - startedAt };
     evidence.error = error instanceof Error && /^(Selection |Playwright |Database preflight |Public fixture preflight |Phase )/.test(error.message)
       ? error.message
       : "Public lane failed before producing a safe diagnostic.";
