@@ -2,6 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import { PublicParticipantRoster } from "./PublicParticipantRoster";
+
 export type PublicParticipantTeam = {
   id: string;
   name: string;
@@ -100,7 +102,7 @@ export function PublicParticipantsDirectory({ teams, locale }: { teams: PublicPa
     {selected ? <div ref={dialogRef} className="fixed inset-0 z-50 grid place-items-center bg-slate-950/75 p-4" role="dialog" aria-modal="true" aria-labelledby="participant-roster-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}>
       <section className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-4"><div><h2 id="participant-roster-title" className="text-2xl font-extrabold">{selected.name}</h2><p className="text-[var(--color-text-muted)]">{selected.tag}</p></div><button type="button" className="min-h-11 rounded-[var(--radius-control)] border border-[var(--color-border)] px-4" onClick={() => setSelected(null)}>{id ? "Tutup" : "Close"}</button></div>
-        {selected.players.length ? <ul className="mt-5 grid gap-3">{selected.players.map((player) => <li key={player.id} className="rounded-[var(--radius-control)] bg-[var(--color-surface-subtle)] p-4"><p className="font-bold">{player.nickname}</p><p className="text-sm text-[var(--color-text-muted)]">{player.displayName} · {player.position}</p></li>)}</ul> : <p className="mt-5 text-[var(--color-text-muted)]">{id ? "Roster belum diterbitkan." : "Roster has not been published."}</p>}
+        {selected.players.length ? <PublicParticipantRoster players={selected.players} locale={locale} /> : <p className="mt-5 text-[var(--color-text-muted)]">{id ? "Roster belum diterbitkan." : "Roster has not been published."}</p>}
       </section>
     </div> : null}
   </div>;

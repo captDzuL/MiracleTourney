@@ -1,7 +1,7 @@
 # Public Roster: UID, IGN, and Optional Position
 
 Date: 2026-10-03
-Status: The user approved retaining the supplied team-card interface. Written specification awaits user review.
+Status: Approved by the user on 2026-10-03; implementation authorized in the current checkout.
 
 ## Goal
 
