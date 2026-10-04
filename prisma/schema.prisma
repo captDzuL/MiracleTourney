@@ -118,6 +118,7 @@ model Event {
   promotions                     EventPromotion[]
   analyticsSnapshots             EventAnalyticsSnapshot[]
   checkIns                       CheckIn[]
+  bracketAppearance              EventBracketAppearance?
   paymentSettings                EventPaymentSettings?
   registrationImportProfiles     RegistrationImportProfile[]
   registrationImportBatches      RegistrationImportBatch[]
@@ -304,6 +305,17 @@ model PaymentSettings {
   updatedAt    DateTime @updatedAt
 }
 
+model EventBracketAppearance {
+  id            String   @id @default(cuid())
+  eventId       String   @unique
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  backgroundUrl String?
+  positionX     Int      @default(50)
+  positionY     Int      @default(50)
+  overlay       Int      @default(35)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
 model EventPaymentSettings {
   id            String    @id @default(cuid())
   eventId       String    @unique

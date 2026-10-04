@@ -32,6 +32,30 @@ describe("uploadImageAsset immutable storage", () => {
     blobPut.mockReset();
   });
 
+  it("rejects a PNG whose header is readable but pixel data is truncated before storage", async () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-token";
+    const complete = (await imageFile(4, 4)).bytes;
+    const truncated = complete.subarray(0, complete.indexOf(Buffer.from("IDAT")) + 4);
+    blobPut.mockResolvedValue({ url: "https://store.public.blob.vercel-storage.com/bracket-backgrounds/broken.png" });
+    expect((await sharp(truncated).metadata()).width).toBe(4);
+    await expect(sharp(truncated, { failOn: "error" }).stats()).rejects.toThrow();
+    await expect(uploadImageAsset({ file: new File([truncated], "broken.png", { type: "image/png" }),
+      folder: "bracket-backgrounds", entityId: "event-1", label: "Bracket background", maxBytes: 5 * 1024 * 1024,
+      validationMode: "throw", validatePixels: true })).rejects.toMatchObject({ code: "decode_failed" });
+    expect(blobPut).not.toHaveBeenCalled();
+  });
+
+  it.each(["png", "jpeg", "webp"] as const)("accepts fully decodable %s artwork", async format => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-token";
+    blobPut.mockResolvedValue({ url: `https://store.public.blob.vercel-storage.com/bracket-backgrounds/asset.${format}` });
+    const bytes = await sharp({ create: { width: 4, height: 4, channels: 4, background: "#aa8bff" } }).toFormat(format).toBuffer();
+    const mimeType = format === "png" ? "image/png" : format === "jpeg" ? "image/jpeg" : "image/webp";
+    const result = await uploadImageAsset({ file: new File([bytes], `artwork.${format}`, { type: mimeType }),
+      folder: "bracket-backgrounds", entityId: "event-1", label: "Bracket background", maxBytes: 5 * 1024 * 1024,
+      validationMode: "throw", validatePixels: true });
+    expect(result).toMatchObject({ mimeType, width: 4, height: 4 });
+    expect(blobPut).toHaveBeenCalledTimes(1);
+  });
   it("uses a UUID/content-addressed create-only Blob pathname after decoding dimensions", async () => {
     process.env.BLOB_READ_WRITE_TOKEN = "test-token";
     blobPut.mockResolvedValue({ url: "https://store.public.blob.vercel-storage.com/certificate-assets/stored.png" });

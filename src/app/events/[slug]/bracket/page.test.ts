@@ -14,6 +14,7 @@ import {
 } from "@/lib/platform/demo-store";
 import type { EventRoundConfig, Match, MatchGame } from "@/lib/platform/types";
 import BracketPage from "./page";
+import { bracketDesignFixture } from "@/app/[locale]/bracket-design-preview/fixture";
 
 const {
   getEventRoundConfigsMock,
@@ -21,14 +22,17 @@ const {
   getMatchesForEventMock,
   featureEnabledMock,
   drawingEventMock,
+  socialReaderMock,
 } = vi.hoisted(() => ({
   getEventRoundConfigsMock: vi.fn(),
   getMatchGamesForEventMock: vi.fn(),
   getMatchesForEventMock: vi.fn(),
   featureEnabledMock: vi.fn(),
   drawingEventMock: vi.fn(),
+  socialReaderMock: vi.fn(),
 }));
 
+vi.mock("@/lib/bracket/read", () => ({ readPublicSocialBracket: socialReaderMock }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: featureEnabledMock }));
 vi.mock("@/lib/events/adaptive-public-phases", () => ({
   getPublicCompetitionPhaseVisibility: vi.fn().mockResolvedValue("none"),
@@ -111,15 +115,16 @@ describe("public bracket page", () => {
 
   beforeEach(() => {
     featureEnabledMock.mockReturnValue(false);
+    socialReaderMock.mockResolvedValue(null);
     drawingEventMock.mockResolvedValue(null);
     roundConfigsByEvent = new Map();
     matchGamesByEvent = new Map();
     matchOverridesByEvent = new Map();
 
-    getEventRoundConfigsMock.mockImplementation(async (eventId: string, store: typeof import("@/lib/platform/demo-store")) => (
+    getEventRoundConfigsMock.mockImplementation(async (eventId: string) => (
       roundConfigsByEvent.get(eventId) ?? []
     ));
-    getMatchGamesForEventMock.mockImplementation(async (eventId: string, store: typeof import("@/lib/platform/demo-store")) => (
+    getMatchGamesForEventMock.mockImplementation(async (eventId: string) => (
       matchGamesByEvent.get(eventId) ?? new Map()
     ));
     getMatchesForEventMock.mockImplementation(async (eventId: string, store: typeof import("@/lib/platform/demo-store")) => (
@@ -219,6 +224,20 @@ describe("public bracket page", () => {
     expect(markup).toContain("overflow-x-auto");
     expect(markup).not.toContain("pv-section-card");
     expect(markup).not.toContain("bg-white");
+  });
+
+  it("offers a PNG beside adaptive V3 league standings without replacing them", async () => {
+    const event = createEvent({ name: "Adaptive league", slug: "adaptive-league", gameModeId: "mode-flashpeak-5v5", format: "League", participantCap: 8 });
+    setEventStatus(event.id, "Published");
+    featureEnabledMock.mockImplementation((flag: string) => flag === "adaptive_public_event_v3" || flag === "ui_v3_foundation");
+    const model = bracketDesignFixture("en");
+    socialReaderMock.mockResolvedValue({ ...model, event: { ...model.event, id: event.id, slug: event.slug, format: "League" }, preview: false });
+    const markup = await renderBracket(event.slug);
+    expect(markup).toContain("mpv3-bracket-page");
+    expect(markup).toContain("Download full PNG");
+    expect(markup).toContain("Select round for PNG");
+    expect(markup).toContain("mpv3-panel");
+    expect(markup).not.toContain("social-bracket");
   });
 
   it("preserves the adaptive legacy composition when only the adaptive flag is enabled", async () => {
@@ -334,6 +353,7 @@ describe("public bracket page", () => {
       captainContact: `legacy-captain-${index + 1}@example.test`,
     })));
     featureEnabledMock.mockReturnValue(false);
+    socialReaderMock.mockResolvedValue(null);
     configureSeriesFallback(event);
 
     const markup = await renderBracket(event.slug);
@@ -357,11 +377,15 @@ describe("public bracket page", () => {
     });
     setEventStatus(event.id, "Published");
     featureEnabledMock.mockImplementation((flag: string) => flag === "ui_v3_foundation");
+    const model = bracketDesignFixture("en");
+    socialReaderMock.mockResolvedValue({ ...model, event: { ...model.event, id: event.id, slug: event.slug, format: "League" }, preview: false });
 
     const markup = await renderBracket(event.slug);
 
     expect(markup).toContain('class="miracle-public-v3 mpv3-bracket-page"');
     expect(markup).toContain("mpv3-table-wrap");
+    expect(markup).toContain("Download full PNG");
+    expect(markup).toContain("Select round for PNG");
     expect(markup).not.toContain("pv-section-card");
     expect(markup).not.toContain("bg-white");
   });
@@ -376,6 +400,7 @@ describe("public bracket page", () => {
     });
     setEventStatus(event.id, "Published");
     featureEnabledMock.mockReturnValue(false);
+    socialReaderMock.mockResolvedValue(null);
 
     const markup = await renderBracket(event.slug);
 
@@ -638,5 +663,24 @@ describe("public bracket page", () => {
     expect(mlbbMarkup).toContain("Dawn Breakers");
     expect(mlbbMarkup).toContain("3 - 2");
     expect(mlbbMarkup).toContain("Final");
+  });
+
+  it("uses the shared social board for a V3 elimination event", async () => {
+    const event = createEvent({ name: "Social final", slug: "social-final", gameModeId: "mode-flashpeak-5v5", format: "Single Elimination", participantCap: 8 });
+    setEventStatus(event.id, "Published");
+    featureEnabledMock.mockImplementation((key: string) => key === "ui_v3_foundation");
+    socialReaderMock.mockResolvedValue({
+      event: { id: event.id, slug: event.slug, name: event.name, logoUrl: null, format: event.format, status: event.status },
+      locale: "id", appearance: { backgroundUrl: null, positionX: 50, positionY: 50, overlay: 35 },
+      matches: [{ id: "final", roundKey: "single:1", roundLabel: "Final", round: 1, slot: 1, bracket: "single",
+        home: { team: { id: "alpha", name: "Alpha", logoUrl: null, initials: "A" }, label: "Alpha", sourceMatchId: null, outcome: null },
+        away: { team: null, label: "Menunggu tim", sourceMatchId: null, outcome: null },
+        homeScore: null, awayScore: null, winnerTeamId: null, status: "scheduled", bestOf: 3, schedule: null, games: [] }],
+      champion: null, preview: false,
+    });
+    const markup = await renderBracket(event.slug);
+    expect(markup).toContain("social-bracket");
+    expect(markup).toContain("Unduh PNG lengkap");
+    expect(markup).toContain("Alpha");
   });
 });
