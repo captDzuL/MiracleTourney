@@ -1,0 +1,13 @@
+# Local encrypted production backup
+
+Dzul approved free PostgreSQL18 client tools plus age encryption, local output E:/MiracleBackups and weekly job preparation. Additional paid cost must remain zero. This extends go-live Task3; it does not authorize production mutation or waive recovery/performance gates.
+
+Portable clients in ignored task-owned runtime directories do not replace installed PostgreSQL16. pg_dump custom-format bytes stream directly into age public-key encryption. Only encrypted immutable timestamped archives and redacted manifests reach E:/MiracleBackups, with restricted Windows ACLs. Credentials are process environment only, never command arguments/logs. Explicit production direct host/database/TLS identity guards fail closed. No plaintext intermediate dumps.
+
+Private age identity is never stored in Git, output folder, command arguments or logs. Windows CurrentUser DPAPI may protect the local identity at rest in a separate owner-only runtime key directory; archive encryption remains portable age, not DPAPI. Cross-machine recovery additionally requires owner-held private-key escrow. If no independently recoverable key arrangement can be established, do not export live data or activate the weekly job; report the exact required owner action. Public recipient is not secret.
+
+Runner uses bounded timeouts, dual process exit checking, no retries, exclusive lock, unique filenames and partial artifacts that cannot be called successful. Existing backup files are never overwritten/deleted. Report only safe codes/counts/bytes/times/checksum. Failed runs stop and leave honest evidence, not fake successful manifests. Focused tests exercise host/TLS/output guards, failed process paths, concurrency, ciphertext tampering, redaction and atomic success.
+
+After review, perform one encrypted backup with dated source identity and logical checkpoint metadata; verify decrypt/archive-readability without printing data. Restore into a NEW isolated nonproduction branch only after branch/endpoint/credential identity and zero-cost capacity are verified, preserving production/sharedtest/retainedchild. Record aggregate data/schema/ledger integrity and duration before declaring usable recovery. No migration or schema changes to production.
+
+Existing weekly job backup-lokal-mingguan-miracle-production is Sunday09:00Asia/Jakarta, paused until reviewed runner, recoverable keys and successful independent restore. It uses Codex quota and requires local computer/app/network. Weekly backup alone does not satisfy RPO1h or prove RTO30m; no automatic cleanup and no paid cloud snapshot. Stable runtime handoff must point to reviewed SHA/tool hashes/config, not unverified arbitrary code. No CI/E2E/push/deploy this work.
