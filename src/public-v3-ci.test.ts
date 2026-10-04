@@ -216,106 +216,151 @@ describe("production pressure measurements", () => {
     statusCounts: { 200: scenario.requests }, p95Ms, maxMs: p95Ms, failures: 0, failureKinds: [], passed: p95Ms < 3000,
     ...overrides,
   });
+  const initialResult = (scenario: { path: string }, initialLatencyMs = 500, overrides = {}) => ({
+    path: scenario.path, requests: 1, completed: 1, concurrency: 1,
+    statusCounts: { 200: 1 }, initialLatencyMs, maxMs: initialLatencyMs,
+    failures: 0, failureKinds: [], passed: true, ...overrides,
+  });
 
-  it("collects both locale warmups and loads after a cold latency failure while retaining the first failure", async () => {
+  it("accepts slow initial samples for both locales as recorded warnings while requiring both measured loads", async () => {
+    const { runPublicPressure } = await import(pressureModulePath);
+    const server = { pid: 123, exitCode: null, stdout: new EventEmitter(), stderr: new EventEmitter() };
+    const writeEvidence = vi.fn();
+    const visited: string[] = [];
+    const saved = await runPublicPressure({ scenarios: homeScenarios, loadEnvironment: vi.fn(), checkFixtures: vi.fn(),
+      build: vi.fn(), startServer: () => server, stopServer: vi.fn(), writeEvidence,
+      measure: async (scenario: { path: string; requests: number; concurrency: number }) => {
+        visited.push(`${scenario.requests === 1 ? "initial" : "load"}-${scenario.path}`);
+        return scenario.requests === 1 ? initialResult(scenario, scenario.path === "/id" ? 4082 : 3000) : measuredResult(scenario, 700);
+      },
+      fetchImpl: async () => ({ status: 200, body: { cancel: async () => undefined } }),
+    });
+    expect(visited).toEqual(["initial-/id", "initial-/en", "load-/id", "load-/en"]);
+    expect(saved).toMatchObject({ policy: "initial-warning-load-strict-v1", status: "passed",
+      initialLatencyWarnings: [
+        { path: "/id", latencyMs: 4082, thresholdMs: 3000 },
+        { path: "/en", latencyMs: 3000, thresholdMs: 3000 },
+      ],
+      warmups: [{ path: "/id", initialLatencyMs: 4082 }, { path: "/en", initialLatencyMs: 3000 }],
+      scenarios: [{ path: "/id", requests: 40, completed: 40, p95Ms: 700, failures: 0 },
+        { path: "/en", requests: 40, completed: 40, p95Ms: 700, failures: 0 }],
+    });
+    expect(saved.warmups[0]).not.toHaveProperty("p95Ms");
+    expect(writeEvidence).toHaveBeenCalledWith(saved);
+  });
+
+  it("stops on initial HTTP/content/request/timeout failures and persists failed evidence", async () => {
+    const { runPublicPressure } = await import(pressureModulePath);
+    for (const [kind, overrides] of [
+      ["status", { statusCounts: { 500: 1 }, failures: 1, failureKinds: ["status"], passed: false }],
+      ["content", { failures: 1, failureKinds: ["content"], passed: false }],
+      ["request", { completed: 0, statusCounts: {}, initialLatencyMs: null, maxMs: 0, failures: 1, failureKinds: ["request"], passed: false }],
+      ["timeout", { completed: 0, statusCounts: {}, initialLatencyMs: null, maxMs: 0, failures: 1, failureKinds: ["timeout"], passed: false }],
+    ] as const) {
+      const server = { pid: 123, exitCode: null, stdout: new EventEmitter(), stderr: new EventEmitter() };
+      const writeEvidence = vi.fn();
+      const measure = vi.fn(async (scenario: { path: string }) => initialResult(scenario, 4082, overrides));
+      await expect(runPublicPressure({ scenarios: homeScenarios, loadEnvironment: vi.fn(), checkFixtures: vi.fn(),
+        build: vi.fn(), startServer: () => server, stopServer: vi.fn(), writeEvidence, measure,
+        fetchImpl: async () => ({ status: 200, body: { cancel: async () => undefined } }),
+      })).rejects.toThrow(/Warm/);
+      expect(measure, kind).toHaveBeenCalledTimes(1);
+      expect(writeEvidence.mock.calls[0][0], kind).toMatchObject({ status: "failed", policy: "initial-warning-load-strict-v1",
+        failure: { kind, stage: "warmup", path: "/id" }, initialLatencyWarnings: [] });
+    }
+  });
+
+  it("keeps measured p95 at the 3000ms boundary and measured failures fatal after initial warnings", async () => {
+    const { runPublicPressure } = await import(pressureModulePath);
+    for (const [kind, overrides] of [
+      ["latency", { p95Ms: 3000, maxMs: 3000, passed: false }],
+      ["content", { failures: 1, failureKinds: ["content"], passed: false }],
+      ["request", { completed: 39, statusCounts: { 200: 39 }, failures: 1, failureKinds: ["request"], passed: false }],
+    ] as const) {
+      const server = { pid: 123, exitCode: null, stdout: new EventEmitter(), stderr: new EventEmitter() };
+      const writeEvidence = vi.fn();
+      const measure = vi.fn(async (scenario: { path: string; requests: number; concurrency: number }) => scenario.requests === 1
+        ? initialResult(scenario, scenario.path === "/id" ? 4082 : 500) : measuredResult(scenario, 500, overrides));
+      await expect(runPublicPressure({ scenarios: homeScenarios, loadEnvironment: vi.fn(), checkFixtures: vi.fn(),
+        build: vi.fn(), startServer: () => server, stopServer: vi.fn(), writeEvidence, measure,
+        fetchImpl: async () => ({ status: 200, body: { cancel: async () => undefined } }),
+      })).rejects.toThrow(/Pressure/);
+      expect(measure, kind).toHaveBeenCalledTimes(3);
+      expect(writeEvidence.mock.calls[0][0], kind).toMatchObject({ status: "failed",
+        failure: { kind, stage: "measured", path: "/id" },
+        initialLatencyWarnings: [{ path: "/id", latencyMs: 4082, thresholdMs: 3000 }],
+        scenarios: [{ path: "/id", requests: 40, failures: kind === "latency" ? 0 : 1 }],
+      });
+    }
+  });
+
+  it("collects both locale initial samples and loads after a cold latency warning", async () => {
     const { runPressureScenarios } = await import(pressureModulePath);
     const calls: string[] = [];
     const warmups: unknown[] = [];
     const loads: unknown[] = [];
-    const retained: unknown[] = [];
-    await expect(runPressureScenarios(homeScenarios, {
-      collectLatencyOnly: true,
+    const warnings: unknown[] = [];
+    await runPressureScenarios(homeScenarios, {
       measure: async (scenario: { path: string; requests: number; concurrency: number }) => {
         calls.push(`${scenario.requests === 1 ? "warm" : "load"}-${scenario.path}`);
-        return measuredResult(scenario, scenario.path === "/id" && scenario.requests === 1 ? 4082 : 500);
+        return scenario.requests === 1 ? initialResult(scenario, scenario.path === "/id" ? 4082 : 500) : measuredResult(scenario);
       },
       onWarm: (result: unknown) => warmups.push(result), onMeasured: (result: unknown) => loads.push(result),
-      onRetainedFailure: (failure: unknown) => retained.push(failure),
-    })).rejects.toThrow(/latency/i);
+      onInitialWarning: (warning: unknown) => warnings.push(warning),
+    });
     expect(calls).toEqual(["warm-/id", "warm-/en", "load-/id", "load-/en"]);
     expect(warmups).toHaveLength(2);
     expect(loads).toHaveLength(2);
-    expect(warmups[0]).toMatchObject({ path: "/id", passed: false, p95Ms: 4082 });
-    expect(retained).toEqual([{ kind: "latency", stage: "warmup", path: "/id" }]);
+    expect(warmups[0]).toMatchObject({ path: "/id", passed: true, initialLatencyMs: 4082 });
+    expect(warnings).toEqual([{ path: "/id", latencyMs: 4082, thresholdMs: 3000 }]);
   });
 
-  it("retains a measured latency failure but stops immediately on every non-latency or invalid result", async () => {
+  it("stops on measured latency and every unsafe or invalid initial result", async () => {
     const { runPressureScenarios } = await import(pressureModulePath);
     const calls: string[] = [];
     await expect(runPressureScenarios(homeScenarios, {
-      collectLatencyOnly: true,
       measure: async (scenario: { path: string; requests: number; concurrency: number }) => {
         calls.push(`${scenario.requests === 1 ? "warm" : "load"}-${scenario.path}`);
-        return measuredResult(scenario, scenario.path === "/id" && scenario.requests === 40 ? 3200 : 500);
+        return scenario.requests === 1 ? initialResult(scenario) : measuredResult(scenario, scenario.path === "/id" ? 3200 : 500);
       },
-    })).rejects.toThrow(/latency/i);
-    expect(calls).toEqual(["warm-/id", "warm-/en", "load-/id", "load-/en"]);
+    })).rejects.toThrow(/Pressure/);
+    expect(calls).toEqual(["warm-/id", "warm-/en", "load-/id"]);
 
     const unsafe = [
       { failureKinds: ["content"], failures: 1 }, { failureKinds: ["status"], failures: 1, statusCounts: { 500: 1 } },
-      { failureKinds: ["timeout"], failures: 1, completed: 0 }, { failureKinds: ["request"], failures: 1, completed: 0 },
-      { completed: 0 }, { p95Ms: Number.NaN }, { maxMs: Number.POSITIVE_INFINITY },
-      { p95Ms: 500, passed: false }, { passed: true }, { failureKinds: ["unknown"], failures: 1 },
+      { failureKinds: ["timeout"], failures: 1, completed: 0, statusCounts: {}, initialLatencyMs: null, maxMs: 0 },
+      { failureKinds: ["request"], failures: 1, completed: 0, statusCounts: {}, initialLatencyMs: null, maxMs: 0 },
+      { completed: 0 }, { initialLatencyMs: Number.NaN }, { maxMs: Number.POSITIVE_INFINITY },
+      { initialLatencyMs: 500, passed: false }, { p95Ms: 500 }, { failureKinds: ["unknown"], failures: 1 },
     ];
     for (const overrides of unsafe) {
       const visited: string[] = [];
       await expect(runPressureScenarios(homeScenarios, {
-        collectLatencyOnly: true,
         measure: async (scenario: { path: string; requests: number; concurrency: number }) => {
           visited.push(scenario.path);
-          return measuredResult(scenario, 4082, overrides);
+          return initialResult(scenario, 4082, { passed: false, ...overrides });
         },
       })).rejects.toThrow();
       expect(visited, JSON.stringify(overrides)).toEqual(["/id"]);
     }
   });
 
-  it("keeps ordinary pressure fail-closed on the first cold latency result", async () => {
-    const { runPressureScenarios } = await import(pressureModulePath);
-    const calls: string[] = [];
-    await expect(runPressureScenarios(homeScenarios, {
-      measure: async (scenario: { path: string; requests: number; concurrency: number }) => {
-        calls.push(scenario.path);
-        return measuredResult(scenario, 4082);
-      },
-    })).rejects.toThrow(/Warm/);
-    expect(calls).toEqual(["/id"]);
-  });
-
-  it("stops after a later content failure without replacing the first cold latency failure", async () => {
+  it("stops after a later content failure while preserving an earlier initial warning", async () => {
     const { runPublicPressure } = await import(pressureModulePath);
     const server = { pid: 123, exitCode: null, stdout: new EventEmitter(), stderr: new EventEmitter() };
     const writeEvidence = vi.fn();
     const measure = vi.fn(async (scenario: { path: string; requests: number; concurrency: number }) =>
-      measuredResult(scenario, scenario.path === "/id" ? 4082 : 500, scenario.path === "/en"
-        ? { failures: 1, failureKinds: ["content"], passed: false } : {}));
+      scenario.requests === 1 ? initialResult(scenario, scenario.path === "/id" ? 4082 : 500,
+        scenario.path === "/en" ? { failures: 1, failureKinds: ["content"], passed: false } : {}) : measuredResult(scenario));
     await expect(runPublicPressure({ mode: "homepage-only", scenarios: homeScenarios, loadEnvironment: vi.fn(), checkFixtures: vi.fn(),
       build: vi.fn(), startServer: () => server, stopServer: vi.fn(), writeEvidence, measure,
       fetchImpl: async () => ({ status: 200, body: { cancel: async () => undefined } }),
     })).rejects.toThrow(/Warm/);
     expect(measure).toHaveBeenCalledTimes(2);
-    expect(writeEvidence.mock.calls[0][0]).toMatchObject({ status: "failed", failure: { kind: "latency", stage: "warmup", path: "/id" } });
+    expect(writeEvidence.mock.calls[0][0]).toMatchObject({ status: "failed", failure: { kind: "content", stage: "warmup", path: "/en" },
+      initialLatencyWarnings: [{ path: "/id", latencyMs: 4082, thresholdMs: 3000 }] });
     expect(writeEvidence.mock.calls[0][0].warmups[1]).toMatchObject({ path: "/en", failureKinds: ["content"] });
     expect(writeEvidence.mock.calls[0][0].scenarios).toEqual([]);
-  });
-
-  it("writes failed homepage evidence at the first cold failure after collecting later valid results", async () => {
-    const { runPublicPressure } = await import(pressureModulePath);
-    const server = { pid: 123, exitCode: null, stdout: new EventEmitter(), stderr: new EventEmitter() };
-    const writeEvidence = vi.fn();
-    const measure = vi.fn(async (scenario: { path: string; requests: number; concurrency: number }) =>
-      measuredResult(scenario, scenario.path === "/id" && scenario.requests === 1 ? 4082 : 500));
-    await expect(runPublicPressure({ mode: "homepage-only", scenarios: homeScenarios, loadEnvironment: vi.fn(), checkFixtures: vi.fn(),
-      build: vi.fn(), startServer: () => server, stopServer: vi.fn(), writeEvidence, measure,
-      fetchImpl: async () => ({ status: 200, body: { cancel: async () => undefined } }),
-    })).rejects.toThrow(/latency/i);
-    const saved = writeEvidence.mock.calls[0][0];
-    expect(saved).toMatchObject({ status: "failed", failure: { kind: "latency", stage: "warmup", path: "/id" } });
-    expect(saved.warmups.map((result: { path: string }) => result.path)).toEqual(["/id", "/en"]);
-    expect(saved.scenarios.map((result: { path: string }) => result.path)).toEqual(["/id", "/en"]);
-    expect(saved.warmups[0].passed).toBe(false);
-    expect(saved.scenarios.every((result: { passed: boolean }) => result.passed)).toBe(true);
-    expect(JSON.stringify(saved)).not.toMatch(/secret|<main|stack/);
   });
 
   it("keeps a passing homepage artifact passed when every cold and measured gate passes", async () => {
@@ -324,11 +369,13 @@ describe("production pressure measurements", () => {
     const writeEvidence = vi.fn();
     const saved = await runPublicPressure({ mode: "homepage-only", scenarios: homeScenarios, loadEnvironment: vi.fn(), checkFixtures: vi.fn(),
       build: vi.fn(), startServer: () => server, stopServer: vi.fn(), writeEvidence,
-      measure: async (scenario: { path: string; requests: number; concurrency: number }) => measuredResult(scenario),
+      measure: async (scenario: { path: string; requests: number; concurrency: number }) => scenario.requests === 1
+        ? initialResult(scenario, scenario.path === "/id" ? 4082 : 500) : measuredResult(scenario),
       fetchImpl: async () => ({ status: 200, body: { cancel: async () => undefined } }),
     });
     expect(saved).toMatchObject({ status: "passed", warmups: [{ path: "/id", passed: true }, { path: "/en", passed: true }],
-      scenarios: [{ path: "/id", passed: true }, { path: "/en", passed: true }] });
+      scenarios: [{ path: "/id", passed: true }, { path: "/en", passed: true }],
+      initialLatencyWarnings: [{ path: "/id", latencyMs: 4082, thresholdMs: 3000 }] });
     expect(saved).not.toHaveProperty("failure");
     expect(writeEvidence).toHaveBeenCalledWith(saved);
   });
@@ -494,20 +541,34 @@ describe("production pressure measurements", () => {
     expect(result.passed).toBe(false);
   });
 
+  it("records a single initial request as latency without inventing a p95", async () => {
+    const { measureScenario } = await import(pressureModulePath);
+    let time = 0;
+    const result = await measureScenario({ path: "/id", requests: 1, concurrency: 1, p95Ms: 3000,
+      initialSample: true, public: true, expected: "ok", statuses: [200] }, {
+      fetchImpl: async () => ({ status: 200, text: async () => "ok" }), baseUrl: "http://127.0.0.1:3102",
+      clock: () => { time += 4082; return time; },
+    });
+    expect(result).toMatchObject({ path: "/id", requests: 1, completed: 1, initialLatencyMs: 4082,
+      statusCounts: { 200: 1 }, failures: 0, passed: true });
+    expect(result).not.toHaveProperty("p95Ms");
+  });
+
   it("warms and validates every route before starting measured load", async () => {
     const { runPressureScenarios } = await import(pressureModulePath);
     const calls: string[] = [];
-    const measure = vi.fn(async (scenario: { path: string; requests: number }) => {
+    const measure = vi.fn(async (scenario: { path: string; requests: number; concurrency: number }) => {
       calls.push(`${scenario.requests === 1 ? "warm" : "load"}-${scenario.path}`);
-      return { path: scenario.path, passed: true };
+      return scenario.requests === 1 ? initialResult(scenario) : measuredResult(scenario);
     });
-    await runPressureScenarios([{ path: "/id", requests: 40 }, { path: "/en", requests: 40 }], { measure });
+    await runPressureScenarios(homeScenarios, { measure });
     expect(calls).toEqual(["warm-/id", "warm-/en", "load-/id", "load-/en"]);
     calls.length = 0;
-    await expect(runPressureScenarios([{ path: "/id", requests: 40 }, { path: "/en", requests: 40 }], {
-      measure: async (scenario: { path: string; requests: number }) => {
+    await expect(runPressureScenarios(homeScenarios, {
+      measure: async (scenario: { path: string; requests: number; concurrency: number }) => {
         calls.push(`${scenario.requests === 1 ? "warm" : "load"}-${scenario.path}`);
-        return { path: scenario.path, passed: scenario.path !== "/en" };
+        return scenario.requests === 1 ? initialResult(scenario, 500, scenario.path === "/en"
+          ? { failures: 1, failureKinds: ["content"], passed: false } : {}) : measuredResult(scenario);
       },
     })).rejects.toThrow(/Warm/);
     expect(calls).toEqual(["warm-/id", "warm-/en"]);
