@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,6 +52,24 @@ test('owner-only directory guard checks the actual Windows DACL and rejects ordi
     assert.equal(result.status, 0, result.stderr);
     await assertOwnerOnlyDirectory(root);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('owner-only directory guard rejects a reparse-point ancestor even for an owner-only target', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'miracle-acl-ancestor-'));
+  const target = join(root, 'actual');
+  const junction = join(root, 'through-junction');
+  try {
+    const escapedTarget = target.replaceAll("'", "''");
+    const escapedJunction = junction.replaceAll("'", "''");
+    const command = `$p='${escapedTarget}';New-Item -ItemType Directory -Path $p -ErrorAction Stop | Out-Null;$s=[Security.Principal.WindowsIdentity]::GetCurrent().User;$a=New-Object Security.AccessControl.DirectorySecurity;$a.SetOwner($s);$a.SetAccessRuleProtection($true,$false);$f=[Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit;$r=New-Object Security.AccessControl.FileSystemAccessRule($s,[Security.AccessControl.FileSystemRights]::FullControl,$f,[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow);$a.AddAccessRule($r);[IO.Directory]::SetAccessControl($p,$a);New-Item -ItemType Junction -Path '${escapedJunction}' -Target $p -ErrorAction Stop | Out-Null`;
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    await assertOwnerOnlyDirectory(target);
+    await assert.rejects(assertOwnerOnlyDirectory(junction), { code: 'OUTPUT_REJECTED' });
+  } finally {
+    spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `if (Test-Path -LiteralPath '${junction.replaceAll("'", "''")}') { [IO.Directory]::Delete('${junction.replaceAll("'", "''")}') }`], { encoding: 'utf8' });
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('owner-only guard rejects a key artifact with an added broad file ACE', async () => {

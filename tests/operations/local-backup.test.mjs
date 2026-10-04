@@ -69,14 +69,17 @@ test('preserves a binary fixture stream and publishes a manifest after both comm
   assert.equal((await stat(result.archivePath)).size, 26);
 });
 
-test('passes the held snapshot to dump and records only aggregate checkpoint fields', async () => {
+test('binds the manifest checkpoint snapshot to the dump argument', async () => {
   const f = await fixture();
-  await writeFile(f.dump, `if (!process.argv.includes('--snapshot=00000003-0000001B-1')) process.exit(7); process.stdout.write(Buffer.from([0,1,2,255]));`);
-  const checkpoint = { appliedMigrations: 17, ledgerSha256: 'a'.repeat(64), schemaSha256: 'b'.repeat(64), tableCounts: { Event: 2 }, tableChecksumsMd5: { Event: 'c'.repeat(32) }, integrity: { invalidConstraints: 0, criticalUniqueIndexes: true } };
+  const snapshot = '00000003-0000001B-1';
+  await writeFile(f.dump, `if (!process.argv.includes('--snapshot=${snapshot}')) process.exit(7); process.stdout.write(Buffer.from([0,1,2,255]));`);
+  const checkpoint = { snapshot, appliedMigrations: 17, ledgerSha256: 'a'.repeat(64), schemaSha256: 'b'.repeat(64), tableCounts: { Event: 2 }, tableChecksumsMd5: { Event: 'c'.repeat(32) }, integrity: { invalidConstraints: 0, criticalUniqueIndexes: true } };
   const result = await runEncryptedBackup(config(f, { snapshotId: '00000003-0000001B-1', checkpoint }));
   const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8'));
   assert.deepEqual(manifest.checkpoint, checkpoint);
+  assert.equal(manifest.checkpoint.snapshot, snapshot);
   assert.equal(JSON.stringify(manifest).includes('synthetic-secret'), false);
+  await assert.rejects(runEncryptedBackup(config(await fixture(), { snapshotId: snapshot, checkpoint: { ...checkpoint, snapshot: '00000003-0000001B-2' } })), { code: 'CONFIG_REJECTED' });
 });
 
 for (const [mode, code] of [['dump-fail', 'DUMP_FAILED'], ['age-fail', 'ENCRYPT_FAILED'], ['age-empty', 'EMPTY_ARCHIVE'], ['age-garbage', 'ARCHIVE_INVALID'], ['timeout', 'BACKUP_TIMEOUT']]) {

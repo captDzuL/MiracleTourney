@@ -133,6 +133,7 @@ export async function runEncryptedBackup(config) {
   const timeoutMs = config.timeoutMs;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 7_200_000) throw failure('CONFIG_REJECTED');
   if (config.snapshotId !== undefined && !/^[0-9A-F]{8}-[0-9A-F]{8}-[0-9]+$/i.test(config.snapshotId)) throw failure('CONFIG_REJECTED');
+  if (config.checkpoint && (typeof config.snapshotId !== 'string' || config.checkpoint.snapshot !== config.snapshotId)) throw failure('CONFIG_REJECTED');
   const stamp = (config.now instanceof Date ? config.now : new Date()).toISOString().replaceAll(':', '-').replaceAll('.', '-');
   const name = `miracle-neondb-${stamp}`;
   const archivePath = resolve(output, `${name}.age`);
@@ -201,6 +202,7 @@ export async function runEncryptedBackup(config) {
     if (config.checkpoint) {
       const cp = config.checkpoint;
       manifest.checkpoint = {
+        snapshot: cp.snapshot,
         appliedMigrations: cp.appliedMigrations, ledgerSha256: cp.ledgerSha256,
         schemaSha256: cp.schemaSha256, tableCounts: cp.tableCounts,
         tableChecksumsMd5: cp.tableChecksumsMd5, integrity: cp.integrity,

@@ -37,6 +37,19 @@ export const LEGACY_TABLES = Object.freeze([
   'RegistrationImportBatch', 'RegistrationImportItem',
 ]);
 
+export function buildCriticalUniqueIndexSql() {
+  const pairs = [['User', 'email'], ['Event', 'slug'], ['Certificate', 'eventId'], ['PasswordResetToken', 'token']];
+  return pairs.map(([table, column]) => `EXISTS (
+      SELECT 1 FROM pg_index i
+      JOIN pg_class t ON t.oid = i.indrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0]
+      WHERE n.nspname = 'public' AND t.relname = '${table}' AND a.attname = '${column}'
+        AND i.indisunique AND i.indnkeyatts = 1
+        AND i.indisvalid AND i.indisready AND i.indislive AND i.indpred IS NULL
+    )`).join(' AND\n    ');
+}
+
 export function buildCheckpointSql() {
   const countPairs = LEGACY_TABLES.map(name => `'${name}', (SELECT count(*)::bigint FROM public."${name}")`).join(',\n      ');
   const checksumPairs = LEGACY_TABLES.map(name => `'${name}', (SELECT md5(coalesce(string_agg(md5(t::text), '' ORDER BY md5(t::text)), '')) FROM public."${name}" t)`).join(',\n      ');
@@ -62,15 +75,7 @@ SELECT 'MIRACLE_CHECKPOINT' || chr(9) || json_build_object(
   'integrity', json_build_object(
     'invalidConstraints', (SELECT count(*)::int FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
       WHERE n.nspname = 'public' AND NOT c.convalidated),
-    'criticalUniqueIndexes', (
-      SELECT count(*) = 4 FROM pg_index i
-      JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace
-      JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0]
-      WHERE n.nspname = 'public' AND i.indisunique AND i.indnkeyatts = 1 AND
-        ((t.relname = 'User' AND a.attname = 'email') OR
-         (t.relname = 'Event' AND a.attname = 'slug') OR
-         (t.relname = 'Certificate' AND a.attname = 'eventId') OR
-         (t.relname = 'PasswordResetToken' AND a.attname = 'token')))))::text;
+    'criticalUniqueIndexes', (${buildCriticalUniqueIndexSql()})))::text;
 `;
 }
 
