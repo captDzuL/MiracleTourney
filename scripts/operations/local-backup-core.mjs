@@ -89,7 +89,7 @@ export async function verifyPostgresDependencySet(directory, expected) {
   } catch { throw failure('TOOL_REJECTED'); }
 }
 
-export async function publishCompleteFile(partialPath, finalPath) {
+export async function publishCompleteFile(partialPath, finalPath, cleanupPartial = unlink) {
   try {
     if (!isAbsolute(partialPath) || !isAbsolute(finalPath) || dirname(partialPath) !== dirname(finalPath)) throw failure('BACKUP_FAILED');
     const partial = lstatSync(partialPath);
@@ -98,14 +98,19 @@ export async function publishCompleteFile(partialPath, finalPath) {
   } catch (error) {
     throw failure(error?.code === 'EEXIST' ? 'ARCHIVE_COLLISION' : 'BACKUP_FAILED');
   }
-  // A failed unlink leaves two names for complete bytes; it never creates a
-  // truncated final artifact or removes a pre-existing file.
-  try { await unlink(partialPath); } catch { throw failure('BACKUP_FAILED'); }
+  // The final hard link is the publication point. Cleanup failure leaves a
+  // complete final file, so report the retained partial without undoing success.
+  try { await cleanupPartial(partialPath); return { partialRetained: false }; }
+  catch { return { partialRetained: true }; }
 }
 
-export async function publishBackupPair(paths) {
-  await publishCompleteFile(paths.archivePartial, paths.archiveFinal);
-  await publishCompleteFile(paths.manifestPartial, paths.manifestFinal);
+export async function publishBackupPair(paths, cleanupPartial = unlink) {
+  const warnings = [];
+  const archive = await publishCompleteFile(paths.archivePartial, paths.archiveFinal, cleanupPartial);
+  if (archive.partialRetained) warnings.push('ARCHIVE_PARTIAL_RETAINED');
+  const manifest = await publishCompleteFile(paths.manifestPartial, paths.manifestFinal, cleanupPartial);
+  if (manifest.partialRetained) warnings.push('MANIFEST_PARTIAL_RETAINED');
+  return warnings;
 }
 
 function processResult(child) {
@@ -188,8 +193,8 @@ export async function runEncryptedBackup(config) {
     const handle = await open(manifestPartial, 'wx', 0o600);
     try { await handle.writeFile(`${JSON.stringify(manifest, null, 2)}\n`); await handle.sync(); } finally { await handle.close(); }
     validateOutputDirectory(output, config.approvedOutputRoot);
-    await publishBackupPair({ archivePartial: partialPath, archiveFinal: archivePath, manifestPartial, manifestFinal: manifestPath });
-    return { archivePath, manifestPath, bytes: metadata.size, sha256 };
+    const warnings = await publishBackupPair({ archivePartial: partialPath, archiveFinal: archivePath, manifestPartial, manifestFinal: manifestPath });
+    return { archivePath, manifestPath, bytes: metadata.size, sha256, warnings };
   } catch (error) {
     if (dump && !dump.killed) dump.kill();
     if (age && !age.killed) age.kill();

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { createReadStream } from 'node:fs';
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,6 +60,7 @@ test('preserves a binary fixture stream and publishes a manifest after both comm
   const f = await fixture();
   const result = await runEncryptedBackup(config(f));
   assert.equal(result.bytes, 26);
+  assert.deepEqual(result.warnings, []);
   assert.deepEqual([...await readFile(result.archivePath)], [...Buffer.from('age-encryption.org/v1\n'), 0, 1, 2, 255]);
   const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8'));
   assert.equal(manifest.sha256, result.sha256);
@@ -164,6 +165,27 @@ test('failed manifest publication leaves a complete orphan archive and the exist
     assert.equal((await readdir(root)).includes('archive.partial'), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+for (const [failedStage, expectedWarning] of [['archive', 'ARCHIVE_PARTIAL_RETAINED'], ['manifest', 'MANIFEST_PARTIAL_RETAINED']]) {
+  test(`${failedStage} partial cleanup failure reports a verified committed pair with a safe warning`, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'miracle-cleanup-test-'));
+    const paths = { archivePartial: join(root, 'archive.partial'), archiveFinal: join(root, 'archive.age'), manifestPartial: join(root, 'archive.json.partial'), manifestFinal: join(root, 'archive.json') };
+    const archive = Buffer.from('complete-archive');
+    try {
+      await writeFile(paths.archivePartial, archive);
+      await writeFile(paths.manifestPartial, JSON.stringify({ archive: 'archive.age', bytes: archive.length, sha256: createHash('sha256').update(archive).digest('hex') }));
+      const cleanup = async path => {
+        if (path === paths[`${failedStage}Partial`]) throw new Error('synthetic-secret-path');
+        await unlink(path);
+      };
+      const warnings = await publishBackupPair(paths, cleanup);
+      assert.deepEqual(warnings, [expectedWarning]);
+      assert.equal(JSON.stringify(warnings).includes('synthetic-secret-path'), false);
+      await verifyBackupPair(paths.archiveFinal, paths.manifestFinal);
+      assert.equal((await readdir(root)).includes(`${failedStage === 'archive' ? 'archive' : 'archive.json'}.partial`), true);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+}
 
 test('ciphertext tampering is detected against the manifest digest', async () => {
   const f = await fixture();
