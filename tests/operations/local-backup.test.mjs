@@ -7,7 +7,8 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateSourceUrl, validateOutputDirectory, runEncryptedBackup, verifyBackupPair } from '../../scripts/operations/local-backup-core.mjs';
+import { validateSourceUrl, validateOutputDirectory, runEncryptedBackup, verifyBackupPair, verifyPostgresDependencySet, publishCompleteFile, publishBackupPair } from '../../scripts/operations/local-backup-core.mjs';
+import { PG18_DLL_SHA256 } from '../../scripts/operations/pg18-dll-hashes.mjs';
 
 const sourceUrl = 'postgresql://backup:synthetic-secret@ep-sparkling-night-azr6wxwd.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=verify-full&sslrootcert=system';
 const nodeHash = createHash('sha256');
@@ -55,7 +56,7 @@ function config(f, extra = {}) {
   };
 }
 
-test('writes only encrypted bytes and an atomic manifest after both commands succeed', async () => {
+test('preserves a binary fixture stream and publishes a manifest after both commands succeed', async () => {
   const f = await fixture();
   const result = await runEncryptedBackup(config(f));
   assert.equal(result.bytes, 26);
@@ -100,14 +101,68 @@ test('timestamp collision cannot overwrite an existing archive', async () => {
   assert.equal((await readFile(first.archivePath)).subarray(0, 22).toString(), 'age-encryption.org/v1\n');
 });
 
-test('CLI refuses to run without independent recovery escrow', () => {
+test('CLI refuses to run even when environment claims escrow and ACL readiness', () => {
   const cli = fileURLToPath(new URL('../../scripts/operations/local-backup.mjs', import.meta.url));
   const result = spawnSync(process.execPath, [cli], {
-    encoding: 'utf8', env: { ...process.env, MIRACLE_BACKUP_ESCROW_CONFIRMED: '', MIRACLE_BACKUP_SOURCE_URL: sourceUrl },
+    encoding: 'utf8', env: { ...process.env, MIRACLE_BACKUP_ESCROW_CONFIRMED: 'yes', MIRACLE_BACKUP_ACL_CONFIRMED: 'yes', MIRACLE_BACKUP_SOURCE_URL: sourceUrl, MIRACLE_BACKUP_AGE_RECIPIENT: 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq' },
   });
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /KEY_NOT_READY/);
+  assert.match(result.stderr, /PREPARATION_DISABLED/);
   assert.equal(result.stderr.includes('synthetic-secret'), false);
+});
+
+test('PostgreSQL dependency verifier rejects missing, changed, and unexpected adjacent DLLs', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'miracle-dll-test-'));
+  const dll = join(root, 'libpq.dll');
+  const bytes = Buffer.from('approved-synthetic-dll');
+  const expected = { 'libpq.dll': createHash('sha256').update(bytes).digest('hex') };
+  try {
+    await assert.rejects(verifyPostgresDependencySet(root, expected), { code: 'TOOL_REJECTED' });
+    await writeFile(dll, bytes);
+    await verifyPostgresDependencySet(root, expected);
+    await writeFile(dll, Buffer.from('modified-synthetic-dll'));
+    await assert.rejects(verifyPostgresDependencySet(root, expected), { code: 'TOOL_REJECTED' });
+    await writeFile(dll, bytes);
+    await writeFile(join(root, 'surprise.dll'), Buffer.from('unexpected'));
+    await assert.rejects(verifyPostgresDependencySet(root, expected), { code: 'TOOL_REJECTED' });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('pinned PostgreSQL 18.6 runtime contains exactly the recorded 29 DLLs', async () => {
+  const directory = fileURLToPath(new URL('../../.superpowers/sdd/2026-10-04-local-encrypted-backup/runtime/pg18/bin/', import.meta.url));
+  assert.equal(Object.keys(PG18_DLL_SHA256).length, 29);
+  await verifyPostgresDependencySet(directory, PG18_DLL_SHA256);
+});
+
+test('publication exposes complete files and never replaces a colliding archive', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'miracle-publish-test-'));
+  const partial = join(root, 'archive.partial');
+  const final = join(root, 'archive.age');
+  try {
+    await writeFile(partial, Buffer.from('complete-archive'));
+    await publishCompleteFile(partial, final);
+    assert.equal((await readFile(final)).toString(), 'complete-archive');
+    assert.equal((await readdir(root)).includes('archive.partial'), false);
+    await writeFile(partial, Buffer.from('new-archive'));
+    await assert.rejects(publishCompleteFile(partial, final), { code: 'ARCHIVE_COLLISION' });
+    assert.equal((await readFile(final)).toString(), 'complete-archive');
+    assert.equal((await readFile(partial)).toString(), 'new-archive');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('failed manifest publication leaves a complete orphan archive and the existing manifest unchanged', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'miracle-pair-test-'));
+  const paths = { archivePartial: join(root, 'archive.partial'), archiveFinal: join(root, 'archive.age'), manifestPartial: join(root, 'archive.json.partial'), manifestFinal: join(root, 'archive.json') };
+  try {
+    await writeFile(paths.archivePartial, Buffer.from('complete-archive'));
+    await writeFile(paths.manifestPartial, Buffer.from('new-manifest'));
+    await writeFile(paths.manifestFinal, Buffer.from('existing-manifest'));
+    await assert.rejects(publishBackupPair(paths), { code: 'ARCHIVE_COLLISION' });
+    assert.equal((await readFile(paths.archiveFinal)).toString(), 'complete-archive');
+    assert.equal((await readFile(paths.manifestFinal)).toString(), 'existing-manifest');
+    assert.equal((await readFile(paths.manifestPartial)).toString(), 'new-manifest');
+    assert.equal((await readdir(root)).includes('archive.partial'), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test('ciphertext tampering is detected against the manifest digest', async () => {
@@ -143,4 +198,25 @@ test('official age binaries round-trip synthetic binary bytes and reject tamperi
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('runner pipes a synthetic dump through the pinned real age binary', async () => {
+  const f = await fixture();
+  const runtime = fileURLToPath(new URL('../../.superpowers/sdd/2026-10-04-local-encrypted-backup/runtime/age/', import.meta.url));
+  const keygen = join(runtime, 'age-keygen.exe');
+  const age = join(runtime, 'age.exe');
+  const identity = join(f.root, 'synthetic-identity.txt');
+  try {
+    assert.equal(spawnSync(keygen, ['-o', identity], { windowsHide: true }).status, 0);
+    const recipient = (await readFile(identity, 'utf8')).match(/# public key: (age1\S+)/)?.[1];
+    assert.ok(recipient);
+    const result = await runEncryptedBackup(config(f, {
+      agePath: age, ageSha256: '2821a4ed191da07372acd302e5f6feae7a7985e285e1417765ebe74025af45f0',
+      ageArgsPrefix: [], recipient, timeoutMs: 5000,
+    }));
+    await verifyBackupPair(result.archivePath, result.manifestPath);
+    const restored = spawnSync(age, ['-d', '-i', identity, '-o', '-', result.archivePath], { windowsHide: true });
+    assert.equal(restored.status, 0);
+    assert.deepEqual(restored.stdout, Buffer.from([0, 1, 2, 255]));
+  } finally { await rm(f.root, { recursive: true, force: true }); }
 });

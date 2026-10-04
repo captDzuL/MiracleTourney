@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream, existsSync, lstatSync, realpathSync } from 'node:fs';
-import { open, readFile, rename, stat, unlink } from 'node:fs/promises';
+import { link, open, readFile, readdir, stat, unlink } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, resolve } from 'node:path';
+import { PG18_DLL_SHA256 } from './pg18-dll-hashes.mjs';
 
 const DIRECT_HOST = 'ep-sparkling-night-azr6wxwd.c-3.ap-southeast-1.aws.neon.tech';
 const DEFAULT_OUTPUT = 'E:/MiracleBackups';
@@ -76,6 +77,37 @@ async function verifyExecutable(path, expectedSha256) {
   } catch { throw failure('TOOL_REJECTED'); }
 }
 
+export async function verifyPostgresDependencySet(directory, expected) {
+  try {
+    if (!isAbsolute(directory) || !expected || typeof expected !== 'object' || Array.isArray(expected)) throw failure('TOOL_REJECTED');
+    assertNoLinks(directory, 'TOOL_REJECTED');
+    const required = Object.keys(expected);
+    if (required.some(name => !/^[a-z0-9_.-]+\.dll$/i.test(name) || !/^[a-f0-9]{64}$/i.test(expected[name]))) throw failure('TOOL_REJECTED');
+    const found = (await readdir(directory)).filter(name => name.toLowerCase().endsWith('.dll'));
+    if (found.length !== required.length || found.some(name => !Object.hasOwn(expected, name))) throw failure('TOOL_REJECTED');
+    for (const name of required) await verifyExecutable(resolve(directory, name), expected[name]);
+  } catch { throw failure('TOOL_REJECTED'); }
+}
+
+export async function publishCompleteFile(partialPath, finalPath) {
+  try {
+    if (!isAbsolute(partialPath) || !isAbsolute(finalPath) || dirname(partialPath) !== dirname(finalPath)) throw failure('BACKUP_FAILED');
+    const partial = lstatSync(partialPath);
+    if (!partial.isFile() || partial.isSymbolicLink()) throw failure('BACKUP_FAILED');
+    await link(partialPath, finalPath);
+  } catch (error) {
+    throw failure(error?.code === 'EEXIST' ? 'ARCHIVE_COLLISION' : 'BACKUP_FAILED');
+  }
+  // A failed unlink leaves two names for complete bytes; it never creates a
+  // truncated final artifact or removes a pre-existing file.
+  try { await unlink(partialPath); } catch { throw failure('BACKUP_FAILED'); }
+}
+
+export async function publishBackupPair(paths) {
+  await publishCompleteFile(paths.archivePartial, paths.archiveFinal);
+  await publishCompleteFile(paths.manifestPartial, paths.manifestFinal);
+}
+
 function processResult(child) {
   return new Promise(resolve => {
     child.once('error', () => resolve(false));
@@ -89,6 +121,9 @@ export async function runEncryptedBackup(config) {
   const source = validateSourceUrl(config.sourceUrl);
   const output = validateOutputDirectory(config.outputDirectory, config.approvedOutputRoot);
   await verifyExecutable(config.pgDumpPath, config.pgDumpSha256);
+  if (basename(config.pgDumpPath).toLowerCase() === 'pg_dump.exe') {
+    await verifyPostgresDependencySet(dirname(config.pgDumpPath), PG18_DLL_SHA256);
+  }
   await verifyExecutable(config.agePath, config.ageSha256);
   const timeoutMs = config.timeoutMs;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 7_200_000) throw failure('CONFIG_REJECTED');
@@ -144,10 +179,6 @@ export async function runEncryptedBackup(config) {
     }
     if (!prefix.equals(AGE_HEADER)) throw failure('ARCHIVE_INVALID');
     const sha256 = hash.digest('hex');
-    validateOutputDirectory(output, config.approvedOutputRoot);
-    const reserved = await open(archivePath, 'wx', 0o600);
-    await reserved.close();
-    await rename(partialPath, archivePath);
     const manifest = {
       format: 'pg_dump-custom+age-v1', source: 'approved-direct-neondb',
       createdAt: startedAt.toISOString(), completedAt: new Date().toISOString(),
@@ -156,9 +187,8 @@ export async function runEncryptedBackup(config) {
     const manifestPartial = `${manifestPath}.partial`;
     const handle = await open(manifestPartial, 'wx', 0o600);
     try { await handle.writeFile(`${JSON.stringify(manifest, null, 2)}\n`); await handle.sync(); } finally { await handle.close(); }
-    const manifestReserved = await open(manifestPath, 'wx', 0o600);
-    await manifestReserved.close();
-    await rename(manifestPartial, manifestPath);
+    validateOutputDirectory(output, config.approvedOutputRoot);
+    await publishBackupPair({ archivePartial: partialPath, archiveFinal: archivePath, manifestPartial, manifestFinal: manifestPath });
     return { archivePath, manifestPath, bytes: metadata.size, sha256 };
   } catch (error) {
     if (dump && !dump.killed) dump.kill();
