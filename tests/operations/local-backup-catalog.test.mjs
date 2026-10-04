@@ -21,7 +21,7 @@ function processStatus(exe, args, env = {}) {
   return result.status;
 }
 
-async function unusedLoopbackPort() {
+async function allocateLoopbackPort() {
   const server = net.createServer();
   await new Promise((resolveReady, reject) => {
     server.once('error', reject);
@@ -29,9 +29,26 @@ async function unusedLoopbackPort() {
   });
   const port = server.address().port;
   await new Promise(resolveClosed => server.close(resolveClosed));
-  assert.notEqual(port, 55438);
   return port;
 }
+
+async function unusedLoopbackPort(allocate = allocateLoopbackPort) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const port = await allocate();
+    if (Number.isInteger(port) && port >= 1024 && port <= 65535 && port !== 55438) return port;
+  }
+  throw new Error('No permitted loopback port after 8 attempts');
+}
+
+test('synthetic catalog port selection skips reserved 55438 and stops after a bounded number of retries', async () => {
+  const offered = [55438, 60123];
+  const chosen = await unusedLoopbackPort(async () => offered.shift());
+  assert.equal(chosen, 60123);
+  assert.equal(offered.length, 0);
+  let attempts = 0;
+  await assert.rejects(unusedLoopbackPort(async () => { attempts += 1; return 55438; }), /No permitted loopback port/);
+  assert.equal(attempts, 8);
+});
 
 const oldCountSql = `SELECT count(*) = 4 FROM pg_index i
   JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace
