@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TOURNAMENT_FORMAT_PRESETS } from "@/lib/tournament/formats/types";
 
 const boundary = vi.hoisted(() => ({
@@ -57,8 +57,93 @@ beforeEach(() => {
     { matchId: "match-late", start: "2026-09-20T05:00:00.000Z", end: "2026-09-20T06:00:00.000Z", roomId: "B" },
   ] } } });
 });
+afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 describe("narrow public homepage featured read", () => {
+  it("distinguishes transaction entry rejection from rejection after the callback without changing errors", async () => {
+    vi.stubEnv("PUBLIC_V3_HOME_DISCOVERY_TRACE", "1");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { readPublicHomeFeaturedEvent } = await import("./public-home-read");
+    const entryError = Object.assign(new Error("private entry detail"), { code: "P2028" });
+    boundary.transaction.mockRejectedValueOnce(entryError);
+    await expect(readPublicHomeFeaturedEvent("cup", now)).rejects.toBe(entryError);
+    expect(info.mock.calls.map(([line]) => String(line))).toEqual(expect.arrayContaining([
+      expect.stringMatching(/failure stage=transaction_start class=transaction_error/),
+    ]));
+    expect(info.mock.calls.flat().join(" ")).not.toContain("private entry detail");
+
+    info.mockClear();
+    const finishError = Object.assign(new Error("private finish detail"), { code: "P2028" });
+    boundary.transaction.mockImplementationOnce(async (fn: (tx: unknown) => unknown) => {
+      await fn({ event: { findFirst: boundary.event }, scheduleRevision: { findFirst: boundary.revision } });
+      throw finishError;
+    });
+    await expect(readPublicHomeFeaturedEvent("cup", now)).rejects.toBe(finishError);
+    expect(info.mock.calls.map(([line]) => String(line))).toEqual(expect.arrayContaining([
+      expect.stringMatching(/stage=callback_done/),
+      expect.stringMatching(/failure stage=transaction_after_callback class=transaction_error/),
+    ]));
+  });
+
+  it("attributes query, projection and fallback failures to their own stages", async () => {
+    vi.stubEnv("PUBLIC_V3_HOME_DISCOVERY_TRACE", "1");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { readPublicHomeFeaturedEvent } = await import("./public-home-read");
+    const queryError = Object.assign(new Error("private query detail"), { code: "P2024" });
+    boundary.event.mockRejectedValueOnce(queryError);
+    await expect(readPublicHomeFeaturedEvent("cup", now)).rejects.toBe(queryError);
+    expect(info.mock.calls.map(([line]) => String(line))).toEqual(expect.arrayContaining([
+      expect.stringMatching(/failure stage=event_read_start class=pool_timeout/),
+    ]));
+
+    info.mockClear();
+    const revisionError = Object.assign(new Error("private revision detail"), { code: "P1001" });
+    boundary.revision.mockRejectedValueOnce(revisionError);
+    await expect(readPublicHomeFeaturedEvent("cup", now)).rejects.toBe(revisionError);
+    expect(info.mock.calls.map(([line]) => String(line))).toEqual(expect.arrayContaining([
+      expect.stringMatching(/failure stage=revision_read_start class=connection_error/),
+    ]));
+
+    info.mockClear();
+    boundary.revision.mockResolvedValueOnce({ version: 2, status: "published", snapshot: { draft: null } });
+    await expect(readPublicHomeFeaturedEvent("cup", now)).rejects.toBeInstanceOf(TypeError);
+    expect(info.mock.calls.map(([line]) => String(line))).toEqual(expect.arrayContaining([
+      expect.stringMatching(/failure stage=projection_start class=projection_error/),
+    ]));
+
+    info.mockClear();
+    boundary.enabled = false;
+    const fallbackError = Object.assign(new Error("private fallback detail"), { code: "P2034" });
+    boundary.full.mockRejectedValueOnce(fallbackError);
+    await expect(readPublicHomeFeaturedEvent("cup", now)).rejects.toBe(fallbackError);
+    expect(info.mock.calls.map(([line]) => String(line))).toEqual(expect.arrayContaining([
+      expect.stringMatching(/failure stage=fallback_start class=transaction_conflict/),
+    ]));
+    expect(info.mock.calls.flat().join(" ")).not.toMatch(/private query detail|private revision detail|private fallback detail/);
+  });
+
+  it("keeps simultaneous failure stages request-local", async () => {
+    vi.stubEnv("PUBLIC_V3_HOME_DISCOVERY_TRACE", "1");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { readPublicHomeFeaturedEvent } = await import("./public-home-read");
+    const eventError = Object.assign(new Error("secret A"), { code: "P2024" });
+    const revisionError = Object.assign(new Error("secret B"), { code: "P2034" });
+    boundary.event.mockImplementation(async ({ where }: { where: { slug: string } }) => {
+      await Promise.resolve();
+      if (where.slug === "cup-a") throw eventError;
+      return event();
+    });
+    boundary.revision.mockRejectedValue(revisionError);
+    const results = await Promise.allSettled([readPublicHomeFeaturedEvent("cup-a", now), readPublicHomeFeaturedEvent("cup-b", now)]);
+    expect(results).toEqual([{ status: "rejected", reason: eventError }, { status: "rejected", reason: revisionError }]);
+    const failures = info.mock.calls.map(([line]) => String(line)).filter((line) => line.includes(" failure "));
+    expect(failures).toEqual(expect.arrayContaining([
+      expect.stringMatching(/stage=event_read_start class=pool_timeout/),
+      expect.stringMatching(/stage=revision_read_start class=transaction_conflict/),
+    ]));
+    expect(failures).toHaveLength(2);
+    expect(failures.join(" ")).not.toMatch(/secret A|secret B/);
+  });
   it("uses at most two joined snapshot data reads and projects authoritative ordered highlights without detail overfetch", async () => {
     const { readPublicHomeFeaturedEvent } = await import("./public-home-read");
     const view = await readPublicHomeFeaturedEvent("cup", now);

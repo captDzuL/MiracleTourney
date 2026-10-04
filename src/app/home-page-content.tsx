@@ -8,6 +8,7 @@ import { PublicHomeV2 } from "@/components/public-v2/PublicHomeV2";
 import { PublicDiscoveryHomeV3 } from "@/components/v3/public-discovery/PublicDiscoveryV3";
 import { chooseFeaturedDiscoveryEvent, filterDiscoveryEvents } from "@/lib/events/public-discovery";
 import { readPublicHomeFeaturedEvent } from "@/lib/events/public-home-read";
+import { createFeaturedTrace } from "@/lib/events/public-home-trace";
 import type { PublicHomeFeaturedEvent } from "@/lib/events/public-v3-types";
 import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
@@ -124,11 +125,16 @@ export async function HomePageContent({
     let featuredView: PublicHomeFeaturedEvent | null = null;
     let featuredReadState: "none" | "ready" | "unavailable" | "read_failure" | "mismatch" = "none";
     if (featured) {
+      const featuredTrace = createFeaturedTrace();
       try {
+        featuredTrace.mark("reader_await");
         featuredView = await readPublicHomeFeaturedEvent(featured.event.slug);
+        featuredTrace.mark("identity_check");
         featuredReadState = !featuredView ? "unavailable" : featuredView.identity.id === featured.event.id ? "ready" : "mismatch";
         if (featuredReadState !== "ready") console.error("Homepage featured event unavailable", { code: featuredReadState });
-      } catch {
+        featuredTrace.mark("reader_done");
+      } catch (error) {
+        featuredTrace.fail(error);
         featuredReadState = "read_failure";
         console.error("Homepage featured event unavailable", { code: featuredReadState });
       }

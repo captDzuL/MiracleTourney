@@ -3,6 +3,7 @@ import { prisma } from "@/lib/platform/db";
 import type { CompetitionGraph } from "@/lib/tournament/competition/types";
 import type { StoredSchedule } from "@/lib/tournament/operations/state";
 import { publicOngoingEnabled, projectPublicOngoingMatches } from "./public-ongoing";
+import { createFeaturedTrace } from "./public-home-trace";
 import { projectPublicHomeFeaturedEvent, projectPublicV3AuthoritativeMatch, projectPublicV3Identity, readPublicV3Event } from "./public-v3-read";
 import type { PublicHomeFeaturedEvent } from "./public-v3-types";
 
@@ -27,13 +28,30 @@ function isHomeProjectionGraph(value: unknown, eventId: string): value is Compet
 
 /** Read only homepage-visible authoritative ongoing data; other lifecycles retain the full reader. */
 export async function readPublicHomeFeaturedEvent(slug: string, now = new Date()): Promise<PublicHomeFeaturedEvent | null> {
+  const trace = createFeaturedTrace();
+  trace.mark("reader_start");
   const fallback = async () => {
+    trace.mark("fallback_start");
     const full = await readPublicV3Event(slug, null, now);
-    return full ? projectPublicHomeFeaturedEvent(full) : null;
+    trace.mark("fallback_done");
+    if (!full) return null;
+    trace.mark("projection_start");
+    const projected = projectPublicHomeFeaturedEvent(full);
+    trace.mark("projection_done");
+    return projected;
   };
-  if (!publicOngoingEnabled()) return fallback();
+  try {
+    if (!publicOngoingEnabled()) {
+      const result = await fallback();
+      trace.mark("reader_done");
+      return result;
+    }
 
+  trace.mark("transaction_start");
   const ongoing = await prisma.$transaction(async (tx): Promise<PublicHomeFeaturedEvent | null> => {
+    trace.mark("transaction_enter");
+    const done = <T,>(value: T): T => { trace.mark("callback_done"); return value; };
+    trace.mark("event_read_start");
     const event = await tx.event.findFirst({
       relationLoadStrategy: "join",
       where: { slug, status: "Ongoing" },
@@ -46,20 +64,24 @@ export async function readPublicHomeFeaturedEvent(slug: string, now = new Date()
         teams: { select: { id: true, name: true }, take: HOME_ROW_LIMIT + 1 },
       },
     });
-    if (!event || event.status !== "Ongoing" || event.matches.length > HOME_ROW_LIMIT || event.teams.length > HOME_ROW_LIMIT) return null;
+    trace.mark("event_read_done");
+    if (!event || event.status !== "Ongoing" || event.matches.length > HOME_ROW_LIMIT || event.teams.length > HOME_ROW_LIMIT) return done(null);
     const graph = (event.competitionPhases[0]?.configuration as { graph?: unknown } | null)?.graph;
-    if (!isHomeProjectionGraph(graph, event.id)) return null;
+    if (!isHomeProjectionGraph(graph, event.id)) return done(null);
 
+    if (event.publishedScheduleVersion != null) trace.mark("revision_read_start");
     const revision = event.publishedScheduleVersion == null ? null : await tx.scheduleRevision.findFirst({
       where: { eventId: event.id, version: event.publishedScheduleVersion, status: "published" },
     });
+    if (event.publishedScheduleVersion != null) trace.mark("revision_read_done");
+    trace.mark("projection_start");
     const snapshot = revision?.status === "published" && revision.version === event.publishedScheduleVersion
       ? revision.snapshot as unknown as StoredSchedule
       : undefined;
     const matches = projectPublicOngoingMatches(graph, event.matches, event.teams, snapshot);
     const toPublic = (rows: typeof matches) => rows.map(projectPublicV3AuthoritativeMatch);
     const identity = projectPublicV3Identity({ ...event, format: graph.config.kind }, "ongoing", "authoritative", event.teams.length);
-    return {
+    const result = {
       source: "authoritative", mode: "ongoing", identity,
       organizer: identity.organizer, facts: identity.facts, statusExplanation: identity.statusExplanation,
       statusExplanationKey: identity.statusExplanationKey, cta: identity.cta, navigation: identity.navigation,
@@ -68,8 +90,16 @@ export async function readPublicHomeFeaturedEvent(slug: string, now = new Date()
       nextMatches: toPublic(matches.filter((match) => match.status !== "live" && match.status !== "completed")),
       recentResults: toPublic(matches.filter((match) => match.resultVersion > 0)
         .sort((a, b) => (b.confirmedAt ?? "").localeCompare(a.confirmedAt ?? "") || a.id.localeCompare(b.id)).slice(0, 12)),
-    };
+    } as const;
+    trace.mark("projection_done");
+    return done(result);
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 
-  return ongoing ?? fallback();
+    trace.mark("transaction_done");
+    const result = ongoing ?? await fallback();
+    trace.mark("reader_done");
+    return result;
+  } catch (error) {
+    throw trace.fail(error);
+  }
 }

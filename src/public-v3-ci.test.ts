@@ -164,6 +164,52 @@ describe("public V3 lane", () => {
 });
 
 describe("production pressure measurements", () => {
+  it("collects only fixed featured stage/class lines with bounded finite aggregates", async () => {
+    const { createFeaturedTraceCollector } = await import(pressureModulePath);
+    const collector = createFeaturedTraceCollector();
+    collector.consume("[public-v3-featured] stage=transaction_start ms=12\n[public-v3-fea");
+    collector.consume("tured] failure stage=event_read_start class=pool_timeout ms=15\n");
+    collector.consume("[public-v3-featured] failure stage=unknown_stage class=pool_timeout ms=9\n");
+    collector.consume("[public-v3-featured] failure stage=event_read_start class=secret_code ms=9\n");
+    collector.consume("[public-v3-featured] failure stage=event_read_start class=pool_timeout ms=100000\n");
+    collector.consume("[public-v3-featured] failure stage=event_read_start class=pool_timeout ms=NaN\n");
+    collector.consume("secret=do-not-retain\n" + "x".repeat(4100) + "[public-v3-featured] stage=reader_done ms=1\n");
+    expect(collector.snapshot()).toEqual({
+      stageCounts: { transaction_start: 1 }, failureCounts: { "event_read_start:pool_timeout": 1 },
+      maxDurationMs: { transaction_start: 12, event_read_start: 15 },
+    });
+    for (let index = 0; index < 10_002; index += 1) collector.consume("[public-v3-featured] stage=transaction_start ms=99999\n");
+    expect(collector.snapshot()).toEqual({
+      stageCounts: { transaction_start: 10_000 }, failureCounts: { "event_read_start:pool_timeout": 1 },
+      maxDurationMs: { transaction_start: 99_999, event_read_start: 15 },
+    });
+    expect(JSON.stringify(collector.snapshot())).not.toContain("secret");
+  });
+
+  it("serializes featured diagnostics only in homepage mode without changing failed content", async () => {
+    const { runPublicPressure } = await import(pressureModulePath);
+    const stdout = new EventEmitter();
+    const server = { pid: 123, exitCode: null, stdout, stderr: new EventEmitter() };
+    const writeEvidence = vi.fn();
+    const options = { loadEnvironment: vi.fn(), checkFixtures: vi.fn(), build: vi.fn(), startServer: () => {
+      queueMicrotask(() => stdout.emit("data", "[public-v3-featured] failure stage=event_read_start class=pool_timeout ms=14\nprivate=do-not-retain\n"));
+      return server;
+    },
+      stopServer: vi.fn(), writeEvidence, traceDrainMs: 0,
+      fetchImpl: async (url: string) => url.endsWith("/id/login")
+        ? { status: 200, body: { cancel: async () => undefined } }
+        : { status: 200, text: async () => "<main role='alert'>Unavailable</main>" },
+      scenarios: [{ path: "/id", requests: 1, concurrency: 1, p95Ms: 3000, public: true, expected: "featured-event", statuses: [200] }],
+    };
+    await expect(runPublicPressure({ ...options, mode: "homepage-only" })).rejects.toThrow(/Warm/);
+    expect(writeEvidence.mock.calls[0][0]).toMatchObject({ status: "failed", failure: { kind: "content" },
+      featuredTrace: { failureCounts: { "event_read_start:pool_timeout": 1 }, maxDurationMs: { event_read_start: 14 } } });
+    expect(JSON.stringify(writeEvidence.mock.calls[0][0])).not.toContain("do-not-retain");
+
+    writeEvidence.mockClear();
+    await expect(runPublicPressure({ ...options, mode: "production-like", env: { PUBLIC_V3_HOME_DISCOVERY_TRACE: "1" } })).rejects.toThrow(/Warm/);
+    expect(writeEvidence.mock.calls[0][0]).not.toHaveProperty("featuredTrace");
+  });
   const homeScenarios = ["/id", "/en"].map((path) => ({ path, requests: 40, concurrency: 10, p95Ms: 3000, statuses: [200] }));
   const measuredResult = (scenario: { path: string; requests: number; concurrency: number }, p95Ms = 500, overrides = {}) => ({
     path: scenario.path, requests: scenario.requests, completed: scenario.requests, concurrency: scenario.concurrency,

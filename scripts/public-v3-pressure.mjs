@@ -53,6 +53,48 @@ export function createDiscoveryTraceCollector() {
   };
 }
 
+export function createFeaturedTraceCollector() {
+  const stages = new Set(["reader_await", "identity_check", "reader_start", "transaction_start", "transaction_enter",
+    "event_read_start", "event_read_done", "revision_read_start", "revision_read_done", "projection_start", "projection_done",
+    "callback_done", "transaction_done", "transaction_after_callback", "fallback_start", "fallback_done", "reader_done"]);
+  const errorClasses = new Set(["transaction_error", "pool_timeout", "connection_error", "transaction_conflict",
+    "validation_error", "projection_error", "unknown_error"]);
+  const stageCounts = {};
+  const failureCounts = {};
+  const maxDurationMs = {};
+  let pending = "";
+  let discard = false;
+  const collect = (line) => {
+    const stage = /^\[public-v3-featured\] stage=([a-z_]+) ms=(0|[1-9]\d{0,4})$/.exec(line);
+    const failure = /^\[public-v3-featured\] failure stage=([a-z_]+) class=([a-z_]+) ms=(0|[1-9]\d{0,4})$/.exec(line);
+    if (stage && stages.has(stage[1])) {
+      stageCounts[stage[1]] = Math.min(10_000, (stageCounts[stage[1]] ?? 0) + 1);
+      maxDurationMs[stage[1]] = Math.max(maxDurationMs[stage[1]] ?? 0, Number(stage[2]));
+    } else if (failure && stages.has(failure[1]) && errorClasses.has(failure[2])) {
+      const key = `${failure[1]}:${failure[2]}`;
+      failureCounts[key] = Math.min(10_000, (failureCounts[key] ?? 0) + 1);
+      maxDurationMs[failure[1]] = Math.max(maxDurationMs[failure[1]] ?? 0, Number(failure[3]));
+    }
+  };
+  return {
+    consume(chunk) {
+      const parts = String(chunk).split("\n");
+      for (let index = 0; index < parts.length; index += 1) {
+        const complete = index < parts.length - 1;
+        const combinedLength = pending.length + parts[index].length;
+        if (combinedLength > 4_096) discard = true;
+        if (complete) {
+          if (!discard) collect((pending + parts[index]).replace(/\r$/, ""));
+          pending = "";
+          discard = false;
+        } else if (!discard) pending += parts[index];
+        else pending = "";
+      }
+    },
+    snapshot() { return { stageCounts: { ...stageCounts }, failureCounts: { ...failureCounts }, maxDurationMs: { ...maxDurationMs } }; },
+  };
+}
+
 async function boundedFetch(fetchImpl, url, { publicBody, timeoutMs }) {
   const controller = new AbortController();
   let timeoutId;
@@ -202,6 +244,7 @@ export async function runPublicPressure({ env = process.env, fetchImpl = fetch, 
   const startedAt = now();
   const logs = [];
   const discoveryTrace = createDiscoveryTraceCollector();
+  const featuredTrace = createFeaturedTraceCollector();
   try {
     loadEnvironment({ env });
     stage = "fixtures";
@@ -215,7 +258,7 @@ export async function runPublicPressure({ env = process.env, fetchImpl = fetch, 
     evidence.buildMs = now() - buildStart;
     stage = "readiness";
     server = startServer(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", port], { env: serverEnv, stdio: ["ignore", "pipe", "pipe"] });
-    server.stdout.on("data", (chunk) => { const output = String(chunk); logs.push(...output.split(/\r?\n/).filter(Boolean).map((line) => /error|warn|fail/i.test(line) ? "diagnostic" : "normal")); if (mode === "homepage-only") discoveryTrace.consume(output); });
+    server.stdout.on("data", (chunk) => { const output = String(chunk); logs.push(...output.split(/\r?\n/).filter(Boolean).map((line) => /error|warn|fail/i.test(line) ? "diagnostic" : "normal")); if (mode === "homepage-only") { discoveryTrace.consume(output); featuredTrace.consume(output); } });
     server.stderr.on("data", (chunk) => { logs.push(...String(chunk).split(/\r?\n/).filter(Boolean).map(() => "stderr")); });
     const deadline = now() + 45_000;
     let ready = false;
@@ -246,7 +289,7 @@ export async function runPublicPressure({ env = process.env, fetchImpl = fetch, 
     const drainMs = boundedTraceDrainMs(traceDrainMs);
     if (mode === "homepage-only" && evidence.failure?.kind === "content" && drainMs > 0) await sleep(drainMs);
     stopServer(server);
-    if (mode === "homepage-only") evidence.discoveryTrace = discoveryTrace.snapshot();
+    if (mode === "homepage-only") { evidence.discoveryTrace = discoveryTrace.snapshot(); evidence.featuredTrace = featuredTrace.snapshot(); }
     evidence.safeServerLogCounts = { normal: logs.filter((value) => value === "normal").length, diagnostic: logs.filter((value) => value === "diagnostic").length, stderr: logs.filter((value) => value === "stderr").length };
     await writeEvidence(evidence);
   }

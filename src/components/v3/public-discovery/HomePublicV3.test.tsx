@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { publicV3RouteTargets, type PublicHomeFeaturedEvent, type PublicV3EventViewModel, type PublicV3Match } from "@/lib/events/public-v3-types";
 import type { PublicDiscoveryEvent } from "@/lib/events/public-discovery";
 import type { Game } from "@/lib/platform/types";
@@ -47,6 +47,27 @@ function render(view: PublicHomeFeaturedEvent | null = homepageView(), locale: "
 
 describe("final homepage composition", () => {
   beforeEach(() => { vi.clearAllMocks(); dependencies.locale = "id"; dependencies.discovery.mockResolvedValue(entries); dependencies.read.mockResolvedValue(homepageView()); });
+  afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+  it("distinguishes a featured reader rejection from a later identity access throw without exposing details", async () => {
+    vi.stubEnv("PUBLIC_V3_HOME_DISCOVERY_TRACE", "1");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const rejected = Object.assign(new Error("secret reader detail"), { code: "P2024", meta: { password: "secret" } });
+    dependencies.read.mockRejectedValueOnce(rejected);
+    const rejectedHtml = renderToStaticMarkup(await HomePageContent({}));
+    expect(rejectedHtml).toContain('data-public-home-featured="read_failure"');
+    expect(info.mock.calls.map(([line]) => String(line))).toEqual(expect.arrayContaining([
+      expect.stringMatching(/failure stage=reader_await class=pool_timeout/),
+    ]));
+
+    info.mockClear();
+    dependencies.read.mockResolvedValueOnce({ identity: null });
+    await HomePageContent({});
+    expect(info.mock.calls.map(([line]) => String(line))).toEqual(expect.arrayContaining([
+      expect.stringMatching(/failure stage=identity_check class=projection_error/),
+    ]));
+    expect(info.mock.calls.flat().join(" ")).not.toMatch(/secret reader detail|password|secret/);
+  });
   it.each(["id", "en"] as const)("renders the narrow Ongoing hero identically to the full view in %s", (locale) => {
     const full = homepageView();
     if (full.mode !== "ongoing") throw new Error("expected ongoing fixture");
