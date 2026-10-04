@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,6 +67,58 @@ test('rejects a mismatched root, reparse ancestor, and unsafe existing ACL', asy
     const noInheritance = join(parent, 'no-inheritance');
     const badAcl = run(`$s=[Security.Principal.WindowsIdentity]::GetCurrent().User;$a=New-Object Security.AccessControl.DirectorySecurity;$a.SetOwner($s);$a.SetAccessRuleProtection($true,$false);$r=New-Object Security.AccessControl.FileSystemAccessRule($s,[Security.AccessControl.FileSystemRights]::FullControl,[Security.AccessControl.InheritanceFlags]::None,[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow);$a.AddAccessRule($r);[void][IO.Directory]::CreateDirectory(${psLiteral(noInheritance)},$a); Initialize-BackupKey ${settings(noInheritance)}`);
     assert.notEqual(badAcl.status, 0); assert.match(badAcl.stderr, /KEY_ACL_REJECTED/);
+  } finally { await rm(parent, { recursive: true, force: true }); }
+});
+
+test('rejects an E-drive junction even when its target has a valid owner ACL', () => {
+  const script = `
+    $drive=[IO.Path]::GetPathRoot('E:\\MiracleBackupKeys');
+    $fixture=[IO.Path]::Combine($drive,('miracle-key-fix-'+[guid]::NewGuid().ToString('N')));
+    $target=[IO.Path]::Combine($fixture,'target'); $link=[IO.Path]::Combine($fixture,'link');
+    [void][IO.Directory]::CreateDirectory($fixture);
+    try {
+      $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User;
+      $acl=New-Object Security.AccessControl.DirectorySecurity;
+      $acl.SetOwner($sid); $acl.SetAccessRuleProtection($true,$false);
+      $flags=[Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit;
+      $rule=New-Object Security.AccessControl.FileSystemAccessRule($sid,[Security.AccessControl.FileSystemRights]::FullControl,$flags,[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow);
+      $acl.AddAccessRule($rule);
+      [void][IO.Directory]::CreateDirectory($target,$acl);
+      New-Item -ItemType Junction -Path $link -Target $target | Out-Null;
+      $failure='';
+      try { Initialize-BackupKey -KeyDirectory $link -ApprovedRoot $link -AgeKeygenPath ${psLiteral(ageKeygen)} -AgePath ${psLiteral(age)} -ExpectedKeygenSha256 ${psLiteral(keygenHash)} -ExpectedAgeSha256 ${psLiteral(ageHash)} | Out-Null }
+      catch { $failure=$_.Exception.Message }
+      if($failure -cne 'KEY_PATH_REJECTED'){throw 'PATH_NOT_REJECTED'};
+      if([IO.File]::Exists([IO.Path]::Combine($target,'identity.dpapi')) -or [IO.File]::Exists([IO.Path]::Combine($target,'recipient.txt'))){throw 'TARGET_MODIFIED'};
+      'PATH_SAFE'
+    } finally {
+      if([IO.Path]::GetDirectoryName($fixture) -cne $drive -or -not [IO.Path]::GetFileName($fixture).StartsWith('miracle-key-fix-') -or [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($target)) -cne $fixture){throw 'UNSAFE_CLEANUP'};
+      if([IO.Directory]::Exists($link)){[IO.Directory]::Delete($link)};
+      if([IO.Directory]::Exists($target)){[IO.Directory]::Delete($target,$true)};
+      if([IO.Directory]::Exists($fixture)){[IO.Directory]::Delete($fixture)};
+    }`;
+  const result = run(script);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /PATH_SAFE/);
+});
+
+test('a pre-existing launcher blocks generation without overwriting it', async () => {
+  const parent = await fixture(); const root = join(parent, 'keys');
+  try {
+    assert.equal(run(`Initialize-BackupKey ${settings(root)} | Out-Null`).status, 0);
+    await rm(join(root, 'identity.dpapi'));
+    await rm(join(root, 'recipient.txt'));
+    const launcher = join(root, 'copy-recovery-key.cmd');
+    await writeFile(launcher, 'pre-existing launcher');
+    const result = run(`Initialize-BackupKey ${settings(root)}`);
+    assert.notEqual(result.status, 0); assert.match(result.stderr, /KEY_EXISTS/);
+    assert.equal(await readFile(launcher, 'utf8'), 'pre-existing launcher');
+    assert.deepEqual(await readdir(root), ['copy-recovery-key.cmd']);
+    await rm(launcher);
+    await mkdir(launcher);
+    const directoryCollision = run(`Initialize-BackupKey ${settings(root)}`);
+    assert.notEqual(directoryCollision.status, 0); assert.match(directoryCollision.stderr, /KEY_EXISTS/);
+    assert.deepEqual(await readdir(root), ['copy-recovery-key.cmd']);
   } finally { await rm(parent, { recursive: true, force: true }); }
 });
 

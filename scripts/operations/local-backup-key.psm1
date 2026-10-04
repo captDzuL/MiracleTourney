@@ -9,8 +9,8 @@ function Assert-KeyPath {
         $path = [IO.Path]::GetFullPath($KeyDirectory).TrimEnd('\')
         $approved = [IO.Path]::GetFullPath($ApprovedRoot).TrimEnd('\')
         if (-not [string]::Equals($path, $approved, [StringComparison]::OrdinalIgnoreCase)) { throw 'KEY_PATH_REJECTED' }
-        $cursor = [IO.Path]::GetPathRoot($path).TrimEnd('\')
-        if ([string]::Equals($path, $cursor, [StringComparison]::OrdinalIgnoreCase)) { throw 'KEY_PATH_REJECTED' }
+        $cursor = [IO.Path]::GetPathRoot($path)
+        if ([string]::Equals($path, $cursor.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) { throw 'KEY_PATH_REJECTED' }
         foreach ($part in $path.Substring($cursor.Length).TrimStart('\').Split('\')) {
             if (-not $part) { continue }
             $cursor = [IO.Path]::Combine($cursor, $part)
@@ -135,8 +135,11 @@ function Initialize-BackupKey {
     $directory = Open-KeyDirectory $KeyDirectory $ApprovedRoot -Create
     $identityPath = [IO.Path]::Combine($directory, 'identity.dpapi')
     $recipientPath = [IO.Path]::Combine($directory, 'recipient.txt')
-    if ([IO.File]::Exists($identityPath) -or [IO.File]::Exists($recipientPath) -or
-        [IO.File]::Exists([IO.Path]::Combine($directory, 'recovery-verified.json'))) { throw 'KEY_EXISTS' }
+    foreach ($artifact in @($identityPath, $recipientPath,
+            [IO.Path]::Combine($directory, 'recovery-verified.json'),
+            [IO.Path]::Combine($directory, 'copy-recovery-key.cmd'))) {
+        if ([IO.File]::Exists($artifact) -or [IO.Directory]::Exists($artifact)) { throw 'KEY_EXISTS' }
+    }
     $identity = $null
     [byte[]]$generated = Invoke-AgeTool $AgeKeygenPath @() @()
     try {
