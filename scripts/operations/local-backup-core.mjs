@@ -132,6 +132,7 @@ export async function runEncryptedBackup(config) {
   await verifyExecutable(config.agePath, config.ageSha256);
   const timeoutMs = config.timeoutMs;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 7_200_000) throw failure('CONFIG_REJECTED');
+  if (config.snapshotId !== undefined && !/^[0-9A-F]{8}-[0-9A-F]{8}-[0-9]+$/i.test(config.snapshotId)) throw failure('CONFIG_REJECTED');
   const stamp = (config.now instanceof Date ? config.now : new Date()).toISOString().replaceAll(':', '-').replaceAll('.', '-');
   const name = `miracle-neondb-${stamp}`;
   const archivePath = resolve(output, `${name}.age`);
@@ -144,18 +145,25 @@ export async function runEncryptedBackup(config) {
   let age;
   let timer;
   let timedOut = false;
+  let aborted = false;
+  const onAbort = () => { aborted = true; dump?.kill(); age?.kill(); };
   try {
+    if (config.signal?.aborted) throw failure('BACKUP_FAILED');
     try { lock = await open(lockPath, 'wx', 0o600); } catch { throw failure('BACKUP_LOCKED'); }
     if (existsSync(archivePath) || existsSync(manifestPath) || existsSync(partialPath)) throw failure('ARCHIVE_COLLISION');
     try { partial = await open(partialPath, 'wx', 0o600); } catch { throw failure('ARCHIVE_COLLISION'); }
-    const safeEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^PG/i.test(key)));
+    const safeEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(PG|DATABASE_URL$|DIRECT_URL$|MIRACLE_BACKUP_)/i.test(key)));
     Object.assign(safeEnv, source);
     safeEnv.PGPASSWORD = source.PGPASSWORD;
+    safeEnv.PGCONNECT_TIMEOUT = '15';
+    safeEnv.PGCLIENTENCODING = 'UTF8';
     const startedAt = new Date();
-    const dumpArgs = [...(config.pgDumpArgsPrefix || []), '--format=custom', '--no-owner', '--no-acl'];
+    const dumpArgs = [...(config.pgDumpArgsPrefix || []), ...(config.snapshotId ? [`--snapshot=${config.snapshotId}`] : []), '--format=custom', '--no-owner', '--no-acl'];
     const ageArgs = [...(config.ageArgsPrefix || []), '--encrypt', '--recipient', config.recipient];
     dump = spawn(config.pgDumpPath, dumpArgs, { env: safeEnv, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
-    age = spawn(config.agePath, ageArgs, { env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^PG/i.test(key))), stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
+    age = spawn(config.agePath, ageArgs, { env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(PG|DATABASE_URL$|DIRECT_URL$|MIRACLE_BACKUP_)/i.test(key))), stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
+    config.signal?.addEventListener('abort', onAbort, { once: true });
+    if (config.signal?.aborted) onAbort();
     timer = setTimeout(() => { timedOut = true; dump.kill(); age.kill(); }, timeoutMs);
     dump.stdout?.on('error', () => {});
     age.stdin?.on('error', () => {});
@@ -168,6 +176,7 @@ export async function runEncryptedBackup(config) {
       new Promise(resolve => { writer.once('finish', () => resolve(true)); writer.once('error', () => resolve(false)); }),
     ]);
     clearTimeout(timer);
+    if (aborted) throw failure('BACKUP_FAILED');
     if (timedOut) throw failure('BACKUP_TIMEOUT');
     if (!dumpOk) throw failure('DUMP_FAILED');
     if (!ageOk || !writerOk) throw failure('ENCRYPT_FAILED');
@@ -189,10 +198,20 @@ export async function runEncryptedBackup(config) {
       createdAt: startedAt.toISOString(), completedAt: new Date().toISOString(),
       archive: basename(archivePath), bytes: metadata.size, sha256,
     };
+    if (config.checkpoint) {
+      const cp = config.checkpoint;
+      manifest.checkpoint = {
+        appliedMigrations: cp.appliedMigrations, ledgerSha256: cp.ledgerSha256,
+        schemaSha256: cp.schemaSha256, tableCounts: cp.tableCounts,
+        tableChecksumsMd5: cp.tableChecksumsMd5, integrity: cp.integrity,
+      };
+    }
     const manifestPartial = `${manifestPath}.partial`;
     const handle = await open(manifestPartial, 'wx', 0o600);
     try { await handle.writeFile(`${JSON.stringify(manifest, null, 2)}\n`); await handle.sync(); } finally { await handle.close(); }
     validateOutputDirectory(output, config.approvedOutputRoot);
+    if (config.beforePublish) await config.beforePublish();
+    if (config.signal?.aborted) throw failure('BACKUP_FAILED');
     const warnings = await publishBackupPair({ archivePartial: partialPath, archiveFinal: archivePath, manifestPartial, manifestFinal: manifestPath });
     return { archivePath, manifestPath, bytes: metadata.size, sha256, warnings };
   } catch (error) {
@@ -201,6 +220,7 @@ export async function runEncryptedBackup(config) {
     const allowed = new Set(['BACKUP_LOCKED', 'ARCHIVE_COLLISION', 'BACKUP_TIMEOUT', 'DUMP_FAILED', 'ENCRYPT_FAILED', 'EMPTY_ARCHIVE', 'ARCHIVE_INVALID', 'OUTPUT_REJECTED']);
     throw allowed.has(error?.code) ? error : failure('BACKUP_FAILED');
   } finally {
+    config.signal?.removeEventListener('abort', onAbort);
     if (timer) clearTimeout(timer);
     if (partial) await partial.close().catch(() => {});
     if (lock) { await lock.close().catch(() => {}); await unlink(lockPath).catch(() => {}); }

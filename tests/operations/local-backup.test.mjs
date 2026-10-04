@@ -69,6 +69,16 @@ test('preserves a binary fixture stream and publishes a manifest after both comm
   assert.equal((await stat(result.archivePath)).size, 26);
 });
 
+test('passes the held snapshot to dump and records only aggregate checkpoint fields', async () => {
+  const f = await fixture();
+  await writeFile(f.dump, `if (!process.argv.includes('--snapshot=00000003-0000001B-1')) process.exit(7); process.stdout.write(Buffer.from([0,1,2,255]));`);
+  const checkpoint = { appliedMigrations: 17, ledgerSha256: 'a'.repeat(64), schemaSha256: 'b'.repeat(64), tableCounts: { Event: 2 }, tableChecksumsMd5: { Event: 'c'.repeat(32) }, integrity: { invalidConstraints: 0, criticalUniqueIndexes: true } };
+  const result = await runEncryptedBackup(config(f, { snapshotId: '00000003-0000001B-1', checkpoint }));
+  const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8'));
+  assert.deepEqual(manifest.checkpoint, checkpoint);
+  assert.equal(JSON.stringify(manifest).includes('synthetic-secret'), false);
+});
+
 for (const [mode, code] of [['dump-fail', 'DUMP_FAILED'], ['age-fail', 'ENCRYPT_FAILED'], ['age-empty', 'EMPTY_ARCHIVE'], ['age-garbage', 'ARCHIVE_INVALID'], ['timeout', 'BACKUP_TIMEOUT']]) {
   test(`${mode} does not create a success manifest or leak stderr`, async () => {
     const f = await fixture(mode);
@@ -95,6 +105,16 @@ test('exclusive lock prevents a concurrent run', async () => {
   await assert.rejects(first, { code: 'BACKUP_TIMEOUT' });
 });
 
+test('lost snapshot signal stops the dump without publishing a manifest', async () => {
+  const f = await fixture('timeout');
+  const controller = new AbortController();
+  const pending = runEncryptedBackup(config(f, { signal: controller.signal, timeoutMs: 5000 }));
+  await new Promise(resolve => setTimeout(resolve, 100));
+  controller.abort();
+  await assert.rejects(pending);
+  assert.equal((await readdir(f.root)).some(name => name.endsWith('.json')), false);
+});
+
 test('timestamp collision cannot overwrite an existing archive', async () => {
   const f = await fixture();
   const first = await runEncryptedBackup(config(f));
@@ -102,13 +122,13 @@ test('timestamp collision cannot overwrite an existing archive', async () => {
   assert.equal((await readFile(first.archivePath)).subarray(0, 22).toString(), 'age-encryption.org/v1\n');
 });
 
-test('CLI refuses to run even when environment claims escrow and ACL readiness', () => {
+test('CLI rejects injected readiness arguments even when environment claims readiness', () => {
   const cli = fileURLToPath(new URL('../../scripts/operations/local-backup.mjs', import.meta.url));
-  const result = spawnSync(process.execPath, [cli], {
+  const result = spawnSync(process.execPath, [cli, '--ready'], {
     encoding: 'utf8', env: { ...process.env, MIRACLE_BACKUP_ESCROW_CONFIRMED: 'yes', MIRACLE_BACKUP_ACL_CONFIRMED: 'yes', MIRACLE_BACKUP_SOURCE_URL: sourceUrl, MIRACLE_BACKUP_AGE_RECIPIENT: 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq' },
   });
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /PREPARATION_DISABLED/);
+  assert.match(result.stderr, /CONFIG_REJECTED/);
   assert.equal(result.stderr.includes('synthetic-secret'), false);
 });
 

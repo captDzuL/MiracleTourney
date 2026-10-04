@@ -234,4 +234,117 @@ function Copy-BackupRecoveryKey {
     finally { [Array]::Clear($identity, 0, $identity.Length) }
 }
 
-Export-ModuleMember -Function Initialize-BackupKey, Get-BackupKeyStatus, Verify-BackupRecoveryCopy, Copy-BackupRecoveryKey
+function Assert-ArchiveFileAcl {
+    param([string]$Path)
+    if (-not [IO.File]::Exists($Path) -or
+        ([IO.File]::GetAttributes($Path) -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'ARCHIVE_VERIFY_FAILED' }
+    $acl = [IO.File]::GetAccessControl($Path)
+    $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $rules = @($acl.Access)
+    if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $owner -or $rules.Count -ne 1) { throw 'ARCHIVE_VERIFY_FAILED' }
+    $rule = $rules[0]
+    if ($rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -ne $owner -or
+        $rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
+        ($rule.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne [Security.AccessControl.FileSystemRights]::FullControl) { throw 'ARCHIVE_VERIFY_FAILED' }
+}
+
+function Assert-ArchiveTool {
+    param([string]$Path, [string]$ExpectedSha256)
+    [void](Assert-KeyPath $Path $Path)
+    if (-not [IO.File]::Exists($Path) -or
+        ([IO.File]::GetAttributes($Path) -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        $ExpectedSha256 -notmatch '^[a-f0-9]{64}$') { throw 'ARCHIVE_VERIFY_FAILED' }
+    $stream = [IO.File]::OpenRead($Path)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $actual = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '') }
+    finally { $sha.Dispose(); $stream.Dispose() }
+    if ($actual -ine $ExpectedSha256) { throw 'ARCHIVE_VERIFY_FAILED' }
+}
+
+function Test-BackupArchive {
+    param([string]$KeyDirectory, [string]$ApprovedRoot, [string]$OutputDirectory, [string]$ApprovedOutputRoot,
+        [string]$ArchivePath, [string]$AgePath, [string]$ExpectedAgeSha256,
+        [string]$PgRestorePath, [string]$ExpectedPgRestoreSha256, [string[]]$PgRestoreArgsPrefix = @(),
+        [int]$TimeoutMs = 7200000)
+    $identity = $null
+    $ageProcess = $null
+    $restoreProcess = $null
+    try {
+        if ($TimeoutMs -lt 100 -or $TimeoutMs -gt 7200000) { throw 'ARCHIVE_VERIFY_FAILED' }
+        $keyPath = Open-KeyDirectory $KeyDirectory $ApprovedRoot
+        $outputPath = Assert-KeyPath $OutputDirectory $ApprovedOutputRoot
+        if (-not [IO.Directory]::Exists($outputPath)) { throw 'ARCHIVE_VERIFY_FAILED' }
+        Assert-OwnerAcl $outputPath
+        $archive = [IO.Path]::GetFullPath($ArchivePath)
+        if (-not [string]::Equals([IO.Path]::GetDirectoryName($archive), $outputPath, [StringComparison]::OrdinalIgnoreCase) -or
+            [IO.Path]::GetFileName($archive) -notmatch '^miracle-neondb-\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z\.age$') { throw 'ARCHIVE_VERIFY_FAILED' }
+        [void](Assert-KeyPath $archive $archive)
+        $manifestPath = [IO.Path]::ChangeExtension($archive, '.json')
+        Assert-ArchiveFileAcl $archive
+        Assert-ArchiveFileAcl $manifestPath
+        $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+        if ($manifest.archive -cne [IO.Path]::GetFileName($archive) -or
+            $manifest.bytes -ne (New-Object IO.FileInfo($archive)).Length -or
+            $manifest.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'ARCHIVE_VERIFY_FAILED' }
+        $archiveStream = [IO.File]::OpenRead($archive)
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { $hash = [BitConverter]::ToString($sha.ComputeHash($archiveStream)).Replace('-', '').ToLowerInvariant() }
+        finally { $sha.Dispose(); $archiveStream.Dispose() }
+        if ($hash -cne $manifest.sha256) { throw 'ARCHIVE_VERIFY_FAILED' }
+        Assert-ArchiveTool $AgePath $ExpectedAgeSha256
+        Assert-ArchiveTool $PgRestorePath $ExpectedPgRestoreSha256
+        $identity = Get-Identity $keyPath
+        [void](Get-PublicRecipient $keyPath)
+        $ageProcess = New-Object Diagnostics.Process
+        $ageProcess.StartInfo = New-Object Diagnostics.ProcessStartInfo
+        $ageProcess.StartInfo.FileName = $AgePath
+        $ageProcess.StartInfo.Arguments = '--decrypt --identity - "' + $archive + '"'
+        $ageProcess.StartInfo.UseShellExecute = $false
+        $ageProcess.StartInfo.CreateNoWindow = $true
+        $ageProcess.StartInfo.RedirectStandardInput = $true
+        $ageProcess.StartInfo.RedirectStandardOutput = $true
+        $ageProcess.StartInfo.RedirectStandardError = $true
+        $restoreProcess = New-Object Diagnostics.Process
+        $restoreProcess.StartInfo = New-Object Diagnostics.ProcessStartInfo
+        $restoreProcess.StartInfo.FileName = $PgRestorePath
+        $restoreProcess.StartInfo.Arguments = ((@($PgRestoreArgsPrefix) + @('--list', '-')) | ForEach-Object { '"' + $_ + '"' }) -join ' '
+        $restoreProcess.StartInfo.UseShellExecute = $false
+        $restoreProcess.StartInfo.CreateNoWindow = $true
+        $restoreProcess.StartInfo.RedirectStandardInput = $true
+        $restoreProcess.StartInfo.RedirectStandardOutput = $true
+        $restoreProcess.StartInfo.RedirectStandardError = $true
+        foreach ($process in @($ageProcess, $restoreProcess)) {
+            foreach ($name in @($process.StartInfo.EnvironmentVariables.Keys)) {
+                if ($name -match '^(PG|DATABASE_URL$|DIRECT_URL$|MIRACLE_BACKUP_)') {
+                    [void]$process.StartInfo.EnvironmentVariables.Remove($name)
+                }
+            }
+        }
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        if (-not $ageProcess.Start() -or -not $restoreProcess.Start()) { throw 'ARCHIVE_VERIFY_FAILED' }
+        $copy = $ageProcess.StandardOutput.BaseStream.CopyToAsync($restoreProcess.StandardInput.BaseStream)
+        $ageError = $ageProcess.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $restoreOutput = $restoreProcess.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $restoreError = $restoreProcess.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $ageProcess.StandardInput.BaseStream.Write($identity, 0, $identity.Length)
+        $ageProcess.StandardInput.Close()
+        if (-not $copy.Wait([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds))) { throw 'ARCHIVE_VERIFY_FAILED' }
+        [void]$copy.GetAwaiter().GetResult()
+        $restoreProcess.StandardInput.Close()
+        if (-not $ageProcess.WaitForExit([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds)) -or
+            -not $restoreProcess.WaitForExit([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds))) { throw 'ARCHIVE_VERIFY_FAILED' }
+        foreach ($task in @($ageError, $restoreOutput, $restoreError)) {
+            if (-not $task.Wait([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds))) { throw 'ARCHIVE_VERIFY_FAILED' }
+            [void]$task.GetAwaiter().GetResult()
+        }
+        if ($ageProcess.ExitCode -ne 0 -or $restoreProcess.ExitCode -ne 0) { throw 'ARCHIVE_VERIFY_FAILED' }
+        return @{ status = 'ARCHIVE_VERIFIED'; bytes = $manifest.bytes; sha256 = $hash }
+    } catch { throw 'ARCHIVE_VERIFY_FAILED' }
+    finally {
+        if ($ageProcess) { try { if (-not $ageProcess.HasExited) { $ageProcess.Kill() } } catch {}; $ageProcess.Dispose() }
+        if ($restoreProcess) { try { if (-not $restoreProcess.HasExited) { $restoreProcess.Kill() } } catch {}; $restoreProcess.Dispose() }
+        if ($identity) { [Array]::Clear($identity, 0, $identity.Length) }
+    }
+}
+
+Export-ModuleMember -Function Initialize-BackupKey, Get-BackupKeyStatus, Verify-BackupRecoveryCopy, Copy-BackupRecoveryKey, Test-BackupArchive
