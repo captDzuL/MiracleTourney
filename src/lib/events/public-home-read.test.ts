@@ -37,6 +37,11 @@ const match = (id: string, overrides: Record<string, unknown> = {}) => ({
   scheduledLabel: null, homeScore: 99, awayScore: 88, resultVersion: 0, resultConfirmedAt: null,
   ...overrides,
 });
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((accept) => { resolve = accept; });
+  return { promise, resolve };
+}
 const event = () => ({
   id: "event-1", slug: "cup", name: "Miracle Cup", description: "Public competition", gameId: "game-flashpeak",
   gameModeId: "mode-flashpeak-5v5", format: "Single Elimination", status: "Ongoing", participantCap: 8,
@@ -60,6 +65,139 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 describe("narrow public homepage featured read", () => {
+  it("shares one active same-slug default transaction but returns independent public views and rereads after settlement", async () => {
+    vi.stubEnv("PUBLIC_V3_HOME_DISCOVERY_TRACE", "1");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const gate = deferred<void>();
+    boundary.transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
+      await gate.promise;
+      return fn({ event: { findFirst: boundary.event }, scheduleRevision: { findFirst: boundary.revision } });
+    });
+    const { readPublicHomeFeaturedEvent } = await import("./public-home-read");
+    const first = readPublicHomeFeaturedEvent("cup");
+    const second = readPublicHomeFeaturedEvent("cup");
+    const activeTransactions = boundary.transaction.mock.calls.length;
+    gate.resolve();
+    const [one, two] = await Promise.all([first, second]);
+    expect(activeTransactions).toBe(1);
+    expect(one).toMatchObject({ mode: "ongoing", source: "authoritative", identity: { slug: "cup", title: "Miracle Cup" } });
+    expect(two).toEqual(one);
+    expect(two).not.toBe(one);
+    expect(two?.identity).not.toBe(one?.identity);
+    if (one?.mode !== "ongoing" || two?.mode !== "ongoing") throw new Error("expected two public ongoing views");
+    one.identity.title = "mutated by caller";
+    one.liveMatches[0].home = "private mutation";
+    expect(two.identity.title).toBe("Miracle Cup");
+    expect(two.liveMatches[0].home).toBe("Alpha");
+    expect(info.mock.calls.map(([line]) => String(line)).filter((line) => line.includes("stage=transaction_start"))).toHaveLength(1);
+
+    boundary.event.mockResolvedValueOnce({ ...event(), publishedScheduleVersion: 3, name: "New public title" });
+    boundary.revision.mockResolvedValueOnce({ version: 3, status: "published", snapshot: { draft: { assignments: [
+      { matchId: "match-live", start: "2026-09-21T03:00:00.000Z", end: "2026-09-21T04:00:00.000Z", roomId: "B" },
+    ] } } });
+    const fresh = await readPublicHomeFeaturedEvent("cup");
+    expect(boundary.transaction).toHaveBeenCalledTimes(2);
+    expect(fresh).toMatchObject({ identity: { title: "New public title" }, liveMatches: [{ start: "2026-09-21T03:00:00.000Z" }] });
+    boundary.event.mockResolvedValueOnce({ ...event(), status: "Draft" });
+    boundary.full.mockResolvedValueOnce(null);
+    await expect(readPublicHomeFeaturedEvent("cup")).resolves.toBeNull();
+    expect(boundary.transaction).toHaveBeenCalledTimes(3);
+    expect(boundary.full).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs fallback independently for each shared null and rechecks private status after settlement", async () => {
+    const gate = deferred<void>();
+    boundary.transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
+      await gate.promise;
+      return fn({ event: { findFirst: boundary.event }, scheduleRevision: { findFirst: boundary.revision } });
+    });
+    boundary.event.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...event(), status: "Draft" });
+    boundary.full.mockResolvedValue(null);
+    const { readPublicHomeFeaturedEvent } = await import("./public-home-read");
+    const one = readPublicHomeFeaturedEvent("cup");
+    const two = readPublicHomeFeaturedEvent("cup");
+    const activeTransactions = boundary.transaction.mock.calls.length;
+    gate.resolve();
+    expect(await Promise.all([one, two])).toEqual([null, null]);
+    expect(activeTransactions).toBe(1);
+    expect(boundary.full).toHaveBeenCalledTimes(2);
+    expect(await readPublicHomeFeaturedEvent("cup")).toBeNull();
+    expect(boundary.transaction).toHaveBeenCalledTimes(2);
+    expect(boundary.full).toHaveBeenCalledTimes(3);
+    expect(boundary.revision).not.toHaveBeenCalled();
+  });
+
+  it("propagates the exact shared transaction error and starts fresh after rejection", async () => {
+    const gate = deferred<void>();
+    const original = Object.assign(new Error("private transaction detail"), { code: "P2028" });
+    boundary.transaction.mockImplementationOnce(async () => { await gate.promise; throw original; });
+    const { readPublicHomeFeaturedEvent } = await import("./public-home-read");
+    const one = readPublicHomeFeaturedEvent("cup");
+    const two = readPublicHomeFeaturedEvent("cup");
+    const activeTransactions = boundary.transaction.mock.calls.length;
+    const both = Promise.allSettled([one, two]);
+    gate.resolve();
+    expect(await both).toEqual([{ status: "rejected", reason: original }, { status: "rejected", reason: original }]);
+    expect(activeTransactions).toBe(1);
+    expect((await readPublicHomeFeaturedEvent("cup"))?.mode).toBe("ongoing");
+    expect(boundary.transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not share across slugs, explicit dates, or a flags-off invocation", async () => {
+    const gate = deferred<void>();
+    boundary.transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
+      await gate.promise;
+      return fn({ event: { findFirst: boundary.event }, scheduleRevision: { findFirst: boundary.revision } });
+    });
+    boundary.event.mockImplementation(({ where }: { where: { slug: string } }) => Promise.resolve({ ...event(), slug: where.slug }));
+    boundary.full.mockResolvedValue(null);
+    const { readPublicHomeFeaturedEvent } = await import("./public-home-read");
+    const first = readPublicHomeFeaturedEvent("cup-a");
+    const different = readPublicHomeFeaturedEvent("cup-b");
+    const explicit = readPublicHomeFeaturedEvent("cup-a", now);
+    const anotherExplicit = readPublicHomeFeaturedEvent("cup-a", new Date(now.valueOf() + 1_000));
+    boundary.enabled = false;
+    const disabled = readPublicHomeFeaturedEvent("cup-a");
+    expect(boundary.transaction).toHaveBeenCalledTimes(4);
+    expect(await disabled).toBeNull();
+    expect(boundary.full).toHaveBeenCalledWith("cup-a", null, expect.any(Date));
+    boundary.enabled = true;
+    gate.resolve();
+    const [a, b, c, d] = await Promise.all([first, different, explicit, anotherExplicit]);
+    expect(a?.identity.slug).toBe("cup-a");
+    expect(b?.identity.slug).toBe("cup-b");
+    expect(c?.identity.slug).toBe("cup-a");
+    expect(d?.identity.slug).toBe("cup-a");
+    expect(boundary.transaction).toHaveBeenCalledTimes(4);
+  });
+
+  it("bypasses sharing at 64 active keys and for slugs above 200 characters without rejecting input", async () => {
+    const gate = deferred<void>();
+    boundary.transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
+      await gate.promise;
+      return fn({ event: { findFirst: boundary.event }, scheduleRevision: { findFirst: boundary.revision } });
+    });
+    boundary.event.mockImplementation(({ where }: { where: { slug: string } }) => Promise.resolve({ ...event(), slug: where.slug }));
+    const { readPublicHomeFeaturedEvent } = await import("./public-home-read");
+    const longSlug = "x".repeat(201);
+    const longA = readPublicHomeFeaturedEvent(longSlug);
+    const longB = readPublicHomeFeaturedEvent(longSlug);
+    expect(boundary.transaction).toHaveBeenCalledTimes(2);
+    const active = Array.from({ length: 64 }, (_, index) => readPublicHomeFeaturedEvent(`cup-${index}`));
+    expect(boundary.transaction).toHaveBeenCalledTimes(66);
+    const overflowA = readPublicHomeFeaturedEvent("overflow");
+    const overflowB = readPublicHomeFeaturedEvent("overflow");
+    expect(boundary.transaction).toHaveBeenCalledTimes(68);
+    gate.resolve();
+    const views = await Promise.all([longA, longB, ...active, overflowA, overflowB]);
+    expect(views).toHaveLength(68);
+    expect(views.every((view) => view?.mode === "ongoing")).toBe(true);
+    expect(views[0]?.identity.slug).toBe(longSlug);
+    expect(boundary.full).not.toHaveBeenCalled();
+    const later = await readPublicHomeFeaturedEvent("overflow");
+    expect(later?.mode).toBe("ongoing");
+    expect(boundary.transaction).toHaveBeenCalledTimes(69);
+  });
   it("distinguishes transaction entry rejection from rejection after the callback without changing errors", async () => {
     vi.stubEnv("PUBLIC_V3_HOME_DISCOVERY_TRACE", "1");
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
