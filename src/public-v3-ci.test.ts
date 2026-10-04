@@ -164,6 +164,128 @@ describe("public V3 lane", () => {
 });
 
 describe("production pressure measurements", () => {
+  const homeScenarios = ["/id", "/en"].map((path) => ({ path, requests: 40, concurrency: 10, p95Ms: 3000, statuses: [200] }));
+  const measuredResult = (scenario: { path: string; requests: number; concurrency: number }, p95Ms = 500, overrides = {}) => ({
+    path: scenario.path, requests: scenario.requests, completed: scenario.requests, concurrency: scenario.concurrency,
+    statusCounts: { 200: scenario.requests }, p95Ms, maxMs: p95Ms, failures: 0, failureKinds: [], passed: p95Ms < 3000,
+    ...overrides,
+  });
+
+  it("collects both locale warmups and loads after a cold latency failure while retaining the first failure", async () => {
+    const { runPressureScenarios } = await import(pressureModulePath);
+    const calls: string[] = [];
+    const warmups: unknown[] = [];
+    const loads: unknown[] = [];
+    const retained: unknown[] = [];
+    await expect(runPressureScenarios(homeScenarios, {
+      collectLatencyOnly: true,
+      measure: async (scenario: { path: string; requests: number; concurrency: number }) => {
+        calls.push(`${scenario.requests === 1 ? "warm" : "load"}-${scenario.path}`);
+        return measuredResult(scenario, scenario.path === "/id" && scenario.requests === 1 ? 4082 : 500);
+      },
+      onWarm: (result: unknown) => warmups.push(result), onMeasured: (result: unknown) => loads.push(result),
+      onRetainedFailure: (failure: unknown) => retained.push(failure),
+    })).rejects.toThrow(/latency/i);
+    expect(calls).toEqual(["warm-/id", "warm-/en", "load-/id", "load-/en"]);
+    expect(warmups).toHaveLength(2);
+    expect(loads).toHaveLength(2);
+    expect(warmups[0]).toMatchObject({ path: "/id", passed: false, p95Ms: 4082 });
+    expect(retained).toEqual([{ kind: "latency", stage: "warmup", path: "/id" }]);
+  });
+
+  it("retains a measured latency failure but stops immediately on every non-latency or invalid result", async () => {
+    const { runPressureScenarios } = await import(pressureModulePath);
+    const calls: string[] = [];
+    await expect(runPressureScenarios(homeScenarios, {
+      collectLatencyOnly: true,
+      measure: async (scenario: { path: string; requests: number; concurrency: number }) => {
+        calls.push(`${scenario.requests === 1 ? "warm" : "load"}-${scenario.path}`);
+        return measuredResult(scenario, scenario.path === "/id" && scenario.requests === 40 ? 3200 : 500);
+      },
+    })).rejects.toThrow(/latency/i);
+    expect(calls).toEqual(["warm-/id", "warm-/en", "load-/id", "load-/en"]);
+
+    const unsafe = [
+      { failureKinds: ["content"], failures: 1 }, { failureKinds: ["status"], failures: 1, statusCounts: { 500: 1 } },
+      { failureKinds: ["timeout"], failures: 1, completed: 0 }, { failureKinds: ["request"], failures: 1, completed: 0 },
+      { completed: 0 }, { p95Ms: Number.NaN }, { maxMs: Number.POSITIVE_INFINITY },
+      { p95Ms: 500, passed: false }, { passed: true }, { failureKinds: ["unknown"], failures: 1 },
+    ];
+    for (const overrides of unsafe) {
+      const visited: string[] = [];
+      await expect(runPressureScenarios(homeScenarios, {
+        collectLatencyOnly: true,
+        measure: async (scenario: { path: string; requests: number; concurrency: number }) => {
+          visited.push(scenario.path);
+          return measuredResult(scenario, 4082, overrides);
+        },
+      })).rejects.toThrow();
+      expect(visited, JSON.stringify(overrides)).toEqual(["/id"]);
+    }
+  });
+
+  it("keeps ordinary pressure fail-closed on the first cold latency result", async () => {
+    const { runPressureScenarios } = await import(pressureModulePath);
+    const calls: string[] = [];
+    await expect(runPressureScenarios(homeScenarios, {
+      measure: async (scenario: { path: string; requests: number; concurrency: number }) => {
+        calls.push(scenario.path);
+        return measuredResult(scenario, 4082);
+      },
+    })).rejects.toThrow(/Warm/);
+    expect(calls).toEqual(["/id"]);
+  });
+
+  it("stops after a later content failure without replacing the first cold latency failure", async () => {
+    const { runPublicPressure } = await import(pressureModulePath);
+    const server = { pid: 123, exitCode: null, stdout: new EventEmitter(), stderr: new EventEmitter() };
+    const writeEvidence = vi.fn();
+    const measure = vi.fn(async (scenario: { path: string; requests: number; concurrency: number }) =>
+      measuredResult(scenario, scenario.path === "/id" ? 4082 : 500, scenario.path === "/en"
+        ? { failures: 1, failureKinds: ["content"], passed: false } : {}));
+    await expect(runPublicPressure({ mode: "homepage-only", scenarios: homeScenarios, loadEnvironment: vi.fn(), checkFixtures: vi.fn(),
+      build: vi.fn(), startServer: () => server, stopServer: vi.fn(), writeEvidence, measure,
+      fetchImpl: async () => ({ status: 200, body: { cancel: async () => undefined } }),
+    })).rejects.toThrow(/Warm/);
+    expect(measure).toHaveBeenCalledTimes(2);
+    expect(writeEvidence.mock.calls[0][0]).toMatchObject({ status: "failed", failure: { kind: "latency", stage: "warmup", path: "/id" } });
+    expect(writeEvidence.mock.calls[0][0].warmups[1]).toMatchObject({ path: "/en", failureKinds: ["content"] });
+    expect(writeEvidence.mock.calls[0][0].scenarios).toEqual([]);
+  });
+
+  it("writes failed homepage evidence at the first cold failure after collecting later valid results", async () => {
+    const { runPublicPressure } = await import(pressureModulePath);
+    const server = { pid: 123, exitCode: null, stdout: new EventEmitter(), stderr: new EventEmitter() };
+    const writeEvidence = vi.fn();
+    const measure = vi.fn(async (scenario: { path: string; requests: number; concurrency: number }) =>
+      measuredResult(scenario, scenario.path === "/id" && scenario.requests === 1 ? 4082 : 500));
+    await expect(runPublicPressure({ mode: "homepage-only", scenarios: homeScenarios, loadEnvironment: vi.fn(), checkFixtures: vi.fn(),
+      build: vi.fn(), startServer: () => server, stopServer: vi.fn(), writeEvidence, measure,
+      fetchImpl: async () => ({ status: 200, body: { cancel: async () => undefined } }),
+    })).rejects.toThrow(/latency/i);
+    const saved = writeEvidence.mock.calls[0][0];
+    expect(saved).toMatchObject({ status: "failed", failure: { kind: "latency", stage: "warmup", path: "/id" } });
+    expect(saved.warmups.map((result: { path: string }) => result.path)).toEqual(["/id", "/en"]);
+    expect(saved.scenarios.map((result: { path: string }) => result.path)).toEqual(["/id", "/en"]);
+    expect(saved.warmups[0].passed).toBe(false);
+    expect(saved.scenarios.every((result: { passed: boolean }) => result.passed)).toBe(true);
+    expect(JSON.stringify(saved)).not.toMatch(/secret|<main|stack/);
+  });
+
+  it("keeps a passing homepage artifact passed when every cold and measured gate passes", async () => {
+    const { runPublicPressure } = await import(pressureModulePath);
+    const server = { pid: 123, exitCode: null, stdout: new EventEmitter(), stderr: new EventEmitter() };
+    const writeEvidence = vi.fn();
+    const saved = await runPublicPressure({ mode: "homepage-only", scenarios: homeScenarios, loadEnvironment: vi.fn(), checkFixtures: vi.fn(),
+      build: vi.fn(), startServer: () => server, stopServer: vi.fn(), writeEvidence,
+      measure: async (scenario: { path: string; requests: number; concurrency: number }) => measuredResult(scenario),
+      fetchImpl: async () => ({ status: 200, body: { cancel: async () => undefined } }),
+    });
+    expect(saved).toMatchObject({ status: "passed", warmups: [{ path: "/id", passed: true }, { path: "/en", passed: true }],
+      scenarios: [{ path: "/id", passed: true }, { path: "/en", passed: true }] });
+    expect(saved).not.toHaveProperty("failure");
+    expect(writeEvidence).toHaveBeenCalledWith(saved);
+  });
   it("collects only allowlisted discovery stages and numeric durations across stream chunks", async () => {
     const { createDiscoveryTraceCollector } = await import(pressureModulePath);
     const collector = createDiscoveryTraceCollector();

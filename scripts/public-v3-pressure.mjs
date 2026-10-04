@@ -129,19 +129,51 @@ export async function measureScenario(scenario, { fetchImpl = fetch, baseUrl, cl
   return { path: scenario.path, requests: scenario.requests, completed: durations.length, concurrency: scenario.concurrency, statusCounts, p95Ms, maxMs: Math.max(0, ...durations), failures: failures.length, failureKinds: [...new Set(failures)], ...(Object.keys(sourceCounts).length ? { contentDiagnostics: { missingMarkerCounts, detectedMarkerCounts, sourceCounts, discoveryStateCounts, featuredStateCounts } } : {}), passed: durations.length === scenario.requests && failures.length === 0 && p95Ms < scenario.p95Ms };
 }
 
-export async function runPressureScenarios(scenarios, { measure, onWarm = () => undefined, onMeasured = () => undefined, onStage = () => undefined }) {
+function validPressureResult(scenario, result) {
+  if (!result || result.path !== scenario.path || result.requests !== scenario.requests || result.concurrency !== scenario.concurrency
+    || !Number.isInteger(result.completed) || result.completed < 0 || result.completed > scenario.requests
+    || !Number.isInteger(result.failures) || result.failures < 0 || !Array.isArray(result.failureKinds)
+    || !Number.isFinite(result.p95Ms) || result.p95Ms < 0 || !Number.isFinite(result.maxMs) || result.maxMs < result.p95Ms
+    || typeof result.passed !== "boolean" || !result.statusCounts || typeof result.statusCounts !== "object") return false;
+  const counts = Object.entries(result.statusCounts);
+  return counts.every(([status, count]) => (scenario.statuses ?? [200]).includes(Number(status)) && Number.isInteger(count) && count >= 0)
+    && counts.reduce((total, [, count]) => total + count, 0) === result.completed
+    && result.passed === (result.completed === scenario.requests && result.failures === 0
+      && result.failureKinds.length === 0 && result.p95Ms < scenario.p95Ms);
+}
+
+function latencyOnlyFailure(scenario, result) {
+  return (scenario.path === "/id" || scenario.path === "/en") && Number.isFinite(scenario.p95Ms) && scenario.p95Ms > 0
+    && validPressureResult(scenario, result) && result.completed === scenario.requests && result.failures === 0
+    && result.failureKinds.length === 0 && result.passed === false && result.p95Ms >= scenario.p95Ms;
+}
+
+export async function runPressureScenarios(scenarios, { measure, onWarm = () => undefined, onMeasured = () => undefined,
+  onStage = () => undefined, onRetainedFailure = () => undefined, collectLatencyOnly = false }) {
+  let retainedLatency = false;
   for (const scenario of scenarios) {
     onStage("warmup", scenario.path);
     const warm = await measure({ ...scenario, requests: 1, concurrency: 1 });
     onWarm(warm);
-    if (!warm.passed) throw new Error(`Warm/content preflight failed for ${scenario.path}.`);
+    if (collectLatencyOnly && !validPressureResult({ ...scenario, requests: 1, concurrency: 1 }, warm)) throw new Error(`Invalid pressure result for ${scenario.path}.`);
+    if (!warm.passed) {
+      if (!collectLatencyOnly || !latencyOnlyFailure({ ...scenario, requests: 1, concurrency: 1 }, warm)) throw new Error(`Warm/content preflight failed for ${scenario.path}.`);
+      if (!retainedLatency) onRetainedFailure({ kind: "latency", stage: "warmup", path: scenario.path });
+      retainedLatency = true;
+    }
   }
   for (const scenario of scenarios) {
     onStage("measured", scenario.path);
     const result = await measure(scenario);
     onMeasured(result);
-    if (!result.passed) throw new Error(`Pressure contract failed for ${scenario.path}.`);
+    if (collectLatencyOnly && !validPressureResult(scenario, result)) throw new Error(`Invalid pressure result for ${scenario.path}.`);
+    if (!result.passed) {
+      if (!collectLatencyOnly || !latencyOnlyFailure(scenario, result)) throw new Error(`Pressure contract failed for ${scenario.path}.`);
+      if (!retainedLatency) onRetainedFailure({ kind: "latency", stage: "measured", path: scenario.path });
+      retainedLatency = true;
+    }
   }
+  if (retainedLatency) throw new Error("Homepage latency contract failed.");
 }
 
 async function command(args, env, logs) {
@@ -161,7 +193,7 @@ function stopOwnedServer(server) {
 export async function runPublicPressure({ env = process.env, fetchImpl = fetch, sha = process.env.PUBLIC_V3_HEAD_SHA ?? process.env.GITHUB_SHA ?? "local", now = Date.now, mode = "production-like",
   loadEnvironment = loadE2eEnvironment, checkFixtures = checkPublicFixtures, build = command, startServer = spawn, stopServer = stopOwnedServer,
   writeEvidence = async (value) => { await mkdir("test-results/public-v3", { recursive: true }); await writeFile("test-results/public-v3/pressure.json", JSON.stringify(value, null, 2)); },
-  scenarios = PRESSURE_SCENARIOS, timeoutMs = REQUEST_DEADLINE_MS, traceDrainMs = 3_000,
+  scenarios = PRESSURE_SCENARIOS, timeoutMs = REQUEST_DEADLINE_MS, traceDrainMs = 3_000, measure = measureScenario,
 } = {}) {
   const evidence = { sha, mode, environment: "guarded E2E test database", buildMs: null, warmups: [], scenarios: [], safeServerLogCounts: {}, status: "failed" };
   let server;
@@ -194,17 +226,21 @@ export async function runPublicPressure({ env = process.env, fetchImpl = fetch, 
     }
     if (!ready) throw new Error("Owned production server did not become ready.");
     await runPressureScenarios(scenarios, {
-      measure: (scenario) => measureScenario(scenario, { fetchImpl, baseUrl, timeoutMs }),
+      measure: (scenario) => measure(scenario, { fetchImpl, baseUrl, timeoutMs }),
+      collectLatencyOnly: mode === "homepage-only",
       onStage: (nextStage, path) => { stage = nextStage; route = path; },
       onWarm: (result) => evidence.warmups.push(result),
       onMeasured: (result) => evidence.scenarios.push(result),
+      onRetainedFailure: (failure) => { evidence.failure ??= { ...failure, elapsedMs: now() - startedAt }; },
     });
     evidence.status = "passed";
     return evidence;
   } catch (error) {
     const last = stage === "warmup" ? evidence.warmups.at(-1) : stage === "measured" ? evidence.scenarios.at(-1) : null;
-    const resultKind = last?.failureKinds?.[0] ?? (last && last.completed !== last.requests ? "incomplete" : last ? "latency" : null);
-    evidence.failure = { kind: resultKind ?? (stage === "fixtures" ? "fixture" : stage === "readiness" ? "readiness" : stage === "build" ? "build" : "preflight"), stage, path: route, elapsedMs: now() - startedAt };
+    const scenario = scenarios.find(({ path }) => path === route);
+    const invalid = mode === "homepage-only" && scenario && last && !validPressureResult(stage === "warmup" ? { ...scenario, requests: 1, concurrency: 1 } : scenario, last);
+    const resultKind = last?.failureKinds?.[0] ?? (last && last.completed !== last.requests ? "incomplete" : invalid ? "invalid_metrics" : last ? "latency" : null);
+    evidence.failure ??= { kind: resultKind ?? (stage === "fixtures" ? "fixture" : stage === "readiness" ? "readiness" : stage === "build" ? "build" : "preflight"), stage, path: route, elapsedMs: now() - startedAt };
     throw error;
   } finally {
     const drainMs = boundedTraceDrainMs(traceDrainMs);
