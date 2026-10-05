@@ -18,6 +18,17 @@ export async function loadExpectedLedger(root, names) {
 function fail(code) { const error = new Error(code); error.code = code; return error; }
 const SNAPSHOT_RE = /^[0-9A-F]{8}-[0-9A-F]{8}-[0-9]+$/i;
 
+function checkpointDiagnostic(stderr, timedOut) {
+  if (timedOut) return 'TIMEOUT';
+  if (/certificate verify failed|unable to get (?:local )?issuer certificate/i.test(stderr)) return 'TLS_CHAIN';
+  if (/hostname mismatch|does not match the host name|server certificate for .* does not match/i.test(stderr)) return 'TLS_HOSTNAME';
+  if (/root certificate file|could not load.*certificate|SSL_CERT_FILE/i.test(stderr)) return 'TLS_CA_LOAD';
+  if (/password authentication failed|no password supplied/i.test(stderr)) return 'AUTH';
+  if (/SSL error|TLS|SSL handshake/i.test(stderr)) return 'TLS_OTHER';
+  if (/SQLSTATE|ERROR:/i.test(stderr)) return 'SQL';
+  return 'UNKNOWN';
+}
+
 export const LEGACY_MIGRATIONS = Object.freeze([
   '20260812150000_baseline', '20260812160000_multi_organizer', '20260814171500_add_team_logo_url',
   '20260816181154_add_team_captain_relation', '20260816185211_add_password_reset_token',
@@ -82,16 +93,21 @@ SELECT 'MIRACLE_CHECKPOINT' || chr(9) || json_build_object(
 export async function runSnapshotSession(config, duringSnapshot) {
   if (!config || typeof config.path !== 'string' || !Array.isArray(config.args) ||
       typeof config.sql !== 'string' || !Number.isSafeInteger(config.timeoutMs) ||
-      config.timeoutMs < 100 || config.timeoutMs > 7_800_000) throw fail('CHECKPOINT_FAILED');
+      config.timeoutMs < 100 || config.timeoutMs > 7_800_000 ||
+      config.closeSql !== undefined && !['COMMIT;', 'ROLLBACK;'].includes(config.closeSql)) throw fail('CHECKPOINT_FAILED');
   let child;
   let timer;
   let settled = false;
   let committing = false;
+  let stderr = '';
+  let timedOut = false;
   const aborter = new AbortController();
   try {
     child = spawn(config.path, config.args, {
-      env: config.env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true,
+      env: config.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
     });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(0, 4096); });
     let rejectEarlyExit;
     const earlyExit = new Promise((_, reject) => { rejectEarlyExit = reject; });
     const closed = new Promise(resolve => {
@@ -131,16 +147,29 @@ export async function runSnapshotSession(config, duringSnapshot) {
     child.stdin.on('error', () => {});
     child.stdin.write(`${config.sql.trimEnd()}\n`);
     const timeout = new Promise((_, reject) => {
-      timer = setTimeout(() => { aborter.abort(); child.kill(); reject(fail('CHECKPOINT_FAILED')); }, config.timeoutMs);
+      timer = setTimeout(() => { timedOut = true; aborter.abort(); child.kill(); reject(fail('CHECKPOINT_FAILED')); }, config.timeoutMs);
     });
     const checkpoint = await Promise.race([checkpointReady, earlyExit, timeout]);
     const result = await Promise.race([duringSnapshot(checkpoint, aborter.signal), earlyExit, timeout]);
     committing = true;
-    child.stdin.end('COMMIT;\n');
+    child.stdin.end(`${config.closeSql || 'COMMIT;'}\n`);
     if (!await Promise.race([closed, timeout])) throw fail('CHECKPOINT_FAILED');
     return result;
-  } catch { aborter.abort(); throw fail('CHECKPOINT_FAILED'); }
+  } catch (error) {
+    aborter.abort();
+    if (error?.code === 'CHECKPOINT_DRIFT') throw error;
+    const safe = fail('CHECKPOINT_FAILED');
+    safe.diagnostic = checkpointDiagnostic(stderr, timedOut);
+    throw safe;
+  }
   finally { if (timer) clearTimeout(timer); if (child && !child.killed) child.kill(); }
+}
+
+export async function runCheckpointOnly(config, expectedLedger, expectedTables) {
+  return runSnapshotSession({ ...config, closeSql: 'ROLLBACK;' }, raw => {
+    const checkpoint = validateCheckpoint(raw, expectedLedger, expectedTables);
+    return { status: 'BACKUP_PREFLIGHT_READY', appliedMigrations: checkpoint.appliedMigrations };
+  });
 }
 
 const CRITICAL_COLUMNS = Object.freeze({

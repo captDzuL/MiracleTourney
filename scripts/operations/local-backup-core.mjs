@@ -4,6 +4,7 @@ import { createReadStream, createWriteStream, existsSync, lstatSync, realpathSyn
 import { link, open, readFile, readdir, stat, unlink } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, resolve } from 'node:path';
 import { PG18_DLL_SHA256 } from './pg18-dll-hashes.mjs';
+import { buildPinnedPgEnv, verifyPinnedCaBundle } from './local-backup-ca.mjs';
 
 const DIRECT_HOST = 'ep-sparkling-night-azr6wxwd.c-3.ap-southeast-1.aws.neon.tech';
 const DEFAULT_OUTPUT = 'E:/MiracleBackups';
@@ -128,6 +129,7 @@ export async function runEncryptedBackup(config) {
   await verifyExecutable(config.pgDumpPath, config.pgDumpSha256);
   if (basename(config.pgDumpPath).toLowerCase() === 'pg_dump.exe') {
     await verifyPostgresDependencySet(dirname(config.pgDumpPath), PG18_DLL_SHA256);
+    await verifyPinnedCaBundle();
   }
   await verifyExecutable(config.agePath, config.ageSha256);
   const timeoutMs = config.timeoutMs;
@@ -153,11 +155,7 @@ export async function runEncryptedBackup(config) {
     try { lock = await open(lockPath, 'wx', 0o600); } catch { throw failure('BACKUP_LOCKED'); }
     if (existsSync(archivePath) || existsSync(manifestPath) || existsSync(partialPath)) throw failure('ARCHIVE_COLLISION');
     try { partial = await open(partialPath, 'wx', 0o600); } catch { throw failure('ARCHIVE_COLLISION'); }
-    const safeEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(PG|DATABASE_URL$|DIRECT_URL$|MIRACLE_BACKUP_)/i.test(key)));
-    Object.assign(safeEnv, source);
-    safeEnv.PGPASSWORD = source.PGPASSWORD;
-    safeEnv.PGCONNECT_TIMEOUT = '15';
-    safeEnv.PGCLIENTENCODING = 'UTF8';
+    const safeEnv = buildPinnedPgEnv(source);
     const startedAt = new Date();
     const dumpArgs = [...(config.pgDumpArgsPrefix || []), ...(config.snapshotId ? [`--snapshot=${config.snapshotId}`] : []), '--format=custom', '--no-owner', '--no-acl'];
     const ageArgs = [...(config.ageArgsPrefix || []), '--encrypt', '--recipient', config.recipient];

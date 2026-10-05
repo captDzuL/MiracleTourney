@@ -11,7 +11,7 @@ const checkpoint = { snapshot, ledger: [], schema: [], counts: {}, integrity: { 
 async function fakeSession(mode = 'good') {
   const root = await mkdtemp(join(tmpdir(), 'miracle-snapshot-'));
   const script = join(root, 'fake-psql.mjs');
-  await writeFile(script, `process.stdin.setEncoding('utf8'); let seen=''; process.stdin.on('data', chunk => { seen += chunk; if (seen.includes('pg_export_snapshot') && !globalThis.sent) { globalThis.sent=true; ${mode === 'silent' ? '' : `process.stdout.write('MIRACLE_CHECKPOINT\\t' + JSON.stringify(${JSON.stringify(mode === 'bad' ? { ...checkpoint, snapshot: 'bad' } : checkpoint)}) + '\\n');`} ${mode === 'early-exit' ? 'setTimeout(() => process.exit(0), 20);' : ''} } if (seen.includes('COMMIT;')) process.exit(${mode === 'exit-fail' ? 8 : 0}); });`);
+  await writeFile(script, `process.stdin.setEncoding('utf8'); let seen=''; process.stdin.on('data', chunk => { seen += chunk; if (seen.includes('pg_export_snapshot') && !globalThis.sent) { globalThis.sent=true; ${mode === 'silent' || mode === 'tls-fail' ? '' : `process.stdout.write('MIRACLE_CHECKPOINT\\t' + JSON.stringify(${JSON.stringify(mode === 'bad' ? { ...checkpoint, snapshot: 'bad' } : checkpoint)}) + '\\n');`} ${mode === 'early-exit' ? 'setTimeout(() => process.exit(0), 20);' : ''} ${mode === 'tls-fail' ? "process.stderr.write('synthetic-private-path SSL error: certificate verify failed'); process.exit(2);" : ''} } if (seen.includes('${mode === 'rollback' ? 'ROLLBACK;' : 'COMMIT;'}')) process.exit(${mode === 'exit-fail' ? 8 : 0}); }); process.stdin.on('end', () => { if (${JSON.stringify(mode)} === 'rollback' && !seen.includes('ROLLBACK;')) process.exit(7); });`);
   return { root, script };
 }
 
@@ -26,6 +26,43 @@ test('holds one read-only snapshot session through callback and commits after ca
     });
     assert.equal(called, true);
     assert.equal(value, 'archive-published');
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('checkpoint-only session rolls back after validation without requiring a dump', async () => {
+  const f = await fakeSession('rollback');
+  try {
+    const result = await runSnapshotSession({
+      path: process.execPath, args: [f.script], env: {},
+      sql: 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\nSELECT pg_export_snapshot();',
+      closeSql: 'ROLLBACK;', timeoutMs: 500,
+    }, async raw => raw.snapshot);
+    assert.equal(result, snapshot);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('checkpoint-only operation returns safe readiness fields and never exposes snapshot or rows', async () => {
+  const f = await fakeSession('rollback');
+  try {
+    const { runCheckpointOnly } = await import('../../scripts/operations/local-backup-snapshot.mjs');
+    const result = await runCheckpointOnly({
+      path: process.execPath, args: [f.script], env: {},
+      sql: 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\nSELECT pg_export_snapshot();', timeoutMs: 500,
+    }, [], []);
+    assert.deepEqual(result, { status: 'BACKUP_PREFLIGHT_READY', appliedMigrations: 0 });
+    assert.equal(JSON.stringify(result).includes(snapshot), false);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('checkpoint failure exposes only an allowlisted TLS diagnostic', async () => {
+  const f = await fakeSession('tls-fail');
+  try {
+    await assert.rejects(runSnapshotSession({ path: process.execPath, args: [f.script], env: {}, sql: 'SELECT pg_export_snapshot();', timeoutMs: 500 }, async () => {}), error => {
+      assert.equal(error.code, 'CHECKPOINT_FAILED');
+      assert.equal(error.diagnostic, 'TLS_CHAIN');
+      assert.equal(JSON.stringify(error).includes('synthetic-private-path'), false);
+      return true;
+    });
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
 

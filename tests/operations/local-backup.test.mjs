@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateSourceUrl, validateOutputDirectory, runEncryptedBackup, verifyBackupPair, verifyPostgresDependencySet, publishCompleteFile, publishBackupPair } from '../../scripts/operations/local-backup-core.mjs';
 import { PG18_DLL_SHA256 } from '../../scripts/operations/pg18-dll-hashes.mjs';
+import { PINNED_CA_PATH } from '../../scripts/operations/local-backup-ca.mjs';
 
 const sourceUrl = 'postgresql://backup:synthetic-secret@ep-sparkling-night-azr6wxwd.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=verify-full&sslrootcert=system';
 const nodeHash = createHash('sha256');
@@ -67,6 +68,23 @@ test('preserves a binary fixture stream and publishes a manifest after both comm
   assert.equal(JSON.stringify(manifest).includes('synthetic-secret'), false);
   assert.equal((await readdir(f.root)).some(x => x.endsWith('.partial')), false);
   assert.equal((await stat(result.archivePath)).size, 26);
+});
+
+test('dump child receives only the fixed verified CA path despite inherited trust overrides', async () => {
+  const f = await fixture();
+  const names = ['PGSSLROOTCERT', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'OPENSSL_CONF'];
+  const saved = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  try {
+    await writeFile(f.dump, `if (process.env.PGSSLROOTCERT !== ${JSON.stringify(PINNED_CA_PATH)} || process.env.PGSSLMODE !== 'verify-full' || process.env.SSL_CERT_FILE || process.env.SSL_CERT_DIR || process.env.OPENSSL_CONF) process.exit(7); process.stdout.write(Buffer.from([0,1,2,255]));`);
+    for (const name of names) process.env[name] = 'C:/synthetic/attacker.pem';
+    const result = await runEncryptedBackup(config(f));
+    assert.equal(result.bytes, 26);
+  } finally {
+    for (const name of names) {
+      if (saved[name] === undefined) delete process.env[name]; else process.env[name] = saved[name];
+    }
+    await rm(f.root, { recursive: true, force: true });
+  }
 });
 
 test('binds the manifest checkpoint snapshot to the dump argument', async () => {
@@ -133,6 +151,14 @@ test('CLI rejects injected readiness arguments even when environment claims read
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /CONFIG_REJECTED/);
   assert.equal(result.stderr.includes('synthetic-secret'), false);
+});
+
+test('checkpoint-only operator CLI rejects arguments before any source or backup action', () => {
+  const cli = fileURLToPath(new URL('../../scripts/operations/local-backup-preflight.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [cli, '--ready'], { encoding: 'utf8', timeout: 15000 });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /^CONFIG_REJECTED\s*$/);
+  assert.equal(result.stdout, '');
 });
 
 test('PostgreSQL dependency verifier rejects missing, changed, and unexpected adjacent DLLs', async () => {
