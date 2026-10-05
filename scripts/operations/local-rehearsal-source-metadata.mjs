@@ -9,6 +9,7 @@ const MANIFEST = 'E:/MiracleBackups/miracle-neondb-2026-10-05T01-23-48-741Z.json
 const ARCHIVE = 'miracle-neondb-2026-10-05T01-23-48-741Z.age';
 const ARCHIVE_SHA256 = 'dc30ddf3ae4bb98dacd9d68e293b26cef5a3818664364c405c01d578cf1d7f5b';
 const TABLES = Object.freeze(['User', 'Team', 'Player', 'PlayerStat']);
+const DIGEST_TABLES = Object.freeze(['User', 'Team', 'Player', 'PlayerStat', 'Event']);
 const SETTINGS = Object.freeze(['TimeZone', 'DateStyle', 'IntervalStyle', 'extra_float_digits',
   'bytea_output', 'server_encoding', 'lc_collate', 'collationProvider', 'collationLocale']);
 const FLAGS = Object.freeze(['tableFound', 'hasDropped', 'hasTimestamptz', 'hasTemporal',
@@ -56,6 +57,17 @@ ROLLBACK;
 `;
 }
 
+export function buildSourceDigestSql() {
+  const checksums = DIGEST_TABLES.map(table =>
+    `'${table}', (SELECT md5(coalesce(string_agg(md5(t::text), '' ORDER BY md5(t::text)), '')) FROM public."${table}" t)`).join(',\n    ');
+  return `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout = '20s';
+SELECT 'MIRACLE_SOURCE_DIGEST' || chr(9) || json_build_object(
+    ${checksums})::text;
+ROLLBACK;
+`;
+}
+
 export function summarizeSourceMetadataLine(output, expectedSchemaSha256) {
   try {
     if (typeof output !== 'string' || output.length > 262144 ||
@@ -83,12 +95,30 @@ export function summarizeSourceMetadataLine(output, expectedSchemaSha256) {
   } catch { throw fail(); }
 }
 
-async function readManifestSchemaHash() {
+export function summarizeSourceDigestLine(output, expectedChecksums) {
+  try {
+    if (typeof output !== 'string' || output.length > 4096 ||
+        !DIGEST_TABLES.every(table => /^[a-f0-9]{32}$/.test(expectedChecksums?.[table]))) throw fail();
+    const lines = output.trim().split(/\r?\n/);
+    if (lines.length !== 1 || !lines[0].startsWith('MIRACLE_SOURCE_DIGEST\t')) throw fail();
+    const actual = JSON.parse(lines[0].slice('MIRACLE_SOURCE_DIGEST\t'.length));
+    if (!exactKeys(actual, DIGEST_TABLES) ||
+        !DIGEST_TABLES.every(table => typeof actual[table] === 'string' && /^[a-f0-9]{32}$/.test(actual[table]))) throw fail();
+    return {
+      currentMatchesManifest: Object.fromEntries(DIGEST_TABLES.map(table =>
+        [table, actual[table] === expectedChecksums[table]])),
+      historicalDataStateKnown: false,
+    };
+  } catch { throw fail(); }
+}
+
+async function readManifestCheckpoint() {
   try {
     const manifest = JSON.parse(await readFile(MANIFEST, 'utf8'));
     if (manifest.archive !== ARCHIVE || manifest.sha256 !== ARCHIVE_SHA256 ||
-        !/^[a-f0-9]{64}$/.test(manifest.checkpoint?.schemaSha256)) throw fail();
-    return manifest.checkpoint.schemaSha256;
+        !/^[a-f0-9]{64}$/.test(manifest.checkpoint?.schemaSha256) ||
+        !DIGEST_TABLES.every(table => /^[a-f0-9]{32}$/.test(manifest.checkpoint?.tableChecksumsMd5?.[table]))) throw fail();
+    return manifest.checkpoint;
   } catch { throw fail(); }
 }
 
@@ -122,11 +152,16 @@ async function runPinnedPsql(path, env, sql) {
 }
 
 async function main() {
-  if (process.argv.length !== 3 || process.argv[2] !== '--source-metadata-diagnostic') throw fail();
-  const schemaHash = await readManifestSchemaHash();
+  if (process.argv.length !== 3 || !['--source-metadata-diagnostic', '--source-digest-diagnostic'].includes(process.argv[2])) throw fail();
+  const checkpoint = await readManifestCheckpoint();
   const config = await prepareFixedExport();
-  const output = await runPinnedPsql(config.psqlPath, config.pgEnv, buildSourceMetadataSql());
-  process.stdout.write(`${JSON.stringify(summarizeSourceMetadataLine(output, schemaHash))}\n`);
+  const digestMode = process.argv[2] === '--source-digest-diagnostic';
+  const output = await runPinnedPsql(config.psqlPath, config.pgEnv,
+    digestMode ? buildSourceDigestSql() : buildSourceMetadataSql());
+  const result = digestMode
+    ? summarizeSourceDigestLine(output, checkpoint.tableChecksumsMd5)
+    : summarizeSourceMetadataLine(output, checkpoint.schemaSha256);
+  process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]).toLowerCase() === fileURLToPath(import.meta.url).toLowerCase()) {

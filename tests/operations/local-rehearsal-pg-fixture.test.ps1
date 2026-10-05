@@ -221,6 +221,15 @@ CREATE TABLE public."PlayerStat" ("id" text PRIMARY KEY);
     Assert-That ($metadata.schema.Count -gt 0 -and $metadata.tableMetadata.User.tableFound -and
       $metadata.tableMetadata.Team.tableFound -and $metadata.tableMetadata.Player.tableFound -and
       $metadata.tableMetadata.PlayerStat.tableFound) 'source-metadata-catalog'
+    $digestOutput = @(Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword (Build-Sql 'source-digest'))
+    $digestMarker = @($digestOutput | Where-Object { $_.StartsWith("MIRACLE_SOURCE_DIGEST`t") })
+    Assert-That ($digestMarker.Count -eq 1) 'source-digest-marker'
+    $digest = $digestMarker[0].Substring('MIRACLE_SOURCE_DIGEST'.Length + 1) | ConvertFrom-Json
+    $digestCountOk = @($digest.PSObject.Properties).Count -eq 5
+    $digestValuesOk = @(@('User','Team','Player','PlayerStat','Event') | Where-Object {
+      [string]$digest.PSObject.Properties[$_].Value -notmatch '^[a-f0-9]{32}$'
+    }).Count -eq 0
+    Assert-That ($digestCountOk -and $digestValuesOk) ('source-digest-shape-' + $digestCountOk + '-' + $digestValuesOk)
     $postcheckSql = Build-Sql 'postcheck'
     $good = Query-Json $postcheckSql
     Assert-That ($good.certificateConstraints -and $good.sessionVersion -and $good.resetTokenUnique -and $good.rateLimitBucket) 'catalog-good'

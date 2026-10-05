@@ -1,5 +1,5 @@
 import { buildCandidatePostcheckSql, buildSyntheticFlowSql } from '../../scripts/operations/local-rehearsal-runner.mjs';
-import { buildSourceMetadataSql } from '../../scripts/operations/local-rehearsal-source-metadata.mjs';
+import { buildSourceMetadataSql, buildSourceDigestSql } from '../../scripts/operations/local-rehearsal-source-metadata.mjs';
 import { PG18_DLL_SHA256 } from '../../scripts/operations/pg18-dll-hashes.mjs';
 
 if (process.argv[2] === 'postcheck' && process.argv.length === 3) {
@@ -10,6 +10,8 @@ if (process.argv[2] === 'postcheck' && process.argv.length === 3) {
   process.stdout.write(JSON.stringify(PG18_DLL_SHA256));
 } else if (process.argv[2] === 'source-metadata' && process.argv.length === 3) {
   process.stdout.write(buildSourceMetadataSql());
+} else if (process.argv[2] === 'source-digest' && process.argv.length === 3) {
+  process.stdout.write(buildSourceDigestSql());
 } else {
   process.exitCode = 1;
 }
