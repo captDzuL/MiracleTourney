@@ -358,4 +358,79 @@ function Test-BackupArchive {
     }
 }
 
-Export-ModuleMember -Function Initialize-BackupKey, Get-BackupKeyStatus, Verify-BackupRecoveryCopy, Copy-BackupRecoveryKey, Test-BackupArchive
+function Restore-BackupArchive {
+    param([string]$KeyDirectory, [string]$ApprovedKeyRoot, [string]$OutputDirectory, [string]$ApprovedOutputRoot,
+        [string]$ArchivePath, [string]$AgePath, [string]$ExpectedAgeSha256,
+        [string]$PgRestorePath, [string]$ExpectedPgRestoreSha256, [string]$Database,
+        [int]$TimeoutMs = 7200000)
+    $identity = $null
+    $ageProcess = $null
+    $restoreProcess = $null
+    try {
+        if ($Database -cnotin @('recovery_baseline', 'migration_candidate') -or
+            $TimeoutMs -lt 100 -or $TimeoutMs -gt 7200000) { throw 'RESTORE_FAILED' }
+        $keyPath = Open-KeyDirectory $KeyDirectory $ApprovedKeyRoot
+        $outputPath = Assert-KeyPath $OutputDirectory $ApprovedOutputRoot
+        Assert-OwnerAcl $outputPath
+        $archive = [IO.Path]::GetFullPath($ArchivePath)
+        if (-not [string]::Equals([IO.Path]::GetDirectoryName($archive), $outputPath, [StringComparison]::OrdinalIgnoreCase) -or
+            [IO.Path]::GetFileName($archive) -notmatch '^miracle-neondb-\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z\.age$') { throw 'RESTORE_FAILED' }
+        Assert-ArchiveFileAcl $archive
+        $manifestPath = [IO.Path]::ChangeExtension($archive, '.json')
+        Assert-ArchiveFileAcl $manifestPath
+        $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+        if ($manifest.archive -cne [IO.Path]::GetFileName($archive) -or
+            $manifest.sha256 -notmatch '^[a-f0-9]{64}$' -or
+            $manifest.bytes -ne ([IO.FileInfo]$archive).Length) { throw 'RESTORE_FAILED' }
+        Assert-ArchiveTool $archive $manifest.sha256
+        Assert-ArchiveTool $AgePath $ExpectedAgeSha256
+        Assert-ArchiveTool $PgRestorePath $ExpectedPgRestoreSha256
+        $identity = Get-Identity $keyPath
+        $ageProcess = New-Object Diagnostics.Process
+        $ageProcess.StartInfo = New-Object Diagnostics.ProcessStartInfo
+        $ageProcess.StartInfo.FileName = $AgePath
+        $ageProcess.StartInfo.Arguments = '-d -i - "' + $archive + '"'
+        $ageProcess.StartInfo.UseShellExecute = $false
+        $ageProcess.StartInfo.CreateNoWindow = $true
+        $ageProcess.StartInfo.RedirectStandardInput = $true
+        $ageProcess.StartInfo.RedirectStandardOutput = $true
+        $ageProcess.StartInfo.RedirectStandardError = $true
+        $restoreProcess = New-Object Diagnostics.Process
+        $restoreProcess.StartInfo = New-Object Diagnostics.ProcessStartInfo
+        $restoreProcess.StartInfo.FileName = $PgRestorePath
+        # No archive filename: pg_restore reads its custom-format input from stdin.
+        $restoreProcess.StartInfo.Arguments = '--single-transaction --exit-on-error --no-owner --no-acl --host=127.0.0.1 --port=55438 --username=rehearsal_owner --dbname=' + $Database
+        $restoreProcess.StartInfo.UseShellExecute = $false
+        $restoreProcess.StartInfo.CreateNoWindow = $true
+        $restoreProcess.StartInfo.RedirectStandardInput = $true
+        $restoreProcess.StartInfo.RedirectStandardOutput = $true
+        $restoreProcess.StartInfo.RedirectStandardError = $true
+        if (-not $restoreProcess.Start() -or -not $ageProcess.Start()) { throw 'RESTORE_FAILED' }
+        $ageError = $ageProcess.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $restoreOutput = $restoreProcess.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $restoreError = $restoreProcess.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $copy = $ageProcess.StandardOutput.BaseStream.CopyToAsync($restoreProcess.StandardInput.BaseStream)
+        $ageProcess.StandardInput.BaseStream.Write($identity, 0, $identity.Length)
+        $ageProcess.StandardInput.Close()
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        if (-not $copy.Wait($TimeoutMs)) { throw 'RESTORE_FAILED' }
+        [void]$copy.GetAwaiter().GetResult()
+        $restoreProcess.StandardInput.Close()
+        if (-not $ageProcess.WaitForExit([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds)) -or
+            -not $restoreProcess.WaitForExit([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds))) { throw 'RESTORE_FAILED' }
+        foreach ($task in @($ageError, $restoreOutput, $restoreError)) {
+            if (-not $task.Wait([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds))) { throw 'RESTORE_FAILED' }
+            [void]$task.GetAwaiter().GetResult()
+        }
+        if ($ageProcess.ExitCode -ne 0 -or $restoreProcess.ExitCode -ne 0) { throw 'RESTORE_FAILED' }
+        return @{ status = 'RESTORED'; ageExit = $ageProcess.ExitCode; restoreExit = $restoreProcess.ExitCode;
+            durationMs = [int]$clock.ElapsedMilliseconds; database = $Database }
+    } catch { throw 'RESTORE_FAILED' }
+    finally {
+        if ($ageProcess) { try { if (-not $ageProcess.HasExited) { $ageProcess.Kill() } } catch {}; $ageProcess.Dispose() }
+        if ($restoreProcess) { try { if (-not $restoreProcess.HasExited) { $restoreProcess.Kill() } } catch {}; $restoreProcess.Dispose() }
+        if ($identity) { [Array]::Clear($identity, 0, $identity.Length) }
+    }
+}
+
+Export-ModuleMember -Function Initialize-BackupKey, Get-BackupKeyStatus, Verify-BackupRecoveryCopy, Copy-BackupRecoveryKey, Test-BackupArchive, Restore-BackupArchive
