@@ -1,3 +1,5 @@
+param([switch]$RunMigrationIntegration)
+
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -7,6 +9,7 @@ $serverRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\.superpower
 $port = $null
 $started = $false
 $stopped = $false
+$startAttempted = $false
 $bin = [IO.Path]::Combine($serverRoot,'pgsql','bin')
 $data = [IO.Path]::Combine($fixtureRoot, 'cluster')
 $bootstrapPassword = [Convert]::ToBase64String(([byte[]](1..32 | ForEach-Object { [byte](Get-Random -Maximum 256) }))).TrimEnd('=').Replace('+','-').Replace('/','_')
@@ -123,6 +126,65 @@ function Invoke-Pipeline([string]$SourceDb, [string]$TargetDb) {
     }
 }
 
+function Invoke-MigrationChild([string[]]$Arguments, [int]$TimeoutMs, [string]$DatabaseUrl) {
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = New-Object Diagnostics.ProcessStartInfo
+    $process.StartInfo.FileName = (Get-Command node).Source
+    $process.StartInfo.WorkingDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+    # These are fixed repository-relative switches and paths; credentials stay in environment only.
+    $process.StartInfo.Arguments = $Arguments -join ' '
+    $process.StartInfo.UseShellExecute = $false; $process.StartInfo.CreateNoWindow = $true
+    $process.StartInfo.RedirectStandardInput = $true
+    $process.StartInfo.RedirectStandardOutput = $true; $process.StartInfo.RedirectStandardError = $true
+    # Do not inherit any caller database or production-host routing into either child.
+    foreach ($name in @('DATABASE_URL','DIRECT_URL','MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL','NEON_PROD_HOST')) {
+        [void]$process.StartInfo.Environment.Remove($name)
+    }
+    foreach ($name in @($process.StartInfo.Environment.Keys)) {
+        if ($name -like 'PG*') { [void]$process.StartInfo.Environment.Remove($name) }
+    }
+    $process.StartInfo.Environment['DATABASE_URL'] = $DatabaseUrl
+    $process.StartInfo.Environment['DIRECT_URL'] = $DatabaseUrl
+    if ($Arguments[0] -eq 'node_modules/vitest/vitest.mjs') {
+        $process.StartInfo.Environment['MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL'] = $DatabaseUrl
+    }
+    try {
+        Assert-That ($process.Start()) 'migration-child-start'
+        $process.StandardInput.Close()
+        $outputTask = $process.StandardOutput.ReadToEndAsync()
+        $errorTask = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit($TimeoutMs)) { $process.Kill(); throw 'FIXTURE_MIGRATION_CHILD_TIMEOUT' }
+        $output = $outputTask.GetAwaiter().GetResult()
+        $errorOutput = $errorTask.GetAwaiter().GetResult()
+        Assert-That ($output.Length -le 2000000 -and $errorOutput.Length -le 200000) 'migration-child-output-bound'
+        Assert-That ($process.ExitCode -eq 0) 'migration-child-exit'
+        return @{ output = $output; errorOutput = $errorOutput; exitCode = $process.ExitCode }
+    } finally { if (-not $process.HasExited) { $process.Kill() }; $process.Dispose() }
+}
+
+function Run-MigrationIntegration {
+    $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+    $migrationFile = [IO.Path]::Combine($repoRoot,'prisma','migrations','20260912000000_competition_operations_v3_foundation','migration.sql')
+    $migrationSql = [IO.File]::ReadAllText($migrationFile)
+    $fkLine = @($migrationSql -split '\r?\n' | Where-Object {
+        $_ -match '^ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_eventId_winnerTeamId_fkey"'
+    })
+    Assert-That ($fkLine.Count -eq 1 -and $fkLine[0] -eq 'ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_eventId_winnerTeamId_fkey" FOREIGN KEY ("eventId", "winnerTeamId") REFERENCES "Team"("eventId", "id") ON DELETE NO ACTION ON UPDATE CASCADE DEFERRABLE INITIALLY DEFERRED;') 'reviewed-fk-exact'
+    $databaseUrl = 'postgresql://fixture_owner:' + $ownerPassword + '@127.0.0.1:' + $port + '/migration_fixture?schema=public'
+    $empty = @(Invoke-Sql 'migration_fixture' 'fixture_owner' $ownerPassword "SELECT count(*) FROM pg_class WHERE relkind='r' AND relnamespace='public'::regnamespace;")
+    Assert-That ($empty[-1] -eq '0') 'migration-db-empty'
+    $role = @(Invoke-Sql 'migration_fixture' 'fixture_owner' $ownerPassword 'SELECT rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname=current_user;')
+    Assert-That ($role[-1] -eq 'f|f|f') 'migration-owner-unprivileged'
+    $diff = Invoke-MigrationChild @('node_modules/prisma/build/index.js','migrate','diff','--from-empty','--to-schema-datamodel','prisma/schema.prisma','--script') 90000 $databaseUrl
+    Assert-That ($diff.output.Contains('CREATE TABLE "MatchResultRevision"')) 'migration-schema-diff'
+    [void](Invoke-Sql 'migration_fixture' 'fixture_owner' $ownerPassword $diff.output)
+    [void](Invoke-Sql 'migration_fixture' 'fixture_owner' $ownerPassword ('ALTER TABLE "MatchResultRevision" DROP CONSTRAINT "MatchResultRevision_eventId_winnerTeamId_fkey"; ' + $fkLine[0]))
+    $test = Invoke-MigrationChild @('node_modules/vitest/vitest.mjs','run','tests/competition/persistence-migration.integration.test.ts','--reporter=dot') 90000 $databaseUrl
+    Assert-That ($test.output -match 'Tests\s+1 passed \(1\)' -and $test.output -notmatch 'Tests\s+.*skipped') 'migration-one-pass-no-skip'
+    [Console]::WriteLine($test.output.Trim())
+    [Console]::WriteLine('MIGRATION_INTEGRATION_PASS tests=1 childExit=' + $test.exitCode + ' loopback=127.0.0.1 owner=fixture_owner')
+}
+
 try {
     Assert-That (([IO.FileInfo]$zipPath).Length -eq 384620317) 'zip-size'
     Assert-That ((Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash.ToLowerInvariant() -eq 'e2246ba91d22345bc3d017586c09ede52d9df180b1eeb480f050445f1cad84e2') 'zip-hash'
@@ -165,13 +227,19 @@ try {
     } finally { [IO.File]::Delete($pwfile) }
     [IO.File]::AppendAllText([IO.Path]::Combine($data,'postgresql.conf'),"`nlisten_addresses='127.0.0.1'`nport=$port`npassword_encryption='scram-sha-256'`nlog_statement='none'`nlog_min_error_statement='panic'`n")
     [IO.File]::WriteAllText([IO.Path]::Combine($data,'pg_hba.conf'),"host all all 127.0.0.1/32 scram-sha-256`nhost all all ::1/128 reject`nlocal all all reject`n")
+    $startAttempted = $true
     Invoke-Tool ([IO.Path]::Combine($bin,'pg_ctl.exe')) ('-D "' + $data + '" -l "' + ([IO.Path]::Combine($fixtureRoot,'server.log')) + '" -w -t 60 start') 90000
     $started = $true
     $wrongPassword = $(if ($bootstrapPassword[0] -eq 'A') { 'B' } else { 'A' }) + $bootstrapPassword.Substring(1)
     [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $wrongPassword 'SELECT 1;' -ExpectAuthDenial)
     [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $bootstrapPassword "CREATE ROLE fixture_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '$ownerPassword';")
-    foreach ($db in @('synthetic_source','synthetic_restore','synthetic_candidate')) {
+    $databases = if ($RunMigrationIntegration) { @('migration_fixture') } else { @('synthetic_source','synthetic_restore','synthetic_candidate') }
+    foreach ($db in $databases) {
         [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $bootstrapPassword "CREATE DATABASE $db OWNER fixture_owner TEMPLATE template0 ENCODING 'UTF8';")
+    }
+    if ($RunMigrationIntegration) {
+        Run-MigrationIntegration
+        return
     }
     [void](Invoke-Sql 'synthetic_source' 'fixture_owner' $ownerPassword 'CREATE TABLE public.synthetic_probe (id integer PRIMARY KEY, dropped_note text, note text NOT NULL); INSERT INTO public.synthetic_probe VALUES (1, ''discarded'', ''synthetic only''); ALTER TABLE public.synthetic_probe DROP COLUMN dropped_note;')
     $pipeline = Invoke-Pipeline 'synthetic_source' 'synthetic_restore'
@@ -338,8 +406,9 @@ CREATE TABLE public."PlayerStat" ("id" text PRIMARY KEY);
         } catch { [Console]::Error.WriteLine('FIXTURE_STOP_UNVERIFIED ' + $fixtureRoot) }
     }
     $approvedPrefix = [IO.Path]::Combine([IO.Path]::GetTempPath(),'miracle-task3-pg-')
-    if ((-not $started -or $stopped) -and [IO.Directory]::Exists($fixtureRoot) -and
+    if ((-not $startAttempted -or $stopped) -and [IO.Directory]::Exists($fixtureRoot) -and
         $fixtureRoot.StartsWith($approvedPrefix,[StringComparison]::OrdinalIgnoreCase)) {
         [IO.Directory]::Delete($fixtureRoot,$true)
     }
+    if ($RunMigrationIntegration -and $started -and -not $stopped) { throw 'FIXTURE_STOP_UNVERIFIED' }
 }

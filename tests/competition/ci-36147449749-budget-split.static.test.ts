@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readSourceText } from "./source-text";
 
 const root = resolve(import.meta.dirname, "../..");
-const read = (relativePath: string) => readFileSync(resolve(root, relativePath), "utf8");
+const read = (relativePath: string) => readSourceText(resolve(root, relativePath));
 
 const overnight = read("tests/e2e/overnight-smoke.spec.ts");
 const globalSetup = read("tests/e2e/global-setup.ts");

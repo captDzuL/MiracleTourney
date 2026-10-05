@@ -1,22 +1,22 @@
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readSourceText } from "./source-text";
 
 import { buildRegistrationPreview, suggestRegistrationMapping } from "../../src/lib/imports/registration-intake";
 
 const root = resolve(import.meta.dirname, "../..");
-const config = readFileSync(resolve(root, "playwright.config.ts"), "utf8");
-const releaseConfig = readFileSync(resolve(root, "playwright.release.config.ts"), "utf8");
-const lifecycle = readFileSync(resolve(root, "tests/e2e/v3-organizer-lifecycle.spec.ts"), "utf8");
-const englishMessages = readFileSync(resolve(root, "messages/en.json"), "utf8");
-const matchday = readFileSync(resolve(root, "tests/e2e/v3-matchday.spec.ts"), "utf8");
-const auth = readFileSync(resolve(root, "tests/e2e/helpers/auth.ts"), "utf8");
-const fixtures = readFileSync(resolve(root, "tests/e2e/helpers/fixtures.ts"), "utf8");
+const config = readSourceText(resolve(root, "playwright.config.ts"));
+const releaseConfig = readSourceText(resolve(root, "playwright.release.config.ts"));
+const lifecycle = readSourceText(resolve(root, "tests/e2e/v3-organizer-lifecycle.spec.ts"));
+const englishMessages = readSourceText(resolve(root, "messages/en.json"));
+const matchday = readSourceText(resolve(root, "tests/e2e/v3-matchday.spec.ts"));
+const auth = readSourceText(resolve(root, "tests/e2e/helpers/auth.ts"));
+const fixtures = readSourceText(resolve(root, "tests/e2e/helpers/fixtures.ts"));
 const releaseFixture = fixtures.match(
   /export async function prepareOrganizerReleaseFixture[\s\S]*?export async function preparePublishedEventRevisionFixture/,
 )?.[0] ?? "";
-const completionFixtures = readFileSync(resolve(root, "tests/e2e/helpers/completion.ts"), "utf8");
-const registrationIntake = readFileSync(resolve(root, "src/lib/imports/registration-intake.ts"), "utf8");
+const completionFixtures = readSourceText(resolve(root, "tests/e2e/helpers/completion.ts"));
+const registrationIntake = readSourceText(resolve(root, "src/lib/imports/registration-intake.ts"));
 const releaseJourney = lifecycle.match(
   /async function runOrganizerReleaseJourneyPartA[\s\S]*?function eventIdentity/,
 )?.[0] ?? "";
