@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/platform/db";
+import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
 import type { CompetitionGraph, CompetitionMatch } from "@/lib/tournament/competition";
 import { competitionProjection, type Standing } from "@/lib/tournament/operations/result-projection";
 import type { StoredSchedule } from "@/lib/tournament/operations/state";
@@ -281,6 +282,11 @@ export async function getPublicDrawingEvent(slug: string): Promise<PublicDrawing
 const AWARD_ORDER: IndividualAwardType[] = ["mvp", "top_scorer", "top_defender", "top_assist"];
 const COMPLETE_CERTIFICATE_COUNT = 7;
 const COMPLETE_CERTIFICATE_TYPES = new Set(["champion", "runner_up", "third_place", ...AWARD_ORDER]);
+// Competition validation admits at most 256 teams. Two-leg round robin is the
+// largest v1 graph: 256 * 255 persisted matches.
+const FINISHED_TEAM_ROW_LIMIT = 256;
+const FINISHED_MATCH_ROW_LIMIT = 256 * 255;
+const FINISHED_COMPLETION_CHILD_ROW_LIMIT = 256;
 
 function completionSnapshotVersion(value: unknown): number | null {
   if (!value || Array.isArray(value) || typeof value !== "object") return null;
@@ -289,23 +295,34 @@ function completionSnapshotVersion(value: unknown): number | null {
 }
 
 export async function getPublicFinishedEvent(slug: string): Promise<PublicFinishedEventViewModel | null> {
-  const event = await prisma.event.findFirst({ where: { slug, status: "Finished" } });
-  if (!event) return null;
-  const [completion, phase, matches, teams, publication] = await Promise.all([
-    prisma.tournamentCompletion.findUnique({
-      where: { eventId: event.id },
-      include: {
-        podiumPlacements: { orderBy: { rank: "asc" } },
-        awards: { include: { decision: true } },
+  const event = await prisma.event.findFirst({
+    relationLoadStrategy: "join",
+    where: { slug, status: "Finished" },
+    include: {
+      completion: {
+        include: {
+          podiumPlacements: { orderBy: { rank: "asc" }, take: readerProbeLimit(FINISHED_COMPLETION_CHILD_ROW_LIMIT) },
+          awards: { include: { decision: true }, take: readerProbeLimit(FINISHED_COMPLETION_CHILD_ROW_LIMIT) },
+        },
       },
-    }),
-    prisma.competitionPhase.findFirst({
-      where: { eventId: event.id, sequence: 1, status: { in: ["active", "completed"] } },
-    }),
-    prisma.match.findMany({ where: { eventId: event.id }, orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }] }),
-    prisma.team.findMany({ where: { eventId: event.id }, select: { id: true, name: true } }),
-    prisma.certificatePublication.findFirst({ where: { eventId: event.id }, orderBy: { version: "desc" } }),
-  ]);
+      competitionPhases: { where: { sequence: 1, status: { in: ["active", "completed"] } }, take: 1 },
+      matches: { orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }], take: readerProbeLimit(FINISHED_MATCH_ROW_LIMIT) },
+      teams: { select: { id: true, name: true }, take: readerProbeLimit(FINISHED_TEAM_ROW_LIMIT) },
+      certificatePublications: { orderBy: { version: "desc" }, take: 1 },
+    },
+  });
+  if (!event) return null;
+  const completion = event.completion;
+  const phase = event.competitionPhases[0];
+  const matches = event.matches;
+  const teams = event.teams;
+  assertReaderResultWithinLimit("public.finished.matches", matches, FINISHED_MATCH_ROW_LIMIT);
+  assertReaderResultWithinLimit("public.finished.teams", teams, FINISHED_TEAM_ROW_LIMIT);
+  if (completion) {
+    assertReaderResultWithinLimit("public.finished.podium", completion.podiumPlacements, FINISHED_COMPLETION_CHILD_ROW_LIMIT);
+    assertReaderResultWithinLimit("public.finished.awards", completion.awards, FINISHED_COMPLETION_CHILD_ROW_LIMIT);
+  }
+  const publication = event.certificatePublications[0];
   const parsed = phaseGraph(phase?.configuration, event.id);
   if (!completion || completion.status !== "completed" || !parsed) return null;
   const certificateIds = Array.isArray(publication?.certificateIds)
@@ -315,6 +332,7 @@ export async function getPublicFinishedEvent(slug: string): Promise<PublicFinish
   const publicationIsCurrent = completionVersion !== null
     && publication?.completionId === completion.id
     && publication.completionVersion === completionVersion
+    && certificateIds.length === COMPLETE_CERTIFICATE_COUNT
     && new Set(certificateIds).size === COMPLETE_CERTIFICATE_COUNT;
   const certificates = publicationIsCurrent
     ? await prisma.certificate.findMany({

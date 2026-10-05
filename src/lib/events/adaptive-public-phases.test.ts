@@ -54,6 +54,23 @@ const graph = generateCompetitionGraph({
   teams: [{ id: "team-b", seed: 1 }, { id: "team-a", seed: 2 }],
 });
 
+function joinedFinishedRow(completion: unknown, publication: unknown = null) {
+  return {
+    ...event,
+    status: "Finished",
+    completion,
+    competitionPhases: [{ status: "completed", configuration: { graph } }],
+    matches: graph.matches.map((match) => ({
+      id: match.id, status: "Scheduled",
+      homeTeamId: match.home.kind === "team" ? match.home.teamId : "",
+      awayTeamId: match.away.kind === "team" ? match.away.teamId : "",
+      homeScore: 0, awayScore: 0, resultVersion: 0, scheduledAt: null, scheduleRoom: null,
+    })),
+    teams: [{ id: "team-a", name: "Alpha" }, { id: "team-b", name: "Beta" }],
+    certificatePublications: publication ? [publication] : [],
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.eventFindFirst.mockResolvedValue(event);
@@ -111,9 +128,39 @@ describe("adaptive public drawing", () => {
 });
 
 describe("adaptive public finished event", () => {
+  it("projects a single joined Finished snapshot without separate phase and publication reads", async () => {
+    mocks.eventFindFirst.mockResolvedValue({
+      ...event,
+      status: "Finished",
+      completion: { id: "completion-1", status: "completed", sourceSnapshot: { version: 3 }, podiumPlacements: [], awards: [] },
+      competitionPhases: [{ status: "completed", configuration: { graph } }],
+      matches: [],
+      teams: [{ id: "team-a", name: "Alpha" }, { id: "team-b", name: "Beta" }],
+      certificatePublications: [],
+    });
+    for (const reader of [mocks.completionFindUnique, mocks.phaseFindFirst, mocks.matchFindMany, mocks.teamFindMany, mocks.publicationFindFirst]) {
+      reader.mockRejectedValue(new Error("Finished relation was read separately"));
+    }
+
+    const view = await getPublicFinishedEvent("miracle-cup");
+
+    expect(view).toMatchObject({ mode: "finished", event: { name: "Miracle Cup" }, facts: { participants: 2 }, certificates: { status: "preparing" } });
+    expect(mocks.eventFindFirst).toHaveBeenCalledWith(expect.objectContaining({ relationLoadStrategy: "join" }));
+  });
+
+  it("rejects an over-capacity joined team set instead of projecting a partial Finished snapshot", async () => {
+    mocks.eventFindFirst.mockResolvedValue({
+      ...joinedFinishedRow({ id: "completion-1", status: "completed", sourceSnapshot: { version: 3 }, podiumPlacements: [], awards: [] }),
+      teams: Array.from({ length: 257 }, (_, index) => ({ id: `team-${index}`, name: `Team ${index}` })),
+    });
+
+    await expect(getPublicFinishedEvent("miracle-cup")).rejects.toMatchObject({
+      resource: "public.finished.teams", limit: 256,
+    });
+  });
+
   it("publishes organizer-approved individual awards and certificate links only from the publication", async () => {
-    mocks.eventFindFirst.mockResolvedValue({ ...event, status: "Finished" });
-    mocks.completionFindUnique.mockResolvedValue({
+    const completion = {
       id: "completion-1",
       status: "completed",
       sourceSnapshot: { version: 3 },
@@ -127,7 +174,7 @@ describe("adaptive public finished event", () => {
         { type: "top_defender", status: "approved", decision: { recipientId: "p3", recipientName: "Aegis", teamId: "team-b", teamName: "Beta", reason: null } },
         { type: "top_assist", status: "approved", decision: { recipientId: "p4", recipientName: "Orbit", teamId: "team-a", teamName: "Alpha", reason: null } },
       ],
-    });
+    };
     const types = ["champion", "runner_up", "third_place", "mvp", "top_scorer", "top_defender", "top_assist"];
     const certificates = types.map((type) => ({
       id: `cert-${type}`,
@@ -138,11 +185,12 @@ describe("adaptive public finished event", () => {
       verificationCode: `VERIFY-${type}`,
       status: "ready",
     }));
-    mocks.publicationFindFirst.mockResolvedValue({
+    const publication = {
       completionId: "completion-1",
       completionVersion: 3,
       certificateIds: certificates.map(({ id }) => id),
-    });
+    };
+    mocks.eventFindFirst.mockResolvedValue(joinedFinishedRow(completion, publication));
     mocks.certificateFindMany.mockResolvedValue(certificates);
 
     const view = await getPublicFinishedEvent("miracle-cup");
@@ -167,8 +215,7 @@ describe("adaptive public finished event", () => {
   });
 
   it("withholds certificate links from stale or incomplete publications", async () => {
-    mocks.eventFindFirst.mockResolvedValue({ ...event, status: "Finished" });
-    mocks.completionFindUnique.mockResolvedValue({
+    const completion = {
       id: "completion-1",
       status: "completed",
       sourceSnapshot: { version: 4 },
@@ -176,12 +223,13 @@ describe("adaptive public finished event", () => {
       awards: [
         { type: "mvp", status: "approved", decision: { recipientId: "p1", recipientName: "Nyx", teamId: "team-b", teamName: "Beta", reason: null } },
       ],
-    });
-    mocks.publicationFindFirst.mockResolvedValue({
+    };
+    const publication = {
       completionId: "completion-1",
       completionVersion: 3,
       certificateIds: ["cert-mvp"],
-    });
+    };
+    mocks.eventFindFirst.mockResolvedValue(joinedFinishedRow(completion, publication));
 
     const view = await getPublicFinishedEvent("miracle-cup");
 
