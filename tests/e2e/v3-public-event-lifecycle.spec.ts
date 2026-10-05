@@ -40,6 +40,8 @@ test.describe.serial("Adaptive public event lifecycle", () => {
   let third = teams[0]!;
   let completionId = "";
   let completionVersion = 0;
+  let organizerCreated = false;
+  let eventCreated = false;
 
   const run = async (command: OperationCommand) => {
     const operation = operations.execute({
@@ -87,12 +89,6 @@ test.describe.serial("Adaptive public event lifecycle", () => {
   test.beforeAll(async () => {
     const safe = validateE2eDatabaseConfiguration(process.env);
     if (!safe.ok) throw new Error(safe.message);
-    if (process.env.E2E_DATABASE_RESET_ALLOWED !== "true") {
-      throw new Error("Blocked: lifecycle fixture requires E2E_DATABASE_RESET_ALLOWED=true in .env.test");
-    }
-
-    await prisma.event.deleteMany({ where: { id: eventId } });
-    await prisma.user.deleteMany({ where: { id: organizerId } });
     await prisma.user.create({
       data: {
         id: organizerId,
@@ -102,6 +98,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
         passwordHash: "not-used-by-this-public-test",
       },
     });
+    organizerCreated = true;
     await prisma.event.create({
       data: {
         id: eventId,
@@ -128,6 +125,7 @@ test.describe.serial("Adaptive public event lifecycle", () => {
         publishedAt: new Date("2026-09-01T00:00:00.000Z"),
       },
     });
+    eventCreated = true;
     await prisma.team.createMany({
       data: teams.map((team, index) => ({
         ...team,
@@ -146,8 +144,8 @@ test.describe.serial("Adaptive public event lifecycle", () => {
     while (inFlightOperations.size > 0) {
       await Promise.allSettled([...inFlightOperations]);
     }
-    await prisma.event.deleteMany({ where: { id: eventId } });
-    await prisma.user.deleteMany({ where: { id: organizerId } });
+    if (eventCreated) await prisma.event.deleteMany({ where: { id: eventId } });
+    if (organizerCreated) await prisma.user.deleteMany({ where: { id: organizerId } });
     await prisma.$disconnect();
   });
 

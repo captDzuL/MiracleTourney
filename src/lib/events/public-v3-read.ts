@@ -1261,10 +1261,17 @@ async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now
 }
 
 async function readPublicV3EventImpl(slug: string, viewer: PublicViewer, now = new Date(), requestId?: string): Promise<PublicV3EventViewModel | null> {
-  let event = await callOptional("event", "findUnique", { where: { slug } });
-  if (!event) event = await callOptional("event", "findFirst", { where: { slug } });
+  const include = { organizer: { select: { organizerProfile: { select: { contactChannel: true, contactValue: true } } } } };
+  let event = await callOptional("event", "findUnique", { where: { slug }, include });
+  if (!event) event = await callOptional("event", "findFirst", { where: { slug }, include });
   if (!event) return null;
-  const row = record(event);
+  const storedEvent = record(event);
+  const publicContact = record(record(storedEvent.organizer).organizerProfile);
+  const row: AnyRecord = {
+    ...storedEvent,
+    organizerContactChannel: text(publicContact.contactChannel, text(storedEvent.organizerContactChannel)),
+    organizerContactValue: text(publicContact.contactValue, text(storedEvent.organizerContactValue)),
+  };
   const status = text(row.status);
   if (!PUBLIC_STATUSES.has(status)) return null;
   const trace = requestId
