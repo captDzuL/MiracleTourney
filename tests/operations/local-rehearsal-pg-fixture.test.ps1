@@ -2,13 +2,13 @@ param([switch]$RunMigrationIntegration)
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+. (Join-Path $PSScriptRoot 'fixture-safety.ps1')
+if ($RunMigrationIntegration) { Add-Type -Path (Join-Path $PSScriptRoot 'FixtureBoundedProcess.cs') }
 
 $zipPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\.superpowers\sdd\2026-10-04-local-encrypted-backup\runtime\postgresql-18.6-windows-x64-binaries.zip'))
 $fixtureRoot = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'miracle-task3-pg-' + [guid]::NewGuid().ToString('N'))
 $serverRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\.superpowers\sdd\2026-10-04-v3-release-pr-readiness\runtime\catalog-server'))
 $port = $null
-$started = $false
-$stopped = $false
 $startAttempted = $false
 $bin = [IO.Path]::Combine($serverRoot,'pgsql','bin')
 $data = [IO.Path]::Combine($fixtureRoot, 'cluster')
@@ -27,6 +27,19 @@ function Invoke-Tool([string]$Path, [string]$Arguments, [int]$TimeoutMs = 90000)
         Assert-That ($process.Start()) 'tool-start'
         if (-not $process.WaitForExit($TimeoutMs)) { $process.Kill(); throw 'FIXTURE_TOOL_TIMEOUT' }
         Assert-That ($process.ExitCode -eq 0) 'tool-exit'
+    } finally { $process.Dispose() }
+}
+function Test-OwnedClusterStopped {
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = New-Object Diagnostics.ProcessStartInfo
+    $process.StartInfo.FileName = [IO.Path]::Combine($bin,'pg_ctl.exe')
+    $process.StartInfo.Arguments = '-D "' + $data + '" status'
+    $process.StartInfo.UseShellExecute = $false; $process.StartInfo.CreateNoWindow = $true
+    try {
+        Assert-That ($process.Start()) 'cluster-status-start'
+        if (-not $process.WaitForExit(15000)) { $process.Kill(); return $false }
+        # pg_ctl status returns 3 only when this exact data directory has no running server.
+        return $process.ExitCode -eq 3
     } finally { $process.Dispose() }
 }
 function Invoke-Sql([string]$Database, [string]$User, [string]$Password, [string]$Sql,
@@ -127,39 +140,25 @@ function Invoke-Pipeline([string]$SourceDb, [string]$TargetDb) {
 }
 
 function Invoke-MigrationChild([string[]]$Arguments, [int]$TimeoutMs, [string]$DatabaseUrl) {
-    $process = New-Object Diagnostics.Process
-    $process.StartInfo = New-Object Diagnostics.ProcessStartInfo
-    $process.StartInfo.FileName = (Get-Command node).Source
-    $process.StartInfo.WorkingDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+    $startInfo = New-Object Diagnostics.ProcessStartInfo
+    $startInfo.FileName = (Get-Command node).Source
+    $startInfo.WorkingDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
     # These are fixed repository-relative switches and paths; credentials stay in environment only.
-    $process.StartInfo.Arguments = $Arguments -join ' '
-    $process.StartInfo.UseShellExecute = $false; $process.StartInfo.CreateNoWindow = $true
-    $process.StartInfo.RedirectStandardInput = $true
-    $process.StartInfo.RedirectStandardOutput = $true; $process.StartInfo.RedirectStandardError = $true
+    $startInfo.Arguments = $Arguments -join ' '
+    $startInfo.UseShellExecute = $false; $startInfo.CreateNoWindow = $true
     # Do not inherit any caller database or production-host routing into either child.
     foreach ($name in @('DATABASE_URL','DIRECT_URL','MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL','NEON_PROD_HOST')) {
-        [void]$process.StartInfo.Environment.Remove($name)
+        [void]$startInfo.Environment.Remove($name)
     }
-    foreach ($name in @($process.StartInfo.Environment.Keys)) {
-        if ($name -like 'PG*') { [void]$process.StartInfo.Environment.Remove($name) }
+    foreach ($name in @($startInfo.Environment.Keys)) {
+        if ($name -like 'PG*') { [void]$startInfo.Environment.Remove($name) }
     }
-    $process.StartInfo.Environment['DATABASE_URL'] = $DatabaseUrl
-    $process.StartInfo.Environment['DIRECT_URL'] = $DatabaseUrl
+    $startInfo.Environment['DATABASE_URL'] = $DatabaseUrl
+    $startInfo.Environment['DIRECT_URL'] = $DatabaseUrl
     if ($Arguments[0] -eq 'node_modules/vitest/vitest.mjs') {
-        $process.StartInfo.Environment['MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL'] = $DatabaseUrl
+        $startInfo.Environment['MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL'] = $DatabaseUrl
     }
-    try {
-        Assert-That ($process.Start()) 'migration-child-start'
-        $process.StandardInput.Close()
-        $outputTask = $process.StandardOutput.ReadToEndAsync()
-        $errorTask = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit($TimeoutMs)) { $process.Kill(); throw 'FIXTURE_MIGRATION_CHILD_TIMEOUT' }
-        $output = $outputTask.GetAwaiter().GetResult()
-        $errorOutput = $errorTask.GetAwaiter().GetResult()
-        Assert-That ($output.Length -le 2000000 -and $errorOutput.Length -le 200000) 'migration-child-output-bound'
-        Assert-That ($process.ExitCode -eq 0) 'migration-child-exit'
-        return @{ output = $output; errorOutput = $errorOutput; exitCode = $process.ExitCode }
-    } finally { if (-not $process.HasExited) { $process.Kill() }; $process.Dispose() }
+    return [FixtureBoundedProcess]::Run($startInfo, $TimeoutMs, 5000, 2000000, 200000)
 }
 
 function Run-MigrationIntegration {
@@ -229,7 +228,6 @@ try {
     [IO.File]::WriteAllText([IO.Path]::Combine($data,'pg_hba.conf'),"host all all 127.0.0.1/32 scram-sha-256`nhost all all ::1/128 reject`nlocal all all reject`n")
     $startAttempted = $true
     Invoke-Tool ([IO.Path]::Combine($bin,'pg_ctl.exe')) ('-D "' + $data + '" -l "' + ([IO.Path]::Combine($fixtureRoot,'server.log')) + '" -w -t 60 start') 90000
-    $started = $true
     $wrongPassword = $(if ($bootstrapPassword[0] -eq 'A') { 'B' } else { 'A' }) + $bootstrapPassword.Substring(1)
     [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $wrongPassword 'SELECT 1;' -ExpectAuthDenial)
     [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $bootstrapPassword "CREATE ROLE fixture_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '$ownerPassword';")
@@ -399,16 +397,18 @@ CREATE TABLE public."PlayerStat" ("id" text PRIMARY KEY);
     [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword $flowSql -ExpectFailure)
     [Console]::WriteLine('SYNTHETIC_PG18_PASS catalog=10 flow=2 dumpRestore=1 port=' + $port + ' dumpExit=' + $pipeline.dumpExit + ' restoreExit=' + $pipeline.restoreExit)
 } finally {
-    if ($started) {
-        try {
-            Invoke-Tool ([IO.Path]::Combine($bin,'pg_ctl.exe')) ('-D "' + $data + '" -m fast -w -t 60 stop') 90000
-            $stopped = $true
-        } catch { [Console]::Error.WriteLine('FIXTURE_STOP_UNVERIFIED ' + $fixtureRoot) }
-    }
     $approvedPrefix = [IO.Path]::Combine([IO.Path]::GetTempPath(),'miracle-task3-pg-')
-    if ((-not $startAttempted -or $stopped) -and [IO.Directory]::Exists($fixtureRoot) -and
-        $fixtureRoot.StartsWith($approvedPrefix,[StringComparison]::OrdinalIgnoreCase)) {
-        [IO.Directory]::Delete($fixtureRoot,$true)
+    try {
+        Invoke-OwnedClusterCleanup $startAttempted {
+            Invoke-Tool ([IO.Path]::Combine($bin,'pg_ctl.exe')) ('-D "' + $data + '" -m fast -w -t 60 stop') 90000
+        } {
+            Test-OwnedClusterStopped
+        } {
+            Assert-That ($fixtureRoot.StartsWith($approvedPrefix,[StringComparison]::OrdinalIgnoreCase)) 'owned-cleanup-prefix'
+            if ([IO.Directory]::Exists($fixtureRoot)) { [IO.Directory]::Delete($fixtureRoot,$true) }
+        }
+    } catch {
+        [Console]::Error.WriteLine('FIXTURE_STOP_UNVERIFIED ' + $fixtureRoot)
+        throw
     }
-    if ($RunMigrationIntegration -and $started -and -not $stopped) { throw 'FIXTURE_STOP_UNVERIFIED' }
 }
