@@ -173,10 +173,17 @@ try {
     foreach ($db in @('synthetic_source','synthetic_restore','synthetic_candidate')) {
         [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $bootstrapPassword "CREATE DATABASE $db OWNER fixture_owner TEMPLATE template0 ENCODING 'UTF8';")
     }
-    [void](Invoke-Sql 'synthetic_source' 'fixture_owner' $ownerPassword 'CREATE TABLE public.synthetic_probe (id integer PRIMARY KEY, note text NOT NULL); INSERT INTO public.synthetic_probe VALUES (1, ''synthetic only'');')
+    [void](Invoke-Sql 'synthetic_source' 'fixture_owner' $ownerPassword 'CREATE TABLE public.synthetic_probe (id integer PRIMARY KEY, dropped_note text, note text NOT NULL); INSERT INTO public.synthetic_probe VALUES (1, ''discarded'', ''synthetic only''); ALTER TABLE public.synthetic_probe DROP COLUMN dropped_note;')
     $pipeline = Invoke-Pipeline 'synthetic_source' 'synthetic_restore'
     $restored = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword 'SELECT count(*) FROM public.synthetic_probe;')
     Assert-That ($restored[-1] -eq '1') 'fresh-default-db-restore'
+    $fingerprintSql = "SELECT md5((SELECT t::text FROM public.synthetic_probe t)), (SELECT string_agg(column_name || ':' || ordinal_position, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'synthetic_probe');"
+    $sourceFingerprint = @(Invoke-Sql 'synthetic_source' 'fixture_owner' $ownerPassword $fingerprintSql)
+    $restoreFingerprint = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword $fingerprintSql)
+    $sourceParts = $sourceFingerprint[-1] -split '\|'
+    $restoreParts = $restoreFingerprint[-1] -split '\|'
+    Assert-That ($sourceParts[0] -eq $restoreParts[0]) 'dropped-attribute-composite-hash-stable'
+    Assert-That ($sourceParts[1] -ne $restoreParts[1]) 'dropped-attribute-ordinal-drift'
 
     $schema = @'
 CREATE TABLE public."User" ("id" text PRIMARY KEY, "email" text NOT NULL UNIQUE, "name" text NOT NULL,
@@ -203,8 +210,17 @@ CREATE UNIQUE INDEX "PasswordResetToken_userId_key" ON public."PasswordResetToke
 CREATE TABLE public."RateLimitBucket" ("id" text PRIMARY KEY, "key" text NOT NULL, "count" integer NOT NULL,
  "resetAt" timestamp NOT NULL);
 CREATE UNIQUE INDEX "RateLimitBucket_key_key" ON public."RateLimitBucket"("key");
+CREATE TABLE public."Player" ("id" text PRIMARY KEY);
+CREATE TABLE public."PlayerStat" ("id" text PRIMARY KEY);
 '@
     [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword $schema)
+    $metadataOutput = @(Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword (Build-Sql 'source-metadata'))
+    $metadataMarker = @($metadataOutput | Where-Object { $_.StartsWith("MIRACLE_SOURCE_METADATA`t") })
+    Assert-That ($metadataMarker.Count -eq 1) 'source-metadata-marker'
+    $metadata = $metadataMarker[0].Substring('MIRACLE_SOURCE_METADATA'.Length + 1) | ConvertFrom-Json
+    Assert-That ($metadata.schema.Count -gt 0 -and $metadata.tableMetadata.User.tableFound -and
+      $metadata.tableMetadata.Team.tableFound -and $metadata.tableMetadata.Player.tableFound -and
+      $metadata.tableMetadata.PlayerStat.tableFound) 'source-metadata-catalog'
     $postcheckSql = Build-Sql 'postcheck'
     $good = Query-Json $postcheckSql
     Assert-That ($good.certificateConstraints -and $good.sessionVersion -and $good.resetTokenUnique -and $good.rateLimitBucket) 'catalog-good'
