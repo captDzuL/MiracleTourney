@@ -1,9 +1,9 @@
 import { ArrowUpRight, BarChart3, CalendarDays, ListTree, Trophy, Users } from "lucide-react";
-import { resolvePublicV3Route, type PublicV3EventViewModel, type PublicV3Locale } from "@/lib/events/public-v3-types";
+import { resolvePublicV3Route, type PublicHomeFeaturedEvent, type PublicV3Locale } from "@/lib/events/public-v3-types";
 import { PublicV3SectionHeading } from "./PublicV3Primitives";
 import { homeCopy } from "./home-copy";
 
-export function PublicDiscoveryShortcuts({ view, locale }: { view: PublicV3EventViewModel; locale: PublicV3Locale }) {
+export function PublicDiscoveryShortcuts({ view, locale }: { view: PublicHomeFeaturedEvent; locale: PublicV3Locale }) {
   const t = homeCopy[locale];
   const items = [
     { key: "overview", label: t.overview, icon: Trophy },

@@ -1,5 +1,38 @@
 # Progress Handoff — Organizer Master Workspace
 
+## Current launch preparation — 2026-10-03
+
+This section supersedes the historical blocker/next-action statements below.
+Worktree: `E:\dev\MiracleTourney-gitnative\.worktrees\codex-public-event-overview`;
+branch `codex/public-event-overview-v3`, baseline `71970cf`, PR target
+`feature/ui/release/1.0`. Dirty integration checkout is preserved. Admin-wide
+V3 migration is deferred; no merge or production operation is authorized.
+
+- Existing seven-case public CI is green, not full-public/full-application evidence.
+- New source commits `c2e6e2d`/`0070fe5` prepare 54 explicitly selected public
+  cases across four serial profiles, no reset/reseed, one worker and no retries.
+  Affected unit/config tests passed 38/38; TypeScript and changed-file lint
+  passed. Final review and first remote runtime proof are still pending.
+- Direct production-like build and original pressure scenarios passed with
+  p95 317/66/13 ms and zero failures. Public content smoke remains blocked
+  locally by divergent test schema/alternate Windows TLS; no seed/reset or
+  shared database migration. One reviewed Linux full-public CI lane will
+  perform public pressure then selected public E2E on existing guarded fixtures.
+- Production read-only preflight found **19 pending migrations**, six legacy
+  certificates, zero duplicate reset-token user groups, six-hour PITR, and
+  no production snapshot/schedule. Fresh child-only migration/restore
+  rehearsal is pending; existing shared test and production remain untouched.
+- Vercel production override auto-migrates before build; old app certificate
+  writers and reset/session security are not fully backward compatible.
+  A controlled cutover and a fresh verified production checkpoint are still
+  required before deployment. RPO/RTO/recovery PIC remain unknown.
+- Current detailed evidence is in `2026-09-14-release-1.0-verification.md` and
+  `.superpowers/sdd/2026-10-03-v3-go-live/`. Status stays BLOCKED for production.
+  PR may be draft if operational evidence is incomplete; never equate PR or
+  a public-only CI pass with production readiness.
+
+## Historical handoff (2026-09-24 and earlier)
+
 Snapshot date: 2026-09-16 Asia/Jakarta
 Branch: feature/ui/release/1.0
 Product implementation anchor: a3624c60186fefa2f6e5474cf423e1af7a7639d8

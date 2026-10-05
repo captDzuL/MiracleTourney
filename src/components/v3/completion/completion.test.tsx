@@ -348,6 +348,48 @@ describe("CompletionWorkspace", () => {
     expect(complete).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    [
+      "en",
+      "Tournament completed successfully. Refresh to view the committed version.",
+      "Turnamen berhasil diselesaikan. Muat ulang untuk melihat versi yang tercatat.",
+    ],
+    [
+      "id",
+      "Turnamen berhasil diselesaikan. Muat ulang untuk melihat versi yang tercatat.",
+      "Tournament completed successfully. Refresh to view the committed version.",
+    ],
+  ] as const)("preserves the %s completion feedback after the keyed authoritative rerender (feedback inside the keyed form or refresh-before-durable-feedback must fail)", async (locale, expectedFeedback, oppositeFeedback) => {
+    const complete = vi.fn(async () => ({ status: "completed" as const, eventId: "event-1", version: 5, snapshot: {} as never }));
+    navigation.refresh.mockImplementationOnce(() => {
+      root.render(provider(locale, <CompletionWorkspace
+        completeAction={complete}
+        completionIdempotencyKey="33333333-3333-4333-8333-333333333333"
+        reopenIdempotencyKey="44444444-4444-4444-8444-444444444444"
+        state={state("completed")}
+      />));
+    });
+
+    await act(async () => root.render(provider(locale, <CompletionWorkspace
+      completeAction={complete}
+      completionIdempotencyKey="11111111-1111-4111-8111-111111111111"
+      reopenIdempotencyKey="22222222-2222-4222-8222-222222222222"
+      state={state("ready")}
+    />)));
+
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-complete-tournament]")!.click());
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(navigation.refresh).toHaveBeenCalledTimes(1);
+    const result = container.querySelector<HTMLElement>('[data-action-result][role="status"]');
+    expect(result).not.toBeNull();
+    expect(result?.textContent).toBe(expectedFeedback);
+    expect(container.textContent).not.toContain(oppositeFeedback);
+    expect(container.querySelector("[data-completion-status]")?.getAttribute("data-completion-status")).toBe("completed");
+    expect(container.querySelector<HTMLButtonElement>("[data-complete-tournament]")?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>("[data-reopen-tournament]")?.disabled).toBe(false);
+  });
+
   it("locks a terminal completion replay until authoritative props replace the consumed key", async () => {
     const terminal = { status: "completed" as const, eventId: "event-1", version: 5, snapshot: {} as never };
     const complete = vi.fn(async () => ({ status: "already_applied" as const, eventId: "event-1", version: 5, result: terminal }));

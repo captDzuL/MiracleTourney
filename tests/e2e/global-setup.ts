@@ -1,7 +1,7 @@
 import { request, type FullConfig } from "@playwright/test";
 
 export default async function globalSetup(config?: FullConfig) {
-  if (process.env.E2E_DATABASE_RESET_ALLOWED !== "true") {
+  if (process.env.E2E_DATABASE_RESET_ALLOWED !== "true" && process.env.PUBLIC_V3_NO_RESET !== "1") {
     throw new Error("Blocked: set E2E_DATABASE_RESET_ALLOWED=true in .env.test before running DB-backed E2E tests.");
   }
   const baseURL = config?.projects[0]?.use.baseURL;

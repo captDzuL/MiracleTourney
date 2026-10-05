@@ -118,6 +118,14 @@
   min-width: 0;
   min-height: 100vh;
 }
+/* Detail routes already live inside the shared V3 shell; keep their page-owned
+   frame from adding a second viewport-height canvas around the shell content. */
+.miracle-public-v3.mpv3-leaderboard-page { min-height: 0; background: transparent; }
+.miracle-public-v3.mpv3-bracket-page { min-height: 0; background: transparent; }
+.miracle-public-v3.mpv3-detail-page { min-height: 0; background: transparent; }
+.miracle-public-v3 .pv-team-avatar { border-color: var(--mpv3-border); background: var(--mpv3-inset); color: var(--mpv3-text); }
+.miracle-public-v3 .pv-team-identity__name { color: var(--mpv3-text); }
+.miracle-public-v3 .pv-team-identity__meta { color: var(--mpv3-muted); }
 .miracle-public-v3 *, .miracle-public-v3 *::before, .miracle-public-v3 *::after { box-sizing: border-box; }
 .miracle-public-v3 :is(h1,h2,h3,p,figure,dl,dd) { margin: 0; }
 .miracle-public-v3 :is(h1,h2,h3) { font-family: Montserrat, Arial, sans-serif; line-height: 1.15; letter-spacing: -.04em; font-weight: 800; overflow-wrap: anywhere; }

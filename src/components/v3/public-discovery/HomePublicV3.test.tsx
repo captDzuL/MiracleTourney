@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { publicV3RouteTargets, type PublicV3EventViewModel, type PublicV3Match } from "@/lib/events/public-v3-types";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { publicV3RouteTargets, type PublicHomeFeaturedEvent, type PublicV3EventViewModel, type PublicV3Match } from "@/lib/events/public-v3-types";
 import type { PublicDiscoveryEvent } from "@/lib/events/public-discovery";
 import type { Game } from "@/lib/platform/types";
 import { PublicDiscoveryHomeV3 } from "./PublicDiscoveryV3";
@@ -14,6 +14,7 @@ vi.mock("next-intl/server", () => ({ getTranslations: async () => (key: string) 
 vi.mock("@/i18n/navigation", () => ({ Link: (props: React.ComponentProps<"a">) => <a {...props} />, usePathname: () => dependencies.pathname }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => true }));
 vi.mock("@/lib/events/public-v3-read", () => ({ readPublicV3Event: dependencies.read }));
+vi.mock("@/lib/events/public-home-read", () => ({ readPublicHomeFeaturedEvent: dependencies.read }));
 vi.mock("@/lib/platform/repository", () => ({ getPublicDiscoveryEvents: dependencies.discovery, getAllGames: () => games, getPublicEvents: vi.fn() }));
 import { HomePageContent } from "@/app/home-page-content";
 import { PublicHomepageShellBoundary } from "./PublicHomepageShellBoundary";
@@ -38,7 +39,7 @@ function entry(slug: string, status: PublicDiscoveryEvent["event"]["status"]): P
   return { event: { id: slug, slug, name: `Miracle ${slug}`, gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", description: "Competition", status, format: "Single Elimination", participantCap: 32, startsAt: "2026-09-18", venue: "Arena", registrationWindow: "", registrationFeeRequired: false }, teamCount: 12, hasLiveMatch: status === "Ongoing", phaseStatus: null, updatedAt: "2026-09-18" };
 }
 const entries = [entry("done", "Finished"), entry("open", "Published"), entry("live", "Ongoing"), entry("second-live", "Ongoing")];
-function render(view: PublicV3EventViewModel | null = homepageView(), locale: "id" | "en" = "id") {
+function render(view: PublicHomeFeaturedEvent | null = homepageView(), locale: "id" | "en" = "id") {
   const root = document.createElement("div");
   root.innerHTML = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale={locale} entries={entries} games={games} gameFilter="all" loadState="ready" featuredView={view} />);
   return root;
@@ -46,6 +47,38 @@ function render(view: PublicV3EventViewModel | null = homepageView(), locale: "i
 
 describe("final homepage composition", () => {
   beforeEach(() => { vi.clearAllMocks(); dependencies.locale = "id"; dependencies.discovery.mockResolvedValue(entries); dependencies.read.mockResolvedValue(homepageView()); });
+  afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+  it("distinguishes a featured reader rejection from a later identity access throw without exposing details", async () => {
+    vi.stubEnv("PUBLIC_V3_HOME_DISCOVERY_TRACE", "1");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const rejected = Object.assign(new Error("secret reader detail"), { code: "P2024", meta: { password: "secret" } });
+    dependencies.read.mockRejectedValueOnce(rejected);
+    const rejectedHtml = renderToStaticMarkup(await HomePageContent({}));
+    expect(rejectedHtml).toContain('data-public-home-featured="read_failure"');
+    expect(info.mock.calls.map(([line]) => String(line))).toEqual(expect.arrayContaining([
+      expect.stringMatching(/failure stage=reader_await class=pool_timeout/),
+    ]));
+
+    info.mockClear();
+    dependencies.read.mockResolvedValueOnce({ identity: null });
+    await HomePageContent({});
+    expect(info.mock.calls.map(([line]) => String(line))).toEqual(expect.arrayContaining([
+      expect.stringMatching(/failure stage=identity_check class=projection_error/),
+    ]));
+    expect(info.mock.calls.flat().join(" ")).not.toMatch(/secret reader detail|password|secret/);
+  });
+  it.each(["id", "en"] as const)("renders the narrow Ongoing hero identically to the full view in %s", (locale) => {
+    const full = homepageView();
+    if (full.mode !== "ongoing") throw new Error("expected ongoing fixture");
+    const narrow: PublicHomeFeaturedEvent = {
+      source: full.source, mode: "ongoing", identity: full.identity, organizer: full.organizer, facts: full.facts,
+      statusExplanation: full.statusExplanation, statusExplanationKey: full.statusExplanationKey,
+      cta: full.cta, navigation: full.navigation, teams: full.teams.map(({ id, name }) => ({ id, name })),
+      liveMatches: full.liveMatches, nextMatches: full.nextMatches, recentResults: full.recentResults,
+    };
+    expect(render(narrow, locale).innerHTML).toBe(render(full, locale).innerHTML);
+  });
   it("presents normalized hero, match, Pulse, five routes and lifecycle groups in that order", () => {
     const root = render();
     expect(root.querySelector("h1")?.textContent).toBe("Miracle Football League S3");
@@ -137,11 +170,50 @@ describe("final homepage composition", () => {
     expect(html.includes("data-existing-shell")).toBe(expectedShell);
     expect((html.match(/<main/g) ?? []).length).toBe(1);
   });
+  it.each([["/events/live", true], ["/events/live/participants", false], ["/events/live/schedule", false], ["/events", false]] as const)("lets only the flagged event overview own the frame at %s", (pathname, ownsFrame) => {
+    dependencies.pathname = pathname;
+    const html = renderToStaticMarkup(<PublicHomepageShellBoundary enabled={false} eventOverviewEnabled shell={<main data-existing-shell>Existing route</main>}><main data-event-frame>Event overview</main></PublicHomepageShellBoundary>);
+    expect(html.includes("data-event-frame")).toBe(ownsFrame);
+    expect((html.match(/<main/g) ?? []).length).toBe(1);
+  });
   it("loads the deterministic discovery winner through the normalized reader", async () => {
     const html = renderToStaticMarkup(await HomePageContent({}));
-    expect(dependencies.read).toHaveBeenCalledWith("live", null);
+    expect(dependencies.read).toHaveBeenCalledWith("live");
     expect(html).toContain("Miracle Football League S3");
     expect(html).toContain('data-public-source="authoritative"');
+    const root = document.createElement("div"); root.innerHTML = html;
+    expect(root.querySelector(".mpv3-home-intro")?.getAttribute("data-public-home-discovery")).toBe("ready");
+    expect(root.querySelector(".mpv3-home-intro")?.getAttribute("data-public-home-featured")).toBe("ready");
+  });
+  it("records safe marker diagnostics for real homepage success and fallback markup", async () => {
+    const pressureModulePath = "../../../../scripts/public-v3-pressure.mjs";
+    const { measureScenario, PRESSURE_SCENARIOS } = await import(pressureModulePath);
+    const scenario = { ...PRESSURE_SCENARIOS.find((item: { path: string }) => item.path === "/id")!, requests: 1, concurrency: 1 };
+    const fixtureEntries = [...entries, entry("flashpeak-champions-32", "Finished")];
+    const goodHtml = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale="id" entries={fixtureEntries} games={games} gameFilter="all" loadState="ready" featuredView={homepageView()} />);
+    const failedHtml = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale="id" entries={fixtureEntries} games={games} gameFilter="all" loadState="error" featuredView={null} diagnostics={{ discovery: "timeout", featured: "none" }} />);
+    const measure = (body: string) => measureScenario(scenario, {
+      fetchImpl: async () => ({ status: 200, text: async () => body }), baseUrl: "http://127.0.0.1:3102", clock: () => 0,
+    });
+    expect(await measure(goodHtml)).toMatchObject({ passed: true, failures: 0 });
+    expect(await measure(failedHtml)).toMatchObject({
+      passed: false, failureKinds: ["content"],
+      contentDiagnostics: { missingMarkerCounts: { "featured-event": 1 }, detectedMarkerCounts: { alert: 1 }, sourceCounts: { absent: 1 }, discoveryStateCounts: { timeout: 1 }, featuredStateCounts: { none: 1 } },
+    });
+    const noFixtureHtml = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale="id" entries={entries} games={games} gameFilter="all" loadState="ready" featuredView={homepageView()} />);
+    expect(await measure(noFixtureHtml)).toMatchObject({
+      passed: false, contentDiagnostics: { missingMarkerCounts: { "fixture-link": 1 }, detectedMarkerCounts: {}, sourceCounts: { authoritative: 1 } },
+    });
+    const compatibleView = { ...homepageView(), source: "compatible" as const };
+    const compatibleHtml = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale="id" entries={fixtureEntries} games={games} gameFilter="all" loadState="ready" featuredView={compatibleView} />);
+    expect(await measure(compatibleHtml)).toMatchObject({
+      passed: false, contentDiagnostics: { missingMarkerCounts: {}, detectedMarkerCounts: { "compatible-source": 1 }, sourceCounts: { compatible: 1 } },
+    });
+    const englishScenario = { ...PRESSURE_SCENARIOS.find((item: { path: string }) => item.path === "/en")!, requests: 1, concurrency: 1 };
+    const englishHtml = renderToStaticMarkup(<PublicDiscoveryHomeV3 locale="en" entries={fixtureEntries} games={games} gameFilter="all" loadState="ready" featuredView={homepageView()} />);
+    expect(await measureScenario(englishScenario, {
+      fetchImpl: async () => ({ status: 200, text: async () => englishHtml }), baseUrl: "http://127.0.0.1:3102", clock: () => 0,
+    })).toMatchObject({ passed: true, failures: 0 });
   });
   it.each(["reject", "missing"])("logs %s featured reads and renders honest failure without demo substitution", async (failure) => {
     if (failure === "reject") dependencies.read.mockRejectedValue(new Error("database unavailable"));
@@ -149,9 +221,24 @@ describe("final homepage composition", () => {
     const logger = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const html = renderToStaticMarkup(await HomePageContent({}));
-      expect(html).toContain('role="alert"');
+      const root = document.createElement("div"); root.innerHTML = html;
+      expect(root.querySelector('[role="alert"]')).not.toBeNull();
+      expect(root.querySelector(".mpv3-home-intro")?.getAttribute("data-public-home-featured")).toBe(failure === "reject" ? "read_failure" : "unavailable");
       expect(html).not.toContain("Miracle Football League S3");
-      expect(logger).toHaveBeenCalled();
+      expect(logger).toHaveBeenCalledWith("Homepage featured event unavailable", { code: failure === "reject" ? "read_failure" : "unavailable" });
+    } finally { logger.mockRestore(); }
+  });
+  it("marks a failed discovery read without attempting the featured read", async () => {
+    dependencies.discovery.mockRejectedValue(new Error("private database detail"));
+    const logger = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const html = renderToStaticMarkup(await HomePageContent({}));
+      const root = document.createElement("div"); root.innerHTML = html;
+      expect(root.querySelector(".mpv3-home-intro")?.getAttribute("data-public-home-discovery")).toBe("read_failure");
+      expect(root.querySelector(".mpv3-home-intro")?.getAttribute("data-public-home-featured")).toBe("none");
+      expect(root.querySelector('[role="alert"]')).not.toBeNull();
+      expect(dependencies.read).not.toHaveBeenCalled();
+      expect(logger).toHaveBeenCalledWith("Public discovery events unavailable", { code: "read_failure" });
     } finally { logger.mockRestore(); }
   });
 });

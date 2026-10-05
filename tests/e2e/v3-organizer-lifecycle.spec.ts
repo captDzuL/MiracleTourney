@@ -488,8 +488,12 @@ async function runOrganizerReleaseJourneyPartA(page: Page, fixture: ReleaseFixtu
 
   await expectLocalizedRegistrationSurface(page, registrationFixture, locale, "qris");
   await page.locator("textarea").fill(locale === "id" ? "Gunakan QRIS rilis deterministik." : "Use the deterministic release QRIS.");
-  await page.locator("[data-save]").click();
-  await expectLocalizedText(page, copy.qrisDraftSaved, copy.opposite.qrisDraftSaved);
+  await runAndSettleServerActionUi(page, {
+    request: (_request, requestUrl) => requestUrl.pathname === `/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration`
+      && requestUrl.search === "?view=qris",
+    trigger: () => page.locator("[data-save]").click(),
+    uiReady: () => expectLocalizedText(page, copy.qrisDraftSaved, copy.opposite.qrisDraftSaved),
+  });
   await expect.poll(async () => (await fixture.readState()).qris?.status).toBe("draft");
   const savedQris = await fixture.readState();
   expect(savedQris.qris?.version).toBe(fixture.qrisVersion + 1);
@@ -593,12 +597,21 @@ async function runOrganizerReleaseJourneyPartA(page: Page, fixture: ReleaseFixtu
     await decisionReason.fill(locale === "id" ? "Pemilihan berdasarkan performa turnamen." : "Selected based on tournament performance.");
     await expect(decisionReason).toHaveValue(locale === "id" ? "Pemilihan berdasarkan performa turnamen." : "Selected based on tournament performance.");
   }
-  await page.locator("[data-complete-tournament]").click();
-  await expectLocalizedText(page, copy.completionFeedback, copy.opposite.completionFeedback);
+  const completionPath = `/${locale}/organizer/events/${encodeURIComponent(fixture.id)}/completion`;
+  await runAndSettleServerActionUi(page, {
+    request: (request, requestUrl) => requestUrl.pathname === completionPath
+      && requestUrl.search === ""
+      && Boolean(request.headers()["next-action"])
+      && (request.postData() ?? "").includes(fixture.id),
+    trigger: () => page.locator("[data-complete-tournament]").click(),
+    uiReady: () => expectLocalizedText(page, copy.completionFeedback, copy.opposite.completionFeedback),
+  });
   await expect(page.locator("[data-completion-status]")).toHaveAttribute("data-completion-status", copy.completionStatus);
   await expect.poll(async () => (await fixture.readState()).completion?.status).toBe("completed");
   receipt = await fixture.readState();
   expect(receipt.completion).toMatchObject({ status: "completed" });
+  expect(receipt.completion?.id).toBeTruthy();
+  expect(receipt.completion?.completedAt).toBeTruthy();
 }
 
 async function runOrganizerReleaseJourneyPartB(page: Page, fixture: ReleaseFixture, locale: (typeof LOCALES)[number]) {

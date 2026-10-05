@@ -125,6 +125,7 @@ const { prisma } = vi.hoisted(() => ({
     },
     competitionAuditLog: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn() },
     $transaction: vi.fn(),
+    $connect: vi.fn(),
   },
 }));
 
@@ -153,6 +154,7 @@ import {
   getPaymentSettings,
   getLeaderboardForEvent,
   getFlashpeakLeaderboardForEvent,
+  getFlashpeakLeaderboardForEventResult,
   getPublicDiscoveryEvents,
   getManageableEventsForUser,
   getManageableEventDraft,
@@ -2578,6 +2580,58 @@ describe("Flashpeak V3 leaderboard reads", () => {
     );
     consoleError.mockRestore();
   });
+
+  it("reports a successful empty read separately from a database error", async () => {
+    prisma.playerStat.findMany.mockResolvedValue([]);
+    await expect(getFlashpeakLeaderboardForEventResult("event-1")).resolves.toEqual({ status: "empty", entries: [] });
+
+    prisma.playerStat.findMany.mockRejectedValue(new Error("database unavailable"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(getFlashpeakLeaderboardForEventResult("event-1")).resolves.toEqual({ status: "error", entries: [] });
+    consoleError.mockRestore();
+  });
+
+  it("reports malformed completed rows as unavailable instead of no statistics", async () => {
+    prisma.playerStat.findMany.mockResolvedValue([{
+      matchId: "match-invalid-score",
+      teamId: "team-1",
+      stats: { scores: ["not-a-score"], goal: 1, assist: 0, passing: 0, defense: 0 },
+      match: { resultSnapshot: { bestOf: 1 }, games: [{ gameNumber: 1 }] },
+      player: {
+        id: "player-1",
+        displayName: "Nadia Putri",
+        nickname: "Nyx",
+        position: "Forward",
+        team: { id: "team-1", name: "Garuda Nova", eventId: "event-1" },
+      },
+    }]);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(getFlashpeakLeaderboardForEventResult("event-1")).resolves.toEqual({ status: "error", entries: [] });
+
+    consoleError.mockRestore();
+  });
+
+  it("reports completed rows with roster mismatches as unavailable instead of no statistics", async () => {
+    prisma.playerStat.findMany.mockResolvedValue([{
+      matchId: "match-invalid-roster",
+      teamId: "team-other",
+      stats: { scores: [8], goal: 1, assist: 0, passing: 0, defense: 0 },
+      match: { resultSnapshot: { bestOf: 1 }, games: [{ gameNumber: 1 }] },
+      player: {
+        id: "player-1",
+        displayName: "Nadia Putri",
+        nickname: "Nyx",
+        position: "Forward",
+        team: { id: "team-1", name: "Garuda Nova", eventId: "event-1" },
+      },
+    }]);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(getFlashpeakLeaderboardForEventResult("event-1")).resolves.toEqual({ status: "error", entries: [] });
+
+    consoleError.mockRestore();
+  });
 });
 
 describe("authoritative player-stat write boundary", () => {
@@ -2818,6 +2872,27 @@ describe("authoritative player-stat write boundary", () => {
 describe("public discovery V3 reads", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("separates guarded connection, query, and mapping stages without logging event data", async () => {
+    vi.stubEnv("PUBLIC_V3_HOME_DISCOVERY_TRACE", "1");
+    const lines: string[] = [];
+    const logger = vi.spyOn(console, "info").mockImplementation((line: string) => { lines.push(line); });
+    let finishConnect: (() => void) | undefined;
+    prisma.$connect.mockImplementation(() => new Promise<void>((resolve) => { finishConnect = resolve; }));
+    prisma.event.findMany.mockResolvedValue([{ ...publishedEventRow({ id: "private-event-id", name: "private-event-name" }), updatedAt: new Date("2026-09-12T10:00:00.000Z"), competitionPhases: [], matches: [], _count: { teams: 0 } }]);
+    try {
+      const pending = getPublicDiscoveryEvents();
+      expect(prisma.event.findMany).not.toHaveBeenCalled();
+      finishConnect?.();
+      await expect(pending).resolves.toHaveLength(1);
+      expect(lines.map((line) => line.split(" ms=")[0])).toEqual([
+        "[public-v3-discovery] connect-start", "[public-v3-discovery] connect-done",
+        "[public-v3-discovery] query-start", "[public-v3-discovery] query-done", "[public-v3-discovery] map-done",
+      ]);
+      expect(lines.every((line) => /^\[public-v3-discovery\] (connect-start|query-start|(connect-done|query-done|map-done) ms=\d{1,5})$/.test(line))).toBe(true);
+      expect(lines.join(" ")).not.toMatch(/private-event/);
+    } finally { logger.mockRestore(); vi.unstubAllEnvs(); }
+  });
+
   it("returns public database events with drawing, live, count, and freshness metadata", async () => {
     prisma.event.findMany.mockResolvedValue([
       {
@@ -2838,6 +2913,18 @@ describe("public discovery V3 reads", () => {
         updatedAt: "2026-09-12T10:00:00.000Z",
       }),
     ]);
+    expect(prisma.event.findMany).toHaveBeenCalledWith({
+      relationLoadStrategy: "join",
+      where: { status: { in: ["Published", "Registration Closed", "Ongoing", "Finished"] } },
+      include: {
+        stream: true,
+        activeVisualAsset: true,
+        competitionPhases: { where: { sequence: 1 }, select: { status: true }, take: 1 },
+        matches: { where: { status: "Live" }, select: { id: true }, take: 1 },
+        _count: { select: { teams: true } },
+      },
+      orderBy: [{ updatedAt: "desc" }, { slug: "asc" }],
+    });
   });
 
   it("rejects database failures instead of returning fixture events", async () => {

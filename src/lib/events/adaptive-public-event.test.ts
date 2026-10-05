@@ -113,15 +113,16 @@ describe("adaptive renderer eligibility", () => {
 });
 
 describe("adaptive event route phases", () => {
-  it("keeps registration, drawing, ongoing, and finished on the permanent event URL", () => {
+  it("keeps every public lifecycle phase on the permanent V3 event URL", () => {
     const source = fs.readFileSync(
       path.resolve(process.cwd(), "src/app/[locale]/events/[slug]/page.tsx"),
       "utf8",
     );
-    expect(source).toContain("getPublicDrawingEvent");
-    expect(source).toContain("getPublicFinishedEvent");
-    expect(source).toContain("<AdaptivePhaseEventPage");
-    expect(source.indexOf("getPublicDrawingEvent")).toBeLessThan(source.indexOf("getAdaptivePublicEventViewWithRetry"));
+    expect(source).toContain("readPublicV3Event");
+    expect(source).toContain("<PublicV3EventPage");
+    expect(source).toContain('["Published", "Registration Closed", "Ongoing", "Finished"]');
+    expect(source.indexOf("readPublicV3Event")).toBeLessThan(source.indexOf("renderEventDetailPage"));
+    expect(source).not.toContain("<AdaptivePhaseEventPage");
     expect(source).not.toContain("/live-center");
     expect(source).not.toContain("/recap");
   });

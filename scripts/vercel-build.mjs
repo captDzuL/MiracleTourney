@@ -45,29 +45,10 @@ function executeCommand(command, args) {
 }
 
 export function runVercelBuild(env, runCommand = executeCommand) {
-  const productionCandidate = isProductionCandidate(env);
   assertVercelBuildDatabaseSafety(env);
-  const commands = [];
-
-  if (productionCandidate) {
-    commands.push(["pnpm", ["exec", "prisma", "migrate", "deploy"]]);
-  }
-
-  commands.push(["pnpm", ["exec", "next", "build"]]);
-
-  for (const [command, args] of commands) {
-    const result = runCommand(command, args);
-
-    if (result.error) {
-      throw result.error;
-    }
-
-    if (result.status !== 0) {
-      return result.status ?? 1;
-    }
-  }
-
-  return 0;
+  const result = runCommand("pnpm", ["exec", "next", "build"]);
+  if (result.error) throw result.error;
+  return result.status ?? 1;
 }
 
 const isEntryPoint = process.argv[1]

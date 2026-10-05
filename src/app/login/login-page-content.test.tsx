@@ -25,7 +25,6 @@ describe("renderLoginPage", () => {
 
     expect(html).toContain('href="/forgot-password" data-i18n-link="true"');
   });
-});
 
   it("preserves a safe event registration return path", async () => {
     const page = await renderLoginPage(Promise.resolve({ returnTo: "/events/nusantara-cup/register" }));
@@ -42,3 +41,15 @@ describe("renderLoginPage", () => {
     expect(html).toContain('name="locale" value="id"');
     expect(html).toContain('href="/register?eventId=event-abc"');
   });
+
+  it("uses the V3 token surface while retaining visible labels and password-manager metadata", async () => {
+    const page = await renderLoginPage(Promise.resolve({}), "en");
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("var(--color-surface");
+    expect(html).toContain('aria-describedby="login-description"');
+    expect(html).toContain('autoComplete="current-password"');
+    expect(html).toContain('for="email"');
+    expect(html).toContain('for="password"');
+  });
+});

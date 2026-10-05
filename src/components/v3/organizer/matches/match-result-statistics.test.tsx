@@ -15,12 +15,35 @@ vi.mock("@/lib/actions/competition-v3-actions",()=>({mutateCompetitionWorkspaceA
 vi.mock("next/navigation",()=>({useRouter:()=>({refresh:boundary.refresh})}));
 function fixture():CompetitionWorkspaceState{return {event:{id:"event",name:"Cup",version:7,timezone:"Asia/Jakarta",startsAt:null,publishedScheduleVersion:null,config:null},teams:[{id:"home",name:"Garuda"},{id:"away",name:"Vortex"}],matches:[{id:"match:1",homeTeamId:"home",awayTeamId:"away",homeScore:2,awayScore:0,status:"Completed",scheduleStatus:"completed",resultVersion:2,bestOf:3,roundLabel:"Final",phaseId:null,groupId:null,start:null,end:null,room:null,games:[{gameNumber:1,homeScore:3,awayScore:0},{gameNumber:2,homeScore:2,awayScore:1}]}],graph:null,drawing:null,standings:[],readiness:[],actions:[],schedule:null,publishedSchedule:null,incidents:[],announcements:[],audit:[],unavailableSections:[]};}
 function statistics():EventMatchStatistics{return {eventId:"event",matchId:"match:1",eventVersion:7,resultVersion:2,games:[{gameNumber:2,homeScore:2,awayScore:1},{gameNumber:1,homeScore:3,awayScore:0}],allowedStatKeys:["goal","assist","passing","defense"],scoreGameNumbers:[1,2],scoreContextUnavailable:false,teams:[{id:"home",name:"Garuda",players:[{id:"player1",teamId:"home",nickname:"Nyx",position:"Forward"}]},{id:"away",name:"Vortex",players:[]}],stats:{player1:{scores:[7.6,null],goals:3,assists:4,passing:28,defense:12}},submissions:[{id:"sub",teamId:"home",status:"pending",stats:{player1:{scores:[8.1,null],goal:1,assist:2,passing:3,defense:4}},submittedAt:"2026-09-16T00:00:00.000Z",reviewedAt:null,reviewedBy:null,rejectionNote:null}],revisions:[{id:"rev",version:2,homeScore:2,awayScore:0,reason:"Verified score sheet",actorUserId:"owner",createdAt:"2026-09-16T00:00:00.000Z"}]};}
+function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(next=>{resolve=next;});return {promise,resolve};}
 describe("combined match result and statistics workspace",()=>{
  let host:HTMLDivElement,root:Root,state:CompetitionWorkspaceState,data:EventMatchStatistics;
  beforeEach(()=>{vi.resetAllMocks();state=fixture();data=statistics();host=document.createElement("div");document.body.append(host);root=createRoot(host);vi.stubGlobal("fetch",vi.fn().mockImplementation(async()=>({ok:true,json:async()=>state})));boundary.save.mockResolvedValue({status:"saved"});boundary.approve.mockResolvedValue({status:"saved"});});
  afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
  function render(view="result",locale:"id"|"en"="en"){act(()=>root.render(<NextIntlClientProvider locale={locale} messages={locale==="id"?id:en}><MatchResultStatisticsWorkspace initialState={state} statistics={data} matchId="match:1" locale={locale} view={view}/></NextIntlClientProvider>));}
  const click=async(text:string)=>{const button=[...host.querySelectorAll("button")].find(b=>b.textContent===text)!;expect(button).toBeDefined();await act(async()=>button.click());};
+ it("shows official-result success before the workspace refresh settles",async()=>{
+  state.matches[0]={...state.matches[0],status:"Live",resultVersion:0,games:[]};data={...data,resultVersion:0,games:[]};
+  boundary.operation.mockResolvedValue({status:"saved",receipt:{version:8}});
+  const pending=deferred<{ok:true;json:()=>Promise<CompetitionWorkspaceState>}>();
+  vi.mocked(fetch).mockImplementationOnce(()=>pending.promise as unknown as Promise<Response>);
+  render("result");
+  act(()=>host.querySelector('form[aria-label="Official result"]')!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));
+  await act(async()=>{await Promise.resolve();await Promise.resolve();});
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("Saved. Refreshing authoritative data.");
+  expect(host.textContent).not.toContain("Saving…");
+  await act(async()=>{pending.resolve({ok:true,json:async()=>state});await Promise.resolve();});
+ });
+ it("shows player-stat success before its workspace refresh settles",async()=>{
+  const pending=deferred<{ok:true;json:()=>Promise<CompetitionWorkspaceState>}>();
+  vi.mocked(fetch).mockImplementationOnce(()=>pending.promise as unknown as Promise<Response>);
+  render("statistics");
+  act(()=>host.querySelector<HTMLFormElement>("[data-player-form]")!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));
+  await act(async()=>{await Promise.resolve();await Promise.resolve();});
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("Saved. Refreshing authoritative data.");
+  expect(host.textContent).not.toContain("Saving…");
+  await act(async()=>{pending.resolve({ok:true,json:async()=>state});await Promise.resolve();});
+ });
  it.each(["id","en"] as const)("retains locale and match scope in URL views (%s)",locale=>{
   render("statistics",locale);
   const links=[...host.querySelectorAll<HTMLAnchorElement>("[data-match-view]")];

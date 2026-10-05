@@ -28,8 +28,9 @@ describe("public discovery honest loading", () => {
     await expect(loadPublicDiscovery(async () => { throw error; }, 100, logger)).resolves.toEqual({
       entries: [],
       loadState: "error",
+      failureCode: "read_failure",
     });
-    expect(logger).toHaveBeenCalledWith("Public discovery events unavailable", { error });
+    expect(logger).toHaveBeenCalledWith("Public discovery events unavailable", { code: "read_failure" });
   });
 
   it("times out without substituting demo events", async () => {
@@ -37,11 +38,25 @@ describe("public discovery honest loading", () => {
     const logger = vi.fn();
     const pending = loadPublicDiscovery(() => new Promise(() => undefined), 2000, logger);
     await vi.advanceTimersByTimeAsync(2000);
-    await expect(pending).resolves.toEqual({ entries: [], loadState: "error" });
+    await expect(pending).resolves.toEqual({ entries: [], loadState: "error", failureCode: "timeout" });
     expect(logger).toHaveBeenCalledWith(
       "Public discovery events unavailable",
-      expect.objectContaining({ error: expect.objectContaining({ message: "Public event read timed out" }) }),
+      { code: "timeout" },
     );
     vi.useRealTimers();
+  });
+
+  it("traces a bounded load timeout without logging the error payload", async () => {
+    vi.stubEnv("PUBLIC_V3_HOME_DISCOVERY_TRACE", "1");
+    vi.useFakeTimers();
+    const lines: string[] = [];
+    const info = vi.spyOn(console, "info").mockImplementation((line: string) => { lines.push(line); });
+    try {
+      const pending = loadPublicDiscovery(() => new Promise(() => undefined), 2000, vi.fn());
+      await vi.advanceTimersByTimeAsync(2000);
+      await expect(pending).resolves.toMatchObject({ loadState: "error", failureCode: "timeout" });
+      expect(lines[0]).toBe("[public-v3-discovery] load-start");
+      expect(lines[1]).toMatch(/^\[public-v3-discovery\] load-timeout ms=\d{1,5}$/);
+    } finally { info.mockRestore(); vi.useRealTimers(); vi.unstubAllEnvs(); }
   });
 });

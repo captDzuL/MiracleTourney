@@ -258,7 +258,7 @@ for (const kind of ["single_elimination", "double_elimination", "round_robin", "
     expect(publicData).not.toContain("Official result submission");
 
     await page.goto(`/en/events/${fixture.slug}`);
-    await expect(page.getByRole("heading", { name: "Recent official results", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Latest official results", exact: true })).toBeVisible();
     await expect(page.getByText(/2\s(?:-|–)\s0/, { exact: true }).first()).toBeVisible();
   });
 }

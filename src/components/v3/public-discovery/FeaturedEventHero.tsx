@@ -1,15 +1,15 @@
 import { ArrowRight } from "lucide-react";
-import { publicV3LocalizedHref, resolvePublicV3Route, type PublicV3EventViewModel, type PublicV3Locale, type PublicV3Match } from "@/lib/events/public-v3-types";
+import { publicV3LocalizedHref, resolvePublicV3Route, type PublicHomeFeaturedEvent, type PublicV3Locale, type PublicV3Match } from "@/lib/events/public-v3-types";
 import { EventPosterStage } from "./EventPosterStage";
 import { PublicV3Action, PublicV3Eyebrow, PublicV3FactStrip, PublicV3StatusBadge } from "./PublicV3Primitives";
 import { homeCopy, homeDate, homeStatusExplanation } from "./home-copy";
 
-export function highlightedMatch(view: PublicV3EventViewModel): PublicV3Match | undefined {
+export function highlightedMatch(view: PublicHomeFeaturedEvent): PublicV3Match | undefined {
   if (view.mode === "ongoing") return view.liveMatches[0] ?? view.nextMatches[0] ?? view.recentResults[0];
   if (view.mode === "finished") return view.matches.filter((match) => match.official).at(-1);
   return undefined;
 }
-export function PhaseHighlight({ view, locale }: { view: PublicV3EventViewModel; locale: PublicV3Locale }) {
+export function PhaseHighlight({ view, locale }: { view: PublicHomeFeaturedEvent; locale: PublicV3Locale }) {
   const t = homeCopy[locale];
   const match = highlightedMatch(view);
   const teamName = (value: string | null) => view.teams.find((team) => team.id === value)?.name ?? value ?? t.pending;
@@ -28,7 +28,7 @@ export function PhaseHighlight({ view, locale }: { view: PublicV3EventViewModel;
     </> : <p>{view.mode === "finished" ? t.resultsPending : t.noMatch}</p>}
   </div>;
 }
-export function FeaturedEventHero({ view, locale, gameSlug }: { view: PublicV3EventViewModel; locale: PublicV3Locale; gameSlug?: string }) {
+export function FeaturedEventHero({ view, locale, gameSlug }: { view: PublicHomeFeaturedEvent; locale: PublicV3Locale; gameSlug?: string }) {
   const t = homeCopy[locale];
   const identity = view.identity;
   const phaseLabel = { ongoing: t.live, registration: t.registration, drawing: t.drawing, finished: t.final }[view.mode];

@@ -1,4 +1,4 @@
-import type { PublicV3EventViewModel, PublicV3Locale } from "@/lib/events/public-v3-types";
+import type { PublicHomeFeaturedEvent, PublicV3Locale } from "@/lib/events/public-v3-types";
 
 export const homeCopy = {
   id: {
@@ -27,7 +27,7 @@ const explanationsId: Record<string, string> = {
   "finished.authoritative": "Event selesai dengan hasil resmi dan penghargaan yang telah diterbitkan.",
   "finished.compatible": "Event selesai; penghargaan tampil setelah publikasi diverifikasi.",
 };
-export function homeStatusExplanation(view: PublicV3EventViewModel, locale: PublicV3Locale) {
+export function homeStatusExplanation(view: PublicHomeFeaturedEvent, locale: PublicV3Locale) {
   return locale === "id" ? explanationsId[view.statusExplanationKey] ?? homeCopy.id.pending : view.statusExplanation;
 }
 export function homeDate(value: string | null, locale: PublicV3Locale, timezone?: string) {

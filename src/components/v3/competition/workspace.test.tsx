@@ -3,7 +3,9 @@ import * as React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
+import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import en from "../../../../messages/en.json";
 import { TOURNAMENT_FORMAT_PRESETS } from "@/lib/tournament/formats/types";
 import { generateCompetitionGraph } from "@/lib/tournament/competition";
 import type { CompetitionWorkspaceState } from "@/lib/competition/workspace-types";
@@ -15,6 +17,11 @@ vi.mock("@/lib/actions/competition-v3-actions", () => ({ mutateCompetitionWorksp
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: boundary.refresh }), useParams: () => ({ locale: "id" }) }));
 export function fixture(): CompetitionWorkspaceState {
   return { event: { id: "event", name: "Miracle Open", version: 4, timezone: "Asia/Jakarta", startsAt: "2026-09-12T02:00:00.000Z", publishedScheduleVersion: 3, config: TOURNAMENT_FORMAT_PRESETS.singleElimination }, graph: null, drawing: null, teams: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }], matches: [{ id: "match", homeTeamId: "a", awayTeamId: "b", homeScore: 0, awayScore: 0, status: "Scheduled", scheduleStatus: "confirmed", resultVersion: 0, bestOf: 1, roundLabel: "single 1", phaseId: null, groupId: null, start: "2026-09-12T02:00:00.000Z", end: "2026-09-12T02:30:00.000Z", room: "Room A", games: [] }], standings: [], readiness: [], actions: [{ id: "action", matchId: "match", priority: "critical", title: "Missing readiness", detail: null }], schedule: null, publishedSchedule: null, incidents: [], announcements: [], audit: [], unavailableSections: [] };
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(next => { resolve = next; });
+  return { promise, resolve };
 }
 describe("organizer Match Day workspace", () => {
   it("keeps the existing report composition available when the master flag is off", () => {
@@ -130,6 +137,31 @@ describe("organizer Match Day workspace", () => {
     await act(async () => button("Alpha: ready").click());
     expect(boundary.execute).toHaveBeenCalledWith(expect.objectContaining({ eventId: "event", expectedVersion: 4, command: { kind: "readiness_update", matchId: "match", teamId: "a", status: "ready" } }));
     expect(boundary.refresh).toHaveBeenCalled(); expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    ["legacy", false, "match", "Alpha: ready", "Saved. Updating workspace."],
+    ["master", true, "match-control", "Mark Alpha ready", "Saved. Updating workspace."],
+  ] as const)("shows settled success during a pending %s workspace refresh", async (_surface, masterShell, view, label, savedText) => {
+    const pending = deferred<{ ok: true; json: () => Promise<CompetitionWorkspaceState> }>();
+    vi.mocked(fetch).mockImplementationOnce(() => pending.promise as unknown as Promise<Response>);
+    if (masterShell) {
+      state.event.status = "Ongoing";
+      state.drawingPublished = true;
+    }
+    const workspace = <CompetitionWorkspace initialState={state} locale="en" view={view} masterShell={masterShell} matchId="match" />;
+    act(() => root.render(masterShell ? <NextIntlClientProvider locale="en" messages={en}>{workspace}</NextIntlClientProvider> : workspace));
+
+    act(() => button(label).click());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(savedText);
+    expect(host.querySelector('[role="status"]')?.textContent).not.toBe("Saving…");
+    expect(button(label).disabled).toBe(true);
+
+    await act(async () => {
+      pending.resolve({ ok: true, json: async () => state });
+      await Promise.resolve();
+    });
   });
   it("shows conflicts without automatically replaying the mutation", async () => {
     boundary.execute.mockRejectedValue(new Error("Version conflict: refresh competition state"));

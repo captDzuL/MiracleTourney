@@ -30,6 +30,26 @@ const extractJob = (workflow: string, jobId: string) =>
 const extractStep = (job: string, stepName: string) =>
   job.match(new RegExp(`      - name: ${stepName}\\r?\\n([\\s\\S]*?)(?=\\r?\\n      - name:|$)`))?.[0] ?? "";
 
+const normalizeExpression = (expression: string) =>
+  expression
+    .replace(/\$\{\{/g, "")
+    .replace(/\}\}/g, "")
+    .replace(/\r?\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const extractCondition = (step: string) =>
+  normalizeExpression(
+    step.match(/\r?\n\s+if: >-\r?\n([\s\S]*?)(?=\r?\n\s+(?:run|shell|uses):)/)?.[1] ?? "",
+  );
+
+const PUBLIC_DIAGNOSTIC_CONDITION =
+  "github.event_name == 'push' && github.ref == 'refs/heads/codex/public-event-overview-v3' && contains(github.event.head_commit.message, '[ci:public-v3-only]')";
+const FULL_GATE_CONDITION =
+  "github.event_name != 'push' || ( github.ref != 'refs/heads/codex/organizer-release-readiness' || !contains(github.event.head_commit.message, '[ci:failing4-only]') ) && ( github.ref != 'refs/heads/codex/public-event-overview-v3' || !contains(github.event.head_commit.message, '[ci:public-v3-only]') )";
+const ARTIFACT_CONDITION =
+  "failure() || ( github.event_name == 'push' && github.ref == 'refs/heads/codex/organizer-release-readiness' && contains(github.event.head_commit.message, '[ci:failing4-only]') ) || ( github.event_name == 'push' && github.ref == 'refs/heads/codex/public-event-overview-v3' && contains(github.event.head_commit.message, '[ci:public-v3-only]') )";
+
 describe("CI E2E release sequence", () => {
   it("runs a real fail-closed ESLint gate on the pinned CI runtime", async () => {
     const workflow = await readWorkflow();
@@ -56,11 +76,11 @@ describe("CI E2E release sequence", () => {
   it("keeps the E2E dependency, lock, timeout, and fail-closed job gate", async () => {
     const e2eJob = extractJob(await readWorkflow(), "e2e-tests");
 
-    expect(e2eJob).toContain("needs: [lint-and-typecheck, unit-tests]");
+    expect(e2eJob).toContain("needs: [ci-route, lint-and-typecheck, unit-tests]");
     expect(e2eJob).toContain("timeout-minutes: 90");
     expect(e2eJob).toContain("group: e2e-neon-test-db");
     expect(e2eJob).toContain("cancel-in-progress: false");
-    expect(e2eJob).toContain("if: ${{ vars.E2E_ENABLED == 'true' }}");
+    expect(e2eJob).toContain("if: ${{ vars.E2E_ENABLED == 'true' && (needs.ci-route.outputs.route == 'full' || needs.ci-route.outputs.route == 'diagnostic') }}");
     expect(e2eJob).not.toContain("always()");
     expect(e2eJob).not.toContain("!cancelled()");
     expect(e2eJob).not.toContain("needs.lint-and-typecheck.result");
@@ -79,7 +99,59 @@ describe("CI E2E release sequence", () => {
     expect(fullStep.match(/run: pnpm test:e2e:ci/g)).toHaveLength(1);
   });
 
-  it("runs exactly the ordered failing-four-case diagnostic commands", async () => {
+  it("keeps the public-v3 diagnostic marker scoped to its push branch", async () => {
+    const diagnosticStep = extractStep(
+      extractJob(await readWorkflow(), "e2e-tests"),
+      "Run public-v3-only diagnostic fast lane",
+    );
+
+    expect(extractCondition(diagnosticStep)).toBe(PUBLIC_DIAGNOSTIC_CONDITION);
+  });
+
+  it("keeps the full E2E command behind the public-v3 inverse marker condition", async () => {
+    const fullStep = extractStep(
+      extractJob(await readWorkflow(), "e2e-tests"),
+      "Run guarded Match Day, default, and flags-off E2E profiles",
+    );
+
+    expect(extractCondition(fullStep)).toBe(FULL_GATE_CONDITION);
+  });
+
+  it("runs only the ordered public-v3 diagnostic subsets without reseeding or sharding", async () => {
+    const diagnosticStep = extractStep(
+      extractJob(await readWorkflow(), "e2e-tests"),
+      "Run public-v3-only diagnostic fast lane",
+    );
+    const commandLines = diagnosticStep
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const diagnosticCommand =
+      'pnpm exec playwright test tests/e2e/v3-matchday.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.config.ts --workers=1 --retries=0 --grep "official (single_elimination|double_elimination|round_robin|group_playoffs) result advances the authoritative competition and public state|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and result|keeps the same permanent URL through finished and certificates" --fail-on-flaky-tests';
+
+    expect(commandLines.filter((line) => line === "pnpm test:e2e:preflight")).toHaveLength(1);
+    expect(commandLines.filter((line) => line === diagnosticCommand)).toHaveLength(1);
+    expect(commandLines.filter((line) => line.startsWith("pnpm "))).toEqual([
+      "pnpm test:e2e:preflight",
+      diagnosticCommand,
+    ]);
+    expect(commandLines.indexOf("pnpm test:e2e:preflight")).toBeLessThan(commandLines.indexOf(diagnosticCommand));
+    expect(diagnosticStep).toContain("--workers=1");
+    expect(diagnosticStep).toContain("--retries=0");
+    expect(diagnosticStep).toContain("--fail-on-flaky-tests");
+    expect(diagnosticStep).not.toContain("test:e2e:ci");
+    expect(diagnosticStep).not.toContain("test:e2e:prepare");
+    expect(diagnosticStep).not.toContain("test:e2e:seed");
+    expect(diagnosticStep).not.toContain("test:e2e:reset");
+    expect(diagnosticStep).not.toContain("db:seed");
+    expect(diagnosticStep).not.toContain("migrate reset");
+    expect(diagnosticStep).not.toContain("--force-reset");
+    expect(diagnosticStep).not.toContain("reseed");
+    expect(diagnosticStep).not.toContain("--shard");
+    expect(diagnosticStep).not.toMatch(/--retries=(?!0\b)\d+/);
+  });
+
+  it("runs exactly the ordered two-case organizer diagnostic commands", async () => {
     const diagnosticStep = extractStep(
       extractJob(await readWorkflow(), "e2e-tests"),
       "Run failing4-only diagnostic fast lane",
@@ -93,18 +165,12 @@ describe("CI E2E release sequence", () => {
     expect(diagnosticStep).toContain("github.ref == 'refs/heads/codex/organizer-release-readiness'");
     expect(diagnosticStep).toContain("contains(github.event.head_commit.message, '[ci:failing4-only]')");
     expect(commandLines.filter((line) => line === "pnpm test:e2e:preflight")).toHaveLength(1);
-    expect(
-      commandLines.filter(
-        (line) =>
-          line ===
-          "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and result|keeps the same permanent URL through finished and certificates\" --fail-on-flaky-tests",
-      ),
-    ).toHaveLength(1);
+    const diagnosticCommand =
+      "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a\" --fail-on-flaky-tests";
+    expect(commandLines.filter((line) => line.startsWith("pnpm "))).toEqual(["pnpm test:e2e:preflight", diagnosticCommand]);
     expect(commandLines.filter((line) => line === "pnpm test:e2e:prepare")).toHaveLength(0);
     expect(commandLines.indexOf("pnpm test:e2e:preflight")).toBeLessThan(
-      commandLines.indexOf(
-        "pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep \"@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and result|keeps the same permanent URL through finished and certificates\" --fail-on-flaky-tests",
-      ),
+      commandLines.indexOf(diagnosticCommand),
     );
   });
 
@@ -117,9 +183,18 @@ describe("CI E2E release sequence", () => {
     for (const forbidden of [
       "test:e2e:ci",
       "test:e2e:prepare",
+      "test:e2e:seed",
+      "test:e2e:reset",
+      "test:e2e:reseed",
       "--shard=1/2",
       "--shard=2/2",
+      "--retries",
+      "retry",
+      "seed",
+      "reset",
+      "reseed",
       "v3-matchday",
+      "v3-public-event-lifecycle",
       "playwright.smoke.config.ts",
       "playwright.visual-v2.config.ts",
       "playwright.legacy.config.ts",
@@ -139,9 +214,7 @@ describe("CI E2E release sequence", () => {
       .map((line) => line.trim())
       .filter(Boolean);
 
-    expect(artifactStep).toContain("failure()");
-    expect(artifactStep).toContain("github.event_name == 'push'");
-    expect(artifactStep).toContain("contains(github.event.head_commit.message, '[ci:failing4-only]')");
+    expect(extractCondition(artifactStep)).toBe(ARTIFACT_CONDITION);
     expect(paths).toEqual(["playwright-report/", "test-results/"]);
     expect(artifactStep).toContain("retention-days: 7");
   });
@@ -158,6 +231,18 @@ describe("CI E2E release sequence", () => {
       expect(condition).toMatch(/github\.event_name\s*(?:==|!=)\s*'push'/);
       expect(condition).toMatch(/github\.ref\s*(?:==|!=)\s*'refs\/heads\/codex\/organizer-release-readiness'/);
     }
+  });
+
+  it("keeps every public-v3 marker predicate push- and branch-scoped", async () => {
+    const workflow = await readWorkflow();
+    const marker = "contains(github.event.head_commit.message, '[ci:public-v3-only]')";
+    const markerMatches = [...workflow.matchAll(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))];
+
+    expect(markerMatches).toHaveLength(3);
+    const e2eJob = extractJob(workflow, "e2e-tests");
+    expect(extractCondition(extractStep(e2eJob, "Run guarded Match Day, default, and flags-off E2E profiles"))).toBe(FULL_GATE_CONDITION);
+    expect(extractCondition(extractStep(e2eJob, "Run public-v3-only diagnostic fast lane"))).toBe(PUBLIC_DIAGNOSTIC_CONDITION);
+    expect(extractCondition(extractStep(e2eJob, "Upload Playwright report evidence"))).toBe(ARTIFACT_CONDITION);
   });
 
   it("records elapsed time for every release phase and the total sequence", async () => {

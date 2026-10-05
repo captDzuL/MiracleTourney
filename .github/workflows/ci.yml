@@ -3,8 +3,25 @@ name: CI
 on:
   push:
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
 
 jobs:
+  ci-route:
+    name: CI route
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      route: ${{ steps.route.outputs.route }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve exact event route and prior public evidence
+        id: route
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/public-v3-route.mjs
+
   lint-and-typecheck:
     name: Lint & Typecheck
     runs-on: ubuntu-latest
@@ -51,11 +68,11 @@ jobs:
     name: E2E Tests
     runs-on: ubuntu-22.04
     timeout-minutes: 90
-    needs: [lint-and-typecheck, unit-tests]
+    needs: [ci-route, lint-and-typecheck, unit-tests]
     concurrency:
       group: e2e-neon-test-db
       cancel-in-progress: false
-    if: ${{ vars.E2E_ENABLED == 'true' }}
+    if: ${{ vars.E2E_ENABLED == 'true' && (needs.ci-route.outputs.route == 'full' || needs.ci-route.outputs.route == 'diagnostic') }}
     env:
       CI: true
       E2E_ENV_FILE: ${{ github.workspace }}/.env.test
@@ -114,8 +131,14 @@ jobs:
         if: >-
           ${{
             github.event_name != 'push' ||
-            github.ref != 'refs/heads/codex/organizer-release-readiness' ||
-            !contains(github.event.head_commit.message, '[ci:failing4-only]')
+            (
+              github.ref != 'refs/heads/codex/organizer-release-readiness' ||
+              !contains(github.event.head_commit.message, '[ci:failing4-only]')
+            ) &&
+            (
+              github.ref != 'refs/heads/codex/public-event-overview-v3' ||
+              !contains(github.event.head_commit.message, '[ci:public-v3-only]')
+            )
           }}
         run: pnpm test:e2e:ci
       - name: Run failing4-only diagnostic fast lane
@@ -128,7 +151,18 @@ jobs:
         shell: bash
         run: |
           pnpm test:e2e:preflight
-          pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep "@task11-release-journey-part-a|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and result|keeps the same permanent URL through finished and certificates" --fail-on-flaky-tests
+          pnpm exec playwright test tests/e2e/v3-organizer-lifecycle.spec.ts --config playwright.ci-default.config.ts --workers=1 --grep "@task11-release-journey-part-a" --fail-on-flaky-tests
+      - name: Run public-v3-only diagnostic fast lane
+        if: >-
+          ${{
+            github.event_name == 'push' &&
+            github.ref == 'refs/heads/codex/public-event-overview-v3' &&
+            contains(github.event.head_commit.message, '[ci:public-v3-only]')
+          }}
+        shell: bash
+        run: |
+          pnpm test:e2e:preflight
+          pnpm exec playwright test tests/e2e/v3-matchday.spec.ts tests/e2e/v3-public-event-lifecycle.spec.ts --config playwright.config.ts --workers=1 --retries=0 --grep "official (single_elimination|double_elimination|round_robin|group_playoffs) result advances the authoritative competition and public state|keeps one permanent URL through registration and drawing|keeps the same permanent URL through ongoing and result|keeps the same permanent URL through finished and certificates" --fail-on-flaky-tests
       - name: Upload Playwright report evidence
         if: >-
           ${{
@@ -137,6 +171,11 @@ jobs:
               github.event_name == 'push' &&
               github.ref == 'refs/heads/codex/organizer-release-readiness' &&
               contains(github.event.head_commit.message, '[ci:failing4-only]')
+            ) ||
+            (
+              github.event_name == 'push' &&
+              github.ref == 'refs/heads/codex/public-event-overview-v3' &&
+              contains(github.event.head_commit.message, '[ci:public-v3-only]')
             )
           }}
         uses: actions/upload-artifact@v6
@@ -145,5 +184,119 @@ jobs:
           path: |
             playwright-report/
             test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+  public-v3-e2e:
+    name: Public V3 E2E
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    needs: [ci-route, lint-and-typecheck, unit-tests]
+    concurrency:
+      group: e2e-neon-test-db
+      cancel-in-progress: false
+    if: ${{ vars.E2E_ENABLED == 'true' && (needs.ci-route.outputs.route == 'run' || needs.ci-route.outputs.route == 'verify') }}
+    env:
+      CI: true
+      E2E_ENV_FILE: ${{ github.workspace }}/.env.test
+      PLAYWRIGHT_PORT: "3100"
+      PUBLIC_V3_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: pnpm/action-setup@v6
+        if: ${{ needs.ci-route.outputs.route == 'run' }}
+        with:
+          version: 10
+      - uses: actions/setup-node@v5
+        if: ${{ needs.ci-route.outputs.route == 'run' }}
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Reuse verified same-SHA public push evidence
+        if: ${{ needs.ci-route.outputs.route == 'verify' }}
+        run: echo "Exact-head Public V3 E2E push evidence verified by CI route."
+      - name: Install dependencies
+        if: ${{ needs.ci-route.outputs.route == 'run' }}
+        run: pnpm install --frozen-lockfile
+      - name: Create guarded public E2E environment
+        if: ${{ needs.ci-route.outputs.route == 'run' }}
+        uses: ./.github/actions/guarded-public-e2e-env
+        env:
+          TEST_DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
+          TEST_DIRECT_URL: ${{ secrets.NEON_TEST_DIRECT_URL }}
+          PRODUCTION_NEON_HOST: ${{ secrets.NEON_PROD_HOST }}
+      - name: Install Playwright Chromium
+        if: ${{ needs.ci-route.outputs.route == 'run' }}
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Generate JWT secret
+        if: ${{ needs.ci-route.outputs.route == 'run' }}
+        shell: bash
+        run: |
+          JWT_SECRET="$(openssl rand -base64 32)"
+          echo "::add-mask::$JWT_SECRET"
+          echo "JWT_SECRET=$JWT_SECRET" >> "$GITHUB_ENV"
+      - name: Measure guarded production-build pressure
+        if: ${{ needs.ci-route.outputs.route == 'run' }}
+        run: node scripts/public-v3-pressure.mjs
+      - name: Run complete public V3 selection
+        if: ${{ needs.ci-route.outputs.route == 'run' }}
+        run: pnpm test:e2e:public-v3
+      - name: Upload scrubbed public evidence
+        if: ${{ always() && needs.ci-route.outputs.route == 'run' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: public-v3-evidence
+          path: |
+            test-results/public-v3/pressure.json
+            test-results/public-v3/evidence.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  public-v3-homepage:
+    name: Public V3 Homepage Check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    needs: [ci-route, lint-and-typecheck, unit-tests]
+    concurrency:
+      group: e2e-neon-test-db
+      cancel-in-progress: false
+    if: ${{ vars.E2E_ENABLED == 'true' && github.event_name == 'push' && needs.ci-route.outputs.route == 'home' }}
+    env:
+      CI: true
+      E2E_ENV_FILE: ${{ github.workspace }}/.env.test
+      PUBLIC_V3_HEAD_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Create guarded public E2E environment
+        uses: ./.github/actions/guarded-public-e2e-env
+        env:
+          TEST_DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
+          TEST_DIRECT_URL: ${{ secrets.NEON_TEST_DIRECT_URL }}
+          PRODUCTION_NEON_HOST: ${{ secrets.NEON_PROD_HOST }}
+      - name: Generate JWT secret
+        shell: bash
+        run: |
+          JWT_SECRET="$(openssl rand -base64 32)"
+          echo "::add-mask::$JWT_SECRET"
+          echo "JWT_SECRET=$JWT_SECRET" >> "$GITHUB_ENV"
+      - name: Diagnose both localized homepages
+        run: node scripts/public-v3-pressure.mjs --homepage-only
+      - name: Upload scrubbed homepage evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: public-v3-home-evidence
+          path: test-results/public-v3/pressure.json
           if-no-files-found: warn
           retention-days: 7

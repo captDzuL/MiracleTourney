@@ -19,7 +19,31 @@ function wib(value: string, locale: "id" | "en") {
   return `${new Intl.DateTimeFormat(locale === "id" ? "id-ID" : "en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(new Date(value))} WIB`;
 }
 
-export function PublicScheduleBoard({ matches, locale, timezone, unpublished = false }: { matches: PublicScheduleMatch[]; locale: "id" | "en"; timezone: string; unpublished?: boolean }) {
+function statusLabel(status: PublicScheduleMatch["status"], id: boolean) {
+  if (id) {
+    return {
+      scheduled: "Dijadwalkan",
+      delayed: "Tertunda",
+      postponed: "Ditunda",
+      live: "Sedang berlangsung",
+      completed: "Selesai",
+    }[status];
+  }
+
+  return {
+    scheduled: "Scheduled",
+    delayed: "Delayed",
+    postponed: "Postponed",
+    live: "Live",
+    completed: "Completed",
+  }[status];
+}
+
+function legacyStatusLabel(status: PublicScheduleMatch["status"], id: boolean) {
+  return status === "completed" ? (id ? "Selesai" : "Completed") : status === "live" ? "Live" : status;
+}
+
+export function PublicScheduleBoard({ matches, locale, timezone, unpublished = false, presentation = "legacy" }: { matches: PublicScheduleMatch[]; locale: "id" | "en"; timezone: string; unpublished?: boolean; presentation?: "legacy" | "v3" }) {
   const [round, setRound] = useState("all");
   const id = locale === "id";
   const rounds = useMemo(() => [...new Set(matches.map((match) => match.roundLabel))], [matches]);
@@ -29,7 +53,7 @@ export function PublicScheduleBoard({ matches, locale, timezone, unpublished = f
   return <div className="grid min-w-0 gap-5" data-event-timezone={timezone}>
     <label className="grid max-w-sm gap-2 text-sm font-bold">{id ? "Babak" : "Round"}<select name="round" className="min-h-11 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3" value={round} onChange={(event) => setRound(event.target.value)}><option value="all">{id ? "Semua babak" : "All rounds"}</option>{rounds.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
     <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">{visible.map((match) => <article key={match.id} className="min-w-0 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{match.roundLabel} · BO{match.bestOf}</span><span className="font-bold text-[var(--color-brand-cyan)]">{match.status === "completed" ? (id ? "Selesai" : "Completed") : match.status === "live" ? "Live" : match.status}</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{match.roundLabel} · BO{match.bestOf}</span><span className="font-bold text-[var(--color-brand-cyan)]">{presentation === "v3" ? statusLabel(match.status, id) : legacyStatusLabel(match.status, id)}</span></div>
       <h2 className="mt-3 break-words text-lg font-extrabold">{match.home ?? "TBD"} <span className="font-normal text-[var(--color-text-muted)]">vs</span> {match.away ?? "TBD"}</h2>
       {match.status === "completed" ? <p className="mt-2 text-2xl font-extrabold tabular-nums">{match.homeScore} – {match.awayScore}</p> : null}
       <p className="mt-3 text-sm text-[var(--color-text-muted)]">{match.start ? wib(match.start, locale) : "TBD"}{match.room ? ` · ${match.room}` : ""}</p>

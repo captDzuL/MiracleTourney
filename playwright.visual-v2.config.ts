@@ -12,7 +12,7 @@ const webServer =
   process.env.PLAYWRIGHT_SKIP_WEBSERVER === "1"
     ? undefined
     : {
-        command: `node .\\node_modules\\next\\dist\\bin\\next dev --hostname 127.0.0.1 --port ${port}`,
+        command: `node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port ${port}`,
         env: {
           ...process.env,
           FEATURE_FLAG_UI_V3_FOUNDATION: "true",

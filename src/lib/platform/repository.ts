@@ -3110,7 +3110,23 @@ export async function getPlayerStatFormContext(matchId: string, eventId: string)
  * tournament data is temporarily unavailable.
  */
 export async function getPublicDiscoveryEvents(): Promise<PublicDiscoveryEvent[]> {
+  const trace = process.env.PUBLIC_V3_HOME_DISCOVERY_TRACE === "1";
+  const elapsed = (started: number) => Math.min(99999, Math.round(performance.now() - started));
+  if (trace) {
+    console.info("[public-v3-discovery] connect-start");
+    const connectStarted = performance.now();
+    try {
+      await prisma.$connect();
+      console.info(`[public-v3-discovery] connect-done ms=${elapsed(connectStarted)}`);
+    } catch (error) {
+      console.info(`[public-v3-discovery] connect-error ms=${elapsed(connectStarted)}`);
+      throw error;
+    }
+  }
+  if (trace) console.info("[public-v3-discovery] query-start");
+  const queryStarted = performance.now();
   const rows = await prisma.event.findMany({
+    relationLoadStrategy: "join",
     where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
     include: {
       ...eventPublicInclude,
@@ -3128,14 +3144,18 @@ export async function getPublicDiscoveryEvents(): Promise<PublicDiscoveryEvent[]
     },
     orderBy: [{ updatedAt: "desc" }, { slug: "asc" }],
   });
+  if (trace) console.info(`[public-v3-discovery] query-done ms=${elapsed(queryStarted)}`);
 
-  return rows.map((row) => ({
+  const mapStarted = performance.now();
+  const entries = rows.map((row) => ({
     event: mapEvent(row),
     phaseStatus: row.competitionPhases[0]?.status ?? null,
     hasLiveMatch: row.matches.length > 0,
     teamCount: row._count.teams,
     updatedAt: row.updatedAt.toISOString(),
   }));
+  if (trace) console.info(`[public-v3-discovery] map-done ms=${elapsed(mapStarted)}`);
+  return entries;
 }
 
 /**
@@ -3144,9 +3164,14 @@ export async function getPublicDiscoveryEvents(): Promise<PublicDiscoveryEvent[]
  * This public discovery path intentionally has no demo fallback: an unavailable
  * database must produce an honest empty/error state instead of invented players.
  */
-export async function getFlashpeakLeaderboardForEvent(
+export type FlashpeakLeaderboardReadResult = {
+  status: "ready" | "empty" | "error";
+  entries: FlashpeakLeaderboardEntry[];
+};
+
+export async function getFlashpeakLeaderboardForEventResult(
   eventId: string,
-): Promise<FlashpeakLeaderboardEntry[]> {
+): Promise<FlashpeakLeaderboardReadResult> {
   try {
     const rows = await prisma.playerStat.findMany({
       where: {
@@ -3206,11 +3231,20 @@ export async function getFlashpeakLeaderboardForEvent(
         stats: row.stats,
       }];
     });
-    return aggregateFlashpeakLeaderboard(sources);
+    const entries = aggregateFlashpeakLeaderboard(sources);
+    if (rows.length === 0) return { status: "empty", entries };
+    if (sources.length === 0 || entries.length === 0) return { status: "error", entries: [] };
+    return { status: "ready", entries };
   } catch (error) {
     console.error("Failed to load Flashpeak leaderboard", { eventId, error });
-    return [];
+    return { status: "error", entries: [] };
   }
+}
+
+export async function getFlashpeakLeaderboardForEvent(
+  eventId: string,
+): Promise<FlashpeakLeaderboardEntry[]> {
+  return (await getFlashpeakLeaderboardForEventResult(eventId)).entries;
 }
 
 /**

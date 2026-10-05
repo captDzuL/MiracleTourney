@@ -1,13 +1,13 @@
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseServerActionResult } from "../e2e/helpers/server-action";
+import { readSourceText } from "./source-text";
 
 const root = resolve(import.meta.dirname, "../..");
-const helper = readFileSync(resolve(root, "tests/e2e/helpers/server-action.ts"), "utf8");
-const overnightSpec = readFileSync(resolve(root, "tests/e2e/overnight-smoke.spec.ts"), "utf8");
-const actionSource = readFileSync(resolve(root, "src/lib/actions/competition-v3-actions.ts"), "utf8");
-const announcementsSource = readFileSync(resolve(root, "src/components/v3/organizer/AnnouncementsWorkspace.tsx"), "utf8");
+const helper = readSourceText(resolve(root, "tests/e2e/helpers/server-action.ts"));
+const overnightSpec = readSourceText(resolve(root, "tests/e2e/overnight-smoke.spec.ts"));
+const actionSource = readSourceText(resolve(root, "src/lib/actions/competition-v3-actions.ts"));
+const announcementsSource = readSourceText(resolve(root, "src/components/v3/organizer/AnnouncementsWorkspace.tsx"));
 
 function assertDrawingSettlementOrder(source: string) {
   const responseIndex = source.indexOf("const drawingResponse = await drawingResponsePromise");

@@ -12,7 +12,7 @@ describe("sanitized ongoing public state", () => {
   const now = new Date("2026-09-12T03:00:00Z");
   beforeEach(async () => {
     store = operationStore(); boundary.db = store.db; boundary.flags = true;
-    await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { slug: "cup", name: "Cup", status: "Ongoing", timezone: "Asia/Jakarta", updatedAt: now } }); });
+    await store.db.$transaction(async tx => { await tx.event.update({ where: { id: "event" }, data: { slug: "cup", name: "Cup", gameId: "game-flashpeak", status: "Ongoing", timezone: "Asia/Jakarta", updatedAt: now } }); });
     await createCompetitionOperations(store.db, undefined, { allowInternalInitialize: true }).execute({ eventId: "event", actor: { id: "owner", role: "organizer" }, expectedVersion: 0, idempotencyKey: "init", command: { kind: "initialize", config: TOURNAMENT_FORMAT_PRESETS.roundRobin, teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }] } });
   });
   it("does not infer LIVE from the clock or expose draft schedules or private fields", async () => {
@@ -83,6 +83,41 @@ describe("sanitized ongoing public state", () => {
     expect(corrected?.recentResults[0]).toMatchObject({ homeScore: 2, awayScore: 0, resultVersion: 2 });
     expect(corrected?.stateVersion).not.toBe(live?.stateVersion);
     expect(JSON.stringify(corrected)).not.toContain("secretPlayerStats");
+  });
+  it("includes persisted approved player statistics in the public leaderboard", async () => {
+    const matchId = String(store.rows("match")[0].id);
+    store.updateRow("match", matchId, { status: "Completed" });
+    store.seed("player", { id: "player-a", eventId: "event", teamId: "a", displayName: "Ari", nickname: "Ari", position: "Forward" });
+    store.seed("playerStat", { id: "stat-a", matchId, playerId: "player-a", playerName: "Ari", teamId: "a", position: "Forward", gameSlug: "flashpeak", stats: { scores: [8], goal: 2, assist: 1, passing: 3, defense: 4 } });
+
+    const view = await getPublicOngoingEvent("cup", now);
+
+    expect(view?.leaderboard).toMatchObject([{ playerId: "player-a", nickname: "Ari", game: 1, score: 8, goal: 2, assist: 1, passing: 3, defense: 4 }]);
+  });
+  it("publishes only completed statistics for this event and a matching roster", async () => {
+    const [completedMatch] = store.rows("match");
+    const completedMatchId = String(completedMatch.id);
+    const liveMatchId = "live-match";
+    store.updateRow("match", completedMatchId, { status: "Completed" });
+    store.seed("match", { id: liveMatchId, eventId: "event", status: "Live" });
+    store.seed("match", { id: "scheduled-match", eventId: "event", status: "Scheduled" });
+    store.seed("match", { id: "foreign-match", eventId: "other-event", status: "Completed" });
+    store.seed("team", { id: "foreign-team", eventId: "other-event", name: "Foreign" });
+    store.seed("player", { id: "valid-player", eventId: "event", teamId: "a", displayName: "Ari", nickname: "Ari" });
+    store.seed("player", { id: "wrong-team-player", eventId: "event", teamId: "b", displayName: "Bo", nickname: "Bo" });
+    store.seed("player", { id: "foreign-team-player", eventId: "event", teamId: "foreign-team", displayName: "Cy", nickname: "Cy" });
+    const stat = (id: string, matchId: string, playerId: string, teamId: string) => ({ id, matchId, playerId, playerName: id, teamId, position: "Forward", gameSlug: "flashpeak", stats: { scores: [8], goal: 2 } });
+    store.seed("playerStat", stat("valid", completedMatchId, "valid-player", "a"));
+    store.seed("playerStat", stat("live", liveMatchId, "valid-player", "a"));
+    store.seed("playerStat", stat("scheduled", "scheduled-match", "valid-player", "a"));
+    store.seed("playerStat", stat("foreign", "foreign-match", "valid-player", "a"));
+    store.seed("playerStat", stat("wrong-team", completedMatchId, "wrong-team-player", "a"));
+    store.seed("playerStat", stat("foreign-team", completedMatchId, "foreign-team-player", "foreign-team"));
+
+    const view = await getPublicOngoingEvent("cup", now);
+
+    expect(view?.leaderboard).toMatchObject([{ playerId: "valid-player", game: 1, score: 8, goal: 2 }]);
+    expect(view?.leaderboard).toHaveLength(1);
   });
   it("keeps a live overrun estimate private until explicit schedule publication", async () => {
     const service = createCompetitionOperations(store.db, () => now, { allowInternalInitialize: true }); let sequence = 0;

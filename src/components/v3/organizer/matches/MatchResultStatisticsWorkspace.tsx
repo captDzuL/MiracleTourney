@@ -60,7 +60,7 @@ export function MatchResultStatisticsWorkspace({initialState,statistics:data,mat
   <nav aria-label={t("title")} className="flex flex-wrap gap-2">{["result","statistics","history"].map(item=><a key={item} data-match-view={item} href={`${base}?view=${item}`} aria-current={view===item?"page":undefined} className={link+(view===item?" bg-[var(--color-surface-active)]":"")}>{t(item)}</a>)}</nav>
   {workspace.connectionError&&<p role="alert" className={surface}>{t("connection")}</p>}
   {workspace.actionError&&<div role="alert" className={surface}>{t(workspace.actionError==="conflict"?"conflict":workspace.actionError==="unauthorized"?"unauthorized":"failed")}{workspace.canRetry&&<Button disabled={workspace.busy} onClick={()=>void workspace.retry()}>{t("retry")}</Button>}</div>}
-  {(saving||feedback||workspace.busy||workspace.saved)&&<p role={feedback&&feedback!=="saved"?"alert":"status"}>{saving||workspace.busy?t("saving"):feedback?t(feedback):t("saved")}</p>}
+  {(saving||feedback||workspace.busy||workspace.saved)&&<p role={feedback&&feedback!=="saved"?"alert":"status"}>{feedback?t(feedback):workspace.saved?t("saved"):t("saving")}</p>}
   {uncertain&&<Button disabled={saving} onClick={()=>pending.current&&void execute(pending.current)}>{t("retry")}</Button>}
   <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_260px]">
    <div className="grid min-w-0 gap-5">

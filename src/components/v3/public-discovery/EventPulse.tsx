@@ -1,8 +1,8 @@
-import { resolvePublicV3Route, type PublicV3EventViewModel, type PublicV3Locale } from "@/lib/events/public-v3-types";
+import { resolvePublicV3Route, type PublicHomeFeaturedEvent, type PublicV3Locale } from "@/lib/events/public-v3-types";
 import { homeCopy, homeDate, homeStatusExplanation } from "./home-copy";
 import { PublicV3Eyebrow } from "./PublicV3Primitives";
 
-export function EventPulse({ view, locale }: { view: PublicV3EventViewModel; locale: PublicV3Locale }) {
+export function EventPulse({ view, locale }: { view: PublicHomeFeaturedEvent; locale: PublicV3Locale }) {
   const t = homeCopy[locale];
   const next = view.mode === "ongoing" ? view.nextMatches[0] : view.mode === "drawing" ? view.matches[0] : undefined;
   const teamName = (value: string | null) => view.teams.find((team) => team.id === value)?.name ?? value ?? t.pending;

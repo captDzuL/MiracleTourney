@@ -59,7 +59,7 @@ export function MatchControlWorkspace({initialState,locale,view,query={}}:{
     {workspace.connectionError&&<div role="alert" className={surface}><p>{t("connection")}</p><Button className="mt-3" onClick={()=>void workspace.refresh()}>{t("retry")}</Button></div>}
     {workspace.actionError&&<div role="alert" className={surface}><p>{t(workspace.actionError==="conflict"?"conflict":workspace.actionError==="unauthorized"?"unauthorized":"failed")}</p>{workspace.canRetry&&<Button className="mt-3" disabled={busy} onClick={()=>void workspace.retry()}>{t("retryAction")}</Button>}</div>}
     {!!state.unavailableSections.length&&<p role="alert" className={surface}>{t("partial")}</p>}
-    <p role="status" aria-live="polite" className="text-sm text-[var(--color-text-subtle)]">{busy?t("saving"):workspace.saved?t("saved"):""}</p>
+    <p role="status" aria-live="polite" className="text-sm text-[var(--color-text-subtle)]">{workspace.saved?t("saved"):busy?t("saving"):""}</p>
     {view==="match-control"&&<>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{["live","needs-result","readiness","action"].map(key=><a key={key} href={workspaceHref(base,query,{filter:key,page:"1"})} className={surface+" miracle-focus-ring hover:border-[var(--color-brand-cyan)]"}><span className="block text-xs text-[var(--color-text-subtle)]">{t(key)}</span><strong data-action-count={key==="action"?"":undefined} className="mt-2 block text-2xl font-bold tabular-nums">{key==="action"?state.actions.length:state.matches.filter(match=>matchesFilter(state,match,key)).length}</strong></a>)}</div>
       {!!state.actions.length && <section className={surface} aria-label={t("action")}>

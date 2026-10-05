@@ -83,7 +83,18 @@ function refreshRequiredOutcome(result: CompletionActionResult): RefreshRequired
 }
 
 export function CompletionWorkspace(props: CompletionWorkspaceProps) {
-  return <CompletionWorkspaceForm key={authoritativeStateKey(props)} {...props} />;
+  const feedbackOwnerKey = `${props.state.event.id}:${props.state.event.matchDayHref}`;
+  return <CompletionWorkspaceFeedbackOwner key={feedbackOwnerKey} {...props} />;
+}
+
+function CompletionWorkspaceFeedbackOwner(props: CompletionWorkspaceProps) {
+  const [actionResult, setActionResult] = useState<string | null>(null);
+  return <CompletionWorkspaceForm
+    {...props}
+    actionResult={actionResult}
+    setActionResult={setActionResult}
+    key={authoritativeStateKey(props)}
+  />;
 }
 
 function CompletionWorkspaceForm({
@@ -92,12 +103,13 @@ function CompletionWorkspaceForm({
   reopenIdempotencyKey,
   completeAction = completeTournamentAction,
   reopenAction = reopenTournamentAction,
-}: CompletionWorkspaceProps) {
+  actionResult,
+  setActionResult,
+}: CompletionWorkspaceProps & { actionResult: string | null; setActionResult: (value: string | null) => void }) {
   const t = useTranslations("completionWorkspace");
   const router = useRouter();
   const integrationRequired = state.status === "integration_required";
   const [activeTab, setActiveTab] = useState<CompletionTab>("readiness");
-  const [actionResult, setActionResult] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<"complete" | "reopen" | null>(null);
   const [reopenReason, setReopenReason] = useState("");
   const [awardDecisions, setAwardDecisions] = useState<AwardDecisions>(() => initialAwardDecisions(state));
@@ -216,6 +228,7 @@ function CompletionWorkspaceForm({
           idempotencyKey: completionIdempotencyKey,
         });
         const message = resultMessage(result, "complete");
+        setActionResult(message);
         if (result.status === "blocked" && result.code === "not_ready" && result.blockers) {
           setAuthoritativeBlockers(result.blockers.map(blockerFromResult));
           setActiveTab("readiness");
@@ -235,7 +248,6 @@ function CompletionWorkspaceForm({
           setTerminalRefreshPending("complete");
           router.refresh();
         }
-        setActionResult(message);
       } catch {
         setActionResult(t("feedback.failed"));
       } finally {
@@ -261,6 +273,7 @@ function CompletionWorkspaceForm({
           reason: reopenReason.trim(),
         });
         const message = resultMessage(result, "reopen");
+        setActionResult(message);
         if (
           result.status === "reopened"
           || (result.status === "already_applied" && result.result.status === "reopened")
@@ -274,7 +287,6 @@ function CompletionWorkspaceForm({
             router.refresh();
           }
         }
-        setActionResult(message);
       } catch {
         setActionResult(t("feedback.failed"));
       } finally {

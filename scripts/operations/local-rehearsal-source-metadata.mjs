@@ -1,0 +1,330 @@
+import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { prepareFixedExport } from './local-backup-operator.mjs';
+import { buildCheckpointSql, LEGACY_TABLES } from './local-backup-snapshot.mjs';
+import { compareRestoredCheckpoint, normalizeRecoverySchema } from './local-rehearsal-core.mjs';
+
+const MANIFEST = 'E:/MiracleBackups/miracle-neondb-2026-10-05T01-23-48-741Z.json';
+const ARCHIVE = 'miracle-neondb-2026-10-05T01-23-48-741Z.age';
+const ARCHIVE_SHA256 = 'dc30ddf3ae4bb98dacd9d68e293b26cef5a3818664364c405c01d578cf1d7f5b';
+const TABLES = Object.freeze(['User', 'Team', 'Player', 'PlayerStat']);
+const DIGEST_TABLES = Object.freeze(['User', 'Team', 'Player', 'PlayerStat', 'Event']);
+const SETTINGS = Object.freeze(['TimeZone', 'DateStyle', 'IntervalStyle', 'extra_float_digits',
+  'bytea_output', 'server_encoding', 'lc_collate', 'collationProvider', 'collationLocale']);
+const FLAGS = Object.freeze(['tableFound', 'hasDropped', 'hasTimestamptz', 'hasTemporal',
+  'hasInterval', 'hasFloat', 'hasBytea', 'hasGenerated']);
+
+function fail() { const error = new Error('SOURCE_METADATA_REJECTED'); error.code = error.message; return error; }
+const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) &&
+  JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+
+function tableSql(name) {
+  return `'${name}', (SELECT json_build_object(
+    'tableFound', count(*) > 0,
+    'hasDropped', coalesce(bool_or(a.attisdropped), false),
+    'hasTimestamptz', coalesce(bool_or(NOT a.attisdropped AND a.atttypid = 'timestamptz'::regtype), false),
+    'hasTemporal', coalesce(bool_or(NOT a.attisdropped AND a.atttypid IN
+      ('date'::regtype, 'time'::regtype, 'timetz'::regtype, 'timestamp'::regtype, 'timestamptz'::regtype)), false),
+    'hasInterval', coalesce(bool_or(NOT a.attisdropped AND a.atttypid = 'interval'::regtype), false),
+    'hasFloat', coalesce(bool_or(NOT a.attisdropped AND a.atttypid IN ('float4'::regtype, 'float8'::regtype)), false),
+    'hasBytea', coalesce(bool_or(NOT a.attisdropped AND a.atttypid = 'bytea'::regtype), false),
+    'hasGenerated', coalesce(bool_or(NOT a.attisdropped AND a.attgenerated <> ''), false))
+    FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = '${name}' AND c.relkind IN ('r', 'p') AND a.attnum > 0)`;
+}
+
+export function buildSourceMetadataSql() {
+  const settings = SETTINGS.map(name => {
+    const expression = name === 'lc_collate' ? '(SELECT datcollate FROM pg_database WHERE datname = current_database())'
+      : name === 'collationProvider' ? '(SELECT datlocprovider::text FROM pg_database WHERE datname = current_database())'
+        : name === 'collationLocale' ? "coalesce((SELECT datlocale FROM pg_database WHERE datname = current_database()), '')"
+          : `current_setting('${name}')`;
+    return `'${name}', ${expression}`;
+  }).join(',\n    ');
+  return `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout = '20s';
+SELECT 'MIRACLE_SOURCE_METADATA' || chr(9) || json_build_object(
+  'schema', (SELECT coalesce(json_agg(row_to_json(c) ORDER BY c.table_name, c.ordinal_position), '[]'::json)
+    FROM (SELECT columns.table_name, columns.column_name, columns.data_type, columns.is_nullable, columns.ordinal_position
+      FROM information_schema.columns columns JOIN information_schema.tables tables
+        ON tables.table_schema = columns.table_schema AND tables.table_name = columns.table_name
+      WHERE columns.table_schema = 'public' AND tables.table_type = 'BASE TABLE') c),
+  'settings', json_build_object(${settings}),
+  'tableMetadata', json_build_object(${TABLES.map(tableSql).join(',\n    ')}))::text;
+ROLLBACK;
+`;
+}
+
+export function buildSourceDigestSql() {
+  const checksums = DIGEST_TABLES.map(table =>
+    `'${table}', (SELECT md5(coalesce(string_agg(md5(t::text), '' ORDER BY md5(t::text)), '')) FROM public."${table}" t)`).join(',\n    ');
+  return `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout = '20s';
+SELECT 'MIRACLE_SOURCE_DIGEST' || chr(9) || json_build_object(
+    ${checksums})::text;
+ROLLBACK;
+`;
+}
+
+export function buildDeepComparisonSql(location) {
+  if (!['source', 'local'].includes(location)) throw fail();
+  const marker = location === 'source' ? 'MIRACLE_SOURCE_DEEP' : 'MIRACLE_LOCAL_CHECKPOINT';
+  const content = (expression, collation = '') => DIGEST_TABLES.map(table =>
+    `'${table}', (SELECT md5(coalesce(string_agg(md5(${expression}), '' ORDER BY md5(${expression})${collation}), '')) FROM public."${table}" t)`).join(',\n    ');
+  return `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout = '20s';
+SELECT '${marker}' || chr(9) || json_build_object(
+  'schema', (SELECT coalesce(json_agg(row_to_json(c) ORDER BY c.table_name, c.ordinal_position), '[]'::json)
+    FROM (SELECT columns.table_name, columns.column_name, columns.data_type, columns.is_nullable, columns.ordinal_position
+      FROM information_schema.columns columns JOIN information_schema.tables tables
+        ON tables.table_schema = columns.table_schema AND tables.table_name = columns.table_name
+      WHERE columns.table_schema = 'public' AND tables.table_type = 'BASE TABLE') c),
+  'canonical', json_build_object(${content('to_jsonb(t)::text', ' COLLATE "C"')}),
+  'composite', json_build_object(${content('t::text')}))::text;
+ROLLBACK;
+`;
+}
+
+function logicalDigestSelect() {
+  const checksums = LEGACY_TABLES.map(table =>
+    `'${table}', (SELECT md5(coalesce(string_agg(md5(to_jsonb(t)::text), '' ORDER BY md5(to_jsonb(t)::text) COLLATE "C"), '')) FROM public."${table}" t)`).join(',\n    ');
+  return `SELECT 'MIRACLE_LOGICAL_REFERENCE' || chr(9) || json_build_object(
+  'schema', (SELECT coalesce(json_agg(row_to_json(s) ORDER BY s.table_name COLLATE "C", s.column_name COLLATE "C"), '[]'::json)
+    FROM (SELECT c.relname::text AS table_name, a.attname::text AS column_name,
+      pg_catalog.format_type(a.atttypid, a.atttypmod)::text AS data_type,
+      CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS is_nullable
+      FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+      WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped) s),
+  'canonical', json_build_object(${checksums}))::text;\n`;
+}
+
+const logicalSettings = `SET LOCAL statement_timeout = '90s';
+SET LOCAL TIME ZONE 'UTC';
+SET LOCAL DateStyle = 'ISO, MDY';
+SET LOCAL IntervalStyle = 'postgres';
+SET LOCAL extra_float_digits = 1;
+SET LOCAL bytea_output = 'hex';
+SET LOCAL search_path = pg_catalog, public;
+`;
+
+export function buildSourceRecoveryReferenceSql() {
+  // The original checkpoint and the logical digests are read in one fixed snapshot.
+  return `${buildCheckpointSql()}${logicalSettings}${logicalDigestSelect()}ROLLBACK;\n`;
+}
+
+export function buildLocalLogicalSql() {
+  return `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\n${logicalSettings}` +
+    logicalDigestSelect().replace('MIRACLE_LOGICAL_REFERENCE', 'MIRACLE_LOCAL_CHECKPOINT') + 'ROLLBACK;\n';
+}
+
+const validDigestMap = value => exactKeys(value, LEGACY_TABLES) &&
+  LEGACY_TABLES.every(table => typeof value[table] === 'string' && /^[a-f0-9]{32}$/.test(value[table]));
+
+function sourceDrift() { const error = new Error('SOURCE_REFERENCE_DRIFT'); error.code = error.message; return error; }
+
+export function anchorRecoveryReference(source, logical, checkpoint, expectedLedger) {
+  try {
+    if (!/^[0-9A-F]{8}-[0-9A-F]{8}-[0-9]+$/i.test(source?.snapshot) ||
+        source.source?.database !== 'neondb' || source.source.serverVersion < 180000 ||
+        source.source.serverVersion >= 190000 || typeof source.source.ssl !== 'boolean' ||
+        !exactKeys(logical, ['schema', 'canonical']) || !validDigestMap(logical.canonical) ||
+        !exactKeys(checkpoint?.tableCounts, LEGACY_TABLES) ||
+        !exactKeys(checkpoint?.tableChecksumsMd5, LEGACY_TABLES) ||
+        checkpoint.integrity?.invalidConstraints !== 0 || checkpoint.integrity?.criticalUniqueIndexes !== true) throw sourceDrift();
+    compareRestoredCheckpoint(source, checkpoint, expectedLedger);
+    return { schema: normalizeRecoverySchema(source.schema),
+      logicalSchema: normalizeRecoverySchema(logical.schema), canonical: { ...logical.canonical } };
+  } catch { throw sourceDrift(); }
+}
+
+export function parseSourceRecoveryReference(output, checkpoint, expectedLedger) {
+  try {
+    if (typeof output !== 'string' || output.length > 262144) throw sourceDrift();
+    const lines = output.trim().split(/\r?\n/);
+    if (lines.length !== 2 || !lines[0].startsWith('MIRACLE_CHECKPOINT\t') ||
+        !lines[1].startsWith('MIRACLE_LOGICAL_REFERENCE\t')) throw sourceDrift();
+    const source = JSON.parse(lines[0].slice('MIRACLE_CHECKPOINT\t'.length));
+    const logical = JSON.parse(lines[1].slice('MIRACLE_LOGICAL_REFERENCE\t'.length));
+    return anchorRecoveryReference(source, logical, checkpoint, expectedLedger);
+  } catch { throw sourceDrift(); }
+}
+
+export async function collectGuardedSourceRecoveryReference(checkpoint, expectedLedger) {
+  try {
+    const config = await prepareFixedExport();
+    const output = await runPinnedPsql(config.psqlPath, config.pgEnv,
+      buildSourceRecoveryReferenceSql(), 120000);
+    return parseSourceRecoveryReference(output, checkpoint, expectedLedger);
+  } catch { throw sourceDrift(); }
+}
+
+function validateDeepValue(raw) {
+  if (!exactKeys(raw, ['schema', 'canonical', 'composite']) ||
+      !Array.isArray(raw.schema) || raw.schema.length === 0 || raw.schema.length > 4096 ||
+      !raw.schema.every(row => exactKeys(row, ['table_name', 'column_name', 'data_type', 'is_nullable', 'ordinal_position']) &&
+        /^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(row.table_name) &&
+        /^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(row.column_name) &&
+        typeof row.data_type === 'string' && row.data_type.length > 0 && row.data_type.length <= 120 &&
+        ['YES', 'NO'].includes(row.is_nullable) && Number.isSafeInteger(row.ordinal_position) && row.ordinal_position > 0) ||
+      !['canonical', 'composite'].every(field => exactKeys(raw[field], DIGEST_TABLES) &&
+        DIGEST_TABLES.every(table => /^[a-f0-9]{32}$/.test(raw[field][table])))) throw fail();
+  const keys = raw.schema.map(row => `${row.table_name}\0${row.column_name}`);
+  if (new Set(keys).size !== keys.length) throw fail();
+  return raw;
+}
+
+export function parseDeepComparisonLine(output) {
+  try {
+    if (typeof output !== 'string' || output.length > 262144) throw fail();
+    const lines = output.trim().split(/\r?\n/);
+    if (lines.length !== 1 || !lines[0].startsWith('MIRACLE_SOURCE_DEEP\t')) throw fail();
+    return validateDeepValue(JSON.parse(lines[0].slice('MIRACLE_SOURCE_DEEP\t'.length)));
+  } catch { throw fail(); }
+}
+
+export function compareDeepComparison(source, local) {
+  try {
+    validateDeepValue(source); validateDeepValue(local);
+    const sourceByKey = new Map(source.schema.map(row => [`${row.table_name}\0${row.column_name}`, row]));
+    const localByKey = new Map(local.schema.map(row => [`${row.table_name}\0${row.column_name}`, row]));
+    const differences = [];
+    const keys = [...new Set([...sourceByKey.keys(), ...localByKey.keys()])].sort();
+    for (const key of keys) {
+      const [table, column] = key.split('\0');
+      const a = sourceByKey.get(key); const b = localByKey.get(key);
+      if (!b) differences.push({ table, column, kind: 'missing' });
+      else if (!a) differences.push({ table, column, kind: 'extra' });
+      else {
+        if (a.data_type !== b.data_type) differences.push({ table, column, kind: 'type' });
+        if (a.is_nullable !== b.is_nullable) differences.push({ table, column, kind: 'nullability' });
+        if (a.ordinal_position !== b.ordinal_position) differences.push({ table, column, kind: 'ordinal' });
+      }
+      if (differences.length > 4096) throw fail();
+    }
+    return {
+      schemaExact: JSON.stringify(source.schema) === JSON.stringify(local.schema),
+      schemaOrderDiffers: differences.length === 0 && JSON.stringify(source.schema) !== JSON.stringify(local.schema),
+      schemaDifferences: differences,
+      canonicalMatches: Object.fromEntries(DIGEST_TABLES.map(table => [table, source.canonical[table] === local.canonical[table]])),
+      compositeMatches: Object.fromEntries(DIGEST_TABLES.map(table => [table, source.composite[table] === local.composite[table]])),
+    };
+  } catch { throw fail(); }
+}
+
+export async function collectGuardedSourceDeepComparison(checkpoint) {
+  try {
+    if (!/^[a-f0-9]{64}$/.test(checkpoint?.schemaSha256) ||
+        !DIGEST_TABLES.every(table => /^[a-f0-9]{32}$/.test(checkpoint?.tableChecksumsMd5?.[table]))) throw fail();
+    const config = await prepareFixedExport();
+    const output = await runPinnedPsql(config.psqlPath, config.pgEnv, buildDeepComparisonSql('source'));
+    const source = parseDeepComparisonLine(output);
+    if (createHash('sha256').update(JSON.stringify(source.schema)).digest('hex') !== checkpoint.schemaSha256 ||
+        DIGEST_TABLES.some(table => source.composite[table] !== checkpoint.tableChecksumsMd5[table])) throw fail();
+    return source;
+  } catch { throw fail(); }
+}
+
+export function summarizeSourceMetadataLine(output, expectedSchemaSha256) {
+  try {
+    if (typeof output !== 'string' || output.length > 262144 ||
+        !/^[a-f0-9]{64}$/.test(expectedSchemaSha256)) throw fail();
+    const lines = output.trim().split(/\r?\n/);
+    if (lines.length !== 1 || !lines[0].startsWith('MIRACLE_SOURCE_METADATA\t')) throw fail();
+    const raw = JSON.parse(lines[0].slice('MIRACLE_SOURCE_METADATA\t'.length));
+    if (!exactKeys(raw, ['schema', 'settings', 'tableMetadata']) ||
+        !Array.isArray(raw.schema) || raw.schema.length === 0 || raw.schema.length > 4096 ||
+        !raw.schema.every(row => exactKeys(row, ['table_name', 'column_name', 'data_type', 'is_nullable', 'ordinal_position']) &&
+          ['table_name', 'column_name', 'data_type', 'is_nullable'].every(key => typeof row[key] === 'string') &&
+          Number.isSafeInteger(row.ordinal_position) && row.ordinal_position > 0) ||
+        !exactKeys(raw.settings, SETTINGS) || !SETTINGS.every(name => typeof raw.settings[name] === 'string' &&
+          (name === 'collationLocale' || raw.settings[name].length > 0) &&
+          raw.settings[name].length <= 120 && !/[\r\n\x00-\x1f]/.test(raw.settings[name])) ||
+        !exactKeys(raw.tableMetadata, TABLES) || !TABLES.every(table =>
+          exactKeys(raw.tableMetadata[table], FLAGS) && FLAGS.every(flag => typeof raw.tableMetadata[table][flag] === 'boolean') &&
+          raw.tableMetadata[table].tableFound)) throw fail();
+    return {
+      currentSchemaMatchesManifest: createHash('sha256').update(JSON.stringify(raw.schema)).digest('hex') === expectedSchemaSha256,
+      settings: raw.settings,
+      tableMetadata: raw.tableMetadata,
+      historicalSessionSettingsKnown: false,
+    };
+  } catch { throw fail(); }
+}
+
+export function summarizeSourceDigestLine(output, expectedChecksums) {
+  try {
+    if (typeof output !== 'string' || output.length > 4096 ||
+        !DIGEST_TABLES.every(table => /^[a-f0-9]{32}$/.test(expectedChecksums?.[table]))) throw fail();
+    const lines = output.trim().split(/\r?\n/);
+    if (lines.length !== 1 || !lines[0].startsWith('MIRACLE_SOURCE_DIGEST\t')) throw fail();
+    const actual = JSON.parse(lines[0].slice('MIRACLE_SOURCE_DIGEST\t'.length));
+    if (!exactKeys(actual, DIGEST_TABLES) ||
+        !DIGEST_TABLES.every(table => typeof actual[table] === 'string' && /^[a-f0-9]{32}$/.test(actual[table]))) throw fail();
+    return {
+      currentMatchesManifest: Object.fromEntries(DIGEST_TABLES.map(table =>
+        [table, actual[table] === expectedChecksums[table]])),
+      historicalDataStateKnown: false,
+    };
+  } catch { throw fail(); }
+}
+
+async function readManifestCheckpoint() {
+  try {
+    const manifest = JSON.parse(await readFile(MANIFEST, 'utf8'));
+    if (manifest.archive !== ARCHIVE || manifest.sha256 !== ARCHIVE_SHA256 ||
+        !/^[a-f0-9]{64}$/.test(manifest.checkpoint?.schemaSha256) ||
+        !DIGEST_TABLES.every(table => /^[a-f0-9]{32}$/.test(manifest.checkpoint?.tableChecksumsMd5?.[table]))) throw fail();
+    return manifest.checkpoint;
+  } catch { throw fail(); }
+}
+
+async function runPinnedPsql(path, env, sql, timeoutMs = 30000) {
+  let child;
+  let timer;
+  try {
+    child = spawn(path, ['-X', '-w', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1'],
+      { env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
+    let output = '';
+    let overflow = false;
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', chunk => {
+      output += chunk;
+      if (output.length > 262144) { overflow = true; child.kill(); }
+    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(sql);
+    const completed = new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', resolve);
+    });
+    const timed = new Promise((_, reject) => {
+      timer = setTimeout(() => { child.kill(); reject(fail()); }, timeoutMs);
+    });
+    const code = await Promise.race([completed, timed]);
+    if (code !== 0 || overflow) throw fail();
+    return output;
+  } catch { throw fail(); }
+  finally { if (timer) clearTimeout(timer); if (child && !child.killed) child.kill(); }
+}
+
+async function main() {
+  if (process.argv.length !== 3 || !['--source-metadata-diagnostic', '--source-digest-diagnostic'].includes(process.argv[2])) throw fail();
+  const checkpoint = await readManifestCheckpoint();
+  const config = await prepareFixedExport();
+  const digestMode = process.argv[2] === '--source-digest-diagnostic';
+  const output = await runPinnedPsql(config.psqlPath, config.pgEnv,
+    digestMode ? buildSourceDigestSql() : buildSourceMetadataSql());
+  const result = digestMode
+    ? summarizeSourceDigestLine(output, checkpoint.tableChecksumsMd5)
+    : summarizeSourceMetadataLine(output, checkpoint.schemaSha256);
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+}
+
+if (process.argv[1] && resolve(process.argv[1]).toLowerCase() === fileURLToPath(import.meta.url).toLowerCase()) {
+  main().catch(() => { process.stderr.write('SOURCE_METADATA_REJECTED\n'); process.exitCode = 1; });
+}

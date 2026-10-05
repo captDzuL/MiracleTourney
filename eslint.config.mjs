@@ -13,7 +13,7 @@ const typescript = requireFromNext("@typescript-eslint/eslint-plugin");
 const typescriptParser = requireFromNext("@typescript-eslint/parser");
 
 export default [
-  { ignores: [".next/**", "node_modules/**", "coverage/**", "playwright-report/**", "test-results/**", "next-env.d.ts", "public/**/*.js"] },
+  { ignores: [".next/**", "node_modules/**", "coverage/**", "playwright-report/**", "test-results/**", ".superpowers/**", "next-env.d.ts", "public/**/*.js"] },
   {
     files: ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx", "**/*.ts", "**/*.tsx"],
     languageOptions: {
