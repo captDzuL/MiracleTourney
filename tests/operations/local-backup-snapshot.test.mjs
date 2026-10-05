@@ -105,9 +105,15 @@ test('checkpoint rejects changed ledger checksum and critical physical schema dr
   const schema = Object.entries(columns).flatMap(([table_name, items]) => items.map(([column_name, data_type, is_nullable]) => ({ table_name, column_name, data_type, is_nullable })));
   const good = { ...checkpoint, ledger: expected.map(item => ({ migration_name: item.name, checksum: item.sha256, finished_at: '2026-01-01', rolled_back_at: null })), schema: [...schema, { table_name: '_prisma_migrations', column_name: 'id', data_type: 'text', is_nullable: 'NO' }], counts: Object.fromEntries(Object.keys(columns).map(name => [name, 0])), checksums: Object.fromEntries(Object.keys(columns).map(name => [name, 'd41d8cd98f00b204e9800998ecf8427e'])), integrity: { invalidConstraints: 0, criticalUniqueIndexes: true }, source: { database: 'neondb', serverVersion: 180006, ssl: true } };
   assert.equal(validateCheckpoint(good, expected, Object.keys(columns)).appliedMigrations, 2);
+  // pg_stat_ssl describes the backend hop; the operator's pinned libpq
+  // verify-full connection is the client transport proof.
+  assert.equal(validateCheckpoint({ ...good, source: { ...good.source, ssl: false } }, expected, Object.keys(columns)).appliedMigrations, 2);
+  assert.throws(() => validateCheckpoint({ ...good, source: { ...good.source, ssl: null } }, expected, Object.keys(columns)), { code: 'CHECKPOINT_DRIFT' });
+  assert.throws(() => validateCheckpoint({ ...good, source: { ...good.source, database: 'wrong' } }, expected, Object.keys(columns)), { code: 'CHECKPOINT_DRIFT' });
   const historicRollback = { migration_name: 'first', checksum: 'older-failed-attempt', finished_at: null, rolled_back_at: '2026-01-01' };
   assert.equal(validateCheckpoint({ ...good, ledger: [historicRollback, ...good.ledger] }, expected, Object.keys(columns)).appliedMigrations, 2);
   assert.throws(() => validateCheckpoint({ ...good, ledger: [{ ...good.ledger[0], checksum: 'c'.repeat(64) }, good.ledger[1]] }, expected, Object.keys(columns)), { code: 'CHECKPOINT_DRIFT' });
+  assert.throws(() => validateCheckpoint({ ...good, ledger: [{ ...good.ledger[0], checksum: undefined }, good.ledger[1]] }, expected, Object.keys(columns)), { code: 'CHECKPOINT_DRIFT' });
   assert.throws(() => validateCheckpoint({ ...good, schema: schema.filter(row => row.column_name !== 'eventId') }, expected, Object.keys(columns)), { code: 'CHECKPOINT_DRIFT' });
   assert.throws(() => validateCheckpoint({ ...good, counts: { ...good.counts, NewV3Table: 0 } }, expected, Object.keys(columns)), { code: 'CHECKPOINT_DRIFT' });
   assert.throws(() => validateCheckpoint({ ...good, integrity: { invalidConstraints: 0, criticalUniqueIndexes: false } }, expected, Object.keys(columns)), { code: 'CHECKPOINT_DRIFT' });
@@ -115,13 +121,23 @@ test('checkpoint rejects changed ledger checksum and critical physical schema dr
   assert.throws(() => validateCheckpoint({ ...good, schema: [...good.schema, { table_name: 'Unexpected', column_name: 'id', data_type: 'text', is_nullable: 'NO' }] }, expected, Object.keys(columns)), { code: 'CHECKPOINT_DRIFT' });
 });
 
-test('expected ledger hashes migration SQL using LF bytes and rejects missing files', async () => {
+test('expected ledger admits only hashes of its LF and CRLF SQL bytes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'miracle-ledger-'));
   try {
     await mkdir(join(root, '20260101000000_first'));
     await writeFile(join(root, '20260101000000_first', 'migration.sql'), 'SELECT 1;\r\n');
     const ledger = await loadExpectedLedger(root, ['20260101000000_first']);
-    assert.deepEqual(ledger, [{ name: '20260101000000_first', sha256: 'b4e0497804e46e0a0b0b8c31975b062152d551bac49c3c2e80932567b4085dcd' }]);
+    assert.deepEqual(ledger, [{
+      name: '20260101000000_first',
+      sha256: 'b4e0497804e46e0a0b0b8c31975b062152d551bac49c3c2e80932567b4085dcd',
+      sha256Crlf: 'd3cd5042f97738960d802ad6b3a548dfa18152215118ba18f04493bc6944b0e4',
+    }]);
+    const success = checksum => ({
+      ...checkpoint,
+      ledger: [{ migration_name: ledger[0].name, checksum, finished_at: '2026-01-01', rolled_back_at: null }],
+    });
+    assert.equal(validateCheckpoint(success(ledger[0].sha256Crlf), ledger).appliedMigrations, 1);
+    assert.throws(() => validateCheckpoint(success('c'.repeat(64)), ledger), { code: 'CHECKPOINT_DRIFT' });
     await assert.rejects(loadExpectedLedger(root, ['20260101000000_missing']), { code: 'CHECKPOINT_DRIFT' });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

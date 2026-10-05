@@ -9,7 +9,12 @@ export async function loadExpectedLedger(root, names) {
     const result = [];
     for (const name of names) {
       const sql = await readFile(join(root, name, 'migration.sql'), 'utf8');
-      result.push({ name, sha256: createHash('sha256').update(sql.replaceAll('\r\n', '\n')).digest('hex') });
+      const lfSql = sql.replaceAll('\r\n', '\n');
+      result.push({
+        name,
+        sha256: createHash('sha256').update(lfSql).digest('hex'),
+        sha256Crlf: createHash('sha256').update(lfSql.replaceAll('\n', '\r\n')).digest('hex'),
+      });
     }
     return result;
   } catch { throw fail('CHECKPOINT_DRIFT'); }
@@ -179,6 +184,12 @@ const CRITICAL_COLUMNS = Object.freeze({
   PasswordResetToken: { id: ['text', 'NO'], userId: ['text', 'NO'], token: ['text', 'NO'], expiresAt: ['timestamp without time zone', 'NO'] },
 });
 
+function matchesExpectedChecksum(actual, expected) {
+  return typeof actual === 'string' && /^[a-f0-9]{64}$/.test(actual) &&
+    (actual === expected.sha256 ||
+      typeof expected.sha256Crlf === 'string' && actual === expected.sha256Crlf);
+}
+
 export function validateCheckpoint(checkpoint, expectedLedger, expectedTables = []) {
   try {
     if (!SNAPSHOT_RE.test(checkpoint?.snapshot) || !Array.isArray(checkpoint.ledger) ||
@@ -187,17 +198,21 @@ export function validateCheckpoint(checkpoint, expectedLedger, expectedTables = 
     const applied = new Map();
     for (const row of checkpoint.ledger) {
       const expected = expectedLedger.find(item => item.name === row.migration_name);
-      if (!expected || (row.finished_at && row.checksum !== expected.sha256) || (row.finished_at && row.rolled_back_at) ||
+      if (!expected || (row.finished_at && !matchesExpectedChecksum(row.checksum, expected)) ||
+          (row.finished_at && row.rolled_back_at) ||
           (!row.finished_at && !row.rolled_back_at)) throw fail('CHECKPOINT_DRIFT');
       if (row.finished_at) {
         if (applied.has(row.migration_name)) throw fail('CHECKPOINT_DRIFT');
         applied.set(row.migration_name, row.checksum);
       }
     }
-    if (applied.size !== expectedLedger.length || expectedLedger.some(item => applied.get(item.name) !== item.sha256)) throw fail('CHECKPOINT_DRIFT');
+    if (applied.size !== expectedLedger.length || expectedLedger.some(item =>
+      !matchesExpectedChecksum(applied.get(item.name), item))) throw fail('CHECKPOINT_DRIFT');
     if (expectedTables.length) {
+      // pg_stat_ssl reports the server backend's hop, not the pinned libpq
+      // client's verify-full connection to the Neon endpoint.
       if (checkpoint.source?.database !== 'neondb' || checkpoint.source.serverVersion < 180000 ||
-          checkpoint.source.serverVersion >= 190000 || checkpoint.source.ssl !== true) throw fail('CHECKPOINT_DRIFT');
+          checkpoint.source.serverVersion >= 190000 || typeof checkpoint.source.ssl !== 'boolean') throw fail('CHECKPOINT_DRIFT');
       if (checkpoint.integrity.criticalUniqueIndexes !== true) throw fail('CHECKPOINT_DRIFT');
       const foundTables = Object.keys(checkpoint.counts).sort();
       if (JSON.stringify(foundTables) !== JSON.stringify([...expectedTables].sort()) ||
