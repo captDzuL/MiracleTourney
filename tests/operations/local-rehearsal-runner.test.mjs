@@ -129,3 +129,15 @@ test('operator limitation describes the expanded synthetic SQL without implying 
   assert.ok(rehearsalRunner.REHEARSAL_LIMITATIONS.includes('SYNTHETIC_FLOW_LOCAL_SQL_ONLY_NO_APP_INTEGRATIONS'));
   assert.equal(rehearsalRunner.REHEARSAL_LIMITATIONS.includes('SYNTHETIC_FLOW_LIMITED_TO_LOCAL_RATE_LIMIT_CONSTRAINT'), false);
 });
+
+test('checkpoint diagnostic plan restores baseline only and never schedules candidate migrations', () => {
+  assert.equal(typeof rehearsalRunner.buildRehearsalPlan, 'function');
+  assert.deepEqual(rehearsalRunner.buildRehearsalPlan('checkpoint-diagnostic'), {
+    restoreDatabases: ['recovery_baseline'], migrateCandidate: false, terminalStatus: 'CHECKPOINT_DIAGNOSTIC_ONLY',
+  });
+  assert.deepEqual(rehearsalRunner.buildRehearsalPlan('full'), {
+    restoreDatabases: ['recovery_baseline', 'migration_candidate'], migrateCandidate: true,
+    terminalStatus: 'REHEARSAL_VERIFIED',
+  });
+  assert.throws(() => rehearsalRunner.buildRehearsalPlan('unknown'), /CONFIG_REJECTED/);
+});

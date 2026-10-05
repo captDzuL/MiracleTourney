@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -48,6 +48,46 @@ test('checkpoint comparison accepts trusted CRLF checksum but detects row drift'
   assert.equal(compareRestoredCheckpoint(raw, expected, [migration]).appliedMigrations, 1);
   assert.throws(() => compareRestoredCheckpoint({ ...raw, counts: { User: 3 } }, expected, [migration]), /CHECKPOINT_DRIFT/);
   assert.throws(() => compareRestoredCheckpoint({ ...raw, ledger: [{ ...ledger[0], checksum: 'f'.repeat(64) }] }, expected, [migration]), /CHECKPOINT_DRIFT/);
+});
+
+test('checkpoint drift exposes only fixed predicate booleans and table-level match flags', () => {
+  const ledger = [{ migration_name: name, checksum: lf, finished_at: '2026-01-01', rolled_back_at: null,
+    started_at: '2026-01-01', id: 'synthetic-id' }];
+  const schema = [
+    { table_name: 'Event', column_name: 'id', data_type: 'text', is_nullable: 'NO', ordinal_position: 1 },
+    { table_name: 'User', column_name: 'synthetic_private_marker', data_type: 'text', is_nullable: 'NO', ordinal_position: 1 },
+  ];
+  const raw = { ledger, schema, counts: { Event: 1, User: 2 },
+    checksums: { Event: 'a'.repeat(32), User: 'b'.repeat(32) },
+    integrity: { invalidConstraints: 0, criticalUniqueIndexes: true } };
+  const expected = { appliedMigrations: 1, ledgerSha256: sha(ledger), schemaSha256: sha(schema),
+    tableCounts: raw.counts, tableChecksumsMd5: raw.checksums, integrity: raw.integrity };
+  assert.equal(compareRestoredCheckpoint(raw, expected, [migration]).tableCount, 2);
+  assert.throws(() => compareRestoredCheckpoint({ ...raw, schema: [...schema].reverse() }, expected, [migration]), error => {
+    assert.equal(error.code, 'CHECKPOINT_DRIFT');
+    assert.ok(error.predicates, 'fixed predicate vector is attached');
+    assert.equal(error.predicates.schemaSha256, false);
+    assert.equal(error.predicates.schemaBinaryOrderSha256, true);
+    assert.equal(error.predicates.ledgerKnown, true);
+    assert.equal(error.predicates.appliedCount, true);
+    assert.equal(error.predicates.tableCounts, true);
+    assert.equal(error.predicates.tableChecksumsMd5, true);
+    assert.equal(JSON.stringify(error).includes('synthetic_private_marker'), false);
+    return true;
+  });
+  assert.throws(() => compareRestoredCheckpoint({ ...raw,
+    checksums: { Event: raw.checksums.Event, User: 'c'.repeat(32) } }, expected, [migration]), error => {
+    assert.equal(error.predicates.tableChecksumsMd5, false);
+    assert.deepEqual(error.predicates.checksumsByTable, { Event: true, User: false });
+    assert.deepEqual(error.predicates.countsByTable, { Event: true, User: true });
+    return true;
+  });
+  assert.throws(() => compareRestoredCheckpoint({ ...raw,
+    ledger: [{ ...ledger[0], migration_name: 'unknown_synthetic_migration' }] }, expected, [migration]), error => {
+    assert.equal(error.predicates.ledgerKnown, false);
+    assert.equal(error.predicates.ledgerValidPrefix, false);
+    return true;
+  });
 });
 
 test('migration ledger counts applied/pending and refuses unfinished or foreign entries', () => {

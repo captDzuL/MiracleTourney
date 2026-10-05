@@ -403,7 +403,16 @@ async function migrate(password, runRoot, schema) {
   return { exit: result.exit, durationMs: result.durationMs };
 }
 
-export async function runRehearsal(archive) {
+export function buildRehearsalPlan(mode = 'full') {
+  if (mode === 'checkpoint-diagnostic') return { restoreDatabases: ['recovery_baseline'],
+    migrateCandidate: false, terminalStatus: 'CHECKPOINT_DIAGNOSTIC_ONLY' };
+  if (mode === 'full') return { restoreDatabases: ['recovery_baseline', 'migration_candidate'],
+    migrateCandidate: true, terminalStatus: 'REHEARSAL_VERIFIED' };
+  throw fail('CONFIG_REJECTED');
+}
+
+export async function runRehearsal(archive, mode = 'full') {
+  const plan = buildRehearsalPlan(mode);
   if (typeof archive !== 'string' || dirname(resolve(archive)).toLowerCase() !== outputRoot.toLowerCase() ||
       basename(archive) !== APPROVED_ARCHIVE) throw fail('ARCHIVE_REJECTED');
   await assertOwnerOnlyDirectory(outputRoot);
@@ -428,14 +437,16 @@ export async function runRehearsal(archive) {
   let result;
   let failure;
   let phase = 'RUNTIME';
+  let restoreDatabase;
   let stop = { status: 'NOT_STARTED' };
   try {
     cluster = await prepareCluster(runRoot, zipPath, bootstrapPassword, ownerPassword);
-    const stagedSchema = await stageMigrations(runRoot, names);
+    const stagedSchema = plan.migrateCandidate ? await stageMigrations(runRoot, names) : null;
     phase = 'RESTORE';
     const restores = [];
     const localEnvironments = [];
-    for (const database of ['recovery_baseline', 'migration_candidate']) {
+    for (const database of plan.restoreDatabases) {
+      restoreDatabase = database;
       const restored = await restoreArchive(archive, database, ownerPassword);
       const checkpoint = await queryJson(cluster.bin, database, ownerPassword, buildRestoreCheckpointSql());
       const verified = compareRestoredCheckpoint(checkpoint, manifest.checkpoint, expected);
@@ -443,25 +454,30 @@ export async function runRehearsal(archive) {
       restores.push({ database, ageExit: restored.ageExit, restoreExit: restored.restoreExit,
         durationMs: restored.durationMs, ...verified });
     }
-    phase = 'MIGRATION';
-    const beforeLedger = (await queryJson(cluster.bin, 'migration_candidate', ownerPassword, ledgerSql())).ledger;
-    const before = inspectMigrationLedger(beforeLedger, expected);
-    if (before.applied !== manifest.checkpoint.appliedMigrations || before.pending === 0) throw fail('MIGRATION_DRIFT');
-    const migration = await migrate(ownerPassword, runRoot, stagedSchema);
-    const afterLedger = (await queryJson(cluster.bin, 'migration_candidate', ownerPassword, ledgerSql())).ledger;
-    const after = inspectMigrationLedger(afterLedger, expected);
-    const postchecks = await queryJson(cluster.bin, 'migration_candidate', ownerPassword, buildCandidatePostcheckSql());
-    assessCandidate({ ...postchecks, migration: after });
-    const flow = await syntheticFlow(cluster.bin, ownerPassword);
-    phase = 'NOOP';
-    const second = await migrate(ownerPassword, runRoot, stagedSchema);
-    const noopLedger = (await queryJson(cluster.bin, 'migration_candidate', ownerPassword, ledgerSql())).ledger;
-    const noop = inspectMigrationLedger(noopLedger, expected);
-    if (noop.pending !== 0 || JSON.stringify(noopLedger) !== JSON.stringify(afterLedger)) throw fail('NOOP_FAILED');
-    result = { status: 'REHEARSAL_VERIFIED', runRoot, archiveSha256: pair.sha256,
-      restores, migrations: { before, after, first: migration, second, noop },
-      postchecks, syntheticFlow: flow, localEnvironments,
-      limitations: REHEARSAL_LIMITATIONS };
+    if (!plan.migrateCandidate) {
+      result = { status: plan.terminalStatus, runRoot, archiveSha256: pair.sha256,
+        restores, localEnvironments, limitations: ['DIAGNOSTIC_ONLY_NOT_RELEASE_PROOF'] };
+    } else {
+      phase = 'MIGRATION';
+      const beforeLedger = (await queryJson(cluster.bin, 'migration_candidate', ownerPassword, ledgerSql())).ledger;
+      const before = inspectMigrationLedger(beforeLedger, expected);
+      if (before.applied !== manifest.checkpoint.appliedMigrations || before.pending === 0) throw fail('MIGRATION_DRIFT');
+      const migration = await migrate(ownerPassword, runRoot, stagedSchema);
+      const afterLedger = (await queryJson(cluster.bin, 'migration_candidate', ownerPassword, ledgerSql())).ledger;
+      const after = inspectMigrationLedger(afterLedger, expected);
+      const postchecks = await queryJson(cluster.bin, 'migration_candidate', ownerPassword, buildCandidatePostcheckSql());
+      assessCandidate({ ...postchecks, migration: after });
+      const flow = await syntheticFlow(cluster.bin, ownerPassword);
+      phase = 'NOOP';
+      const second = await migrate(ownerPassword, runRoot, stagedSchema);
+      const noopLedger = (await queryJson(cluster.bin, 'migration_candidate', ownerPassword, ledgerSql())).ledger;
+      const noop = inspectMigrationLedger(noopLedger, expected);
+      if (noop.pending !== 0 || JSON.stringify(noopLedger) !== JSON.stringify(afterLedger)) throw fail('NOOP_FAILED');
+      result = { status: plan.terminalStatus, runRoot, archiveSha256: pair.sha256,
+        restores, migrations: { before, after, first: migration, second, noop },
+        postchecks, syntheticFlow: flow, localEnvironments,
+        limitations: REHEARSAL_LIMITATIONS };
+    }
   } catch (error) {
     failure = error;
   } finally {
@@ -470,7 +486,9 @@ export async function runRehearsal(archive) {
       const evidence = result && stop.status === 'STOPPED' ? { ...result, cluster: stop } :
         { status: 'REHEARSAL_FAILED', phase, cluster: stop,
           code: failure?.code || (stop.status !== 'STOPPED' ? 'STOP_UNVERIFIED' : 'REHEARSAL_FAILED'),
-          archiveSha256: pair.sha256, runRoot };
+          archiveSha256: pair.sha256, runRoot, restoreDatabase,
+          ...(failure?.code === 'CHECKPOINT_DRIFT' && failure.predicates ?
+            { checkpointPredicates: failure.predicates } : {}) };
       await writeFile(join(runRoot, 'rehearsal-result.json'), `${JSON.stringify(evidence, null, 2)}\n`,
         { flag: 'wx', mode: 0o600 }).catch(() => { if (!failure) failure = fail('EVIDENCE_FAILED'); });
     }
@@ -482,8 +500,9 @@ export async function runRehearsal(archive) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 3) { process.stderr.write('REHEARSAL_REJECTED\n'); process.exitCode = 1; }
-  else runRehearsal(process.argv[2]).then(result => {
+  if (process.argv.length !== 3 && !(process.argv.length === 4 && process.argv[3] === '--checkpoint-diagnostic')) {
+    process.stderr.write('REHEARSAL_REJECTED\n'); process.exitCode = 1;
+  } else runRehearsal(process.argv[2], process.argv.length === 4 ? 'checkpoint-diagnostic' : 'full').then(result => {
     process.stdout.write(`${JSON.stringify(result)}\n`);
   }).catch(error => {
     const safe = new Set(['ARCHIVE_REJECTED', 'RUNTIME_REJECTED', 'CHECKPOINT_DRIFT', 'MIGRATION_DRIFT',

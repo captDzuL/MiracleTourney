@@ -52,16 +52,46 @@ export function inspectMigrationLedger(rows, expected) {
 }
 
 export function compareRestoredCheckpoint(raw, expected, expectedLedger) {
-  try {
-    if (!raw || !expected || !Array.isArray(raw.ledger) || !Array.isArray(raw.schema) ||
-        !raw.counts || !raw.checksums || !raw.integrity ||
-        inspectMigrationLedger(raw.ledger, expectedLedger).applied !== expected.appliedMigrations ||
-        digest(raw.ledger) !== expected.ledgerSha256 || digest(raw.schema) !== expected.schemaSha256 ||
-        !equal(raw.counts, expected.tableCounts) || !equal(raw.checksums, expected.tableChecksumsMd5) ||
-        !equal(raw.integrity, expected.integrity)) throw fail('CHECKPOINT_DRIFT');
-    return { appliedMigrations: expected.appliedMigrations,
-      tableCount: Object.keys(raw.counts).length, rowCount: Object.values(raw.counts).reduce((a, b) => a + b, 0) };
-  } catch { throw fail('CHECKPOINT_DRIFT'); }
+  const safe = check => { try { return check() === true; } catch { return false; } };
+  const shape = !!(raw && expected && Array.isArray(raw.ledger) && Array.isArray(raw.schema) &&
+    raw.counts && raw.checksums && raw.integrity);
+  let inspected;
+  try { if (shape) inspected = inspectMigrationLedger(raw.ledger, expectedLedger); } catch { /* fixed Boolean only */ }
+  const names = Array.isArray(expectedLedger) ? new Set(expectedLedger.map(item => item.name)) : new Set();
+  const tableNames = expected?.tableCounts && typeof expected.tableCounts === 'object'
+    ? Object.keys(expected.tableCounts) : [];
+  const checksumNames = expected?.tableChecksumsMd5 && typeof expected.tableChecksumsMd5 === 'object'
+    ? Object.keys(expected.tableChecksumsMd5) : [];
+  const countsByTable = Object.fromEntries(tableNames.map(table =>
+    [table, safe(() => Object.hasOwn(raw.counts, table) && raw.counts[table] === expected.tableCounts[table])]));
+  const checksumsByTable = Object.fromEntries(checksumNames.map(table =>
+    [table, safe(() => Object.hasOwn(raw.checksums, table) && raw.checksums[table] === expected.tableChecksumsMd5[table])]));
+  const predicates = {
+    shape,
+    ledgerKnown: safe(() => shape && names.size === expectedLedger.length &&
+      raw.ledger.every(row => names.has(row.migration_name))),
+    ledgerValidPrefix: !!inspected,
+    appliedCount: safe(() => inspected?.applied === expected.appliedMigrations),
+    ledgerSha256: safe(() => shape && digest(raw.ledger) === expected.ledgerSha256),
+    schemaSha256: safe(() => shape && digest(raw.schema) === expected.schemaSha256),
+    schemaBinaryOrderSha256: safe(() => shape && digest([...raw.schema].sort((a, b) =>
+      a.table_name < b.table_name ? -1 : a.table_name > b.table_name ? 1 :
+        a.ordinal_position - b.ordinal_position)) === expected.schemaSha256),
+    tableCounts: safe(() => shape && equal(raw.counts, expected.tableCounts)),
+    tableChecksumsMd5: safe(() => shape && equal(raw.checksums, expected.tableChecksumsMd5)),
+    integrity: safe(() => shape && equal(raw.integrity, expected.integrity)),
+    countsByTable,
+    checksumsByTable,
+  };
+  const required = ['shape', 'ledgerKnown', 'ledgerValidPrefix', 'appliedCount', 'ledgerSha256',
+    'schemaSha256', 'tableCounts', 'tableChecksumsMd5', 'integrity'];
+  if (required.some(name => !predicates[name])) {
+    const error = fail('CHECKPOINT_DRIFT');
+    error.predicates = predicates;
+    throw error;
+  }
+  return { appliedMigrations: expected.appliedMigrations,
+    tableCount: Object.keys(raw.counts).length, rowCount: Object.values(raw.counts).reduce((a, b) => a + b, 0) };
 }
 
 export function assessCandidate(value) {
