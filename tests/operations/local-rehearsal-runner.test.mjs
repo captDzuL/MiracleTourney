@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import * as rehearsalRunner from '../../scripts/operations/local-rehearsal-runner.mjs';
 import {
   buildLocalPgEnv, buildRestoreCheckpointSql, buildCandidatePostcheckSql,
   buildSyntheticFlowSql, buildPgCtlInvocation, parsePrivateJson, runRedactedChild,
@@ -74,4 +76,56 @@ test('PostgreSQL start and stop use bounded no-pipe child settings', () => {
   assert.equal(start.options.timeoutMs, 90000);
   assert.equal(stop.options.timeoutMs, 90000);
   assert.throws(() => buildPgCtlInvocation('restart', 'C:\\fixture\\cluster', 'C:\\fixture', {}), /CONFIG_REJECTED/);
+});
+
+test('host accepts the runner-emitted UTC rehearsal name and rejects extra segments', async () => {
+  // The live host script creates E:/MiracleBackups directories, so exercise only its parsed name predicate.
+  const host = await readFile(new URL('../../scripts/operations/local-rehearsal-host.ps1', import.meta.url), 'utf8');
+  const match = host.match(/\$RunName -cnotmatch '([^']+)'/);
+  assert.ok(match, 'host RunName guard exists');
+  const name = `rehearsal-${new Date('2026-10-05T02:55:50.980Z').toISOString().replaceAll(':', '-').replaceAll('.', '-')}`;
+  const accepted = new RegExp(match[1]);
+  assert.equal(accepted.test(name), true);
+  assert.equal(accepted.test('rehearsal-2026-10-05T02-55-50-44-980Z'), false);
+  assert.equal(accepted.test('../rehearsal-2026-10-05T02-55-50-980Z'), false);
+});
+
+test('negative SCRAM probe uses a valid wrong password and requires server auth denial', async () => {
+  assert.equal(typeof rehearsalRunner.verifyAuth, 'function');
+  const bootstrapPassword = 'A'.repeat(43);
+  const calls = [];
+  const probe = async (...args) => {
+    calls.push(args);
+    return calls.length === 1 ? { exit: 2, stderrMatched: true, stdout: '' } :
+      { exit: 0, stderrMatched: false, stdout: 'MIRACLE_LOCAL_CHECKPOINT\t{"listen":"127.0.0.1","port":"55438","passwordEncryption":"scram-sha-256"}\n' };
+  };
+  await rehearsalRunner.verifyAuth('C:\\fixture\\bin', bootstrapPassword, probe);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0][1], 'postgres');
+  assert.notEqual(calls[0][2], bootstrapPassword);
+  assert.match(calls[0][2], /^[A-Za-z0-9_-]{32,}$/);
+  assert.doesNotThrow(() => buildLocalPgEnv('recovery_baseline', calls[0][2]));
+  assert.equal(calls[0][4].expectAuthFailure, true);
+  assert.equal(calls[1][2], bootstrapPassword);
+  await assert.rejects(rehearsalRunner.verifyAuth('C:\\fixture\\bin', bootstrapPassword,
+    async () => ({ exit: 2, stderrMatched: false, stdout: '' })), /AUTH_REJECTED/);
+  await assert.rejects(rehearsalRunner.verifyAuth('C:\\fixture\\bin', bootstrapPassword,
+    async () => { const error = new Error('CHILD_TIMEOUT'); error.code = 'CHILD_TIMEOUT'; throw error; }),
+  error => error.code === 'CHILD_TIMEOUT');
+});
+
+test('bounded child accepts only expected nonzero exit and captures redacted auth diagnostics privately', async () => {
+  const args = ['-e', "process.stderr.write('password authentication failed for user \\\"fixture\\\"'); process.exit(2)"];
+  const denied = await runRedactedChild(process.execPath, args,
+    { timeoutMs: 5000, acceptedExitCodes: [2], stderrPattern: /password authentication failed/ });
+  assert.equal(denied.exit, 2);
+  assert.equal(denied.stderrMatched, true);
+  assert.equal(Object.hasOwn(denied, 'stderr'), false);
+  await assert.rejects(runRedactedChild(process.execPath, args, { timeoutMs: 5000 }), /CHILD_FAILED/);
+});
+
+test('operator limitation describes the expanded synthetic SQL without implying app integration coverage', () => {
+  assert.ok(Array.isArray(rehearsalRunner.REHEARSAL_LIMITATIONS));
+  assert.ok(rehearsalRunner.REHEARSAL_LIMITATIONS.includes('SYNTHETIC_FLOW_LOCAL_SQL_ONLY_NO_APP_INTEGRATIONS'));
+  assert.equal(rehearsalRunner.REHEARSAL_LIMITATIONS.includes('SYNTHETIC_FLOW_LIMITED_TO_LOCAL_RATE_LIMIT_CONSTRAINT'), false);
 });

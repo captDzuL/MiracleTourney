@@ -26,6 +26,10 @@ const PG_ZIP_BYTES = 384620317;
 const APPROVED_ARCHIVE = 'miracle-neondb-2026-10-05T01-23-48-741Z.age';
 const APPROVED_ARCHIVE_SHA256 = 'dc30ddf3ae4bb98dacd9d68e293b26cef5a3818664364c405c01d578cf1d7f5b';
 const MIGRATION_NAME = /^(?:\d{12}|\d{14})_[a-z0-9_]+$/;
+export const REHEARSAL_LIMITATIONS = Object.freeze([
+  'LOCAL_RESTORE_NOT_SERVICE_RTO', 'SOURCE_LOCALE_EXTENSION_EQUIVALENCE_NOT_PROVEN',
+  'SYNTHETIC_FLOW_LOCAL_SQL_ONLY_NO_APP_INTEGRATIONS',
+]);
 
 function fail(code) { const error = new Error(code); error.code = code; return error; }
 const stamp = () => new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
@@ -84,16 +88,22 @@ export function parsePrivateJson(value) {
 }
 
 async function runChild(path, args, { env, cwd, input = '', timeoutMs = 120000, maxOutput = 262144,
-  captureOutput = true } = {}) {
+  captureOutput = true, stderrPattern, acceptedExitCodes = [0] } = {}) {
   let child;
   let timer;
   try {
     child = spawn(path, args, { env, cwd,
-      stdio: [captureOutput ? 'pipe' : 'ignore', captureOutput ? 'pipe' : 'ignore', 'ignore'], windowsHide: true });
+      stdio: [captureOutput ? 'pipe' : 'ignore', captureOutput ? 'pipe' : 'ignore', stderrPattern ? 'pipe' : 'ignore'],
+      windowsHide: true });
     let stdout = '';
+    let stderr = '';
     if (captureOutput) {
       child.stdout.setEncoding('utf8');
       child.stdout.on('data', chunk => { stdout += chunk; if (stdout.length > maxOutput) child.kill(); });
+    }
+    if (stderrPattern) {
+      child.stderr.setEncoding('utf8');
+      child.stderr.on('data', chunk => { stderr += chunk; if (stderr.length > maxOutput) child.kill(); });
     }
     if (child.stdin) { child.stdin.on('error', () => {}); child.stdin.end(input); }
     const completion = new Promise((resolve, reject) => {
@@ -105,8 +115,9 @@ async function runChild(path, args, { env, cwd, input = '', timeoutMs = 120000, 
       timer = setTimeout(() => { child.kill(); reject(fail('CHILD_TIMEOUT')); }, timeoutMs);
     });
     const exit = await Promise.race([completion, timeout]);
-    if (exit !== 0 || stdout.length > maxOutput) throw fail('CHILD_FAILED');
-    return { stdout, exit, durationMs: Math.round(performance.now() - started) };
+    if (!acceptedExitCodes.includes(exit) || stdout.length > maxOutput || stderr.length > maxOutput) throw fail('CHILD_FAILED');
+    return { stdout, stderrMatched: stderrPattern ? stderrPattern.test(stderr) : false,
+      exit, durationMs: Math.round(performance.now() - started) };
   } catch (error) {
     throw ['CHILD_TIMEOUT', 'CHILD_FAILED'].includes(error?.code) ? error : fail('CHILD_FAILED');
   } finally { if (timer) clearTimeout(timer); if (child && !child.killed) child.kill(); }
@@ -123,12 +134,14 @@ export function buildPgCtlInvocation(action, data, runRoot, env) {
     options: { env, timeoutMs: 90000, captureOutput: false } };
 }
 
-async function runPsql(bin, database, password, sql, { bootstrap = false } = {}) {
+async function runPsql(bin, database, password, sql, { bootstrap = false, expectAuthFailure = false } = {}) {
   const env = bootstrap ? bootstrapEnv(password) : buildLocalPgEnv(database, password);
   if (bootstrap) env.PGDATABASE = database;
   return runChild(join(bin, 'psql.exe'), ['-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1',
     '--host=127.0.0.1', '--port=55438', `--username=${env.PGUSER}`, `--dbname=${database}`],
-  { env, input: `${sql.trimEnd()}\n`, timeoutMs: 120000 });
+  { env, input: `${sql.trimEnd()}\n`, timeoutMs: 120000,
+    stderrPattern: expectAuthFailure ? /password authentication failed for user "rehearsal_bootstrap"/i : undefined,
+    acceptedExitCodes: expectAuthFailure ? [2] : [0] });
 }
 
 async function queryJson(bin, database, password, sql) {
@@ -284,12 +297,12 @@ async function syntheticFlow(bin, password) {
   return { ...result, writes: 'ROLLED_BACK' };
 }
 
-async function verifyAuth(bin, bootstrapPassword) {
-  try {
-    await runPsql(bin, 'postgres', 'incorrect-local-password', 'SELECT 1;', { bootstrap: true });
-    throw fail('AUTH_REJECTED');
-  } catch (error) { if (error?.code === 'AUTH_REJECTED') throw error; }
-  const result = await runPsql(bin, 'postgres', bootstrapPassword,
+export async function verifyAuth(bin, bootstrapPassword, query = runPsql) {
+  const wrongPassword = `${bootstrapPassword[0] === 'A' ? 'B' : 'A'}${bootstrapPassword.slice(1)}`;
+  const denied = await query(bin, 'postgres', wrongPassword, 'SELECT 1;',
+    { bootstrap: true, expectAuthFailure: true });
+  if (denied.exit !== 2 || denied.stdout || denied.stderrMatched !== true) throw fail('AUTH_REJECTED');
+  const result = await query(bin, 'postgres', bootstrapPassword,
     `SELECT 'MIRACLE_LOCAL_CHECKPOINT' || chr(9) || json_build_object('listen', current_setting('listen_addresses'),\n` +
     `  'port', current_setting('port'), 'passwordEncryption', current_setting('password_encryption'))::text;`, { bootstrap: true });
   const line = result.stdout.trim().split(/\r?\n/).find(row => row.startsWith('MIRACLE_LOCAL_CHECKPOINT\t'));
@@ -448,8 +461,7 @@ export async function runRehearsal(archive) {
     result = { status: 'REHEARSAL_VERIFIED', runRoot, archiveSha256: pair.sha256,
       restores, migrations: { before, after, first: migration, second, noop },
       postchecks, syntheticFlow: flow, localEnvironments,
-      limitations: ['LOCAL_RESTORE_NOT_SERVICE_RTO', 'SOURCE_LOCALE_EXTENSION_EQUIVALENCE_NOT_PROVEN',
-        'SYNTHETIC_FLOW_LIMITED_TO_LOCAL_RATE_LIMIT_CONSTRAINT'] };
+      limitations: REHEARSAL_LIMITATIONS };
   } catch (error) {
     failure = error;
   } finally {

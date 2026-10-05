@@ -26,7 +26,8 @@ function Invoke-Tool([string]$Path, [string]$Arguments, [int]$TimeoutMs = 90000)
         Assert-That ($process.ExitCode -eq 0) 'tool-exit'
     } finally { $process.Dispose() }
 }
-function Invoke-Sql([string]$Database, [string]$User, [string]$Password, [string]$Sql, [switch]$ExpectFailure) {
+function Invoke-Sql([string]$Database, [string]$User, [string]$Password, [string]$Sql,
+    [switch]$ExpectFailure, [switch]$ExpectAuthDenial) {
     $env:PGHOST = '127.0.0.1'; $env:PGPORT = [string]$port; $env:PGDATABASE = $Database
     $env:PGUSER = $User; $env:PGPASSWORD = $Password; $env:PGSSLMODE = 'disable'
     $process = New-Object Diagnostics.Process
@@ -39,18 +40,23 @@ function Invoke-Sql([string]$Database, [string]$User, [string]$Password, [string
     try {
         Assert-That ($process.Start()) 'psql-start'
         $outputTask = $process.StandardOutput.ReadToEndAsync()
-        $errorTask = $process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $errorTask = if ($ExpectAuthDenial) { $process.StandardError.ReadToEndAsync() }
+            else { $process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null) }
         $writeTask = $process.StandardInput.WriteLineAsync($Sql)
         $completed = [Threading.Tasks.Task]::WhenAny($writeTask, [Threading.Tasks.Task]::Delay(45000)).GetAwaiter().GetResult()
         if (-not [object]::ReferenceEquals($completed,$writeTask)) { $process.Kill(); throw 'FIXTURE_PSQL_INPUT_TIMEOUT' }
-        if ($writeTask.IsFaulted -and -not $ExpectFailure) { throw 'FIXTURE_PSQL_INPUT_FAILED' }
+        if ($writeTask.IsFaulted -and -not ($ExpectFailure -or $ExpectAuthDenial)) { throw 'FIXTURE_PSQL_INPUT_FAILED' }
         try { $process.StandardInput.Close() }
-        catch { if (-not $ExpectFailure) { throw } }
+        catch { if (-not ($ExpectFailure -or $ExpectAuthDenial)) { throw } }
         if (-not $process.WaitForExit(45000)) { $process.Kill(); throw 'FIXTURE_PSQL_TIMEOUT' }
-        [void]$errorTask.GetAwaiter().GetResult()
+        $privateError = $errorTask.GetAwaiter().GetResult()
         $output = @($outputTask.GetAwaiter().GetResult() -split '\r?\n' | Where-Object { $_ })
         $code = $process.ExitCode
     } finally { if (-not $process.HasExited) { $process.Kill() }; $process.Dispose() }
+    if ($ExpectAuthDenial) {
+        Assert-That ($code -eq 2 -and $privateError -match 'password authentication failed for user "fixture_bootstrap"') 'scram-auth-denial'
+        return @()
+    }
     if ($ExpectFailure) { Assert-That ($code -ne 0) 'expected-sql-failure'; return @() }
     Assert-That ($code -eq 0) 'sql-exit'
     return $output
@@ -161,6 +167,8 @@ try {
     [IO.File]::WriteAllText([IO.Path]::Combine($data,'pg_hba.conf'),"host all all 127.0.0.1/32 scram-sha-256`nhost all all ::1/128 reject`nlocal all all reject`n")
     Invoke-Tool ([IO.Path]::Combine($bin,'pg_ctl.exe')) ('-D "' + $data + '" -l "' + ([IO.Path]::Combine($fixtureRoot,'server.log')) + '" -w -t 60 start') 90000
     $started = $true
+    $wrongPassword = $(if ($bootstrapPassword[0] -eq 'A') { 'B' } else { 'A' }) + $bootstrapPassword.Substring(1)
+    [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $wrongPassword 'SELECT 1;' -ExpectAuthDenial)
     [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $bootstrapPassword "CREATE ROLE fixture_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '$ownerPassword';")
     foreach ($db in @('synthetic_source','synthetic_restore','synthetic_candidate')) {
         [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $bootstrapPassword "CREATE DATABASE $db OWNER fixture_owner TEMPLATE template0 ENCODING 'UTF8';")

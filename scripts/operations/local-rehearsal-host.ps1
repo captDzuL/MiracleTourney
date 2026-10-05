@@ -33,7 +33,7 @@ function Assert-OwnerDirectory([string]$Path) {
 try {
     $root = 'E:\MiracleBackups'
     $approvedZip = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\.superpowers\sdd\2026-10-04-local-encrypted-backup\runtime\postgresql-18.6-windows-x64-binaries.zip'))
-    if ($RunName -cnotmatch '^rehearsal-\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d\d-\d{3}Z$' -or
+    if ($RunName -cnotmatch '^rehearsal-\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z$' -or
         -not [string]::Equals([IO.Path]::GetFullPath($ZipPath), $approvedZip, [StringComparison]::OrdinalIgnoreCase)) { Fail }
     Assert-NoReparse $root
     Assert-OwnerDirectory $root
