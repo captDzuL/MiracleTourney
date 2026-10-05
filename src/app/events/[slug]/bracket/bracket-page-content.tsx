@@ -6,11 +6,14 @@ import { BackToEvent } from "@/components/public-v2/BackToEvent";
 import { TeamIdentity } from "@/components/TeamAvatar";
 import { PublicV3Action, PublicV3SectionHeading } from "@/components/v3/public-discovery/PublicV3Primitives";
 import { AdaptiveBracketBoard } from "@/components/v3/public-event/AdaptiveBracketBoard";
+import { SocialBracketBoard } from "@/components/v3/public-event/SocialBracketBoard";
+import { BracketPngDownloads } from "@/components/v3/public-event/BracketPngDownloads";
 import { DataTable, Pill, Section } from "@/components/ui";
 import { getPublicDrawingEvent, getPublicFinishedEvent } from "@/lib/events/adaptive-public-phases";
 import { getPublicOngoingEvent } from "@/lib/events/public-ongoing";
 import { publicMatchLabel } from "@/lib/events/public-match-label";
 import { isFeatureEnabled } from "@/lib/feature-flags";
+import { readPublicSocialBracket } from "@/lib/bracket/read";
 import {
   getBracketPreview,
   getEventRoundConfigs,
@@ -456,6 +459,8 @@ export async function renderBracketPage(slug: string, locale?: "id" | "en") {
     roundN: (n: number) => t("round", { n }),
   };
   const visualV3 = isFeatureEnabled("ui_v3_foundation");
+  const socialModel = visualV3 ? await readPublicSocialBracket(slug, locale ?? "id") : null;
+  const pngRounds = socialModel ? [...new Map(socialModel.matches.map(match => [match.roundKey, { key: match.roundKey, label: match.roundLabel }])).values()] : [];
 
   if (isFeatureEnabled("adaptive_public_event_v3")) {
     const drawing = ["Published", "Registration Closed"].includes(event.status)
@@ -475,6 +480,20 @@ export async function renderBracketPage(slug: string, locale?: "id" | "en") {
     const standings = view && "standings" in view ? view.standings : [];
     const registrationSlots = !view && ["Published", "Registration Closed"].includes(event.status) ? event.participantCap : 0;
 
+    if (visualV3 && socialModel && format !== "round_robin") {
+      return (
+        <V3BracketPage
+          backLabel={t("backToEvent")}
+          description={t("description")}
+          event={event}
+          locale={locale}
+          title={t("title", { name: event.name })}
+        >
+          <SocialBracketBoard model={socialModel} />
+        </V3BracketPage>
+      );
+    }
+
     if (visualV3) {
       return (
         <V3BracketPage
@@ -485,6 +504,7 @@ export async function renderBracketPage(slug: string, locale?: "id" | "en") {
           title={t("title", { name: event.name })}
         >
           <section className="mpv3-section mpv3-panel mpv3-panel-pad" aria-label={t("title", { name: event.name })}>
+            {format === "round_robin" && socialModel ? <div className="mb-4"><BracketPngDownloads model={socialModel} rounds={pngRounds} /></div> : null}
             <AdaptiveBracketBoard
               locale={locale ?? "id"}
               format={format}
@@ -504,6 +524,20 @@ export async function renderBracketPage(slug: string, locale?: "id" | "en") {
         <AdaptiveBracketBoard locale={locale ?? "id"} format={format} matches={adaptiveMatches} standings={standings} registrationSlots={registrationSlots} />
       </Section>
     </>;
+  }
+
+  if (visualV3 && socialModel && event.format !== "League") {
+    return (
+      <V3BracketPage
+        backLabel={t("backToEvent")}
+        description={t("description")}
+        event={event}
+        locale={locale}
+        title={t("title", { name: event.name })}
+      >
+        <SocialBracketBoard model={socialModel} />
+      </V3BracketPage>
+    );
   }
 
   const [teams, items, recordedMatches, roundConfigs, gamesMap] = await Promise.all([
@@ -539,6 +573,7 @@ export async function renderBracketPage(slug: string, locale?: "id" | "en") {
           title={t("title", { name: event.name })}
         >
           <section className="mpv3-section" aria-label={t("title", { name: event.name })}>
+            {socialModel ? <div className="mb-4"><BracketPngDownloads model={socialModel} rounds={pngRounds} /></div> : null}
             <V3BracketTable columns={columns} rows={rows} />
           </section>
         </V3BracketPage>

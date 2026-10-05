@@ -1,8 +1,9 @@
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 Object.assign(globalThis, { React });
-const boundary = vi.hoisted(() => ({ read: vi.fn(), enabled: true }));
+const boundary = vi.hoisted(() => ({ read: vi.fn(), readBracket: vi.fn(), enabled: true }));
 vi.mock("./workspace-read", () => ({ readCompetitionWorkspace: boundary.read }));
+vi.mock("@/lib/bracket/read", () => ({ readOrganizerSocialBracket: boundary.readBracket }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => boundary.enabled }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NOT_FOUND"); } }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale: (path: string) => { throw new Error(`REDIRECT:${path}`); } }));
@@ -20,10 +21,11 @@ describe("organizer server routes", () => {
     const element = await MatchControlPage({ params: Promise.resolve({ locale: "id", eventId: "event" }), searchParams: Promise.resolve({ filter: "needs-result", group: "group-a", round: "2", matchday: "2026-09-12", match: "match", page: "2" }) });
     expect(element.props).toMatchObject({ masterShell: true, query: { filter: "needs-result", group: "group-a", round: "2", matchday: "2026-09-12", match: "match", page: "2" } });
   });
-  beforeEach(() => { boundary.enabled = true; boundary.read.mockReset(); boundary.read.mockResolvedValue({ event: { id: "event", version: 7 }, matches: [{ id: "match" }], unavailableSections: [] }); });
+  beforeEach(() => { boundary.enabled = true; boundary.read.mockReset(); boundary.readBracket.mockReset(); boundary.readBracket.mockResolvedValue(null); boundary.read.mockResolvedValue({ event: { id: "event", version: 7 }, matches: [{ id: "match" }], unavailableSections: [] }); });
   it.each([[CompetitionPage, "competition"], [SchedulePage, "schedule"], [MatchControlPage, "match-control"], [MatchPage, "match"]] as const)("loads async localized params for view %s", async (page, view) => {
     const element = await page({ params: Promise.resolve({ locale: "id", eventId: "event", matchId: "match" }) });
-    expect(element.props).toMatchObject({ locale: "id", view: view === "match" ? "result" : view, initialState: { event: { id: "event", version: 7 } } });
+    const workspace = page === CompetitionPage ? element.props.children[0] : element;
+    expect(workspace.props).toMatchObject({ locale: "id", view: view === "match" ? "result" : view, initialState: { event: { id: "event", version: 7 } } });
   });
   it("rejects unsupported locale, rollout off and foreign match ids", async () => {
     await expect(CompetitionPage({ params: Promise.resolve({ locale: "fr", eventId: "event" }) })).rejects.toThrow("NOT_FOUND");

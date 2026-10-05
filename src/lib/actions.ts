@@ -227,8 +227,8 @@ function rejectImageUpload(code: ImageUploadValidationCode, message: string, val
 /**
  * Single validation + storage boundary for every admin image upload.
  * Checks, in order: entity id shape, presence, byte size, declared MIME,
- * magic bytes, and finally real decodability through `sharp` (which also gives
- * the dimensions we persist on a visual revision).
+ * magic bytes, and image dimensions through `sharp`. Callers can opt into
+ * full pixel decoding before storage to reject truncated image payloads.
  */
 type UploadImageAssetInput = {
   file: FormDataEntryValue | null;
@@ -238,6 +238,7 @@ type UploadImageAssetInput = {
   maxBytes: number;
   minDimension?: number;
   maxDimension?: number;
+  validatePixels?: boolean;
   validationMode?: "redirect" | "throw";
   errorPath?: string;
 };
@@ -250,6 +251,7 @@ async function uploadImageAssetImpl({
   maxBytes,
   minDimension,
   maxDimension,
+  validatePixels = false,
   validationMode = "redirect",
   errorPath = "/admin",
 }: UploadImageAssetInput): Promise<UploadedImageAsset> {
@@ -275,7 +277,7 @@ async function uploadImageAssetImpl({
   }
 
   const mimeType = file.type || "image/png";
-  const dimensions = await readImageDimensions(buffer);
+  const dimensions = await readImageDimensions(buffer, validatePixels);
   if (!dimensions) {
     rejectImageUpload("decode_failed", `${label} file could not be decoded as an image.`, validationMode, errorPath);
   }
@@ -307,12 +309,13 @@ export async function uploadImageAsset(input: UploadImageAssetInput): Promise<Up
   return withServerActionLog("image_upload", "/server-actions/image-upload", () => uploadImageAssetImpl(input));
 }
 
-/** Returns real pixel dimensions, or null when the bytes are not a decodable image. */
-async function readImageDimensions(buffer: Buffer): Promise<{ width: number; height: number } | null> {
+/** Returns image dimensions, optionally requiring all pixels to decode, or null on failure. */
+async function readImageDimensions(buffer: Buffer, validatePixels = false): Promise<{ width: number; height: number } | null> {
   try {
     const sharp = (await import("sharp")).default;
     const metadata = await sharp(buffer).metadata();
     if (!metadata.width || !metadata.height) return null;
+    if (validatePixels) await sharp(buffer, { failOn: "error" }).stats();
     return { width: metadata.width, height: metadata.height };
   } catch {
     return null;
