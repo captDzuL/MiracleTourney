@@ -307,7 +307,7 @@ function Test-BackupArchive {
         $restoreProcess = New-Object Diagnostics.Process
         $restoreProcess.StartInfo = New-Object Diagnostics.ProcessStartInfo
         $restoreProcess.StartInfo.FileName = $PgRestorePath
-        $restoreProcess.StartInfo.Arguments = ((@($PgRestoreArgsPrefix) + @('--list', '-')) | ForEach-Object { '"' + $_ + '"' }) -join ' '
+        $restoreProcess.StartInfo.Arguments = ((@($PgRestoreArgsPrefix) + @('--list')) | ForEach-Object { '"' + $_ + '"' }) -join ' '
         $restoreProcess.StartInfo.UseShellExecute = $false
         $restoreProcess.StartInfo.CreateNoWindow = $true
         $restoreProcess.StartInfo.RedirectStandardInput = $true
@@ -328,8 +328,19 @@ function Test-BackupArchive {
         $restoreError = $restoreProcess.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
         $ageProcess.StandardInput.BaseStream.Write($identity, 0, $identity.Length)
         $ageProcess.StandardInput.Close()
-        if (-not $copy.Wait([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds))) { throw 'ARCHIVE_VERIFY_FAILED' }
-        [void]$copy.GetAwaiter().GetResult()
+        try {
+            if (-not $copy.Wait([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds))) { throw 'ARCHIVE_VERIFY_FAILED' }
+            [void]$copy.GetAwaiter().GetResult()
+        } catch {
+            $cause = if ($copy.IsFaulted) { $copy.Exception.GetBaseException() } else { $null }
+            # pg_restore --list can finish after the TOC; still drain age to authenticate the entire ciphertext.
+            if (-not ($cause -is [IO.IOException]) -or $cause.HResult -ne -2147024787 -or
+                -not $restoreProcess.WaitForExit([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds)) -or
+                $restoreProcess.ExitCode -ne 0) { throw }
+            $drain = $ageProcess.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
+            if (-not $drain.Wait([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds))) { throw 'ARCHIVE_VERIFY_FAILED' }
+            [void]$drain.GetAwaiter().GetResult()
+        }
         $restoreProcess.StandardInput.Close()
         if (-not $ageProcess.WaitForExit([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds)) -or
             -not $restoreProcess.WaitForExit([Math]::Max(1, $TimeoutMs - [int]$clock.ElapsedMilliseconds))) { throw 'ARCHIVE_VERIFY_FAILED' }
