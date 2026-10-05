@@ -83,16 +83,19 @@ export function parsePrivateJson(value) {
   } catch { throw fail('QUERY_FAILED'); }
 }
 
-async function runChild(path, args, { env, cwd, input = '', timeoutMs = 120000, maxOutput = 262144 } = {}) {
+async function runChild(path, args, { env, cwd, input = '', timeoutMs = 120000, maxOutput = 262144,
+  captureOutput = true } = {}) {
   let child;
   let timer;
   try {
-    child = spawn(path, args, { env, cwd, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
+    child = spawn(path, args, { env, cwd,
+      stdio: [captureOutput ? 'pipe' : 'ignore', captureOutput ? 'pipe' : 'ignore', 'ignore'], windowsHide: true });
     let stdout = '';
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', chunk => { stdout += chunk; if (stdout.length > maxOutput) child.kill(); });
-    child.stdin.on('error', () => {});
-    child.stdin.end(input);
+    if (captureOutput) {
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', chunk => { stdout += chunk; if (stdout.length > maxOutput) child.kill(); });
+    }
+    if (child.stdin) { child.stdin.on('error', () => {}); child.stdin.end(input); }
     const completion = new Promise((resolve, reject) => {
       child.once('error', () => reject(fail('CHILD_FAILED')));
       child.once('close', code => resolve(code));
@@ -110,6 +113,15 @@ async function runChild(path, args, { env, cwd, input = '', timeoutMs = 120000, 
 }
 
 export const runRedactedChild = runChild;
+
+export function buildPgCtlInvocation(action, data, runRoot, env) {
+  if (action !== 'start' && action !== 'stop') throw fail('CONFIG_REJECTED');
+  const args = action === 'start'
+    ? ['-D', data, '-l', join(runRoot, 'server.log'), '-w', '-t', '60', 'start']
+    : ['-D', data, '-m', 'fast', '-w', '-t', '60', 'stop'];
+  return { path: join(runRoot, 'server', 'pgsql', 'bin', 'pg_ctl.exe'), args,
+    options: { env, timeoutMs: 90000, captureOutput: false } };
+}
 
 async function runPsql(bin, database, password, sql, { bootstrap = false } = {}) {
   const env = bootstrap ? bootstrapEnv(password) : buildLocalPgEnv(database, password);
@@ -161,20 +173,31 @@ function ledgerSql() {
     `    FROM (SELECT migration_name, checksum, finished_at, rolled_back_at, started_at, id FROM public._prisma_migrations) m))::text;`;
 }
 
-function candidatePostcheckSql() {
-  const index = name => `EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid\n` +
-    `    JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname='${name}'\n` +
-    `    AND i.indisunique AND i.indisvalid AND i.indisready AND i.indislive)`;
-  const column = (table, name, nullable, defaultPattern = '') =>
+export function buildCandidatePostcheckSql() {
+  const index = (table, name, columns) => `EXISTS (SELECT 1 FROM pg_index i\n` +
+    `    JOIN pg_class idx ON idx.oid=i.indexrelid JOIN pg_namespace idx_ns ON idx_ns.oid=idx.relnamespace\n` +
+    `    JOIN pg_class tbl ON tbl.oid=i.indrelid JOIN pg_namespace tbl_ns ON tbl_ns.oid=tbl.relnamespace\n` +
+    `    JOIN pg_am am ON am.oid=idx.relam\n` +
+    `    WHERE idx_ns.nspname='public' AND idx.relname='${name}' AND idx.relkind='i'\n` +
+    `      AND tbl_ns.nspname='public' AND tbl.relname='${table}' AND am.amname='btree'\n` +
+    `      AND i.indisunique AND i.indimmediate AND i.indisvalid AND i.indisready AND i.indislive\n` +
+    `      AND NOT i.indisprimary AND NOT i.indisexclusion AND NOT i.indnullsnotdistinct\n` +
+    `      AND i.indpred IS NULL AND i.indexprs IS NULL\n` +
+    `      AND i.indnkeyatts=${columns.length} AND i.indnatts=${columns.length}\n` +
+    `      AND (SELECT array_agg(a.attname::text ORDER BY k.ordinality)\n` +
+    `           FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ordinality)\n` +
+    `           JOIN pg_attribute a ON a.attrelid=tbl.oid AND a.attnum=k.attnum)\n` +
+    `          = ARRAY[${columns.map(sqlQuote).join(',')}]::text[])`;
+  const column = (table, name, nullable, exactDefault) =>
     `EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='${table}'\n` +
-    `    AND column_name='${name}' AND is_nullable='${nullable}'${defaultPattern ? ` AND column_default LIKE '${defaultPattern}'` : ''})`;
+    `    AND column_name='${name}' AND is_nullable='${nullable}'${exactDefault === undefined ? '' : ` AND column_default=${sqlQuote(exactDefault)}`})`;
   return `SELECT 'MIRACLE_LOCAL_CHECKPOINT' || chr(9) || json_build_object(\n` +
     ` 'certificateMissing', (SELECT count(*)::int FROM public."Certificate" WHERE "recipientId" IS NULL OR "recipientName" IS NULL OR "verificationCode" IS NULL),\n` +
     ` 'certificateDuplicateCodes', (SELECT count(*)::int FROM (SELECT "verificationCode" FROM public."Certificate" GROUP BY "verificationCode" HAVING count(*) > 1) x),\n` +
-    ` 'certificateConstraints', (${column('Certificate', 'recipientId', 'NO')} AND ${column('Certificate', 'recipientName', 'NO')} AND ${column('Certificate', 'verificationCode', 'NO')} AND ${index('Certificate_verificationCode_key')} AND ${index('Certificate_eventId_type_recipientKind_recipientId_version_key')}),\n` +
-    ` 'sessionVersion', (${column('User', 'sessionVersion', 'NO', '%0%')}),\n` +
-    ` 'resetTokenUnique', (${column('PasswordResetToken', 'tokenFormat', 'NO')} AND ${index('PasswordResetToken_userId_key')}),\n` +
-    ` 'rateLimitBucket', (to_regclass('public."RateLimitBucket"') IS NOT NULL AND ${index('RateLimitBucket_key_key')}),\n` +
+    ` 'certificateConstraints', (${column('Certificate', 'recipientId', 'NO')} AND ${column('Certificate', 'recipientName', 'NO')} AND ${column('Certificate', 'verificationCode', 'NO')} AND ${index('Certificate', 'Certificate_verificationCode_key', ['verificationCode'])} AND ${index('Certificate', 'Certificate_eventId_type_recipientKind_recipientId_version_key', ['eventId', 'type', 'recipientKind', 'recipientId', 'version'])}),\n` +
+    ` 'sessionVersion', (${column('User', 'sessionVersion', 'NO', '0')}),\n` +
+    ` 'resetTokenUnique', (${column('PasswordResetToken', 'tokenFormat', 'NO', "'legacy_raw'::text")} AND ${index('PasswordResetToken', 'PasswordResetToken_userId_key', ['userId'])}),\n` +
+    ` 'rateLimitBucket', (to_regclass('public."RateLimitBucket"') IS NOT NULL AND ${index('RateLimitBucket', 'RateLimitBucket_key_key', ['key'])}),\n` +
     ` 'invalidConstraints', (SELECT count(*)::int FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='public' AND NOT c.convalidated))::text;`;
 }
 
@@ -188,21 +211,77 @@ function localeAndExtensionSql() {
     ` 'extensions', (SELECT coalesce(json_agg(json_build_object('name', extname, 'version', extversion) ORDER BY extname), '[]'::json) FROM pg_extension))::text;`;
 }
 
-async function syntheticFlow(bin, password) {
-  const token = randomBytes(16).toString('hex');
+export function buildSyntheticFlowSql(token) {
+  if (typeof token !== 'string' || !/^[a-f0-9]{32}$/.test(token)) throw fail('CONFIG_REJECTED');
   const id = `rehearsal_${token}`;
-  const sql = `BEGIN;\n` +
-    `INSERT INTO public."RateLimitBucket" ("id", "key", "count", "resetAt")\n` +
-    ` VALUES (${sqlQuote(id)}, ${sqlQuote(id)}, 1, CURRENT_TIMESTAMP + INTERVAL '1 minute');\n` +
+  const q = value => sqlQuote(`${id}_${value}`);
+  return `BEGIN;\nSET LOCAL statement_timeout='30s';\n` +
+    `INSERT INTO public."User" ("id","email","name","role","passwordHash","createdAt","updatedAt")\n` +
+    ` VALUES (${q('user')},${q('user@example.invalid')},'Synthetic User','USER','synthetic-hash',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);\n` +
+    `INSERT INTO public."Event" ("id","slug","name","description","gameId","gameModeId","format","status",\n` +
+    ` "participantCap","registrationWindow","startsAt","venue","createdAt","updatedAt")\n` +
+    ` VALUES (${q('event')},${q('slug')},'Synthetic Event','Local fixture','game','mode','single_elimination',\n` +
+    ` 'draft',8,'closed','later','local',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);\n` +
+    `INSERT INTO public."Team" ("id","eventId","name","logoText","tag","createdAt")\n` +
+    ` VALUES (${q('team')},${q('event')},'Synthetic Team','ST','ST',CURRENT_TIMESTAMP);\n` +
     `DO $$ BEGIN\n` +
-    `  BEGIN\n` +
-    `    INSERT INTO public."RateLimitBucket" ("id", "key", "count", "resetAt")\n` +
-    `      VALUES (${sqlQuote(`${id}_second`)}, ${sqlQuote(id)}, 1, CURRENT_TIMESTAMP + INTERVAL '1 minute');\n` +
-    `    RAISE EXCEPTION 'unique constraint not enforced';\n` +
-    `  EXCEPTION WHEN unique_violation THEN NULL;\n` +
-    `END $$;\nROLLBACK;`;
-  await runPsql(bin, 'migration_candidate', password, sql);
-  return { rateLimitUniqueFixture: 'ROLLED_BACK' };
+    ` IF (SELECT "sessionVersion" FROM public."User" WHERE "id"=${q('user')}) <> 0 THEN RAISE EXCEPTION 'session default'; END IF;\n` +
+    ` UPDATE public."User" SET "sessionVersion"="sessionVersion"+1 WHERE "id"=${q('user')};\n` +
+    ` IF (SELECT "sessionVersion" FROM public."User" WHERE "id"=${q('user')}) <> 1 THEN RAISE EXCEPTION 'session increment'; END IF;\n` +
+    `END $$;\n` +
+    `INSERT INTO public."PasswordResetToken" ("id","userId","token","tokenFormat","expiresAt","createdAt")\n` +
+    ` VALUES (${q('reset1')},${q('user')},${q('digest1')},'sha256',CURRENT_TIMESTAMP+INTERVAL '30 minutes',CURRENT_TIMESTAMP);\n` +
+    `DO $$ BEGIN\n` +
+    ` BEGIN\n` +
+    `  INSERT INTO public."PasswordResetToken" ("id","userId","token","tokenFormat","expiresAt","createdAt")\n` +
+    `   VALUES (${q('reset2')},${q('user')},${q('digest2')},'sha256',CURRENT_TIMESTAMP+INTERVAL '30 minutes',CURRENT_TIMESTAMP);\n` +
+    `  RAISE EXCEPTION 'reset user uniqueness absent';\n` +
+    ` EXCEPTION WHEN unique_violation THEN NULL; END;\n` +
+    ` UPDATE public."PasswordResetToken" SET "usedAt"=CURRENT_TIMESTAMP WHERE "id"=${q('reset1')};\n` +
+    ` IF NOT EXISTS (SELECT 1 FROM public."PasswordResetToken" WHERE "id"=${q('reset1')} AND "tokenFormat"='sha256' AND "usedAt" IS NOT NULL)\n` +
+    ` THEN RAISE EXCEPTION 'reset consumption'; END IF;\n` +
+    `END $$;\n` +
+    `INSERT INTO public."Certificate" ("id","eventId","teamId","type","recipientKind","recipientId",\n` +
+    ` "recipientName","version","verificationCode","imageUrl","status","attemptCount","createdAt","updatedAt")\n` +
+    ` VALUES (${q('cert1')},${q('event')},${q('team')},'champion','team',${q('team')},'Synthetic Team',1,\n` +
+    ` ${q('verification')},'','ready',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);\n` +
+    `DO $$ BEGIN\n` +
+    ` BEGIN\n` +
+    `  INSERT INTO public."Certificate" ("id","eventId","teamId","type","recipientKind","recipientId",\n` +
+    `   "recipientName","version","verificationCode","imageUrl","status","attemptCount","createdAt","updatedAt")\n` +
+    `   VALUES (${q('cert2')},${q('event')},${q('team')},'champion','team',${q('team')},'Synthetic Team',2,\n` +
+    `   ${q('verification')},'','ready',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);\n` +
+    `  RAISE EXCEPTION 'certificate verification uniqueness absent';\n` +
+    ` EXCEPTION WHEN unique_violation THEN NULL; END;\n` +
+    ` BEGIN\n` +
+    `  INSERT INTO public."Certificate" ("id","eventId","teamId","type","recipientKind","recipientId",\n` +
+    `   "recipientName","version","verificationCode","imageUrl","status","attemptCount","createdAt","updatedAt")\n` +
+    `   VALUES (${q('cert3')},${q('event')},${q('team')},'champion','team',${q('team')},'Synthetic Team',1,\n` +
+    `   ${q('verification2')},'','ready',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);\n` +
+    `  RAISE EXCEPTION 'certificate recipient uniqueness absent';\n` +
+    ` EXCEPTION WHEN unique_violation THEN NULL; END;\n` +
+    `END $$;\n` +
+    `INSERT INTO public."RateLimitBucket" ("id", "key", "count", "resetAt")\n` +
+    ` VALUES (${q('bucket1')},${q('bucket')},1,CURRENT_TIMESTAMP+INTERVAL '1 minute');\n` +
+    `DO $$ BEGIN\n` +
+    ` BEGIN\n` +
+    `  INSERT INTO public."RateLimitBucket" ("id", "key", "count", "resetAt")\n` +
+    `   VALUES (${q('bucket2')},${q('bucket')},1,CURRENT_TIMESTAMP+INTERVAL '1 minute');\n` +
+    `  RAISE EXCEPTION 'rate limit uniqueness absent';\n` +
+    ` EXCEPTION WHEN unique_violation THEN NULL; END;\n` +
+    `END $$;\n` +
+    `SELECT 'MIRACLE_LOCAL_CHECKPOINT' || chr(9) || json_build_object(\n` +
+    ` 'certificateUnique', true, 'sessionIncrement', true, 'resetOnePerUser', true,\n` +
+    ` 'resetConsumed', true, 'rateLimitUnique', true)::text;\nROLLBACK;`;
+}
+
+async function syntheticFlow(bin, password) {
+  const sql = buildSyntheticFlowSql(randomBytes(16).toString('hex'));
+  const { stdout } = await runPsql(bin, 'migration_candidate', password, sql);
+  const line = stdout.trim().split(/\r?\n/).find(row => row.startsWith('MIRACLE_LOCAL_CHECKPOINT\t'));
+  const result = parsePrivateJson(line?.slice('MIRACLE_LOCAL_CHECKPOINT\t'.length));
+  if (Object.values(result).some(value => value !== true) || Object.keys(result).length !== 5) throw fail('FLOW_FAILED');
+  return { ...result, writes: 'ROLLED_BACK' };
 }
 
 async function verifyAuth(bin, bootstrapPassword) {
@@ -248,8 +327,8 @@ async function prepareCluster(runRoot, zip, bootstrapPassword, ownerPassword) {
   await writeFile(join(data, 'pg_hba.conf'),
     `host all all 127.0.0.1/32 scram-sha-256\nhost all all ::1/128 reject\nlocal all all reject\n`, { flag: 'w' });
   if (!await portFree()) throw fail('PORT_OCCUPIED');
-  await runChild(join(bin, 'pg_ctl.exe'), ['-D', data, '-l', join(runRoot, 'server.log'), '-w', '-t', '60', 'start'],
-    { env: bootstrapEnv(bootstrapPassword), timeoutMs: 90000, maxOutput: 4096 });
+  const start = buildPgCtlInvocation('start', data, runRoot, bootstrapEnv(bootstrapPassword));
+  await runChild(start.path, start.args, start.options);
   await verifyAuth(bin, bootstrapPassword);
   await runPsql(bin, 'postgres', bootstrapPassword,
     `CREATE ROLE rehearsal_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD ${sqlQuote(ownerPassword)};`,
@@ -267,8 +346,9 @@ async function stopCluster(runRoot) {
   const data = join(runRoot, 'cluster');
   if (!existsSync(join(bin, 'pg_ctl.exe')) || !existsSync(data)) return { status: 'NOT_STARTED' };
   try {
-    await runChild(join(bin, 'pg_ctl.exe'), ['-D', data, '-m', 'fast', '-w', '-t', '60', 'stop'],
-      { env: buildLocalPgEnv('recovery_baseline', 'local-only-password-0000000000000000'), timeoutMs: 90000, maxOutput: 1024 });
+    const stop = buildPgCtlInvocation('stop', data, runRoot,
+      buildLocalPgEnv('recovery_baseline', 'local-only-password-0000000000000000'));
+    await runChild(stop.path, stop.args, stop.options);
     return { status: 'STOPPED' };
   } catch { return { status: 'STOP_UNVERIFIED' }; }
 }
@@ -357,7 +437,7 @@ export async function runRehearsal(archive) {
     const migration = await migrate(ownerPassword, runRoot, stagedSchema);
     const afterLedger = (await queryJson(cluster.bin, 'migration_candidate', ownerPassword, ledgerSql())).ledger;
     const after = inspectMigrationLedger(afterLedger, expected);
-    const postchecks = await queryJson(cluster.bin, 'migration_candidate', ownerPassword, candidatePostcheckSql());
+    const postchecks = await queryJson(cluster.bin, 'migration_candidate', ownerPassword, buildCandidatePostcheckSql());
     assessCandidate({ ...postchecks, migration: after });
     const flow = await syntheticFlow(cluster.bin, ownerPassword);
     phase = 'NOOP';
