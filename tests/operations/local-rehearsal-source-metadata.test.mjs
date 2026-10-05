@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { buildSourceMetadataSql, summarizeSourceMetadataLine, buildSourceDigestSql,
-  summarizeSourceDigestLine } from '../../scripts/operations/local-rehearsal-source-metadata.mjs';
+  summarizeSourceDigestLine, buildDeepComparisonSql, parseDeepComparisonLine,
+  compareDeepComparison } from '../../scripts/operations/local-rehearsal-source-metadata.mjs';
 
 const schema = [{ table_name: 'User', column_name: 'id', data_type: 'text', is_nullable: 'NO', ordinal_position: 1 }];
 const sha = createHash('sha256').update(JSON.stringify(schema)).digest('hex');
@@ -77,4 +78,34 @@ test('source digest SQL is a fixed read-only query of exactly five tables', () =
   assert.match(sql, /ROLLBACK;\s*$/);
   assert.equal((sql.match(/FROM public\."(?:User|Team|Player|PlayerStat|Event)"/g) || []).length, 5);
   assert.doesNotMatch(sql, /pg_export_snapshot|UPDATE|INSERT|DELETE|CREATE/);
+});
+
+test('deep SQL uses the same fixed schema and canonical/content digests on source and local', () => {
+  const source = buildDeepComparisonSql('source');
+  const local = buildDeepComparisonSql('local');
+  assert.match(source, /^BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;/);
+  assert.match(source, /ROLLBACK;\s*$/);
+  assert.match(source, /MIRACLE_SOURCE_DEEP/);
+  assert.match(local, /MIRACLE_LOCAL_CHECKPOINT/);
+  assert.equal(source.replace('MIRACLE_SOURCE_DEEP', 'MIRACLE_LOCAL_CHECKPOINT'), local);
+  assert.equal((source.match(/to_jsonb\(t\)::text/g) || []).length, 10);
+  assert.doesNotMatch(source, /pg_export_snapshot/);
+});
+
+test('deep comparison identifies structural drift and keeps hashes out of the result', () => {
+  const names = ['User', 'Team', 'Player', 'PlayerStat', 'Event'];
+  const source = { schema, canonical: Object.fromEntries(names.map(name => [name, 'a'.repeat(32)])),
+    composite: Object.fromEntries(names.map(name => [name, 'b'.repeat(32)])) };
+  const local = { schema: [{ ...schema[0], ordinal_position: 2 }],
+    canonical: { ...source.canonical, User: 'c'.repeat(32) },
+    composite: { ...source.composite, User: 'd'.repeat(32) } };
+  const parsed = parseDeepComparisonLine(`MIRACLE_SOURCE_DEEP\t${JSON.stringify(source)}`);
+  assert.deepEqual(parsed, source);
+  const result = compareDeepComparison(parsed, local);
+  assert.deepEqual(result.schemaDifferences, [{ table: 'User', column: 'id', kind: 'ordinal' }]);
+  assert.equal(result.canonicalMatches.User, false);
+  assert.equal(result.canonicalMatches.Team, true);
+  assert.equal(result.compositeMatches.User, false);
+  assert.equal(JSON.stringify(result).includes('a'.repeat(32)), false);
+  assert.equal(JSON.stringify(result).includes('b'.repeat(32)), false);
 });

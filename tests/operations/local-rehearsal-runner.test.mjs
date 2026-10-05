@@ -135,6 +135,9 @@ test('checkpoint diagnostic plan restores baseline only and never schedules cand
   assert.deepEqual(rehearsalRunner.buildRehearsalPlan('checkpoint-diagnostic'), {
     restoreDatabases: ['recovery_baseline'], migrateCandidate: false, terminalStatus: 'CHECKPOINT_DIAGNOSTIC_ONLY',
   });
+  assert.deepEqual(rehearsalRunner.buildRehearsalPlan('checkpoint-deep-diagnostic'), {
+    restoreDatabases: ['recovery_baseline'], migrateCandidate: false, terminalStatus: 'CHECKPOINT_DEEP_DIAGNOSTIC_ONLY',
+  });
   assert.deepEqual(rehearsalRunner.buildRehearsalPlan('full'), {
     restoreDatabases: ['recovery_baseline', 'migration_candidate'], migrateCandidate: true,
     terminalStatus: 'REHEARSAL_VERIFIED',

@@ -230,6 +230,16 @@ CREATE TABLE public."PlayerStat" ("id" text PRIMARY KEY);
       [string]$digest.PSObject.Properties[$_].Value -notmatch '^[a-f0-9]{32}$'
     }).Count -eq 0
     Assert-That ($digestCountOk -and $digestValuesOk) ('source-digest-shape-' + $digestCountOk + '-' + $digestValuesOk)
+    foreach ($mode in @('deep-source','deep-local')) {
+        $deepOutput = @(Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword (Build-Sql $mode))
+        $deepPrefix = $(if ($mode -eq 'deep-source') { 'MIRACLE_SOURCE_DEEP' } else { 'MIRACLE_LOCAL_CHECKPOINT' })
+        $deepMarker = @($deepOutput | Where-Object { $_.StartsWith($deepPrefix + "`t") })
+        Assert-That ($deepMarker.Count -eq 1) ('deep-marker-' + $mode)
+        $deep = $deepMarker[0].Substring($deepPrefix.Length + 1) | ConvertFrom-Json
+        Assert-That ($deep.schema.Count -gt 0 -and
+          @($deep.canonical.PSObject.Properties).Count -eq 5 -and
+          @($deep.composite.PSObject.Properties).Count -eq 5) ('deep-shape-' + $mode)
+    }
     $postcheckSql = Build-Sql 'postcheck'
     $good = Query-Json $postcheckSql
     Assert-That ($good.certificateConstraints -and $good.sessionVersion -and $good.resetTokenUnique -and $good.rateLimitBucket) 'catalog-good'

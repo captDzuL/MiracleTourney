@@ -10,6 +10,8 @@ import { assertOutputCapacity, assertOwnerOnlyDirectory, verifyPinnedFile } from
 import { verifyBackupPair, verifyPostgresDependencySet } from './local-backup-core.mjs';
 import { loadExpectedLedger, LEGACY_TABLES, buildCriticalUniqueIndexSql } from './local-backup-snapshot.mjs';
 import { PG18_DLL_SHA256 } from './pg18-dll-hashes.mjs';
+import { buildDeepComparisonSql, collectGuardedSourceDeepComparison,
+  compareDeepComparison } from './local-rehearsal-source-metadata.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(scriptDir, '../..');
@@ -406,6 +408,8 @@ async function migrate(password, runRoot, schema) {
 export function buildRehearsalPlan(mode = 'full') {
   if (mode === 'checkpoint-diagnostic') return { restoreDatabases: ['recovery_baseline'],
     migrateCandidate: false, terminalStatus: 'CHECKPOINT_DIAGNOSTIC_ONLY' };
+  if (mode === 'checkpoint-deep-diagnostic') return { restoreDatabases: ['recovery_baseline'],
+    migrateCandidate: false, terminalStatus: 'CHECKPOINT_DEEP_DIAGNOSTIC_ONLY' };
   if (mode === 'full') return { restoreDatabases: ['recovery_baseline', 'migration_candidate'],
     migrateCandidate: true, terminalStatus: 'REHEARSAL_VERIFIED' };
   throw fail('CONFIG_REJECTED');
@@ -428,6 +432,8 @@ export async function runRehearsal(archive, mode = 'full') {
   const authenticated = await runChild(process.execPath, [archiveVerifier, archive], { timeoutMs: 7200000, maxOutput: 1024 });
   const authentication = parsePrivateJson(authenticated.stdout);
   if (authentication.status !== 'ARCHIVE_VERIFIED' || authentication.bytes !== pair.bytes || authentication.sha256 !== pair.sha256) throw fail('ARCHIVE_REJECTED');
+  const sourceDeep = mode === 'checkpoint-deep-diagnostic'
+    ? await collectGuardedSourceDeepComparison(manifest.checkpoint) : null;
   const { names, expected } = await readMigrationNames();
   const runRoot = join(outputRoot, `rehearsal-${stamp()}`);
   await assertFreshRehearsalPath(runRoot, outputRoot);
@@ -449,7 +455,14 @@ export async function runRehearsal(archive, mode = 'full') {
       restoreDatabase = database;
       const restored = await restoreArchive(archive, database, ownerPassword);
       const checkpoint = await queryJson(cluster.bin, database, ownerPassword, buildRestoreCheckpointSql());
-      const verified = compareRestoredCheckpoint(checkpoint, manifest.checkpoint, expected);
+      const deepComparison = sourceDeep ? compareDeepComparison(sourceDeep,
+        await queryJson(cluster.bin, database, ownerPassword, buildDeepComparisonSql('local'))) : null;
+      let verified;
+      try { verified = compareRestoredCheckpoint(checkpoint, manifest.checkpoint, expected); }
+      catch (error) {
+        if (error?.code === 'CHECKPOINT_DRIFT' && deepComparison) error.deepComparison = deepComparison;
+        throw error;
+      }
       localEnvironments.push({ database, ...(await queryJson(cluster.bin, database, ownerPassword, localeAndExtensionSql())) });
       restores.push({ database, ageExit: restored.ageExit, restoreExit: restored.restoreExit,
         durationMs: restored.durationMs, ...verified });
@@ -488,7 +501,9 @@ export async function runRehearsal(archive, mode = 'full') {
           code: failure?.code || (stop.status !== 'STOPPED' ? 'STOP_UNVERIFIED' : 'REHEARSAL_FAILED'),
           archiveSha256: pair.sha256, runRoot, restoreDatabase,
           ...(failure?.code === 'CHECKPOINT_DRIFT' && failure.predicates ?
-            { checkpointPredicates: failure.predicates } : {}) };
+            { checkpointPredicates: failure.predicates } : {}),
+          ...(failure?.code === 'CHECKPOINT_DRIFT' && failure.deepComparison ?
+            { deepComparison: failure.deepComparison } : {}) };
       await writeFile(join(runRoot, 'rehearsal-result.json'), `${JSON.stringify(evidence, null, 2)}\n`,
         { flag: 'wx', mode: 0o600 }).catch(() => { if (!failure) failure = fail('EVIDENCE_FAILED'); });
     }
@@ -500,9 +515,10 @@ export async function runRehearsal(archive, mode = 'full') {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 3 && !(process.argv.length === 4 && process.argv[3] === '--checkpoint-diagnostic')) {
+  if (process.argv.length !== 3 && !(process.argv.length === 4 &&
+      ['--checkpoint-diagnostic', '--checkpoint-deep-diagnostic'].includes(process.argv[3]))) {
     process.stderr.write('REHEARSAL_REJECTED\n'); process.exitCode = 1;
-  } else runRehearsal(process.argv[2], process.argv.length === 4 ? 'checkpoint-diagnostic' : 'full').then(result => {
+  } else runRehearsal(process.argv[2], process.argv.length === 4 ? process.argv[3].slice(2) : 'full').then(result => {
     process.stdout.write(`${JSON.stringify(result)}\n`);
   }).catch(error => {
     const safe = new Set(['ARCHIVE_REJECTED', 'RUNTIME_REJECTED', 'CHECKPOINT_DRIFT', 'MIGRATION_DRIFT',

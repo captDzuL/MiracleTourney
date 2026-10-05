@@ -68,6 +68,91 @@ ROLLBACK;
 `;
 }
 
+export function buildDeepComparisonSql(location) {
+  if (!['source', 'local'].includes(location)) throw fail();
+  const marker = location === 'source' ? 'MIRACLE_SOURCE_DEEP' : 'MIRACLE_LOCAL_CHECKPOINT';
+  const content = (expression, collation = '') => DIGEST_TABLES.map(table =>
+    `'${table}', (SELECT md5(coalesce(string_agg(md5(${expression}), '' ORDER BY md5(${expression})${collation}), '')) FROM public."${table}" t)`).join(',\n    ');
+  return `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout = '20s';
+SELECT '${marker}' || chr(9) || json_build_object(
+  'schema', (SELECT coalesce(json_agg(row_to_json(c) ORDER BY c.table_name, c.ordinal_position), '[]'::json)
+    FROM (SELECT columns.table_name, columns.column_name, columns.data_type, columns.is_nullable, columns.ordinal_position
+      FROM information_schema.columns columns JOIN information_schema.tables tables
+        ON tables.table_schema = columns.table_schema AND tables.table_name = columns.table_name
+      WHERE columns.table_schema = 'public' AND tables.table_type = 'BASE TABLE') c),
+  'canonical', json_build_object(${content('to_jsonb(t)::text', ' COLLATE "C"')}),
+  'composite', json_build_object(${content('t::text')}))::text;
+ROLLBACK;
+`;
+}
+
+function validateDeepValue(raw) {
+  if (!exactKeys(raw, ['schema', 'canonical', 'composite']) ||
+      !Array.isArray(raw.schema) || raw.schema.length === 0 || raw.schema.length > 4096 ||
+      !raw.schema.every(row => exactKeys(row, ['table_name', 'column_name', 'data_type', 'is_nullable', 'ordinal_position']) &&
+        /^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(row.table_name) &&
+        /^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(row.column_name) &&
+        typeof row.data_type === 'string' && row.data_type.length > 0 && row.data_type.length <= 120 &&
+        ['YES', 'NO'].includes(row.is_nullable) && Number.isSafeInteger(row.ordinal_position) && row.ordinal_position > 0) ||
+      !['canonical', 'composite'].every(field => exactKeys(raw[field], DIGEST_TABLES) &&
+        DIGEST_TABLES.every(table => /^[a-f0-9]{32}$/.test(raw[field][table])))) throw fail();
+  const keys = raw.schema.map(row => `${row.table_name}\0${row.column_name}`);
+  if (new Set(keys).size !== keys.length) throw fail();
+  return raw;
+}
+
+export function parseDeepComparisonLine(output) {
+  try {
+    if (typeof output !== 'string' || output.length > 262144) throw fail();
+    const lines = output.trim().split(/\r?\n/);
+    if (lines.length !== 1 || !lines[0].startsWith('MIRACLE_SOURCE_DEEP\t')) throw fail();
+    return validateDeepValue(JSON.parse(lines[0].slice('MIRACLE_SOURCE_DEEP\t'.length)));
+  } catch { throw fail(); }
+}
+
+export function compareDeepComparison(source, local) {
+  try {
+    validateDeepValue(source); validateDeepValue(local);
+    const sourceByKey = new Map(source.schema.map(row => [`${row.table_name}\0${row.column_name}`, row]));
+    const localByKey = new Map(local.schema.map(row => [`${row.table_name}\0${row.column_name}`, row]));
+    const differences = [];
+    const keys = [...new Set([...sourceByKey.keys(), ...localByKey.keys()])].sort();
+    for (const key of keys) {
+      const [table, column] = key.split('\0');
+      const a = sourceByKey.get(key); const b = localByKey.get(key);
+      if (!b) differences.push({ table, column, kind: 'missing' });
+      else if (!a) differences.push({ table, column, kind: 'extra' });
+      else {
+        if (a.data_type !== b.data_type) differences.push({ table, column, kind: 'type' });
+        if (a.is_nullable !== b.is_nullable) differences.push({ table, column, kind: 'nullability' });
+        if (a.ordinal_position !== b.ordinal_position) differences.push({ table, column, kind: 'ordinal' });
+      }
+      if (differences.length > 4096) throw fail();
+    }
+    return {
+      schemaExact: JSON.stringify(source.schema) === JSON.stringify(local.schema),
+      schemaOrderDiffers: differences.length === 0 && JSON.stringify(source.schema) !== JSON.stringify(local.schema),
+      schemaDifferences: differences,
+      canonicalMatches: Object.fromEntries(DIGEST_TABLES.map(table => [table, source.canonical[table] === local.canonical[table]])),
+      compositeMatches: Object.fromEntries(DIGEST_TABLES.map(table => [table, source.composite[table] === local.composite[table]])),
+    };
+  } catch { throw fail(); }
+}
+
+export async function collectGuardedSourceDeepComparison(checkpoint) {
+  try {
+    if (!/^[a-f0-9]{64}$/.test(checkpoint?.schemaSha256) ||
+        !DIGEST_TABLES.every(table => /^[a-f0-9]{32}$/.test(checkpoint?.tableChecksumsMd5?.[table]))) throw fail();
+    const config = await prepareFixedExport();
+    const output = await runPinnedPsql(config.psqlPath, config.pgEnv, buildDeepComparisonSql('source'));
+    const source = parseDeepComparisonLine(output);
+    if (createHash('sha256').update(JSON.stringify(source.schema)).digest('hex') !== checkpoint.schemaSha256 ||
+        DIGEST_TABLES.some(table => source.composite[table] !== checkpoint.tableChecksumsMd5[table])) throw fail();
+    return source;
+  } catch { throw fail(); }
+}
+
 export function summarizeSourceMetadataLine(output, expectedSchemaSha256) {
   try {
     if (typeof output !== 'string' || output.length > 262144 ||
