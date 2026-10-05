@@ -28,20 +28,20 @@ describe("Vercel database safety", () => {
     expect(runCommand).toHaveBeenCalledWith("pnpm", ["exec", "next", "build"]);
   });
 
-  it("allows migrations only during a production build", () => {
+  it("builds production without applying migrations", () => {
     const runCommand = vi.fn(() => ({ status: 0 }));
-    runVercelBuild({ VERCEL_ENV: "production" }, runCommand);
-    expect(runCommand).toHaveBeenNthCalledWith(1, "pnpm", ["exec", "prisma", "migrate", "deploy"]);
+    expect(runVercelBuild({ VERCEL_ENV: "production" }, runCommand)).toBe(0);
+    expect(runCommand).toHaveBeenCalledExactlyOnceWith("pnpm", ["exec", "next", "build"]);
   });
 
-  it("migrates trusted main branch candidates before promotion", () => {
+  it("builds trusted main branch candidates without applying migrations", () => {
     const runCommand = vi.fn(() => ({ status: 0 }));
     runVercelBuild({
       VERCEL_ENV: "preview",
       VERCEL_GIT_COMMIT_REF: "main",
       VERCEL_GIT_REPO_ID: "1316699241",
     }, runCommand);
-    expect(runCommand).toHaveBeenNthCalledWith(1, "pnpm", ["exec", "prisma", "migrate", "deploy"]);
+    expect(runCommand).toHaveBeenCalledExactlyOnceWith("pnpm", ["exec", "next", "build"]);
   });
 
   it("does not migrate pull requests whose source branch is named main", () => {
@@ -59,19 +59,19 @@ describe("Vercel database safety", () => {
     expect(runCommand).toHaveBeenCalledWith("pnpm", ["exec", "next", "build"]);
   });
 
-  it("migrates deployments explicitly targeting production", () => {
+  it("builds explicit production targets without applying migrations", () => {
     const runCommand = vi.fn(() => ({ status: 0 }));
     runVercelBuild({
       VERCEL_ENV: "preview",
       VERCEL_TARGET_ENV: "production",
     }, runCommand);
-    expect(runCommand).toHaveBeenNthCalledWith(1, "pnpm", ["exec", "prisma", "migrate", "deploy"]);
+    expect(runCommand).toHaveBeenCalledExactlyOnceWith("pnpm", ["exec", "next", "build"]);
   });
 
-  it("stops before build when migration fails", () => {
+  it("returns a failed build command status", () => {
     const runCommand = vi.fn(() => ({ status: 1 }));
     const exitCode = runVercelBuild({ VERCEL_ENV: "production" }, runCommand);
     expect(exitCode).toBe(1);
-    expect(runCommand).toHaveBeenCalledTimes(1);
+    expect(runCommand).toHaveBeenCalledExactlyOnceWith("pnpm", ["exec", "next", "build"]);
   });
 });

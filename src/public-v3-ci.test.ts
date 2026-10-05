@@ -1,12 +1,73 @@
 import { describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { deflateRawSync } from "node:zlib";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const routeModulePath = "../scripts/public-v3-route.mjs";
 const ciModulePath = "../scripts/public-v3-ci.mjs";
 const pressureModulePath = "../scripts/public-v3-pressure.mjs";
 const cases = (count: number, suffix = "") => ({ suites: [{ specs: Array.from({ length: count }, (_, index) => ({ id: `case-${index}${suffix}`, title: `public case ${index}${suffix}`, file: "public.spec.ts", line: index + 1, column: 1, tests: [] })) }] });
+const proofSha = "a".repeat(40);
+const selectionCounts = [22, 6, 2, 1, 3, 1, 5, 4, 9, 1];
+const pressurePaths = ["/id/login", "/api/me", "/id/admin", "/id", "/id/events", "/id/events/flashpeak-champions-32", "/id/events/flashpeak-champions-32/bracket",
+  "/en", "/en/events", "/en/events/flashpeak-champions-32", "/en/events/flashpeak-champions-32/bracket"];
+const cleanResult = (path: string, initial: boolean, latency = 500) => {
+  const requests = initial ? 1 : path === "/id/login" || path === "/api/me" ? 80 : 40;
+  const concurrency = initial ? 1 : requests === 80 ? 20 : 10;
+  return { path, requests, concurrency, completed: requests, statusCounts: { 200: requests },
+    ...(initial ? { initialLatencyMs: latency } : { p95Ms: latency }), maxMs: latency, failures: 0, failureKinds: [], passed: true };
+};
+const fullProof = async () => {
+  const { PUBLIC_PHASES } = await import(ciModulePath);
+  let selectionIndex = 0;
+  const evidence = { sha: proofSha, mode: "full-public", status: "passed", exclusions: ["three public-v3-seeded-events seed/reseed cases"],
+    phases: PUBLIC_PHASES.map((phase: { id: string; expected: number; selections: { id: string; args: string[] }[] }) => ({ id: phase.id, expected: phase.expected, passed: phase.expected,
+      selections: phase.selections.map((selection) => {
+        const count = selectionCounts[selectionIndex++];
+        return { id: selection.id, args: selection.args, listed: count, passed: count, failed: 0, skipped: 0, flaky: 0, elapsedMs: 100,
+          manifest: Array.from({ length: count }, (_, index) => ({ id: `${selection.id}-${index}`, file: "public.spec.ts", line: index + 1, column: 1, title: `case ${index}` })), failedCases: [] };
+      }) })) };
+  const pressure = { sha: proofSha, mode: "production-like", policy: "initial-warning-load-strict-v1", environment: "guarded E2E test database", status: "passed", buildMs: 100,
+    warmups: pressurePaths.map((path) => cleanResult(path, true)), scenarios: pressurePaths.map((path) => cleanResult(path, false)), initialLatencyWarnings: [] };
+  return { evidence, pressure };
+};
+const crc32 = (bytes: Buffer) => {
+  let value = 0xffffffff;
+  for (const byte of bytes) {
+    value ^= byte;
+    for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+  }
+  return (value ^ 0xffffffff) >>> 0;
+};
+const zipProof = (proof: Record<string, unknown>, compress = false) => {
+  const local: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(proof)) {
+    const fileName = Buffer.from(`${name}.json`);
+    const data = Buffer.from(JSON.stringify(content));
+    const stored = compress ? deflateRawSync(data) : data;
+    const crc = crc32(data);
+    const header = Buffer.alloc(30);
+    header.writeUInt32LE(0x04034b50, 0); header.writeUInt16LE(20, 4); header.writeUInt16LE(compress ? 8 : 0, 8); header.writeUInt32LE(crc, 14);
+    header.writeUInt32LE(stored.length, 18); header.writeUInt32LE(data.length, 22); header.writeUInt16LE(fileName.length, 26);
+    local.push(header, fileName, stored);
+    const entry = Buffer.alloc(46);
+    entry.writeUInt32LE(0x02014b50, 0); entry.writeUInt16LE(20, 4); entry.writeUInt16LE(20, 6);
+    entry.writeUInt16LE(compress ? 8 : 0, 10); entry.writeUInt32LE(crc, 16); entry.writeUInt32LE(stored.length, 20); entry.writeUInt32LE(data.length, 24);
+    entry.writeUInt16LE(fileName.length, 28); entry.writeUInt32LE(offset, 42);
+    central.push(entry, fileName);
+    offset += header.length + fileName.length + stored.length;
+  }
+  const directory = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(central.length / 2, 8); end.writeUInt16LE(central.length / 2, 10);
+  end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...local, directory, end]);
+};
 
 describe("public V3 CI routing", () => {
   it("routes only the named marker push to the full public lane", async () => {
@@ -20,31 +81,132 @@ describe("public V3 CI routing", () => {
     expect(() => routePublicV3({ event: "mystery" })).toThrow(/unknown/i);
   });
 
-  it("runs drafts at new SHAs, reuses exact verified evidence, and restores full gate when ready", async () => {
+  it("requires exact push proof for draft, ready, reopened and synchronized eligible PRs", async () => {
     const { routePublicV3 } = await import(routeModulePath);
-    const draft = { event: "pull_request", action: "opened", head: "codex/public-event-overview-v3", base: "feature/ui/release/1.0", draft: true };
-    expect(routePublicV3(draft, false)).toBe("run");
-    expect(routePublicV3(draft, true)).toBe("verify");
-    expect(routePublicV3({ ...draft, action: "synchronize" }, false)).toBe("run");
-    expect(routePublicV3({ ...draft, action: "ready_for_review", draft: false }, true)).toBe("full");
-    expect(routePublicV3({ ...draft, draft: false }, true)).toBe("full");
+    const draft = { event: "pull_request", action: "opened", head: "codex/public-event-overview-v3", base: "feature/ui/release/1.0", draft: true,
+      repository: "captDzuL/MiracleTourney", repositoryId: 1316699241, headRepositoryId: 1316699241, baseRepositoryId: 1316699241, sha: "a".repeat(40) };
+    for (const action of ["opened", "reopened", "synchronize", "ready_for_review"]) {
+      expect(routePublicV3({ ...draft, action, draft: action !== "ready_for_review" }, true)).toBe("verify");
+      expect(() => routePublicV3({ ...draft, action }, false)).toThrow(/evidence/i);
+    }
+    expect(() => routePublicV3({ ...draft, repositoryId: 42 }, true)).toThrow(/repository/i);
+    expect(() => routePublicV3({ ...draft, headRepositoryId: 42 }, true)).toThrow(/repository/i);
+    expect(() => routePublicV3({ ...draft, sha: "bad" }, true)).toThrow(/SHA/i);
     expect(routePublicV3({ ...draft, base: "main" }, true)).toBe("full");
+    expect(routePublicV3({ ...draft, head: "other" }, false)).toBe("full");
     expect(() => routePublicV3({ ...draft, action: "unknown" }, false)).toThrow(/unknown/i);
   });
 
-  it("rejects old or unrelated successful runs as reuse evidence", async () => {
+  it("rejects a wrong-run provenance, job, artifact or expired artifact", async () => {
     const { matchingPublicEvidence } = await import(routeModulePath);
-    const target = { sha: "a".repeat(40), repository: "owner/repo" };
-    const run = { head_sha: target.sha, head_branch: "codex/public-event-overview-v3", event: "push", conclusion: "success", path: ".github/workflows/ci.yml", id: 101 };
-    const job = { name: "Public V3 E2E", conclusion: "success", head_sha: target.sha };
-    const artifacts = { 101: [{ name: "public-v3-evidence", expired: false }] };
-    expect(matchingPublicEvidence(target, [run], { 101: [job] }, artifacts)).toBe(true);
-    expect(matchingPublicEvidence(target, [{ ...run, head_sha: "b".repeat(40) }], { 101: [job] }, artifacts)).toBe(false);
-    expect(matchingPublicEvidence(target, [run], { 101: [{ ...job, name: "E2E Tests" }] }, artifacts)).toBe(false);
-    expect(matchingPublicEvidence(target, [run], { 101: [{ ...job, conclusion: "skipped" }] }, artifacts)).toBe(false);
-    expect(matchingPublicEvidence(target, [run], { 101: [job] }, { 101: [{ name: "playwright-report", expired: false }] })).toBe(false);
-    expect(matchingPublicEvidence(target, [run], { 101: [job] }, { 101: [{ name: "public-v3-home-evidence", expired: false }] })).toBe(false);
-    expect(matchingPublicEvidence(target, [{ ...run, conclusion: "success" }], { 101: [{ ...job, name: "Public V3 Homepage Check" }] }, { 101: [{ name: "public-v3-home-evidence", expired: false }] })).toBe(false);
+    const target = { sha: "a".repeat(40), repository: "captDzuL/MiracleTourney", repositoryId: 1316699241 };
+    const run = { head_sha: target.sha, head_branch: "codex/public-event-overview-v3", event: "push", conclusion: "success", status: "completed", path: ".github/workflows/ci.yml", id: 101,
+      repository: { id: 1316699241, full_name: target.repository }, head_repository: { id: 1316699241, full_name: target.repository } };
+    const job = { name: "Public V3 E2E", conclusion: "success", status: "completed", head_sha: target.sha, run_id: 101 };
+    const artifact = { name: "public-v3-evidence", expired: false, workflow_run: { id: 101, head_sha: target.sha, repository_id: 1316699241 } };
+    expect(matchingPublicEvidence(target, [run], { 101: [job] }, { 101: [artifact] })).toBe(true);
+    expect(matchingPublicEvidence(target, [{ ...run, head_sha: "b".repeat(40) }], { 101: [job] }, { 101: [artifact] })).toBe(false);
+    expect(matchingPublicEvidence(target, [{ ...run, repository: { id: 42 } }], { 101: [job] }, { 101: [artifact] })).toBe(false);
+    expect(matchingPublicEvidence(target, [{ ...run, head_repository: { id: 42 } }], { 101: [job] }, { 101: [artifact] })).toBe(false);
+    expect(matchingPublicEvidence(target, [{ ...run, event: "pull_request" }], { 101: [job] }, { 101: [artifact] })).toBe(false);
+    expect(matchingPublicEvidence(target, [{ ...run, conclusion: "failure" }], { 101: [job] }, { 101: [artifact] })).toBe(false);
+    expect(matchingPublicEvidence(target, [run], { 101: [{ ...job, name: "E2E Tests" }] }, { 101: [artifact] })).toBe(false);
+    expect(matchingPublicEvidence(target, [run], { 101: [{ ...job, conclusion: "skipped" }] }, { 101: [artifact] })).toBe(false);
+    expect(matchingPublicEvidence(target, [run], { 101: [job] }, { 101: [{ ...artifact, expired: true }] })).toBe(false);
+    expect(matchingPublicEvidence(target, [run], { 101: [job] }, { 101: [{ ...artifact, workflow_run: { ...artifact.workflow_run, head_sha: "b".repeat(40) } }] })).toBe(false);
+    expect(matchingPublicEvidence(target, [run], { 101: [job] }, { 101: [{ ...artifact, name: "public-v3-home-evidence" }] })).toBe(false);
+  });
+
+  it("requires exact 54 clean cases and strict measured pressure in the downloaded artifact", async () => {
+    const { validatePublicArtifact } = await import(routeModulePath);
+    const { evidence, pressure } = await fullProof();
+    expect(validatePublicArtifact(proofSha, { evidence, pressure })).toBe(true);
+    expect(validatePublicArtifact(proofSha, { evidence: { ...evidence, sha: "b".repeat(40) }, pressure })).toBe(false);
+    expect(validatePublicArtifact(proofSha, { evidence: { ...evidence, status: "failed" }, pressure })).toBe(false);
+    expect(validatePublicArtifact(proofSha, { evidence: { ...evidence, phases: evidence.phases.slice(0, 3) }, pressure })).toBe(false);
+    expect(validatePublicArtifact(proofSha, { evidence: { ...evidence, phases: evidence.phases.map((phase: { passed: number }, i: number) => i ? phase : { ...phase, passed: 34 }) }, pressure })).toBe(false);
+    expect(validatePublicArtifact(proofSha, { evidence: { ...evidence, phases: evidence.phases.map((phase: { selections: { flaky: number }[] }, i: number) => i ? phase : { ...phase,
+      selections: phase.selections.map((selection: { flaky: number }, j: number) => j ? selection : { ...selection, flaky: 1 }) }) }, pressure })).toBe(false);
+    const duplicated = structuredClone(evidence);
+    duplicated.phases[0].selections[1].manifest[0].id = duplicated.phases[0].selections[0].manifest[0].id;
+    expect(validatePublicArtifact(proofSha, { evidence: duplicated, pressure })).toBe(false);
+    expect(validatePublicArtifact(proofSha, { evidence, pressure: { ...pressure, status: "failed" } })).toBe(false);
+    expect(validatePublicArtifact(proofSha, { evidence, pressure: { ...pressure, scenarios: pressure.scenarios.slice(0, 10) } })).toBe(false);
+    expect(validatePublicArtifact(proofSha, { evidence, pressure: { ...pressure, scenarios: pressure.scenarios.map((item, i) => i ? item : { ...item, p95Ms: 3000, passed: true }) } })).toBe(false);
+    expect(validatePublicArtifact(proofSha, { evidence, pressure: { ...pressure, scenarios: pressure.scenarios.map((item, i) => i ? item : { ...item, failures: 1, passed: true }) } })).toBe(false);
+  });
+
+  it("accepts a slow initial sample only as a warning when actual load and content pass", async () => {
+    const { validatePublicArtifact } = await import(routeModulePath);
+    const { evidence, pressure } = await fullProof();
+    const warned = { ...pressure, warmups: pressure.warmups.map((item, i) => i ? item : { ...item, initialLatencyMs: 4082, maxMs: 4082 }),
+      initialLatencyWarnings: [{ path: "/id/login", latencyMs: 4082, thresholdMs: 3000 }] };
+    expect(validatePublicArtifact(proofSha, { evidence, pressure: warned })).toBe(true);
+    expect(validatePublicArtifact(proofSha, { evidence, pressure: { ...warned, warmups: warned.warmups.map((item, i) => i ? item : { ...item, failures: 1, failureKinds: ["content"], passed: false }) } })).toBe(false);
+    expect(validatePublicArtifact(proofSha, { evidence, pressure: { ...warned, scenarios: warned.scenarios.map((item, i) => i ? item : { ...item, p95Ms: 3000 }) } })).toBe(false);
+    expect(validatePublicArtifact(proofSha, { evidence, pressure: { ...warned, initialLatencyWarnings: [] } })).toBe(false);
+  });
+
+  it("keeps the dependency-free router pressure proof in sync with the runtime scenarios", async () => {
+    const { EXPECTED_PRESSURE_SCENARIOS } = await import(routeModulePath);
+    const { PRESSURE_SCENARIOS } = await import(pressureModulePath);
+    expect(EXPECTED_PRESSURE_SCENARIOS).toEqual(PRESSURE_SCENARIOS.map((scenario: { path: string; requests: number; concurrency: number; p95Ms: number; statuses: number[] }) => ({
+      path: scenario.path, requests: scenario.requests, concurrency: scenario.concurrency, p95Ms: scenario.p95Ms, statuses: scenario.statuses,
+    })));
+  });
+
+  it("boots the route script from a clean directory before package installation", () => {
+    const isolated = mkdtempSync(join(tmpdir(), "public-v3-route-"));
+    try {
+      mkdirSync(join(isolated, "scripts"));
+      for (const file of ["public-v3-route.mjs", "public-v3-ci.mjs"]) copyFileSync(join("scripts", file), join(isolated, "scripts", file));
+      const result = spawnSync(process.execPath, ["--input-type=module", "-e", "await import('./scripts/public-v3-route.mjs')"], {
+        cwd: isolated, encoding: "utf8", timeout: 10_000, env: { ...process.env },
+      });
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+    } finally { rmSync(isolated, { recursive: true, force: true }); }
+  });
+
+  it("reads both bounded JSON files from the downloaded GitHub artifact ZIP", async () => {
+    const { decodePublicEvidenceArchive } = await import(routeModulePath);
+    const proof = await fullProof();
+    expect(decodePublicEvidenceArchive(zipProof(proof))).toEqual(proof);
+    expect(decodePublicEvidenceArchive(zipProof(proof, true))).toEqual(proof);
+    expect(() => decodePublicEvidenceArchive(zipProof({ evidence: proof.evidence }))).toThrow(/archive/i);
+    expect(() => decodePublicEvidenceArchive(zipProof({ evidence: proof.evidence, pressure: proof.pressure, extra: {} }))).toThrow(/archive/i);
+    expect(() => decodePublicEvidenceArchive(Buffer.alloc(2_000_001))).toThrow(/archive/i);
+  });
+
+  it("reuses only a verified artifact downloaded through a bounded unauthenticated redirect", async () => {
+    const { findEvidence } = await import(routeModulePath);
+    const proof = await fullProof();
+    const run = { id: 101, head_sha: proofSha, head_branch: "codex/public-event-overview-v3", event: "push", status: "completed", conclusion: "success", path: ".github/workflows/ci.yml",
+      repository: { id: 1316699241, full_name: "captDzuL/MiracleTourney" }, head_repository: { id: 1316699241, full_name: "captDzuL/MiracleTourney" } };
+    const job = { run_id: 101, name: "Public V3 E2E", head_sha: proofSha, status: "completed", conclusion: "success" };
+    const artifact = { id: 501, name: "public-v3-evidence", expired: false, size_in_bytes: 100000, workflow_run: { id: 101, head_sha: proofSha, repository_id: 1316699241 } };
+    const signedUrl = "https://productionresultssa0.blob.core.windows.net/actions-results/proof.zip";
+    let duplicateArtifact = false;
+    const fetchImpl = vi.fn(async (url: string, options?: { headers?: Record<string, string> }) => {
+      if (url.includes("/workflows/ci.yml/runs?")) return Response.json({ workflow_runs: [run] });
+      if (url.endsWith("/runs/101/jobs?per_page=100")) return Response.json({ jobs: [job] });
+      if (url.endsWith("/runs/101/artifacts?per_page=100")) return Response.json({ artifacts: duplicateArtifact ? [artifact, { ...artifact, id: 502 }] : [artifact] });
+      if (url.endsWith("/artifacts/501/zip")) return new Response(null, { status: 302, headers: { location: signedUrl } });
+      if (url === signedUrl) {
+        expect(options?.headers?.Authorization).toBeUndefined();
+        return new Response(zipProof(proof));
+      }
+      throw new Error(`Unexpected test URL ${url}`);
+    });
+    expect(await findEvidence({ repository: "captDzuL/MiracleTourney", sha: proofSha, token: "synthetic", fetchImpl })).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
+    duplicateArtifact = true;
+    expect(await findEvidence({ repository: "captDzuL/MiracleTourney", sha: proofSha, token: "synthetic", fetchImpl })).toBe(false);
+    duplicateArtifact = false;
+    const badFetch = vi.fn(async (url: string, options?: { headers?: Record<string, string> }) => url === signedUrl
+      ? new Response(zipProof({ ...proof, pressure: { ...proof.pressure, status: "failed" } }))
+      : fetchImpl(url, options));
+    expect(await findEvidence({ repository: "captDzuL/MiracleTourney", sha: proofSha, token: "synthetic", fetchImpl: badFetch })).toBe(false);
   });
 
   it("binds the homepage route to a separate guarded check without broad runners", () => {

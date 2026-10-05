@@ -1,9 +1,10 @@
-# V3 database cutover preflight — 3 October 2026
+# V3 database cutover preflight — updated 5 October 2026
 
 Status: **BLOCKED**. This is evidence and a future human-controlled procedure,
-not authorization to deploy or mutate production. Candidate baseline
-`71970cf`; PR target `feature/ui/release/1.0`; actual production Git branch
-`master`. Admin-wide UI migration is deferred.
+not authorization to deploy or mutate production. Candidate branch
+`codex/public-event-overview-v3`; PR target `feature/ui/release/1.0`; actual
+production Git branch `master`. Admin-wide UI migration is deferred. The
+final candidate SHA and remote CI/preview results are pending.
 
 ## Verified state
 
@@ -17,8 +18,12 @@ not authorization to deploy or mutate production. Candidate baseline
   `PasswordResetToken.userId` groups. No user rows or secrets were inspected.
 - PITR history: six hours. Snapshot list and production schedule were empty.
   A history window alone does not preserve a release checkpoint indefinitely.
-- Vercel override runs production `prisma migrate deploy` before `pnpm build`.
-  Old production serves traffic while this schema change occurs.
+- Read-only Vercel inspection refreshed 2026-10-05 confirmed project
+  `miracle-tourney` (`prj_QHv1i060yrRIq6miqOmGodoULhCY`, scope
+  `miracle25`), production branch `master`, and the active override
+  `if [ "$VERCEL_ENV" = "production" ]; then pnpm prisma migrate deploy; fi && pnpm build`.
+  Removing migration from the repository build script does not change this
+  platform override. Its correction requires a separate Dzul cutover decision.
 - Active artifact `dpl_DgUjgWS4WivtPbhDvPPwqbq95P7Q`, SHA `a742c300`, READY;
   bounded ID/EN GETs returned HTTP 200. This is basic availability, not a
   validated functional rollback artifact.
@@ -66,7 +71,7 @@ revocation. Fresh reset links and a security-aware rollback strategy are
 required; do not weaken token/session checks. Recheck duplicate reset-user
 groups immediately before the unique index, with concurrent writers controlled.
 
-## Rehearsal actually performed
+## Earlier Neon child exploration — 3 October
 
 Created and retained production-derived child `br-shy-bird-azhvhia7`, source
 timestamp `2026-10-03T11:01:37Z`, and endpoint `ep-shy-frog-az7dhld2`
@@ -82,35 +87,103 @@ is unresolved: current [Neon plan docs](https://neon.com/docs/introduction/plans
 allow one Free manual snapshot, so plan exclusion is not proven. Dashboard
 fallback required an unavailable login session.
 
-**Stopped before Prisma migration or restore.** No upgrade/no-op, backfill,
-restore integrity, migration duration or RTO is claimed. Production and
-shared test were untouched. Preserve the child for an approved next attempt;
-cleanup is a separate explicit resource decision.
+That child exploration stopped before Prisma migration or restore. It did not
+measure upgrade/no-op, backfill, restore integrity, migration duration, or
+service recovery time. The child is retained; cleanup remains a separate
+resource decision. The later local rehearsal below supplies different,
+bounded evidence and does not rewrite the child result.
+
+## Actual encrypted-backup and local recovery evidence — 5 October
+
+The existing production-derived, encrypted archive
+`E:/MiracleBackups/miracle-neondb-2026-10-05T01-23-48-741Z.age` is 175,055
+bytes with SHA-256
+`dc30ddf3ae4bb98dacd9d68e293b26cef5a3818664364c405c01d578cf1d7f5b`.
+The reviewed one-time local rehearsal completed at
+`2026-10-05T04:38:49.8211130Z` with exit 0 in 75,046 ms. It performed one
+guarded source reference check and two independent restores into a stopped,
+isolated local PostgreSQL 18 cluster. Both restores matched all 23 tables,
+2,036 rows, named-column values, logical column types/nullability, migration
+ledger, and integrity checks. Baseline and candidate restore segments were
+359 ms and 444 ms. Original physical ordinal and record-text hash differences
+on four tables were retained as representation differences after the logical
+comparisons passed; these are not silently called source data loss.
+
+The candidate started with 17 applied/19 pending/zero unfinished migrations.
+The first checked-in Prisma migration deployment exited 0 in 14,074 ms and
+ended with 36 applied/zero pending/zero unfinished. Certificate backfill and
+constraints, session version, reset-token uniqueness, and rate-limit bucket
+checks passed. Synthetic certificate/session/reset/limiter SQL flows passed
+inside rolled-back transactions. The second deployment exited 0 in 1,123 ms
+with an unchanged ledger. No email, Blob, external app, production migration,
+shared-test write, seed, or reset was performed. The private local cluster is
+stopped, with no listener on its rehearsal port; its data remains sensitive
+and retained for the owner. The full source locale/extension equivalence and
+the exact record-text platform mechanism remain unproved.
+
+These are local segments, not production recovery-time measurements. Dzul's
+RPO at most one hour and RTO at most 30 minutes are targets, not achieved
+service metrics. Weekly backup remains **PAUSED**. The current backup CLI is
+bound to the pre-V3 17-applied migration and physical-schema contract; it
+fails closed after source migration until a reviewed post-V3 contract is
+supplied. Activation also requires durable reviewed runtime/script paths
+independent of this removable worktree. Do not mistake a saved archive for a
+fresh cutover checkpoint.
+
+The local rehearsal runner is a one-time, source-anchored release proof for
+this exact archive. Its full mode requires the **current** production source
+to still match the old immutable checkpoint so it can build an ephemeral
+reference. It is not a generic emergency restore entrypoint if production is
+down, changed, or migrated. An incident recovery procedure must identify a
+prevalidated immutable archive by hash, authenticate/decrypt it with reviewed
+tools, restore into an isolated target, compare retained integrity evidence,
+and obtain the owner's loss/switchover decision. It must not prescribe
+rerunning this source-anchored validator as an incident prerequisite.
+
+The production dependency audit initially failed on 2026-10-05 (exit 1,
+six advisories: three high, two moderate, one low) in locked
+`brace-expansion@5.0.9` and `undici@6.28.0`. Scoped patch releases
+`brace-expansion@5.0.12` and `undici@6.28.1` were committed at `e0b55bd`;
+frozen install and 11 focused tests passed, and the subsequent
+`pnpm audit --prod` exited 0 with no known vulnerabilities. This records
+the resolved audit evidence, not an exploitability assessment or a waiver.
 
 ## Required before production cutover
 
-1. Agree recovery PIC, RPO (acceptable data loss), RTO (recovery duration),
-   retention, stop criteria, and the write/traffic handling window.
-2. Resolve checkpoint creation and verify restore into a **new isolated
-   branch**. Create a fresh authorized production recovery point close to the
-   actual release; rehearsal copies do not constitute a current backup.
-3. On a verified child-only direct connection, run all 19 pending Prisma
-   migrations without seed/reset. Verify 36 successful entries, no unresolved
-   failure, required columns/constraints, non-null and unique certificate
-   backfill, unchanged unrelated aggregate counts, and clean no-op re-run.
-4. Compare an independently restored branch's schema, migration checksums
-   and aggregate counts with the pre-migration baseline. Record actual times.
-5. Obtain separate authorization for the production build/cutover changes.
-   Do not let the current automatic production migration precede a compatible
-   app without an agreed write-control strategy. Never promote a test-DB
-   preview onto production aliases.
-6. Validate the exact compatible app recovery artifact and flag-off behavior.
-   `vercel rollback <validated-deployment-id>` changes the app, not the
-   database. Do not use down-migrations as a data backup.
-7. If recovery requires restoring a checkpoint, quantify all writes after
-   that point that would be lost, restore to a new branch first, verify data,
-   and require a human switchover decision. No production restore or alias
-   switch is authorized here.
+1. Dzul and the recovery PIC agree the write/traffic pause, stop criteria,
+   backup retention, RPO/RTO targets, and acceptable loss before a cutover
+   window. Check current source schema, 17-applied baseline, zero unfinished
+   migrations, duplicate reset-user groups, and certificate compatibility.
+2. Separately approve and correct the live Vercel production build override
+   so a build cannot start `prisma migrate deploy`. Verify the effective
+   override before any production deployment. A repository script change
+   alone does not satisfy this gate.
+3. At cutover, pause incompatible old certificate/reset writers and other
+   writes under the agreed procedure. Take a **fresh** authorized production
+   backup/checkpoint after the pause and verify its authentication, retained
+   identity, recoverability and measured timing. The 5 October archive and
+   local rehearsal cannot substitute for a fresh recovery point.
+4. With a separate explicit production migration decision, apply the 19
+   pending migrations once while writes remain paused. Stop on any unknown
+   status; do not blindly retry, seed, reset, or run a down migration. Verify
+   36 applied/zero pending/zero unfinished, the certificate/session/reset/
+   limiter constraints, and critical row counts before the app switch.
+5. Switch only to a validated schema-compatible application artifact, then
+   test ID/EN public flows, authentication/session/reset, certificates,
+   writes, flags-off paths and logs. Resume writers only after the release
+   and recovery PICs approve the observed state. Never promote a preview
+   connected to a test database onto production aliases.
+6. On failure, preserve the current state and decide with the recovery PIC.
+   The old `a742c300` certificate/reset writers are incompatible with the
+   migrated schema and digest-token behavior, so an app-only rollback to that
+   SHA is not a safe promise. A Vercel rollback changes only application
+   code. If data restore is needed, quantify post-checkpoint writes that
+   would be lost, restore to a new isolated branch, verify it, and require a
+   separate human switchover decision. No production restore, alias switch,
+   or down migration is authorized by this runbook.
+7. Before activating weekly backups after migration, review a post-V3
+   backup contract, test its restore, and pin durable runner/tool paths outside
+   a removable worktree. Keep the weekly job paused until those checks pass.
 
 References: [Neon snapshots](https://neon.com/blog/three-ways-to-use-your-snapshots),
 [create-snapshot API](https://api-docs.neon.tech/reference/createsnapshot),

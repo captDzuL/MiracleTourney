@@ -1,6 +1,6 @@
 # Local encrypted production backup
 
-The guarded runner is implemented for the approved direct production `neondb` source. The reviewed preflight and single encrypted export completed on 2026-10-05. The first archive verification failed; a local helper bug that passed a literal `-` input filename to `pg_restore` was then confirmed with the pinned tool. The corrected helper still requires fresh independent review and controller-run verification of the existing archive. The weekly job remains paused. Do not repeat the export.
+The guarded runner is implemented for the approved direct production `neondb` source. The reviewed preflight and single encrypted export completed on 2026-10-05. The first archive verification failed because a local helper passed a literal `-` input filename to `pg_restore`; that helper was corrected and reviewed. The existing archive subsequently passed authenticated verification and one full local two-restore/migration/no-op rehearsal, detailed below. The weekly job remains paused. Do not repeat this export.
 
 ## Pinned local tools and provenance
 
@@ -36,6 +36,37 @@ The pinned libpq connection's `verify-full` mode, exact host and database, and v
 
 ## Isolated local recovery rehearsal runner
 
+The controller's reviewed full rehearsal ran once on 2026-10-05, exit 0,
+75,046 ms end to end. The immutable 175,055-byte archive SHA-256 is
+`dc30ddf3ae4bb98dacd9d68e293b26cef5a3818664364c405c01d578cf1d7f5b`.
+Two independent local restores took 359 ms and 444 ms. Each matched the
+production-derived reference across 23 tables/2,036 rows, logical schema,
+named-column values, ledger, and integrity. Candidate migration took 14,074
+ms and moved 17 applied/19 pending/zero unfinished to 36 applied/zero
+pending/zero unfinished. Its second application was a 1,123 ms no-op.
+Certificate/session/reset/limiter postchecks and synthetic rolled-back SQL
+flows passed. The private local cluster was stopped and remains retained for
+the owner. These measurements do not establish production RTO; source
+locale/extension equivalence and the exact four-table record-text difference
+mechanism remain unproved. The RPO <=1 hour and RTO <=30 minutes are Dzul's
+targets. A fresh backup under an agreed write pause is still required before
+cutover.
+
+The current backup runner deliberately expects the **pre-V3** 17-applied
+physical contract. After production migration it will fail closed until a
+reviewed post-V3 backup contract is supplied. Weekly activation also requires
+durable reviewed runtime/script paths independent of this removable worktree.
+Keep the scheduled job **PAUSED** until both requirements and a corresponding
+restore check are met.
+
+This local rehearsal runner is source-anchored to the exact old checkpoint
+and archive. Full mode cannot establish its reference if production is down,
+changed, or migrated; it is not a general emergency restore command. In an
+incident, use a prevalidated immutable archive identified by hash, reviewed
+age authentication and isolated restore tools, retained integrity evidence,
+and a named owner decision on write loss and switchover. Do not rerun the
+source-anchored release validator as a prerequisite for incident recovery.
+
 Task 3 adds `scripts/operations/local-rehearsal-runner.mjs` for a controller-run rehearsal after fresh code review. It accepts one absolute path to the already authenticated `.age` archive and verifies the owner-only backup/key directories, archive and manifest hash, full age authentication, pinned PostgreSQL 18.6 ZIP, pinned client DLLs, and free capacity before it creates a new directory. It rejects an occupied port and existing or redirected rehearsal target. Full rehearsal also reads the protected source URL through the existing fixed, pinned `verify-full` connection guard. Before creating a local cluster, one bounded read-only source transaction must reproduce the immutable manifest's complete 23-table original checkpoint, schema, ledger, counts and integrity. The source transaction's snapshot ID is new and is not required to equal the archived snapshot ID. Source credentials, schema rows and digests remain transient in memory; only fixed failure codes can leave the process.
 
 The runner creates one exclusive `E:/MiracleBackups/rehearsal-<UTC timestamp>` subtree with an owner-only inheritable Windows ACL. The pinned ZIP is extracted into that subtree's separate `server/pgsql` runtime; the existing client bins are not modified. Its `cluster/` uses only `127.0.0.1:55438`, SCRAM authentication, a generated bootstrap credential and a distinct generated non-superuser `rehearsal_owner`. Only that owner role restores and migrates the two new databases, `recovery_baseline` and `migration_candidate`. The bootstrap password file is exclusive and removed after `initdb`. No service, firewall, global PATH, production/shared database, seed, or reset operation is used.
@@ -50,14 +81,14 @@ node scripts/operations/local-rehearsal-runner.mjs E:/MiracleBackups/miracle-neo
 
 Run this only from the reviewed checkout. A success line contains `REHEARSAL_VERIFIED` and redacted timings/counts, and the private subtree contains `rehearsal-result.json`. Any nonzero status requires inspecting that private status and the stopped/uncertain cluster state before deciding on another run. A different run would create a new subtree; no existing data is deleted. The local restore time is not a production service recovery-time objective. The source snapshot omitted source locale, collation and extension metadata, so the runner records local values and explicitly leaves cross-environment equivalence unproven. No app-level email, Blob, provider, or end-user flow runs in this rehearsal.
 
-This is a bounded table-column/type/nullability and named-value contract, not a full drift audit of every index, trigger, policy, extension, or view. The original and logical aggregate MD5 values are comparison aids, not authentication or a cryptographic proof that the historical source state is unchanged. The current source must first match every original manifest field; if it has changed, full rehearsal fails before local work. The exact Linux-to-Windows composite record-text quoting mechanism has not been proved, although the five-table named-value diagnostic showed equality and the three `Event` ordinal changes were identified. The `.age` archive has a SHA-256 in its manifest; the manifest itself is not signed. The runner checks ciphertext bytes and hash, but does not claim recoverability until separate age authentication, `pg_restore --list`, and a later reviewed isolated restore succeed.
+This is a bounded table-column/type/nullability and named-value contract, not a full drift audit of every index, trigger, policy, extension, or view. The original and logical aggregate MD5 values are comparison aids, not authentication or a cryptographic proof that the historical source state is unchanged. The current source must first match every original manifest field; if it has changed, full rehearsal fails before local work. The exact Linux-to-Windows composite record-text quoting mechanism has not been proved, although the five-table named-value diagnostic showed equality and the three `Event` ordinal changes were identified. The `.age` archive has a SHA-256 in its manifest; the manifest itself is not signed. Authentication, `pg_restore --list`, and the reviewed local two-restore comparison subsequently succeeded for this exact archive. Those results establish bounded local recoverability, not production service recovery.
 
-## Reviewed one-time operation
+## Reviewed one-time operation history
 
-For the existing 2026-10-05 archive, steps 1–4 below are completed history. Do not rerun the preflight or export for this archive; step 5 is the pending controller action after fresh helper review.
+For the existing 2026-10-05 archive, steps 1–5 below are completed history. The reviewed full local rehearsal described above followed them. Do not rerun the preflight, export, verification, or rehearsal merely to refresh this report.
 
 1. Obtain a clean independent review of the trust bridge, preflight, and synthetic tests; retain the EDB provenance limit. Controller reconfirms protected source metadata, actual key and output ACLs, writable permission, free space/quota, tool hashes, and local migration baseline.
 2. Controller verifies the existing `E:/MiracleBackups` protected current-owner-only inheritable DACL and reconciles it empty. Do not change an existing unsafe directory's ACL in place.
 3. Invoke `node scripts/operations/local-backup-preflight.mjs` exactly once from the reviewed checkout with **no arguments**. This may exclusively initialize the public CA bundle in the current-plan ignored owner-only runtime, then uses the fixed source and same pinned `psql` to run the full read-only checkpoint, closes with `ROLLBACK`, and returns only `{"status":"BACKUP_PREFLIGHT_READY","appliedMigrations":17}` on success. It may read the existing local key status as a readiness guard, but does not mutate the key or invoke `pg_dump`, age, or archive publishing. On any failure, stop and reconcile; do not automatically retry.
 4. Only if that preflight passes, invoke `node scripts/operations/local-backup.mjs` exactly once with **no arguments**. Export will not create the CA bundle; it verifies the existing exact bundle before connecting. Record start/end, archive bytes and SHA-256, manifest, and same-snapshot checkpoint. On failure/unknown status, reconcile partial/final files; do not retry automatically.
-5. Independently run `node scripts/operations/local-backup-verify.mjs E:/MiracleBackups/<exact-archive-name>.age` on the reviewed existing archive after fresh review of the helper. This checks path/DACL, manifest SHA-256, pinned age/pg_restore/DLLs, then unprotects the identity internally and streams age decryption into `pg_restore --list` with stdin as the archive source. If `pg_restore` exits successfully after reading the TOC, the helper drains the remainder of age's output so the entire ciphertext is authenticated. Both child exits must be zero. Identity, decrypted bytes, TOC text, and child stderr are never printed or written to disk; output is status, bytes, and SHA-256 only. A later reviewed isolated restore must compare ledger, schema, counts, checksums, and integrity before calling the backup recoverable. The weekly job remains paused.
+5. Independent reviewed verification ran `node scripts/operations/local-backup-verify.mjs` against the exact archive. It checked path/DACL, manifest SHA-256, pinned age/pg_restore/DLLs, streamed age decryption into `pg_restore --list`, drained the complete ciphertext, and required both child exits to be zero. Identity, decrypted bytes, TOC text, and child stderr were not printed or written to disk. The subsequent reviewed isolated restores compared ledger, logical schema, counts, named values, and integrity. The weekly job remains paused.
