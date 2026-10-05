@@ -22,11 +22,10 @@ export async function generateMetadata({
   const event = await getPublicEventBySlug(slug);
   if (!event) return {};
 
-  let ogImage = event.logoUrl ?? event.gameImageUrl;
-  if (isFeatureEnabled("adaptive_public_event_v3")) {
-    const view = await readPublicV3Event(slug, null).catch(() => null);
-    if (view) ogImage = view.identity.poster.eventUrl ?? view.identity.poster.gameImageUrl ?? view.identity.poster.logoUrl ?? undefined;
-  }
+  const ogImage = isFeatureEnabled("adaptive_public_event_v3")
+    ? (event.activeVisualAsset?.status === "approved" && event.activeVisualAsset.url ? event.activeVisualAsset.url : null)
+      ?? event.gameImageUrl ?? event.logoUrl
+    : event.logoUrl ?? event.gameImageUrl;
 
   const title = event.name;
   const description = event.description;

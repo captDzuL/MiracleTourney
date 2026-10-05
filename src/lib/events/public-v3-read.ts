@@ -10,9 +10,8 @@ import { readPublicFinished } from "./public-finished";
 import { aggregateFlashpeakLeaderboard, readFlashpeakStatPayload } from "@/lib/player-stats/flashpeak";
 import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
 import { createServerMilestoneLogger, withServerActionLog } from "@/lib/observability/logger";
-import { publicV3LocalizedHref, publicV3RouteTargets, publicV3RouteTarget } from "./public-v3-types";
+import { publicV3LocalizedHref, publicV3RouteTargets } from "./public-v3-types";
 import type {
-  CompatiblePublicCertificate,
   CompatiblePublicEventInput,
   CompatiblePublicEventRecord,
   CompatiblePublicMatch,
@@ -38,6 +37,9 @@ const CERTIFICATE_TYPES = new Set(["champion", "runner_up", "third_place", ...AW
 const EXPECTED_CERTIFICATE_COUNT = 7;
 const PUBLIC_READER_ROW_LIMIT = 500;
 const MAX_REGISTRATION_TEMPLATE_SLOTS = 256;
+const FINISHED_IN_FLIGHT_LIMIT = 64;
+const FINISHED_IN_FLIGHT_KEY_LIMIT = 200;
+const inFlightFinished = new Map<string, Promise<PublicV3EventViewModel | null>>();
 
 type AnyRecord = Record<string, unknown>;
 
@@ -1261,7 +1263,7 @@ async function compatibilitySnapshot(event: AnyRecord, viewer: PublicViewer, now
   };
 }
 
-async function readPublicV3EventImpl(slug: string, viewer: PublicViewer, now = new Date(), requestId?: string): Promise<PublicV3EventViewModel | null> {
+async function readPublicV3EventImpl(slug: string, viewer: PublicViewer, now: Date, requestId?: string, shareInFlight = false): Promise<PublicV3EventViewModel | null> {
   let event = await callOptional("event", "findUnique", { where: { slug } });
   if (!event) event = await callOptional("event", "findFirst", { where: { slug } });
   if (!event) return null;
@@ -1272,24 +1274,46 @@ async function readPublicV3EventImpl(slug: string, viewer: PublicViewer, now = n
     ? createServerMilestoneLogger({ operation: "public_event_read", route: "/server-readers/public-event", requestId })
     : undefined;
   const persistedUpdates = await readPublishedAnnouncements(text(row.id), now, status, trace);
-  let authoritative: unknown = null;
-  if (status === "Ongoing") authoritative = await readPublicOngoing(slug, now);
-  else if (status === "Finished") authoritative = await readPublicFinished(slug);
-  else if (status === "Published") {
-    authoritative = await readPublicDrawing(slug);
-    if (!authoritative) authoritative = await readPublicRegistration(slug, viewer, now);
-  } else if (status === "Registration Closed") {
-    authoritative = await readPublicDrawing(slug);
+  const load = async (updates = persistedUpdates): Promise<PublicV3EventViewModel | null> => {
+    let authoritative: unknown = null;
+    if (status === "Ongoing") authoritative = await readPublicOngoing(slug, now);
+    else if (status === "Finished") authoritative = await readPublicFinished(slug);
+    else if (status === "Published") {
+      authoritative = await readPublicDrawing(slug);
+      if (!authoritative) authoritative = await readPublicRegistration(slug, viewer, now);
+    } else if (status === "Registration Closed") {
+      authoritative = await readPublicDrawing(slug);
+    }
+    const authoritativeMode = text(record(authoritative).mode);
+    const snapshotTeams = ["registration", "drawing", "ongoing", "finished"].includes(authoritativeMode)
+      ? teamsFromRaw(publicReaderRows("public.snapshot.teams", await callOptional("team", "findMany", { where: { eventId: text(row.id) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) })))
+      : [];
+    const normalized = normalizeAuthoritative(row, authoritative, "authoritative", snapshotTeams, updates);
+    if (normalized) return normalized;
+    return projectCompatiblePublicV3Event(await compatibilitySnapshot(row, viewer, now, updates));
+  };
+  // Finished projections contain no viewer-specific state. Share only overlapping work,
+  // then evict so publication and announcement changes are visible to the next read.
+  const finishedKey = `${text(row.id)}:${slug}`;
+  if (status === "Finished" && shareInFlight && finishedKey.length <= FINISHED_IN_FLIGHT_KEY_LIMIT) {
+    let pending = inFlightFinished.get(finishedKey);
+    if (!pending && inFlightFinished.size < FINISHED_IN_FLIGHT_LIMIT) {
+      const operation = load([]);
+      const owned: Promise<PublicV3EventViewModel | null> = operation.then(
+        (value) => { if (inFlightFinished.get(finishedKey) === owned) inFlightFinished.delete(finishedKey); return value; },
+        (error) => { if (inFlightFinished.get(finishedKey) === owned) inFlightFinished.delete(finishedKey); throw error; },
+      );
+      inFlightFinished.set(finishedKey, owned);
+      pending = owned;
+    }
+    if (pending) {
+      const view = structuredClone(await pending);
+      return view ? { ...view, updates: persistedUpdates } : null;
+    }
   }
-  const authoritativeMode = text(record(authoritative).mode);
-  const snapshotTeams = ["registration", "drawing", "ongoing", "finished"].includes(authoritativeMode)
-    ? teamsFromRaw(publicReaderRows("public.snapshot.teams", await callOptional("team", "findMany", { where: { eventId: text(row.id) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: readerProbeLimit(PUBLIC_READER_ROW_LIMIT) })))
-    : [];
-  const normalized = normalizeAuthoritative(row, authoritative, "authoritative", snapshotTeams, persistedUpdates);
-  if (normalized) return normalized;
-  return projectCompatiblePublicV3Event(await compatibilitySnapshot(row, viewer, now, persistedUpdates));
+  return load();
 }
 
-export function readPublicV3Event(slug: string, viewer: PublicViewer, now = new Date()): Promise<PublicV3EventViewModel | null> {
-  return withServerActionLog("public_event_read", "/server-readers/public-event", ({ requestId }) => readPublicV3EventImpl(slug, viewer, now, requestId));
+export function readPublicV3Event(slug: string, viewer: PublicViewer, now?: Date): Promise<PublicV3EventViewModel | null> {
+  return withServerActionLog("public_event_read", "/server-readers/public-event", ({ requestId }) => readPublicV3EventImpl(slug, viewer, now ?? new Date(), requestId, now === undefined));
 }

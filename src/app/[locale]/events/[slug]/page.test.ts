@@ -18,11 +18,4 @@ describe("localized adaptive event routing contract", () => {
     expect(source).not.toContain("shouldUseAdaptiveRegistrationRenderer");
     expect(source).toContain("return renderEventDetailPage");
   });
-
-  it("keeps personalized view state outside public metadata", () => {
-    const metadataSection = source.slice(source.indexOf("export async function generateMetadata"), source.indexOf("export default async function LocalizedEventDetailPage"));
-    expect(metadataSection).toContain("readPublicV3Event(slug, null)");
-    expect(metadataSection).not.toContain("getSessionUser");
-    expect(metadataSection).toContain("view.identity.poster.eventUrl");
-  });
 });
