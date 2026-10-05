@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { buildSourceMetadataSql, summarizeSourceMetadataLine, buildSourceDigestSql,
   summarizeSourceDigestLine, buildDeepComparisonSql, parseDeepComparisonLine,
-  compareDeepComparison } from '../../scripts/operations/local-rehearsal-source-metadata.mjs';
+  compareDeepComparison, buildSourceRecoveryReferenceSql, buildLocalLogicalSql,
+  anchorRecoveryReference, parseSourceRecoveryReference } from '../../scripts/operations/local-rehearsal-source-metadata.mjs';
+import { LEGACY_TABLES } from '../../scripts/operations/local-backup-snapshot.mjs';
 
 const schema = [{ table_name: 'User', column_name: 'id', data_type: 'text', is_nullable: 'NO', ordinal_position: 1 }];
 const sha = createHash('sha256').update(JSON.stringify(schema)).digest('hex');
@@ -109,3 +111,63 @@ test('deep comparison identifies structural drift and keeps hashes out of the re
   assert.equal(JSON.stringify(result).includes('a'.repeat(32)), false);
   assert.equal(JSON.stringify(result).includes('b'.repeat(32)), false);
 });
+
+test('source reference rejects any changed original checkpoint field before local restore', () => {
+  const ledger = [{ migration_name: '20260812150000_baseline', checksum: 'f'.repeat(64),
+    finished_at: '2026-01-01', rolled_back_at: null, started_at: '2026-01-01', id: 'fixture' }];
+  const expectedLedger = [{ name: ledger[0].migration_name, sha256: ledger[0].checksum,
+    sha256Crlf: ledger[0].checksum }];
+  const schemaRows = [...LEGACY_TABLES, '_prisma_migrations'].map(table => ({
+    table_name: table, column_name: 'id', data_type: 'text', is_nullable: 'NO', ordinal_position: 1,
+  }));
+  const counts = Object.fromEntries(LEGACY_TABLES.map(table => [table, 0]));
+  const checksums = Object.fromEntries(LEGACY_TABLES.map(table => [table, 'a'.repeat(32)]));
+  const integrity = { invalidConstraints: 0, criticalUniqueIndexes: true };
+  const source = { snapshot: '00000001-00000001-1',
+    source: { database: 'neondb', serverVersion: 180006, ssl: true },
+    ledger, schema: schemaRows, counts, checksums, integrity };
+  const checkpoint = { appliedMigrations: 1, ledgerSha256: shaHash(ledger),
+    schemaSha256: shaHash(schemaRows), tableCounts: counts, tableChecksumsMd5: checksums, integrity };
+  const canonical = Object.fromEntries(LEGACY_TABLES.map(table => [table, 'b'.repeat(32)]));
+  const logical = { schema: schemaRows.map(row => ({ table_name: row.table_name,
+    column_name: row.column_name, data_type: row.data_type, is_nullable: row.is_nullable })), canonical };
+  const reference = anchorRecoveryReference(source, logical, checkpoint, expectedLedger);
+  assert.equal(Object.keys(reference.canonical).length, 23);
+  assert.equal(reference.schema.length, 24);
+  assert.equal(reference.logicalSchema.length, 24);
+  assert.equal(JSON.stringify(reference).includes('fixture'), false);
+  const output = `MIRACLE_CHECKPOINT\t${JSON.stringify(source)}\n` +
+    `MIRACLE_LOGICAL_REFERENCE\t${JSON.stringify(logical)}\n`;
+  assert.deepEqual(parseSourceRecoveryReference(output, checkpoint, expectedLedger), reference);
+  assert.throws(() => parseSourceRecoveryReference(output + 'extra\n', checkpoint, expectedLedger),
+    /SOURCE_REFERENCE_DRIFT/);
+  for (const changed of [
+    { ...source, counts: { ...counts, User: 1 } },
+    { ...source, checksums: { ...checksums, User: 'c'.repeat(32) } },
+    { ...source, schema: [{ ...schemaRows[0], data_type: 'integer' }, ...schemaRows.slice(1)] },
+    { ...source, ledger: [{ ...ledger[0], id: 'changed' }] },
+    { ...source, integrity: { ...integrity, invalidConstraints: 1 } },
+  ]) assert.throws(() => anchorRecoveryReference(changed, logical, checkpoint, expectedLedger),
+    /SOURCE_REFERENCE_DRIFT/);
+  assert.throws(() => anchorRecoveryReference(source, { ...logical, canonical: { ...canonical, User: 'not-a-hash' } }, checkpoint, expectedLedger),
+    /SOURCE_REFERENCE_DRIFT/);
+});
+
+test('source and local logical SQL use fixed settings and all 23 named-value aggregates', () => {
+  const source = buildSourceRecoveryReferenceSql();
+  const local = buildLocalLogicalSql();
+  assert.equal((source.match(/BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;/g) || []).length, 1);
+  assert.match(source, /MIRACLE_CHECKPOINT/);
+  assert.match(source, /MIRACLE_LOGICAL_REFERENCE/);
+  assert.match(source, /ROLLBACK;\s*$/);
+  assert.equal((source.match(/to_jsonb\(t\)::text/g) || []).length, 46);
+  assert.equal((local.match(/to_jsonb\(t\)::text/g) || []).length, 46);
+  assert.match(source, /COLLATE "C"/);
+  assert.match(local, /COLLATE "C"/);
+  assert.match(source, /SET LOCAL TIME ZONE 'UTC'/);
+  assert.match(local, /SET LOCAL TIME ZONE 'UTC'/);
+  assert.match(source, /format_type\(a\.atttypid,\s*a\.atttypmod\)/);
+  assert.match(local, /format_type\(a\.atttypid,\s*a\.atttypmod\)/);
+});
+
+const shaHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');

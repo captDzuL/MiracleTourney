@@ -133,14 +133,21 @@ test('operator limitation describes the expanded synthetic SQL without implying 
 test('checkpoint diagnostic plan restores baseline only and never schedules candidate migrations', () => {
   assert.equal(typeof rehearsalRunner.buildRehearsalPlan, 'function');
   assert.deepEqual(rehearsalRunner.buildRehearsalPlan('checkpoint-diagnostic'), {
-    restoreDatabases: ['recovery_baseline'], migrateCandidate: false, terminalStatus: 'CHECKPOINT_DIAGNOSTIC_ONLY',
+    restoreDatabases: ['recovery_baseline'], migrateCandidate: false, sourceReference: false,
+    terminalStatus: 'CHECKPOINT_DIAGNOSTIC_ONLY',
   });
   assert.deepEqual(rehearsalRunner.buildRehearsalPlan('checkpoint-deep-diagnostic'), {
-    restoreDatabases: ['recovery_baseline'], migrateCandidate: false, terminalStatus: 'CHECKPOINT_DEEP_DIAGNOSTIC_ONLY',
+    restoreDatabases: ['recovery_baseline'], migrateCandidate: false, sourceReference: false,
+    terminalStatus: 'CHECKPOINT_DEEP_DIAGNOSTIC_ONLY',
   });
   assert.deepEqual(rehearsalRunner.buildRehearsalPlan('full'), {
-    restoreDatabases: ['recovery_baseline', 'migration_candidate'], migrateCandidate: true,
+    restoreDatabases: ['recovery_baseline', 'migration_candidate'], migrateCandidate: true, sourceReference: true,
     terminalStatus: 'REHEARSAL_VERIFIED',
   });
   assert.throws(() => rehearsalRunner.buildRehearsalPlan('unknown'), /CONFIG_REJECTED/);
+});
+
+test('full rehearsal cannot verify a restore without its anchored source reference', () => {
+  assert.throws(() => rehearsalRunner.verifyRecoveryCheckpoint('full', {}, {}, null, {}, []),
+    /SOURCE_REFERENCE_DRIFT/);
 });

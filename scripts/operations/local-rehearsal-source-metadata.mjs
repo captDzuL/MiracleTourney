@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prepareFixedExport } from './local-backup-operator.mjs';
+import { buildCheckpointSql, LEGACY_TABLES } from './local-backup-snapshot.mjs';
+import { compareRestoredCheckpoint, normalizeRecoverySchema } from './local-rehearsal-core.mjs';
 
 const MANIFEST = 'E:/MiracleBackups/miracle-neondb-2026-10-05T01-23-48-741Z.json';
 const ARCHIVE = 'miracle-neondb-2026-10-05T01-23-48-741Z.age';
@@ -85,6 +87,80 @@ SELECT '${marker}' || chr(9) || json_build_object(
   'composite', json_build_object(${content('t::text')}))::text;
 ROLLBACK;
 `;
+}
+
+function logicalDigestSelect() {
+  const checksums = LEGACY_TABLES.map(table =>
+    `'${table}', (SELECT md5(coalesce(string_agg(md5(to_jsonb(t)::text), '' ORDER BY md5(to_jsonb(t)::text) COLLATE "C"), '')) FROM public."${table}" t)`).join(',\n    ');
+  return `SELECT 'MIRACLE_LOGICAL_REFERENCE' || chr(9) || json_build_object(
+  'schema', (SELECT coalesce(json_agg(row_to_json(s) ORDER BY s.table_name COLLATE "C", s.column_name COLLATE "C"), '[]'::json)
+    FROM (SELECT c.relname::text AS table_name, a.attname::text AS column_name,
+      pg_catalog.format_type(a.atttypid, a.atttypmod)::text AS data_type,
+      CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS is_nullable
+      FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+      WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped) s),
+  'canonical', json_build_object(${checksums}))::text;\n`;
+}
+
+const logicalSettings = `SET LOCAL statement_timeout = '90s';
+SET LOCAL TIME ZONE 'UTC';
+SET LOCAL DateStyle = 'ISO, MDY';
+SET LOCAL IntervalStyle = 'postgres';
+SET LOCAL extra_float_digits = 1;
+SET LOCAL bytea_output = 'hex';
+SET LOCAL search_path = pg_catalog, public;
+`;
+
+export function buildSourceRecoveryReferenceSql() {
+  // The original checkpoint and the logical digests are read in one fixed snapshot.
+  return `${buildCheckpointSql()}${logicalSettings}${logicalDigestSelect()}ROLLBACK;\n`;
+}
+
+export function buildLocalLogicalSql() {
+  return `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\n${logicalSettings}` +
+    logicalDigestSelect().replace('MIRACLE_LOGICAL_REFERENCE', 'MIRACLE_LOCAL_CHECKPOINT') + 'ROLLBACK;\n';
+}
+
+const validDigestMap = value => exactKeys(value, LEGACY_TABLES) &&
+  LEGACY_TABLES.every(table => typeof value[table] === 'string' && /^[a-f0-9]{32}$/.test(value[table]));
+
+function sourceDrift() { const error = new Error('SOURCE_REFERENCE_DRIFT'); error.code = error.message; return error; }
+
+export function anchorRecoveryReference(source, logical, checkpoint, expectedLedger) {
+  try {
+    if (!/^[0-9A-F]{8}-[0-9A-F]{8}-[0-9]+$/i.test(source?.snapshot) ||
+        source.source?.database !== 'neondb' || source.source.serverVersion < 180000 ||
+        source.source.serverVersion >= 190000 || typeof source.source.ssl !== 'boolean' ||
+        !exactKeys(logical, ['schema', 'canonical']) || !validDigestMap(logical.canonical) ||
+        !exactKeys(checkpoint?.tableCounts, LEGACY_TABLES) ||
+        !exactKeys(checkpoint?.tableChecksumsMd5, LEGACY_TABLES) ||
+        checkpoint.integrity?.invalidConstraints !== 0 || checkpoint.integrity?.criticalUniqueIndexes !== true) throw sourceDrift();
+    compareRestoredCheckpoint(source, checkpoint, expectedLedger);
+    return { schema: normalizeRecoverySchema(source.schema),
+      logicalSchema: normalizeRecoverySchema(logical.schema), canonical: { ...logical.canonical } };
+  } catch { throw sourceDrift(); }
+}
+
+export function parseSourceRecoveryReference(output, checkpoint, expectedLedger) {
+  try {
+    if (typeof output !== 'string' || output.length > 262144) throw sourceDrift();
+    const lines = output.trim().split(/\r?\n/);
+    if (lines.length !== 2 || !lines[0].startsWith('MIRACLE_CHECKPOINT\t') ||
+        !lines[1].startsWith('MIRACLE_LOGICAL_REFERENCE\t')) throw sourceDrift();
+    const source = JSON.parse(lines[0].slice('MIRACLE_CHECKPOINT\t'.length));
+    const logical = JSON.parse(lines[1].slice('MIRACLE_LOGICAL_REFERENCE\t'.length));
+    return anchorRecoveryReference(source, logical, checkpoint, expectedLedger);
+  } catch { throw sourceDrift(); }
+}
+
+export async function collectGuardedSourceRecoveryReference(checkpoint, expectedLedger) {
+  try {
+    const config = await prepareFixedExport();
+    const output = await runPinnedPsql(config.psqlPath, config.pgEnv,
+      buildSourceRecoveryReferenceSql(), 120000);
+    return parseSourceRecoveryReference(output, checkpoint, expectedLedger);
+  } catch { throw sourceDrift(); }
 }
 
 function validateDeepValue(raw) {
@@ -207,7 +283,7 @@ async function readManifestCheckpoint() {
   } catch { throw fail(); }
 }
 
-async function runPinnedPsql(path, env, sql) {
+async function runPinnedPsql(path, env, sql, timeoutMs = 30000) {
   let child;
   let timer;
   try {
@@ -227,7 +303,7 @@ async function runPinnedPsql(path, env, sql) {
       child.once('close', resolve);
     });
     const timed = new Promise((_, reject) => {
-      timer = setTimeout(() => { child.kill(); reject(fail()); }, 30000);
+      timer = setTimeout(() => { child.kill(); reject(fail()); }, timeoutMs);
     });
     const code = await Promise.race([completed, timed]);
     if (code !== 0 || overflow) throw fail();

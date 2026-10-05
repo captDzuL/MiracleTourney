@@ -5,13 +5,15 @@ import { appendFile, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/pr
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connect } from 'node:net';
-import { assertLocalTarget, assertFreshRehearsalPath, compareRestoredCheckpoint, inspectMigrationLedger, assessCandidate } from './local-rehearsal-core.mjs';
+import { assertLocalTarget, assertFreshRehearsalPath, compareRestoredCheckpoint,
+  compareLogicalRecoveryCheckpoint, inspectMigrationLedger, assessCandidate } from './local-rehearsal-core.mjs';
 import { assertOutputCapacity, assertOwnerOnlyDirectory, verifyPinnedFile } from './local-backup-readiness.mjs';
 import { verifyBackupPair, verifyPostgresDependencySet } from './local-backup-core.mjs';
 import { loadExpectedLedger, LEGACY_TABLES, buildCriticalUniqueIndexSql } from './local-backup-snapshot.mjs';
 import { PG18_DLL_SHA256 } from './pg18-dll-hashes.mjs';
 import { buildDeepComparisonSql, collectGuardedSourceDeepComparison,
-  compareDeepComparison } from './local-rehearsal-source-metadata.mjs';
+  compareDeepComparison, buildLocalLogicalSql,
+  collectGuardedSourceRecoveryReference } from './local-rehearsal-source-metadata.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(scriptDir, '../..');
@@ -407,11 +409,24 @@ async function migrate(password, runRoot, schema) {
 
 export function buildRehearsalPlan(mode = 'full') {
   if (mode === 'checkpoint-diagnostic') return { restoreDatabases: ['recovery_baseline'],
-    migrateCandidate: false, terminalStatus: 'CHECKPOINT_DIAGNOSTIC_ONLY' };
+    migrateCandidate: false, sourceReference: false, terminalStatus: 'CHECKPOINT_DIAGNOSTIC_ONLY' };
   if (mode === 'checkpoint-deep-diagnostic') return { restoreDatabases: ['recovery_baseline'],
-    migrateCandidate: false, terminalStatus: 'CHECKPOINT_DEEP_DIAGNOSTIC_ONLY' };
+    migrateCandidate: false, sourceReference: false, terminalStatus: 'CHECKPOINT_DEEP_DIAGNOSTIC_ONLY' };
   if (mode === 'full') return { restoreDatabases: ['recovery_baseline', 'migration_candidate'],
-    migrateCandidate: true, terminalStatus: 'REHEARSAL_VERIFIED' };
+    migrateCandidate: true, sourceReference: true, terminalStatus: 'REHEARSAL_VERIFIED' };
+  throw fail('CONFIG_REJECTED');
+}
+
+export function verifyRecoveryCheckpoint(mode, checkpoint, localLogical, sourceReference,
+  manifestCheckpoint, expectedLedger) {
+  if (mode === 'full') {
+    if (!sourceReference) throw fail('SOURCE_REFERENCE_DRIFT');
+    return compareLogicalRecoveryCheckpoint(checkpoint, localLogical, sourceReference,
+      manifestCheckpoint, expectedLedger);
+  }
+  if (mode === 'checkpoint-diagnostic' || mode === 'checkpoint-deep-diagnostic') {
+    return compareRestoredCheckpoint(checkpoint, manifestCheckpoint, expectedLedger);
+  }
   throw fail('CONFIG_REJECTED');
 }
 
@@ -432,9 +447,11 @@ export async function runRehearsal(archive, mode = 'full') {
   const authenticated = await runChild(process.execPath, [archiveVerifier, archive], { timeoutMs: 7200000, maxOutput: 1024 });
   const authentication = parsePrivateJson(authenticated.stdout);
   if (authentication.status !== 'ARCHIVE_VERIFIED' || authentication.bytes !== pair.bytes || authentication.sha256 !== pair.sha256) throw fail('ARCHIVE_REJECTED');
+  const { names, expected } = await readMigrationNames();
   const sourceDeep = mode === 'checkpoint-deep-diagnostic'
     ? await collectGuardedSourceDeepComparison(manifest.checkpoint) : null;
-  const { names, expected } = await readMigrationNames();
+  const sourceReference = plan.sourceReference
+    ? await collectGuardedSourceRecoveryReference(manifest.checkpoint, expected) : null;
   const runRoot = join(outputRoot, `rehearsal-${stamp()}`);
   await assertFreshRehearsalPath(runRoot, outputRoot);
   const bootstrapPassword = randomBytes(32).toString('base64url');
@@ -455,10 +472,13 @@ export async function runRehearsal(archive, mode = 'full') {
       restoreDatabase = database;
       const restored = await restoreArchive(archive, database, ownerPassword);
       const checkpoint = await queryJson(cluster.bin, database, ownerPassword, buildRestoreCheckpointSql());
+      const localLogical = plan.sourceReference
+        ? await queryJson(cluster.bin, database, ownerPassword, buildLocalLogicalSql()) : null;
       const deepComparison = sourceDeep ? compareDeepComparison(sourceDeep,
         await queryJson(cluster.bin, database, ownerPassword, buildDeepComparisonSql('local'))) : null;
       let verified;
-      try { verified = compareRestoredCheckpoint(checkpoint, manifest.checkpoint, expected); }
+      try { verified = verifyRecoveryCheckpoint(mode, checkpoint, localLogical,
+        sourceReference, manifest.checkpoint, expected); }
       catch (error) {
         if (error?.code === 'CHECKPOINT_DRIFT' && deepComparison) error.deepComparison = deepComparison;
         throw error;
@@ -521,7 +541,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   } else runRehearsal(process.argv[2], process.argv.length === 4 ? process.argv[3].slice(2) : 'full').then(result => {
     process.stdout.write(`${JSON.stringify(result)}\n`);
   }).catch(error => {
-    const safe = new Set(['ARCHIVE_REJECTED', 'RUNTIME_REJECTED', 'CHECKPOINT_DRIFT', 'MIGRATION_DRIFT',
+    const safe = new Set(['ARCHIVE_REJECTED', 'RUNTIME_REJECTED', 'CHECKPOINT_DRIFT', 'SOURCE_REFERENCE_DRIFT', 'MIGRATION_DRIFT',
       'RESTORE_FAILED', 'PORT_OCCUPIED', 'AUTH_REJECTED', 'POSTCHECK_FAILED', 'NOOP_FAILED', 'STOP_UNVERIFIED']);
     process.stderr.write(`${safe.has(error?.code) ? error.code : 'REHEARSAL_FAILED'}\n`);
     process.exitCode = 1;

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, resolve } from 'node:path';
+import { LEGACY_TABLES } from './local-backup-snapshot.mjs';
 
 function fail(code) { const error = new Error(code); error.code = code; return error; }
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -92,6 +93,75 @@ export function compareRestoredCheckpoint(raw, expected, expectedLedger) {
   }
   return { appliedMigrations: expected.appliedMigrations,
     tableCount: Object.keys(raw.counts).length, rowCount: Object.values(raw.counts).reduce((a, b) => a + b, 0) };
+}
+
+const recoveryTableNames = [...LEGACY_TABLES, '_prisma_migrations'].sort();
+const recoveryContentNames = [...LEGACY_TABLES].sort();
+const schemaFields = ['table_name', 'column_name', 'data_type', 'is_nullable'];
+const binaryCompare = (a, b) => Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
+
+export function normalizeRecoverySchema(schema) {
+  try {
+    if (!Array.isArray(schema) || schema.length === 0 || schema.length > 4096) throw fail('CHECKPOINT_DRIFT');
+    const normalized = schema.map(row => {
+      const keys = Object.keys(row || {}).sort();
+      if (JSON.stringify(keys) !== JSON.stringify([...schemaFields].sort()) &&
+          JSON.stringify(keys) !== JSON.stringify([...schemaFields, 'ordinal_position'].sort()) ||
+          !/^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(row.table_name) ||
+          !/^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(row.column_name) ||
+          typeof row.data_type !== 'string' || row.data_type.length === 0 || row.data_type.length > 120 ||
+          !['YES', 'NO'].includes(row.is_nullable) ||
+          Object.hasOwn(row, 'ordinal_position') &&
+            (!Number.isSafeInteger(row.ordinal_position) || row.ordinal_position <= 0)) throw fail('CHECKPOINT_DRIFT');
+      return Object.fromEntries(schemaFields.map(key => [key, row[key]]));
+    });
+    const names = [...new Set(normalized.map(row => row.table_name))].sort();
+    if (JSON.stringify(names) !== JSON.stringify(recoveryTableNames)) throw fail('CHECKPOINT_DRIFT');
+    normalized.sort((a, b) => binaryCompare(`${a.table_name}\0${a.column_name}`, `${b.table_name}\0${b.column_name}`));
+    if (normalized.some((row, index) => index > 0 && row.table_name === normalized[index - 1].table_name &&
+        row.column_name === normalized[index - 1].column_name)) throw fail('CHECKPOINT_DRIFT');
+    return normalized;
+  } catch { throw fail('CHECKPOINT_DRIFT'); }
+}
+
+function validCanonical(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) &&
+    JSON.stringify(Object.keys(value).sort()) === JSON.stringify(recoveryContentNames) &&
+    LEGACY_TABLES.every(table => typeof value[table] === 'string' && /^[a-f0-9]{32}$/.test(value[table]));
+}
+
+export function compareLogicalRecoveryCheckpoint(raw, localLogical, sourceReference, expected, expectedLedger) {
+  let strictFailure;
+  try { compareRestoredCheckpoint(raw, expected, expectedLedger); }
+  catch (error) { strictFailure = error; }
+  try {
+    if (!sourceReference || !localLogical || !validCanonical(sourceReference.canonical) ||
+        !validCanonical(localLogical.canonical) ||
+        JSON.stringify(normalizeRecoverySchema(sourceReference.schema)) !==
+          JSON.stringify(normalizeRecoverySchema(raw?.schema)) ||
+        JSON.stringify(normalizeRecoverySchema(sourceReference.logicalSchema)) !==
+          JSON.stringify(normalizeRecoverySchema(localLogical.schema))) throw fail('CHECKPOINT_DRIFT');
+    const required = ['shape', 'ledgerKnown', 'ledgerValidPrefix', 'appliedCount',
+      'ledgerSha256', 'tableCounts', 'integrity'];
+    if (strictFailure && (strictFailure.code !== 'CHECKPOINT_DRIFT' ||
+        required.some(name => strictFailure.predicates?.[name] !== true))) throw fail('CHECKPOINT_DRIFT');
+    if (LEGACY_TABLES.some(table => localLogical.canonical[table] !== sourceReference.canonical[table])) throw fail('CHECKPOINT_DRIFT');
+    return {
+      appliedMigrations: expected.appliedMigrations,
+      tableCount: LEGACY_TABLES.length,
+      rowCount: Object.values(raw.counts).reduce((a, b) => a + b, 0),
+      representationDifferences: {
+        schemaOrdinalOrOrder: strictFailure ? !strictFailure.predicates.schemaSha256 : false,
+        originalCompositeTables: LEGACY_TABLES.filter(table =>
+          raw.checksums[table] !== expected.tableChecksumsMd5[table]),
+      },
+      logicalSchemaAndAllValuesMatched: true,
+    };
+  } catch {
+    const error = fail('CHECKPOINT_DRIFT');
+    if (strictFailure?.predicates) error.predicates = strictFailure.predicates;
+    throw error;
+  }
 }
 
 export function assessCandidate(value) {

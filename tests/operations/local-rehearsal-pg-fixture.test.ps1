@@ -240,6 +240,59 @@ CREATE TABLE public."PlayerStat" ("id" text PRIMARY KEY);
           @($deep.canonical.PSObject.Properties).Count -eq 5 -and
           @($deep.composite.PSObject.Properties).Count -eq 5) ('deep-shape-' + $mode)
     }
+    $legacyTables = ConvertFrom-Json -InputObject (Build-Sql 'legacy-tables')
+    Assert-That ($legacyTables.Count -eq 23) 'recovery-table-list'
+    foreach ($db in @('synthetic_source','synthetic_restore')) {
+        foreach ($table in $legacyTables) {
+            $create = if ($table -eq 'Event' -and $db -eq 'synthetic_source') {
+                'CREATE TABLE public."Event" (id text, discarded text, note text); ALTER TABLE public."Event" DROP COLUMN discarded;'
+            } elseif ($table -eq 'Event') {
+                'CREATE TABLE public."Event" (id text, note text);'
+            } elseif ($table -eq 'User') {
+                'CREATE TABLE public."User" (id text, note text);'
+            } else {
+                'CREATE TABLE public."' + $table + '" (id text);'
+            }
+            [void](Invoke-Sql $db 'fixture_owner' $ownerPassword $create)
+        }
+        [void](Invoke-Sql $db 'fixture_owner' $ownerPassword 'CREATE TABLE public._prisma_migrations (id text, migration_name text, checksum text, finished_at timestamp, rolled_back_at timestamp, started_at timestamp);')
+        [void](Invoke-Sql $db 'fixture_owner' $ownerPassword 'INSERT INTO public."User" (id,note) VALUES (''same'',NULL),(''same'',''quote " and comma, preserved''); INSERT INTO public."Event" (id,note) VALUES (''event'',NULL);')
+    }
+    $sourceReferenceOutput = @(Invoke-Sql 'synthetic_source' 'fixture_owner' $ownerPassword (Build-Sql 'recovery-source'))
+    $originalMarker = @($sourceReferenceOutput | Where-Object { $_.StartsWith("MIRACLE_CHECKPOINT`t") })
+    $logicalMarker = @($sourceReferenceOutput | Where-Object { $_.StartsWith("MIRACLE_LOGICAL_REFERENCE`t") })
+    Assert-That ($originalMarker.Count -eq 1 -and $logicalMarker.Count -eq 1) 'source-reference-markers'
+    $sourceOriginal = $originalMarker[0].Substring('MIRACLE_CHECKPOINT'.Length+1) | ConvertFrom-Json
+    $sourceLogical = $logicalMarker[0].Substring('MIRACLE_LOGICAL_REFERENCE'.Length+1) | ConvertFrom-Json
+    Assert-That (@($sourceOriginal.counts.PSObject.Properties).Count -eq 23 -and
+      @($sourceOriginal.checksums.PSObject.Properties).Count -eq 23 -and
+      @($sourceLogical.canonical.PSObject.Properties).Count -eq 23) 'source-reference-all-tables'
+    $localLogicalOutput = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword (Build-Sql 'recovery-local'))
+    $localLogicalMarker = @($localLogicalOutput | Where-Object { $_.StartsWith("MIRACLE_LOCAL_CHECKPOINT`t") })
+    Assert-That ($localLogicalMarker.Count -eq 1) 'local-logical-marker'
+    $localLogical = $localLogicalMarker[0].Substring('MIRACLE_LOCAL_CHECKPOINT'.Length+1) | ConvertFrom-Json
+    foreach ($table in $legacyTables) {
+        Assert-That ($sourceLogical.canonical.$table -eq $localLogical.canonical.$table) ('logical-value-' + $table)
+    }
+    Assert-That (($sourceLogical.schema | ConvertTo-Json -Compress -Depth 5) -eq
+      ($localLogical.schema | ConvertTo-Json -Compress -Depth 5)) 'logical-schema-equal-despite-ordinal'
+    $sourceEventOrdinal = @(Invoke-Sql 'synthetic_source' 'fixture_owner' $ownerPassword "SELECT ordinal_position FROM information_schema.columns WHERE table_schema='public' AND table_name='Event' AND column_name='note';")[-1]
+    $localEventOrdinal = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword "SELECT ordinal_position FROM information_schema.columns WHERE table_schema='public' AND table_name='Event' AND column_name='note';")[-1]
+    Assert-That ($sourceEventOrdinal -ne $localEventOrdinal) 'logical-equal-despite-ordinal'
+    [void](Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword 'ALTER TABLE public."User" ALTER COLUMN note TYPE character varying(200);')
+    $typeOutput = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword (Build-Sql 'recovery-local'))
+    $typeMarker = @($typeOutput | Where-Object { $_.StartsWith("MIRACLE_LOCAL_CHECKPOINT`t") })
+    Assert-That ($typeMarker.Count -eq 1) 'type-logical-marker'
+    $changedType = $typeMarker[0].Substring('MIRACLE_LOCAL_CHECKPOINT'.Length+1) | ConvertFrom-Json
+    Assert-That ($changedType.canonical.User -eq $sourceLogical.canonical.User -and
+      ($changedType.schema | ConvertTo-Json -Compress -Depth 5) -ne
+      ($sourceLogical.schema | ConvertTo-Json -Compress -Depth 5)) 'type-modifier-mutation-rejected'
+    [void](Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword 'UPDATE public."User" SET note=''changed'' WHERE note IS NULL;')
+    $mutatedOutput = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword (Build-Sql 'recovery-local'))
+    $mutatedMarker = @($mutatedOutput | Where-Object { $_.StartsWith("MIRACLE_LOCAL_CHECKPOINT`t") })
+    Assert-That ($mutatedMarker.Count -eq 1) 'mutated-logical-marker'
+    $mutated = $mutatedMarker[0].Substring('MIRACLE_LOCAL_CHECKPOINT'.Length+1) | ConvertFrom-Json
+    Assert-That ($mutated.canonical.User -ne $sourceLogical.canonical.User) 'logical-value-mutation-rejected'
     $postcheckSql = Build-Sql 'postcheck'
     $good = Query-Json $postcheckSql
     Assert-That ($good.certificateConstraints -and $good.sessionVersion -and $good.resetTokenUnique -and $good.rateLimitBucket) 'catalog-good'

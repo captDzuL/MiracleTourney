@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
   assertLocalTarget, assertFreshRehearsalPath, compareRestoredCheckpoint,
-  inspectMigrationLedger, assessCandidate,
+  compareLogicalRecoveryCheckpoint, inspectMigrationLedger, assessCandidate,
 } from '../../scripts/operations/local-rehearsal-core.mjs';
+import { LEGACY_TABLES } from '../../scripts/operations/local-backup-snapshot.mjs';
 
 const sha = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const name = '20260812150000_baseline';
@@ -112,4 +113,40 @@ test('candidate postcheck requires backfill, constraints, security and no-op led
   assert.equal(assessCandidate(good).status, 'CANDIDATE_READY');
   assert.throws(() => assessCandidate({ ...good, certificateMissing: 1 }), /POSTCHECK_FAILED/);
   assert.throws(() => assessCandidate({ ...good, migration: { applied: 1, pending: 1, unfinished: 0 } }), /POSTCHECK_FAILED/);
+});
+
+test('logical checkpoint permits representation drift only after all named values and schema match', () => {
+  const ledger = [{ migration_name: name, checksum: lf, finished_at: '2026-01-01',
+    rolled_back_at: null, started_at: '2026-01-01', id: 'fixture' }];
+  const sourceSchema = [...LEGACY_TABLES, '_prisma_migrations'].map(table => ({
+    table_name: table, column_name: 'id', data_type: 'text', is_nullable: 'NO', ordinal_position: 2,
+  }));
+  const localSchema = sourceSchema.map(row => row.table_name === 'Event' ? { ...row, ordinal_position: 1 } : row);
+  const counts = Object.fromEntries(LEGACY_TABLES.map(table => [table, table === 'User' ? 2 : 0]));
+  const sourceChecksums = Object.fromEntries(LEGACY_TABLES.map(table => [table, 'a'.repeat(32)]));
+  const localChecksums = { ...sourceChecksums, User: 'c'.repeat(32) };
+  const canonical = Object.fromEntries(LEGACY_TABLES.map(table => [table, 'b'.repeat(32)]));
+  const integrity = { invalidConstraints: 0, criticalUniqueIndexes: true };
+  const expected = { appliedMigrations: 1, ledgerSha256: sha(ledger), schemaSha256: sha(sourceSchema),
+    tableCounts: counts, tableChecksumsMd5: sourceChecksums, integrity };
+  const raw = { ledger, schema: localSchema, counts, checksums: localChecksums, integrity };
+  const schemaWithoutOrdinal = sourceSchema.map(row => ({ table_name: row.table_name,
+    column_name: row.column_name, data_type: row.data_type, is_nullable: row.is_nullable }));
+  const reference = { schema: schemaWithoutOrdinal, logicalSchema: schemaWithoutOrdinal, canonical };
+  const localLogical = { schema: schemaWithoutOrdinal, canonical };
+  const proof = compareLogicalRecoveryCheckpoint(raw, localLogical, reference, expected, [migration]);
+  assert.equal(proof.tableCount, 23);
+  assert.deepEqual(proof.representationDifferences.originalCompositeTables, ['User']);
+  assert.equal(proof.representationDifferences.schemaOrdinalOrOrder, true);
+  for (const [changedRaw, changedLogical, changedReference] of [
+    [raw, { ...localLogical, canonical: { ...canonical, User: 'd'.repeat(32) } }, reference],
+    [{ ...raw, schema: localSchema.map(row => row.table_name === 'Event' ? { ...row, data_type: 'integer' } : row) }, localLogical, reference],
+    [raw, { ...localLogical, schema: schemaWithoutOrdinal.map(row => row.table_name === 'Event' ?
+      { ...row, data_type: 'character varying(20)' } : row) }, reference],
+    [{ ...raw, counts: { ...counts, User: 3 } }, localLogical, reference],
+    [{ ...raw, integrity: { ...integrity, invalidConstraints: 1 } }, localLogical, reference],
+    [{ ...raw, ledger: [{ ...ledger[0], id: 'changed' }] }, localLogical, reference],
+    [raw, localLogical, { ...reference, canonical: { User: canonical.User } }],
+  ]) assert.throws(() => compareLogicalRecoveryCheckpoint(changedRaw, changedLogical,
+    changedReference, expected, [migration]), /CHECKPOINT_DRIFT/);
 });
