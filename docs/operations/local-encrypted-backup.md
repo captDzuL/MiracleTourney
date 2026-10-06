@@ -1,5 +1,30 @@
 # Local encrypted production backup
 
+## Vercel build safety readback — 2026-10-06
+
+An authenticated, read-only Vercel project API `GET` returned HTTP 200 at
+`2026-10-06T02:36:34.451Z`. The response identified project
+`prj_QHv1i060yrRIq6miqOmGodoULhCY` (`miracle-tourney`), Node.js `24.x`, and
+production branch `master`. The live build command override was:
+
+```text
+if [ "$VERCEL_ENV" = "production" ]; then pnpm prisma migrate deploy; fi && pnpm build
+```
+
+The owner-controlled replacement proposed for review is `pnpm vercel-build`.
+It has **not been applied or read back**; the live setting remains pending.
+This record documents preparation only and does not authorize a settings
+change, deployment, migration, or branch change. Do not change production
+branch `master` to `main` or a release branch as a shortcut, because that
+could trigger an unintended release.
+
+The production artifact must be built from the approved release commit with
+the production environment after the owner-controlled migration gate. A
+Preview build using the isolated test database has different build-time
+environment and generated content; promoting it reuses that artifact rather
+than rebuilding with production variables. Confirm the intended production
+artifact and environment path before build or promotion.
+
 The guarded runner is implemented for the approved direct production `neondb` source. The reviewed preflight and single encrypted export completed on 2026-10-05. The first archive verification failed because a local helper passed a literal `-` input filename to `pg_restore`; that helper was corrected and reviewed. The existing archive subsequently passed authenticated verification and one full local two-restore/migration/no-op rehearsal, detailed below. The weekly job remains paused. Do not repeat this export.
 
 ## Pinned local tools and provenance
