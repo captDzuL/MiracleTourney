@@ -298,3 +298,14 @@ Dzul memilih membersihkan seluruh warning sebelum tes final. Baseline acceptance
 - [ ] Use `next/image` with appropriate explicit dimensions or `fill`/`sizes`. Use per-image `unoptimized` where preserving direct delivery is necessary for user-generated/private/dynamic previews; record that this cleanup does not claim an image performance improvement. Local assets may use the optimizer only where URL, geometry and failure checks remain equivalent.
 - [ ] Run focused real rendering/component behavior tests, scoped ESLint and TypeScript. Review React boundaries, hook rules, accessibility and source handling; self-review and commit exact owned files, then fresh independent spec/quality review.
 - [ ] After all three tasks pass review, freeze new SHA and resume Task4: strict ESLint `--max-warnings=0`, full unit once, one 54-case public local lane and one build/load run. Select additional related organizer form/drawer/image browser checks because this cleanup touches those flows; keep shared Delicate serial and do not reset/reseed. CI remains deferred and no production setting/migration/deploy/merge is authorized.
+
+## Task 10 — Patch the newly published sharp security advisory (Task4D)
+
+**Files:** `package.json`, `pnpm-workspace.yaml`, generated `pnpm-lock.yaml`, and one narrow real consumer regression. Read private `task-10-sharp-security-brief.md` for the source-phase execution and exact preservation constraints; report to `task-10-sharp-security-report.md`.
+
+**Interfaces:** Preserve real PNG/SVG decoding, certificate and bracket outputs, Next image consumers, and Windows/Linux optional binary resolution. No framework upgrade, global SVG disable, schema/operations change, or severity waiver.
+
+- [ ] Diagnose the actual installed root/Next `sharp@0.35.4` paths against HIGH GHSA-wq5f-xc86-pv6w, newly published to GitHub's database October6. Record conditions/limits honestly; this is not evidence of actual compromise.
+- [ ] Write meaningful RED against the installed vulnerable version, then pin patched `0.35.5` narrowly in direct dependency and workspace override and generate the matching lockfile without unrelated upgrades. Verify real resolved consumers and bounded SVG-to-PNG/PNG metadata behavior, not only source-text version assertions.
+- [ ] Focused tests, TypeScript, scoped lint, frozen install and production audit must pass; self-review and exact-file commit followed by fresh independent spec/quality review. No full suite, browser, DB, build/load or provider action in this source phase.
+- [ ] Freeze the reviewed new SHA and resume the still-unrun heavy Task4 gates. The successful zero-warning cleanup is retained; do not reset/reseed, repeat backup/rehearsal, trigger CI or apply production settings. Final whole-delta review requires a scoped addendum for this dependency change.
