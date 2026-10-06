@@ -34,7 +34,7 @@ function safeName(value) {
   return `"${value}"`;
 }
 
-function oldRowProjectionSql(baseline, reference) {
+export function oldRowProjectionSql(baseline, reference) {
   const previous = new Set(baseline.columns.map(row => `${row.table}.${row.name}`));
   const added = new Map();
   for (const row of reference.columns) {
@@ -63,7 +63,7 @@ function fixedReceiptPath(root, value) {
   return resolve(value);
 }
 
-async function readReceipt(root, value) {
+export async function readReceipt(root, value) {
   try {
     const manifestPath = fixedReceiptPath(root, value);
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
@@ -80,7 +80,7 @@ async function readReceipt(root, value) {
   } catch { throw fail('BACKUP_REJECTED'); }
 }
 
-function checkpointSelect() {
+export function checkpointSelect() {
   const source = buildTestingCheckpointSql();
   const start = source.indexOf("SELECT 'MIRACLE_CHECKPOINT'");
   if (start < 0) throw fail('PLAN_REJECTED');

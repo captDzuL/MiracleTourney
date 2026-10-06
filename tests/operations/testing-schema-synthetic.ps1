@@ -1,4 +1,4 @@
-param([switch]$RepairFixture)
+param([switch]$RepairFixture, [switch]$FixtureRecovery)
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $bin = Join-Path $repo '.superpowers/sdd/2026-10-04-v3-release-pr-readiness/runtime/catalog-server/pgsql/bin'
@@ -126,6 +126,13 @@ INSERT INTO "OrganizerPlan" (id,"userId",tier,"startsAt","maxEvents",features,"c
     if ($LASTEXITCODE -ne 0) { throw 'SYNTHETIC_NOOP_DRIFT' }
     & node (Join-Path $PSScriptRoot 'testing-schema-synthetic-check.mjs') 'operational-noop' $snapshot
     if ($LASTEXITCODE -ne 0) { throw 'SYNTHETIC_OPERATIONAL_NOOP_FAILED' }
+    if ($FixtureRecovery) {
+      $env:TASK13_SYNTHETIC_URL = $env:TASK12_SYNTHETIC_URL
+      $env:TASK13_PSQL_PATH = Join-Path $bin 'psql.exe'
+      $script:stage = 'fixture-recovery'
+      & node --import tsx --test (Join-Path $PSScriptRoot 'testing-fixture-recovery-pg.test.mjs')
+      if ($LASTEXITCODE -ne 0) { throw 'SYNTHETIC_FIXTURE_RECOVERY_FAILED' }
+    }
   }
   if (-not $RepairFixture) { Write-Output 'SYNTHETIC_REFERENCE_APPLIED' }
 } finally {
@@ -138,5 +145,5 @@ INSERT INTO "OrganizerPlan" (id,"userId",tier,"startsAt","maxEvents",features,"c
   if ($resolved.StartsWith($expectedPrefix, [StringComparison]::OrdinalIgnoreCase) -and -not (Test-Path -LiteralPath (Join-Path $data 'postmaster.pid'))) {
     Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
   }
-  foreach ($key in @('PGHOST','PGPORT','PGSSLMODE','PGUSER','PGPASSWORD','PGDATABASE','TASK12_SYNTHETIC_URL')) { [Environment]::SetEnvironmentVariable($key, $null, 'Process') }
+  foreach ($key in @('PGHOST','PGPORT','PGSSLMODE','PGUSER','PGPASSWORD','PGDATABASE','TASK12_SYNTHETIC_URL','TASK13_SYNTHETIC_URL','TASK13_PSQL_PATH')) { [Environment]::SetEnvironmentVariable($key, $null, 'Process') }
 }

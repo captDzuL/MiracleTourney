@@ -594,13 +594,7 @@ async function persistMutation(
   });
 }
 
-export function createPrismaCompletionDependencies(
-  actor: CompletionActor,
-  db: PrismaClient = prisma,
-): CompletionDependencies {
-  return {
-    async transaction<T>(eventId: string, work: (tx: CompletionTransaction) => Promise<T>): Promise<T> {
-      const transact = () => db.$transaction(async (database) => {
+function createCompletionTransaction(actor: CompletionActor, database: Prisma.TransactionClient, eventId: string): CompletionTransaction {
         let event: Awaited<ReturnType<typeof database.event.findUnique>> | null | undefined;
         let completion: Awaited<ReturnType<typeof database.tournamentCompletion.findUnique>> | null | undefined;
         const loadEvent = async () => {
@@ -656,8 +650,25 @@ export function createPrismaCompletionDependencies(
             completion = undefined;
           },
         };
-        return work(transaction);
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 20000 });
+        return transaction;
+}
+
+/** Use only when the caller already owns the full serializable transaction. */
+export function createPrismaCompletionDependenciesInTransaction(
+  actor: CompletionActor,
+  database: Prisma.TransactionClient,
+): CompletionDependencies {
+  return { transaction: async (eventId, work) => work(createCompletionTransaction(actor, database, eventId)) };
+}
+
+export function createPrismaCompletionDependencies(
+  actor: CompletionActor,
+  db: PrismaClient = prisma,
+): CompletionDependencies {
+  return {
+    async transaction<T>(eventId: string, work: (tx: CompletionTransaction) => Promise<T>): Promise<T> {
+      const transact = () => db.$transaction(async (database) => work(createCompletionTransaction(actor, database, eventId)),
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 20000 });
       for (let attempt = 0; ; attempt += 1) {
         try {
           return await transact();

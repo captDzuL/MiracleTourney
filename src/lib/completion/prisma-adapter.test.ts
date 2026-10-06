@@ -9,6 +9,7 @@ import { derivePodium } from "./podium";
 import {
   buildCompletionSource,
   createPrismaCompletionDependencies,
+  createPrismaCompletionDependenciesInTransaction,
   loadPrismaCompletionWorkspaceData,
   type CompletionSourceRows,
 } from "./prisma-adapter";
@@ -323,6 +324,17 @@ describe("Prisma completion transaction adapter", () => {
   const actor = { id: "organizer-1", role: "organizer" as const };
   const key1 = "11111111-1111-4111-8111-111111111111";
   const key2 = "22222222-2222-4222-8222-222222222222";
+
+  it("uses the caller's open transaction for fixture completion without nested retries", async () => {
+    const db = new MemoryCompletionPrisma();
+    const transaction = vi.spyOn(db, "$transaction");
+    const result = await db.$transaction(async (tx) => completeTournament("event-1", decisions, 0, key1,
+      createPrismaCompletionDependenciesInTransaction(actor, tx as never)));
+    expect(result).toMatchObject({ status: "completed", version: 1 });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(db.data.podium).toHaveLength(3);
+    expect(db.data.decisions).toHaveLength(4);
+  });
 
   it("atomically persists completion, podium, awards, decisions and an idempotent receipt", async () => {
     const db = new MemoryCompletionPrisma();
