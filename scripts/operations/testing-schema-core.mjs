@@ -15,9 +15,11 @@ export function validateTestingSourceUrl(value) {
     const keys = [...url.searchParams.keys()];
     if (!['postgres:', 'postgresql:'].includes(url.protocol) || url.hostname !== DIRECT_HOST ||
         url.port && url.port !== '5432' || url.pathname !== '/neondb' ||
-        !url.username || !url.password || url.hash || keys.length !== 2 ||
-        new Set(keys).size !== 2 || url.searchParams.get('sslmode') !== 'verify-full' ||
-        url.searchParams.get('sslrootcert') !== 'system') throw fail('SOURCE_REJECTED');
+        !url.username || !url.password || url.hash || ![2, 3].includes(keys.length) ||
+        new Set(keys).size !== keys.length || url.searchParams.get('sslmode') !== 'verify-full' ||
+        keys.some(key => !['sslmode', 'sslrootcert', 'channel_binding'].includes(key)) ||
+        url.searchParams.get('sslrootcert') !== 'system' ||
+        url.searchParams.has('channel_binding') && url.searchParams.get('channel_binding') !== 'require') throw fail('SOURCE_REJECTED');
     const user = decodeURIComponent(url.username);
     const password = decodeURIComponent(url.password);
     if (!user || !password || /[\x00-\x1f\x7f]/.test(user + password)) throw fail('SOURCE_REJECTED');
@@ -25,6 +27,7 @@ export function validateTestingSourceUrl(value) {
       PGHOST: DIRECT_HOST, PGPORT: url.port || '5432', PGDATABASE: 'neondb',
       PGUSER: user, PGSSLMODE: 'verify-full', PGSSLROOTCERT: 'system',
     };
+    if (url.searchParams.has('channel_binding')) fields.PGCHANNELBINDING = 'require';
     Object.defineProperty(fields, 'PGPASSWORD', { value: password, enumerable: false });
     return fields;
   } catch { throw fail('SOURCE_REJECTED'); }
@@ -37,18 +40,20 @@ export function normalizeTestingSourcePair(directRaw, pooledRaw) {
       const keys = [...url.searchParams.keys()];
       if (!['postgres:', 'postgresql:'].includes(url.protocol) || url.hostname !== host ||
           url.port && url.port !== '5432' || url.pathname !== '/neondb' ||
-          !url.username || !url.password || url.hash || keys.length < 1 || keys.length > 2 ||
+          !url.username || !url.password || url.hash || keys.length < 1 || keys.length > 3 ||
           new Set(keys).size !== keys.length ||
-          keys.some(key => !['sslmode', 'sslrootcert'].includes(key)) ||
+          keys.some(key => !['sslmode', 'sslrootcert', 'channel_binding'].includes(key)) ||
           !['require', 'verify-full'].includes(url.searchParams.get('sslmode')) ||
-          url.searchParams.has('sslrootcert') && url.searchParams.get('sslrootcert') !== 'system') throw fail('SOURCE_REJECTED');
+          url.searchParams.has('sslrootcert') && url.searchParams.get('sslrootcert') !== 'system' ||
+          url.searchParams.has('channel_binding') && url.searchParams.get('channel_binding') !== 'require') throw fail('SOURCE_REJECTED');
       url.searchParams.set('sslmode', 'verify-full');
       url.searchParams.set('sslrootcert', 'system');
       return url;
     };
     const direct = parse(directRaw, DIRECT_HOST);
     const pooled = parse(pooledRaw, DIRECT_HOST.replace('.c-3.', '-pooler.c-3.'));
-    if (direct.username !== pooled.username || direct.password !== pooled.password || direct.port !== pooled.port) throw fail('SOURCE_REJECTED');
+    if (direct.username !== pooled.username || direct.password !== pooled.password || direct.port !== pooled.port ||
+        direct.searchParams.has('channel_binding') !== pooled.searchParams.has('channel_binding')) throw fail('SOURCE_REJECTED');
     validateTestingSourceUrl(direct.href);
     return { direct: direct.href, pooled: pooled.href };
   } catch { throw fail('SOURCE_REJECTED'); }

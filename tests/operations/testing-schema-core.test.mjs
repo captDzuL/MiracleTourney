@@ -6,12 +6,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { loadExpectedLedger } from '../../scripts/operations/local-backup-snapshot.mjs';
+import { buildPinnedPgEnv, buildPinnedTestingPgEnv } from '../../scripts/operations/local-backup-ca.mjs';
 import {
   assertCanonicalLedgerLf, assertCatalogState, assertRepairSql, assertTestingBackupReceipt,
   buildTargetCatalog, normalizeTestingSourcePair, validateTestingSourceUrl,
 } from '../../scripts/operations/testing-schema-core.mjs';
 
 const direct = 'postgresql://operator:synthetic-password@ep-delicate-forest-azuodo4q.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=verify-full&sslrootcert=system';
+const directBound = `${direct}&channel_binding=require`;
 const item = (table, name, definition = name) => ({ table, name, definition });
 const baseline = {
   tables: [{ name: 'Certificate', kind: 'r' }, { name: 'CheckIn', kind: 'r' }, { name: '_prisma_migrations', kind: 'r' }],
@@ -50,6 +52,45 @@ test('approved dotenv pair is exact, matching and upgraded to verify-full for li
   assert.equal(pair.pooled, direct.replace('.c-3.', '-pooler.c-3.'));
   assert.throws(() => normalizeTestingSourcePair(direct, pooled.replace('synthetic-password', 'different')), /SOURCE_REJECTED/);
   assert.throws(() => normalizeTestingSourcePair(direct, pooled.replace('-pooler', '')), /SOURCE_REJECTED/);
+});
+
+test('testing source retains required channel binding through direct and pooled normalization and pinned psql environment', () => {
+  const rawDirect = direct.replace('sslmode=verify-full&sslrootcert=system', 'sslmode=require&channel_binding=require');
+  const rawPooled = rawDirect.replace('.c-3.', '-pooler.c-3.');
+  const pair = normalizeTestingSourcePair(rawDirect, rawPooled);
+  for (const [value, host] of [[pair.direct, 'ep-delicate-forest-azuodo4q.c-3.ap-southeast-1.aws.neon.tech'],
+    [pair.pooled, 'ep-delicate-forest-azuodo4q-pooler.c-3.ap-southeast-1.aws.neon.tech']]) {
+    const url = new URL(value);
+    assert.equal(url.hostname, host);
+    assert.equal(url.searchParams.get('sslmode'), 'verify-full');
+    assert.equal(url.searchParams.get('sslrootcert'), 'system');
+    assert.equal(url.searchParams.get('channel_binding'), 'require');
+    assert.equal([...url.searchParams.keys()].length, 3);
+  }
+  const fields = validateTestingSourceUrl(pair.direct);
+  assert.equal(fields.PGCHANNELBINDING, 'require');
+  assert.equal(buildPinnedTestingPgEnv(fields).PGCHANNELBINDING, 'require');
+  assert.equal(buildPinnedTestingPgEnv(fields).PGSSLMODE, 'verify-full');
+  assert.equal(buildPinnedTestingPgEnv(fields).PGSSLROOTCERT.endsWith('.pem'), true);
+  assert.throws(() => buildPinnedPgEnv(fields), /TOOL_REJECTED/);
+});
+
+test('testing source rejects weak, duplicate, unknown and mismatched channel binding', () => {
+  const rawDirect = direct.replace('sslmode=verify-full&sslrootcert=system', 'sslmode=require&channel_binding=require');
+  const rawPooled = rawDirect.replace('.c-3.', '-pooler.c-3.');
+  for (const value of ['', 'prefer', 'disable', 'REQUIRE', 'other']) {
+    assert.throws(() => normalizeTestingSourcePair(rawDirect.replace('channel_binding=require', `channel_binding=${value}`), rawPooled), /SOURCE_REJECTED/);
+    assert.throws(() => validateTestingSourceUrl(directBound.replace('channel_binding=require', `channel_binding=${value}`)), /SOURCE_REJECTED/);
+  }
+  for (const suffix of ['&channel_binding=require', '&options=-csearch_path%3Dpublic', '&channel_binding=prefer']) {
+    assert.throws(() => normalizeTestingSourcePair(rawDirect + suffix, rawPooled), /SOURCE_REJECTED/);
+    assert.throws(() => validateTestingSourceUrl(directBound + suffix), /SOURCE_REJECTED/);
+  }
+  assert.throws(() => normalizeTestingSourcePair(rawDirect, rawPooled.replace('&channel_binding=require', '')), /SOURCE_REJECTED/);
+  assert.throws(() => normalizeTestingSourcePair(rawDirect.replace('&channel_binding=require', ''), rawPooled), /SOURCE_REJECTED/);
+  const fields = validateTestingSourceUrl(direct);
+  fields.PGCHANNELBINDING = 'prefer';
+  assert.throws(() => buildPinnedTestingPgEnv(fields), /TOOL_REJECTED/);
 });
 
 test('target catalog preserves legacy objects and replaces only obsolete certificate uniqueness', () => {

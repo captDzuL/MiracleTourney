@@ -91,6 +91,7 @@ export function buildPinnedPgEnv(source) {
 }
 
 export function buildPinnedTestingPgEnv(source) {
+  if (source?.PGCHANNELBINDING !== undefined && source.PGCHANNELBINDING !== 'require') throw reject();
   return buildPinnedPgEnvForHost(source, 'ep-delicate-forest-azuodo4q.c-3.ap-southeast-1.aws.neon.tech');
 }
 

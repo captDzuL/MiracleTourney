@@ -73,6 +73,24 @@ test('testing export labels its immutable archive for Delicate and keeps product
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
 
+test('testing dump child receives required channel binding after validated source admission', async () => {
+  const { runTestingEncryptedBackup } = await import('../../scripts/operations/local-backup-core.mjs');
+  const f = await fixture();
+  const testingUrl = 'postgresql://backup:synthetic-secret@ep-delicate-forest-azuodo4q.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=verify-full&sslrootcert=system&channel_binding=require';
+  const inherited = process.env.PGCHANNELBINDING;
+  try {
+    process.env.PGCHANNELBINDING = 'disable';
+    await writeFile(f.dump, "process.stdout.write(process.env.PGCHANNELBINDING === 'require' && process.env.PGSSLMODE === 'verify-full' ? 'binding-required' : 'binding-downgraded');");
+    const result = await runTestingEncryptedBackup(config(f, { sourceUrl: testingUrl }));
+    const archive = await readFile(result.archivePath, 'utf8');
+    assert.equal(archive, 'age-encryption.org/v1\nbinding-required');
+  } finally {
+    if (inherited === undefined) delete process.env.PGCHANNELBINDING;
+    else process.env.PGCHANNELBINDING = inherited;
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
 test('preserves a binary fixture stream and publishes a manifest after both commands succeed', async () => {
   const f = await fixture();
   const result = await runEncryptedBackup(config(f));
