@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, realpathSync } from 'node:fs';
-import { basename, dirname, isAbsolute, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { LEGACY_TABLES } from './local-backup-snapshot.mjs';
 
 function fail(code) { const error = new Error(code); error.code = code; return error; }
@@ -29,6 +29,58 @@ export async function assertFreshRehearsalPath(target, root) {
     }
     return resolve(target);
   } catch { throw fail('PATH_REJECTED'); }
+}
+
+const archiveName = /^miracle-neondb-(\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z)\.age$/;
+const sha256 = /^[a-f0-9]{64}$/;
+
+export async function assertFreshArchivePath(archive, root) {
+  try {
+    if (typeof archive !== 'string' || typeof root !== 'string' ||
+        !isAbsolute(archive) || !isAbsolute(root) ||
+        archive.split(/[\\/]/).some(part => part === '.' || part === '..') ||
+        dirname(resolve(archive)).toLowerCase() !== resolve(root).toLowerCase() ||
+        !archiveName.test(basename(archive))) throw fail('ARCHIVE_REJECTED');
+    const manifest = join(resolve(root), basename(archive).slice(0, -4) + '.json');
+    for (const path of [resolve(archive), manifest]) {
+      for (let cursor = path; ; cursor = dirname(cursor)) {
+        const entry = lstatSync(cursor);
+        if (entry.isSymbolicLink() ||
+            realpathSync.native(cursor).toLowerCase() !== cursor.toLowerCase() ||
+            cursor === path && !entry.isFile()) throw fail('ARCHIVE_REJECTED');
+        if (dirname(cursor) === cursor) break;
+      }
+    }
+    return manifest;
+  } catch { throw fail('ARCHIVE_REJECTED'); }
+}
+
+export function assessAuthenticatedArchive(archiveNameValue, manifest, pair, authentication, now = Date.now()) {
+  try {
+    const match = archiveName.exec(archiveNameValue);
+    if (!match || !manifest || manifest.format !== 'pg_dump-custom+age-v1' ||
+        manifest.source !== 'approved-direct-neondb' || manifest.archive !== archiveNameValue ||
+        !Number.isSafeInteger(pair?.bytes) || pair.bytes <= 0 || !sha256.test(pair.sha256) ||
+        manifest.bytes !== pair.bytes || manifest.sha256 !== pair.sha256 ||
+        authentication?.status !== 'ARCHIVE_VERIFIED' ||
+        authentication.bytes !== pair.bytes || authentication.sha256 !== pair.sha256 ||
+        !manifest.checkpoint ||
+        !/^[0-9A-F]{8}-[0-9A-F]{8}-[0-9]+$/i.test(manifest.checkpoint.snapshot) ||
+        !Number.isSafeInteger(manifest.checkpoint.appliedMigrations) ||
+        manifest.checkpoint.appliedMigrations < 0 ||
+        !sha256.test(manifest.checkpoint.ledgerSha256) ||
+        !sha256.test(manifest.checkpoint.schemaSha256) ||
+        !manifest.checkpoint.tableCounts || !manifest.checkpoint.tableChecksumsMd5 ||
+        manifest.checkpoint.integrity?.invalidConstraints !== 0 ||
+        manifest.checkpoint.integrity?.criticalUniqueIndexes !== true ||
+        manifest.createdAt !== match[1].replaceAll('-', (part, offset) => offset >= 10 ? ':' : '-')
+          .replace(/:(\d{3})Z$/, '.$1Z')) throw fail('ARCHIVE_REJECTED');
+    const created = Date.parse(manifest.createdAt);
+    const completed = Date.parse(manifest.completedAt);
+    if (!Number.isFinite(created) || !Number.isFinite(completed) || !Number.isFinite(now) ||
+        completed < created || completed > now || now - completed > 3_600_000) throw fail('ARCHIVE_REJECTED');
+    return { bytes: pair.bytes, sha256: pair.sha256 };
+  } catch { throw fail('ARCHIVE_REJECTED'); }
 }
 
 export function inspectMigrationLedger(rows, expected) {
@@ -169,6 +221,8 @@ export function assessCandidate(value) {
       !Number.isSafeInteger(value.migration?.applied) || value.certificateMissing !== 0 ||
       value.certificateDuplicateCodes !== 0 || value.certificateConstraints !== true ||
       value.sessionVersion !== true || value.resetTokenUnique !== true ||
-      value.rateLimitBucket !== true || value.invalidConstraints !== 0) throw fail('POSTCHECK_FAILED');
+      value.rateLimitBucket !== true || value.invalidConstraints !== 0 ||
+      value.bracketAppearanceTable !== true || value.bracketAppearanceDefaults !== true ||
+      value.bracketAppearanceConstraints !== true) throw fail('POSTCHECK_FAILED');
   return { status: 'CANDIDATE_READY', appliedMigrations: value.migration.applied };
 }

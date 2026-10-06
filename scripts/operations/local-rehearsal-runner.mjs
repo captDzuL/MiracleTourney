@@ -5,7 +5,7 @@ import { appendFile, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/pr
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connect } from 'node:net';
-import { assertLocalTarget, assertFreshRehearsalPath, compareRestoredCheckpoint,
+import { assertLocalTarget, assertFreshRehearsalPath, assertFreshArchivePath, assessAuthenticatedArchive, compareRestoredCheckpoint,
   compareLogicalRecoveryCheckpoint, inspectMigrationLedger, assessCandidate } from './local-rehearsal-core.mjs';
 import { assertOutputCapacity, assertOwnerOnlyDirectory, verifyPinnedFile } from './local-backup-readiness.mjs';
 import { verifyBackupPair, verifyPostgresDependencySet } from './local-backup-core.mjs';
@@ -27,8 +27,6 @@ const restoreScript = join(scriptDir, 'local-rehearsal-restore.ps1');
 const powershell = join(process.env.SystemRoot || 'C:/Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe');
 const PG_ZIP_HASH = 'e2246ba91d22345bc3d017586c09ede52d9df180b1eeb480f050445f1cad84e2';
 const PG_ZIP_BYTES = 384620317;
-const APPROVED_ARCHIVE = 'miracle-neondb-2026-10-05T01-23-48-741Z.age';
-const APPROVED_ARCHIVE_SHA256 = 'dc30ddf3ae4bb98dacd9d68e293b26cef5a3818664364c405c01d578cf1d7f5b';
 const MIGRATION_NAME = /^(?:\d{12}|\d{14})_[a-z0-9_]+$/;
 export const REHEARSAL_LIMITATIONS = Object.freeze([
   'LOCAL_RESTORE_NOT_SERVICE_RTO', 'SOURCE_LOCALE_EXTENSION_EQUIVALENCE_NOT_PROVEN',
@@ -208,6 +206,37 @@ export function buildCandidatePostcheckSql() {
   const column = (table, name, nullable, exactDefault) =>
     `EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='${table}'\n` +
     `    AND column_name='${name}' AND is_nullable='${nullable}'${exactDefault === undefined ? '' : ` AND column_default=${sqlQuote(exactDefault)}`})`;
+  const bracketColumn = (name, type, nullable, defaultSql = null) =>
+    `EXISTS (SELECT 1 FROM pg_attribute a JOIN pg_class t ON t.oid=a.attrelid\n` +
+    `    JOIN pg_namespace n ON n.oid=t.relnamespace\n` +
+    `    LEFT JOIN pg_attrdef d ON d.adrelid=t.oid AND d.adnum=a.attnum\n` +
+    `    WHERE n.nspname='public' AND t.relname='EventBracketAppearance' AND t.relkind='r'\n` +
+    `      AND a.attname='${name}' AND a.attnum>0 AND NOT a.attisdropped\n` +
+    `      AND format_type(a.atttypid,a.atttypmod)=${sqlQuote(type)}\n` +
+    `      AND a.attnotnull=${nullable === 'NO' ? 'true' : 'false'}\n` +
+    `      AND ${defaultSql === null ? 'd.oid IS NULL' : `pg_get_expr(d.adbin,d.adrelid)=${sqlQuote(defaultSql)}`})`;
+  const bracketTable = `EXISTS (SELECT 1 FROM pg_class t JOIN pg_namespace n ON n.oid=t.relnamespace\n` +
+    `    WHERE n.nspname='public' AND t.relname='EventBracketAppearance' AND t.relkind='r'\n` +
+    `      AND t.relpersistence='p' AND (SELECT array_agg(a.attname::text ORDER BY a.attname::text)\n` +
+    `        FROM pg_attribute a WHERE a.attrelid=t.oid AND a.attnum>0 AND NOT a.attisdropped)\n` +
+    `        = ARRAY['backgroundUrl','createdAt','eventId','id','overlay','positionX','positionY','updatedAt']::text[]\n` +
+    `      AND EXISTS (SELECT 1 FROM pg_constraint pk JOIN pg_attribute id_col\n` +
+    `        ON id_col.attrelid=t.oid AND id_col.attname='id' AND id_col.attnum>0 AND NOT id_col.attisdropped\n` +
+    `        WHERE pk.conrelid=t.oid AND pk.conname='EventBracketAppearance_pkey'\n` +
+    `          AND pk.contype='p' AND pk.convalidated\n` +
+    `          AND pk.conkey=ARRAY[id_col.attnum]::smallint[]))`;
+  const bracketFk = `EXISTS (SELECT 1 FROM pg_constraint c\n` +
+    `    JOIN pg_class child ON child.oid=c.conrelid JOIN pg_namespace child_ns ON child_ns.oid=child.relnamespace\n` +
+    `    JOIN pg_class parent ON parent.oid=c.confrelid JOIN pg_namespace parent_ns ON parent_ns.oid=parent.relnamespace\n` +
+    `    JOIN pg_attribute child_col ON child_col.attrelid=child.oid AND child_col.attname='eventId'\n` +
+    `    JOIN pg_attribute parent_col ON parent_col.attrelid=parent.oid AND parent_col.attname='id'\n` +
+    `    WHERE c.conname='EventBracketAppearance_eventId_fkey' AND c.contype='f' AND c.convalidated\n` +
+    `      AND child_ns.nspname='public' AND child.relname='EventBracketAppearance' AND child.relkind='r'\n` +
+    `      AND parent_ns.nspname='public' AND parent.relname='Event' AND parent.relkind='r'\n` +
+    `      AND c.conkey=ARRAY[child_col.attnum]::smallint[]\n` +
+    `      AND c.confkey=ARRAY[parent_col.attnum]::smallint[]\n` +
+    `      AND c.confdeltype='c' AND c.confupdtype='c' AND c.confmatchtype='s'\n` +
+    `      AND NOT c.condeferrable AND NOT c.condeferred)`;
   return `SELECT 'MIRACLE_LOCAL_CHECKPOINT' || chr(9) || json_build_object(\n` +
     ` 'certificateMissing', (SELECT count(*)::int FROM public."Certificate" WHERE "recipientId" IS NULL OR "recipientName" IS NULL OR "verificationCode" IS NULL),\n` +
     ` 'certificateDuplicateCodes', (SELECT count(*)::int FROM (SELECT "verificationCode" FROM public."Certificate" GROUP BY "verificationCode" HAVING count(*) > 1) x),\n` +
@@ -215,6 +244,9 @@ export function buildCandidatePostcheckSql() {
     ` 'sessionVersion', (${column('User', 'sessionVersion', 'NO', '0')}),\n` +
     ` 'resetTokenUnique', (${column('PasswordResetToken', 'tokenFormat', 'NO', "'legacy_raw'::text")} AND ${index('PasswordResetToken', 'PasswordResetToken_userId_key', ['userId'])}),\n` +
     ` 'rateLimitBucket', (to_regclass('public."RateLimitBucket"') IS NOT NULL AND ${index('RateLimitBucket', 'RateLimitBucket_key_key', ['key'])}),\n` +
+    ` 'bracketAppearanceTable', (${bracketTable} AND ${bracketColumn('id', 'text', 'NO')} AND ${bracketColumn('eventId', 'text', 'NO')} AND ${bracketColumn('backgroundUrl', 'text', 'YES')} AND ${bracketColumn('createdAt', 'timestamp(3) without time zone', 'NO', 'CURRENT_TIMESTAMP')} AND ${bracketColumn('updatedAt', 'timestamp(3) without time zone', 'NO')}),\n` +
+    ` 'bracketAppearanceDefaults', (${bracketColumn('positionX', 'integer', 'NO', '50')} AND ${bracketColumn('positionY', 'integer', 'NO', '50')} AND ${bracketColumn('overlay', 'integer', 'NO', '35')}),\n` +
+    ` 'bracketAppearanceConstraints', (${index('EventBracketAppearance', 'EventBracketAppearance_eventId_key', ['eventId'])} AND ${bracketFk}),\n` +
     ` 'invalidConstraints', (SELECT count(*)::int FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='public' AND NOT c.convalidated))::text;`;
 }
 
@@ -432,21 +464,18 @@ export function verifyRecoveryCheckpoint(mode, checkpoint, localLogical, sourceR
 
 export async function runRehearsal(archive, mode = 'full') {
   const plan = buildRehearsalPlan(mode);
-  if (typeof archive !== 'string' || dirname(resolve(archive)).toLowerCase() !== outputRoot.toLowerCase() ||
-      basename(archive) !== APPROVED_ARCHIVE) throw fail('ARCHIVE_REJECTED');
   await assertOwnerOnlyDirectory(outputRoot);
+  const manifestPath = await assertFreshArchivePath(archive, outputRoot);
   await assertOwnerOnlyDirectory(keyRoot, 'KEY_NOT_READY', ['identity.dpapi', 'recipient.txt', 'recovery-verified.json']);
   await assertOutputCapacity(outputRoot, 3_221_225_472n);
   await verifyPinnedFile(zipPath, PG_ZIP_HASH);
   if ((await stat(zipPath)).size !== PG_ZIP_BYTES) throw fail('RUNTIME_REJECTED');
   await verifyPostgresDependencySet(join(oldRuntime, 'pg18', 'bin'), PG18_DLL_SHA256);
-  const pair = await verifyBackupPair(archive, archive.slice(0, -4) + '.json');
-  if (pair.sha256 !== APPROVED_ARCHIVE_SHA256 || pair.bytes !== 175055) throw fail('ARCHIVE_REJECTED');
-  const manifest = parsePrivateJson(await readFile(archive.slice(0, -4) + '.json', 'utf8'));
-  if (!manifest.checkpoint || !manifest.checkpoint.ledgerSha256 || !manifest.checkpoint.schemaSha256) throw fail('CHECKPOINT_DRIFT');
+  const pair = await verifyBackupPair(archive, manifestPath);
+  const manifest = parsePrivateJson(await readFile(manifestPath, 'utf8'));
   const authenticated = await runChild(process.execPath, [archiveVerifier, archive], { timeoutMs: 7200000, maxOutput: 1024 });
   const authentication = parsePrivateJson(authenticated.stdout);
-  if (authentication.status !== 'ARCHIVE_VERIFIED' || authentication.bytes !== pair.bytes || authentication.sha256 !== pair.sha256) throw fail('ARCHIVE_REJECTED');
+  assessAuthenticatedArchive(basename(archive), manifest, pair, authentication);
   const { names, expected } = await readMigrationNames();
   const sourceDeep = mode === 'checkpoint-deep-diagnostic'
     ? await collectGuardedSourceDeepComparison(manifest.checkpoint) : null;

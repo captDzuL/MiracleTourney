@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -8,6 +8,7 @@ import {
   assertLocalTarget, assertFreshRehearsalPath, compareRestoredCheckpoint,
   compareLogicalRecoveryCheckpoint, inspectMigrationLedger, assessCandidate,
 } from '../../scripts/operations/local-rehearsal-core.mjs';
+import * as recoveryCore from '../../scripts/operations/local-rehearsal-core.mjs';
 import { LEGACY_TABLES } from '../../scripts/operations/local-backup-snapshot.mjs';
 
 const sha = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -109,10 +110,61 @@ test('migration ledger includes the checked-in 12-digit version migration', () =
 
 test('candidate postcheck requires backfill, constraints, security and no-op ledger', () => {
   const good = { migration: { applied: 2, pending: 0, unfinished: 0 }, certificateMissing: 0, certificateDuplicateCodes: 0,
-    certificateConstraints: true, sessionVersion: true, resetTokenUnique: true, rateLimitBucket: true, invalidConstraints: 0 };
+    certificateConstraints: true, sessionVersion: true, resetTokenUnique: true, rateLimitBucket: true, invalidConstraints: 0,
+    bracketAppearanceTable: true, bracketAppearanceDefaults: true, bracketAppearanceConstraints: true };
   assert.equal(assessCandidate(good).status, 'CANDIDATE_READY');
+  for (const key of ['bracketAppearanceTable', 'bracketAppearanceDefaults', 'bracketAppearanceConstraints']) {
+    assert.throws(() => assessCandidate({ ...good, [key]: false }), /POSTCHECK_FAILED/);
+    const missing = { ...good }; delete missing[key];
+    assert.throws(() => assessCandidate(missing), /POSTCHECK_FAILED/);
+  }
   assert.throws(() => assessCandidate({ ...good, certificateMissing: 1 }), /POSTCHECK_FAILED/);
   assert.throws(() => assessCandidate({ ...good, migration: { applied: 1, pending: 1, unfinished: 0 } }), /POSTCHECK_FAILED/);
+});
+
+test('fresh archive path is an exact owned-root file and rejects collisions or redirection', async () => {
+  const { assertFreshArchivePath } = recoveryCore;
+  const root = await mkdtemp(join(tmpdir(), 'rehearsal-archive-'));
+  const archive = join(root, 'miracle-neondb-2026-10-06T01-23-48-741Z.age');
+  const manifest = archive.slice(0, -4) + '.json';
+  await writeFile(archive, 'synthetic archive');
+  await writeFile(manifest, '{}');
+  assert.equal(await assertFreshArchivePath(archive, root), manifest);
+  for (const path of [join(root, '..', 'other', 'miracle-neondb-2026-10-06T01-23-48-741Z.age'),
+    join(root, 'other.age'), join(root, 'miracle-neondb-2026-10-06T01-23-48-741Z.age.partial'),
+    join(root, '.', '..', 'other.age')]) {
+    await assert.rejects(assertFreshArchivePath(path, root), /ARCHIVE_REJECTED/);
+  }
+  const linked = join(root, 'miracle-neondb-2026-10-06T01-23-48-742Z.age');
+  await symlink(archive, linked, 'file');
+  await writeFile(linked.slice(0, -4) + '.json', '{}');
+  await assert.rejects(assertFreshArchivePath(linked, root), /ARCHIVE_REJECTED/);
+});
+
+test('fresh archive binding requires matching manifest, authenticated bytes and current age', () => {
+  const { assessAuthenticatedArchive } = recoveryCore;
+  const archive = 'miracle-neondb-2026-10-06T01-23-48-741Z.age';
+  const sha256 = 'a'.repeat(64);
+  const pair = { bytes: 123, sha256 };
+  const verified = { status: 'ARCHIVE_VERIFIED', ...pair };
+  const manifest = { format: 'pg_dump-custom+age-v1', source: 'approved-direct-neondb', archive,
+    createdAt: '2026-10-06T01:23:48.741Z', completedAt: '2026-10-06T01:25:00.000Z', ...pair,
+    checkpoint: { snapshot: '00000001-00000001-1', appliedMigrations: 17,
+      ledgerSha256: sha256, schemaSha256: sha256, tableCounts: {}, tableChecksumsMd5: {},
+      integrity: { invalidConstraints: 0, criticalUniqueIndexes: true } } };
+  const now = Date.parse('2026-10-06T01:40:00.000Z');
+  assert.doesNotThrow(() => assessAuthenticatedArchive(archive, manifest, pair, verified, now));
+  for (const changed of [
+    { archive: 'other.age' }, { format: 'other' }, { source: 'other' },
+    { createdAt: '2026-10-06T01:23:48.742Z' }, { completedAt: '2026-10-06T01:22:00.000Z' },
+    { bytes: 124 }, { sha256: 'b'.repeat(64) }, { checkpoint: null },
+  ]) assert.throws(() => assessAuthenticatedArchive(archive, { ...manifest, ...changed }, pair, verified, now), /ARCHIVE_REJECTED/);
+  assert.throws(() => assessAuthenticatedArchive(archive, manifest, pair,
+    { ...verified, sha256: 'b'.repeat(64) }, now), /ARCHIVE_REJECTED/);
+  assert.throws(() => assessAuthenticatedArchive(archive, manifest, pair, verified,
+    Date.parse('2026-10-06T02:25:00.001Z')), /ARCHIVE_REJECTED/);
+  assert.throws(() => assessAuthenticatedArchive(archive, manifest, pair, verified,
+    Date.parse('2026-10-06T01:24:00.000Z')), /ARCHIVE_REJECTED/);
 });
 
 test('logical checkpoint permits representation drift only after all named values and schema match', () => {
