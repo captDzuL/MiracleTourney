@@ -1,0 +1,4992 @@
+{
+  "tables": [
+    {
+      "name": "Certificate",
+      "kind": "r"
+    },
+    {
+      "name": "CheckIn",
+      "kind": "r"
+    },
+    {
+      "name": "Event",
+      "kind": "r"
+    },
+    {
+      "name": "EventAnalyticsSnapshot",
+      "kind": "r"
+    },
+    {
+      "name": "EventPromotion",
+      "kind": "r"
+    },
+    {
+      "name": "EventRoundConfig",
+      "kind": "r"
+    },
+    {
+      "name": "EventStream",
+      "kind": "r"
+    },
+    {
+      "name": "EventVisualAsset",
+      "kind": "r"
+    },
+    {
+      "name": "Match",
+      "kind": "r"
+    },
+    {
+      "name": "MatchGame",
+      "kind": "r"
+    },
+    {
+      "name": "Notification",
+      "kind": "r"
+    },
+    {
+      "name": "OrganizerPlan",
+      "kind": "r"
+    },
+    {
+      "name": "PasswordResetToken",
+      "kind": "r"
+    },
+    {
+      "name": "PaymentSettings",
+      "kind": "r"
+    },
+    {
+      "name": "Player",
+      "kind": "r"
+    },
+    {
+      "name": "PlayerStat",
+      "kind": "r"
+    },
+    {
+      "name": "RegistrationImportBatch",
+      "kind": "r"
+    },
+    {
+      "name": "RegistrationImportItem",
+      "kind": "r"
+    },
+    {
+      "name": "RegistrationImportProfile",
+      "kind": "r"
+    },
+    {
+      "name": "StatSubmission",
+      "kind": "r"
+    },
+    {
+      "name": "Team",
+      "kind": "r"
+    },
+    {
+      "name": "TeamRegistrationRequest",
+      "kind": "r"
+    },
+    {
+      "name": "User",
+      "kind": "r"
+    },
+    {
+      "name": "_prisma_migrations",
+      "kind": "r"
+    }
+  ],
+  "columns": [
+    {
+      "table": "Certificate",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Certificate",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Certificate",
+      "name": "teamId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Certificate",
+      "name": "imageUrl",
+      "type": "text",
+      "notNull": true,
+      "default": "''::text",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Certificate",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Certificate",
+      "name": "status",
+      "type": "text",
+      "notNull": true,
+      "default": "'ready'::text",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Certificate",
+      "name": "lastError",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Certificate",
+      "name": "attemptCount",
+      "type": "integer",
+      "notNull": true,
+      "default": "1",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Certificate",
+      "name": "updatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "CheckIn",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "CheckIn",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "CheckIn",
+      "name": "teamId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "CheckIn",
+      "name": "playerId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "CheckIn",
+      "name": "method",
+      "type": "text",
+      "notNull": true,
+      "default": "'manual'::text",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "CheckIn",
+      "name": "checkedInAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "slug",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "name",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "description",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "logoUrl",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "gameImageUrl",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "gameId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "gameModeId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "format",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "status",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "participantCap",
+      "type": "integer",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "registrationWindow",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "startsAt",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "venue",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "updatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "accentColor",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "characterArtUrl",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "organizerUserId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "organizerName",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "organizerVerified",
+      "type": "boolean",
+      "notNull": true,
+      "default": "false",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "prizePoolLabel",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "registrationFeeLabel",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "registrationUrl",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "activeVisualAssetId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "registrationFeeRequired",
+      "type": "boolean",
+      "notNull": true,
+      "default": "false",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Event",
+      "name": "registrationFeeAmount",
+      "type": "integer",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "date",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "pageViews",
+      "type": "integer",
+      "notNull": true,
+      "default": "0",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "uniqueVisitors",
+      "type": "integer",
+      "notNull": true,
+      "default": "0",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "registrations",
+      "type": "integer",
+      "notNull": true,
+      "default": "0",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "shareClicks",
+      "type": "integer",
+      "notNull": true,
+      "default": "0",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "metrics",
+      "type": "jsonb",
+      "notNull": true,
+      "default": "'{}'::jsonb",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventPromotion",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventPromotion",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventPromotion",
+      "name": "type",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventPromotion",
+      "name": "startsAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventPromotion",
+      "name": "endsAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventPromotion",
+      "name": "config",
+      "type": "jsonb",
+      "notNull": true,
+      "default": "'{}'::jsonb",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventPromotion",
+      "name": "active",
+      "type": "boolean",
+      "notNull": true,
+      "default": "false",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventPromotion",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventRoundConfig",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventRoundConfig",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventRoundConfig",
+      "name": "roundLabel",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventRoundConfig",
+      "name": "bestOf",
+      "type": "integer",
+      "notNull": true,
+      "default": "1",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventStream",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventStream",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventStream",
+      "name": "platform",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventStream",
+      "name": "url",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventStream",
+      "name": "label",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventStream",
+      "name": "enabled",
+      "type": "boolean",
+      "notNull": true,
+      "default": "true",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventStream",
+      "name": "isLive",
+      "type": "boolean",
+      "notNull": true,
+      "default": "false",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "createdByUserId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "source",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "status",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "url",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "mimeType",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "width",
+      "type": "integer",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "height",
+      "type": "integer",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "focalX",
+      "type": "double precision",
+      "notNull": true,
+      "default": "0.5",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "focalY",
+      "type": "double precision",
+      "notNull": true,
+      "default": "0.5",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "provider",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "model",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "promptVersion",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "workflowRunId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "sourceUrl",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "rightsAttestedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "errorCode",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "approvedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "updatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "roundLabel",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "homeTeamId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "awayTeamId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "homeScore",
+      "type": "integer",
+      "notNull": true,
+      "default": "0",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "awayScore",
+      "type": "integer",
+      "notNull": true,
+      "default": "0",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "status",
+      "type": "text",
+      "notNull": true,
+      "default": "'Scheduled'::text",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "slot",
+      "type": "integer",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "round",
+      "type": "integer",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "winnerTeamId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "scheduledLabel",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Match",
+      "name": "updatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "MatchGame",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "MatchGame",
+      "name": "matchId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "MatchGame",
+      "name": "gameNumber",
+      "type": "integer",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "MatchGame",
+      "name": "homeScore",
+      "type": "integer",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "MatchGame",
+      "name": "awayScore",
+      "type": "integer",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Notification",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Notification",
+      "name": "userId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Notification",
+      "name": "type",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Notification",
+      "name": "title",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Notification",
+      "name": "body",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Notification",
+      "name": "channel",
+      "type": "text",
+      "notNull": true,
+      "default": "'in_app'::text",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Notification",
+      "name": "readAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Notification",
+      "name": "sentAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "userId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "tier",
+      "type": "text",
+      "notNull": true,
+      "default": "'free'::text",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "startsAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "expiresAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "maxEvents",
+      "type": "integer",
+      "notNull": true,
+      "default": "2",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "features",
+      "type": "jsonb",
+      "notNull": true,
+      "default": "'{}'::jsonb",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "updatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "userId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "token",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "expiresAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "usedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PaymentSettings",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PaymentSettings",
+      "name": "qrisImageUrl",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PaymentSettings",
+      "name": "instructions",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PaymentSettings",
+      "name": "updatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Player",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Player",
+      "name": "teamId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Player",
+      "name": "eventId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Player",
+      "name": "displayName",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Player",
+      "name": "nickname",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Player",
+      "name": "position",
+      "type": "text",
+      "notNull": true,
+      "default": "''::text",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Player",
+      "name": "jerseyNumber",
+      "type": "integer",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Player",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PlayerStat",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PlayerStat",
+      "name": "matchId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PlayerStat",
+      "name": "playerId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PlayerStat",
+      "name": "playerName",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PlayerStat",
+      "name": "teamId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PlayerStat",
+      "name": "position",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PlayerStat",
+      "name": "gameSlug",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PlayerStat",
+      "name": "stats",
+      "type": "jsonb",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PlayerStat",
+      "name": "source",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "PlayerStat",
+      "name": "lastUpdatedBy",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "profileId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "createdById",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "sourceKind",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "sourceLabel",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "worksheetName",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "status",
+      "type": "text",
+      "notNull": true,
+      "default": "'draft'::text",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "summary",
+      "type": "jsonb",
+      "notNull": true,
+      "default": "'{}'::jsonb",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "expiresAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "committedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "updatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "batchId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "sourceRow",
+      "type": "integer",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "status",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "selected",
+      "type": "boolean",
+      "notNull": true,
+      "default": "false",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "normalizedData",
+      "type": "jsonb",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "diff",
+      "type": "jsonb",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "validationErrors",
+      "type": "jsonb",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "teamId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "committedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "updatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "createdById",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "sourceKind",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "sourceLabel",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "worksheetName",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "headerSignature",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "mapping",
+      "type": "jsonb",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "updatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "StatSubmission",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "StatSubmission",
+      "name": "matchId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "StatSubmission",
+      "name": "teamId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "StatSubmission",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "StatSubmission",
+      "name": "submittedBy",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "StatSubmission",
+      "name": "status",
+      "type": "text",
+      "notNull": true,
+      "default": "'pending'::text",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "StatSubmission",
+      "name": "rejectionNote",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "StatSubmission",
+      "name": "stats",
+      "type": "jsonb",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "StatSubmission",
+      "name": "submittedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "StatSubmission",
+      "name": "reviewedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "StatSubmission",
+      "name": "reviewedBy",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Team",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Team",
+      "name": "eventId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Team",
+      "name": "captainId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Team",
+      "name": "name",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Team",
+      "name": "logoText",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Team",
+      "name": "tag",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Team",
+      "name": "captainName",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Team",
+      "name": "captainContact",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Team",
+      "name": "source",
+      "type": "text",
+      "notNull": true,
+      "default": "'demo'::text",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Team",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "Team",
+      "name": "logoUrl",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "eventId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "captainId",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "teamId",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "teamName",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "teamTag",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "status",
+      "type": "text",
+      "notNull": true,
+      "default": "'pending_payment'::text",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "proofImageUrl",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "rejectReason",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "expiresAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "approvedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "approvedById",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "updatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "User",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "User",
+      "name": "email",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "User",
+      "name": "name",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "User",
+      "name": "role",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "User",
+      "name": "passwordHash",
+      "type": "text",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "User",
+      "name": "createdAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": "CURRENT_TIMESTAMP",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "User",
+      "name": "updatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "User",
+      "name": "tempPassword",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "User",
+      "name": "deactivatedAt",
+      "type": "timestamp(3) without time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "id",
+      "type": "character varying(36)",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "checksum",
+      "type": "character varying(64)",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "finished_at",
+      "type": "timestamp with time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "migration_name",
+      "type": "character varying(255)",
+      "notNull": true,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "logs",
+      "type": "text",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "rolled_back_at",
+      "type": "timestamp with time zone",
+      "notNull": false,
+      "default": null,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "started_at",
+      "type": "timestamp with time zone",
+      "notNull": true,
+      "default": "now()",
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "applied_steps_count",
+      "type": "integer",
+      "notNull": true,
+      "default": "0",
+      "identity": "",
+      "generated": ""
+    }
+  ],
+  "indexes": [
+    {
+      "name": "Certificate_eventId_key",
+      "table": "Certificate",
+      "definition": "CREATE UNIQUE INDEX \"Certificate_eventId_key\" ON public.\"Certificate\" USING btree (\"eventId\")",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Certificate_pkey",
+      "table": "Certificate",
+      "definition": "CREATE UNIQUE INDEX \"Certificate_pkey\" ON public.\"Certificate\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "CheckIn_eventId_idx",
+      "table": "CheckIn",
+      "definition": "CREATE INDEX \"CheckIn_eventId_idx\" ON public.\"CheckIn\" USING btree (\"eventId\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "CheckIn_eventId_teamId_playerId_key",
+      "table": "CheckIn",
+      "definition": "CREATE UNIQUE INDEX \"CheckIn_eventId_teamId_playerId_key\" ON public.\"CheckIn\" USING btree (\"eventId\", \"teamId\", \"playerId\")",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "CheckIn_pkey",
+      "table": "CheckIn",
+      "definition": "CREATE UNIQUE INDEX \"CheckIn_pkey\" ON public.\"CheckIn\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Event_activeVisualAssetId_key",
+      "table": "Event",
+      "definition": "CREATE UNIQUE INDEX \"Event_activeVisualAssetId_key\" ON public.\"Event\" USING btree (\"activeVisualAssetId\")",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Event_pkey",
+      "table": "Event",
+      "definition": "CREATE UNIQUE INDEX \"Event_pkey\" ON public.\"Event\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Event_slug_key",
+      "table": "Event",
+      "definition": "CREATE UNIQUE INDEX \"Event_slug_key\" ON public.\"Event\" USING btree (slug)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Event_status_idx",
+      "table": "Event",
+      "definition": "CREATE INDEX \"Event_status_idx\" ON public.\"Event\" USING btree (status)",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "EventAnalyticsSnapshot_eventId_date_idx",
+      "table": "EventAnalyticsSnapshot",
+      "definition": "CREATE INDEX \"EventAnalyticsSnapshot_eventId_date_idx\" ON public.\"EventAnalyticsSnapshot\" USING btree (\"eventId\", date)",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "EventAnalyticsSnapshot_pkey",
+      "table": "EventAnalyticsSnapshot",
+      "definition": "CREATE UNIQUE INDEX \"EventAnalyticsSnapshot_pkey\" ON public.\"EventAnalyticsSnapshot\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "EventPromotion_eventId_active_idx",
+      "table": "EventPromotion",
+      "definition": "CREATE INDEX \"EventPromotion_eventId_active_idx\" ON public.\"EventPromotion\" USING btree (\"eventId\", active)",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "EventPromotion_pkey",
+      "table": "EventPromotion",
+      "definition": "CREATE UNIQUE INDEX \"EventPromotion_pkey\" ON public.\"EventPromotion\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "EventRoundConfig_eventId_roundLabel_key",
+      "table": "EventRoundConfig",
+      "definition": "CREATE UNIQUE INDEX \"EventRoundConfig_eventId_roundLabel_key\" ON public.\"EventRoundConfig\" USING btree (\"eventId\", \"roundLabel\")",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "EventRoundConfig_pkey",
+      "table": "EventRoundConfig",
+      "definition": "CREATE UNIQUE INDEX \"EventRoundConfig_pkey\" ON public.\"EventRoundConfig\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "EventStream_eventId_key",
+      "table": "EventStream",
+      "definition": "CREATE UNIQUE INDEX \"EventStream_eventId_key\" ON public.\"EventStream\" USING btree (\"eventId\")",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "EventStream_pkey",
+      "table": "EventStream",
+      "definition": "CREATE UNIQUE INDEX \"EventStream_pkey\" ON public.\"EventStream\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "EventVisualAsset_eventId_createdAt_idx",
+      "table": "EventVisualAsset",
+      "definition": "CREATE INDEX \"EventVisualAsset_eventId_createdAt_idx\" ON public.\"EventVisualAsset\" USING btree (\"eventId\", \"createdAt\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "EventVisualAsset_eventId_source_createdAt_idx",
+      "table": "EventVisualAsset",
+      "definition": "CREATE INDEX \"EventVisualAsset_eventId_source_createdAt_idx\" ON public.\"EventVisualAsset\" USING btree (\"eventId\", source, \"createdAt\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "EventVisualAsset_pkey",
+      "table": "EventVisualAsset",
+      "definition": "CREATE UNIQUE INDEX \"EventVisualAsset_pkey\" ON public.\"EventVisualAsset\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Match_eventId_round_slot_key",
+      "table": "Match",
+      "definition": "CREATE UNIQUE INDEX \"Match_eventId_round_slot_key\" ON public.\"Match\" USING btree (\"eventId\", round, slot)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Match_eventId_status_idx",
+      "table": "Match",
+      "definition": "CREATE INDEX \"Match_eventId_status_idx\" ON public.\"Match\" USING btree (\"eventId\", status)",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Match_pkey",
+      "table": "Match",
+      "definition": "CREATE UNIQUE INDEX \"Match_pkey\" ON public.\"Match\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "MatchGame_matchId_gameNumber_key",
+      "table": "MatchGame",
+      "definition": "CREATE UNIQUE INDEX \"MatchGame_matchId_gameNumber_key\" ON public.\"MatchGame\" USING btree (\"matchId\", \"gameNumber\")",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "MatchGame_pkey",
+      "table": "MatchGame",
+      "definition": "CREATE UNIQUE INDEX \"MatchGame_pkey\" ON public.\"MatchGame\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Notification_pkey",
+      "table": "Notification",
+      "definition": "CREATE UNIQUE INDEX \"Notification_pkey\" ON public.\"Notification\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Notification_userId_readAt_idx",
+      "table": "Notification",
+      "definition": "CREATE INDEX \"Notification_userId_readAt_idx\" ON public.\"Notification\" USING btree (\"userId\", \"readAt\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "OrganizerPlan_pkey",
+      "table": "OrganizerPlan",
+      "definition": "CREATE UNIQUE INDEX \"OrganizerPlan_pkey\" ON public.\"OrganizerPlan\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "OrganizerPlan_userId_key",
+      "table": "OrganizerPlan",
+      "definition": "CREATE UNIQUE INDEX \"OrganizerPlan_userId_key\" ON public.\"OrganizerPlan\" USING btree (\"userId\")",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "PasswordResetToken_pkey",
+      "table": "PasswordResetToken",
+      "definition": "CREATE UNIQUE INDEX \"PasswordResetToken_pkey\" ON public.\"PasswordResetToken\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "PasswordResetToken_token_key",
+      "table": "PasswordResetToken",
+      "definition": "CREATE UNIQUE INDEX \"PasswordResetToken_token_key\" ON public.\"PasswordResetToken\" USING btree (token)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "PaymentSettings_pkey",
+      "table": "PaymentSettings",
+      "definition": "CREATE UNIQUE INDEX \"PaymentSettings_pkey\" ON public.\"PaymentSettings\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Player_eventId_idx",
+      "table": "Player",
+      "definition": "CREATE INDEX \"Player_eventId_idx\" ON public.\"Player\" USING btree (\"eventId\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Player_pkey",
+      "table": "Player",
+      "definition": "CREATE UNIQUE INDEX \"Player_pkey\" ON public.\"Player\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Player_teamId_idx",
+      "table": "Player",
+      "definition": "CREATE INDEX \"Player_teamId_idx\" ON public.\"Player\" USING btree (\"teamId\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Player_teamId_nickname_key",
+      "table": "Player",
+      "definition": "CREATE UNIQUE INDEX \"Player_teamId_nickname_key\" ON public.\"Player\" USING btree (\"teamId\", nickname)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "PlayerStat_matchId_idx",
+      "table": "PlayerStat",
+      "definition": "CREATE INDEX \"PlayerStat_matchId_idx\" ON public.\"PlayerStat\" USING btree (\"matchId\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "PlayerStat_matchId_playerId_key",
+      "table": "PlayerStat",
+      "definition": "CREATE UNIQUE INDEX \"PlayerStat_matchId_playerId_key\" ON public.\"PlayerStat\" USING btree (\"matchId\", \"playerId\")",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "PlayerStat_pkey",
+      "table": "PlayerStat",
+      "definition": "CREATE UNIQUE INDEX \"PlayerStat_pkey\" ON public.\"PlayerStat\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "RegistrationImportBatch_eventId_createdAt_idx",
+      "table": "RegistrationImportBatch",
+      "definition": "CREATE INDEX \"RegistrationImportBatch_eventId_createdAt_idx\" ON public.\"RegistrationImportBatch\" USING btree (\"eventId\", \"createdAt\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "RegistrationImportBatch_expiresAt_idx",
+      "table": "RegistrationImportBatch",
+      "definition": "CREATE INDEX \"RegistrationImportBatch_expiresAt_idx\" ON public.\"RegistrationImportBatch\" USING btree (\"expiresAt\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "RegistrationImportBatch_pkey",
+      "table": "RegistrationImportBatch",
+      "definition": "CREATE UNIQUE INDEX \"RegistrationImportBatch_pkey\" ON public.\"RegistrationImportBatch\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "RegistrationImportItem_batchId_status_idx",
+      "table": "RegistrationImportItem",
+      "definition": "CREATE INDEX \"RegistrationImportItem_batchId_status_idx\" ON public.\"RegistrationImportItem\" USING btree (\"batchId\", status)",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "RegistrationImportItem_pkey",
+      "table": "RegistrationImportItem",
+      "definition": "CREATE UNIQUE INDEX \"RegistrationImportItem_pkey\" ON public.\"RegistrationImportItem\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "RegistrationImportProfile_eventId_headerSignature_idx",
+      "table": "RegistrationImportProfile",
+      "definition": "CREATE INDEX \"RegistrationImportProfile_eventId_headerSignature_idx\" ON public.\"RegistrationImportProfile\" USING btree (\"eventId\", \"headerSignature\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "RegistrationImportProfile_pkey",
+      "table": "RegistrationImportProfile",
+      "definition": "CREATE UNIQUE INDEX \"RegistrationImportProfile_pkey\" ON public.\"RegistrationImportProfile\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "StatSubmission_matchId_teamId_key",
+      "table": "StatSubmission",
+      "definition": "CREATE UNIQUE INDEX \"StatSubmission_matchId_teamId_key\" ON public.\"StatSubmission\" USING btree (\"matchId\", \"teamId\")",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "StatSubmission_pkey",
+      "table": "StatSubmission",
+      "definition": "CREATE UNIQUE INDEX \"StatSubmission_pkey\" ON public.\"StatSubmission\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Team_eventId_name_key",
+      "table": "Team",
+      "definition": "CREATE UNIQUE INDEX \"Team_eventId_name_key\" ON public.\"Team\" USING btree (\"eventId\", name)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Team_eventId_tag_key",
+      "table": "Team",
+      "definition": "CREATE UNIQUE INDEX \"Team_eventId_tag_key\" ON public.\"Team\" USING btree (\"eventId\", tag)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "Team_pkey",
+      "table": "Team",
+      "definition": "CREATE UNIQUE INDEX \"Team_pkey\" ON public.\"Team\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "TeamRegistrationRequest_captainId_idx",
+      "table": "TeamRegistrationRequest",
+      "definition": "CREATE INDEX \"TeamRegistrationRequest_captainId_idx\" ON public.\"TeamRegistrationRequest\" USING btree (\"captainId\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "TeamRegistrationRequest_eventId_captainId_active_key",
+      "table": "TeamRegistrationRequest",
+      "definition": "CREATE UNIQUE INDEX \"TeamRegistrationRequest_eventId_captainId_active_key\" ON public.\"TeamRegistrationRequest\" USING btree (\"eventId\", \"captainId\") WHERE (status = ANY (ARRAY['pending_payment'::text, 'pending_review'::text, 'approved'::text]))",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "TeamRegistrationRequest_eventId_idx",
+      "table": "TeamRegistrationRequest",
+      "definition": "CREATE INDEX \"TeamRegistrationRequest_eventId_idx\" ON public.\"TeamRegistrationRequest\" USING btree (\"eventId\")",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "TeamRegistrationRequest_eventId_teamName_reserved_key",
+      "table": "TeamRegistrationRequest",
+      "definition": "CREATE UNIQUE INDEX \"TeamRegistrationRequest_eventId_teamName_reserved_key\" ON public.\"TeamRegistrationRequest\" USING btree (\"eventId\", \"teamName\") WHERE (status = ANY (ARRAY['pending_payment'::text, 'pending_review'::text]))",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "TeamRegistrationRequest_eventId_teamTag_reserved_key",
+      "table": "TeamRegistrationRequest",
+      "definition": "CREATE UNIQUE INDEX \"TeamRegistrationRequest_eventId_teamTag_reserved_key\" ON public.\"TeamRegistrationRequest\" USING btree (\"eventId\", \"teamTag\") WHERE (status = ANY (ARRAY['pending_payment'::text, 'pending_review'::text]))",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "TeamRegistrationRequest_pkey",
+      "table": "TeamRegistrationRequest",
+      "definition": "CREATE UNIQUE INDEX \"TeamRegistrationRequest_pkey\" ON public.\"TeamRegistrationRequest\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "TeamRegistrationRequest_status_idx",
+      "table": "TeamRegistrationRequest",
+      "definition": "CREATE INDEX \"TeamRegistrationRequest_status_idx\" ON public.\"TeamRegistrationRequest\" USING btree (status)",
+      "unique": false,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "TeamRegistrationRequest_teamId_key",
+      "table": "TeamRegistrationRequest",
+      "definition": "CREATE UNIQUE INDEX \"TeamRegistrationRequest_teamId_key\" ON public.\"TeamRegistrationRequest\" USING btree (\"teamId\")",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "User_email_key",
+      "table": "User",
+      "definition": "CREATE UNIQUE INDEX \"User_email_key\" ON public.\"User\" USING btree (email)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "User_pkey",
+      "table": "User",
+      "definition": "CREATE UNIQUE INDEX \"User_pkey\" ON public.\"User\" USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    },
+    {
+      "name": "_prisma_migrations_pkey",
+      "table": "_prisma_migrations",
+      "definition": "CREATE UNIQUE INDEX _prisma_migrations_pkey ON public._prisma_migrations USING btree (id)",
+      "unique": true,
+      "valid": true,
+      "ready": true,
+      "live": true
+    }
+  ],
+  "constraints": [
+    {
+      "table": "Certificate",
+      "name": "Certificate_attemptCount_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"attemptCount\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Certificate",
+      "name": "Certificate_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Certificate",
+      "name": "Certificate_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Certificate",
+      "name": "Certificate_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Certificate",
+      "name": "Certificate_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Certificate",
+      "name": "Certificate_imageUrl_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"imageUrl\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Certificate",
+      "name": "Certificate_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Certificate",
+      "name": "Certificate_status_not_null",
+      "type": "n",
+      "definition": "NOT NULL status",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Certificate",
+      "name": "Certificate_teamId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"teamId\") REFERENCES \"Team\"(id) ON UPDATE CASCADE ON DELETE RESTRICT",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Certificate",
+      "name": "Certificate_teamId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"teamId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Certificate",
+      "name": "Certificate_updatedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"updatedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "CheckIn",
+      "name": "CheckIn_checkedInAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"checkedInAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "CheckIn",
+      "name": "CheckIn_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "CheckIn",
+      "name": "CheckIn_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "CheckIn",
+      "name": "CheckIn_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "CheckIn",
+      "name": "CheckIn_method_not_null",
+      "type": "n",
+      "definition": "NOT NULL method",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "CheckIn",
+      "name": "CheckIn_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "CheckIn",
+      "name": "CheckIn_playerId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"playerId\") REFERENCES \"Player\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "CheckIn",
+      "name": "CheckIn_teamId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"teamId\") REFERENCES \"Team\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "CheckIn",
+      "name": "CheckIn_teamId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"teamId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_activeVisualAssetId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"activeVisualAssetId\") REFERENCES \"EventVisualAsset\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_description_not_null",
+      "type": "n",
+      "definition": "NOT NULL description",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_format_not_null",
+      "type": "n",
+      "definition": "NOT NULL format",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_gameId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"gameId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_gameModeId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"gameModeId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_name_not_null",
+      "type": "n",
+      "definition": "NOT NULL name",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_organizerUserId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"organizerUserId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_organizerVerified_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"organizerVerified\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_participantCap_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"participantCap\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_registrationFeeRequired_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"registrationFeeRequired\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_registrationWindow_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"registrationWindow\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_slug_not_null",
+      "type": "n",
+      "definition": "NOT NULL slug",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_startsAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"startsAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_status_not_null",
+      "type": "n",
+      "definition": "NOT NULL status",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_updatedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"updatedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Event",
+      "name": "Event_venue_not_null",
+      "type": "n",
+      "definition": "NOT NULL venue",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "EventAnalyticsSnapshot_date_not_null",
+      "type": "n",
+      "definition": "NOT NULL date",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "EventAnalyticsSnapshot_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "EventAnalyticsSnapshot_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "EventAnalyticsSnapshot_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "EventAnalyticsSnapshot_metrics_not_null",
+      "type": "n",
+      "definition": "NOT NULL metrics",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "EventAnalyticsSnapshot_pageViews_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"pageViews\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "EventAnalyticsSnapshot_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "EventAnalyticsSnapshot_registrations_not_null",
+      "type": "n",
+      "definition": "NOT NULL registrations",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "EventAnalyticsSnapshot_shareClicks_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"shareClicks\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventAnalyticsSnapshot",
+      "name": "EventAnalyticsSnapshot_uniqueVisitors_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"uniqueVisitors\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventPromotion",
+      "name": "EventPromotion_active_not_null",
+      "type": "n",
+      "definition": "NOT NULL active",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventPromotion",
+      "name": "EventPromotion_config_not_null",
+      "type": "n",
+      "definition": "NOT NULL config",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventPromotion",
+      "name": "EventPromotion_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventPromotion",
+      "name": "EventPromotion_endsAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"endsAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventPromotion",
+      "name": "EventPromotion_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventPromotion",
+      "name": "EventPromotion_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventPromotion",
+      "name": "EventPromotion_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventPromotion",
+      "name": "EventPromotion_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventPromotion",
+      "name": "EventPromotion_startsAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"startsAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventPromotion",
+      "name": "EventPromotion_type_not_null",
+      "type": "n",
+      "definition": "NOT NULL type",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventRoundConfig",
+      "name": "EventRoundConfig_bestOf_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"bestOf\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventRoundConfig",
+      "name": "EventRoundConfig_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventRoundConfig",
+      "name": "EventRoundConfig_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventRoundConfig",
+      "name": "EventRoundConfig_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventRoundConfig",
+      "name": "EventRoundConfig_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventRoundConfig",
+      "name": "EventRoundConfig_roundLabel_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"roundLabel\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventStream",
+      "name": "EventStream_enabled_not_null",
+      "type": "n",
+      "definition": "NOT NULL enabled",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventStream",
+      "name": "EventStream_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventStream",
+      "name": "EventStream_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventStream",
+      "name": "EventStream_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventStream",
+      "name": "EventStream_isLive_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"isLive\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventStream",
+      "name": "EventStream_label_not_null",
+      "type": "n",
+      "definition": "NOT NULL label",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventStream",
+      "name": "EventStream_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventStream",
+      "name": "EventStream_platform_not_null",
+      "type": "n",
+      "definition": "NOT NULL platform",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventStream",
+      "name": "EventStream_url_not_null",
+      "type": "n",
+      "definition": "NOT NULL url",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "EventVisualAsset_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "EventVisualAsset_createdByUserId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"createdByUserId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "EventVisualAsset_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "EventVisualAsset_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "EventVisualAsset_focalX_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"focalX\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "EventVisualAsset_focalY_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"focalY\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "EventVisualAsset_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "EventVisualAsset_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "EventVisualAsset_source_not_null",
+      "type": "n",
+      "definition": "NOT NULL source",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "EventVisualAsset_status_not_null",
+      "type": "n",
+      "definition": "NOT NULL status",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "EventVisualAsset",
+      "name": "EventVisualAsset_updatedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"updatedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_awayScore_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"awayScore\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_awayTeamId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"awayTeamId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_eventId_round_slot_key",
+      "type": "u",
+      "definition": "UNIQUE (\"eventId\", round, slot)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_homeScore_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"homeScore\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_homeTeamId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"homeTeamId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_roundLabel_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"roundLabel\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_status_not_null",
+      "type": "n",
+      "definition": "NOT NULL status",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Match",
+      "name": "Match_updatedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"updatedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "MatchGame",
+      "name": "MatchGame_awayScore_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"awayScore\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "MatchGame",
+      "name": "MatchGame_gameNumber_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"gameNumber\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "MatchGame",
+      "name": "MatchGame_homeScore_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"homeScore\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "MatchGame",
+      "name": "MatchGame_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "MatchGame",
+      "name": "MatchGame_matchId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"matchId\") REFERENCES \"Match\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "MatchGame",
+      "name": "MatchGame_matchId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"matchId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "MatchGame",
+      "name": "MatchGame_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Notification",
+      "name": "Notification_body_not_null",
+      "type": "n",
+      "definition": "NOT NULL body",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Notification",
+      "name": "Notification_channel_not_null",
+      "type": "n",
+      "definition": "NOT NULL channel",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Notification",
+      "name": "Notification_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Notification",
+      "name": "Notification_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Notification",
+      "name": "Notification_sentAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"sentAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Notification",
+      "name": "Notification_title_not_null",
+      "type": "n",
+      "definition": "NOT NULL title",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Notification",
+      "name": "Notification_type_not_null",
+      "type": "n",
+      "definition": "NOT NULL type",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Notification",
+      "name": "Notification_userId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Notification",
+      "name": "Notification_userId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"userId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "OrganizerPlan_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "OrganizerPlan_features_not_null",
+      "type": "n",
+      "definition": "NOT NULL features",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "OrganizerPlan_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "OrganizerPlan_maxEvents_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"maxEvents\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "OrganizerPlan_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "OrganizerPlan_startsAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"startsAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "OrganizerPlan_tier_not_null",
+      "type": "n",
+      "definition": "NOT NULL tier",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "OrganizerPlan_updatedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"updatedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "OrganizerPlan_userId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "OrganizerPlan",
+      "name": "OrganizerPlan_userId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"userId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "PasswordResetToken_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "PasswordResetToken_expiresAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"expiresAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "PasswordResetToken_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "PasswordResetToken_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "PasswordResetToken_token_not_null",
+      "type": "n",
+      "definition": "NOT NULL token",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "PasswordResetToken_userId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PasswordResetToken",
+      "name": "PasswordResetToken_userId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"userId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PaymentSettings",
+      "name": "PaymentSettings_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PaymentSettings",
+      "name": "PaymentSettings_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PaymentSettings",
+      "name": "PaymentSettings_updatedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"updatedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Player",
+      "name": "Player_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Player",
+      "name": "Player_displayName_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"displayName\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Player",
+      "name": "Player_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Player",
+      "name": "Player_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Player",
+      "name": "Player_nickname_not_null",
+      "type": "n",
+      "definition": "NOT NULL nickname",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Player",
+      "name": "Player_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Player",
+      "name": "Player_position_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"position\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Player",
+      "name": "Player_teamId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"teamId\") REFERENCES \"Team\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Player",
+      "name": "Player_teamId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"teamId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PlayerStat",
+      "name": "PlayerStat_gameSlug_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"gameSlug\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PlayerStat",
+      "name": "PlayerStat_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PlayerStat",
+      "name": "PlayerStat_matchId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"matchId\") REFERENCES \"Match\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PlayerStat",
+      "name": "PlayerStat_matchId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"matchId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PlayerStat",
+      "name": "PlayerStat_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PlayerStat",
+      "name": "PlayerStat_playerId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"playerId\") REFERENCES \"Player\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PlayerStat",
+      "name": "PlayerStat_playerId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"playerId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PlayerStat",
+      "name": "PlayerStat_playerName_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"playerName\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PlayerStat",
+      "name": "PlayerStat_position_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"position\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PlayerStat",
+      "name": "PlayerStat_stats_not_null",
+      "type": "n",
+      "definition": "NOT NULL stats",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "PlayerStat",
+      "name": "PlayerStat_teamId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"teamId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_createdById_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"createdById\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_createdById_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdById\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_expiresAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"expiresAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_profileId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"profileId\") REFERENCES \"RegistrationImportProfile\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_sourceKind_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"sourceKind\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_sourceLabel_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"sourceLabel\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_status_not_null",
+      "type": "n",
+      "definition": "NOT NULL status",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_summary_not_null",
+      "type": "n",
+      "definition": "NOT NULL summary",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportBatch",
+      "name": "RegistrationImportBatch_updatedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"updatedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "RegistrationImportItem_batchId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"batchId\") REFERENCES \"RegistrationImportBatch\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "RegistrationImportItem_batchId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"batchId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "RegistrationImportItem_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "RegistrationImportItem_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "RegistrationImportItem_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "RegistrationImportItem_selected_not_null",
+      "type": "n",
+      "definition": "NOT NULL selected",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "RegistrationImportItem_sourceRow_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"sourceRow\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "RegistrationImportItem_status_not_null",
+      "type": "n",
+      "definition": "NOT NULL status",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "RegistrationImportItem_teamId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"teamId\") REFERENCES \"Team\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportItem",
+      "name": "RegistrationImportItem_updatedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"updatedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_createdById_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"createdById\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_createdById_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdById\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_headerSignature_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"headerSignature\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_mapping_not_null",
+      "type": "n",
+      "definition": "NOT NULL mapping",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_sourceKind_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"sourceKind\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_sourceLabel_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"sourceLabel\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "RegistrationImportProfile",
+      "name": "RegistrationImportProfile_updatedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"updatedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "StatSubmission",
+      "name": "StatSubmission_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "StatSubmission",
+      "name": "StatSubmission_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "StatSubmission",
+      "name": "StatSubmission_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "StatSubmission",
+      "name": "StatSubmission_matchId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"matchId\") REFERENCES \"Match\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "StatSubmission",
+      "name": "StatSubmission_matchId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"matchId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "StatSubmission",
+      "name": "StatSubmission_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "StatSubmission",
+      "name": "StatSubmission_stats_not_null",
+      "type": "n",
+      "definition": "NOT NULL stats",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "StatSubmission",
+      "name": "StatSubmission_status_not_null",
+      "type": "n",
+      "definition": "NOT NULL status",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "StatSubmission",
+      "name": "StatSubmission_submittedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"submittedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "StatSubmission",
+      "name": "StatSubmission_submittedBy_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"submittedBy\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "StatSubmission",
+      "name": "StatSubmission_teamId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"teamId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Team",
+      "name": "Team_captainId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"captainId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Team",
+      "name": "Team_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Team",
+      "name": "Team_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Team",
+      "name": "Team_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Team",
+      "name": "Team_logoText_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"logoText\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Team",
+      "name": "Team_name_not_null",
+      "type": "n",
+      "definition": "NOT NULL name",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Team",
+      "name": "Team_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Team",
+      "name": "Team_source_not_null",
+      "type": "n",
+      "definition": "NOT NULL source",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "Team",
+      "name": "Team_tag_not_null",
+      "type": "n",
+      "definition": "NOT NULL tag",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_approvedById_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"approvedById\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_captainId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"captainId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_captainId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"captainId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_eventId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"eventId\") REFERENCES \"Event\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_eventId_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"eventId\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_expiresAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"expiresAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_status_not_null",
+      "type": "n",
+      "definition": "NOT NULL status",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_teamId_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (\"teamId\") REFERENCES \"Team\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_teamName_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"teamName\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_teamTag_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"teamTag\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "TeamRegistrationRequest",
+      "name": "TeamRegistrationRequest_updatedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"updatedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "User",
+      "name": "User_createdAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"createdAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "User",
+      "name": "User_email_not_null",
+      "type": "n",
+      "definition": "NOT NULL email",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "User",
+      "name": "User_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "User",
+      "name": "User_name_not_null",
+      "type": "n",
+      "definition": "NOT NULL name",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "User",
+      "name": "User_passwordHash_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"passwordHash\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "User",
+      "name": "User_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "User",
+      "name": "User_role_not_null",
+      "type": "n",
+      "definition": "NOT NULL role",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "User",
+      "name": "User_updatedAt_not_null",
+      "type": "n",
+      "definition": "NOT NULL \"updatedAt\"",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "_prisma_migrations_applied_steps_count_not_null",
+      "type": "n",
+      "definition": "NOT NULL applied_steps_count",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "_prisma_migrations_checksum_not_null",
+      "type": "n",
+      "definition": "NOT NULL checksum",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "_prisma_migrations_id_not_null",
+      "type": "n",
+      "definition": "NOT NULL id",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "_prisma_migrations_migration_name_not_null",
+      "type": "n",
+      "definition": "NOT NULL migration_name",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "_prisma_migrations_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    },
+    {
+      "table": "_prisma_migrations",
+      "name": "_prisma_migrations_started_at_not_null",
+      "type": "n",
+      "definition": "NOT NULL started_at",
+      "deferrable": false,
+      "deferred": false,
+      "validated": true
+    }
+  ],
+  "enums": [],
+  "triggers": [],
+  "functions": [
+    {
+      "name": "enforce_match_result_revision",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_match_result_revision()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n  expected_version INTEGER;\nBEGIN\n  IF TG_OP = 'DELETE' THEN\n    IF pg_trigger_depth() > 1\n       OR NOT EXISTS (SELECT 1 FROM \"Match\" WHERE \"id\" = OLD.\"matchId\") THEN\n      RETURN OLD;\n    END IF;\n\n    RAISE EXCEPTION 'Match result revisions are append-only';\n  END IF;\n\n  IF TG_OP = 'UPDATE' THEN\n    RAISE EXCEPTION 'Match result revisions are append-only';\n  END IF;\n\n  PERFORM pg_advisory_xact_lock(hashtext(NEW.\"matchId\"));\n  SELECT COALESCE(MAX(\"version\"), 0) + 1\n    INTO expected_version\n    FROM \"MatchResultRevision\"\n   WHERE \"matchId\" = NEW.\"matchId\";\n\n  IF NEW.\"version\" <> expected_version THEN\n    RAISE EXCEPTION 'Match result revision version must be sequential';\n  END IF;\n\n  RETURN NEW;\nEND;\n$function$\n"
+    }
+  ]
+}

@@ -87,7 +87,15 @@ export function ensurePinnedCaBundle() { return ensureCaBundleAt(caDirectory); }
 export function verifyPinnedCaBundle() { return verifyCaBundleAt(caDirectory); }
 
 export function buildPinnedPgEnv(source) {
-  if (source?.PGHOST !== 'ep-sparkling-night-azr6wxwd.c-3.ap-southeast-1.aws.neon.tech' ||
+  return buildPinnedPgEnvForHost(source, 'ep-sparkling-night-azr6wxwd.c-3.ap-southeast-1.aws.neon.tech');
+}
+
+export function buildPinnedTestingPgEnv(source) {
+  return buildPinnedPgEnvForHost(source, 'ep-delicate-forest-azuodo4q.c-3.ap-southeast-1.aws.neon.tech');
+}
+
+function buildPinnedPgEnvForHost(source, exactHost) {
+  if (source?.PGHOST !== exactHost ||
       source.PGPORT !== '5432' || source.PGDATABASE !== 'neondb' ||
       source.PGSSLMODE !== 'verify-full' || source.PGSSLROOTCERT !== 'system' ||
       !source.PGUSER || !source.PGPASSWORD) throw reject();

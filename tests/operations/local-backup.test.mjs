@@ -58,6 +58,21 @@ function config(f, extra = {}) {
   };
 }
 
+test('testing export labels its immutable archive for Delicate and keeps production source blocked', async () => {
+  const { runTestingEncryptedBackup } = await import('../../scripts/operations/local-backup-core.mjs');
+  const f = await fixture();
+  const testingUrl = 'postgresql://backup:synthetic-secret@ep-delicate-forest-azuodo4q.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=verify-full&sslrootcert=system';
+  try {
+    const result = await runTestingEncryptedBackup(config(f, { sourceUrl: testingUrl }));
+    const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8'));
+    assert.equal(manifest.source, 'approved-delicate-testing-direct-neondb');
+    assert.deepEqual(manifest.testing, { project: 'steep-tree-47893196', branch: 'br-young-thunder-az5w6nt3', database: 'neondb' });
+    assert.match(basename(result.archivePath), /^miracle-testing-neondb-/);
+    await assert.rejects(runTestingEncryptedBackup(config(f, { sourceUrl })), { code: 'SOURCE_REJECTED' });
+    await assert.rejects(runEncryptedBackup(config(f, { sourceUrl: testingUrl })), { code: 'SOURCE_REJECTED' });
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
 test('preserves a binary fixture stream and publishes a manifest after both commands succeed', async () => {
   const f = await fixture();
   const result = await runEncryptedBackup(config(f));

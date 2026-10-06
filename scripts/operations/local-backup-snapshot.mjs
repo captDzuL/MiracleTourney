@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 export async function loadExpectedLedger(root, names) {
   try {
-    if (!Array.isArray(names) || names.some(name => !/^\d{14}_[a-z0-9_]+$/.test(name))) throw fail('CHECKPOINT_DRIFT');
+    if (!Array.isArray(names) || names.some(name => !/^\d{12}(?:\d{2})?_[a-z0-9_]+$/.test(name))) throw fail('CHECKPOINT_DRIFT');
     const result = [];
     for (const name of names) {
       const sql = await readFile(join(root, name, 'migration.sql'), 'utf8');

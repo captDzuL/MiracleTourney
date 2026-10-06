@@ -4,7 +4,8 @@ import { createReadStream, createWriteStream, existsSync, lstatSync, realpathSyn
 import { link, open, readFile, readdir, stat, unlink } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, resolve } from 'node:path';
 import { PG18_DLL_SHA256 } from './pg18-dll-hashes.mjs';
-import { buildPinnedPgEnv, verifyPinnedCaBundle } from './local-backup-ca.mjs';
+import { buildPinnedPgEnv, buildPinnedTestingPgEnv, verifyPinnedCaBundle } from './local-backup-ca.mjs';
+import { TESTING_IDENTITY, TESTING_SOURCE, validateTestingSourceUrl } from './testing-schema-core.mjs';
 
 const DIRECT_HOST = 'ep-sparkling-night-azr6wxwd.c-3.ap-southeast-1.aws.neon.tech';
 const DEFAULT_OUTPUT = 'E:/MiracleBackups';
@@ -122,9 +123,17 @@ function processResult(child) {
 }
 
 export async function runEncryptedBackup(config) {
+  return runEncryptedBackupWithFixedSource(config, validateSourceUrl, 'approved-direct-neondb');
+}
+
+export async function runTestingEncryptedBackup(config) {
+  return runEncryptedBackupWithFixedSource(config, validateTestingSourceUrl, TESTING_SOURCE);
+}
+
+async function runEncryptedBackupWithFixedSource(config, sourceValidator, sourceLabel) {
   if (!config?.recipient || !/^age1[023456789acdefghjklmnpqrstuvwxyz]+$/.test(config.recipient) ||
       config.escrowConfirmed !== true) throw failure('KEY_NOT_READY');
-  const source = validateSourceUrl(config.sourceUrl);
+  const source = sourceValidator(config.sourceUrl);
   const output = validateOutputDirectory(config.outputDirectory, config.approvedOutputRoot);
   await verifyExecutable(config.pgDumpPath, config.pgDumpSha256);
   if (basename(config.pgDumpPath).toLowerCase() === 'pg_dump.exe') {
@@ -138,7 +147,7 @@ export async function runEncryptedBackup(config) {
   if (config.checkpoint && (typeof config.snapshotId !== 'string' || config.checkpoint.snapshot !== config.snapshotId)) throw failure('CONFIG_REJECTED');
   const startedAt = config.now instanceof Date ? config.now : new Date();
   const stamp = startedAt.toISOString().replaceAll(':', '-').replaceAll('.', '-');
-  const name = `miracle-neondb-${stamp}`;
+  const name = `${sourceLabel === TESTING_SOURCE ? 'miracle-testing-neondb' : 'miracle-neondb'}-${stamp}`;
   const archivePath = resolve(output, `${name}.age`);
   const manifestPath = resolve(output, `${name}.json`);
   const partialPath = resolve(output, `${name}.partial`);
@@ -156,7 +165,7 @@ export async function runEncryptedBackup(config) {
     try { lock = await open(lockPath, 'wx', 0o600); } catch { throw failure('BACKUP_LOCKED'); }
     if (existsSync(archivePath) || existsSync(manifestPath) || existsSync(partialPath)) throw failure('ARCHIVE_COLLISION');
     try { partial = await open(partialPath, 'wx', 0o600); } catch { throw failure('ARCHIVE_COLLISION'); }
-    const safeEnv = buildPinnedPgEnv(source);
+    const safeEnv = sourceLabel === TESTING_SOURCE ? buildPinnedTestingPgEnv(source) : buildPinnedPgEnv(source);
     const dumpArgs = [...(config.pgDumpArgsPrefix || []), ...(config.snapshotId ? [`--snapshot=${config.snapshotId}`] : []), '--format=custom', '--no-owner', '--no-acl'];
     const ageArgs = [...(config.ageArgsPrefix || []), '--encrypt', '--recipient', config.recipient];
     dump = spawn(config.pgDumpPath, dumpArgs, { env: safeEnv, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
@@ -193,10 +202,11 @@ export async function runEncryptedBackup(config) {
     if (!prefix.equals(AGE_HEADER)) throw failure('ARCHIVE_INVALID');
     const sha256 = hash.digest('hex');
     const manifest = {
-      format: 'pg_dump-custom+age-v1', source: 'approved-direct-neondb',
+      format: 'pg_dump-custom+age-v1', source: sourceLabel,
       createdAt: startedAt.toISOString(), completedAt: new Date().toISOString(),
       archive: basename(archivePath), bytes: metadata.size, sha256,
     };
+    if (sourceLabel === TESTING_SOURCE) manifest.testing = TESTING_IDENTITY;
     if (config.checkpoint) {
       const cp = config.checkpoint;
       manifest.checkpoint = {
