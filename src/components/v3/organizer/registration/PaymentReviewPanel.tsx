@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import React, { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
@@ -14,7 +15,7 @@ export function PaymentReviewPanel({ locale, eventId, query, returnTo, payments 
  return <section className="grid min-w-0 gap-4"><div className={panel}><Filters {...{ locale, eventId, query }} payments /></div>
  <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]"><div className={panel}><h2 style={{ fontFamily: "var(--font-miracle-v3)" }} className="mb-4 text-lg font-extrabold">{t("paymentQueue")}</h2>
  <div className="grid gap-3">{rows.length ? rows.map(row => <button type="button" className={control + " justify-start p-3 text-left " + (row.id === selected?.id ? "border-[var(--color-brand-violet)] bg-[var(--color-surface-selected)]" : "")} key={row.id} aria-pressed={row.id === selected?.id} onClick={() => { setSelectedId(row.id); setFeedback({ message: "" }); }}>
- {safeImage(row.proofImageUrl) && <img src={safeImage(row.proofImageUrl)} alt={t("proofAlt", { team: row.teamName })} width={48} height={64} className="h-16 w-12 shrink-0 rounded object-contain" loading="lazy" />}
+ {safeImage(row.proofImageUrl) && <Image src={safeImage(row.proofImageUrl)!} alt={t("proofAlt", { team: row.teamName })} width={48} height={64} className="h-16 w-12 shrink-0 rounded object-contain" loading="lazy" unoptimized />}
  <span className="min-w-0 flex-1"><strong className="block break-words">{row.teamName}</strong><span className={muted + " block"}>{t(`statuses.${row.status}`)}</span></span></button>) : <p className={muted}>{t("emptyPayments")}</p>}</div>
  <Pagination {...{ locale, eventId, query, page, totalPages }} /></div>
  {selected && <PaymentDetail key={selected.id + selected.updatedAt.toString()} {...{ locale, eventId, returnTo }} entry={selected} onFeedback={setFeedback} refresh={() => router.refresh()} />}
@@ -37,12 +38,12 @@ function PaymentDetail({ locale, eventId, returnTo, entry, onFeedback, refresh }
   } catch { onFeedback({ message: t("operationFailed"), error: true }); } finally { setBusy(false); }
  }
  return <aside className={panel + " grid content-start gap-4"} aria-busy={busy}><h2 style={{ fontFamily: "var(--font-miracle-v3)" }} className="text-lg font-extrabold">{t("reviewReceipt")}</h2>
- {image ? <><img src={image} alt={t("proofAlt", { team: entry.teamName })} width={300} height={260} className="h-60 w-full rounded object-contain" /><button type="button" data-zoom className={control} onClick={() => setZoom(true)}>{t("zoomProof")}</button></> : <p className={muted}>{t("noProof")}</p>}
+ {image ? <><Image src={image} alt={t("proofAlt", { team: entry.teamName })} width={300} height={260} loading="eager" unoptimized className="h-60 w-full rounded object-contain" /><button type="button" data-zoom className={control} onClick={() => setZoom(true)}>{t("zoomProof")}</button></> : <p className={muted}>{t("noProof")}</p>}
  <h3 style={{ fontFamily: "var(--font-miracle-v3)" }} className="break-words font-extrabold">{entry.teamName}</h3><dl className="grid gap-3 text-sm"><div><dt className={muted}>{t("captain")}</dt><dd>{entry.captain?.name ?? "—"}</dd></div><div><dt className={muted}>{t("status")}</dt><dd>{t(`statuses.${status}`)}</dd></div><div><dt className={muted}>{t("updated")}</dt><dd><time dateTime={new Date(entry.updatedAt).toISOString()}>{new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(new Date(entry.updatedAt))}</time></dd></div></dl>
  {entry.rejectReason && <p className={muted}>{t("rejectionReason")}: {entry.rejectReason}</p>}
  <label className="grid gap-2 text-sm">{t("rejectionReason")}<textarea ref={reasonRef} className={field} rows={3} value={reason} minLength={3} maxLength={240} disabled={locked} onChange={event => setReason(event.target.value)} /></label>
  <div className="flex flex-wrap gap-2"><button type="button" data-approve className={primary} disabled={locked || status !== "pending_review" || !image} onClick={() => review(false)}>{busy ? t("saving") : t("approve")}</button><button type="button" data-reject className={control} disabled={locked} onClick={() => review(true)}>{t("reject")}</button></div>
  <p className={muted}>{t("auditNote")}</p>
- {zoom && image && <WorkspaceDialog title={t("proofAlt", { team: entry.teamName })} onClose={() => setZoom(false)}><img src={image} alt={t("proofAlt", { team: entry.teamName })} width={900} height={1200} className="h-auto max-h-[65dvh] w-full object-contain" /></WorkspaceDialog>}
+ {zoom && image && <WorkspaceDialog title={t("proofAlt", { team: entry.teamName })} onClose={() => setZoom(false)}><Image src={image} alt={t("proofAlt", { team: entry.teamName })} width={900} height={1200} loading="eager" unoptimized className="h-auto max-h-[65dvh] w-full object-contain" /></WorkspaceDialog>}
  </aside>;
 }

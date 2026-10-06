@@ -1,3 +1,5 @@
+import Image from "next/image";
+import { IntrinsicImage } from "@/components/IntrinsicImage";
 import {
   BadgeCheck,
   CalendarPlus,
@@ -980,7 +982,7 @@ function BrandAssetsSection({
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="relative h-14 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-900">
                       {backgroundUrl ? (
-                        <img src={backgroundUrl} alt="" className="h-full w-full object-cover" />
+                        <Image src={backgroundUrl} alt="" fill sizes="80px" loading="eager" unoptimized className="object-cover" />
                       ) : null}
                       <div className="absolute inset-0 bg-slate-950/35" />
                       <div className="absolute bottom-1 left-1">
@@ -1447,7 +1449,7 @@ function PaymentWorkspacePhase({
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                       {request.proofImageUrl ? (
                         <a href={request.proofImageUrl} target="_blank" rel="noreferrer" className="block">
-                          <img src={request.proofImageUrl} alt="Bukti bayar" className="aspect-square w-full rounded-lg object-contain" />
+                          <span className="relative block aspect-square w-full"><Image src={request.proofImageUrl} alt="Bukti bayar" fill sizes="(max-width: 768px) 100vw, 50vw" loading="eager" unoptimized className="rounded-lg object-contain" /></span>
                           <span className="mt-2 block break-all text-xs font-semibold text-cyan-700 underline">{request.proofImageUrl}</span>
                         </a>
                       ) : (
@@ -1476,7 +1478,7 @@ function PaymentWorkspacePhase({
               <textarea className={`${inputClass} min-h-28 resize-y leading-6`} name="instructions" defaultValue={paymentSettings.instructions ?? ""} maxLength={500} />
             </label>
             {paymentSettings.qrisImageUrl ? (
-              <img src={paymentSettings.qrisImageUrl} alt="QRIS aktif" className="aspect-square w-44 rounded-lg border border-slate-200 bg-slate-50 object-contain" />
+              <Image src={paymentSettings.qrisImageUrl} alt="QRIS aktif" width={176} height={176} loading="eager" unoptimized className="aspect-square w-44 rounded-lg border border-slate-200 bg-slate-50 object-contain" />
             ) : null}
             <SubmitButton className={primaryButton}>
               <Save className="h-4 w-4" />
@@ -1922,7 +1924,7 @@ function ReviewPublishPhase({
                       <input type="hidden" name="eventId" value={event.id} />
                       <p className="text-xs font-semibold uppercase text-slate-500">{t("characterArt")}</p>
                       {event.characterArtUrl ? (
-                        <img src={event.characterArtUrl} alt="Character art preview" className="h-24 w-auto rounded-lg border border-slate-200 object-contain" />
+                        <IntrinsicImage src={event.characterArtUrl} alt="Character art preview" heightRem={6} constrainToParent={false} className="rounded-lg border border-slate-200 object-contain" />
                       ) : null}
                       <div className="flex flex-wrap gap-2">
                         <input type="file" name="characterArt" accept="image/png,image/webp,image/jpeg" className={`${inputClass} flex-1 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />

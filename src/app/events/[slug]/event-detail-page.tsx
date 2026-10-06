@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight, CalendarDays, ListTree, Trophy, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 
@@ -249,7 +250,7 @@ export async function renderEventDetailPage(
           <div className="grid min-w-0 gap-4 sm:grid-cols-[88px_minmax(0,1fr)]">
             <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-white/35 bg-white/95 text-slate-500 shadow-sm">
               {event.logoUrl ? (
-                <img src={event.logoUrl} alt={`${event.name} logo`} className="h-full w-full object-contain" />
+                <Image src={event.logoUrl} alt={`${event.name} logo`} width={80} height={80} loading="eager" unoptimized className="h-full w-full object-contain" />
               ) : (
                 <span className="text-lg font-semibold text-slate-700">{getInitials(event.name) || "EV"}</span>
               )}

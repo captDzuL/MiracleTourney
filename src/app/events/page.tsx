@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight, CalendarDays, Trophy, Users } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 
@@ -158,11 +159,14 @@ export default async function EventsPage({
                   <div className="grid gap-3">
                     <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-white/35 bg-white/92 text-slate-500 shadow-sm">
                       {event.logoUrl ? (
-                        <img
+                        <Image
                           src={event.logoUrl}
                           alt={`${event.name} logo`}
+                          width={120}
+                          height={120}
                           loading="lazy"
                           decoding="async"
+                          unoptimized
                           className="h-full w-full object-contain"
                         />
                       ) : (

@@ -1,4 +1,5 @@
 import type React from "react";
+import Image from "next/image";
 
 import type { Team } from "@/lib/platform/types";
 
@@ -9,12 +10,17 @@ export function TeamAvatar({
   size = "md",
 }: Pick<Team, "logoText" | "logoUrl" | "name"> & { size?: "sm" | "md" | "lg" }) {
   const dims = size === "sm" ? "h-7 w-7 rounded-lg text-[10px]" : size === "lg" ? "h-12 w-12 rounded-xl text-sm" : "h-9 w-9 rounded-xl text-xs";
+  const pixels = size === "sm" ? 28 : size === "lg" ? 48 : 36;
   return (
     <span className={`pv-team-avatar relative inline-flex shrink-0 items-center justify-center overflow-hidden border border-slate-200 bg-slate-100 font-semibold text-slate-600 shadow-sm ${dims}`}>
       {logoUrl ? (
-        <img
+        <Image
           src={logoUrl}
           alt={`${name} logo`}
+          width={pixels}
+          height={pixels}
+          loading="eager"
+          unoptimized
           className="h-full w-full object-cover"
         />
       ) : (

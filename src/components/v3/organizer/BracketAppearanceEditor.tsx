@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import React from "react";
 import type { BracketAppearance, SocialBracketModel } from "@/lib/bracket/types";
 import { SocialBracketBoard } from "@/components/v3/public-event/SocialBracketBoard";
@@ -74,7 +75,7 @@ export function BracketAppearanceEditor({ eventId, locale, initial, previewModel
       </div>
       <div className="grid min-w-0 gap-3"><p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--color-brand-violet)]">{t("Live preview", "Pratinjau langsung")}</p>
         <div data-preview className="relative min-h-56 overflow-hidden rounded-[var(--radius-panel)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] bg-cover" style={{ backgroundImage: backdrop, backgroundPosition: `${draft.positionX}% ${draft.positionY}%` }}>
-          {previewUrl && <img alt="" src={previewUrl} className="pointer-events-none absolute h-px w-px opacity-0" onError={() => setImageFailed(true)} />}
+          {previewUrl && <Image alt="" src={previewUrl} width={1} height={1} loading="eager" unoptimized className="pointer-events-none absolute h-px w-px opacity-0" onError={() => setImageFailed(true)} />}
           <div className="relative grid min-h-56 content-center gap-3 p-4"><span className="w-fit rounded-full border border-[var(--color-brand-violet)] bg-[var(--color-surface)] px-3 py-1 text-xs font-bold text-[var(--color-brand-violet)]">{t("Example preview", "Contoh pratinjau")}</span><div className="grid gap-2 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-3 text-sm"><div className="flex justify-between"><span>Alpha</span><strong>2</strong></div><div className="flex justify-between"><span>Bravo</span><strong>1</strong></div></div><div className="w-fit rounded-lg bg-[var(--color-brand-cream)] px-3 py-2 text-sm font-extrabold text-[var(--color-on-accent)]">🏆 {t("Champion example", "Contoh juara")}</div></div>
         </div>
       </div>

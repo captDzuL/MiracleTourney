@@ -114,6 +114,12 @@ test("publishes once in Indonesian and announces the localized revision", async 
 test("keeps the certificate studio reachable and usable at desktop and mobile geometry", async ({ page }) => {
   test.slow();
   const scenario = await prepareTestCertificateFixture();
+  // The DB fixture supplies a URL but no file. Decode controlled image bytes through that URL.
+  await page.route(/\/certificates\/[^/?]+\.png$/, (route) => route.fulfill({
+    status: 200,
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920"><rect width="1080" height="1920" fill="#243b63"/></svg>',
+  }));
   await loginAsOrganizer(page, "en");
 
   for (const viewport of [
@@ -156,6 +162,29 @@ test("keeps the certificate studio reachable and usable at desktop and mobile ge
       expect(box.height, `${name} has no height at ${viewport.width}px`).toBeGreaterThan(0);
     }
     expect(geometry.preview.width, `preview exceeds mobile viewport`).toBeLessThanOrEqual(viewport.width);
+    const image = page.locator("[data-certificate-preview]");
+    await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(1080);
+    const decoded = await image.evaluate(async (element: HTMLImageElement) => {
+      await element.decode();
+      const box = element.getBoundingClientRect();
+      const preview = document.querySelector<HTMLElement>("[data-certificate-preview-sticky]")!.getBoundingClientRect();
+      return {
+        source: new URL(element.currentSrc || element.src).pathname,
+        naturalWidth: element.naturalWidth,
+        naturalHeight: element.naturalHeight,
+        renderedWidth: box.width,
+        renderedHeight: box.height,
+        previewWidth: preview.width,
+        maxHeight: parseFloat(getComputedStyle(document.documentElement).fontSize) * 42,
+      };
+    });
+    expect(decoded.source).toContain(`/certificates/${scenario.id}-`);
+    expect(decoded.naturalHeight).toBe(1920);
+    expect(decoded.renderedWidth, `certificate has no width at ${viewport.width}px`).toBeGreaterThan(0);
+    expect(decoded.renderedHeight, `certificate has no height at ${viewport.width}px`).toBeGreaterThan(0);
+    expect(decoded.renderedWidth / decoded.renderedHeight).toBeCloseTo(decoded.naturalWidth / decoded.naturalHeight, 2);
+    expect(decoded.renderedWidth).toBeLessThanOrEqual(decoded.previewWidth + 1);
+    expect(decoded.renderedHeight).toBeLessThanOrEqual(decoded.maxHeight + 1);
     for (const control of geometry.controls) {
       expect(control.height, `${control.label} is below the 44px target at ${viewport.width}px`).toBeGreaterThanOrEqual(44);
     }

@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { getEventEditorTranslator } from "./event-editor-translations";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -124,8 +125,8 @@ function LiveDraftPreview({ draft, editorLabel, locale }: { draft: LivePreviewDr
   return <aside aria-label={t("livePreviewLabel")} className="h-fit rounded-[var(--radius-panel)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-5 min-[1100px]:sticky min-[1100px]:top-6" data-live-preview>
     <div className="flex items-center justify-between gap-3 text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--color-brand-cream)]"><span>{t("livePreview")}</span><span>{editorLabel ?? t("privateDraft")}</span></div>
     <div className="mt-5 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="grid size-9 overflow-hidden rounded-lg bg-[var(--color-brand-violet)] font-extrabold text-white">{draft.logoUrl ? <img alt={t("logoAlt")} className="size-full object-cover" src={draft.logoUrl} /> : <span className="grid size-full place-items-center">M</span>}</div>
-      {draft.gameImageUrl && <img alt={t("posterAlt")} className="mt-4 aspect-[16/6] w-full rounded-[var(--radius-control)] object-cover" src={draft.gameImageUrl} />}<h3 className="mt-4 break-words text-xl font-extrabold text-[var(--color-text)]">{draft.name || t("eventNameEmpty")}</h3>
+      <div className="grid size-9 overflow-hidden rounded-lg bg-[var(--color-brand-violet)] font-extrabold text-white">{draft.logoUrl ? <Image alt={t("logoAlt")} width={36} height={36} loading="eager" unoptimized className="size-full object-cover" src={draft.logoUrl} /> : <span className="grid size-full place-items-center">M</span>}</div>
+      {draft.gameImageUrl && <span className="relative mt-4 block aspect-[16/6] w-full rounded-[var(--radius-control)]"><Image alt={t("posterAlt")} fill sizes="(max-width: 1100px) 100vw, 40vw" loading="eager" unoptimized className="rounded-[var(--radius-control)] object-cover" src={draft.gameImageUrl} /></span>}<h3 className="mt-4 break-words text-xl font-extrabold text-[var(--color-text)]">{draft.name || t("eventNameEmpty")}</h3>
       <p className="mt-2 line-clamp-3 text-sm text-[var(--color-text-subtle)]">{draft.description || t("descriptionEmpty")}</p>
       <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-border)] text-sm"><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-xs text-[var(--color-text-subtle)]">{t("format")}</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{formatLabel}</dd></div><div className="bg-[var(--color-surface-subtle)] p-3"><dt className="text-xs text-[var(--color-text-subtle)]">{t("previewCapacity")}</dt><dd className="mt-1 font-bold text-[var(--color-text)]">{t("teamsCount", { count: capacity })}</dd></div></dl>
       <p className="mt-4 text-sm font-bold text-[var(--color-text)]">{t("matchesPlanned", { count: matchCount })}{thirdPlaceEnabled ? t("thirdIncluded") : ""}</p>

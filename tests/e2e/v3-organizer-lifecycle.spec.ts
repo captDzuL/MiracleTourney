@@ -320,7 +320,7 @@ export async function expectNavigationEscapeRestoresFocus(page: Page, locale: Re
   await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: locale === "id" ? "Buka navigasi" : "Open navigation", exact: true }), copy.qrisDialog, copy.opposite.qrisDialog);
 }
 
-export async function expectDialogEscapeRestoresFocus(page: Page, trigger: ReturnType<Page["getByRole"]>, accessibleName: string, oppositeAccessibleName?: string) {
+export async function expectDialogEscapeRestoresFocus(page: Page, trigger: ReturnType<Page["getByRole"]>, accessibleName: string, oppositeAccessibleName?: string, expectedImage?: { path: string; width: number; height: number }) {
   await expect(trigger, "release surface must expose a dialog trigger").toBeVisible();
   await trigger.focus();
   await trigger.press("Enter");
@@ -330,6 +330,15 @@ export async function expectDialogEscapeRestoresFocus(page: Page, trigger: Retur
   await expect(dialog).toHaveAttribute("aria-modal", "true");
   await expect(dialog).toHaveAccessibleName(accessibleName);
   if (oppositeAccessibleName) await expect(page.getByRole("dialog", { name: oppositeAccessibleName, exact: true })).toHaveCount(0);
+  if (expectedImage) {
+    const image = dialog.locator("img");
+    await expect(image).toBeVisible();
+    await expect.poll(() => image.evaluate((element: HTMLImageElement) => ({
+      path: new URL(element.currentSrc || element.src).pathname,
+      width: element.naturalWidth,
+      height: element.naturalHeight,
+    }))).toEqual(expectedImage);
+  }
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();
@@ -736,6 +745,12 @@ for (const locale of LOCALES) {
       expect(FEATURE_FLAG_MODES).toContain(mode);
       const fixture = await prepareOrganizerReleaseFixture(`release-a11y-${mode}-${locale}-${viewport.name}`, mode);
       try {
+        // Fixture rows contain URLs, not image bytes. Supply test-owned decodable images at those URLs.
+        await page.route(/\/e2e\/release-(?:qris|payment-proof)\.png$/, async (route) => {
+          const qris = new URL(route.request().url()).pathname.endsWith("release-qris.png");
+          const [width, height] = qris ? [128, 128] : [96, 128];
+          await route.fulfill({ status: 200, contentType: "image/svg+xml", body: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#243b63"/></svg>` });
+        });
         await loginWithCredentials(page, {
           locale,
           email: "organizer-a@miraclefc.gg",
@@ -772,7 +787,15 @@ for (const locale of LOCALES) {
           await expect(trigger).toBeFocused();
         }
         const copy = LOCALE_COPY[locale];
-        await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: locale === "id" ? "Perbesar QRIS" : "Enlarge QRIS", exact: true }), copy.qrisDialog);
+        const qrisPreview = page.getByAltText(locale === "id" ? "Pratinjau QRIS pembayaran acara" : "Event payment QRIS preview").first();
+        await expect.poll(() => qrisPreview.evaluate((image: HTMLImageElement) => ({ path: new URL(image.currentSrc || image.src).pathname, width: image.naturalWidth, height: image.naturalHeight }))).toEqual({ path: "/e2e/release-qris.png", width: 128, height: 128 });
+        await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: locale === "id" ? "Perbesar QRIS" : "Enlarge QRIS", exact: true }), copy.qrisDialog, undefined, { path: "/e2e/release-qris.png", width: 128, height: 128 });
+        await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration?view=payments`);
+        const proofAlt = locale === "id" ? "Bukti pembayaran Release Fixture Team" : "Payment receipt for Release Fixture Team";
+        const proofPreview = page.getByAltText(proofAlt).last();
+        await expect.poll(() => proofPreview.evaluate((image: HTMLImageElement) => ({ path: new URL(image.currentSrc || image.src).pathname, width: image.naturalWidth, height: image.naturalHeight }))).toEqual({ path: "/e2e/release-payment-proof.png", width: 96, height: 128 });
+        await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: locale === "id" ? "Perbesar bukti" : "Enlarge receipt", exact: true }), proofAlt, undefined, { path: "/e2e/release-payment-proof.png", width: 96, height: 128 });
+        await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration?view=qris`);
         expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
         await waitForReleaseFonts(page);
         await suppressAnimationsForScreenshot(page);

@@ -1,4 +1,5 @@
 import React from "react";
+import Image from "next/image";
 import { CalendarDays, MapPin, ShieldCheck, Trophy, Users } from "lucide-react";
 
 import { ShareButton } from "@/components/ShareButton";
@@ -81,7 +82,7 @@ export function PublicEventHero({ view, locale, copy }: {
         </div>
         <div className="mt-7 flex items-center gap-3">
           <div data-testid="adaptive-event-logo" className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] text-lg font-extrabold text-[var(--color-brand-cream)]">
-            {view.event.logoUrl ? <img src={view.event.logoUrl} alt="" className="h-full w-full object-contain" /> : <span>{initials(view.event.name)}</span>}
+            {view.event.logoUrl ? <Image src={view.event.logoUrl} alt="" width={56} height={56} loading="eager" unoptimized className="h-full w-full object-contain" /> : <span>{initials(view.event.name)}</span>}
           </div>
           <div className="min-w-0 text-sm text-[var(--color-text-muted)]">
             <p>{copy.organizedBy}</p>
@@ -103,7 +104,7 @@ export function PublicEventHero({ view, locale, copy }: {
         </dl>
       </div>
       <div data-testid="adaptive-event-poster" className="relative order-1 min-h-64 overflow-hidden border-b border-[var(--color-border)] bg-[linear-gradient(145deg,#101c2e,#39217c)] lg:order-2 lg:min-h-[36rem] lg:border-b-0 lg:border-l">
-        {view.event.posterUrl ? <img src={view.event.posterUrl} alt="" className="absolute inset-0 h-full w-full object-cover" /> : <div className="absolute inset-0 grid place-items-center text-7xl font-extrabold text-white/20">{initials(view.event.name)}</div>}
+        {view.event.posterUrl ? <Image src={view.event.posterUrl} alt="" fill sizes="(max-width: 1024px) 100vw, 50vw" loading="eager" unoptimized className="object-cover" /> : <div className="absolute inset-0 grid place-items-center text-7xl font-extrabold text-white/20">{initials(view.event.name)}</div>}
         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
         <p className="absolute bottom-5 left-5 rounded-full border border-white/25 bg-black/45 px-3 py-1.5 text-xs font-bold text-white backdrop-blur">{view.event.formatLabel}</p>
       </div>
