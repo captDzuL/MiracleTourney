@@ -2,7 +2,6 @@ import {
   BadgeCheck,
   CalendarPlus,
   Check,
-  CreditCard,
   Download,
   Eye,
   FileSpreadsheet,
@@ -80,7 +79,7 @@ import {
   getTeamCountsForEvents,
   getTeamsForEvents,
 } from "@/lib/platform/repository";
-import { buttonStyles, DataTable, Pill, Section, StatCard } from "@/components/ui";
+import { DataTable, Pill, Section, StatCard } from "@/components/ui";
 import { EventVisualAssetsPanel } from "@/components/admin/EventVisualAssetsPanel";
 import { RegistrationControlCenterShell } from "@/components/registration/RegistrationControlCenterShell";
 import { RegistrationQueue } from "@/components/registration/RegistrationQueue";

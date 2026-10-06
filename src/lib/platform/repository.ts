@@ -1155,13 +1155,6 @@ function getBracketRoundLabel(round: number, totalRounds: number) {
   return `Round ${round}`;
 }
 
-function matchesProjectedPairing(
-  match: Pick<Match, "homeTeamId" | "awayTeamId">,
-  projected: Pick<BracketMatch, "homeTeamId" | "awayTeamId">,
-) {
-  return match.homeTeamId === projected.homeTeamId && match.awayTeamId === projected.awayTeamId;
-}
-
 async function getProjectedBracketMatches(event: Event, database?: Prisma.TransactionClient): Promise<Match[]> {
   const teams = database
     ? (await database.team.findMany({ where: { eventId: event.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] })).map(mapTeam)

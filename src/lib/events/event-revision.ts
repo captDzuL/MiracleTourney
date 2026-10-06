@@ -440,7 +440,8 @@ function changedFields(payload: EventRevisionPayload, event: EventSnapshot) {
 }
 
 function eventUpdateData(payload: EventRevisionPayload) {
-  const { stream: _stream, ...fields } = payload;
+  const { stream, ...fields } = payload;
+  void stream;
   return {
     ...fields,
     gameId: getGameIdForMode(payload.gameModeId),

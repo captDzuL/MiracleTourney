@@ -139,12 +139,11 @@ export default async function CaptainPage({
         <div className="grid gap-6">
           <OpenRegistrationSection
             events={focusedOpenEvents}
-            requestedEventId={requestedEventId}
             draftTeam={draftTeamWithPlayers?.team ?? null}
             draftPlayerCount={draftTeamWithPlayers?.players.length ?? 0}
             t={t as TFn}
           />
-          <PaymentRequestsSection requests={focusedPaymentRequests} requestedEventId={requestedEventId} paymentSettings={paymentSettings} t={t as TFn} />
+          <PaymentRequestsSection requests={focusedPaymentRequests} paymentSettings={paymentSettings} t={t as TFn} />
         </div>
       ) : (
         <RosterManagementSection
@@ -375,7 +374,6 @@ function OpenRegistrationSection({
   draftTeam,
 
   draftPlayerCount,
-  requestedEventId,
 
   t,
 
@@ -386,7 +384,6 @@ function OpenRegistrationSection({
   draftTeam: Team | null;
 
   draftPlayerCount: number;
-  requestedEventId?: string;
 
   t: TFn;
 
@@ -506,7 +503,7 @@ function OpenRegistrationSection({
 
 }
 
-function PaymentRequestsSection({ paymentSettings, requests, requestedEventId, t }: { paymentSettings: PaymentSettings; requests: TeamRegistrationRequest[]; requestedEventId?: string; t: TFn }) {
+function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSettings: PaymentSettings; requests: TeamRegistrationRequest[]; t: TFn }) {
   if (requests.length === 0) return null;
 
   return (

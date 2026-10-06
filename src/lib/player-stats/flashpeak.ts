@@ -130,7 +130,10 @@ export function aggregateFlashpeakLeaderboard(
     aggregates.set(row.playerId, current);
   }
   return sortFlashpeakLeaderboard(
-    [...aggregates.values()].map(({ scoreTotal: _scoreTotal, ...entry }) => entry),
+    [...aggregates.values()].map(({ scoreTotal, ...entry }) => {
+      void scoreTotal;
+      return entry;
+    }),
   );
 }
 
