@@ -77,6 +77,61 @@ mechanism remain unproved. The RPO <=1 hour and RTO <=30 minutes are Dzul's
 targets. A fresh backup under an agreed write pause is still required before
 cutover.
 
+## Fresh backup and recovery evidence — 2026-10-06
+
+This is a separate fresh operation from the historical 2026-10-05 evidence
+above. The fixed backup preflight started at 2026-10-06 14:06:24.6060727Z
+and completed successfully after 6,305 ms, reporting 17 applied migrations.
+One read-only encrypted export started at 14:06:48.8971181Z and completed
+successfully after 7,276 ms, producing
+`E:/MiracleBackups/miracle-neondb-2026-10-06T14-06-53-234Z.age` (175,055
+bytes; SHA-256
+`8102e70a03c26a34a7fabcb4a197979051223a88946a79b0f4242055e65bbc1a`).
+Full archive verification of the same bytes completed in 1,794 ms. No
+plaintext dump file was created or published, and no second export was
+performed. The private restored data described below remains retained.
+
+The first rehearsal admission attempt, at 14:07:26.4910950Z, exited before
+creating a cluster or starting restore or migration. Diagnosis found a
+path-representation mismatch in the archive/manifest pair check after the
+validated path crossed the Windows path boundary. The scoped path handoff was
+fixed and independently reviewed before controlled continuation. The same
+fresh archive was reused after its age and current-source guards passed; no
+new export was made.
+
+The controlled local rehearsal started at 14:20:44.0559991Z and completed
+`REHEARSAL_VERIFIED`, exit 0, in 79,128 ms. Both independent restores
+contained 23 tables and 2,036 rows, with all logical schema and values
+matching the source/checkpoint. Original composite serialization differed
+for `User`, `Team`, `Player`, and `PlayerStat`. Column ordinal/order
+representations also differed in the source-versus-local comparison; those
+ordinal/order differences are separate from the four-table composite
+serialization differences. The explicit logical comparison matched all
+values, so both representation differences were reported rather than
+treated as value mismatches. Each restore had 17 applied migrations. The
+candidate then moved
+from 17 applied/20 pending/zero unfinished to 37 applied/zero pending/zero
+unfinished in 13,746 ms. A second migration application completed as a
+1,132 ms no-op with the ledger unchanged. Required postchecks passed,
+including certificate backfill/uniqueness, session-version and reset-token
+constraints, rate-limit uniqueness, and bracket-table defaults and
+constraints. The synthetic SQL flow passed and rolled back its writes. The
+owned local cluster was stopped; its private copied-data directory remains
+retained under owner-only access and is not Git or CI material.
+
+These are local archive and rehearsal measurements, not service recovery
+time, production readiness, or proof that the RPO <=1 hour or RTO <=30
+minutes targets have been achieved. The local PostgreSQL environment used
+Windows English_United States.1252 and `plpgsql` 1.0; equivalence with Neon
+locale or extensions is unproved. The synthetic flow exercised SQL only; no
+application, email, Blob, or provider integration was tested. Weekly backup
+remains **PAUSED** and does not meet the one-hour RPO target. A fresh
+cutover backup under an owner-controlled write pause is still required.
+Production setting changes, migration, deployment, rollback, and restore
+remain separate owner-controlled decisions. The proposed `pnpm vercel-build`
+override remains **PENDING** and has not been applied or read back; this
+evidence does not claim application, CI, or production readiness.
+
 The current backup runner deliberately expects the **pre-V3** 17-applied
 physical contract. After production migration it will fail closed until a
 reviewed post-V3 backup contract is supplied. Weekly activation also requires
