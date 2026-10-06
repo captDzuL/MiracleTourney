@@ -1,32 +1,23 @@
 import { readFile } from 'node:fs/promises';
 import { runTestingEncryptedBackup, verifyBackupPair } from './local-backup-core.mjs';
 import { assertOwnerOnlyDirectory, assertOutputCapacity } from './local-backup-readiness.mjs';
-import { buildCheckpointSql, LEGACY_TABLES, runSnapshotSession, validateCheckpoint } from './local-backup-snapshot.mjs';
 import { prepareFixedTestingExport } from './local-backup-operator.mjs';
-import { assertCanonicalLedgerLf, assertTestingBackupReceipt, TESTING_IDENTITY } from './testing-schema-core.mjs';
+import { assertTestingBackupReceipt, TESTING_IDENTITY } from './testing-schema-core.mjs';
+import { readPinnedTestingCatalogs, runTestingCheckpointSession } from './testing-schema-checkpoint.mjs';
 import { verifyTestingFrontendTls } from './testing-schema-tls.mjs';
 
 function fail(code) { const error = new Error(code); error.code = code; return error; }
 
-function buildTestingCheckpointSql() {
-  const sql = buildCheckpointSql();
-  const needle = "'source', json_build_object('database', current_database(),";
-  if (sql.split(needle).length !== 2) throw fail('CONFIG_REJECTED');
-  return sql.replace(needle, "'source', json_build_object('branch', current_setting('neon.branch_id', true), 'database', current_database(),");
-}
-
 async function main() {
   if (process.argv.length !== 2) throw fail('CONFIG_REJECTED');
   const config = await prepareFixedTestingExport();
+  const { baseline, reference } = await readPinnedTestingCatalogs();
   await verifyTestingFrontendTls();
-  const result = await runSnapshotSession({
+  const result = await runTestingCheckpointSession({
     path: config.psqlPath,
     args: ['-X', '-q', '-A', '-t', '-w', '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate'],
-    env: config.pgEnv, sql: buildTestingCheckpointSql(), timeoutMs: 7_500_000,
-  }, async (raw, signal) => {
-    if (raw.source?.branch !== TESTING_IDENTITY.branch || raw.source?.database !== TESTING_IDENTITY.database) throw fail('CHECKPOINT_DRIFT');
-    assertCanonicalLedgerLf(raw.ledger, config.expectedLedger);
-    const checkpoint = validateCheckpoint(raw, config.expectedLedger, LEGACY_TABLES);
+    env: config.pgEnv, timeoutMs: 7_500_000,
+  }, config.expectedLedger, baseline, reference, TESTING_IDENTITY, async ({ checkpoint }, signal) => {
     await assertOwnerOnlyDirectory(config.output);
     await assertOutputCapacity(config.output);
     const completed = await runTestingEncryptedBackup({

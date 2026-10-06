@@ -124,6 +124,8 @@ INSERT INTO "OrganizerPlan" (id,"userId",tier,"startsAt","maxEvents",features,"c
     if ($LASTEXITCODE -ne 0) { throw 'SYNTHETIC_REPAIR_DRIFT' }
     & node (Join-Path $PSScriptRoot 'testing-schema-synthetic-check.mjs') 'noop' $snapshot
     if ($LASTEXITCODE -ne 0) { throw 'SYNTHETIC_NOOP_DRIFT' }
+    & node (Join-Path $PSScriptRoot 'testing-schema-synthetic-check.mjs') 'operational-noop' $snapshot
+    if ($LASTEXITCODE -ne 0) { throw 'SYNTHETIC_OPERATIONAL_NOOP_FAILED' }
   }
   if (-not $RepairFixture) { Write-Output 'SYNTHETIC_REFERENCE_APPLIED' }
 } finally {

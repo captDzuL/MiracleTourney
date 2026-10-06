@@ -99,6 +99,8 @@ export async function runSnapshotSession(config, duringSnapshot) {
   if (!config || typeof config.path !== 'string' || !Array.isArray(config.args) ||
       typeof config.sql !== 'string' || !Number.isSafeInteger(config.timeoutMs) ||
       config.timeoutMs < 100 || config.timeoutMs > 7_800_000 ||
+      config.maxCheckpointBytes !== undefined &&
+        (!Number.isSafeInteger(config.maxCheckpointBytes) || config.maxCheckpointBytes < 262144 || config.maxCheckpointBytes > 2_000_000) ||
       config.closeSql !== undefined && !['COMMIT;', 'ROLLBACK;'].includes(config.closeSql)) throw fail('CHECKPOINT_FAILED');
   let child;
   let timer;
@@ -130,7 +132,7 @@ export async function runSnapshotSession(config, duringSnapshot) {
       child.stdout.setEncoding('utf8');
       child.stdout.on('data', chunk => {
         buffer += chunk;
-        if (buffer.length > 262144) { reject(fail('CHECKPOINT_FAILED')); return; }
+        if (Buffer.byteLength(buffer, 'utf8') > (config.maxCheckpointBytes ?? 262144)) { reject(fail('CHECKPOINT_FAILED')); return; }
         const lines = buffer.split('\n');
         buffer = lines.pop();
         for (const raw of lines) {

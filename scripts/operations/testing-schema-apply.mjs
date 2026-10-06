@@ -7,9 +7,9 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { verifyBackupPair } from './local-backup-core.mjs';
 import { prepareFixedTestingExport } from './local-backup-operator.mjs';
-import { buildCheckpointSql, LEGACY_TABLES, validateCheckpoint } from './local-backup-snapshot.mjs';
 import { CATALOG_SQL } from './testing-schema-catalog.mjs';
-import { assertCanonicalLedgerLf, assertCatalogState, assertRepairSql, assertTestingBackupReceipt, TESTING_IDENTITY } from './testing-schema-core.mjs';
+import { assertCatalogState, assertRepairSql, assertTestingBackupReceipt, TESTING_IDENTITY } from './testing-schema-core.mjs';
+import { buildTestingCheckpointSql, validateTestingCheckpoint } from './testing-schema-checkpoint.mjs';
 import { verifyTestingFrontendTls } from './testing-schema-tls.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -81,13 +81,15 @@ async function readReceipt(root, value) {
 }
 
 function checkpointSelect() {
-  const source = buildCheckpointSql();
+  const source = buildTestingCheckpointSql();
   const start = source.indexOf("SELECT 'MIRACLE_CHECKPOINT'");
   if (start < 0) throw fail('PLAN_REJECTED');
   return source.slice(start).trim();
 }
 
-async function runSession(config, manifest, verified, baseline, reference, sql) {
+// The CLI below always supplies the fixed Delicate identity; the final
+// argument exists only to exercise this same transaction on isolated PG.
+export async function runTestingRepairSession(config, manifest, verified, baseline, reference, sql, expectedIdentity = TESTING_IDENTITY) {
   const tables = baseline.tables.map(row => `public.${safeName(row.name)}`).join(', ');
   const rowsSql = oldRowProjectionSql(baseline, reference);
   const child = spawn(config.psqlPath, ['-X', '-q', '-A', '-t', '-w', '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate'],
@@ -125,12 +127,12 @@ async function runSession(config, manifest, verified, baseline, reference, sql) 
       'database', current_database(), 'branch', current_setting('neon.branch_id', true),
       'otherActive', (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database()
         AND pid <> pg_backend_pid() AND state <> 'idle'))::text;`, 'TASK12_IDENTITY');
-    if (identity.database !== TESTING_IDENTITY.database || identity.branch !== TESTING_IDENTITY.branch ||
+    if (identity.database !== expectedIdentity.database || identity.branch !== expectedIdentity.branch ||
         identity.otherActive !== 0) throw fail('SOURCE_REJECTED');
     const catalog = await marker(`SELECT 'TASK12_CATALOG' || chr(9) || (${CATALOG_SQL})::text;`, 'TASK12_CATALOG');
-    const state = assertCatalogState(catalog, baseline, reference, 'before');
-    assertCanonicalLedgerLf(checkpoint.ledger, config.expectedLedger);
-    const validated = validateCheckpoint(checkpoint, config.expectedLedger, state === 'baseline' ? LEGACY_TABLES : []);
+    const { state, checkpoint: validated } = validateTestingCheckpoint(checkpoint, config.expectedLedger,
+      baseline, reference, expectedIdentity);
+    if (assertCatalogState(catalog, baseline, reference, 'before') !== state) throw fail('CATALOG_DRIFT');
     assertTestingBackupReceipt(manifest, verified, validated);
     if (state === 'repaired') {
       await send('ROLLBACK;');
@@ -174,11 +176,11 @@ async function main() {
   const config = await prepareFixedTestingExport();
   await verifyTestingFrontendTls();
   const { manifest, verified } = await readReceipt(config.output, process.argv[3]);
-  const result = await runSession(config, manifest, verified, baseline, reference, sql);
+  const result = await runTestingRepairSession(config, manifest, verified, baseline, reference, sql);
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
-main().catch(error => {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => {
   const allowed = new Set(['CONFIG_REJECTED', 'SOURCE_REJECTED', 'PLAN_REJECTED', 'BACKUP_REJECTED',
     'CHECKPOINT_DRIFT', 'CATALOG_DRIFT', 'ROW_DRIFT', 'REPAIR_FAILED', 'REPAIR_TIMEOUT',
     'TOOL_REJECTED', 'KEY_NOT_READY', 'OUTPUT_REJECTED', 'CAPACITY_REJECTED', 'TLS_REJECTED']);

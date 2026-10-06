@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PrismaClient } from '@prisma/client';
 import { CATALOG_SQL } from '../../scripts/operations/testing-schema-catalog.mjs';
 import { assertCatalogState, buildTargetCatalog, catalogSha256 } from '../../scripts/operations/testing-schema-core.mjs';
@@ -32,7 +36,7 @@ if (mode === 'legacy-sql') {
   process.exit(0);
 }
 
-assert.ok(['before', 'rollback', 'after', 'noop'].includes(mode));
+assert.ok(['before', 'rollback', 'after', 'noop', 'operational-noop'].includes(mode));
 assert.ok(snapshotFile);
 const db = new PrismaClient({ datasources: { db: { url: process.env.TASK12_SYNTHETIC_URL } } });
 async function snapshot() {
@@ -81,7 +85,55 @@ try {
       }
       const [certificate] = await db.$queryRawUnsafe('SELECT "recipientKind", "recipientId", "recipientName", "verificationCode", "publishedUrl", "status" FROM public."Certificate" WHERE id = \'cert1\'');
       assert.deepEqual(certificate, { recipientKind: 'team', recipientId: 'team1', recipientName: 'Synthetic team', verificationCode: 'cert1', publishedUrl: 'https://example.test/cert.png', status: 'ready' });
-      process.stdout.write(mode === 'after' ? 'SYNTHETIC_REPAIR_PRESERVED\n' : 'SYNTHETIC_NOOP_STATE\n');
+      if (mode === 'operational-noop') {
+        const checkpointModule = await import('../../scripts/operations/testing-schema-checkpoint.mjs');
+        const applyModule = await import('../../scripts/operations/testing-schema-apply.mjs');
+        assert.equal(typeof checkpointModule.runTestingCheckpointSession, 'function');
+        assert.equal(typeof applyModule.runTestingRepairSession, 'function');
+        const { loadExpectedLedger } = await import('../../scripts/operations/local-backup-snapshot.mjs');
+        const { runTestingEncryptedBackup, verifyBackupPair } = await import('../../scripts/operations/local-backup-core.mjs');
+        const migrationRoot = fileURLToPath(new URL('../../prisma/migrations/', import.meta.url));
+        const names = (await readdir(migrationRoot, { withFileTypes: true }))
+          .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
+        const expectedLedger = await loadExpectedLedger(migrationRoot, names);
+        const url = new URL(process.env.TASK12_SYNTHETIC_URL);
+        const pgEnv = { ...process.env, PGHOST: '127.0.0.1', PGPORT: url.port, PGUSER: url.username,
+          PGPASSWORD: url.password, PGDATABASE: 'task12_reference', PGSSLMODE: 'disable' };
+        const psqlPath = new URL('../../.superpowers/sdd/2026-10-04-v3-release-pr-readiness/runtime/catalog-server/pgsql/bin/psql.exe', import.meta.url).pathname.slice(1);
+        const identity = { database: 'task12_reference', branch: null };
+        const root = dirname(snapshotFile);
+        const dump = join(root, 'fake-dump.mjs');
+        const age = join(root, 'fake-age.mjs');
+        await writeFile(dump, 'process.stdout.write(Buffer.from([0,1,2,255]));');
+        await writeFile(age, "const chunks=[]; for await (const chunk of process.stdin) chunks.push(chunk); process.stdout.write(Buffer.concat([Buffer.from('age-encryption.org/v1\\n'), ...chunks]));");
+        const nodeHash = createHash('sha256');
+        for await (const chunk of createReadStream(process.execPath)) nodeHash.update(chunk);
+        const toolHash = nodeHash.digest('hex');
+        const config = { path: psqlPath, args: ['-X', '-q', '-A', '-t', '-w', '-v', 'ON_ERROR_STOP=1'],
+          env: pgEnv, timeoutMs: 30_000 };
+        const receipt = await checkpointModule.runTestingCheckpointSession(config, expectedLedger, baseline, canonical,
+          identity, async ({ state, checkpoint }, signal) => {
+            assert.equal(state, 'repaired');
+            const pair = await runTestingEncryptedBackup({
+              sourceUrl: 'postgresql://synthetic:synthetic@ep-delicate-forest-azuodo4q.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=verify-full&sslrootcert=system',
+              outputDirectory: root, approvedOutputRoot: root,
+              pgDumpPath: process.execPath, pgDumpSha256: toolHash, pgDumpArgsPrefix: [dump],
+              agePath: process.execPath, ageSha256: toolHash, ageArgsPrefix: [age],
+              recipient: 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
+              escrowConfirmed: true, timeoutMs: 10_000, snapshotId: checkpoint.snapshot, checkpoint, signal,
+            });
+            return { manifest: JSON.parse(await readFile(pair.manifestPath, 'utf8')),
+              verified: await verifyBackupPair(pair.archivePath, pair.manifestPath) };
+          });
+        const sql = await readFile(new URL('../../scripts/operations/testing-schema-repair.sql', import.meta.url), 'utf8');
+        const outcome = await applyModule.runTestingRepairSession({ psqlPath, pgEnv, expectedLedger },
+          receipt.manifest, receipt.verified, baseline, canonical, sql, identity);
+        assert.equal(outcome.status, 'TESTING_SCHEMA_ALREADY_REPAIRED');
+        const afterNoop = await snapshot();
+        assert.equal(catalogSha256(afterNoop.catalog), catalogSha256(current.catalog));
+        assert.deepEqual(afterNoop.rows, current.rows);
+        process.stdout.write('SYNTHETIC_OPERATIONAL_BACKUP_RECEIPT_APPLY_NOOP\n');
+      } else process.stdout.write(mode === 'after' ? 'SYNTHETIC_REPAIR_PRESERVED\n' : 'SYNTHETIC_NOOP_STATE\n');
     }
   }
 } finally {
