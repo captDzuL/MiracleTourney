@@ -5,9 +5,10 @@ import { test } from 'node:test';
 import { createReadStream } from 'node:fs';
 import { mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateSourceUrl, validateOutputDirectory, runEncryptedBackup, verifyBackupPair, verifyPostgresDependencySet, publishCompleteFile, publishBackupPair } from '../../scripts/operations/local-backup-core.mjs';
+import { assessAuthenticatedArchive } from '../../scripts/operations/local-rehearsal-core.mjs';
 import { PG18_DLL_SHA256 } from '../../scripts/operations/pg18-dll-hashes.mjs';
 import { PINNED_CA_PATH } from '../../scripts/operations/local-backup-ca.mjs';
 
@@ -98,6 +99,29 @@ test('binds the manifest checkpoint snapshot to the dump argument', async () => 
   assert.equal(manifest.checkpoint.snapshot, snapshot);
   assert.equal(JSON.stringify(manifest).includes('synthetic-secret'), false);
   await assert.rejects(runEncryptedBackup(config(await fixture(), { snapshotId: snapshot, checkpoint: { ...checkpoint, snapshot: '00000003-0000001B-2' } })), { code: 'CONFIG_REJECTED' });
+});
+
+test('writer output passes strict archive timestamp admission and rejects timestamp tampering', async () => {
+  const f = await fixture();
+  const snapshot = '00000003-0000001B-1';
+  const checkpoint = { snapshot, appliedMigrations: 17, ledgerSha256: 'a'.repeat(64),
+    schemaSha256: 'b'.repeat(64), tableCounts: { Event: 2 }, tableChecksumsMd5: { Event: 'c'.repeat(32) },
+    integrity: { invalidConstraints: 0, criticalUniqueIndexes: true } };
+  try {
+    const result = await runEncryptedBackup(config(f, { snapshotId: snapshot, checkpoint }));
+    const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8'));
+    const pair = await verifyBackupPair(result.archivePath, result.manifestPath);
+    const authentication = { status: 'ARCHIVE_VERIFIED', ...pair };
+    const admittedAt = Date.parse(manifest.completedAt);
+    assert.doesNotThrow(() => assessAuthenticatedArchive(
+      basename(result.archivePath), manifest, pair, authentication, admittedAt));
+    assert.equal(manifest.createdAt, '2026-10-04T01:00:00.000Z');
+    assert.throws(() => assessAuthenticatedArchive(basename(result.archivePath),
+      { ...manifest, createdAt: '2026-10-04T01:00:00.001Z' }, pair, authentication, admittedAt),
+    /ARCHIVE_REJECTED/);
+    assert.throws(() => assessAuthenticatedArchive(basename(result.archivePath), manifest, pair,
+      authentication, admittedAt + 3_600_001), /ARCHIVE_REJECTED/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
 });
 
 for (const [mode, code] of [['dump-fail', 'DUMP_FAILED'], ['age-fail', 'ENCRYPT_FAILED'], ['age-empty', 'EMPTY_ARCHIVE'], ['age-garbage', 'ARCHIVE_INVALID'], ['timeout', 'BACKUP_TIMEOUT']]) {

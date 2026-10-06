@@ -136,7 +136,8 @@ export async function runEncryptedBackup(config) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 7_200_000) throw failure('CONFIG_REJECTED');
   if (config.snapshotId !== undefined && !/^[0-9A-F]{8}-[0-9A-F]{8}-[0-9]+$/i.test(config.snapshotId)) throw failure('CONFIG_REJECTED');
   if (config.checkpoint && (typeof config.snapshotId !== 'string' || config.checkpoint.snapshot !== config.snapshotId)) throw failure('CONFIG_REJECTED');
-  const stamp = (config.now instanceof Date ? config.now : new Date()).toISOString().replaceAll(':', '-').replaceAll('.', '-');
+  const startedAt = config.now instanceof Date ? config.now : new Date();
+  const stamp = startedAt.toISOString().replaceAll(':', '-').replaceAll('.', '-');
   const name = `miracle-neondb-${stamp}`;
   const archivePath = resolve(output, `${name}.age`);
   const manifestPath = resolve(output, `${name}.json`);
@@ -156,7 +157,6 @@ export async function runEncryptedBackup(config) {
     if (existsSync(archivePath) || existsSync(manifestPath) || existsSync(partialPath)) throw failure('ARCHIVE_COLLISION');
     try { partial = await open(partialPath, 'wx', 0o600); } catch { throw failure('ARCHIVE_COLLISION'); }
     const safeEnv = buildPinnedPgEnv(source);
-    const startedAt = new Date();
     const dumpArgs = [...(config.pgDumpArgsPrefix || []), ...(config.snapshotId ? [`--snapshot=${config.snapshotId}`] : []), '--format=custom', '--no-owner', '--no-acl'];
     const ageArgs = [...(config.ageArgsPrefix || []), '--encrypt', '--recipient', config.recipient];
     dump = spawn(config.pgDumpPath, dumpArgs, { env: safeEnv, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
