@@ -35,7 +35,7 @@ test.describe.serial("Adaptive Public Event V3 registration phase", () => {
     await expect(page.getByText("Miracle Community", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("+62 812 3456 7890")).toBeVisible();
     await expect(page.getByText("Rp20.000")).toBeVisible();
-    await expect(page.getByText("Rp5.000.000")).toBeVisible();
+    await expect(page.locator('[data-event-hero]').getByText("Rp5.000.000")).toBeVisible();
     await expect(page.getByText(/0 dari 8 slot terisi/)).toBeVisible();
 
     const trigger = page.getByRole("button", { name: "Daftarkan tim" });

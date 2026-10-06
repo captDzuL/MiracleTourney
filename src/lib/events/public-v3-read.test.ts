@@ -73,6 +73,23 @@ afterEach(() => {
 });
 
 describe("normalized public V3 event reader", () => {
+  it("shows only the organizer profile's explicitly public contact on the event view", async () => {
+    mocks.eventFindUnique.mockResolvedValue({ ...baseEvent, status: "Published", organizer: { organizerProfile: {
+      contactChannel: "WhatsApp", contactValue: "+62 812 3456 7890", organizationName: "Miracle Community",
+    }, email: "private@example.test" } });
+    const view = await readPublicV3Event("miracle-cup", null);
+    expect(view?.organizer).toMatchObject({ contactChannel: "WhatsApp", contactValue: "+62 812 3456 7890" });
+    expect(mocks.eventFindUnique).toHaveBeenCalledWith({ where: { slug: "miracle-cup" }, include: {
+      organizer: { select: { organizerProfile: { select: { contactChannel: true, contactValue: true } } } },
+    } });
+    expect(JSON.stringify(view)).not.toContain("private@example.test");
+
+    mocks.eventFindUnique.mockResolvedValue({ ...baseEvent, status: "Published", organizer: { email: "private@example.test", organizerProfile: null } });
+    const withoutPublicContact = await readPublicV3Event("miracle-cup", null);
+    expect(withoutPublicContact?.organizer.contactValue).toBe("");
+    expect(JSON.stringify(withoutPublicContact)).not.toContain("private@example.test");
+  });
+
   it("prefers the authoritative reader when a complete V3 lifecycle view exists", async () => {
     mocks.ongoing.mockResolvedValue({
       mode: "ongoing",
