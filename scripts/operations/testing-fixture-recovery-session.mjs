@@ -61,6 +61,7 @@ function ownedNewState(states) {
       delete configuration.ownedStateSha256;
       return { ...phase, configuration };
     }),
+    groups: byId(state.groups), groupMembers: byId(state.groupMembers),
     dependencies: byId(state.dependencies), schedules: byId(state.schedules), revisions: byId(state.revisions),
     completion: state.completion ? { ...state.completion,
       podiumPlacements: byId(state.completion.podiumPlacements),
@@ -78,7 +79,7 @@ async function marker(tx, sql, name) {
 
 async function stateFor(tx, event) {
   const eventId = event.id;
-  const [teams, players, matches, games, stats, certificates, phases, dependencies, schedules, revisions,
+  const [teams, players, matches, games, stats, certificates, phases, groups, groupMembers, dependencies, schedules, revisions,
     completion, publications, generation, actions, incidents, readiness, audits, editRevisions, previewTokens] = await Promise.all([
     tx.team.findMany({ where: { eventId }, orderBy: { id: 'asc' } }),
     tx.player.findMany({ where: { eventId }, orderBy: { id: 'asc' } }),
@@ -87,6 +88,8 @@ async function stateFor(tx, event) {
     tx.playerStat.findMany({ where: { match: { eventId } } }),
     tx.certificate.findMany({ where: { eventId } }),
     tx.competitionPhase.findMany({ where: { eventId } }),
+    tx.competitionGroup.findMany({ where: { eventId } }),
+    tx.competitionGroupMember.findMany({ where: { eventId } }),
     tx.matchDependency.findMany({ where: { eventId } }),
     tx.scheduleRevision.findMany({ where: { eventId } }),
     tx.matchResultRevision.findMany({ where: { eventId } }),
@@ -100,7 +103,7 @@ async function stateFor(tx, event) {
     tx.eventEditRevision.count({ where: { eventId } }),
     tx.eventPreviewToken.count({ where: { eventId } }),
   ]);
-  return { event, teams, players, matches, games, stats, certificates, phases, dependencies, schedules, revisions,
+  return { event, teams, players, matches, games, stats, certificates, phases, groups, groupMembers, dependencies, schedules, revisions,
     completion, publications, generation, actions, incidents, readiness, audits, editRevisions, previewTokens };
 }
 
@@ -131,7 +134,7 @@ async function validateReconstructed(tx, states, graphs, oldRowsSha256, backupSh
   if (!/^[a-f0-9]{64}$/.test(ownedStateSha256 || '') || hash(ownedNewState(states)) !== ownedStateSha256) return false;
   for (const [index, state] of states.entries()) {
     const spec = TARGETS[index], graph = graphs[index]?.graph;
-    if (state.publications || state.generation || state.actions || state.incidents || state.readiness || state.audits ||
+    if (state.groups.length || state.groupMembers.length || state.publications || state.generation || state.actions || state.incidents || state.readiness || state.audits ||
         state.editRevisions || state.previewTokens || state.event.competitionVersion !== (spec.status === 'Finished' ? 2 : spec.matches ? 1 : 0) ||
         state.event.timezone !== 'Asia/Jakarta') return false;
     if (spec.matches === 0) {
@@ -244,7 +247,7 @@ async function validateReconstructed(tx, states, graphs, oldRowsSha256, backupSh
 function validateEmptyV3(states) {
   for (const state of states) {
     const event = state.event;
-    if (state.phases.length || state.dependencies.length || state.schedules.length || state.revisions.length || state.completion ||
+    if (state.phases.length || state.groups.length || state.groupMembers.length || state.dependencies.length || state.schedules.length || state.revisions.length || state.completion ||
         state.publications || state.generation || state.actions || state.incidents || state.readiness || state.audits ||
         state.editRevisions || state.previewTokens || event.formatConfig !== null || event.competitionVersion !== 0 ||
         event.publishedScheduleVersion !== null || event.registrationOpensAt || event.registrationClosesAt || event.eventStartsAt ||

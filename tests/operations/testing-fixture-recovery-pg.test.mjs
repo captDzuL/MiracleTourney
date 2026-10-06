@@ -68,6 +68,8 @@ async function recoveryRows(db) {
     events: await db.event.findMany({ where: { id: { in: eventIds } }, orderBy: { id: 'asc' } }),
     matches: await db.match.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
     phases: await db.competitionPhase.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
+    groups: await db.competitionGroup.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
+    groupMembers: await db.competitionGroupMember.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
     dependencies: await db.matchDependency.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
     schedules: await db.scheduleRevision.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
     revisions: await db.matchResultRevision.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
@@ -100,6 +102,9 @@ test('reconstructs exact synthetic fixture metadata atomically and preserves old
     await assert.rejects(runFixtureRecoverySession(db, admission), /FIXTURE_DRIFT/);
     await db.match.update({ where: { id: badMatch.id }, data: { homeTeamId: badMatch.homeTeamId, updatedAt: badMatch.updatedAt } });
     await db.competitionPhase.create({ data: { id: 'foreign-phase', eventId: 'fixture-closed', label: 'single_elimination', sequence: 1, status: 'draft' } });
+    await db.competitionGroup.create({ data: { id: 'foreign-fresh-group', eventId: 'fixture-closed', phaseId: 'foreign-phase', label: 'foreign', sequence: 1 } });
+    const closedTeam = await db.team.findFirstOrThrow({ where: { eventId: 'fixture-closed' } });
+    await db.competitionGroupMember.create({ data: { id: 'foreign-fresh-member', eventId: 'fixture-closed', groupId: 'foreign-fresh-group', teamId: closedTeam.id, seed: 1 } });
     await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
     await db.competitionPhase.delete({ where: { id: 'foreign-phase' } });
     await db.playerStat.update({ where: { id: 'fixture-admin-stat' }, data: { source: 'captain' } });
@@ -144,6 +149,17 @@ test('reconstructs exact synthetic fixture metadata atomically and preserves old
     assert.equal((await readFile(receiptPath, 'utf8')), 'foreign receipt\n');
     assert.deepEqual(await recoveryRows(db), rowsBeforeReceiptRecovery);
     await writeFile(receiptPath, receiptBytes);
+    const closedPhase = await db.competitionPhase.findFirstOrThrow({ where: { eventId: 'fixture-closed' } });
+    await db.competitionGroup.create({ data: { id: 'foreign-group', eventId: 'fixture-closed', phaseId: closedPhase.id, label: 'foreign', sequence: 1 } });
+    const rowsWithForeignGroup = await recoveryRows(db);
+    await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
+    assert.deepEqual(await recoveryRows(db), rowsWithForeignGroup, 'foreign group rejection wrote no database rows');
+    await db.competitionGroupMember.create({ data: { id: 'foreign-member', eventId: 'fixture-closed', groupId: 'foreign-group', teamId: closedTeam.id, seed: 1 } });
+    const rowsWithForeignMember = await recoveryRows(db);
+    await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
+    assert.deepEqual(await recoveryRows(db), rowsWithForeignMember, 'foreign member rejection wrote no database rows');
+    await db.competitionGroup.delete({ where: { id: 'foreign-group' } });
+    assert.equal((await runFixtureRecoverySession(db, admission)).status, 'TESTING_FIXTURES_ALREADY_RECONSTRUCTED');
     assert.equal(await db.matchResultRevision.count({ where: { eventId: 'fixture-finished' } }), 8);
     assert.equal(await db.completionAuditEntry.count({ where: { completion: { eventId: 'fixture-finished' } } }), 1);
     const finished = await db.event.findUniqueOrThrow({ where: { id: 'fixture-finished' } });
