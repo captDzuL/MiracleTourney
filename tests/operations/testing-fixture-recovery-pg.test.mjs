@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { readdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { PrismaClient } from '@prisma/client';
 import { generateCompetitionGraph } from '../../src/lib/tournament/competition/index.ts';
@@ -8,7 +9,8 @@ import { TOURNAMENT_FORMAT_PRESETS } from '../../src/lib/tournament/formats/type
 import { loadExpectedLedger } from '../../scripts/operations/local-backup-snapshot.mjs';
 import { readPinnedTestingCatalogs, runTestingCheckpointSession } from '../../scripts/operations/testing-schema-checkpoint.mjs';
 import { TESTING_IDENTITY, TESTING_SOURCE } from '../../scripts/operations/testing-schema-core.mjs';
-import { runFixtureRecoverySession } from '../../scripts/operations/testing-fixture-recovery-session.mjs';
+import * as recovery from '../../scripts/operations/testing-fixture-recovery-session.mjs';
+const { runFixtureRecoverySession } = recovery;
 
 const url = process.env.TASK13_SYNTHETIC_URL;
 const identity = { database: 'task12_reference', branch: null };
@@ -60,8 +62,22 @@ async function seed(db) {
   }
 }
 
+async function recoveryRows(db) {
+  const eventIds = specs.map(spec => spec.id);
+  return {
+    events: await db.event.findMany({ where: { id: { in: eventIds } }, orderBy: { id: 'asc' } }),
+    matches: await db.match.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
+    phases: await db.competitionPhase.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
+    dependencies: await db.matchDependency.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
+    schedules: await db.scheduleRevision.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
+    revisions: await db.matchResultRevision.findMany({ where: { eventId: { in: eventIds } }, orderBy: { id: 'asc' } }),
+    completion: await db.tournamentCompletion.findUnique({ where: { eventId: 'fixture-finished' }, include: { podiumPlacements: true, awards: { include: { decision: true } }, auditEntries: true } }),
+  };
+}
+
 test('reconstructs exact synthetic fixture metadata atomically and preserves old rows on rerun', { skip: !url }, async () => {
   const db = new PrismaClient({ datasources: { db: { url } } });
+  const receiptDirectory = await mkdtemp(join(tmpdir(), 'task13-receipt-'));
   try {
     await seed(db);
     const unrelatedBefore = await db.event.findUniqueOrThrow({ where: { id: 'fixture-unrelated' } });
@@ -95,8 +111,9 @@ test('reconstructs exact synthetic fixture metadata atomically and preserves old
     await assert.rejects(runFixtureRecoverySession(db, { ...admission, manifest: { ...manifest, checkpoint: changedCheckpoint } }), /Elimination games cannot draw/);
     assert.equal(await db.competitionPhase.count(), 0, 'mid-transaction failure rolled back earlier phase writes');
     await db.matchGame.update({ where: { id: badGame.id }, data: { awayScore: badGame.awayScore } });
-    const first = await runFixtureRecoverySession(db, admission);
-    assert.equal(first.status, 'TESTING_FIXTURES_RECONSTRUCTED');
+    const first = await recovery.runFixtureRecoveryWithReceipt(db, admission, receiptDirectory, async () => { throw new Error('synthetic receipt storage failure'); });
+    assert.equal(first.status, 'TESTING_FIXTURES_COMMITTED_RECEIPT_PENDING');
+    assert.equal(first.databaseStatus, 'TESTING_FIXTURES_RECONSTRUCTED');
     assert.equal(await db.competitionPhase.count({ where: { eventId: { in: specs.map((spec) => spec.id) } } }), 3);
     assert.equal(await db.matchResultRevision.count({ where: { eventId: 'fixture-finished' } }), 8);
     assert.equal(await db.tournamentCompletion.count({ where: { eventId: 'fixture-finished' } }), 1);
@@ -109,9 +126,72 @@ test('reconstructs exact synthetic fixture metadata atomically and preserves old
     assert.deepEqual(await db.matchGame.findMany({ where: { match: { eventId: 'fixture-finished' } }, orderBy: { id: 'asc' } }), gamesBefore);
     const second = await runFixtureRecoverySession(db, admission);
     assert.equal(second.status, 'TESTING_FIXTURES_ALREADY_RECONSTRUCTED');
+    const rowsBeforeReceiptRecovery = await recoveryRows(db);
+    const recovered = await recovery.runFixtureRecoveryWithReceipt(db, admission, receiptDirectory);
+    assert.equal(recovered.status, 'TESTING_FIXTURES_ALREADY_RECONSTRUCTED');
+    assert.equal(recovered.receiptStatus, 'created');
+    const receiptPath = join(receiptDirectory, `task13-fixture-recovery-${manifest.sha256}.json`);
+    const receiptBytes = await readFile(receiptPath);
+    const receiptInfo = await stat(receiptPath);
+    const repeated = await recovery.runFixtureRecoveryWithReceipt(db, admission, receiptDirectory);
+    assert.equal(repeated.receiptStatus, 'verified');
+    assert.deepEqual(await readFile(receiptPath), receiptBytes);
+    assert.equal((await stat(receiptPath)).mtimeMs, receiptInfo.mtimeMs);
+    assert.deepEqual(await recoveryRows(db), rowsBeforeReceiptRecovery, 'receipt recovery and verification wrote zero database rows');
+    await writeFile(receiptPath, 'foreign receipt\n');
+    const conflict = await recovery.runFixtureRecoveryWithReceipt(db, admission, receiptDirectory);
+    assert.equal(conflict.status, 'TESTING_FIXTURES_COMMITTED_RECEIPT_CONFLICT');
+    assert.equal((await readFile(receiptPath, 'utf8')), 'foreign receipt\n');
+    assert.deepEqual(await recoveryRows(db), rowsBeforeReceiptRecovery);
+    await writeFile(receiptPath, receiptBytes);
     assert.equal(await db.matchResultRevision.count({ where: { eventId: 'fixture-finished' } }), 8);
     assert.equal(await db.completionAuditEntry.count({ where: { completion: { eventId: 'fixture-finished' } } }), 1);
+    const finished = await db.event.findUniqueOrThrow({ where: { id: 'fixture-finished' } });
+    await db.event.update({ where: { id: finished.id }, data: { formatConfig: { ...finished.formatConfig, bestOf: { ...finished.formatConfig.bestOf, final: 1 } }, updatedAt: finished.updatedAt } });
+    await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
+    await db.event.update({ where: { id: finished.id }, data: { formatConfig: finished.formatConfig, updatedAt: finished.updatedAt } });
+    const schedule = await db.scheduleRevision.findFirstOrThrow({ where: { eventId: 'fixture-finished' } });
+    await db.scheduleRevision.update({ where: { id: schedule.id }, data: { snapshot: { ...schedule.snapshot, baseMatches: [{ ...schedule.snapshot.baseMatches[0], status: 'tampered' }, ...schedule.snapshot.baseMatches.slice(1)] } } });
+    await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
+    await db.scheduleRevision.update({ where: { id: schedule.id }, data: { snapshot: schedule.snapshot, updatedAt: schedule.updatedAt } });
+    const revision = await db.matchResultRevision.findFirstOrThrow({ where: { eventId: 'fixture-finished' } });
+    await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('ALTER TABLE "MatchResultRevision" DISABLE TRIGGER "MatchResultRevision_append_only"');
+      await tx.matchResultRevision.update({ where: { id: revision.id }, data: { homeScore: 9 } });
+      await tx.$executeRawUnsafe('ALTER TABLE "MatchResultRevision" ENABLE TRIGGER "MatchResultRevision_append_only"');
+    });
+    await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
+    await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('ALTER TABLE "MatchResultRevision" DISABLE TRIGGER "MatchResultRevision_append_only"');
+      await tx.matchResultRevision.update({ where: { id: revision.id }, data: { homeScore: revision.homeScore } });
+      await tx.$executeRawUnsafe('ALTER TABLE "MatchResultRevision" ENABLE TRIGGER "MatchResultRevision_append_only"');
+    });
+    await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('ALTER TABLE "MatchResultRevision" DISABLE TRIGGER "MatchResultRevision_append_only"');
+      await tx.matchResultRevision.update({ where: { id: revision.id }, data: { actorUserId: 'user1' } });
+      await tx.$executeRawUnsafe('ALTER TABLE "MatchResultRevision" ENABLE TRIGGER "MatchResultRevision_append_only"');
+    });
+    await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
+    await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('ALTER TABLE "MatchResultRevision" DISABLE TRIGGER "MatchResultRevision_append_only"');
+      await tx.matchResultRevision.update({ where: { id: revision.id }, data: { actorUserId: revision.actorUserId } });
+      await tx.$executeRawUnsafe('ALTER TABLE "MatchResultRevision" ENABLE TRIGGER "MatchResultRevision_append_only"');
+    });
+    const award = await db.eventAward.findFirstOrThrow({ where: { completion: { eventId: 'fixture-finished' } } });
+    await db.eventAward.update({ where: { id: award.id }, data: { type: 'foreign-award' } });
+    await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
+    await db.eventAward.update({ where: { id: award.id }, data: { type: award.type, updatedAt: award.updatedAt } });
+    const completion = await db.tournamentCompletion.findUniqueOrThrow({ where: { eventId: 'fixture-finished' } });
+    await db.tournamentCompletion.update({ where: { id: completion.id }, data: { sourceSnapshot: { ...completion.sourceSnapshot, actor: { id: 'foreign', role: 'organizer' } } } });
+    await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
+    await db.tournamentCompletion.update({ where: { id: completion.id }, data: { sourceSnapshot: completion.sourceSnapshot, updatedAt: completion.updatedAt } });
     const phase = await db.competitionPhase.findFirstOrThrow({ where: { eventId: 'fixture-closed' } });
+    await db.competitionPhase.update({ where: { id: phase.id }, data: { configuration: { ...phase.configuration, drawing: { teams: [{ id: 'foreign', seed: 1 }] } } } });
+    await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
+    await db.competitionPhase.update({ where: { id: phase.id }, data: { configuration: phase.configuration, updatedAt: phase.updatedAt } });
+    await db.competitionPhase.update({ where: { id: phase.id }, data: { updatedAt: new Date('2030-01-01T00:00:00.000Z') } });
+    await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
+    await db.competitionPhase.update({ where: { id: phase.id }, data: { updatedAt: phase.updatedAt } });
     await db.competitionPhase.update({ where: { id: phase.id }, data: { configuration: { ...phase.configuration, syntheticReconstruction: 'foreign' } } });
     await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
     await db.competitionPhase.update({ where: { id: phase.id }, data: { configuration: phase.configuration, updatedAt: phase.updatedAt } });
@@ -119,5 +199,5 @@ test('reconstructs exact synthetic fixture metadata atomically and preserves old
     await assert.rejects(runFixtureRecoverySession(db, admission), /UNKNOWN_V3_STATE/);
     await db.event.update({ where: { id: 'fixture-unrelated' }, data: { description: unrelatedBefore.description, updatedAt: unrelatedBefore.updatedAt } });
     assert.equal((await runFixtureRecoverySession(db, admission)).status, 'TESTING_FIXTURES_ALREADY_RECONSTRUCTED');
-  } finally { await db.$disconnect(); }
+  } finally { await db.$disconnect(); await rm(receiptDirectory, { recursive: true, force: true }); }
 });

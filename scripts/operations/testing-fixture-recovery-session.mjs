@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { resolve } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { buildFixtureGraph, createSyntheticSchedule } from './testing-fixture-recovery.ts';
@@ -7,14 +7,16 @@ import { scoreResult } from '../../src/lib/tournament/operations/results.ts';
 import { competitionProjection } from '../../src/lib/tournament/operations/result-projection.ts';
 import { matchSnapshot } from '../../src/lib/tournament/operations/state.ts';
 import { completeTournament } from '../../src/lib/completion/complete.ts';
+import { deriveAwardCandidates } from '../../src/lib/completion/awards.ts';
 import { createPrismaCompletionDependenciesInTransaction } from '../../src/lib/completion/prisma-adapter.ts';
 import { CATALOG_SQL } from './testing-schema-catalog.mjs';
 import { readPinnedTestingCatalogs, validateTestingCheckpoint } from './testing-schema-checkpoint.mjs';
 import { checkpointSelect, oldRowProjectionSql, readReceipt } from './testing-schema-apply.mjs';
-import { assertCatalogState, assertTestingBackupReceipt, buildTargetCatalog, TESTING_IDENTITY } from './testing-schema-core.mjs';
+import { assertCatalogState, assertTestingBackupReceipt, buildTargetCatalog, TESTING_IDENTITY, validateTestingSourceUrl } from './testing-schema-core.mjs';
 import { prepareFixedTestingExport } from './local-backup-operator.mjs';
+import { PINNED_CA_PATH, verifyPinnedCaBundle } from './local-backup-ca.mjs';
 import { verifyTestingFrontendTls } from './testing-schema-tls.mjs';
-import { writeFile } from 'node:fs/promises';
+import { link, lstat, open, readFile, unlink } from 'node:fs/promises';
 
 const TARGETS = Object.freeze([
   { slug: 'flashpeak-revision-published', name: 'Flashpeak Revision Published', status: 'Published', cap: 16, venue: 'Revision Arena', window: 'September 10, 2026 - September 20, 2026', starts: 'September 28, 2026', teams: 0, matches: 0 },
@@ -32,10 +34,39 @@ const COMPLETION_KEY = '00000000-0000-4000-8000-000000000013';
 const REASON = `New synthetic fixture reconstruction (${MARKER}); not a historical result`;
 const fail = code => { const error = new Error(code); error.code = code; return error; };
 const json = value => JSON.parse(JSON.stringify(value));
-const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
+const canonical = value => value instanceof Date ? value.toISOString() : Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, nested]) => [key, canonical(nested)])) : value;
 const hash = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 const quote = value => `"${value.replaceAll('"', '""')}"`;
+const byId = rows => [...rows].sort((left, right) => left.id.localeCompare(right.id));
+
+/** Translate only the already-approved libpq testing source for this Prisma 6 engine. */
+export function buildPinnedTestingPrismaUrl(sourceUrl, verifiedCaPath) {
+  validateTestingSourceUrl(sourceUrl);
+  if (verifiedCaPath !== PINNED_CA_PATH) throw fail('SOURCE_REJECTED');
+  const url = new URL(sourceUrl);
+  url.searchParams.delete('sslrootcert');
+  url.searchParams.set('sslmode', 'require');
+  url.searchParams.set('sslaccept', 'strict');
+  url.searchParams.set('sslcert', verifiedCaPath);
+  return url.href;
+}
+
+function ownedNewState(states) {
+  return states.map(state => ({
+    event: state.event,
+    matches: byId(state.matches),
+    phases: byId(state.phases).map(phase => {
+      const configuration = { ...phase.configuration };
+      delete configuration.ownedStateSha256;
+      return { ...phase, configuration };
+    }),
+    dependencies: byId(state.dependencies), schedules: byId(state.schedules), revisions: byId(state.revisions),
+    completion: state.completion ? { ...state.completion,
+      podiumPlacements: byId(state.completion.podiumPlacements),
+      awards: byId(state.completion.awards), auditEntries: byId(state.completion.auditEntries) } : null,
+  }));
+}
 
 async function marker(tx, sql, name) {
   const rows = await tx.$queryRawUnsafe(sql);
@@ -95,35 +126,48 @@ function validateLegacy(state, spec) {
   return spec.matches ? buildFixtureGraph(event, teams, matches) : null;
 }
 
-function validateReconstructed(states, graphs, oldRowsSha256, backupSha256) {
+async function validateReconstructed(tx, states, graphs, oldRowsSha256, backupSha256) {
+  const ownedStateSha256 = states[1]?.phases[0]?.configuration?.ownedStateSha256;
+  if (!/^[a-f0-9]{64}$/.test(ownedStateSha256 || '') || hash(ownedNewState(states)) !== ownedStateSha256) return false;
   for (const [index, state] of states.entries()) {
     const spec = TARGETS[index], graph = graphs[index]?.graph;
     if (state.publications || state.generation || state.actions || state.incidents || state.readiness || state.audits ||
-        state.editRevisions || state.previewTokens || state.event.competitionVersion !== (spec.status === 'Finished' ? 2 : spec.matches ? 1 : 0)) return false;
+        state.editRevisions || state.previewTokens || state.event.competitionVersion !== (spec.status === 'Finished' ? 2 : spec.matches ? 1 : 0) ||
+        state.event.timezone !== 'Asia/Jakarta') return false;
     if (spec.matches === 0) {
       if (state.phases.length || state.dependencies.length || state.schedules.length || state.revisions.length ||
-          state.event.formatConfig?.kind !== 'single_elimination' ||
+          hash(state.event.formatConfig) !== hash(graphs[1].graph.config) ||
+          state.event.publishedScheduleVersion !== null ||
           Object.entries(PUBLISHED_DATES).some(([key, date]) => state.event[key]?.getTime() !== date.getTime())) return false;
     } else {
+      const expectedConfiguration = { ...graph.phases[0], graph, drawing: { teams: graphs[index].seeds },
+        syntheticReconstruction: MARKER, oldRowsSha256, backupSha256, ownedStateSha256 };
       if (state.phases.length !== 1 || state.phases[0].id !== graph.phases[0].id ||
-          state.phases[0].status !== 'active' || state.phases[0].configuration?.syntheticReconstruction !== MARKER ||
-          state.phases[0].configuration?.oldRowsSha256 !== oldRowsSha256 ||
-          state.phases[0].configuration?.backupSha256 !== backupSha256 ||
-          hash(state.phases[0].configuration.graph) !== hash(graph) ||
-          state.dependencies.length !== graph.dependencies.length || state.event.formatConfig?.kind !== graph.config.kind ||
+          state.phases[0].eventId !== state.event.id || state.phases[0].sequence !== 1 ||
+          state.phases[0].label !== graph.phases[0].kind || state.phases[0].status !== 'active' ||
+          hash(state.phases[0].configuration) !== hash(expectedConfiguration) ||
+          state.dependencies.length !== graph.dependencies.length || hash(state.event.formatConfig) !== hash(graph.config) ||
           graph.dependencies.some(dep => !state.dependencies.some(row => row.id === dep.id && row.sourceMatchId === dep.sourceMatchId && row.targetMatchId === dep.targetMatchId && row.outcome === dep.outcome && row.targetSlot === dep.targetSlot))) return false;
       for (const match of state.matches) {
-        if (match.phaseId !== graph.phases[0].id ||
-            hash(match.scheduleMetadata?.graphMatch) !== hash(graph.matches.find(node => node.id === match.id))) return false;
+        if (match.phaseId !== graph.phases[0].id || match.groupId !== null ||
+            hash(match.scheduleMetadata) !== hash({ graphMatch: graph.matches.find(node => node.id === match.id), syntheticReconstruction: MARKER })) return false;
       }
     }
     if (spec.status === 'Ongoing' || spec.status === 'Finished') {
+      const expectedSnapshot = {
+        draft: createSyntheticSchedule(graph, state.matches, SCHEDULE[spec.slug]),
+        input: SCHEDULE[spec.slug],
+        baseMatches: matchSnapshot(state.matches.map(match => ({ ...match, scheduleStatus: 'estimated', resultVersion: 0,
+          scheduledAt: null, scheduledEndsAt: null, scheduleRoom: null }))),
+        syntheticReconstruction: MARKER,
+      };
       if (state.schedules.length !== 1 || state.schedules[0].version !== 1 || state.schedules[0].status !== 'published' ||
           state.schedules[0].idempotencyKey !== `${MARKER}:${spec.slug}:schedule` ||
-          state.event.publishedScheduleVersion !== 1 || state.schedules[0].snapshot?.syntheticReconstruction !== MARKER ||
-          state.schedules[0].snapshot.draft.assignments.length !== spec.matches ||
-          hash(state.schedules[0].snapshot.input) !== hash(SCHEDULE[spec.slug]) ||
-          hash(state.schedules[0].snapshot.draft.assignments) !== hash(createSyntheticSchedule(graph, state.matches, SCHEDULE[spec.slug]).assignments)) return false;
+          state.event.publishedScheduleVersion !== 1 || hash(state.schedules[0].snapshot) !== hash(expectedSnapshot) ||
+          state.schedules[0].createdById !== state.event.organizerUserId ||
+          state.schedules[0].publishedById !== state.event.organizerUserId || !state.schedules[0].publishedAt ||
+          state.event.eventStartsAt?.toISOString() !== SCHEDULE[spec.slug].eventWindow.start ||
+          state.event.registrationOpensAt !== null || state.event.registrationClosesAt !== null) return false;
       for (const match of state.matches) {
         const assignment = state.schedules[0].snapshot.draft.assignments.find(row => row.matchId === match.id);
         if (!assignment || match.scheduleVersion !== 1 || match.scheduleRoom !== assignment.roomId ||
@@ -131,21 +175,68 @@ function validateReconstructed(states, graphs, oldRowsSha256, backupSha256) {
             match.scheduleStatus !== (match.status === 'Live' ? 'live' : match.status === 'Completed' ? 'completed' : 'confirmed') ||
             match.actualStartedAt || match.actualEndedAt) return false;
       }
-    } else if (state.schedules.length || state.event.publishedScheduleVersion !== null) return false;
+    } else if (state.schedules.length || state.event.publishedScheduleVersion !== null ||
+        spec.matches && (state.event.eventStartsAt !== null || state.matches.some(match =>
+          match.scheduleStatus !== 'estimated' || match.scheduledAt || match.scheduledEndsAt || match.scheduleRoom ||
+          match.scheduleVersion || match.actualStartedAt || match.actualEndedAt))) return false;
     if (spec.status === 'Finished') {
       const scores = validateResults(state, graph);
       const podium = competitionProjection(graph, state.matches).placements;
       if (state.revisions.length !== 8 || state.revisions.some(rev => rev.version !== 1 || rev.reason !== REASON ||
+          rev.eventId !== state.event.id || rev.actorUserId !== state.event.organizerUserId ||
           rev.idempotencyKey !== `${MARKER}:${rev.matchId}:result` ||
+          rev.createdAt.getTime() !== state.schedules[0].publishedAt.getTime() ||
+          rev.homeScore !== scores.get(rev.matchId)?.homeScore || rev.awayScore !== scores.get(rev.matchId)?.awayScore ||
+          rev.winnerTeamId !== scores.get(rev.matchId)?.winnerTeamId ||
           hash(rev.scoreSnapshot) !== hash(scores.get(rev.matchId))) ||
           state.matches.some(match => match.resultVersion !== 1 || !match.resultConfirmedAt ||
-            hash(match.resultSnapshot) !== hash(scores.get(match.id))) ||
+            match.resultConfirmedAt.getTime() !== state.schedules[0].publishedAt.getTime() ||
+            !state.revisions.some(rev => rev.matchId === match.id) || hash(match.resultSnapshot) !== hash(scores.get(match.id))) ||
           !state.completion || state.completion.status !== 'completed' || state.completion.podiumPlacements.length !== 3 ||
           state.completion.awards.length !== 4 || state.completion.awards.some(award => award.status !== 'approved' || !award.decision) ||
-          state.completion.podiumPlacements.some(row => row.teamId !== podium.find(item => item.rank === row.rank)?.teamId) ||
+          new Set(state.completion.awards.map(award => award.type)).size !== 4 ||
+          ['mvp', 'top_scorer', 'top_defender', 'top_assist'].some(type => !state.completion.awards.some(award => award.type === type)) ||
+          state.completion.podiumPlacements.some(row => row.teamId !== podium.find(item => item.rank === row.rank)?.teamId ||
+            row.teamName !== state.teams.find(team => team.id === row.teamId)?.name || row.source !== 'official_playoff') ||
           state.completion.awards.some(award => award.decision.recipientId !== state.stats[0].playerId || award.decision.reason !== REASON) ||
           state.completion.auditEntries.length !== 1 || state.completion.auditEntries[0].idempotencyKey !== COMPLETION_KEY) return false;
-    } else if (state.revisions.length || state.completion) return false;
+      const actor = { id: state.event.organizerUserId, role: 'organizer' };
+      const source = await createPrismaCompletionDependenciesInTransaction(actor, tx)
+        .transaction(state.event.id, transaction => transaction.loadSource());
+      const candidates = deriveAwardCandidates(source.statistics);
+      const awardNames = ['mvp', 'top_scorer', 'top_defender', 'top_assist'];
+      const expectedPodium = podium.map(row => ({ rank: row.rank, teamId: row.teamId,
+        teamName: state.teams.find(team => team.id === row.teamId)?.name }));
+      const expectedAwards = awardNames.map(award => ({ award,
+        recipient: candidates[award].find(row => row.playerId === state.stats[0].playerId),
+        candidates: candidates[award], reason: REASON }));
+      const expectedSnapshot = { eventId: state.event.id, version: 2, actor, podium: expectedPodium,
+        awards: expectedAwards, source };
+      const completion = state.completion;
+      if (hash(completion.sourceSnapshot) !== hash(expectedSnapshot) || completion.eventId !== state.event.id ||
+          completion.format !== graph.config.kind || completion.completedByUserId !== actor.id ||
+          !completion.completedAt || completion.completedAt < state.schedules[0].publishedAt ||
+          completion.certificateRevision !== 0 || completion.reopenedAt || completion.reopenedByUserId ||
+          completion.reopenReason) return false;
+      for (const award of completion.awards) {
+        const chosen = expectedAwards.find(row => row.award === award.type);
+        const recipient = chosen?.recipient;
+        if (!recipient || hash(award.candidateSnapshot) !== hash(chosen.candidates) ||
+            award.decision.recipientKind !== 'player' || award.decision.recipientId !== recipient.playerId ||
+            award.decision.recipientName !== recipient.playerName || award.decision.teamId !== recipient.teamId ||
+            award.decision.teamName !== recipient.teamName || award.decision.decidedByUserId !== actor.id ||
+            award.decision.reason !== REASON || !award.decision.decidedAt) return false;
+      }
+      const decisionRows = awardNames.map(award => ({ award, playerId: state.stats[0].playerId, reason: REASON }));
+      const fingerprint = JSON.stringify({ action: 'complete', expectedVersion: 1, decisions: decisionRows });
+      const audit = completion.auditEntries[0];
+      const result = { status: 'completed', eventId: state.event.id, version: 2, snapshot: expectedSnapshot };
+      if (audit.action !== 'completed' || audit.actorUserId !== actor.id || audit.reason !== null ||
+          audit.fingerprint !== fingerprint || hash(audit.result) !== hash(result) ||
+          hash(audit.details) !== hash({ actorRole: actor.role, fingerprint, result }) ||
+          audit.createdAt < completion.completedAt) return false;
+    } else if (state.revisions.length || state.completion || state.matches.some(match =>
+      match.resultVersion !== 0 || match.resultSnapshot !== null || match.resultConfirmedAt !== null)) return false;
   }
   return true;
 }
@@ -250,7 +341,7 @@ export async function runFixtureRecoverySession(db, admission) {
     const oldSql = oldRowProjectionSql(baseline, reference);
     const oldBefore = await marker(tx, oldSql, 'TASK12_ROWS');
     const oldRowsSha256 = hash(oldBefore);
-    if (validateReconstructed(states, graphs, oldRowsSha256, manifest.sha256)) return { status: 'TESTING_FIXTURES_ALREADY_RECONSTRUCTED', ledgerSha256: validated.checkpoint.ledgerSha256, oldRowsSha256 };
+    if (await validateReconstructed(tx, states, graphs, oldRowsSha256, manifest.sha256)) return { status: 'TESTING_FIXTURES_ALREADY_RECONSTRUCTED', ledgerSha256: validated.checkpoint.ledgerSha256, oldRowsSha256, newRowsSha256: states[1].phases[0].configuration.ownedStateSha256, reconstructedAt: states[3].schedules[0].publishedAt.toISOString() };
     validateEmptyV3(states);
     assertTestingBackupReceipt(manifest, verified, validated.checkpoint);
     await applyMetadata(tx, states, graphs, new Date(), oldRowsSha256, manifest.sha256);
@@ -258,9 +349,70 @@ export async function runFixtureRecoverySession(db, admission) {
     if (hash(oldBefore) !== hash(oldAfter)) throw fail('ROW_DRIFT');
     const after = [];
     for (const state of states) after.push(await stateFor(tx, await tx.event.findUniqueOrThrow({ where: { id: state.event.id } })));
-    if (!validateReconstructed(after, graphs, oldRowsSha256, manifest.sha256)) throw fail('RECONSTRUCTION_DRIFT');
-    return { status: 'TESTING_FIXTURES_RECONSTRUCTED', ledgerSha256: validated.checkpoint.ledgerSha256, oldRowsSha256: hash(oldBefore), newRowsSha256: hash(after.map(state => ({ phases: state.phases.map(row => row.id), dependencies: state.dependencies.map(row => row.id), schedules: state.schedules.map(row => row.id), revisions: state.revisions.map(row => row.id), completion: state.completion?.id }))) };
+    const newRowsSha256 = hash(ownedNewState(after));
+    for (const state of after.filter(row => row.phases.length)) {
+      const phase = state.phases[0];
+      await tx.competitionPhase.update({ where: { id: phase.id }, data: {
+        configuration: json({ ...phase.configuration, ownedStateSha256: newRowsSha256 }), updatedAt: phase.updatedAt,
+      } });
+    }
+    const final = [];
+    for (const state of states) final.push(await stateFor(tx, await tx.event.findUniqueOrThrow({ where: { id: state.event.id } })));
+    if (!await validateReconstructed(tx, final, graphs, oldRowsSha256, manifest.sha256)) throw fail('RECONSTRUCTION_DRIFT');
+    return { status: 'TESTING_FIXTURES_RECONSTRUCTED', ledgerSha256: validated.checkpoint.ledgerSha256,
+      oldRowsSha256, newRowsSha256, reconstructedAt: final[3].schedules[0].publishedAt.toISOString() };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 240_000 });
+}
+
+function receiptFor(result, backupSha256) {
+  return {
+    format: 'task13-synthetic-fixture-recovery-v1', sourceBase: 'ccc78acf37697fb6e4ba79037ba85a4162cc3e35',
+    backupSha256, ledgerSha256: result.ledgerSha256, oldRowsSha256: result.oldRowsSha256,
+    newRowsSha256: result.newRowsSha256, reconstructedAt: result.reconstructedAt, provenance: MARKER,
+  };
+}
+
+async function publishRecoveryReceipt(directory, name, expected) {
+  const target = join(directory, name);
+  async function verifyExisting() {
+    let entry;
+    try { entry = await lstat(target); }
+    catch (error) { if (error?.code === 'ENOENT') return false; throw error; }
+    if (!entry.isFile() || entry.isSymbolicLink() || !(await readFile(target)).equals(expected)) throw fail('RECEIPT_CONFLICT');
+    return true;
+  }
+  if (await verifyExisting()) return 'verified';
+  const temporary = join(directory, `.task13-receipt-${randomUUID()}.tmp`);
+  let handle;
+  try {
+    handle = await open(temporary, 'wx', 0o600);
+    await handle.writeFile(expected);
+    await handle.sync();
+    await handle.close(); handle = undefined;
+    try { await link(temporary, target); }
+    catch (error) {
+      if (error?.code === 'EEXIST' && await verifyExisting()) return 'verified';
+      throw error;
+    }
+    return 'created';
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+    await unlink(temporary).catch(() => {});
+  }
+}
+
+/** After a committed DB result, receipt failure is an explicit recoverable status. */
+export async function runFixtureRecoveryWithReceipt(db, admission, directory, publisher = publishRecoveryReceipt) {
+  const databaseResult = await runFixtureRecoverySession(db, admission);
+  const name = `task13-fixture-recovery-${admission.manifest.sha256}.json`;
+  const bytes = Buffer.from(`${JSON.stringify(receiptFor(databaseResult, admission.manifest.sha256))}\n`, 'utf8');
+  try {
+    const receiptStatus = await publisher(directory, name, bytes);
+    return { ...databaseResult, receiptStatus };
+  } catch (error) {
+    return { status: error?.code === 'RECEIPT_CONFLICT' ? 'TESTING_FIXTURES_COMMITTED_RECEIPT_CONFLICT' : 'TESTING_FIXTURES_COMMITTED_RECEIPT_PENDING',
+      databaseStatus: databaseResult.status, backupSha256: admission.manifest.sha256, receiptName: name };
+  }
 }
 
 async function main() {
@@ -270,12 +422,14 @@ async function main() {
   const { manifest, verified } = await readReceipt(config.output, process.argv[3]);
   const { baseline, reference } = await readPinnedTestingCatalogs();
   const expectedLedger = config.expectedLedger;
-  const db = new PrismaClient({ datasources: { db: { url: config.source.url } } });
+  const pinnedCa = await verifyPinnedCaBundle();
+  const db = new PrismaClient({ datasources: { db: { url: buildPinnedTestingPrismaUrl(config.source.url, pinnedCa) } } });
   try {
-    const result = await runFixtureRecoverySession(db, { baseline, reference, expectedLedger, identity: TESTING_IDENTITY, manifest, verified });
-    // The outside-Git receipt is only evidence of this invocation; no payloads or secrets.
-    if (result.status === 'TESTING_FIXTURES_RECONSTRUCTED') await writeFile(resolve(config.output, `task13-fixture-recovery-${Date.now()}.json`), JSON.stringify({ ...result, sourceBase: '46dc1dfb806117e91b8fb118b373a6ab57c2ecd2', backupSha256: manifest.sha256, provenance: MARKER, completedAt: new Date().toISOString() }) + '\n', { flag: 'wx', mode: 0o600 });
+    const result = await runFixtureRecoveryWithReceipt(db,
+      { baseline, reference, expectedLedger, identity: TESTING_IDENTITY, manifest, verified }, config.output);
     process.stdout.write(`${JSON.stringify(result)}\n`);
+    if (result.status === 'TESTING_FIXTURES_COMMITTED_RECEIPT_PENDING' ||
+        result.status === 'TESTING_FIXTURES_COMMITTED_RECEIPT_CONFLICT') process.exitCode = 2;
   } finally { await db.$disconnect(); }
 }
 
