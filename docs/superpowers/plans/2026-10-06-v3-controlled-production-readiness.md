@@ -260,3 +260,41 @@ Spec coverage: source fix yang belum masuk release, drift bracket, auto-migratio
 Type consistency: field bracket Boolean sama di runner/core/tests/report; migration count diambil dari candidate ledger; SHA report sama dengan actual tested tree. Placeholder scan: tidak ada langkah yang mengizinkan bypass guard atau menggunakan nilai credential buatan; exact archive path wajib dicatat dari hasil export sebelum invocation.
 
 Skill yang dipakai: using-superpowers dan writing-plans untuk susunan task/evidence; deployments-cicd dan neon-postgres untuk pemisahan build/migrasi/recovery. Persiapan Task 1–5 disetujui; approval bukan deployment/migration production.
+
+## Addendum — owner-approved strict lint cleanup, 6 October 2026
+
+Dzul memilih membersihkan seluruh warning sebelum tes final. Baseline acceptance dan lint suppression bukan solusi yang dipilih. Tambahan ini adalah bagian Task4: pertahankan tampilan, authorization, URL policy, loading/fallback, dan kontrak eksternal; bukan migrasi UI admin. Implementasi tetap serial, dengan review per deliverable. Tidak diperlukan backup/rehearsal baru karena cleanup ini tidak mengubah Prisma, SQL, atau kode operasi.
+
+## Task 7 — Remove unused bindings without changing behavior (Task4A)
+
+**Files:** Only the bindings diagnosed by the 20 `@typescript-eslint/no-unused-vars` warnings in the existing Task4 report. Do not modify native image or hook behavior in this task. Report privately to `task-7-report.md`.
+
+**Interfaces:** Existing exported signatures, DTO fields, authentication and ownership behavior remain unchanged. No ESLint configuration, rule disable, renamed-to-underscore suppression, or ignore patterns.
+
+- [ ] Reproduce the unused-binding diagnostic with the installed ESLint API and save file/line/message inventory privately. Treat lint as the regression test for trivial pure unused declarations; do not add source-string tests.
+- [ ] Remove unused import specifiers and pure unused local declarations. If an unused binding's initializer has side effects, retain the expression; if destructuring or function parameters are part of a public contract, preserve the contract. Escalate ambiguous behavior rather than silently deleting it.
+- [ ] Verify the affected files with ESLint: zero unused-binding warnings and zero errors; expected image/hook warnings remain until their serial tasks.
+- [ ] Run focused existing tests for touched auth/repository/player-stat/event behavior and TypeScript; capture exact commands/counts/durations/results, self-review, commit only owned paths, and independent spec/quality review.
+
+## Task 8 — Correct hook lifecycles (Task4B)
+
+**Files:** `src/components/v3/events/EventDraftForm.tsx`, `src/components/v3/organizer/OrganizerMasterShell.tsx`, and their existing/new behavior tests. Report privately to `task-8-report.md`.
+
+**Interfaces:** Stable wizard steps; 500ms autosave and revision/idempotency semantics retained. `editable=false` must cancel a pending autosave. Drawer cleanup removes inert and restores overflow/focus on the exact nodes captured at effect setup.
+
+- [ ] Add behavior regression proving a pending edit does not save after the form becomes non-editable before the timer fires. Watch RED on existing code; keep action/network behavior isolated from real databases.
+- [ ] Move immutable step IDs to module scope instead of adding a changing array dependency. Include `editable` in the autosave effect dependency list without broad refactoring.
+- [ ] Capture background/main/trigger nodes when the open-drawer effect begins; cleanup uses those captured nodes. Test close/unmount cleanup, body overflow, inert and appropriate focus restoration using real components with only external dependencies mocked.
+- [ ] Run focused existing form/shell tests and scoped ESLint; self-review and scoped commit, then independent spec/quality review. No whole E2E lane yet.
+
+## Task 9 — Replace native image warnings with compatible image rendering (Task4C)
+
+**Files:** The 28 native image sites listed by installed ESLint, plus focused image behavior tests. Existing shared image components may be reused; a new abstraction is allowed only if it materially preserves a repeated native-image contract. Report privately to `task-9-report.md`.
+
+**Interfaces:** Preserve CSS dimensions/crop/aspect ratios, intrinsic certificate/character proportions, alt text, eager/lazy policy, ref/error handlers, fallback and pre-hydration failure detection. Arbitrary already-approved external URLs, SVG, blob/data local previews, and private proof/QRIS URLs must not become server-side optimizer fetches merely to satisfy lint.
+
+- [ ] Inventory exact native sites and characterize current output: fixed avatars/logos, poster fill, intrinsic certificate/character images, proof/QRIS dialogs and upload previews. Check installed Next15 image behavior and official image documentation; no framework upgrade, wildcard optimizer allowlist or global unoptimized setting.
+- [ ] Write failing regression at an actual consumer boundary for the chosen Next image path: rendered source/ref/error/loading semantics, intrinsic sizing and existing poster fallback. Do not mock next/image into an img and then claim production compatibility from that mock alone.
+- [ ] Use `next/image` with appropriate explicit dimensions or `fill`/`sizes`. Use per-image `unoptimized` where preserving direct delivery is necessary for user-generated/private/dynamic previews; record that this cleanup does not claim an image performance improvement. Local assets may use the optimizer only where URL, geometry and failure checks remain equivalent.
+- [ ] Run focused real rendering/component behavior tests, scoped ESLint and TypeScript. Review React boundaries, hook rules, accessibility and source handling; self-review and commit exact owned files, then fresh independent spec/quality review.
+- [ ] After all three tasks pass review, freeze new SHA and resume Task4: strict ESLint `--max-warnings=0`, full unit once, one 54-case public local lane and one build/load run. Select additional related organizer form/drawer/image browser checks because this cleanup touches those flows; keep shared Delicate serial and do not reset/reseed. CI remains deferred and no production setting/migration/deploy/merge is authorized.
