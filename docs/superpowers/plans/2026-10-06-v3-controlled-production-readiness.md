@@ -309,3 +309,43 @@ Dzul memilih membersihkan seluruh warning sebelum tes final. Baseline acceptance
 - [ ] Write meaningful RED against the installed vulnerable version, then pin patched `0.35.5` narrowly in direct dependency and workspace override and generate the matching lockfile without unrelated upgrades. Verify real resolved consumers and bounded SVG-to-PNG/PNG metadata behavior, not only source-text version assertions.
 - [ ] Focused tests, TypeScript, scoped lint, frozen install and production audit must pass; self-review and exact-file commit followed by fresh independent spec/quality review. No full suite, browser, DB, build/load or provider action in this source phase.
 - [ ] Freeze the reviewed new SHA and resume the still-unrun heavy Task4 gates. The successful zero-warning cleanup is retained; do not reset/reseed, repeat backup/rehearsal, trigger CI or apply production settings. Final whole-delta review requires a scoped addendum for this dependency change.
+
+## Task 11 — Repair the proven no-op unit-test mutation (Task4E)
+
+**Files:** Only `tests/competition/ci-36147449749-budget-split.static.test.ts`; report privately to `task-11-unit-mutation-report.md`. This is a test-only defect found in the first final unit run, not a CI workflow change or an application teardown change.
+
+- [ ] Preserve the initial failing evidence: the teardown-order mutation searched an unguarded delete block, but the real source now uses `if (eventCreated)`. Its replacement was a no-op, so an expected throw did not occur.
+- [ ] Reproduce this exact failure, mutate the actual guarded block, and explicitly assert the mutation changes the source before asserting rejection. Preserve the in-flight-drain, scoped ownership, event-before-user order and budget checks; do not loosen/remove assertions or change application/E2E source.
+- [ ] Run the affected static file, TypeScript and scoped strict lint, then commit only the owned test path and obtain fresh independent spec/quality review. Controller stages the plan documentation separately.
+- [ ] Diagnose the nine synthetic quick-load failures as sandbox loopback EACCES, not measured app performance; rerun only their existing file with scoped loopback permission. Do not rerun the entire 617-suite selection, start a live load test, or reset/reseed to resolve an execution-permission artifact.
+- [ ] Actual testing-schema drift remains a separate BLOCKED gate. Shared database repair needs owner direction; no production setting/migration/deployment, new CI, or database mutation is authorized by this test fix.
+
+## Addendum — approved targeted Delicate repair
+
+### Checkpoint publication — owner instruction, 7 October 2026
+
+Commit and normal-push the candidate branch at four checkpoints: reviewed actual testing DB recovery, public E2E completion, performance completion, and final review completion. Include a separate sanitized Claude handoff in `docs/handoffs` at every push. Each handoff must be usable without private conversation history: exact branch/baseline/source SHA, actual results/counts/durations, remaining failures or NOT RUN gates, accepted limitations, next steps, and production/CI boundaries. Record a failed checkpoint honestly rather than treating it as passed. CI remains deferred; use the previously agreed skip-CI marker on checkpoint publication, with no workflow/protection change. No merge or production action is authorized. Record each tested SHA separately from later documentation-only commits; do not rerun passing tests merely because handoff documentation was added.
+
+Owner's latest "yes please" approves targeted testing-schema and synthetic fixture recovery. Only project `steep-tree-47893196`, branch `br-young-thunder-az5w6nt3` (`test`), Delicate endpoint and `neondb` are in scope. No global reset/reseed, production parent change, paid resource, CI wave, or repeated production backup/rehearsal. Existing rows and migration ledger must remain intact. SQL repair is operational tooling, not unsafe runtime application SQL.
+
+## Task 12 — Reconcile testing schema without replacing data
+
+**Files:** narrow `scripts/operations/testing-schema-*` tooling and focused operations tests as required. Exact implementation choices follow the comprehensive catalog inventory; don't build a general migration framework. Private brief/report: `task-12-schema-brief.md` / `task-12-schema-report.md`.
+
+- [ ] Compare columns, types, defaults, indexes, constraints (including deferrability), enums and tables against the canonical 37-SQL-migration chain. Check checksums using Git LF, not Windows CRLF. Preserve `_prisma_migrations`; `migrate deploy` alone cannot fix this already-applied ledger.
+- [ ] Reuse verified tools/key receipt/ACL/pipeline protections through a separately hard-guarded testing entrypoint. Never loosen the fixed production backup guards. Capture one immutable encrypted Delicate backup with same-snapshot aggregate checkpoint before shared writes; no plaintext dump or private key output.
+- [ ] Build the minimum data-preserving repair for the observed schema, with bounded locks/timeouts and unexpected-state rejection. No DROP of tables/columns/schema/data, TRUNCATE/global DELETE, schema reset, ledger rewrite, blind replay, or `db push --accept-data-loss`. Reject incompatible existing data rather than deleting it. One explicitly reviewed canonical index replacement is allowed: the present obsolete `Certificate_eventId_key` must be replaced with the V3 recipient-aware uniqueness required by `20260912010000_v3_completion_certificates`; validate its exact definition, install/validate the replacement and retain every row. No arbitrary index/constraint removal.
+- [ ] Add meaningful failing regressions first: wrong source, changed schema/ledger/tools, missing backup, destructive plan, partial-failure rollback, and preservation of existing values. Prove repair on an isolated synthetic PG18.6 fixture retaining a stale 37-entry ledger and legacy rows; preserve composite/deferred constraints and verify a second invocation is a no-op.
+- [ ] Fresh independent spec/quality review must pass before the controller performs the real testing export/repair. Verify target/TLS, activity, backup receipt and expected schema immediately before one bounded repair transaction. Compare existing-row projections and ledger hashes before/after; verify all expected schema objects. Operational PASS requires actual evidence, not code review alone.
+
+## Task 13 — Recover only named synthetic public fixtures
+
+- [ ] After structural repair, inspect the four existing named fixture events and recover only missing synthetic competition/completion/publication state using existing fixture contracts. Preserve event IDs and unrelated rows; don't call global seed/prepare/reset or fabricate real historical records.
+- [ ] Test ownership/scope guards and repeat/no-op behavior before shared writes; fresh independent review and exact before/after evidence. Any required destructive or uncertain business-data reconstruction stops for owner direction.
+- [ ] Run existing four-fixture preflight; report unrecoverable lost rows separately from restored schema. No claim that CREATE TABLE recovered deleted records.
+
+## Task 14 — Resume remaining gates once
+
+- [ ] Freeze the reviewed candidate, run the previously blocked DB cascade case, 54 public cases, three selected supplemental browser checks, then production build/application load once with serial Delicate use. Prior unit failures retain their original reports and targeted resolution evidence; no blind repeat of 617 suites.
+- [ ] Diagnose any actual failure before another run. No CI or seed wave, no assertion/timeout relaxation. Keep initial latency warning separate from strict load p95 <3 seconds and zero error/fallback budget.
+- [ ] Fresh final-delta review and honest Preview/PR handoff according to Task5; production setting override, migration, deploy and merge still require separate owner decision.
