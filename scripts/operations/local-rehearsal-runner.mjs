@@ -462,20 +462,24 @@ export function verifyRecoveryCheckpoint(mode, checkpoint, localLogical, sourceR
   throw fail('CONFIG_REJECTED');
 }
 
+export async function verifyFreshArchivePair(archive, root) {
+  const paths = await assertFreshArchivePath(archive, root);
+  return { ...paths, pair: await verifyBackupPair(paths.archivePath, paths.manifestPath) };
+}
+
 export async function runRehearsal(archive, mode = 'full') {
   const plan = buildRehearsalPlan(mode);
   await assertOwnerOnlyDirectory(outputRoot);
-  const manifestPath = await assertFreshArchivePath(archive, outputRoot);
+  const { archivePath, manifestPath, pair } = await verifyFreshArchivePair(archive, outputRoot);
   await assertOwnerOnlyDirectory(keyRoot, 'KEY_NOT_READY', ['identity.dpapi', 'recipient.txt', 'recovery-verified.json']);
   await assertOutputCapacity(outputRoot, 3_221_225_472n);
   await verifyPinnedFile(zipPath, PG_ZIP_HASH);
   if ((await stat(zipPath)).size !== PG_ZIP_BYTES) throw fail('RUNTIME_REJECTED');
   await verifyPostgresDependencySet(join(oldRuntime, 'pg18', 'bin'), PG18_DLL_SHA256);
-  const pair = await verifyBackupPair(archive, manifestPath);
   const manifest = parsePrivateJson(await readFile(manifestPath, 'utf8'));
-  const authenticated = await runChild(process.execPath, [archiveVerifier, archive], { timeoutMs: 7200000, maxOutput: 1024 });
+  const authenticated = await runChild(process.execPath, [archiveVerifier, archivePath], { timeoutMs: 7200000, maxOutput: 1024 });
   const authentication = parsePrivateJson(authenticated.stdout);
-  assessAuthenticatedArchive(basename(archive), manifest, pair, authentication);
+  assessAuthenticatedArchive(basename(archivePath), manifest, pair, authentication);
   const { names, expected } = await readMigrationNames();
   const sourceDeep = mode === 'checkpoint-deep-diagnostic'
     ? await collectGuardedSourceDeepComparison(manifest.checkpoint) : null;
@@ -499,7 +503,7 @@ export async function runRehearsal(archive, mode = 'full') {
     const localEnvironments = [];
     for (const database of plan.restoreDatabases) {
       restoreDatabase = database;
-      const restored = await restoreArchive(archive, database, ownerPassword);
+      const restored = await restoreArchive(archivePath, database, ownerPassword);
       const checkpoint = await queryJson(cluster.bin, database, ownerPassword, buildRestoreCheckpointSql());
       const localLogical = plan.sourceReference
         ? await queryJson(cluster.bin, database, ownerPassword, buildLocalLogicalSql()) : null;

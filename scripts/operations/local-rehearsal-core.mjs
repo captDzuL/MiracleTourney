@@ -51,7 +51,7 @@ export async function assertFreshArchivePath(archive, root) {
         if (dirname(cursor) === cursor) break;
       }
     }
-    return manifest;
+    return { archivePath: resolve(archive), manifestPath: manifest };
   } catch { throw fail('ARCHIVE_REJECTED'); }
 }
 

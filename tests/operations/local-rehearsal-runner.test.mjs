@@ -1,11 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import * as rehearsalRunner from '../../scripts/operations/local-rehearsal-runner.mjs';
 import {
   buildLocalPgEnv, buildRestoreCheckpointSql, buildCandidatePostcheckSql,
   buildSyntheticFlowSql, buildPgCtlInvocation, parsePrivateJson, runRedactedChild,
 } from '../../scripts/operations/local-rehearsal-runner.mjs';
+
+test('runner archive handoff canonicalizes a validated mixed-separator pair', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'rehearsal-pair-'));
+  const archive = join(root, 'miracle-neondb-2026-10-06T01-23-48-741Z.age');
+  const manifest = archive.slice(0, -4) + '.json';
+  const archiveBytes = Buffer.from('synthetic archive');
+  const expected = { bytes: archiveBytes.length, sha256: createHash('sha256').update(archiveBytes).digest('hex') };
+  try {
+    await writeFile(archive, archiveBytes);
+    await writeFile(manifest, JSON.stringify({ archive: basename(archive), ...expected }));
+    const selected = archive.replaceAll('\\', '/');
+    const paths = await rehearsalRunner.verifyFreshArchivePair(selected, root);
+    assert.equal(paths.archivePath, resolve(archive));
+    assert.equal(paths.manifestPath, manifest);
+    assert.deepEqual(paths.pair, expected);
+    await assert.rejects(rehearsalRunner.verifyFreshArchivePair(
+      selected.replace('/miracle-neondb-', '/./miracle-neondb-'), root),
+      /ARCHIVE_REJECTED/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 test('local child environment refuses inherited production and integration credentials', () => {
   const env = buildLocalPgEnv('migration_candidate', 'local-only-password-0000000000000000', {

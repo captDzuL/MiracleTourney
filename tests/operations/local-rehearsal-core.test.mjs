@@ -129,7 +129,7 @@ test('fresh archive path is an exact owned-root file and rejects collisions or r
   const manifest = archive.slice(0, -4) + '.json';
   await writeFile(archive, 'synthetic archive');
   await writeFile(manifest, '{}');
-  assert.equal(await assertFreshArchivePath(archive, root), manifest);
+  assert.deepEqual(await assertFreshArchivePath(archive, root), { archivePath: archive, manifestPath: manifest });
   for (const path of [join(root, '..', 'other', 'miracle-neondb-2026-10-06T01-23-48-741Z.age'),
     join(root, 'other.age'), join(root, 'miracle-neondb-2026-10-06T01-23-48-741Z.age.partial'),
     join(root, '.', '..', 'other.age')]) {
