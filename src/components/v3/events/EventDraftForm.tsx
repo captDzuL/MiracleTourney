@@ -48,6 +48,8 @@ type DraftJournal = {
   queuedAfterAttempt?: boolean;
 };
 
+const stepIds = ["identity", "format", "registration", "public", "review"] as const;
+
 function journalKey(namespace: string, targetId: string) {
   return `miracle:${namespace}:${targetId}`;
 }
@@ -191,7 +193,6 @@ export function EventDraftForm({
   const saveInFlight = useRef(false);
   const activeAttemptRef = useRef<SaveAttempt | null>(null);
   const retryAttemptRef = useRef<SaveAttempt | null>(recoveredJournal?.retryAttempt ?? null);
-  const stepIds = ["identity", "format", "registration", "public", "review"] as const;
   const [activeStep, setActiveStep] = useState(0);
 
   useEffect(() => {
@@ -272,7 +273,7 @@ export function EventDraftForm({
       if (saved && pendingPatchRef.current !== attempt.patch) setSaveCycle((cycle) => cycle + 1);
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [eventId, journalNamespace, pendingPatch, revision, router, saveCycle, saveDraft, saveTargetId]);
+  }, [editable, eventId, journalNamespace, pendingPatch, revision, router, saveCycle, saveDraft, saveTargetId]);
 
   function updateDraft(patch: DraftPatch) {
     setDraft((current) => ({ ...current, ...patch }));

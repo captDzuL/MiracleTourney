@@ -33,17 +33,22 @@ export function OrganizerMasterShell({ children, summary, locale, setup, legacy 
   }, []);
   useEffect(() => {
     if (!open) return;
+    const background = backgroundRef.current;
+    const main = mainRef.current;
+    const trigger = triggerRef.current;
+    const close = closeRef.current;
+    const drawer = drawerRef.current;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    backgroundRef.current?.setAttribute("inert", "");
-    closeRef.current?.focus();
-    const containFocus = (event: FocusEvent) => { if (event.target instanceof Node && !drawerRef.current?.contains(event.target)) closeRef.current?.focus(); };
+    background?.setAttribute("inert", "");
+    close?.focus();
+    const containFocus = (event: FocusEvent) => { if (event.target instanceof Node && !drawer?.contains(event.target)) close?.focus(); };
     document.addEventListener("focusin", containFocus);
     return () => {
       document.removeEventListener("focusin", containFocus);
       document.body.style.overflow = previousOverflow;
-      backgroundRef.current?.removeAttribute("inert");
-      if (window.matchMedia("(min-width: 980px)").matches) mainRef.current?.focus(); else triggerRef.current?.focus();
+      background?.removeAttribute("inert");
+      if (window.matchMedia("(min-width: 980px)").matches) main?.focus(); else trigger?.focus();
     };
   }, [open]);
   if (pathname.startsWith("/admin/") && legacy) return legacy;

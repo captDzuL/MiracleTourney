@@ -26,7 +26,7 @@ beforeEach(() => {
   localStorage.clear(); host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
-afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
+afterEach(() => { act(() => root.unmount()); host.remove(); document.body.style.overflow = ""; vi.unstubAllGlobals(); });
 async function render(view = summary, child: React.ReactNode = <button>Route action</button>) {
   await act(async () => root.render(<NextIntlClientProvider locale={route.locale} messages={route.locale === "id" ? id : en} timeZone="Asia/Jakarta"><OrganizerMasterShell summary={view} locale={route.locale as "en" | "id"}>{child}</OrganizerMasterShell></NextIntlClientProvider>));
 }
@@ -58,14 +58,32 @@ describe("OrganizerMasterShell", () => {
   it("opens an accessible mobile drawer, traps Tab, closes on Escape and restores focus", async () => {
     await render(); const menu = trigger(); menu.focus(); click(menu);
     const dialog = host.querySelector<HTMLElement>('[role="dialog"]')!;
+    const background = host.querySelector<HTMLElement>(".app-root > div")!;
     expect(dialog?.getAttribute("aria-modal")).toBe("true");
     expect(menu.getAttribute("aria-controls")).toBe(dialog.id);
+    expect(background.hasAttribute("inert")).toBe(true);
+    expect(document.body.style.overflow).toBe("hidden");
     const close = dialog.querySelector<HTMLButtonElement>("button")!;
     const last = Array.from(dialog.querySelectorAll<HTMLElement>("a,button")).at(-1)!;
     expect(document.activeElement).toBe(close);
     key(close, "Tab", true); expect(document.activeElement).toBe(last);
     key(last, "Tab"); expect(document.activeElement).toBe(close);
     key(close, "Escape"); expect(host.querySelector('[role="dialog"]')).toBeNull(); expect(document.activeElement).toBe(menu);
+    expect(background.hasAttribute("inert")).toBe(false);
+    expect(document.body.style.overflow).toBe("");
+  });
+  it("cleans the captured background when the open drawer unmounts", async () => {
+    document.body.style.overflow = "auto";
+    await render();
+    const background = host.querySelector<HTMLElement>(".app-root > div")!;
+    click(trigger());
+    expect(background.hasAttribute("inert")).toBe(true);
+    expect(document.body.style.overflow).toBe("hidden");
+
+    act(() => root.render(null));
+    expect(background.isConnected).toBe(false);
+    expect(background.hasAttribute("inert")).toBe(false);
+    expect(document.body.style.overflow).toBe("auto");
   });
   it("closes the drawer on route changes without intercepting a cross-route link", async () => {
     await render(); click(trigger());

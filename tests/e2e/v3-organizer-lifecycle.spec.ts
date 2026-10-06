@@ -747,6 +747,30 @@ for (const locale of LOCALES) {
         await page.goto(`/${locale}/organizer/events/${encodeURIComponent(fixture.registrationEventId)}/registration?view=qris`);
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
         await expectReleaseAccessibilityContract(page);
+        if (mode === "on" && viewport.width === 360) {
+          const trigger = page.getByRole("button", { name: locale === "id" ? "Buka navigasi acara" : "Open event navigation", exact: true });
+          const dialog = page.getByRole("dialog", { name: locale === "id" ? "Navigasi acara" : "Event navigation", exact: true });
+          const background = page.locator(".app-root.miracle-v3 > div").first();
+          const previousOverflow = await page.locator("body").evaluate((body) => body.style.overflow);
+          await expect(trigger).toBeVisible();
+          await trigger.focus();
+          await trigger.press("Enter");
+          await expect(dialog).toBeVisible();
+          await expect(dialog).toHaveAttribute("aria-modal", "true");
+          await expect(background).toHaveAttribute("inert", "");
+          expect(await page.locator("body").evaluate((body) => body.style.overflow)).toBe("hidden");
+          const close = dialog.getByRole("button", { name: locale === "id" ? "Tutup navigasi acara" : "Close event navigation", exact: true });
+          await expect(close).toBeFocused();
+          await page.keyboard.press("Shift+Tab");
+          await expect(dialog.locator('a[href],button:not([disabled])').last()).toBeFocused();
+          await page.keyboard.press("Tab");
+          await expect(close).toBeFocused();
+          await page.keyboard.press("Escape");
+          await expect(dialog).toHaveCount(0);
+          await expect(background).not.toHaveAttribute("inert", "");
+          expect(await page.locator("body").evaluate((body) => body.style.overflow)).toBe(previousOverflow);
+          await expect(trigger).toBeFocused();
+        }
         const copy = LOCALE_COPY[locale];
         await expectDialogEscapeRestoresFocus(page, page.getByRole("button", { name: locale === "id" ? "Perbesar QRIS" : "Enlarge QRIS", exact: true }), copy.qrisDialog);
         expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);

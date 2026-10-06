@@ -14,8 +14,11 @@ import { PublishReadiness } from "./PublishReadiness";
 
 Object.assign(globalThis, { React, IS_REACT_ACT_ENVIRONMENT: true });
 
-const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
+const { refresh, router } = vi.hoisted(() => {
+  const refresh = vi.fn();
+  return { refresh, router: { refresh } };
+});
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 describe("FormatConfigurator", () => {
   let container: HTMLDivElement;
@@ -165,6 +168,28 @@ describe("EventDraftForm", () => {
       eventId: "event-1", expectedRevision: 3, draft: { name: "Miracle Masters" },
     }));
     expect(container.querySelector('[role="status"]')?.textContent).toContain("Saved");
+  });
+
+  it("cancels a pending autosave when the editor becomes read-only before 500ms", async () => {
+    const saveDraft = vi.fn().mockResolvedValue({ status: "saved", revision: 4, fields: {} });
+    const initialDraft = { name: "Miracle Open", formatConfig: null };
+    act(() => root.render(<EventDraftForm eventId="event-1" initialDraft={initialDraft} initialRevision={3} saveDraft={saveDraft} />));
+
+    const name = container.querySelector<HTMLInputElement>('input[name="name"]')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "Pending edit");
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    act(() => root.render(<EventDraftForm editable={false} eventId="event-1" initialDraft={initialDraft} initialRevision={3} saveDraft={saveDraft} />));
+    expect(container.querySelector("[data-event-read-only]")).not.toBeNull();
+
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    expect(saveDraft).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem("miracle:event-draft:event-1") ?? "null")).toMatchObject({
+      revision: 3,
+      patch: { name: "Pending edit" },
+    });
   });
 
   it("keeps a newer edit queued while an earlier save is in flight", async () => {
