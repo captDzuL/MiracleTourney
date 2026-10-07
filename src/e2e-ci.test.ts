@@ -46,14 +46,29 @@ describe("CI E2E release sequence", () => {
     }
   });
 
-  it("runs only lint and unit jobs and never touches a shared database", async () => {
+  it("runs lint, unit and schema-drift jobs and never touches a shared database", async () => {
     const workflow = await readWorkflow();
     const jobsSection = workflow.slice(workflow.search(/^jobs:\r?$/m));
     const jobIds = [...jobsSection.matchAll(/^  ([a-z][\w-]*):\r?$/gm)].map((match) => match[1]);
 
     // E2E is run on demand with the repository scripts; CI must not reset or seed a shared database.
-    expect(jobIds).toEqual(["lint-and-typecheck", "unit-tests"]);
-    expect(workflow).not.toMatch(/NEON_|DATABASE_URL|DIRECT_URL|E2E_DATABASE_RESET_ALLOWED|test:e2e|playwright/i);
+    expect(jobIds).toEqual(["lint-and-typecheck", "unit-tests", "schema-drift"]);
+    expect(workflow).not.toMatch(/NEON_|secrets\.|E2E_DATABASE_RESET_ALLOWED|test:e2e|playwright/i);
+  });
+
+  it("checks schema drift against a throwaway database inside the job", async () => {
+    const workflow = await readWorkflow();
+    const job = extractJob(workflow, "schema-drift");
+
+    expect(job).not.toMatch(/^    if:/m);
+    expect(job).toContain("image: postgres:");
+    // Every database URL in the workflow must point at the service container of the job itself.
+    const urls = [...workflow.matchAll(/(?:DATABASE_URL|DIRECT_URL):\s*(\S+)/g)].map((match) => match[1]);
+    expect(urls.length).toBeGreaterThan(0);
+    for (const url of urls) expect(url, "database URL must be the local service container").toMatch(/@localhost:5432\//);
+    // Applies every migration to an empty database, then fails on any datamodel/migration disagreement.
+    expect(job).toContain("pnpm exec prisma migrate deploy");
+    expect(job).toMatch(/prisma migrate diff[^\n]*--from-url[^\n]*--to-schema-datamodel prisma\/schema\.prisma[^\n]*--exit-code/);
   });
 
   it("records elapsed time for every release phase and the total sequence", async () => {
