@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import Image, { type ImageProps } from "next/image";
 
 export type BrandLogoVariant = "horizontal" | "symbol";
 
@@ -7,7 +8,7 @@ const logoAssets: Record<BrandLogoVariant, { src: string; width: number; height:
   symbol: { src: "/logo/miracle-symbol.svg", width: 48, height: 41 },
 };
 
-export type BrandLogoProps = Omit<React.ComponentPropsWithoutRef<"img">, "alt" | "height" | "src" | "width"> & {
+export type BrandLogoProps = Omit<ImageProps, "alt" | "height" | "src" | "width"> & {
   variant?: BrandLogoVariant;
   alt?: string;
 };
@@ -15,5 +16,5 @@ export type BrandLogoProps = Omit<React.ComponentPropsWithoutRef<"img">, "alt" |
 export function BrandLogo({ alt = "Miracle", className, variant = "horizontal", ...props }: BrandLogoProps) {
   const asset = logoAssets[variant];
 
-  return <img {...props} alt={alt} className={cn("block h-auto", className)} height={asset.height} src={asset.src} width={asset.width} />;
+  return <Image {...props} alt={alt} className={cn("block h-auto", className)} height={asset.height} src={asset.src} width={asset.width} loading={props.loading ?? "eager"} unoptimized />;
 }

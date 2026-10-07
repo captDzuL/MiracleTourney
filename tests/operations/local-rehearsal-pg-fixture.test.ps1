@@ -276,6 +276,13 @@ CREATE UNIQUE INDEX "PasswordResetToken_userId_key" ON public."PasswordResetToke
 CREATE TABLE public."RateLimitBucket" ("id" text PRIMARY KEY, "key" text NOT NULL, "count" integer NOT NULL,
  "resetAt" timestamp NOT NULL);
 CREATE UNIQUE INDEX "RateLimitBucket_key_key" ON public."RateLimitBucket"("key");
+CREATE TABLE public."EventBracketAppearance" ("id" text PRIMARY KEY, "eventId" text NOT NULL,
+ "backgroundUrl" text, "positionX" integer NOT NULL DEFAULT 50,
+ "positionY" integer NOT NULL DEFAULT 50, "overlay" integer NOT NULL DEFAULT 35,
+ "createdAt" timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" timestamp(3) NOT NULL,
+ CONSTRAINT "EventBracketAppearance_eventId_fkey" FOREIGN KEY ("eventId")
+ REFERENCES public."Event"("id") ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE UNIQUE INDEX "EventBracketAppearance_eventId_key" ON public."EventBracketAppearance"("eventId");
 CREATE TABLE public."Player" ("id" text PRIMARY KEY);
 CREATE TABLE public."PlayerStat" ("id" text PRIMARY KEY);
 '@
@@ -362,6 +369,18 @@ CREATE TABLE public."PlayerStat" ("id" text PRIMARY KEY);
     $postcheckSql = Build-Sql 'postcheck'
     $good = Query-Json $postcheckSql
     Assert-That ($good.certificateConstraints -and $good.sessionVersion -and $good.resetTokenUnique -and $good.rateLimitBucket) 'catalog-good'
+    Assert-That ($good.bracketAppearanceTable -and $good.bracketAppearanceDefaults -and $good.bracketAppearanceConstraints) 'bracket-catalog-good'
+    Assert-That (-not (Query-Json ('BEGIN; DROP TABLE public."EventBracketAppearance"; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceTable) 'bracket-missing-table-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" DROP CONSTRAINT "EventBracketAppearance_pkey"; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceTable) 'bracket-missing-primary-key-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" ALTER COLUMN "backgroundUrl" SET NOT NULL; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceTable) 'bracket-nullability-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" ALTER COLUMN "positionX" SET DEFAULT 51; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceDefaults) 'bracket-position-x-default-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" ALTER COLUMN "positionY" SET DEFAULT 49; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceDefaults) 'bracket-position-y-default-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" ALTER COLUMN "overlay" SET DEFAULT 36; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceDefaults) 'bracket-overlay-default-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; DROP INDEX public."EventBracketAppearance_eventId_key"; CREATE INDEX "EventBracketAppearance_eventId_key" ON public."EventBracketAppearance"("eventId"); ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceConstraints) 'bracket-nonunique-index-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; DROP INDEX public."EventBracketAppearance_eventId_key"; CREATE UNIQUE INDEX "EventBracketAppearance_eventId_key" ON public."EventBracketAppearance"("eventId") WHERE "backgroundUrl" IS NOT NULL; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceConstraints) 'bracket-partial-index-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; DROP INDEX public."EventBracketAppearance_eventId_key"; CREATE UNIQUE INDEX "EventBracketAppearance_eventId_key" ON public."EventBracketAppearance"("id"); ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceConstraints) 'bracket-wrong-column-index-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" DROP CONSTRAINT "EventBracketAppearance_eventId_fkey"; ALTER TABLE public."EventBracketAppearance" ADD CONSTRAINT "EventBracketAppearance_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES public."Event"("id") ON DELETE RESTRICT ON UPDATE CASCADE; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceConstraints) 'bracket-wrong-delete-rule-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" DROP CONSTRAINT "EventBracketAppearance_eventId_fkey"; ALTER TABLE public."EventBracketAppearance" ADD CONSTRAINT "EventBracketAppearance_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES public."Event"("id") ON DELETE CASCADE ON UPDATE RESTRICT; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceConstraints) 'bracket-wrong-update-rule-rejected'
     [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."PasswordResetToken_userId_key"; CREATE UNIQUE INDEX "PasswordResetToken_userId_key" ON public."PasswordResetToken"("tokenFormat");')
     Assert-That (-not (Query-Json $postcheckSql).resetTokenUnique) 'wrong-reset-column-rejected'
     [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."PasswordResetToken_userId_key"; CREATE UNIQUE INDEX "PasswordResetToken_userId_key" ON public."PasswordResetToken"("userId") WHERE "usedAt" IS NULL;')
@@ -395,7 +414,7 @@ CREATE TABLE public."PlayerStat" ("id" text PRIMARY KEY);
     Assert-That ($remaining[-1] -eq '0') 'flow-rollback'
     [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."PasswordResetToken_userId_key";')
     [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword $flowSql -ExpectFailure)
-    [Console]::WriteLine('SYNTHETIC_PG18_PASS catalog=10 flow=2 dumpRestore=1 port=' + $port + ' dumpExit=' + $pipeline.dumpExit + ' restoreExit=' + $pipeline.restoreExit)
+    [Console]::WriteLine('SYNTHETIC_PG18_PASS catalog=22 flow=2 dumpRestore=1 port=' + $port + ' dumpExit=' + $pipeline.dumpExit + ' restoreExit=' + $pipeline.restoreExit)
 } finally {
     $approvedPrefix = [IO.Path]::Combine([IO.Path]::GetTempPath(),'miracle-task3-pg-')
     try {

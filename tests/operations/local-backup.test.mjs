@@ -5,9 +5,10 @@ import { test } from 'node:test';
 import { createReadStream } from 'node:fs';
 import { mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateSourceUrl, validateOutputDirectory, runEncryptedBackup, verifyBackupPair, verifyPostgresDependencySet, publishCompleteFile, publishBackupPair } from '../../scripts/operations/local-backup-core.mjs';
+import { assessAuthenticatedArchive } from '../../scripts/operations/local-rehearsal-core.mjs';
 import { PG18_DLL_SHA256 } from '../../scripts/operations/pg18-dll-hashes.mjs';
 import { PINNED_CA_PATH } from '../../scripts/operations/local-backup-ca.mjs';
 
@@ -57,6 +58,39 @@ function config(f, extra = {}) {
   };
 }
 
+test('testing export labels its immutable archive for Delicate and keeps production source blocked', async () => {
+  const { runTestingEncryptedBackup } = await import('../../scripts/operations/local-backup-core.mjs');
+  const f = await fixture();
+  const testingUrl = 'postgresql://backup:synthetic-secret@ep-delicate-forest-azuodo4q.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=verify-full&sslrootcert=system';
+  try {
+    const result = await runTestingEncryptedBackup(config(f, { sourceUrl: testingUrl }));
+    const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8'));
+    assert.equal(manifest.source, 'approved-delicate-testing-direct-neondb');
+    assert.deepEqual(manifest.testing, { project: 'steep-tree-47893196', branch: 'br-young-thunder-az5w6nt3', database: 'neondb' });
+    assert.match(basename(result.archivePath), /^miracle-testing-neondb-/);
+    await assert.rejects(runTestingEncryptedBackup(config(f, { sourceUrl })), { code: 'SOURCE_REJECTED' });
+    await assert.rejects(runEncryptedBackup(config(f, { sourceUrl: testingUrl })), { code: 'SOURCE_REJECTED' });
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('testing dump child receives required channel binding after validated source admission', async () => {
+  const { runTestingEncryptedBackup } = await import('../../scripts/operations/local-backup-core.mjs');
+  const f = await fixture();
+  const testingUrl = 'postgresql://backup:synthetic-secret@ep-delicate-forest-azuodo4q.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=verify-full&sslrootcert=system&channel_binding=require';
+  const inherited = process.env.PGCHANNELBINDING;
+  try {
+    process.env.PGCHANNELBINDING = 'disable';
+    await writeFile(f.dump, "process.stdout.write(process.env.PGCHANNELBINDING === 'require' && process.env.PGSSLMODE === 'verify-full' ? 'binding-required' : 'binding-downgraded');");
+    const result = await runTestingEncryptedBackup(config(f, { sourceUrl: testingUrl }));
+    const archive = await readFile(result.archivePath, 'utf8');
+    assert.equal(archive, 'age-encryption.org/v1\nbinding-required');
+  } finally {
+    if (inherited === undefined) delete process.env.PGCHANNELBINDING;
+    else process.env.PGCHANNELBINDING = inherited;
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
 test('preserves a binary fixture stream and publishes a manifest after both commands succeed', async () => {
   const f = await fixture();
   const result = await runEncryptedBackup(config(f));
@@ -98,6 +132,29 @@ test('binds the manifest checkpoint snapshot to the dump argument', async () => 
   assert.equal(manifest.checkpoint.snapshot, snapshot);
   assert.equal(JSON.stringify(manifest).includes('synthetic-secret'), false);
   await assert.rejects(runEncryptedBackup(config(await fixture(), { snapshotId: snapshot, checkpoint: { ...checkpoint, snapshot: '00000003-0000001B-2' } })), { code: 'CONFIG_REJECTED' });
+});
+
+test('writer output passes strict archive timestamp admission and rejects timestamp tampering', async () => {
+  const f = await fixture();
+  const snapshot = '00000003-0000001B-1';
+  const checkpoint = { snapshot, appliedMigrations: 17, ledgerSha256: 'a'.repeat(64),
+    schemaSha256: 'b'.repeat(64), tableCounts: { Event: 2 }, tableChecksumsMd5: { Event: 'c'.repeat(32) },
+    integrity: { invalidConstraints: 0, criticalUniqueIndexes: true } };
+  try {
+    const result = await runEncryptedBackup(config(f, { snapshotId: snapshot, checkpoint }));
+    const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8'));
+    const pair = await verifyBackupPair(result.archivePath, result.manifestPath);
+    const authentication = { status: 'ARCHIVE_VERIFIED', ...pair };
+    const admittedAt = Date.parse(manifest.completedAt);
+    assert.doesNotThrow(() => assessAuthenticatedArchive(
+      basename(result.archivePath), manifest, pair, authentication, admittedAt));
+    assert.equal(manifest.createdAt, '2026-10-04T01:00:00.000Z');
+    assert.throws(() => assessAuthenticatedArchive(basename(result.archivePath),
+      { ...manifest, createdAt: '2026-10-04T01:00:00.001Z' }, pair, authentication, admittedAt),
+    /ARCHIVE_REJECTED/);
+    assert.throws(() => assessAuthenticatedArchive(basename(result.archivePath), manifest, pair,
+      authentication, admittedAt + 3_600_001), /ARCHIVE_REJECTED/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
 });
 
 for (const [mode, code] of [['dump-fail', 'DUMP_FAILED'], ['age-fail', 'ENCRYPT_FAILED'], ['age-empty', 'EMPTY_ARCHIVE'], ['age-garbage', 'ARCHIVE_INVALID'], ['timeout', 'BACKUP_TIMEOUT']]) {

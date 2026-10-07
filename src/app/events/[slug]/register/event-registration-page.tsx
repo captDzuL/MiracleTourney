@@ -18,9 +18,10 @@ type SearchParams = { error?: string; success?: string };
 
 export async function renderEventRegistrationPage(
   slug: string,
-  _locale: "id" | "en" = "id",
+  locale: "id" | "en" = "id",
   searchParams?: Promise<SearchParams>,
 ) {
+  void locale;
   const [event, user, resolvedSearchParams] = await Promise.all([
     getPublicEventBySlug(slug),
     getSessionUser(),

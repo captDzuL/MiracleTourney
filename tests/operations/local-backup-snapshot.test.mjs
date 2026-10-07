@@ -11,9 +11,21 @@ const checkpoint = { snapshot, ledger: [], schema: [], counts: {}, integrity: { 
 async function fakeSession(mode = 'good') {
   const root = await mkdtemp(join(tmpdir(), 'miracle-snapshot-'));
   const script = join(root, 'fake-psql.mjs');
-  await writeFile(script, `process.stdin.setEncoding('utf8'); let seen=''; process.stdin.on('data', chunk => { seen += chunk; if (seen.includes('pg_export_snapshot') && !globalThis.sent) { globalThis.sent=true; ${mode === 'silent' || mode === 'tls-fail' ? '' : `process.stdout.write('MIRACLE_CHECKPOINT\\t' + JSON.stringify(${JSON.stringify(mode === 'bad' ? { ...checkpoint, snapshot: 'bad' } : checkpoint)}) + '\\n');`} ${mode === 'early-exit' ? 'setTimeout(() => process.exit(0), 20);' : ''} ${mode === 'tls-fail' ? "process.stderr.write('synthetic-private-path SSL error: certificate verify failed'); process.exit(2);" : ''} } if (seen.includes('${mode === 'rollback' ? 'ROLLBACK;' : 'COMMIT;'}')) process.exit(${mode === 'exit-fail' ? 8 : 0}); }); process.stdin.on('end', () => { if (${JSON.stringify(mode)} === 'rollback' && !seen.includes('ROLLBACK;')) process.exit(7); });`);
+  await writeFile(script, `process.stdin.setEncoding('utf8'); let seen=''; process.stdin.on('data', chunk => { seen += chunk; if (seen.includes('pg_export_snapshot') && !globalThis.sent) { globalThis.sent=true; ${mode === 'silent' || mode === 'tls-fail' ? '' : `process.stdout.write('MIRACLE_CHECKPOINT\\t' + JSON.stringify(${JSON.stringify(mode === 'bad' ? { ...checkpoint, snapshot: 'bad' } : mode === 'large' ? { ...checkpoint, catalog: 'x'.repeat(300000) } : checkpoint)}) + '\\n');`} ${mode === 'early-exit' ? 'setTimeout(() => process.exit(0), 20);' : ''} ${mode === 'tls-fail' ? "process.stderr.write('synthetic-private-path SSL error: certificate verify failed'); process.exit(2);" : ''} } if (seen.includes('${mode === 'rollback' ? 'ROLLBACK;' : 'COMMIT;'}')) process.exit(${mode === 'exit-fail' ? 8 : 0}); }); process.stdin.on('end', () => { if (${JSON.stringify(mode)} === 'rollback' && !seen.includes('ROLLBACK;')) process.exit(7); });`);
   return { root, script };
 }
+
+test('testing snapshot accepts a bounded full catalog without widening the production default', async () => {
+  const f = await fakeSession('large');
+  const options = { path: process.execPath, args: [f.script], env: {},
+    sql: 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\nSELECT pg_export_snapshot();', timeoutMs: 2000 };
+  try {
+    await assert.rejects(runSnapshotSession(options, async () => 'unexpected'), { code: 'CHECKPOINT_FAILED' });
+    const catalogSize = await runSnapshotSession({ ...options, maxCheckpointBytes: 2_000_000 },
+      async raw => raw.catalog.length);
+    assert.equal(catalogSize, 300000);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
 
 test('holds one read-only snapshot session through callback and commits after callback', async () => {
   const f = await fakeSession();

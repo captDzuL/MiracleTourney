@@ -53,6 +53,21 @@ and limiter migrations. Do not edit previously applied SQL.
 18. `20260921000000_add_user_session_version`
 19. `20260924000000_add_rate_limit_buckets`
 
+Two later migrations extend this chain, so the current candidate has **21 pending
+migrations** (38 files in total):
+
+20. `20261004000000_event_bracket_appearance`
+21. `20261007010000_reconcile_schema_drift` — idempotent. Production already has the five
+    tables and five indexes that earlier models declared outside the migration history
+    (`OrganizerPlan`, `EventPromotion`, `EventAnalyticsSnapshot`, `Notification`,
+    `CheckIn`; `Event_status_idx`, `Match_eventId_status_idx`, `Player_teamId_idx`,
+    `Player_eventId_idx`, `PlayerStat_matchId_idx`), so on production it skips them and only
+    renames 14 composite foreign keys and drops two `updatedAt` defaults
+    (`EventVisualAsset`, `RateLimitBucket`). On a database rebuilt from migrations it creates the
+    missing objects. It was rehearsed on a schema-only copy of the production `public` schema read
+    through the Neon schema API on 7 October (17 applied, 21 applied afterwards, `prisma migrate diff`
+    empty) and on an empty database; a CI job now fails on any drift.
+
 The files do not drop tables or columns or delete rows. Completion rewrites
 existing certificate rows and removes their event-level unique index.
 Ordinary indexes and table alterations still have lock/duration risks.
@@ -163,11 +178,15 @@ the resolved audit evidence, not an exploitability assessment or a waiver.
    backup/checkpoint after the pause and verify its authentication, retained
    identity, recoverability and measured timing. The 5 October archive and
    local rehearsal cannot substitute for a fresh recovery point.
-4. With a separate explicit production migration decision, apply the 19
+4. With a separate explicit production migration decision, apply the 21
    pending migrations once while writes remain paused. Stop on any unknown
    status; do not blindly retry, seed, reset, or run a down migration. Verify
-   36 applied/zero pending/zero unfinished, the certificate/session/reset/
-   limiter constraints, and critical row counts before the app switch.
+   38 applied/zero pending/zero unfinished, the certificate/session/reset/
+   limiter constraints, and critical row counts before the app switch. Also
+   run `prisma migrate diff --from-url <production> --to-schema-datamodel
+   prisma/schema.prisma --script --exit-code` against the migrated database: it
+   must exit 0. (Earlier rehearsal figures of 36 and 37 applied predate the
+   bracket-appearance and reconcile migrations.)
 5. Switch only to a validated schema-compatible application artifact, then
    test ID/EN public flows, authentication/session/reset, certificates,
    writes, flags-off paths and logs. Resume writers only after the release

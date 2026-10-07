@@ -1,4 +1,5 @@
 import { getTranslations } from "next-intl/server";
+import Image from "next/image";
 import { getGameArtTheme } from "@/lib/platform/config";
 
 const statusClass: Record<string, { class: string; dot?: boolean; key: string }> = {
@@ -42,11 +43,14 @@ export function GameArt({
       </span>
       <div className="absolute bottom-0 left-4 translate-y-1/2">
         {logoUrl ? (
-          <img
+          <Image
             src={logoUrl}
             alt={entityName}
+            width={56}
+            height={56}
             loading={priority ? "eager" : "lazy"}
             decoding="async"
+            unoptimized
             className="h-14 w-14 rounded-xl border-2 border-white object-cover shadow-md"
           />
         ) : (

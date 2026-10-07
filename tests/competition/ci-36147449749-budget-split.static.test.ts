@@ -377,10 +377,19 @@ describe("CI 36147449749 shard-2 budget split contracts", () => {
       "const receipt = await operation;\n      operationVersion = receipt.version;",
       "inFlightOperations.delete(operation);\n      const receipt = await operation;\n      operationVersion = receipt.version;",
     ))).toThrow();
-    expect(() => assertAdaptiveLifecycleContract(lifecycle.replace(
-      "while (inFlightOperations.size > 0) {\n      await Promise.allSettled([...inFlightOperations]);\n    }\n    await prisma.event.deleteMany({ where: { id: eventId } });",
-      "await prisma.event.deleteMany({ where: { id: eventId } });\n    while (inFlightOperations.size > 0) {\n      await Promise.allSettled([...inFlightOperations]);\n    }",
-    ))).toThrow();
+    const guardedTeardown = "while (inFlightOperations.size > 0) {\n      await Promise.allSettled([...inFlightOperations]);\n    }\n    if (eventCreated) await prisma.event.deleteMany({ where: { id: eventId } });";
+    const reorderedTeardown = lifecycle.replace(
+      guardedTeardown,
+      "if (eventCreated) await prisma.event.deleteMany({ where: { id: eventId } });\n    while (inFlightOperations.size > 0) {\n      await Promise.allSettled([...inFlightOperations]);\n    }",
+    );
+    expect(reorderedTeardown).not.toBe(lifecycle);
+    expect(() => assertAdaptiveLifecycleContract(reorderedTeardown)).toThrow();
+    const undrainedTeardown = lifecycle.replace(
+      guardedTeardown,
+      "if (eventCreated) await prisma.event.deleteMany({ where: { id: eventId } });",
+    );
+    expect(undrainedTeardown).not.toBe(lifecycle);
+    expect(() => assertAdaptiveLifecycleContract(undrainedTeardown)).toThrow();
     for (const label of ["registration and drawing", "ongoing and result", "finished and certificates"]) {
       expect(lifecycle).toContain(`test.step("${label}"`);
     }

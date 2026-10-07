@@ -1,4 +1,5 @@
 import { getEventEditorTranslator } from "./event-editor-translations";
+import Image from "next/image";
 import { uploadPublishedRevisionVisualAction } from "@/lib/actions/event-revision-actions";
 
 type RevisionVisualEditorProps = {
@@ -24,7 +25,7 @@ export function RevisionVisualEditor({ eventId, locale, logoUrl, posterUrl, revi
         <p className="text-sm font-extrabold text-[var(--color-text)]">{t("revisionPoster")}</p>
         <p className="mt-1 text-xs leading-5 text-[var(--color-text-subtle)]">{t("revisionPosterHint")}</p>
       </div>
-      {posterUrl && <img alt={t("revisionPoster")} className="aspect-[16/6] w-full rounded-[var(--radius-control)] object-cover" src={posterUrl} />}
+      {posterUrl && <span className="relative block aspect-[16/6] w-full rounded-[var(--radius-control)]"><Image alt={t("revisionPoster")} fill sizes="(max-width: 1100px) 100vw, 50vw" loading="eager" unoptimized className="rounded-[var(--radius-control)] object-cover" src={posterUrl} /></span>}
       <input accept="image/png,image/jpeg,image/webp" className={fileClass} name="revisionPoster" required type="file" />
       <label className="flex items-start gap-3 text-sm text-[var(--color-text)]"><input className="mt-1" name="rightsAttestation" required type="checkbox" value="confirmed" />{t("rights")}</label>
       <button className={buttonClass} type="submit">{t("revisionUploadPoster")}</button>
@@ -38,7 +39,7 @@ export function RevisionVisualEditor({ eventId, locale, logoUrl, posterUrl, revi
         <p className="text-sm font-extrabold text-[var(--color-text)]">{t("revisionLogo")}</p>
         <p className="mt-1 text-xs leading-5 text-[var(--color-text-subtle)]">{t("revisionLogoHint")}</p>
       </div>
-      {logoUrl && <img alt={t("revisionLogo")} className="size-20 rounded-[var(--radius-control)] object-cover" src={logoUrl} />}
+      {logoUrl && <Image alt={t("revisionLogo")} width={80} height={80} loading="eager" unoptimized className="size-20 rounded-[var(--radius-control)] object-cover" src={logoUrl} />}
       <input accept="image/png,image/jpeg,image/webp" className={fileClass} name="revisionLogo" required type="file" />
       <button className={buttonClass} type="submit">{t("revisionUploadLogo")}</button>
     </form>

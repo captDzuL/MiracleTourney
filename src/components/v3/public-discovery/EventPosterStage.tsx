@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 export type EventPosterStageProps = {
@@ -47,13 +48,13 @@ function PosterContent({ eventName, gameSlug, posterAlt, eyebrow, variant = "her
   return (
     <figure className={cn("mpv3-poster-stage", `mpv3-poster-stage--${variant}`, showPoster && "mpv3-poster-stage--poster", className)}>
       {showPoster ? (
-        <img ref={checkPoster} className="mpv3-event-poster" src={source!} alt={posterAlt?.trim() || eventName} loading={loading} fetchPriority={priority ? "high" : "auto"} onError={() => setPosterFailed(true)} />
+        <Image ref={checkPoster} className="mpv3-event-poster" src={source!} alt={posterAlt?.trim() || eventName} fill sizes="(max-width: 580px) 100vw, (max-width: 1000px) 50vw, 33vw" loading={loading} fetchPriority={priority ? "high" : "auto"} unoptimized onError={() => setPosterFailed(true)} />
       ) : (
         <>
           <div className="mpv3-poster-lines" aria-hidden="true" />
           {showCharacters && <>
-            <img ref={checkCharacter} className="mpv3-character mpv3-character--first" src="/character-art/roster/midfielder/Kelly.png" alt="" width={2525} height={3500} loading={loading} onError={() => setArtFailed(true)} />
-            <img ref={checkCharacter} className="mpv3-character mpv3-character--second" src="/character-art/roster/striker/Rafael.png" alt="" width={2227} height={3184} loading={loading} onError={() => setArtFailed(true)} />
+            <Image ref={checkCharacter} className="mpv3-character mpv3-character--first" src="/character-art/roster/midfielder/Kelly.png" alt="" width={2525} height={3500} loading={loading} unoptimized onError={() => setArtFailed(true)} />
+            <Image ref={checkCharacter} className="mpv3-character mpv3-character--second" src="/character-art/roster/striker/Rafael.png" alt="" width={2227} height={3184} loading={loading} unoptimized onError={() => setArtFailed(true)} />
           </>}
           <span className="mpv3-poster-brand" aria-hidden="true">MIRACLE</span>
           <figcaption className="mpv3-poster-caption">

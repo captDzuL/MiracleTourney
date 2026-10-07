@@ -20,7 +20,7 @@ function canonicalPreview(value: unknown): unknown {
   return value;
 }
 
-function scoreResult(match: Match, graphMatch: CompetitionMatch | undefined, input: ResultGame[]) {
+export function scoreResult(match: Match, graphMatch: CompetitionMatch | undefined, input: ResultGame[]) {
   if (!graphMatch || graphMatch.status !== "pending" || !match.homeTeamId || !match.awayTeamId || match.homeTeamId === match.awayTeamId) throw new Error("Match participants are unresolved or this is a bye");
   const games = [...input].sort((a, b) => a.gameNumber - b.gameNumber);
   const bestOf = graphMatch.bestOf;

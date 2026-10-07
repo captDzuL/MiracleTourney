@@ -1,5 +1,4 @@
 import React from "react";
-import type { ReactNode } from "react";
 
 export type SocialContact = {
   href: string;

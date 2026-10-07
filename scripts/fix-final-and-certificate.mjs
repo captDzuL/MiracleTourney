@@ -121,7 +121,7 @@ try {
     `npx tsx scripts/generate-certificate.ts ${event.id} ${WINNER_ID}`,
     { stdio: "inherit", cwd: process.cwd() }
   );
-} catch (err) {
+} catch {
   console.error("❌ Certificate generation gagal. Jalankan manual:");
   console.error(`   npx tsx scripts/generate-certificate.ts ${event.id} ${WINNER_ID}`);
   process.exit(1);

@@ -1,5 +1,30 @@
 # Local encrypted production backup
 
+## Vercel build safety readback — 2026-10-06
+
+An authenticated, read-only Vercel project API `GET` returned HTTP 200 at
+`2026-10-06T02:36:34.451Z`. The response identified project
+`prj_QHv1i060yrRIq6miqOmGodoULhCY` (`miracle-tourney`), Node.js `24.x`, and
+production branch `master`. The live build command override was:
+
+```text
+if [ "$VERCEL_ENV" = "production" ]; then pnpm prisma migrate deploy; fi && pnpm build
+```
+
+The owner-controlled replacement proposed for review is `pnpm vercel-build`.
+It has **not been applied or read back**; the live setting remains pending.
+This record documents preparation only and does not authorize a settings
+change, deployment, migration, or branch change. Do not change production
+branch `master` to `main` or a release branch as a shortcut, because that
+could trigger an unintended release.
+
+The production artifact must be built from the approved release commit with
+the production environment after the owner-controlled migration gate. A
+Preview build using the isolated test database has different build-time
+environment and generated content; promoting it reuses that artifact rather
+than rebuilding with production variables. Confirm the intended production
+artifact and environment path before build or promotion.
+
 The guarded runner is implemented for the approved direct production `neondb` source. The reviewed preflight and single encrypted export completed on 2026-10-05. The first archive verification failed because a local helper passed a literal `-` input filename to `pg_restore`; that helper was corrected and reviewed. The existing archive subsequently passed authenticated verification and one full local two-restore/migration/no-op rehearsal, detailed below. The weekly job remains paused. Do not repeat this export.
 
 ## Pinned local tools and provenance
@@ -52,6 +77,61 @@ mechanism remain unproved. The RPO <=1 hour and RTO <=30 minutes are Dzul's
 targets. A fresh backup under an agreed write pause is still required before
 cutover.
 
+## Fresh backup and recovery evidence — 2026-10-06
+
+This is a separate fresh operation from the historical 2026-10-05 evidence
+above. The fixed backup preflight started at 2026-10-06 14:06:24.6060727Z
+and completed successfully after 6,305 ms, reporting 17 applied migrations.
+One read-only encrypted export started at 14:06:48.8971181Z and completed
+successfully after 7,276 ms, producing
+`E:/MiracleBackups/miracle-neondb-2026-10-06T14-06-53-234Z.age` (175,055
+bytes; SHA-256
+`8102e70a03c26a34a7fabcb4a197979051223a88946a79b0f4242055e65bbc1a`).
+Full archive verification of the same bytes completed in 1,794 ms. No
+plaintext dump file was created or published, and no second export was
+performed. The private restored data described below remains retained.
+
+The first rehearsal admission attempt, at 14:07:26.4910950Z, exited before
+creating a cluster or starting restore or migration. Diagnosis found a
+path-representation mismatch in the archive/manifest pair check after the
+validated path crossed the Windows path boundary. The scoped path handoff was
+fixed and independently reviewed before controlled continuation. The same
+fresh archive was reused after its age and current-source guards passed; no
+new export was made.
+
+The controlled local rehearsal started at 14:20:44.0559991Z and completed
+`REHEARSAL_VERIFIED`, exit 0, in 79,128 ms. Both independent restores
+contained 23 tables and 2,036 rows, with all logical schema and values
+matching the source/checkpoint. Original composite serialization differed
+for `User`, `Team`, `Player`, and `PlayerStat`. Column ordinal/order
+representations also differed in the source-versus-local comparison; those
+ordinal/order differences are separate from the four-table composite
+serialization differences. The explicit logical comparison matched all
+values, so both representation differences were reported rather than
+treated as value mismatches. Each restore had 17 applied migrations. The
+candidate then moved
+from 17 applied/20 pending/zero unfinished to 37 applied/zero pending/zero
+unfinished in 13,746 ms. A second migration application completed as a
+1,132 ms no-op with the ledger unchanged. Required postchecks passed,
+including certificate backfill/uniqueness, session-version and reset-token
+constraints, rate-limit uniqueness, and bracket-table defaults and
+constraints. The synthetic SQL flow passed and rolled back its writes. The
+owned local cluster was stopped; its private copied-data directory remains
+retained under owner-only access and is not Git or CI material.
+
+These are local archive and rehearsal measurements, not service recovery
+time, production readiness, or proof that the RPO <=1 hour or RTO <=30
+minutes targets have been achieved. The local PostgreSQL environment used
+Windows English_United States.1252 and `plpgsql` 1.0; equivalence with Neon
+locale or extensions is unproved. The synthetic flow exercised SQL only; no
+application, email, Blob, or provider integration was tested. Weekly backup
+remains **PAUSED** and does not meet the one-hour RPO target. A fresh
+cutover backup under an owner-controlled write pause is still required.
+Production setting changes, migration, deployment, rollback, and restore
+remain separate owner-controlled decisions. The proposed `pnpm vercel-build`
+override remains **PENDING** and has not been applied or read back; this
+evidence does not claim application, CI, or production readiness.
+
 The current backup runner deliberately expects the **pre-V3** 17-applied
 physical contract. After production migration it will fail closed until a
 reviewed post-V3 backup contract is supplied. Weekly activation also requires
@@ -59,24 +139,27 @@ durable reviewed runtime/script paths independent of this removable worktree.
 Keep the scheduled job **PAUSED** until both requirements and a corresponding
 restore check are met.
 
-This local rehearsal runner is source-anchored to the exact old checkpoint
-and archive. Full mode cannot establish its reference if production is down,
+The release rehearsal runner is source-anchored to the selected archive's
+checkpoint. Full mode cannot establish its reference if production is down,
 changed, or migrated; it is not a general emergency restore command. In an
 incident, use a prevalidated immutable archive identified by hash, reviewed
 age authentication and isolated restore tools, retained integrity evidence,
 and a named owner decision on write loss and switchover. Do not rerun the
 source-anchored release validator as a prerequisite for incident recovery.
 
-Task 3 adds `scripts/operations/local-rehearsal-runner.mjs` for a controller-run rehearsal after fresh code review. It accepts one absolute path to the already authenticated `.age` archive and verifies the owner-only backup/key directories, archive and manifest hash, full age authentication, pinned PostgreSQL 18.6 ZIP, pinned client DLLs, and free capacity before it creates a new directory. It rejects an occupied port and existing or redirected rehearsal target. Full rehearsal also reads the protected source URL through the existing fixed, pinned `verify-full` connection guard. Before creating a local cluster, one bounded read-only source transaction must reproduce the immutable manifest's complete 23-table original checkpoint, schema, ledger, counts and integrity. The source transaction's snapshot ID is new and is not required to equal the archived snapshot ID. Source credentials, schema rows and digests remain transient in memory; only fixed failure codes can leave the process.
+Task 3 extends `scripts/operations/local-rehearsal-runner.mjs` for a controller-run rehearsal after fresh code review. The controller supplies the exact absolute `.age` path from one successful new export. The runner accepts only the fixed backup output root and filename grammar, rejects path traversal and redirected archive or manifest files, and requires a matching manifest with the approved source/format, file bytes and SHA-256, full age authentication, and a completion time no more than one hour old at the guard. The older 2026-10-05 archive remains historical evidence and does not meet this fresh window. The runner verifies owner-only backup/key directories, pinned PostgreSQL 18.6 ZIP, pinned client DLLs, and free capacity before it creates a new directory. It rejects an occupied port and existing or redirected rehearsal target. Full rehearsal also reads the protected source URL through the existing fixed, pinned `verify-full` connection guard. Before creating a local cluster, one bounded read-only source transaction must reproduce the selected manifest's complete 23-table original checkpoint, schema, ledger, counts and integrity. The source transaction's snapshot ID is new and is not required to equal the archived snapshot ID. Source credentials, schema rows and digests remain transient in memory; only fixed failure codes can leave the process.
 
 The runner creates one exclusive `E:/MiracleBackups/rehearsal-<UTC timestamp>` subtree with an owner-only inheritable Windows ACL. The pinned ZIP is extracted into that subtree's separate `server/pgsql` runtime; the existing client bins are not modified. Its `cluster/` uses only `127.0.0.1:55438`, SCRAM authentication, a generated bootstrap credential and a distinct generated non-superuser `rehearsal_owner`. Only that owner role restores and migrates the two new databases, `recovery_baseline` and `migration_candidate`. The bootstrap password file is exclusive and removed after `initdb`. No service, firewall, global PATH, production/shared database, seed, or reset operation is used.
 
 The internal DPAPI key bridge streams age decryption directly into `pg_restore` for each database. `pg_restore` receives stdin with `--single-transaction --exit-on-error --no-owner --no-acl`; both age and restore exit statuses must be zero. Each restore must independently match the manifest's migration ledger, checked-in LF/CRLF checksum variants, all 23 table counts, and integrity. Its schema is compared by table and column identity, data type with modifiers, and nullability; all 23 tables are compared by deterministic, sorted hashes of complete named-column JSONB values, including nulls and duplicate rows. Both the current source reference and local query use the same explicit time, date, bytea, float and binary-sort settings. Original physical column ordinals and `t::text` aggregate MD5 differences are reported as representation differences only after every logical schema and value check succeeds. The candidate alone then runs the full checked-in Prisma migration chain from a private copy of the schema and SQL files, checks the completed ledger, certificate backfill and uniqueness, User session-version and reset-token constraints, and RateLimitBucket uniqueness. Named security indexes are checked against their exact tables and ordered key columns, with no predicate, expression, or included columns. A synthetic rolled-back transaction exercises certificate verification and recipient uniqueness, session-version default and increment, SHA-256 reset-token uniqueness and consumption, and RateLimitBucket key uniqueness. The same migrate command runs a second time; unchanged ledger plus zero pending migrations establishes the no-op check. All child errors and query values stay out of stdout and the report. The runner starts and stops only its new cluster with bounded, no-pipe launcher calls; it retains the private data/runtime/log/evidence subtree for the owner's cleanup decision.
 
-After review, the controller's one-time entrypoint for the known archive is:
+The candidate postcheck additionally requires the exact `EventBracketAppearance` table and column contract, defaults 50/50/35, its `id` primary key, a valid nonpartial unique index on `eventId`, and a validated `eventId` foreign key to `Event.id` with delete and update cascade. Missing or false postcheck fields fail closed.
+
+After clean review, the controller records the exact absolute `archive` value printed by a single successful fresh export as `$ArchivePath`. Only after successful preflight and export, use that value unchanged as one argument to each command:
 
 ```powershell
-node scripts/operations/local-rehearsal-runner.mjs E:/MiracleBackups/miracle-neondb-2026-10-05T01-23-48-741Z.age
+node scripts/operations/local-backup-verify.mjs $ArchivePath
+node scripts/operations/local-rehearsal-runner.mjs $ArchivePath
 ```
 
 Run this only from the reviewed checkout. A success line contains `REHEARSAL_VERIFIED` and redacted timings/counts, and the private subtree contains `rehearsal-result.json`. Any nonzero status requires inspecting that private status and the stopped/uncertain cluster state before deciding on another run. A different run would create a new subtree; no existing data is deleted. The local restore time is not a production service recovery-time objective. The source snapshot omitted source locale, collation and extension metadata, so the runner records local values and explicitly leaves cross-environment equivalence unproven. No app-level email, Blob, provider, or end-user flow runs in this rehearsal.

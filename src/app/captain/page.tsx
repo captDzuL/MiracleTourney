@@ -1,4 +1,5 @@
 import { CalendarDays, Clock, CreditCard, Crown, Plus, Settings, Trophy, Upload, Users } from "lucide-react";
+import Image from "next/image";
 import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
@@ -139,12 +140,11 @@ export default async function CaptainPage({
         <div className="grid gap-6">
           <OpenRegistrationSection
             events={focusedOpenEvents}
-            requestedEventId={requestedEventId}
             draftTeam={draftTeamWithPlayers?.team ?? null}
             draftPlayerCount={draftTeamWithPlayers?.players.length ?? 0}
             t={t as TFn}
           />
-          <PaymentRequestsSection requests={focusedPaymentRequests} requestedEventId={requestedEventId} paymentSettings={paymentSettings} t={t as TFn} />
+          <PaymentRequestsSection requests={focusedPaymentRequests} paymentSettings={paymentSettings} t={t as TFn} />
         </div>
       ) : (
         <RosterManagementSection
@@ -375,7 +375,6 @@ function OpenRegistrationSection({
   draftTeam,
 
   draftPlayerCount,
-  requestedEventId,
 
   t,
 
@@ -386,7 +385,6 @@ function OpenRegistrationSection({
   draftTeam: Team | null;
 
   draftPlayerCount: number;
-  requestedEventId?: string;
 
   t: TFn;
 
@@ -506,7 +504,7 @@ function OpenRegistrationSection({
 
 }
 
-function PaymentRequestsSection({ paymentSettings, requests, requestedEventId, t }: { paymentSettings: PaymentSettings; requests: TeamRegistrationRequest[]; requestedEventId?: string; t: TFn }) {
+function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSettings: PaymentSettings; requests: TeamRegistrationRequest[]; t: TFn }) {
   if (requests.length === 0) return null;
 
   return (
@@ -534,7 +532,7 @@ function PaymentRequestsSection({ paymentSettings, requests, requestedEventId, t
               {request.event?.registrationFeeLabel ? <p className="mt-2 font-medium text-slate-800">{request.event.registrationFeeLabel}</p> : null}
               {paymentSettings.instructions ? <p className="mt-2 leading-6">{paymentSettings.instructions}</p> : null}
               {paymentSettings.qrisImageUrl ? (
-                <img src={paymentSettings.qrisImageUrl} alt="QRIS" className="mt-3 aspect-square w-36 rounded-lg border border-slate-200 bg-white object-contain" />
+                <Image src={paymentSettings.qrisImageUrl} alt="QRIS" width={144} height={144} loading="eager" unoptimized className="mt-3 aspect-square w-36 rounded-lg border border-slate-200 bg-white object-contain" />
               ) : (
                 <p className="mt-2 text-amber-700">{t("noQrisConfigured")}</p>
               )}

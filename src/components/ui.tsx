@@ -1,6 +1,5 @@
 import { ExternalLink, Radio } from "lucide-react";
 
-import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { getTikTokLiveHandle } from "@/lib/streams";
 import { TikTokLiveCard } from "@/components/TikTokLiveCard";

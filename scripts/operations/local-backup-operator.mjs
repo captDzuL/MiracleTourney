@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -9,6 +9,9 @@ import { assertOwnerOnlyDirectory, assertOutputCapacity, assertRecoveryReady, no
 import { LEGACY_MIGRATIONS, loadExpectedLedger } from './local-backup-snapshot.mjs';
 import { buildPinnedPgEnv, ensurePinnedCaBundle, verifyPinnedCaBundle } from './local-backup-ca.mjs';
 import { PG18_DLL_SHA256 } from './pg18-dll-hashes.mjs';
+import { loadE2eEnvironment } from '../e2e-env.mjs';
+import { normalizeTestingSourcePair, validateTestingSourceUrl } from './testing-schema-core.mjs';
+import { buildPinnedTestingPgEnv } from './local-backup-ca.mjs';
 
 const run = promisify(execFile);
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -92,4 +95,31 @@ export async function prepareFixedExport() {
   const config = await prepare();
   await verifyPinnedCaBundle();
   return { ...config, pgEnv: buildPinnedPgEnv(config.source.fields) };
+}
+
+export async function prepareFixedTestingExport() {
+  const approvedFile = 'E:/dev/MiracleTourney-gitnative/.worktrees/release-1.0-integration/.env.test';
+  if (process.env.E2E_ENV_FILE?.replaceAll('\\', '/') !== approvedFile) throw fail('SOURCE_REJECTED');
+  validateOutputDirectory(output, output);
+  await assertOwnerOnlyDirectory(output);
+  await assertOutputCapacity(output);
+  await assertOwnerOnlyDirectory(keyDirectory, 'KEY_NOT_READY', ['identity.dpapi', 'recipient.txt', 'recovery-verified.json']);
+  const keyStatus = await readKeyStatus();
+  await assertRecoveryReady(keyStatus, join(keyDirectory, 'recovery-verified.json'), recipient);
+  await verifyTools();
+  await verifyPinnedCaBundle();
+  const env = loadE2eEnvironment({ cwd: repository, env: process.env });
+  const pair = normalizeTestingSourcePair(env.DIRECT_URL, env.DATABASE_URL);
+  const source = { url: pair.direct, pooledUrl: pair.pooled, fields: validateTestingSourceUrl(pair.direct) };
+  const migrationsRoot = join(repository, 'prisma/migrations');
+  const names = (await readdir(migrationsRoot, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
+  if (names.length !== 37) throw fail('CHECKPOINT_DRIFT');
+  const expectedLedger = await loadExpectedLedger(migrationsRoot, names);
+  return {
+    source, expectedLedger, output, recipient,
+    pgDumpPath: join(pgBin, 'pg_dump.exe'), pgDumpSha256: pins.pgDump,
+    agePath: join(ageBin, 'age.exe'), ageSha256: pins.age,
+    psqlPath: join(snapshotBin, 'psql.exe'), pgEnv: buildPinnedTestingPgEnv(source.fields),
+  };
 }

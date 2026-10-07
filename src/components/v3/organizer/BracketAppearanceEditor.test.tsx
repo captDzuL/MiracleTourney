@@ -15,6 +15,14 @@ async function renderWithBoard(locale: "en" | "id" = "en") { await act(async () 
 async function click(action: string) { await act(async () => host.querySelector<HTMLButtonElement>(`button[data-action="${action}"]`)!.click()); }
 function change(name: string, value: string) { const element = host.querySelector<HTMLInputElement>(`input[name="${name}"]`)!; act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(element, value); element.dispatchEvent(new Event("input", { bubbles: true })); element.dispatchEvent(new Event("change", { bubbles: true })); }); }
 describe("BracketAppearanceEditor", () => {
+  it("gives every appearance slider a 44px tall touch target", async () => {
+    await render();
+    const sliders = [...host.querySelectorAll<HTMLInputElement>('input[type="range"]')];
+
+    expect(sliders.map((slider) => slider.name)).toEqual(["positionX", "positionY", "overlay"]);
+    for (const slider of sliders) expect(slider.classList.contains("h-11"), `${slider.name} must be h-11 (44px)`).toBe(true);
+  });
+
   it("requires saving slider and local artwork changes before exporting, then re-enables export after save or reset", async () => {
     await renderWithBoard();
     const full = () => [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.includes("Download full PNG"))!;

@@ -40,8 +40,14 @@ export async function waitForReleaseFonts(page: Page) {
 
 /** Apply visual-only suppression after the product reduced-motion contract has been checked. */
 export async function suppressAnimationsForScreenshot(page: Page) {
-  await page.addStyleTag({
-    content: `
+  // Not page.addStyleTag: Playwright rejects it with any Content-Security-Policy violation raised while
+  // it runs, including the unrelated blocked Speed Insights debug script in development, which made
+  // this helper fail intermittently. Appending the style element in-page has no such side channel.
+  await page.evaluate((css) => {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+  }, `
       *, *::before, *::after {
         animation-duration: 0ms !important;
         animation-iteration-count: 1 !important;
@@ -50,8 +56,7 @@ export async function suppressAnimationsForScreenshot(page: Page) {
         scroll-behavior: auto !important;
         caret-color: transparent !important;
       }
-    `,
-  });
+    `);
 }
 
 export async function loginWithCredentials(

@@ -93,6 +93,21 @@ describe("CertificateStudio", () => {
     expect(tabs[1].getAttribute("aria-selected")).toBe("true");
   });
 
+  it.each([
+    { width: 600, height: 1200, ratio: "600 / 1200", boundedWidth: "min(100%, 21rem)" },
+    { width: 1200, height: 600, ratio: "1200 / 600", boundedWidth: "min(100%, 84rem)" },
+  ])("sizes a decoded $width×$height certificate by its actual intrinsic ratio", async ({ width, height, ratio, boundedWidth }) => {
+    await act(async () => root.render(provider("en", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
+    const image = container.querySelector<HTMLImageElement>("[data-certificate-preview]")!;
+    Object.defineProperties(image, {
+      naturalWidth: { configurable: true, value: width },
+      naturalHeight: { configurable: true, value: height },
+    });
+    await act(async () => image.dispatchEvent(new Event("load", { bubbles: true })));
+    expect(image.parentElement?.style.aspectRatio).toBe(ratio);
+    expect(image.parentElement?.style.width).toBe(boundedWidth);
+  });
+
   it("switches type and versions without losing the selected version per record", async () => {
     await act(async () => root.render(provider("en", <CertificateStudio generationKeys={Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>} publicationKey={crypto.randomUUID()} state={available} />)));
     const version1 = container.querySelector<HTMLButtonElement>("[data-version='1']")!;

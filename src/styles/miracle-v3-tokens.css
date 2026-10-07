@@ -96,6 +96,16 @@ html[data-panel-theme="light"] .miracle-v3.panel-scope {
   --color-feedback-error: #E69393;
 }
 
+/*
+ * The V3 shells use a sticky header (4rem + border). Keep keyboard focus and in-page
+ * anchor targets below it (WCAG 2.2 SC 2.4.11 Focus Not Obscured). Per-element
+ * scroll-margin alone does not hold when Shift+Tab scrolls the viewport upward, so
+ * reserve the space on the scrolling box itself.
+ */
+html:has(.miracle-v3) {
+  scroll-padding-top: 6rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .miracle-v3 {
     --motion-duration-fast: 0ms;

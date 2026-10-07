@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft, ArrowRight, Check, Clock3, CreditCard, ShieldCheck, Upload } from "lucide-react";
+import Image from "next/image";
 import { useRef, useState } from "react";
 
 import { SubmitButton } from "@/components/submit-button";
@@ -166,7 +167,7 @@ export function CaptainRegistrationWizard({
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_320px]">
             <div className="grid aspect-square max-w-sm place-items-center rounded-xl bg-[#f7f4ec] p-5">
-              {paymentSettings?.qrisImageUrl ? <img src={paymentSettings.qrisImageUrl} alt="QRIS pembayaran" className="h-full w-full object-contain" /> : <CreditCard className="h-24 w-24 text-[#09111e]" />}
+              {paymentSettings?.qrisImageUrl ? <span className="relative block size-full"><Image src={paymentSettings.qrisImageUrl} alt="QRIS pembayaran" fill sizes="(max-width: 384px) 100vw, 344px" loading="eager" unoptimized className="object-contain" /></span> : <CreditCard className="h-24 w-24 text-[#09111e]" />}
             </div>
             <div>
               <div className="rounded-xl border border-[#29374a] bg-[#0c1523] p-4 text-sm text-[#aab7c9]"><b className="block text-[#49d1ec]">Petunjuk organizer</b>{paymentSettings?.instructions ?? "Pastikan nominal dan tanggal pembayaran terlihat jelas."}</div>

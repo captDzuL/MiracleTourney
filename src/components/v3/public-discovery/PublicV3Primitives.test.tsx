@@ -15,6 +15,7 @@ describe("final public V3 primitives", () => {
   let root: ReturnType<typeof createRoot>;
   const render = (node: React.ReactNode) => act(() => root.render(node));
   const failImage = () => act(() => container.querySelector("img")?.dispatchEvent(new Event("error")));
+  const localPath = (image: HTMLImageElement | null) => image ? new URL(image.src).pathname : null;
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -24,7 +25,7 @@ describe("final public V3 primitives", () => {
 
   it("prioritizes a real event poster and preserves its supplied alternative text", () => {
     render(<EventPosterStage eventName="Community Cup" gameSlug="flashpeak" posterUrl="/event-posters/cup.png" posterAlt="Community Cup official poster" />);
-    expect(container.querySelector("img")?.getAttribute("src")).toBe("/event-posters/cup.png");
+    expect(localPath(container.querySelector("img"))).toBe("/event-posters/cup.png");
     expect(container.querySelector("img")?.alt).toBe("Community Cup official poster");
     expect(container.querySelectorAll("img")).toHaveLength(1);
   });
@@ -34,19 +35,30 @@ describe("final public V3 primitives", () => {
     expect(container.querySelector("img")?.alt).toBe("Community Cup");
   });
 
+  it("delivers an approved external priority poster directly with eager high-priority loading", () => {
+    render(<EventPosterStage eventName="Community Cup" posterUrl="https://images.example.com/cup.png" priority />);
+    const image = container.querySelector("img")!;
+    expect(image.getAttribute("src")).toBe("https://images.example.com/cup.png");
+    expect(image.getAttribute("srcset")).toBeNull();
+    expect(image.getAttribute("loading")).toBe("eager");
+    expect(image.getAttribute("fetchpriority")).toBe("high");
+    expect(image.alt).toBe("Community Cup");
+  });
+
   it.each([null, "  ", "javascript:alert(1)", "//images.example.com/cup.png"])("uses local Flashpeak characters for invalid poster %s", (posterUrl) => {
     render(<EventPosterStage eventName="Community Cup" gameSlug="flashpeak" posterUrl={posterUrl} />);
-    expect(Array.from(container.querySelectorAll("img")).map((img) => img.getAttribute("src"))).toEqual([
+    expect(Array.from(container.querySelectorAll("img")).map((img) => localPath(img))).toEqual([
       "/character-art/roster/midfielder/Kelly.png", "/character-art/roster/striker/Rafael.png",
     ]);
     expect(Array.from(container.querySelectorAll("img")).every((img) => img.alt === "")).toBe(true);
+    expect(Array.from(container.querySelectorAll("img")).map((img) => [img.getAttribute("width"), img.getAttribute("height")])).toEqual([["2525", "3500"], ["2227", "3184"]]);
     expect(container.textContent).toContain("Community Cup");
   });
 
   it("recovers a failed poster through local art then branded text without invented prize or season", () => {
     render(<EventPosterStage eventName="Community Cup" gameSlug="flashpeak" posterUrl="/missing.png" />);
     failImage();
-    expect(container.querySelector("img")?.getAttribute("src")).toBe("/character-art/roster/midfielder/Kelly.png");
+    expect(localPath(container.querySelector("img"))).toBe("/character-art/roster/midfielder/Kelly.png");
     failImage();
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("MIRACLE");
@@ -61,7 +73,7 @@ describe("final public V3 primitives", () => {
     failImage();
     expect(container.querySelector("img")).toBeNull();
     render(<EventPosterStage eventName="Other Cup" gameSlug="other" posterUrl="/new.png" />);
-    expect(container.querySelector("img")?.getAttribute("src")).toBe("/new.png");
+    expect(localPath(container.querySelector("img"))).toBe("/new.png");
   });
 
   // Model browser image state before attaching React, without dispatching error events.
@@ -80,7 +92,7 @@ describe("final public V3 primitives", () => {
 
   it("recovers an SSR poster that completed failing before hydration", () => {
     hydrateImages(<EventPosterStage eventName="Community Cup" gameSlug="flashpeak" posterUrl="/pre-hydration-404.png" />, [{ complete: true, naturalWidth: 0 }]);
-    expect(Array.from(container.querySelectorAll("img")).map((image) => image.getAttribute("src"))).toEqual([
+    expect(Array.from(container.querySelectorAll("img")).map((image) => localPath(image))).toEqual([
       "/character-art/roster/midfielder/Kelly.png", "/character-art/roster/striker/Rafael.png",
     ]);
   });
@@ -94,7 +106,7 @@ describe("final public V3 primitives", () => {
 
   it.each([{ complete: true, naturalWidth: 120 }, { complete: false, naturalWidth: 0 }])("preserves an SSR poster that is loaded or still pending (%j)", (state) => {
     hydrateImages(<EventPosterStage eventName="Community Cup" gameSlug="flashpeak" posterUrl="/valid-poster.png" />, [state]);
-    expect(container.querySelector("img")?.getAttribute("src")).toBe("/valid-poster.png");
+    expect(localPath(container.querySelector("img"))).toBe("/valid-poster.png");
     expect(container.querySelectorAll("img")).toHaveLength(1);
   });
 

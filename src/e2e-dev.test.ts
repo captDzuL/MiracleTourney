@@ -20,8 +20,12 @@ async function createEnvironment(contents: string) {
 }
 
 function spawnMock() {
-  return vi.fn((_command: string, _args: string[], _options: SpawnOptions) =>
-    ({ on: vi.fn() }) as unknown as ChildProcess);
+  return vi.fn((command: string, args: string[], options: SpawnOptions) => {
+    void command;
+    void args;
+    void options;
+    return { on: vi.fn() } as unknown as ChildProcess;
+  });
 }
 
 afterEach(async () => {

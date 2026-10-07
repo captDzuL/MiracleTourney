@@ -110,7 +110,8 @@ export async function signIn(email: string, password: string) {
     maxAge,
   });
 
-  const { passwordHash: _, ...publicUser } = user;
+  const { passwordHash, ...publicUser } = user;
+  void passwordHash;
   return { ok: true as const, user: publicUser };
 }
 
