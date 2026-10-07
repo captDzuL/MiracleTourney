@@ -41,7 +41,8 @@ describe("Vercel adapter", () => {
     const calls: Call[] = [];
     const fetchImpl = fakeFetch((call) => (call.method === "POST" ? { id: "dpl_p" } : { readyState: "READY" }), calls);
     await createVercelAdapter({ token: "t", teamSlug: "team", fetchImpl, pollMs: 0 }).deployPreview({ sha: SHA, ref: "release" });
-    expect((calls[0].body as { target: string }).target).toBe("preview");
+    // Vercel answers 400 to target "preview"; a Preview deployment is created by leaving target out.
+    expect(calls[0].body).not.toHaveProperty("target");
   });
 
   it("fails when the deployment ends as ERROR or never becomes READY", async () => {
@@ -64,6 +65,28 @@ describe("Vercel adapter", () => {
     const patch = calls.find((call) => call.method === "PATCH");
     expect(patch).toEqual({ method: "PATCH", path: "/v9/projects/miracle-tourney/env/prod1", body: { value: "true" } });
     await expect(createVercelAdapter({ token: "t", teamSlug: "team", fetchImpl }).setProductionFlag("FEATURE_FLAG_MISSING", "true")).rejects.toThrow(/No production-only variable/);
+  });
+
+  it("reports the API's own error message when a request is rejected", async () => {
+    const { createVercelAdapter } = await load();
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 400, text: async () => JSON.stringify({ error: { code: "bad_request", message: "Invalid request: `target` should be 'production'" } }) }));
+    await expect(createVercelAdapter({ token: "secret-token-value", teamSlug: "team", fetchImpl }).deployPreview({ sha: SHA, ref: "r" })).rejects.toThrow(/HTTP 400: bad_request Invalid request: `target` should be 'production'/);
+  });
+
+  it("keeps polling through a dropped connection but never repeats a POST", async () => {
+    const { createVercelAdapter } = await load();
+    let polls = 0;
+    const fetchImpl = vi.fn(async (_url: string, init: { method: string }) => {
+      if (init.method === "POST") return { ok: true, status: 200, text: async () => JSON.stringify({ id: "dpl_n" }) };
+      polls += 1;
+      if (polls === 1) throw new Error("fetch failed");
+      return { ok: true, status: 200, text: async () => JSON.stringify({ readyState: "READY" }) };
+    });
+    await expect(createVercelAdapter({ token: "t", teamSlug: "team", fetchImpl, pollMs: 0 }).deployPreview({ sha: SHA, ref: "r" })).resolves.toEqual({ id: "dpl_n" });
+    expect(fetchImpl.mock.calls.filter(([, init]) => init.method === "POST")).toHaveLength(1);
+    const failingPost = vi.fn(async () => { throw new Error("fetch failed"); });
+    await expect(createVercelAdapter({ token: "t", teamSlug: "team", fetchImpl: failingPost }).deployPreview({ sha: SHA, ref: "r" })).rejects.toThrow("fetch failed");
+    expect(failingPost).toHaveBeenCalledTimes(1);
   });
 
   it("does not leak the token into an error message", async () => {
