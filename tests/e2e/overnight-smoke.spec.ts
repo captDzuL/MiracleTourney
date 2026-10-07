@@ -338,8 +338,9 @@ overnightTest("registration order stays private and imports stop after drawing p
   ).toBe("active");
 
   await page.goto(`/id/events/${slug}/bracket`);
-  await expect(page.getByText("Team 23", { exact: true })).toBeVisible();
-  await expect(page.getByText("Team 24", { exact: true })).toBeVisible();
+  // The social bracket renders a desktop and a mobile layout; only the one for this viewport is visible.
+  await expect(page.getByText("Team 23", { exact: true }).filter({ visible: true })).toBeVisible();
+  await expect(page.getByText("Team 24", { exact: true }).filter({ visible: true })).toBeVisible();
 
   // Late import must fail once the authoritative drawing locks the roster.
   await page.goto(`/en/admin?phase=import&activeEventId=${eventId}`);

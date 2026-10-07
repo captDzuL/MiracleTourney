@@ -226,6 +226,49 @@ describe("public bracket page", () => {
     expect(markup).not.toContain("bg-white");
   });
 
+  it("keeps registration order private: no social bracket and no team names before the drawing is published", async () => {
+    const event = createEvent({
+      name: "Private registration order",
+      slug: "private-registration-order",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Published");
+    featureEnabledMock.mockImplementation((flag: string) => flag === "adaptive_public_event_v3" || flag === "ui_v3_foundation");
+    drawingEventMock.mockResolvedValue(null);
+    // The legacy reader would expose every pairing the engine can already resolve. It must not reach the page.
+    const model = bracketDesignFixture("en");
+    socialReaderMock.mockResolvedValue({ ...model, event: { ...model.event, id: event.id, slug: event.slug }, preview: false });
+    const teamNames = model.matches.flatMap((match) => [match.home.team?.name, match.away.team?.name]).filter((name): name is string => Boolean(name));
+    expect(teamNames.length).toBeGreaterThan(0);
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).not.toContain("social-bracket");
+    for (const name of teamNames) expect(markup, `${name} must stay private before the drawing is published`).not.toContain(name);
+    expect(markup).toContain("TBD");
+  });
+
+  it("shows the social bracket once the drawing is published", async () => {
+    const event = createEvent({
+      name: "Published social bracket",
+      slug: "published-social-bracket",
+      gameModeId: "mode-flashpeak-5v5",
+      format: "Single Elimination",
+      participantCap: 8,
+    });
+    setEventStatus(event.id, "Published");
+    featureEnabledMock.mockImplementation((flag: string) => flag === "adaptive_public_event_v3" || flag === "ui_v3_foundation");
+    drawingEventMock.mockResolvedValue(publishedDrawingView(event));
+    const model = bracketDesignFixture("en");
+    socialReaderMock.mockResolvedValue({ ...model, event: { ...model.event, id: event.id, slug: event.slug }, preview: false });
+
+    const markup = await renderBracket(event.slug);
+
+    expect(markup).toContain("social-bracket");
+  });
+
   it("offers a PNG beside adaptive V3 league standings without replacing them", async () => {
     const event = createEvent({ name: "Adaptive league", slug: "adaptive-league", gameModeId: "mode-flashpeak-5v5", format: "League", participantCap: 8 });
     setEventStatus(event.id, "Published");

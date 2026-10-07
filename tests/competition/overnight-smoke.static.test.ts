@@ -200,7 +200,10 @@ describe("overnight smoke fixture cleanup contracts", () => {
     );
     expect(overnightSpec).toContain('overnightTest("registration order stays private and imports stop after drawing publication"');
     expect(scenario).toContain("trackOvernightEvent({ name: eventName, slug });");
-    expect(scenario).toContain("await expect(page.getByText(\"Team 23\", { exact: true })).toBeVisible();");
+    // Still asserts that Team 23 becomes visible after the drawing is published. The social bracket renders a
+    // desktop and a mobile layout, so the bare locator resolves to two elements and fails strict mode; the
+    // assertion is scoped to the layout visible in this viewport instead.
+    expect(scenario).toContain("await expect(page.getByText(\"Team 23\", { exact: true }).filter({ visible: true })).toBeVisible();");
     expect(scenario).toContain("await expect(lockedPreview.getByRole(\"button\"");
   });
 });

@@ -480,7 +480,10 @@ export async function renderBracketPage(slug: string, locale?: "id" | "en") {
     const standings = view && "standings" in view ? view.standings : [];
     const registrationSlots = !view && ["Published", "Registration Closed"].includes(event.status) ? event.participantCap : 0;
 
-    if (visualV3 && socialModel && format !== "round_robin") {
+    // registrationSlots > 0 means the event is still in registration with no published drawing. The social
+    // reader for a legacy event exposes every pairing the engine can already resolve, which reveals the
+    // registration order, so that state must fall through to the TBD placeholders below.
+    if (visualV3 && socialModel && format !== "round_robin" && registrationSlots === 0) {
       return (
         <V3BracketPage
           backLabel={t("backToEvent")}
