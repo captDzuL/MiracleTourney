@@ -84,3 +84,13 @@ jobs:
       - name: Fail when prisma/schema.prisma and the migrations disagree
         # Exit code 2 means the datamodel needs a database change that no migration provides.
         run: pnpm exec prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script --exit-code
+      - name: Record the physical catalog built from the migrations (PostgreSQL 18)
+        # The post-migration check compares production against this file; it is only a reference, never a gate.
+        env:
+          CATALOG_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/miracle_schema
+        run: node scripts/operations/catalog-postcheck.mjs snapshot catalog-reference-pg18.json
+      - uses: actions/upload-artifact@v5
+        with:
+          name: catalog-reference-pg18
+          path: catalog-reference-pg18.json
+          retention-days: 30

@@ -32,7 +32,8 @@ document or a merged PR is not that approval. Companion documents:
 4. A fresh backup/checkpoint of the production branch exists and its restore was
    rehearsed on a child branch within the Neon history window (6 h). The scheduled
    backup is PAUSED; a manual checkpoint is required. The incident restore procedure
-   is not yet written (open item F6); this cutover must not start without it.
+   is `v3-incident-restore-runbook.md`; read it before step 4, and rehearse the restore on
+   a child branch first.
 5. Owner has named the maintenance window and who watches production.
 
 ## Procedure
@@ -61,6 +62,12 @@ Steps 1–3 change nothing in the database. Run them in this order.
    - `pnpm exec prisma migrate status` — expect 38 applied, 0 pending.
    - `pnpm exec prisma migrate diff --from-url "$DIRECT_URL" --to-schema-datamodel prisma/schema.prisma --script --exit-code`
      — expect exit code 0 (empty). Exit 2 means drift: stop, do not deploy.
+   - Physical catalog check (the ledger and `migrate diff` do not prove the physical
+     schema): download the `catalog-reference-pg18` artifact of the CI run for the
+     release SHA, then
+     `CATALOG_DATABASE_URL="$DIRECT_URL" pnpm ops:catalog-postcheck compare catalog-reference-pg18.json --allow-production-read`
+     — expect exit 0, or exactly the two known production differences listed in
+     `v3-incident-restore-runbook.md` section 4. Any other difference: stop.
    Do not rerun on error; capture the error and decide with the owner.
 6. **Deploy with flags off.** Create the production deployment of the release SHA.
    Smoke (flags off, legacy UI): home and `/events` in both locales return 200,
@@ -99,8 +106,6 @@ Expected result right now: exit 1 with both blockers. After steps 1–2 it must 
 
 ## Open items (not done by this document)
 
-- Incident restore runbook and post-V3 backup contract (F6).
-- Physical-catalog postcheck after migration (N2): step 5 uses `migrate diff`, which
-  compares against the Prisma datamodel; it does not replace a catalog comparison with
-  a reference.
+- Implement the post-V3 backup runner and rehearse a restore from it
+  (`v3-incident-restore-runbook.md` section 6); the scheduled backup stays PAUSED.
 - Decision on `email_password_reset` (see matrix, finding 2).

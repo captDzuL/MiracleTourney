@@ -71,6 +71,16 @@ describe("CI E2E release sequence", () => {
     expect(job).toMatch(/prisma migrate diff[^\n]*--from-url[^\n]*--to-schema-datamodel prisma\/schema\.prisma[^\n]*--exit-code/);
   });
 
+  it("records the physical catalog reference from the throwaway database as a non-gating artifact", async () => {
+    const job = extractJob(await readWorkflow(), "schema-drift");
+
+    expect(job).toContain("node scripts/operations/catalog-postcheck.mjs snapshot catalog-reference-pg18.json");
+    expect(job).toContain("name: catalog-reference-pg18");
+    // The reference step must come after the drift gate, so it can never mask a failed gate.
+    expect(job.indexOf("catalog-postcheck.mjs snapshot")).toBeGreaterThan(job.indexOf("--exit-code"));
+    expect(job).not.toContain("continue-on-error");
+  });
+
   it("records elapsed time for every release phase and the total sequence", async () => {
     const { runE2eCi } = await import(ciModulePath) as CiModule;
     const timestamps = [0, 100, 350, 400, 900, 950, 1_550, 1_600, 2_300, 2_350, 3_150, 3_200, 4_000, 4_100, 4_200, 4_300];
