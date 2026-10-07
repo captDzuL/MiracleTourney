@@ -5,7 +5,7 @@ import type { BracketAppearance, SocialBracketModel } from "@/lib/bracket/types"
 import { SocialBracketBoard } from "@/components/v3/public-event/SocialBracketBoard";
 
 type Props = { eventId: string; locale: "en" | "id"; initial: BracketAppearance; previewModel?: SocialBracketModel | null };
-const slider = "w-full accent-[var(--color-brand-cyan)] miracle-focus-ring";
+const slider = "h-11 w-full accent-[var(--color-brand-cyan)] miracle-focus-ring";
 const button = "miracle-focus-ring min-h-11 rounded-lg border border-[var(--color-border-strong)] px-4 py-2 text-sm font-bold disabled:cursor-wait disabled:opacity-60";
 export function BracketAppearanceEditor({ eventId, locale, initial, previewModel }: Props) {
   const t = (en: string, id: string) => locale === "id" ? id : en;

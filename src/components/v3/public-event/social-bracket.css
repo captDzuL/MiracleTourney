@@ -25,3 +25,13 @@
 .sb-export-legend{margin:10px 4px 0;color:var(--sb-muted);font-size:10px;font-weight:600;letter-spacing:.01em}
 .sb-download-round-label{display:grid;gap:6px;margin:0 0 10px;color:var(--sb-muted);font-size:11px;font-weight:700}.sb-download-round-label select{min-height:44px;border:1px solid var(--sb-border);border-radius:8px;background:var(--sb-panel);color:var(--sb-ink);font:700 12px Montserrat,Arial,sans-serif;padding:8px 12px}.sb-download-round-label select:focus-visible{outline:2px solid var(--sb-cream);outline-offset:2px}
 :where(.sb-downloads,.sb-download-round-label,.sb-download-message){--sb-cyan:var(--color-brand-cyan,#49D1EC);--sb-border:var(--color-border,#29374A);--sb-cream:var(--color-brand-cream,#F6DFB1);--sb-panel:var(--color-surface,#101B2B);--sb-ink:var(--color-text,#F3EFE7);--sb-muted:var(--color-text-muted,#AAB7C9);font-family:Montserrat,Arial,sans-serif}
+/*
+ * The match-details disclosure must be a 44px tall target (it was 20px, below even WCAG 2.5.8's 24px minimum).
+ * Match cards have a fixed height, so the extra box height is cancelled by negative block margins: the
+ * summary still occupies 20px of layout and nothing in the card moves. display:flow-root keeps that negative
+ * margin inside .sb-details; without it the margin collapses through the padding-less compact variant and
+ * shifts the whole strip up over the away team row. The PNG export uses the static
+ * .sb-details-static block instead of a summary, so it is unaffected.
+ */
+.sb-details{display:flow-root}
+.sb-details summary{display:flex;align-items:center;min-height:44px;margin-block:-12px}
