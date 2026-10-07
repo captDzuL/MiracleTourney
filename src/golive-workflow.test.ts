@@ -12,7 +12,7 @@ describe("go-live workflow guards", () => {
 
   it("defaults to the read-only dry run and runs inside the protected environment", () => {
     expect(workflow).toMatch(/mode:[\s\S]*?default: dry-run/);
-    expect(workflow).toMatch(/^    environment: production-go-live$/m);
+    expect(workflow).toMatch(/^    environment: production$/m);
     expect(workflow).toMatch(/^permissions:\r?\n  contents: read$/m);
     expect(workflow).toMatch(/cancel-in-progress: false/);
   });

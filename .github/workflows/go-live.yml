@@ -2,7 +2,7 @@ name: V3 go-live
 
 # Manual only. A live run changes production: it takes a Neon checkpoint, migrates the production database, deploys this
 # commit to Vercel production with every V3 flag off, then enables the flags step by step and rolls a step back when its
-# smoke check fails. Run "dry-run" first; it only reads. Secrets live in the `production-go-live` environment, which
+# smoke check fails. Run "dry-run" first; it only reads. Secrets live in the `production` environment, which
 # should require a reviewer.
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ jobs:
   go-live:
     name: Go-live (${{ inputs.mode }})
     runs-on: ubuntu-latest
-    environment: production-go-live
+    environment: production
     timeout-minutes: 120
     services:
       postgres:

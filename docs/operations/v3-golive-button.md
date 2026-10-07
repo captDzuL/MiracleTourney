@@ -36,9 +36,10 @@ tugasmu, lihat "Sebelum menekan tombol").
 
 ## Persiapan sekali saja (kamu, di GitHub)
 
-1. Buat **Environment** bernama `production-go-live`: Settings → Environments → New
-   environment. Aktifkan **Required reviewers** dan pilih dirimu, supaya setiap run
-   menunggu persetujuanmu.
+1. Pakai **Environment** bernama `production` (Settings → Environments; buat bila belum
+   ada). Aktifkan **Required reviewers** dan pilih dirimu, supaya setiap run menunggu
+   persetujuanmu. Nama ini harus sama persis dengan `environment:` di `go-live.yml`;
+   bila berbeda, GitHub membuat environment baru tanpa secrets dan tanpa reviewer.
 2. Di environment itu, tambahkan **secrets** (jangan tempel di chat):
    - `PROD_DIRECT_URL`: `DIRECT_URL` database produksi (host `ep-sparkling-night-…`).
    - `NEON_API_KEY`: key Neon yang boleh membuat branch di project `steep-tree-47893196`.
