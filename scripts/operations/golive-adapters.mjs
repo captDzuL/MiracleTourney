@@ -8,13 +8,33 @@ import { evaluateReadback, fetchReadback, formatReadback, V3_FLAGS } from "./ver
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function api(fetchImpl, method, url, token, body) {
-  const response = await fetchImpl(url, {
+  const init = {
     method,
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  };
+  // Only GET is retried on a dropped connection: repeating a POST could create a second deployment or branch.
+  const attempts = method === "GET" ? 4 : 1;
+  let response;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      response = await fetchImpl(url, init);
+      break;
+    } catch (error) {
+      if (attempt >= attempts) throw error;
+      await sleep(500 * attempt);
+    }
+  }
   const text = await response.text();
-  if (!response.ok) throw new Error(`${method} ${new URL(url).pathname} failed with HTTP ${response.status}`);
+  if (!response.ok) {
+    // The API's own error code and message explain a rejected request; they never echo the token.
+    let detail = "";
+    try {
+      const error = JSON.parse(text).error;
+      if (error?.message) detail = `: ${String(error.code ?? "").slice(0, 60)} ${String(error.message).slice(0, 300)}`.replace(/\s+/g, " ");
+    } catch { /* body was not JSON */ }
+    throw new Error(`${method} ${new URL(url).pathname} failed with HTTP ${response.status}${detail}`);
+  }
   return text ? JSON.parse(text) : {};
 }
 
@@ -55,7 +75,8 @@ export function createVercelAdapter({ token, teamSlug, project = "miracle-tourne
     const created = await api(fetchImpl, "POST", `${base}/v13/deployments?${q}&forceNew=1`, token, {
       name: project,
       project,
-      target,
+      // Vercel rejects target "preview": a Preview deployment is the one created without a target.
+      ...(target === "production" ? { target } : {}),
       gitSource: { type: "github", repoId, ref, sha },
     });
     const deadline = Date.now() + timeoutMs;
