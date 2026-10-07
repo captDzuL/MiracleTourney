@@ -210,8 +210,16 @@ test.describe.serial("Adaptive Public Event V3 registration phase", () => {
     await page.goto("/id/events/" + fixture.events.upcoming.slug);
     await expect(page.getByRole("button", { name: "Pendaftaran belum dibuka" })).toBeDisabled();
 
+    // A closed legacy registration is a V3 drawing phase: the page must show the
+    // unpublished drawing and expose no registration entry point of any kind.
     await page.goto("/id/events/" + fixture.events.closed.slug);
-    await expect(page.getByRole("button", { name: "Pendaftaran ditutup" })).toBeDisabled();
+    const closedDrawing = page.locator('[data-lifecycle-overview="drawing"]');
+    await expect(closedDrawing).toBeVisible();
+    await expect(closedDrawing.locator('[data-drawing-publication="tbd"]')).toContainText("Drawing resmi belum diterbitkan");
+    await expect(closedDrawing.locator('[data-bracket-state="tbd"]')).toBeVisible();
+    const registrationEntry = /^(Daftarkan tim|Buat tim dan daftar|Pendaftaran ditutup|Pendaftaran belum dibuka|Slot pendaftaran penuh)$/;
+    await expect(page.getByRole("button", { name: registrationEntry })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: registrationEntry })).toHaveCount(0);
 
     await page.goto("/id/events/" + fixture.events.full.slug);
     await expect(page.getByRole("button", { name: "Slot pendaftaran penuh" })).toBeDisabled();
@@ -219,7 +227,10 @@ test.describe.serial("Adaptive Public Event V3 registration phase", () => {
     await page.goto("/en/events/" + fixture.events.open.slug);
     await expect(page).toHaveURL(new RegExp("/en/events/" + fixture.events.open.slug));
     await expect(page.getByRole("button", { name: "Register a team" })).toBeVisible();
-    await expect(page.getByText("Registration period")).toBeVisible();
+    const registrationOverview = page.locator('[data-lifecycle-overview="registration"]');
+    await expect(registrationOverview.getByText("Registration window")).toBeVisible();
+    await expect(registrationOverview.getByText("Opens", { exact: true })).toBeVisible();
+    await expect(registrationOverview.getByText("Closes", { exact: true })).toBeVisible();
 
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto("/id/events/" + fixture.events.open.slug);
