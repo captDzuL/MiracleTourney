@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { parse as parseCsv } from "csv-parse/sync";
 
 import { validateTeamData } from "@/lib/validation/team-data";
+import { isSafeFilename } from "@/lib/security/request-guard";
 
 export type RegistrationSourceKind = "xlsx" | "csv" | "google-sheet";
 
@@ -22,6 +23,9 @@ export type RegistrationMapping = {
     captainName?: number;
     captainContact?: number;
     captainEmail?: number;
+    captainIgn?: number;
+    captainUid?: number;
+    captainIsPlayer?: number;
   };
   players: Array<{
     nickname?: number;
@@ -46,6 +50,9 @@ export type RegistrationNormalizedTeam = {
   captainName: string;
   captainContact: string;
   captainEmail?: string;
+  captainIgn: string;
+  captainUid: string;
+  captainIsPlayer: boolean;
   players: Array<{
     nickname: string;
     displayName: string;
@@ -75,6 +82,10 @@ function cleanText(value: unknown): string {
   if (value == null) return "";
   if (value instanceof Date) return value.toISOString();
   return String(value).replace(/^\uFEFF/, "").trim();
+}
+
+function isFormulaLeading(value: string): boolean {
+  return /^[\s]*[=+\-@]/.test(value);
 }
 
 function assertSourceBounds(rows: RegistrationCell[][]) {
@@ -132,6 +143,10 @@ export async function parseRegistrationSource(input: {
   buffer: Buffer;
   worksheetName?: string;
 }): Promise<{ sourceKind: RegistrationSourceKind; worksheets: RegistrationWorksheet[] }> {
+  if (!isSafeFilename(input.fileName)) {
+    throw new Error("Nama file registrasi tidak valid.");
+  }
+
   if (input.buffer.byteLength > MAX_FILE_BYTES) {
     throw new Error("File registrasi maksimal 5 MiB.");
   }
@@ -144,10 +159,10 @@ export async function parseRegistrationSource(input: {
     }) as unknown[][];
     const rows = trimRows(
       records.map((row) =>
-        row.map((value) => ({
-          value: cleanText(value),
-          formula: false,
-        })),
+        row.map((value) => {
+          const cleaned = cleanText(value);
+          return { value: cleaned, formula: isFormulaLeading(cleaned) };
+        }),
       ),
     );
     assertSourceBounds(rows);
@@ -186,6 +201,9 @@ const directSynonyms: Record<keyof RegistrationMapping["columns"], string[]> = {
   captainName: ["nama kapten", "captain name", "kapten", "pic name", "nama pic"],
   captainContact: ["no whatsapp kapten", "whatsapp kapten", "kontak kapten", "captain contact", "phone", "nomor hp", "wa"],
   captainEmail: ["email", "email kapten", "captain email", "alamat email"],
+  captainIgn: ["captain ign", "ign kapten", "nickname kapten"],
+  captainUid: ["captain uid", "uid kapten", "captain game id", "id game kapten"],
+  captainIsPlayer: ["kapten juga pemain", "captain is player", "captain player"],
 };
 
 function assignDirectColumn(header: string): keyof RegistrationMapping["columns"] | null {
@@ -204,7 +222,7 @@ function playerColumn(header: string): { index: number; field: "nickname" | "dis
   if (!Number.isInteger(index) || index < 1) return null;
 
   if (["nickname", "nick", "ign", "id game"].includes(descriptor)) return { index, field: "nickname" };
-  if (["nama", "nama pemain", "display name", "full name"].includes(descriptor)) return { index, field: "displayName" };
+  if (["uid", "game uid", "game id", "id game", "nama", "nama pemain", "display name", "full name"].includes(descriptor)) return { index, field: "displayName" };
   if (["role", "posisi", "position"].includes(descriptor)) return { index, field: "position" };
   if (descriptor === "") return { index, field: "nickname" };
 
@@ -284,6 +302,10 @@ function normalizeRow(
   const teamTag = explicitTag || makeTag(teamName, usedTags);
   if (explicitTag) usedTags.add(explicitTag);
 
+  const captainIgn = valueAt(row, mapping.columns.captainIgn) || valueAt(row, mapping.columns.captainName);
+  const captainUid = valueAt(row, mapping.columns.captainUid);
+  const captainFlag = normalizeHeader(valueAt(row, mapping.columns.captainIsPlayer));
+  const captainIsPlayer = !["tidak", "no", "false", "0"].includes(captainFlag);
   const players = mapping.players
     .map((player) => {
       const nickname = valueAt(row, player.nickname);
@@ -294,10 +316,17 @@ function normalizeRow(
     })
     .filter((player): player is RegistrationNormalizedTeam["players"][number] => player != null);
 
+  if (captainIsPlayer && captainIgn && captainUid && !players.some((player) => normalizeName(player.displayName) === normalizeName(captainUid))) {
+    players.unshift({ nickname: captainIgn, displayName: captainUid, position: "Captain" });
+  }
+
   return {
     teamName,
     teamTag,
-    captainName: valueAt(row, mapping.columns.captainName),
+    captainName: valueAt(row, mapping.columns.captainName) || captainIgn,
+    captainIgn,
+    captainUid,
+    captainIsPlayer,
     captainContact: valueAt(row, mapping.columns.captainContact),
     captainEmail: valueAt(row, mapping.columns.captainEmail).toLowerCase() || undefined,
     players,
@@ -326,6 +355,7 @@ export function buildRegistrationPreview(input: {
     participantCap: number;
     bracketLocked: boolean;
     maxRosterSize: number;
+    minRosterSize?: number;
   };
   existingTeams: Array<{
     id: string;
@@ -335,6 +365,7 @@ export function buildRegistrationPreview(input: {
     captainContact?: string | null;
     players: RegistrationNormalizedTeam["players"];
   }>;
+    minRosterSize?: number;
   existingUsers: Array<{ id: string; email: string; role: string }>;
   rows: RegistrationParsedRow[];
   mapping: RegistrationMapping;
@@ -348,7 +379,7 @@ export function buildRegistrationPreview(input: {
 
   const items = input.rows.map<RegistrationPreviewItem>((row) => {
     const errors: string[] = [];
-    if (input.event.bracketLocked) errors.push("Event sudah memiliki hasil pertandingan.");
+    if (input.event.bracketLocked) errors.push("Roster event terkunci karena drawing telah dipublikasikan atau turnamen berjalan.");
     if (hasMappedFormula(row, input.mapping)) {
       errors.push("Kolom yang dipetakan tidak boleh berisi formula spreadsheet.");
     }
@@ -360,6 +391,8 @@ export function buildRegistrationPreview(input: {
       errors.push("Minimal kontak atau email kapten wajib diisi.");
     }
     if (normalized.players.length === 0) errors.push("Minimal satu nickname pemain wajib diisi.");
+    if (input.mapping.columns.captainIgn != null && !normalized.captainIgn) errors.push("Captain IGN wajib diisi.");
+    if (input.mapping.columns.captainUid != null && !normalized.captainUid) errors.push("Captain UID wajib diisi.");
     if (normalized.players.length > input.event.maxRosterSize) {
       errors.push(`Roster melebihi batas ${input.event.maxRosterSize} pemain untuk mode event ini.`);
     }
@@ -371,6 +404,15 @@ export function buildRegistrationPreview(input: {
       captainContact: normalized.captainContact,
     })) {
       errors.push(error.message);
+    }
+    if (normalized.players.length < (input.event.minRosterSize ?? 1)) {
+      errors.push(`Roster inti minimal ${input.event.minRosterSize ?? 1} pemain.`);
+    }
+    const seenUids = new Set<string>();
+    for (const player of normalized.players) {
+      const uid = normalizeName(player.displayName);
+      if (seenUids.has(uid)) errors.push(`UID ${player.displayName} duplikat dalam roster.`);
+      seenUids.add(uid);
     }
 
     const user = normalized.captainEmail ? usersByEmail.get(normalized.captainEmail) : undefined;

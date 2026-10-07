@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
@@ -9,73 +10,189 @@ datasource db {
 }
 
 model User {
-  id                   String               @id @default(cuid())
-  email                String               @unique
-  name                 String
-  role                 String
-  passwordHash         String
-  tempPassword         String?
-  deactivatedAt        DateTime?
-  organizedEvents      Event[]              @relation("EventOrganizer")
-  captainOf            Team[]               @relation("TeamCaptain")
-  teamRegistrationRequests TeamRegistrationRequest[] @relation("RegistrationRequestCaptain")
-  approvedTeamRegistrationRequests TeamRegistrationRequest[] @relation("RegistrationRequestApprover")
-  passwordResetTokens  PasswordResetToken[]
-  organizerPlan        OrganizerPlan?
-  notifications        Notification[]
-  registrationImportProfiles RegistrationImportProfile[]
-  registrationImportBatches  RegistrationImportBatch[]
-  createdVisualAssets  EventVisualAsset[]
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
+  id                               String                      @id @default(cuid())
+  email                            String                      @unique
+  name                             String
+  role                             String
+  passwordHash                     String
+  tempPassword                     String?
+  sessionVersion                   Int                         @default(0)
+  mustChangePassword               Boolean                     @default(false)
+  deactivatedAt                    DateTime?
+  organizedEvents                  Event[]                     @relation("EventOrganizer")
+  captainOf                        Team[]                      @relation("TeamCaptain")
+  teamRegistrationRequests         TeamRegistrationRequest[]   @relation("RegistrationRequestCaptain")
+  approvedTeamRegistrationRequests TeamRegistrationRequest[]   @relation("RegistrationRequestApprover")
+  passwordResetTokens              PasswordResetToken[]
+  organizerPlan                    OrganizerPlan?
+  organizerProfile                 OrganizerProfile?
+  createdPreviewTokens             EventPreviewToken[]         @relation("EventPreviewTokenCreator")
+  createdEventEditRevisions        EventEditRevision[]         @relation("EventEditRevisionCreator")
+  notifications                    Notification[]
+  registrationImportProfiles       RegistrationImportProfile[]
+  registrationImportBatches        RegistrationImportBatch[]
+  createdVisualAssets              EventVisualAsset[]
+  updatedEventPaymentSettings      EventPaymentSettings[]       @relation("EventPaymentSettingsUpdatedBy")
+  readinessUpdates                 MatchReadiness[]            @relation("MatchReadinessActor")
+  resultRevisions                  MatchResultRevision[]       @relation("MatchResultRevisionActor")
+  reportedIncidents                CompetitionIncident[]       @relation("CompetitionIncidentReporter")
+  competitionAuditLogs             CompetitionAuditLog[]       @relation("CompetitionAuditActor")
+  createdScheduleRevisions         ScheduleRevision[]          @relation("ScheduleRevisionCreator")
+  publishedScheduleRevisions       ScheduleRevision[]          @relation("ScheduleRevisionPublisher")
+  createdAnnouncements             EventAnnouncement[]         @relation("EventAnnouncementCreator")
+  publishedAnnouncements           EventAnnouncement[]         @relation("EventAnnouncementPublisher")
+  createdAt                        DateTime                    @default(now())
+  updatedAt                        DateTime                    @updatedAt
+}
+
+model OrganizerProfile {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationName String
+  contactChannel   String
+  contactValue     String
+  verified         Boolean   @default(false)
+  verifiedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model PlatformProfile {
+  id             String   @id @default("global")
+  displayName    String   @default("Miracle")
+  contactChannel String
+  contactValue   String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model Event {
-  id                   String             @id @default(cuid())
-  slug                 String             @unique
-  name                 String
-  description          String
-  logoUrl              String?
-  gameImageUrl         String?
-  gameId               String
-  gameModeId           String
-  format               String
-  status               String
-  participantCap       Int
-  registrationWindow   String
-  startsAt             String
-  venue                String
-  organizerUserId      String?
-  organizer            User?              @relation("EventOrganizer", fields: [organizerUserId], references: [id], onDelete: SetNull)
-  organizerName        String?
-  organizerVerified    Boolean            @default(false)
-  prizePoolLabel       String?
-  registrationFeeRequired Boolean          @default(false)
-  registrationFeeAmount Int?
-  registrationFeeLabel String?
-  registrationUrl      String?
-  characterArtUrl      String?
-  accentColor          String?
-  stream               EventStream?
-  teams                Team[]
-  matches              Match[]
-  players              Player[]
-  statSubmissions      StatSubmission[]
-  roundConfigs         EventRoundConfig[]
-  certificate          Certificate?
-  promotions           EventPromotion[]
-  analyticsSnapshots   EventAnalyticsSnapshot[]
-  checkIns             CheckIn[]
-  registrationImportProfiles RegistrationImportProfile[]
-  registrationImportBatches  RegistrationImportBatch[]
-  visualAssets         EventVisualAsset[] @relation("EventVisualAssets")
-  activeVisualAssetId  String?            @unique
-  activeVisualAsset    EventVisualAsset?  @relation("ActiveEventVisualAsset", fields: [activeVisualAssetId], references: [id], onDelete: SetNull)
-  teamRegistrationRequests TeamRegistrationRequest[]
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
+  id                             String                          @id @default(cuid())
+  slug                           String                          @unique
+  name                           String
+  description                    String
+  logoUrl                        String?
+  gameImageUrl                   String?
+  gameId                         String
+  gameModeId                     String
+  format                         String
+  formatConfig                   Json?
+  status                         String
+  participantCap                 Int
+  registrationWindow             String
+  startsAt                       String
+  registrationOpensAt            DateTime?
+  registrationClosesAt           DateTime?
+  eventStartsAt                  DateTime?
+  timezone                       String                          @default("Asia/Jakarta")
+  venueAddress                   String?
+  draftRevision                  Int                             @default(0)
+  lastDraftMutationId            String?
+  publishedAt                    DateTime?
+  previewRevision                Int                             @default(0)
+  publishedRevision              Int                             @default(0)
+  competitionVersion             Int                             @default(0)
+  publishedScheduleVersion       Int?
+  venue                          String
+  organizerUserId                String?
+  organizer                      User?                           @relation("EventOrganizer", fields: [organizerUserId], references: [id], onDelete: SetNull)
+  organizerName                  String?
+  organizerVerified              Boolean                         @default(false)
+  prizePoolLabel                 String?
+  registrationFeeRequired        Boolean                         @default(false)
+  registrationFeeAmount          Int?
+  registrationFeeLabel           String?
+  registrationUrl                String?
+  characterArtUrl                String?
+  accentColor                    String?
+  stream                         EventStream?
+  teams                          Team[]
+  matches                        Match[]
+  players                        Player[]
+  statSubmissions                StatSubmission[]
+  roundConfigs                   EventRoundConfig[]
+  certificates                   Certificate[]
+  completion                     TournamentCompletion?
+  certificatePublications        CertificatePublication[]
+  certificateGenerationMutations CertificateGenerationMutation[]
+  promotions                     EventPromotion[]
+  analyticsSnapshots             EventAnalyticsSnapshot[]
+  checkIns                       CheckIn[]
+  bracketAppearance              EventBracketAppearance?
+  paymentSettings                EventPaymentSettings?
+  registrationImportProfiles     RegistrationImportProfile[]
+  registrationImportBatches      RegistrationImportBatch[]
+  visualAssets                   EventVisualAsset[]              @relation("EventVisualAssets")
+  activeVisualAssetId            String?                         @unique
+  activeVisualAsset              EventVisualAsset?               @relation("ActiveEventVisualAsset", fields: [activeVisualAssetId], references: [id], onDelete: SetNull)
+  teamRegistrationRequests       TeamRegistrationRequest[]
+  previewTokens                  EventPreviewToken[]
+  editRevisions                  EventEditRevision[]
+  slugRedirects                  EventSlugRedirect[]
+  competitionPhases              CompetitionPhase[]
+  competitionGroups              CompetitionGroup[]
+  matchDependencies              MatchDependency[]
+  matchReadiness                 MatchReadiness[]
+  resultRevisions                MatchResultRevision[]
+  competitionActionItems         CompetitionActionItem[]
+  competitionIncidents           CompetitionIncident[]
+  competitionAuditLogs           CompetitionAuditLog[]
+  scheduleRevisions              ScheduleRevision[]
+  announcements                  EventAnnouncement[]
+  createdAt                      DateTime                        @default(now())
+  updatedAt                      DateTime                        @updatedAt
 
   @@index([status])
+}
+
+model EventPreviewToken {
+  id              String             @id @default(cuid())
+  eventId         String
+  event           Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tokenHash       String             @unique
+  createdByUserId String?
+  createdByUser   User?              @relation("EventPreviewTokenCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  revisionId      String?
+  revision        EventEditRevision? @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  createdAt       DateTime           @default(now())
+
+  @@index([eventId, revokedAt, expiresAt])
+  @@index([revisionId, revokedAt, expiresAt])
+}
+
+model EventEditRevision {
+  id                    String              @id @default(cuid())
+  eventId               String
+  event                 Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdByUserId       String?
+  createdByUser         User?               @relation("EventEditRevisionCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  status                String
+  basePublishedRevision Int
+  revision              Int                 @default(0)
+  lastMutationId        String?
+  lastMutationPayload   Json?
+  payload               Json
+  appliedAt             DateTime?
+  discardedAt           DateTime?
+  discardReason         String?
+  previewTokens         EventPreviewToken[]
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([eventId, status])
+}
+
+model EventSlugRedirect {
+  id        String   @id @default(cuid())
+  oldSlug   String   @unique
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([eventId])
 }
 
 model EventVisualAsset {
@@ -90,6 +207,11 @@ model EventVisualAsset {
   mimeType         String?
   width            Int?
   height           Int?
+  byteSize         Int?
+  storageProvider  String?
+  storageKey       String?
+  contentSha256    String?
+  purpose          String?
   focalX           Float     @default(0.5)
   focalY           Float     @default(0.5)
   provider         String?
@@ -120,49 +242,57 @@ model EventStream {
 }
 
 model Team {
-  id             String        @id @default(cuid())
-  eventId        String?
-  event          Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  captainId      String?
-  captain        User?         @relation("TeamCaptain", fields: [captainId], references: [id], onDelete: SetNull)
-  name           String
-  logoText       String
-  logoUrl        String?
-  tag            String
-  captainName    String?
-  captainContact String?
-  source         String        @default("demo")
-  players        Player[]
-  certificates   Certificate[]
-  checkIns       CheckIn[]
-  registrationImportItems RegistrationImportItem[]
-  registrationRequest TeamRegistrationRequest?
-  createdAt      DateTime      @default(now())
+  id                          String                   @id @default(cuid())
+  eventId                     String?
+  event                       Event?                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  captainId                   String?
+  captain                     User?                    @relation("TeamCaptain", fields: [captainId], references: [id], onDelete: SetNull)
+  name                        String
+  logoText                    String
+  logoUrl                     String?
+  tag                         String
+  captainName                 String?
+  captainIgn                  String?
+  captainUid                  String?
+  captainIsPlayer             Boolean                  @default(true)
+  captainContact              String?
+  source                      String                   @default("demo")
+  players                     Player[]
+  certificates                Certificate[]
+  checkIns                    CheckIn[]
+  registrationImportItems     RegistrationImportItem[]
+  registrationRequest         TeamRegistrationRequest?
+  competitionGroupMemberships CompetitionGroupMember[]
+  matchReadiness              MatchReadiness[]
+  competitionActionItems      CompetitionActionItem[]
+  winningResultRevisions      MatchResultRevision[]    @relation("MatchResultRevisionWinner")
+  createdAt                   DateTime                 @default(now())
 
   @@unique([eventId, tag])
   @@unique([eventId, name])
+  @@unique([eventId, id])
+  @@index([eventId, captainUid])
 }
 
-
 model TeamRegistrationRequest {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   eventId       String
-  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event         Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   captainId     String
-  captain       User     @relation("RegistrationRequestCaptain", fields: [captainId], references: [id], onDelete: Cascade)
-  teamId        String?  @unique
-  team          Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  captain       User      @relation("RegistrationRequestCaptain", fields: [captainId], references: [id], onDelete: Cascade)
+  teamId        String?   @unique
+  team          Team?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
   teamName      String
   teamTag       String
-  status        String   @default("pending_payment")
+  status        String    @default("pending_payment")
   proofImageUrl String?
   rejectReason  String?
   expiresAt     DateTime
   approvedAt    DateTime?
   approvedById  String?
-  approvedBy    User?    @relation("RegistrationRequestApprover", fields: [approvedById], references: [id], onDelete: SetNull)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  approvedBy    User?     @relation("RegistrationRequestApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([status])
   @@index([eventId])
@@ -174,6 +304,35 @@ model PaymentSettings {
   qrisImageUrl String?
   instructions String?
   updatedAt    DateTime @updatedAt
+}
+
+model EventBracketAppearance {
+  id            String   @id @default(cuid())
+  eventId       String   @unique
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  backgroundUrl String?
+  positionX     Int      @default(50)
+  positionY     Int      @default(50)
+  overlay       Int      @default(35)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+model EventPaymentSettings {
+  id            String    @id @default(cuid())
+  eventId       String    @unique
+  event         Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  qrisImageUrl  String?
+  instructions  String?
+  status        String    @default("draft")
+  version       Int       @default(0)
+  publishedAt   DateTime?
+  updatedById   String?
+  updatedBy     User?     @relation("EventPaymentSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, publishedAt])
+  @@index([updatedById])
 }
 
 model Player {
@@ -196,27 +355,53 @@ model Player {
 }
 
 model Match {
-  id              String           @id @default(cuid())
-  eventId         String
-  event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  roundLabel      String
-  homeTeamId      String
-  awayTeamId      String
-  homeScore       Int              @default(0)
-  awayScore       Int              @default(0)
-  status          String           @default("Scheduled")
-  slot            Int?
-  round           Int?
-  winnerTeamId    String?
-  scheduledLabel  String?
-  playerStats     PlayerStat[]
-  statSubmissions StatSubmission[]
-  games           MatchGame[]
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                     String                  @id @default(cuid())
+  eventId                String
+  event                  Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  roundLabel             String
+  homeTeamId             String
+  awayTeamId             String
+  homeScore              Int                     @default(0)
+  awayScore              Int                     @default(0)
+  status                 String                  @default("Scheduled")
+  slot                   Int?
+  round                  Int?
+  winnerTeamId           String?
+  scheduledLabel         String?
+  phaseId                String?
+  phase                  CompetitionPhase?       @relation(fields: [eventId, phaseId], references: [eventId, id], onDelete: Restrict)
+  groupId                String?
+  group                  CompetitionGroup?       @relation(fields: [eventId, groupId], references: [eventId, id], onDelete: Restrict)
+  scheduledAt            DateTime?
+  scheduledEndsAt        DateTime?
+  actualStartedAt        DateTime?
+  actualEndedAt          DateTime?
+  scheduleRoom           String?
+  scheduleStatus         MatchScheduleStatus     @default(estimated)
+  scheduleVersion        Int?
+  scheduleMetadata       Json?
+  resultVersion          Int                     @default(0)
+  resultSnapshot         Json?
+  resultConfirmedAt      DateTime?
+  playerStats            PlayerStat[]
+  statSubmissions        StatSubmission[]
+  games                  MatchGame[]
+  sourceDependencies     MatchDependency[]       @relation("SourceMatchDependencies")
+  targetDependencies     MatchDependency[]       @relation("TargetMatchDependencies")
+  readiness              MatchReadiness[]
+  resultRevisions        MatchResultRevision[]
+  competitionActionItems CompetitionActionItem[]
+  competitionIncidents   CompetitionIncident[]
+  competitionAuditLogs   CompetitionAuditLog[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@unique([eventId, round, slot])
+  @@unique([eventId, id])
   @@index([eventId, status])
+  @@index([eventId, scheduleStatus, scheduledAt])
+  @@index([phaseId])
+  @@index([groupId])
 }
 
 model EventRoundConfig {
@@ -241,18 +426,18 @@ model MatchGame {
 }
 
 model PlayerStat {
-  id            String   @id @default(cuid())
+  id            String  @id @default(cuid())
   matchId       String
-  match         Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  match         Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
   playerId      String
-  player        Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  player        Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
   playerName    String
   teamId        String
   position      String
   gameSlug      String
   stats         Json
-  source        String?  // "captain" | "admin" — who last wrote these stats
-  lastUpdatedBy String?  // userId of last writer
+  source        String? // "captain" | "admin" — who last wrote these stats
+  lastUpdatedBy String? // userId of last writer
 
   @@unique([matchId, playerId])
   @@index([matchId])
@@ -277,27 +462,192 @@ model StatSubmission {
 }
 
 model Certificate {
-  id           String   @id @default(cuid())
-  eventId      String   @unique
-  teamId       String
-  imageUrl     String   @default("")
-  status       String   @default("ready")
-  lastError    String?
-  attemptCount Int      @default(1)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @default(now()) @updatedAt
-  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  team         Team     @relation(fields: [teamId], references: [id])
+  id                       String                         @id @default(cuid())
+  eventId                  String
+  teamId                   String
+  type                     String                         @default("champion")
+  recipientKind            String                         @default("team")
+  recipientId              String
+  recipientName            String
+  version                  Int                            @default(1)
+  templateVersion          String                         @default("legacy-v1")
+  assetManifest            Json                           @default("{}")
+  renderManifest           Json?
+  imageUrl                 String                         @default("")
+  status                   String                         @default("ready")
+  verificationCode         String                         @unique @default(cuid())
+  publishedUrl             String?
+  generatedAt              DateTime?
+  publishedAt              DateTime?
+  supersededByVersion      Int?
+  lastError                String?
+  attemptCount             Int                            @default(1)
+  generationAttemptId      String?
+  generationClaimedAt      DateTime?
+  generationIdempotencyKey String?
+  generationFingerprint    String?
+  generationActorUserId    String?
+  completionId             String?
+  completionVersion        Int?
+  createdAt                DateTime                       @default(now())
+  updatedAt                DateTime                       @default(now()) @updatedAt
+  event                    Event                          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  team                     Team                           @relation(fields: [teamId], references: [id])
+  completion               TournamentCompletion?          @relation(fields: [completionId], references: [id], onDelete: SetNull)
+  generationMutation       CertificateGenerationMutation?
+
+  @@unique([eventId, type, recipientKind, recipientId, version])
+  @@unique([eventId, type, generationIdempotencyKey])
+  @@index([eventId, type, status])
+  @@index([completionId, completionVersion])
+}
+
+model TournamentCompletion {
+  id                      String                   @id @default(cuid())
+  eventId                 String                   @unique
+  event                   Event                    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status                  String                   @default("completed")
+  format                  String
+  sourceSnapshot          Json
+  completedByUserId       String
+  completedAt             DateTime                 @default(now())
+  reopenedByUserId        String?
+  reopenedAt              DateTime?
+  reopenReason            String?
+  certificateRevision     Int                      @default(0)
+  podiumPlacements        PodiumPlacement[]
+  awards                  EventAward[]
+  auditEntries            CompletionAuditEntry[]
+  certificatePublications CertificatePublication[]
+  certificates            Certificate[]
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+}
+
+model CertificateGenerationMutation {
+  id             String      @id @default(cuid())
+  eventId        String
+  event          Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  type           String
+  idempotencyKey String
+  fingerprint    String
+  actorUserId    String
+  certificateId  String      @unique
+  certificate    Certificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+  status         String      @default("in_progress")
+  result         Json?
+  leaseToken     String?
+  leaseOwnerId   String?
+  leaseExpiresAt DateTime?
+  errorMessage   String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([eventId, idempotencyKey])
+  @@index([eventId, type, status])
+}
+
+model CertificatePublication {
+  id                String               @id @default(cuid())
+  eventId           String
+  event             Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  completionId      String
+  completion        TournamentCompletion @relation(fields: [completionId], references: [id], onDelete: Cascade)
+  version           Int
+  completionVersion Int
+  certificateIds    Json
+  idempotencyKey    String
+  fingerprint       String
+  actorUserId       String
+  publishedAt       DateTime             @default(now())
+  createdAt         DateTime             @default(now())
+
+  @@unique([eventId, version])
+  @@unique([eventId, idempotencyKey])
+  @@index([completionId, publishedAt])
+}
+
+model PodiumPlacement {
+  id             String               @id @default(cuid())
+  completionId   String
+  completion     TournamentCompletion @relation(fields: [completionId], references: [id], onDelete: Cascade)
+  rank           Int
+  teamId         String
+  teamName       String
+  source         String
+  sourceMatchId  String?
+  sourceSnapshot Json
+  createdAt      DateTime             @default(now())
+
+  @@unique([completionId, rank])
+  @@index([teamId])
+}
+
+model EventAward {
+  id                String               @id @default(cuid())
+  completionId      String
+  completion        TournamentCompletion @relation(fields: [completionId], references: [id], onDelete: Cascade)
+  type              String
+  status            String               @default("pending")
+  candidateSnapshot Json
+  decision          AwardDecision?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@unique([completionId, type])
+}
+
+model AwardDecision {
+  id              String     @id @default(cuid())
+  awardId         String     @unique
+  award           EventAward @relation(fields: [awardId], references: [id], onDelete: Cascade)
+  recipientKind   String     @default("player")
+  recipientId     String
+  recipientName   String
+  teamId          String
+  teamName        String
+  reason          String?
+  decidedByUserId String
+  decidedAt       DateTime   @default(now())
+}
+
+model CompletionAuditEntry {
+  id           String               @id @default(cuid())
+  completionId String
+  completion   TournamentCompletion @relation(fields: [completionId], references: [id], onDelete: Cascade)
+  action       String
+  actorUserId  String
+  reason       String?
+  details      Json
+  idempotencyKey String?
+  fingerprint  String?
+  result       Json?
+  createdAt    DateTime             @default(now())
+
+  @@unique([completionId, idempotencyKey])
+  @@index([completionId, createdAt])
 }
 
 model PasswordResetToken {
   id        String    @id @default(cuid())
-  userId    String
+  userId    String    @unique
   token     String    @unique
+  tokenFormat String   @default("legacy_raw")
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RateLimitBucket {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  count     Int
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
 }
 
 // ── Paid Features Foundation (hidden, not exposed in UI) ─────────────────────
@@ -306,11 +656,11 @@ model OrganizerPlan {
   id        String    @id @default(cuid())
   userId    String    @unique
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tier      String    @default("free")  // "free" | "starter" | "pro"
+  tier      String    @default("free") // "free" | "starter" | "pro"
   startsAt  DateTime  @default(now())
   expiresAt DateTime?
   maxEvents Int       @default(2)
-  features  Json      @default("{}")    // per-plan feature overrides
+  features  Json      @default("{}") // per-plan feature overrides
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
@@ -319,7 +669,7 @@ model EventPromotion {
   id        String   @id @default(cuid())
   eventId   String
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  type      String   // "featured" | "banner" | "social_boost"
+  type      String // "featured" | "banner" | "social_boost"
   startsAt  DateTime
   endsAt    DateTime
   config    Json     @default("{}")
@@ -347,10 +697,10 @@ model Notification {
   id      String    @id @default(cuid())
   userId  String
   user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type    String    // "match_reminder" | "checkin_open" | "result_posted"
+  type    String // "match_reminder" | "checkin_open" | "result_posted"
   title   String
   body    String
-  channel String    @default("in_app")  // "in_app" | "email" | "push"
+  channel String    @default("in_app") // "in_app" | "email" | "push"
   readAt  DateTime?
   sentAt  DateTime  @default(now())
 
@@ -365,7 +715,7 @@ model CheckIn {
   team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
   playerId    String?
   player      Player?  @relation(fields: [playerId], references: [id], onDelete: SetNull)
-  method      String   @default("manual")  // "manual" | "qr" | "auto"
+  method      String   @default("manual") // "manual" | "qr" | "auto"
   checkedInAt DateTime @default(now())
 
   @@unique([eventId, teamId, playerId])
@@ -392,22 +742,22 @@ model RegistrationImportProfile {
 }
 
 model RegistrationImportBatch {
-  id            String   @id @default(cuid())
+  id            String                     @id @default(cuid())
   eventId       String
-  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event         Event                      @relation(fields: [eventId], references: [id], onDelete: Cascade)
   profileId     String?
   profile       RegistrationImportProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
   createdById   String
-  createdBy     User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy     User                       @relation(fields: [createdById], references: [id], onDelete: Cascade)
   sourceKind    String
   sourceLabel   String
   worksheetName String?
-  status        String   @default("draft")
-  summary       Json     @default("{}")
+  status        String                     @default("draft")
+  summary       Json                       @default("{}")
   expiresAt     DateTime
   committedAt   DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
 
   items RegistrationImportItem[]
 
@@ -416,20 +766,295 @@ model RegistrationImportBatch {
 }
 
 model RegistrationImportItem {
-  id               String   @id @default(cuid())
+  id               String                  @id @default(cuid())
   batchId          String
   batch            RegistrationImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
   sourceRow        Int
   status           String
-  selected         Boolean  @default(false)
+  selected         Boolean                 @default(false)
   normalizedData   Json?
   diff             Json?
   validationErrors Json?
   teamId           String?
-  team             Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  team             Team?                   @relation(fields: [teamId], references: [id], onDelete: SetNull)
   committedAt      DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
 
   @@index([batchId, status])
+}
+
+enum CompetitionPhaseStatus {
+  draft
+  active
+  completed
+}
+
+enum MatchScheduleStatus {
+  estimated
+  confirmed
+  locked
+  delayed
+  live
+  completed
+  postponed
+}
+
+enum MatchReadinessStatus {
+  pending
+  checked_in
+  ready
+  not_ready
+}
+
+enum ReadinessActor {
+  organizer
+  captain
+}
+
+enum CompetitionActionPriority {
+  critical
+  urgent
+  attention_soon
+}
+
+enum AnnouncementUrgency {
+  info
+  important
+  urgent
+}
+
+enum AnnouncementStatus {
+  draft
+  published
+}
+
+enum ScheduleRevisionStatus {
+  draft
+  published
+}
+
+enum MatchDependencyOutcome {
+  winner
+  loser
+}
+
+enum MatchDependencySlot {
+  home
+  away
+}
+
+model CompetitionPhase {
+  id            String                 @id @default(cuid())
+  eventId       String
+  event         Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  label         String
+  sequence      Int
+  status        CompetitionPhaseStatus @default(draft)
+  configuration Json?
+  groups        CompetitionGroup[]
+  matches       Match[]
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@unique([eventId, sequence])
+  @@unique([eventId, id])
+  @@index([eventId, status])
+}
+
+model CompetitionGroup {
+  id        String                   @id @default(cuid())
+  eventId   String
+  event     Event                    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  phaseId   String
+  phase     CompetitionPhase         @relation(fields: [eventId, phaseId], references: [eventId, id], onDelete: Cascade)
+  label     String
+  sequence  Int
+  members   CompetitionGroupMember[]
+  matches   Match[]
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+
+  @@unique([phaseId, sequence])
+  @@unique([eventId, id])
+  @@index([eventId, sequence])
+}
+
+model CompetitionGroupMember {
+  id        String           @id @default(cuid())
+  eventId   String
+  groupId   String
+  group     CompetitionGroup @relation(fields: [eventId, groupId], references: [eventId, id], onDelete: Cascade)
+  teamId    String
+  team      Team             @relation(fields: [eventId, teamId], references: [eventId, id], onDelete: Cascade)
+  seed      Int?
+  createdAt DateTime         @default(now())
+
+  @@unique([groupId, teamId])
+  @@index([teamId])
+}
+
+model MatchDependency {
+  id            String                 @id @default(cuid())
+  eventId       String
+  event         Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sourceMatchId String
+  sourceMatch   Match                  @relation("SourceMatchDependencies", fields: [eventId, sourceMatchId], references: [eventId, id], onDelete: Cascade)
+  targetMatchId String
+  targetMatch   Match                  @relation("TargetMatchDependencies", fields: [eventId, targetMatchId], references: [eventId, id], onDelete: Cascade)
+  outcome       MatchDependencyOutcome
+  targetSlot    MatchDependencySlot
+  createdAt     DateTime               @default(now())
+
+  @@unique([targetMatchId, targetSlot])
+  @@index([eventId])
+  @@index([sourceMatchId])
+}
+
+model MatchReadiness {
+  id          String               @id @default(cuid())
+  eventId     String
+  event       Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matchId     String
+  match       Match                @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Cascade)
+  teamId      String
+  team        Team                 @relation(fields: [eventId, teamId], references: [eventId, id], onDelete: Cascade)
+  status      MatchReadinessStatus @default(pending)
+  actor       ReadinessActor       @default(organizer)
+  actorUserId String?
+  actorUser   User?                @relation("MatchReadinessActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  checkedInAt DateTime?
+  readyAt     DateTime?
+  note        String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@unique([matchId, teamId])
+  @@index([eventId, status])
+  @@index([teamId])
+}
+
+model MatchResultRevision {
+  id             String   @id @default(cuid())
+  eventId        String
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matchId        String
+  match          Match    @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Cascade)
+  version        Int
+  homeScore      Int
+  awayScore      Int
+  winnerTeamId   String?
+  winnerTeam     Team?    @relation("MatchResultRevisionWinner", fields: [eventId, winnerTeamId], references: [eventId, id], onDelete: NoAction)
+  scoreSnapshot  Json
+  actorUserId    String
+  actorUser      User     @relation("MatchResultRevisionActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  reason         String
+  idempotencyKey String
+  createdAt      DateTime @default(now())
+
+  @@unique([matchId, version])
+  @@unique([matchId, idempotencyKey])
+  @@index([eventId, createdAt])
+}
+
+model CompetitionActionItem {
+  id           String                    @id @default(cuid())
+  eventId      String
+  event        Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matchId      String?
+  match        Match?                    @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Cascade)
+  teamId       String?
+  team         Team?                     @relation(fields: [eventId, teamId], references: [eventId, id], onDelete: Cascade)
+  conditionKey String
+  priority     CompetitionActionPriority
+  title        String
+  detail       String?
+  resolvedAt   DateTime?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  @@unique([eventId, conditionKey])
+  @@index([eventId, priority, resolvedAt])
+  @@index([matchId])
+  @@index([teamId])
+}
+
+model CompetitionIncident {
+  id           String    @id @default(cuid())
+  eventId      String
+  event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matchId      String?
+  match        Match?    @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Restrict)
+  reportedById String?
+  reportedBy   User?     @relation("CompetitionIncidentReporter", fields: [reportedById], references: [id], onDelete: SetNull)
+  kind         String
+  description  String
+  details      Json?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([eventId, resolvedAt])
+  @@index([matchId])
+}
+
+model CompetitionAuditLog {
+  id             String   @id @default(cuid())
+  eventId        String
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matchId        String?
+  match          Match?   @relation(fields: [eventId, matchId], references: [eventId, id], onDelete: Restrict)
+  actorUserId    String?
+  actorUser      User?    @relation("CompetitionAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  action         String
+  reason         String?
+  payload        Json?
+  idempotencyKey String?
+  createdAt      DateTime @default(now())
+
+  @@index([eventId, createdAt])
+  @@index([matchId, createdAt])
+  @@index([eventId, idempotencyKey])
+}
+
+model ScheduleRevision {
+  id             String                 @id @default(cuid())
+  eventId        String
+  event          Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  version        Int
+  status         ScheduleRevisionStatus @default(draft)
+  snapshot       Json
+  idempotencyKey String
+  createdById    String?
+  createdBy      User?                  @relation("ScheduleRevisionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  publishedById  String?
+  publishedBy    User?                  @relation("ScheduleRevisionPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  publishedAt    DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@unique([eventId, version])
+  @@unique([eventId, idempotencyKey])
+  @@index([eventId, status, createdAt])
+}
+
+model EventAnnouncement {
+  id            String              @id @default(cuid())
+  eventId       String
+  event         Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status        AnnouncementStatus  @default(draft)
+  urgency       AnnouncementUrgency @default(info)
+  title         String
+  body          String
+  startsAt      DateTime?
+  endsAt        DateTime?
+  createdById   String?
+  createdBy     User?               @relation("EventAnnouncementCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  publishedById String?
+  publishedBy   User?               @relation("EventAnnouncementPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  publishedAt   DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([eventId, status, publishedAt])
 }

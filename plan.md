@@ -1,3 +1,273 @@
+# Miracle UI v3 — Brainstorming checkpoint
+
+**Updated:** 5 September 2026
+**Status:** Paused for the night after approval of the organizer creation, draft workspace, and registration-import mockups. Resume from “Next session”.
+**Scope:** Product/UI design only. The HTML files are interactive prototypes; production behavior has not been changed or authorized.
+
+## Product goal and priority
+
+Miracle must become substantially more informative and easier to operate. Work remains prioritized as organizer → public visitor → captain. Organizer is the primary user and future premium audience, while public visitors and captains must understand what to do without training.
+
+The first organizer success path is now coherent:
+
+1. Create an event through a five-step contextual wizard.
+2. See the public result through live preview while editing.
+3. Return safely to a draft workspace with a clear next action.
+4. Complete a readiness checklist and request review before publishing.
+5. Manage direct Miracle registrations and external registration imports in one Event Workspace.
+
+## Approved UI v3 direction
+
+- Montserrat is the primary interface font.
+- Dark theme is the default across public and organizer surfaces. Organizer retains a remembered light/dark toggle.
+- The Miracle logo anchors the visual identity. Cyan, violet, and cream are the three brand accents; restrained dark/neutral surfaces provide hierarchy without neon glow.
+- Layout uses deliberate spacing, thin separators, and a persistent organizer sidebar. Components must have clear active, disabled, loading, empty, warning, success, and error states.
+- Guidance is contextual: short explanations remain visible near fields; deeper examples or help open only when needed.
+- The footer retains “© [current year] Miracle”, with product contact/social information on complete public surfaces.
+
+## Approved organizer creation flow
+
+Reference: `public/miracle-organizer-v3-contextual-mockup.html`.
+
+- Keep the five-step wizard: Identitas; Format & Jadwal; Registrasi; Halaman Publik; Tinjau & Terbitkan.
+- Desktop keeps form on the left and live public preview on the right. Mobile uses an explicit preview action.
+- Draft begins with meaningful input and must autosave in production. Preview and draft saving remain available when information is incomplete; publication is blocked until minimum information is valid.
+- One event uses one supported game. An organizer can create any number of overlapping events, including multiple events for the same game.
+- Default timezone is WIB, with WITA and WIT selectable and shown beside dates/times.
+- Tournament start date is required; end date is optional. Registration opening and closing date/time are explicit. Match-day scheduling remains flexible.
+- Online, offline, and hybrid delivery remain supported. An offline venue name is enough; full address/map is optional.
+- Event logo (square identity) and poster (portrait promotion) are separate. A valid fallback can replace a missing logo.
+- Public preview now shows distinct registration opening and closing placeholders/values. Prize and organizer contact are separate; contact is visually prominent and can be copied.
+- The proposed unlisted draft-review link remains view-only, available without login, revocable, excluded from listings/indexing, labeled as a draft, and free from internal/payment/admin data.
+
+## Approved draft Event Workspace
+
+Reference: `public/miracle-organizer-v3-workspace-mockup.html`.
+
+- Ringkasan answers “what should I do next?” before showing secondary information.
+- Readiness groups: event identity; format/schedule; registration period/fee; organizer contact; prize information.
+- Each incomplete item opens the relevant wizard step. Saving and returning refreshes the checklist.
+- Event start, venue/channel, registration dates, and fee stay visible in the support column, including empty placeholders.
+- Preview remains available for incomplete drafts. Review-link creation/revocation is simulated in the mockup.
+- Workspace navigation remains Ringkasan, Halaman Publik, Registrasi, Peserta, Pertandingan, Hasil, and Pengaturan.
+
+## Approved organizer registration and import flow
+
+Reference: `public/miracle-organizer-v3-registration-mockup.html`.
+
+- Registrasi exposes two intake paths: direct registration through Miracle and import from an existing Google Forms/spreadsheet workflow.
+- Organizer can search/filter registrations, distinguish Miracle vs Import sources, inspect payment proof, approve payment, or reject it with a required reason.
+- Source and payment status remain independent. Importing a team must never be presented as payment verification.
+- Preserve existing intake support for `.xlsx` and `.csv` files up to 5 MiB. Current production does not accept legacy `.xls`.
+- Import flow: upload file → inspect/match columns → review rows → confirm all selected rows → commit.
+- Current automatic mapping suggestions are preserved. Editable mapping shown in the mockup is a proposed v3 enhancement.
+- Preserve row classifications New, Changed, Same, and Error. New rows start selected; Changed rows require an explicit selection; Same and Error are not selectable.
+- Preserve original spreadsheet row numbers, detailed errors/differences, worksheet selection, import history, captain account reuse/creation, and credential handoff.
+- Import must remain accessible for draft preparation and obey the existing bracket-lock rule.
+
+### Required import pagination
+
+- Review data uses pagination, defaulting to 25 rows with 10 / 25 / 50 choices.
+- The row-count selector appears above and below the table and remains synchronized.
+- Show visible range, total filtered rows, page count, and previous/next controls.
+- Status/search filters apply to the complete dataset before pagination and return the user to page one.
+- Row choices persist across page and filter changes. The selected total counts all pages.
+- The header checkbox explicitly selects eligible rows on the current page only.
+- Final confirmation and commit include all selected rows across pages.
+
+## Existing behavior that production design must respect
+
+- Ordinary captain registration accepts teams only while an event status is Published; capacity, duplicate-captain, payment, and bracket-result checks already apply.
+- Paid registration remains pending until evidence is reviewed. Rejected evidence can be corrected through the existing flow.
+- Spreadsheet imports create or update teams/rosters directly and may create captain credentials; they do not create an ordinary payment-review request.
+- Import commit is blocked after the existing bracket-lock condition applies.
+- Rosters lock when an event is Ongoing or Finished.
+- Registration window, start date, and venue are currently stored as strings and lifecycle changes are primarily status-driven. Structured dates/timezones and server autosave remain production enhancements.
+
+## Prototype boundaries and validation
+
+- Mockups read/write only local browser/session data. They do not publish events, create public review links, verify real payments, create real captain credentials, or commit imports to Miracle.
+- The registration prototype can read XLSX/CSV locally using the bundled ExcelJS browser file. Its validations are illustrative and do not replace existing server validation.
+- Browser checks passed for desktop/mobile layout, live preview, local draft persistence, wizard return, readiness updates, payment approve/reject states, CSV/XLSX reading, import classifications, pagination, page-only selection, cross-page/filter selection persistence, changed-row detail, cross-page confirmation, and import history.
+
+## Next session
+
+Begin the **direct registration through Miracle from the captain side**, using a paid event because it exposes the complete workflow:
+
+1. Public event page makes registration window, fee, eligibility, remaining capacity, and primary action clear.
+2. If authentication is needed, return the captain to the same event after login/signup.
+3. Captain selects a reusable team or creates a new one, reviews roster and event requirements, and confirms registration.
+4. Paid path shows payment instructions and evidence upload; free path activates directly according to existing rules.
+5. Captain gets a persistent registration-status page: pending payment, pending review, approved/active, rejected with reason/resubmit, or expired.
+6. Once already registered, the event CTA becomes “Lihat pendaftaran saya” and must not initiate a duplicate registration.
+7. Connect the captain submission to the organizer Registrasi surface already approved tonight.
+
+First deliverable tomorrow: an interactive captain registration mockup through evidence submission and the corresponding organizer-visible pending-review state. Validate information hierarchy and recovery states before expanding to Peserta, Pertandingan, or Hasil.
+
+---
+
+## Earlier planning record
+
+The material below is retained as historical context. Where it conflicts with the checkpoint above, the 5 September 2026 checkpoint is authoritative.
+
+# Miracle League Product & UX Redesign — Brainstorming Checkpoint
+
+**Tanggal:** 4 September 2026
+**Status:** Brainstorming dihentikan sementara; lanjutkan dari bagian “Titik lanjut besok”.
+**Catatan:** Arah visual dalam checkpoint ini menggantikan arah neon/street-sport pada rencana lama untuk keputusan redesign berikutnya. Rencana lama tetap disimpan di bawah sebagai riwayat teknis. Belum ada implementasi yang diizinkan dari checkpoint ini.
+
+## Masalah utama
+
+Miracle League dinilai sangat tidak informatif. Perbaikannya tidak cukup berupa perubahan warna atau beberapa komponen: struktur informasi, tata letak, navigasi, komponen, dan user journey perlu dibenahi secara menyeluruh.
+
+Prioritas pengguna:
+
+1. Organizer dan calon organizer sebagai pengguna utama serta calon pelanggan premium.
+2. Pengguna publik/peserta yang harus langsung memahami fungsi website dan cara mengikuti event.
+3. Captain yang membutuhkan alur operasional ringkas untuk tim, roster, pembayaran, dan statistik.
+
+Momen sukses pertama organizer adalah dapat membuat dan menerbitkan event pertama dengan mudah. Sebelum diterbitkan, organizer harus dapat melihat persis bagaimana event tampil untuk publik dan memahami bagian yang dapat dikustomisasi.
+
+## Keputusan yang sudah disepakati
+
+### Struktur produk
+
+- Pembuatan event menggunakan wizard khusus, bukan navbar utama.
+- Navigasi utama organizer berisi Dashboard, Event Saya, Buat Event, Panduan & Bantuan, serta Pengaturan.
+- Setelah draft terbentuk, event masuk ke Event Workspace untuk pengelolaan jangka panjang.
+- Event Workspace dirancang untuk Ringkasan, Halaman Publik, Registrasi, Peserta, Pertandingan, Hasil, dan Pengaturan.
+- Pengalaman organizer, publik, dan captain tetap menjadi satu sistem, dengan urutan pengerjaan organizer → publik → captain.
+
+### Draft, preview, dan publikasi
+
+- Draft dibuat sejak organizer mulai mengisi event.
+- Draft selalu tersimpan otomatis.
+- UI menampilkan status “Menyimpan…”, “Draft tersimpan”, dan waktu simpan terakhir.
+- Pergantian langkah, keluar dari halaman, atau membuka preview tidak boleh menghilangkan data.
+- Penyimpanan dan preview draft tidak pernah diblokir.
+- Publikasi diblokir sampai seluruh informasi minimum layak tayang lengkap.
+- Live preview terlihat selama organizer mengisi wizard; desktop memakai form di kiri dan preview di kanan.
+- Preview mobile dapat dibuka melalui tombol khusus.
+- Fase awal desain mencakup tautan review draft tanpa login.
+- Tautan review bersifat unik, tidak terindeks, hanya-baca, dapat dicabut/dibuat ulang, dan diberi label “Preview draft—belum dipublikasikan”.
+- Tautan review tidak menampilkan data internal, peserta, pembayaran, atau pengaturan admin dan tidak dapat dipakai untuk mendaftar.
+
+### Informasi minimum layak tayang
+
+Publikasi membutuhkan:
+
+- Nama dan deskripsi singkat event.
+- Game, format pertandingan, dan kapasitas peserta.
+- Tanggal, waktu, serta zona waktu.
+- Lokasi fisik atau platform pertandingan.
+- Periode dan cara pendaftaran.
+- Biaya atau penanda “gratis”.
+- Hadiah atau penanda “tidak ada”.
+- Kontak organizer.
+- Logo atau visual fallback yang valid.
+
+Informasi lanjutan seperti peraturan lengkap, rundown, sponsor, livestream, dan FAQ boleh dilengkapi setelah draft terbentuk, tetapi checklist kesiapan harus menunjukkan kekurangannya dengan jelas.
+
+### Usulan struktur wizard
+
+Arah yang dipilih adalah wizard seimbang dengan lima tahap dan live preview:
+
+1. Identitas — nama, game, deskripsi singkat, dan logo.
+2. Format & Jadwal — mode, sistem turnamen, kapasitas, tanggal, waktu, zona waktu, dan lokasi.
+3. Registrasi — periode, metode, biaya, persyaratan, dan kontak.
+4. Halaman Publik — hadiah, deskripsi lengkap, peraturan, poster, serta branding.
+5. Tinjau & Terbitkan — checklist, preview penuh, tautan review, validasi, dan publikasi.
+
+Pengelolaan peserta, pertandingan, statistik, standings, leaderboard, dan hasil berada di Event Workspace setelah draft terbentuk. Detail field dan urutan lima tahap masih perlu divalidasi sebelum spesifikasi final.
+
+## Arah visual yang sudah disepakati
+
+- Font utama: **Montserrat**.
+- Hindari warna neon karena melelahkan mata.
+- Palet merek maksimal tiga warna dengan fungsi konsisten.
+- Kandidat dari Color Hunt:
+  - `#F9F7F7` — latar/surface terang.
+  - `#112D4E` — teks utama, navigasi, dan area identitas gelap.
+  - `#3F72AF` — aksi utama, tautan, progres, serta penanda aktif.
+- Warna status untuk sukses, peringatan, dan error perlu diputuskan apakah dihitung di luar tiga warna merek; penggunaannya harus terbatas dan fungsional.
+- Logo Miracle League harus tampil di navigasi utama.
+- Judul halaman ditata di tengah bila konteksnya membutuhkan fokus.
+- Tulisan “Event” pada navbar publik berada di tengah.
+- Gunakan garis batas tipis dan sidebar untuk memisahkan area kerja dengan jelas.
+- Komponen memakai hierarki, spacing, ukuran, dan state yang konsisten.
+- Referensi eksternal: Color Hunt untuk palet dan hellodesign.id untuk tata letak bersih, ruang kosong, hierarki informasi, card berbatas tipis, grid responsif, serta satu aksi utama yang jelas.
+
+## Logo event dan poster
+
+Logo dan poster adalah dua aset terpisah:
+
+- Logo event: rasio 1:1, diunggah pada tahap Identitas, dipakai sebagai penanda kecil di dekat identitas event.
+- Poster event: rasio 4:5, diunggah pada tahap Halaman Publik, dipakai sebagai visual promosi.
+- Poster tampil di sisi kanan hero pada desktop dan sebelum ringkasan pada mobile.
+- Poster menjadi thumbnail kartu event dengan crop otomatis dan fallback bawaan.
+- Wizard harus menyediakan preview, panduan ukuran, crop/focal point, dan fallback untuk kedua aset.
+
+Komposisi hero yang disetujui adalah versi sederhana:
+
+- Satu judul event sebagai fokus utama; tidak ada pengulangan nama event.
+- Logo event kecil dan nama organizer menjadi informasi sekunder.
+- Deskripsi singkat dan satu CTA utama berada di area judul.
+- Poster berada di sisi kanan sebagai pendukung visual.
+- Tanggal, lokasi, biaya, serta hadiah dipindahkan ke baris metadata di bawah hero.
+- Detail dan peraturan berada di bagian konten setelah hero.
+- Kepadatan informasi harus tenang dan mudah dipindai.
+
+## Catatan UI/UX lengkap
+
+- Tata letak dan seluruh komponen perlu dibenahi secara menyeluruh.
+- Benahi button, card event, form, navbar/sidebar, modal, tooltip, loading, empty state, error state, success state, dan footer.
+- Buat panduan awal/onboarding bagi pengguna baru.
+- Tambahkan tooltip pada tombol, ikon, dan fitur yang belum jelas.
+- Susun user journey untuk organizer, publik, dan captain.
+- Perjelas deskripsi event: tujuan, jadwal, lokasi/platform, format, aturan, persyaratan, pendaftaran, biaya, hadiah, batas registrasi, dan kontak.
+- Tambahkan footer dengan copyright tahun berjalan, kontak, dan tautan media sosial berikon serta berlabel.
+- Pastikan tampilan responsif, dapat digunakan dengan keyboard, memiliki focus state, dan menjaga kontras teks.
+
+## Urutan program redesign
+
+1. Kunci information architecture dan user journey ketiga jenis pengguna.
+2. Bentuk design system: Montserrat, token tiga warna, spacing, grid, iconography, komponen, state, dan pola aksesibilitas.
+3. Rancang serta implementasikan wizard event pertama dan draft preview.
+4. Rancang Event Workspace untuk operasional organizer.
+5. Benahi pengalaman publik: homepage, daftar event, detail event, pendaftaran, bracket, standings, leaderboard, dan peserta.
+6. Benahi dashboard captain dan seluruh tugas operasionalnya.
+7. Tambahkan onboarding, panduan awal, tooltip, bantuan kontekstual, empty state, dan footer.
+8. Uji seluruh alur secara responsif dan end-to-end sebelum rollout bertahap.
+
+## Peluang premium organizer yang perlu dijaga
+
+Struktur awal tidak boleh menutup jalan bagi fitur premium berikut:
+
+- Branding event lanjutan dan template khusus.
+- Kapasitas event lebih besar.
+- Staf/co-organizer dan permission granular.
+- Automasi registrasi, pembayaran, pengingat, dan publikasi hasil.
+- Laporan, insight, dan ekspor data.
+- Domain atau halaman event khusus.
+- Dukungan prioritas.
+
+Fitur tersebut belum masuk implementasi awal kecuali dibutuhkan oleh fondasi data atau navigasi.
+
+## Titik lanjut besok
+
+Mulai dengan memvalidasi isi dan urutan wizard lima langkah. Setelah itu:
+
+1. Tentukan behavior setiap tahap, validasi field, dan bantuan kontekstual.
+2. Putuskan aturan warna status di luar palet merek tiga warna.
+3. Rancang information architecture Event Workspace.
+4. Rancang user journey publik dari landing page → menemukan event → memahami detail → mendaftar.
+5. Rancang user journey captain.
+6. Presentasikan desain lengkap per bagian untuk persetujuan.
+7. Setelah seluruh desain disetujui, tulis spesifikasi final di `docs/superpowers/specs/` dan minta review sebelum membuat implementation plan.
+
+---
+
+## Rencana teknis lama yang dipertahankan sebagai riwayat
 # Miracle Public Visual System and AI Event Art Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

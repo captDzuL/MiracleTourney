@@ -5,7 +5,9 @@ export type AppUser = {
   email: string;
   name: string;
   role: Exclude<UserRole, "public">;
+  sessionVersion?: number;
   deactivatedAt?: Date | null;
+  mustChangePassword?: boolean;
 };
 
 export type Game = {
@@ -48,7 +50,10 @@ export type EventStatus =
   | "Ongoing"
   | "Finished";
 
+import type { TournamentFormatConfig } from "@/lib/tournament/formats/types";
+
 export type TournamentFormat = "Single Elimination" | "League";
+export type { StandingsTiebreaker, TournamentFormatConfig } from "@/lib/tournament/formats/types";
 
 export type EventStream = {
   platform: "youtube" | "tiktok" | "external";
@@ -76,6 +81,11 @@ export type EventVisualAsset = {
   mimeType?: string;
   width?: number;
   height?: number;
+  byteSize?: number;
+  storageProvider?: "vercel_blob" | "local";
+  storageKey?: string;
+  contentSha256?: string;
+  purpose?: "certificate_team_logo" | "certificate_character_art";
   focalX: number;
   focalY: number;
   provider?: string;
@@ -101,6 +111,7 @@ export type Event = {
   gameId: string;
   gameModeId: string;
   format: TournamentFormat;
+  formatConfig?: TournamentFormatConfig;
   status: EventStatus;
   participantCap: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
   registrationWindow: string;
@@ -145,6 +156,9 @@ export type Team = {
   tag: string;
   captainName?: string;
   captainContact?: string;
+  captainIgn?: string;
+  captainUid?: string;
+  captainIsPlayer?: boolean;
   captain?: { id: string; name: string } | null;
   source?: "demo" | "csv-import" | "registration" | "registration-intake" | "draft";
 };

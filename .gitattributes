@@ -1,0 +1,3 @@
+scripts/operations/testing-schema-baseline.json text eol=lf
+scripts/operations/testing-schema-reference.json text eol=lf
+scripts/operations/testing-schema-repair.sql text eol=lf

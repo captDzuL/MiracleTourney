@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight, CalendarDays, ListTree, Trophy, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 
@@ -9,6 +10,7 @@ import { ShareButton } from "@/components/ShareButton";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getOrderedStatEntries, getStatKeysForMode } from "@/lib/platform/config";
 import type { Event } from "@/lib/platform/types";
+import { serializeJsonLd } from "@/lib/seo/json-ld";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 import {
   getBracketPreview,
@@ -25,7 +27,7 @@ const fallbackEventsBySlug: Record<string, Event> = {
   "miracle-league": {
     id: "fallback-miracle-league",
     slug: "miracle-league",
-    name: "Miracle Fast Tour",
+    name: "Miracle League",
     description: "New event created from admin panel.",
     logoUrl: "https://lh3.googleusercontent.com/d/1m01dWpxKA6qXRzfFRrEovFzho1nTnV9B",
     gameId: "game-flashpeak",
@@ -67,10 +69,15 @@ function getInitials(name: string) {
     .join("");
 }
 
-export async function renderEventDetailPage(slug: string, locale?: "id" | "en") {
+export async function renderEventDetailPage(
+  slug: string,
+  locale?: "id" | "en",
+  eventOverride?: Event,
+  options: { readOnly?: boolean } = {},
+) {
   const t = await getTranslations("eventDetail");
   const fallbackEvent = fallbackEventsBySlug[slug];
-  const event = await getPublicEventBySlug(slug).catch(() => fallbackEvent ?? null);
+  const event = eventOverride ?? await getPublicEventBySlug(slug).catch(() => fallbackEvent ?? null);
 
   if (!event) notFound();
 
@@ -100,7 +107,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
 
   const isV2 = isFeatureEnabled("public_visual_v2");
 
-  const quickLinksSection = (
+  const quickLinksSection = !options.readOnly ? (
     <Section title={t("quickLinks")} description={t("quickLinksDesc")} className="rounded-xl shadow-none">
       <div className="grid gap-3 text-sm">
         <EventLink href={buildEventHref(event.slug, "participants", locale)}>{t("participants")}</EventLink>
@@ -109,7 +116,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
         <EventLink href={buildEventHref(event.slug, "leaderboards", locale)}>{t("leaderboardLink")}</EventLink>
       </div>
     </Section>
-  );
+  ) : null;
 
   // v2 drops the format snapshot (already shown in the hero meta line) and
   // shows the top performer as a compact callout instead of a full Section —
@@ -195,7 +202,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
       <>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
         />
         <PublicEventDetailV2
           event={event}
@@ -204,6 +211,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
           teams={teams}
           bracket={bracket}
           locale={locale}
+          readOnly={options.readOnly}
           labels={{
             liveNow: t("liveNow"),
             organizer: t("organizerLabel"),
@@ -229,7 +237,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
     <div className="space-y-6">
       <section
@@ -242,7 +250,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
           <div className="grid min-w-0 gap-4 sm:grid-cols-[88px_minmax(0,1fr)]">
             <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-white/35 bg-white/95 text-slate-500 shadow-sm">
               {event.logoUrl ? (
-                <img src={event.logoUrl} alt={`${event.name} logo`} className="h-full w-full object-contain" />
+                <Image src={event.logoUrl} alt={`${event.name} logo`} width={80} height={80} loading="eager" unoptimized className="h-full w-full object-contain" />
               ) : (
                 <span className="text-lg font-semibold text-slate-700">{getInitials(event.name) || "EV"}</span>
               )}
@@ -266,7 +274,7 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
           </div>
 
           <div className="flex flex-wrap gap-2 text-sm text-slate-100 lg:max-w-sm lg:justify-end">
-            <ShareButton />
+            {!options.readOnly ? <ShareButton /> : null}
             <EventFact icon={<CalendarDays className="h-4 w-4 text-cyan-600" />}>
               {event.registrationWindow}
             </EventFact>
@@ -281,12 +289,10 @@ export async function renderEventDetailPage(slug: string, locale?: "id" | "en") 
                 {event.registrationFeeLabel}
               </EventFact>
             ) : null}
-            {event.registrationUrl ? (
+            {!options.readOnly && event.status === "Published" ? (
               <a
-                className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-4 py-2 font-semibold text-slate-950 shadow-sm transition hover:bg-cyan-300"
-                href={event.registrationUrl}
-                target="_blank"
-                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-4 py-2 font-semibold text-cyan-950 shadow-sm transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                href={`${locale ? `/${locale}` : ""}/events/${event.slug}/register`}
               >
                 Daftar Event
                 <ArrowRight className="h-4 w-4" />

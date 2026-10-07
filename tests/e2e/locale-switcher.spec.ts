@@ -1,33 +1,34 @@
 import { expect, test } from "@playwright/test";
 
-test("language switcher toggles localized copy on the homepage", async ({ page }) => {
-  await page.goto("/id");
-  await expect(page).toHaveURL(/\/id$/);
+const cases = [
+  { path: "/id", lang: "id", home: "Beranda", signIn: "Masuk" },
+  { path: "/en", lang: "en", home: "Home", signIn: "Sign in" },
+] as const;
 
-  await expect(page.getByRole("heading", { name: "Lihat Turnamen Komunitas yang Lagi Berjalan" })).toBeVisible();
+const viewports = [
+  { name: "desktop", viewport: { width: 1440, height: 900 } },
+  { name: "mobile", viewport: { width: 390, height: 844 } },
+] as const;
 
-  const localeSwitcher = page.getByLabel(/pilih bahasa \/ select language/i);
+for (const viewport of viewports) {
+  test.describe(`${viewport.name} V3 shell`, () => {
+    test.use({ viewport: viewport.viewport });
 
-  await localeSwitcher.getByRole("button", { name: "en" }).click();
-  await expect(page).toHaveURL(/\/en$/);
-
-  await expect(page.getByRole("heading", { name: "Explore Live Community Tournaments" })).toBeVisible();
-  await expect(localeSwitcher.getByRole("button", { name: "en" })).toHaveAttribute("aria-pressed", "true");
-
-  await localeSwitcher.getByRole("button", { name: "id" }).click();
-  await expect(page).toHaveURL(/\/id$/);
-
-  await expect(page.getByRole("heading", { name: "Lihat Turnamen Komunitas yang Lagi Berjalan" })).toBeVisible();
-  await expect(localeSwitcher.getByRole("button", { name: "id" })).toHaveAttribute("aria-pressed", "true");
-});
-
-test("homepage shell keeps desktop layout styling", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/id");
-
-  const headerRow = page.locator("header > div").first();
-  await expect(headerRow).toBeVisible();
-
-  const display = await headerRow.evaluate((element) => window.getComputedStyle(element).display);
-  expect(display).toBe("flex");
-});
+    for (const item of cases) {
+      test(`renders the V3 ${item.lang} shell`, async ({ page }) => {
+        await page.goto(item.path, { waitUntil: "domcontentloaded" });
+        await expect(page.locator("html")).toHaveAttribute("lang", item.lang);
+        const header = page.locator("header");
+        const brandLink = header.locator("a.mpv3-brand");
+        await expect(brandLink).toHaveAccessibleName(item.home);
+        await expect(brandLink).toBeVisible();
+        await expect(brandLink).toHaveAttribute("aria-current", "page");
+        await expect(header.getByRole("link", { name: item.signIn, exact: true })).toBeVisible();
+        await expect(header).toHaveCount(1);
+        const display = await header.evaluate((node) => getComputedStyle(node).display);
+        expect(display).toBe("flex");
+        await expect(page.getByLabel(/pilih bahasa|select language/i)).toHaveCount(0);
+      });
+    }
+  });
+}

@@ -1,4 +1,5 @@
 import { CalendarDays, Clock, CreditCard, Crown, Plus, Settings, Trophy, Upload, Users } from "lucide-react";
+import Image from "next/image";
 import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
@@ -43,7 +44,7 @@ const dangerButton = "inline-flex items-center justify-center rounded-lg bg-red-
 export default async function CaptainPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ edit?: string; confirm?: string; success?: string; error?: string; tab?: string }>;
+  searchParams?: Promise<{ edit?: string; confirm?: string; success?: string; error?: string; tab?: string; eventId?: string }>;
 }) {
   const user = await requireRole("captain");
   if (!user) {
@@ -56,6 +57,7 @@ export default async function CaptainPage({
   const confirmDeleteId = params?.confirm;
   const success = params?.success;
   const error = params?.error;
+  const requestedEventId = params?.eventId && /^[A-Za-z0-9_-]+$/.test(params.eventId) ? params.eventId : undefined;
   const rosterSignals = new Set(["player-added", "player-updated", "player-deleted", "captain-display-updated", "draft-team-saved", "team-logo-updated"]);
   const activeTab = params?.tab === "roster" || editPlayerId || confirmDeleteId || (success && rosterSignals.has(success)) ? "roster" : "registration";
 
@@ -82,6 +84,17 @@ export default async function CaptainPage({
   }));
   const draftTeamWithPlayers = teamsWithPlayers.find(({ team }) => !team.eventId || team.source === "draft") ?? null;
 
+  const requestedEvent = requestedEventId
+    ? openRegistrationEvents.find((event) => event.id === requestedEventId)
+      ?? paymentRequests.find((request) => request.eventId === requestedEventId)?.event
+      ?? events.find((event) => event.id === requestedEventId)
+    : undefined;
+  const focusedOpenEvents = requestedEventId
+    ? [...openRegistrationEvents].sort((left, right) => Number(right.id === requestedEventId) - Number(left.id === requestedEventId))
+    : openRegistrationEvents;
+  const focusedPaymentRequests = requestedEventId
+    ? [...paymentRequests].sort((left, right) => Number(right.eventId === requestedEventId) - Number(left.eventId === requestedEventId))
+    : paymentRequests;
   const certificates = new Map<string, Certificate | null>(
     teams.map((team) => {
       const cert = team.eventId ? certificatesByEvent.get(team.eventId) : null;
@@ -112,17 +125,26 @@ export default async function CaptainPage({
       {success === "captain-display-updated" ? <Notice tone="success">Tampilan kapten berhasil diperbarui.</Notice> : null}
       {error ? <Notice tone="danger">{decodeURIComponent(error)}</Notice> : null}
 
+      {requestedEvent ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900">
+          <Link href={`/events/${requestedEvent.slug}`} className="font-semibold underline underline-offset-4">
+            ← {requestedEvent.name}
+          </Link>
+          <span className="text-cyan-700">·</span>
+          <span data-testid="registration-flow-event-name" className="font-medium">{requestedEvent.name}</span>
+        </div>
+      ) : null}
       <CaptainDashboardTabs activeTab={activeTab} t={t as TFn} />
 
       {activeTab === "registration" ? (
         <div className="grid gap-6">
           <OpenRegistrationSection
-            events={openRegistrationEvents}
+            events={focusedOpenEvents}
             draftTeam={draftTeamWithPlayers?.team ?? null}
             draftPlayerCount={draftTeamWithPlayers?.players.length ?? 0}
             t={t as TFn}
           />
-          <PaymentRequestsSection requests={paymentRequests} paymentSettings={paymentSettings} t={t as TFn} />
+          <PaymentRequestsSection requests={focusedPaymentRequests} paymentSettings={paymentSettings} t={t as TFn} />
         </div>
       ) : (
         <RosterManagementSection
@@ -510,7 +532,7 @@ function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSetti
               {request.event?.registrationFeeLabel ? <p className="mt-2 font-medium text-slate-800">{request.event.registrationFeeLabel}</p> : null}
               {paymentSettings.instructions ? <p className="mt-2 leading-6">{paymentSettings.instructions}</p> : null}
               {paymentSettings.qrisImageUrl ? (
-                <img src={paymentSettings.qrisImageUrl} alt="QRIS" className="mt-3 aspect-square w-36 rounded-lg border border-slate-200 bg-white object-contain" />
+                <Image src={paymentSettings.qrisImageUrl} alt="QRIS" width={144} height={144} loading="eager" unoptimized className="mt-3 aspect-square w-36 rounded-lg border border-slate-200 bg-white object-contain" />
               ) : (
                 <p className="mt-2 text-amber-700">{t("noQrisConfigured")}</p>
               )}
@@ -518,6 +540,7 @@ function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSetti
             {request.status === "pending_payment" || request.status === "rejected" ? (
               <form action={captainUploadPaymentProofAction} className="grid gap-3">
                 <input type="hidden" name="requestId" value={request.id} />
+                <input type="hidden" name="eventId" value={request.eventId} />
                 <label className={labelClass}>
                   {t("paymentProof")}
                   <input className={inputClass} name="paymentProof" type="file" accept="image/png,image/jpeg,image/webp" required />

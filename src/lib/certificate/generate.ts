@@ -5,12 +5,80 @@ import { getGameConfig } from "@/lib/platform/config";
 import {
   countCertificatesForGame,
   getCertificateByEvent,
+  getLeaderboardForEvent,
   recordCertificateFailure,
   recordCertificateSuccess,
 } from "@/lib/platform/repository";
 import { prisma } from "@/lib/platform/db";
 import { launchCertificateBrowser } from "./browser";
+import { resolveMvpForCertificate } from "./mvp";
+import { renderCertificatePng } from "./renderer";
 import { buildCertificateHtml } from "./template";
+import { buildMiracleV3CertificateHtml, getMiracleV3CertificateFingerprint, type MiracleV3CertificateData } from "./templates/miracle-v3";
+
+export interface MiracleV3CertificateRenderRequest { readonly data: MiracleV3CertificateData }
+export type MiracleV3CertificateIdentity = Readonly<Pick<MiracleV3CertificateData, "certificateId" | "eventId" | "certificateType" | "recipientId" | "version">>;
+export interface MiracleV3GenerationDependencies {
+  /** Atomically claim the exact draft version, or return its existing immutable asset.
+   * The repository must prevent publication during a claim and allocate a unique attemptId.
+   * Task 6 supplies the durable adapter; there is intentionally no default here. */
+  claimGeneration(identity: MiracleV3CertificateIdentity): Promise<
+    { status: "claimed"; attemptId: string } | { status: "ready" | "published"; imageUrl: string }
+  >;
+  render?: (html: string) => Promise<Buffer>;
+  /** Must enforce create-only storage, including on retry/concurrent execution. */
+  storeArtifact(artifact: { filename: string; png: Buffer; overwrite: false }): Promise<string>;
+  /** Both writes must compare the identity and active attempt; never update a published row. */
+  recordSuccess(result: { identity: MiracleV3CertificateIdentity; attemptId: string; imageUrl: string; fingerprint: string }): Promise<void>;
+  recordFailure(result: { identity: MiracleV3CertificateIdentity; attemptId: string; message: string }): Promise<void>;
+}
+
+export class CertificateArtifactFinalizationError extends Error {
+  readonly imageUrl: string;
+  constructor(imageUrl: string, cause: unknown) {
+    super("Certificate artifact was stored but success persistence failed", { cause });
+    this.name = "CertificateArtifactFinalizationError";
+    this.imageUrl = imageUrl;
+  }
+}
+
+/** Render one claimed certificate version; set orchestration and publication live in Task 6. */
+export async function generateMiracleV3Certificate(
+  request: MiracleV3CertificateRenderRequest,
+  dependencies: MiracleV3GenerationDependencies,
+): Promise<string> {
+  // Snapshot caller-owned data before the first asynchronous operation.
+  const data = { ...request.data, branding: { ...request.data.branding } };
+  const fingerprint = getMiracleV3CertificateFingerprint(data);
+  const identity: MiracleV3CertificateIdentity = Object.freeze({
+    certificateId: data.certificateId, eventId: data.eventId, certificateType: data.certificateType,
+    recipientId: data.recipientId, version: data.version,
+  });
+  const claim = await dependencies.claimGeneration(identity);
+  if (claim.status !== "claimed") return claim.imageUrl;
+  if (!claim.attemptId.trim()) throw new Error("Generation claim requires an attempt ID");
+  let imageUrl: string;
+  try {
+    const html = await buildMiracleV3CertificateHtml(data);
+    const png = await (dependencies.render ?? renderCertificatePng)(html);
+    const segment = (value: string) => /^\.+$/.test(value) ? value.replace(/\./g, "%2E") : encodeURIComponent(value);
+    const filename = `certificates/${segment(data.eventId)}/${data.certificateType}/${segment(data.recipientId)}/v${data.version}/${segment(claim.attemptId)}.png`;
+    imageUrl = await dependencies.storeArtifact({ filename, png, overwrite: false });
+  } catch (error) {
+    try {
+      await dependencies.recordFailure({ identity, attemptId: claim.attemptId, message: error instanceof Error ? error.message : "Certificate generation failed" });
+    } catch (persistenceError) {
+      console.error("Certificate failure persistence failed", { ...identity, attemptId: claim.attemptId, error: persistenceError });
+    }
+    throw error;
+  }
+  try { await dependencies.recordSuccess({ identity, attemptId: claim.attemptId, imageUrl, fingerprint }); }
+  catch (persistenceError) {
+    console.error("Certificate success persistence failed", { ...identity, attemptId: claim.attemptId, imageUrl, error: persistenceError });
+    throw new CertificateArtifactFinalizationError(imageUrl, persistenceError);
+  }
+  return imageUrl;
+}
 
 /**
  * Generates a certificate for the champion team if the match is the Final and has a winner.
@@ -36,11 +104,22 @@ export async function generateCertificateIfFinal(matchId: string, eventId: strin
  * the admin panel can show the reason and offer a retry.
  */
 export async function generateCertificate(eventId: string, winnerTeamId: string): Promise<string> {
+  const v3Completion = await prisma.tournamentCompletion.findFirst({
+    where: { eventId },
+    select: { id: true },
+  });
+  if (v3Completion) {
+    throw new Error("Completion V3 certificates must be generated in Certificate Studio");
+  }
   try {
     return await renderAndStoreCertificate(eventId, winnerTeamId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Certificate generation failed";
-    await recordCertificateFailure(eventId, winnerTeamId, message);
+    try {
+      await recordCertificateFailure(eventId, winnerTeamId, message);
+    } catch (persistenceError) {
+      console.error("Certificate failure persistence failed", { eventId, winnerTeamId, error: persistenceError });
+    }
     throw err;
   }
 }
@@ -62,6 +141,13 @@ async function renderAndStoreCertificate(eventId: string, winnerTeamId: string):
   const date = new Intl.DateTimeFormat("id-ID", { year: "numeric", month: "long", day: "numeric" }).format(new Date());
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
 
+  // Manually uploaded character art (admin panel) always wins over the auto-picked MVP portrait.
+  let mvp = null;
+  if (!event.characterArtUrl) {
+    const leaderboard = await getLeaderboardForEvent(eventId, event.gameId);
+    mvp = resolveMvpForCertificate(event.gameId, leaderboard, winnerTeamId);
+  }
+
   const html = await buildCertificateHtml({
     eventName: event.name,
     gameId: event.gameId,
@@ -73,37 +159,49 @@ async function renderAndStoreCertificate(eventId: string, winnerTeamId: string):
     date,
     eventSlug: event.slug,
     baseUrl,
+    mvpArtUrl: mvp?.url ?? null,
+    mvpName: mvp?.name ?? null,
+    mvpRoleLabel: mvp?.roleLabel ?? null,
   });
 
-  const browser = await launchCertificateBrowser();
-  try {
-    const page = await browser.newPage();
-    await page.setViewportSize({ width: 1080, height: 1920 });
-    // The template pulls webfonts from Google Fonts, so "networkidle" is what guarantees the
-    // poster is fully styled before the screenshot. Bound it explicitly: the default 30s would
-    // eat the whole function budget on a slow font CDN, and failing fast lets the admin retry
-    // instead of the request being killed with nothing recorded.
-    await page.setContent(html, { waitUntil: "networkidle", timeout: 20_000 });
-    const pngBuffer = await page.screenshot({ type: "png", fullPage: false });
+  // Reuse the renderer's PNG conversion and cleanup with the origin launch policy.
+  // The launcher returns Playwright on every host, including Vercel/Lambda.
+  const pngBuffer = await renderCertificatePng(html, {
+    isVercel: false,
+    loadPlaywrightChromium: async () => ({
+      launch: async () => {
+        const browser = await launchCertificateBrowser();
+        return {
+          newPage: async () => {
+            const page = await browser.newPage();
+            return {
+              setViewportSize: (viewport) => page.setViewportSize(viewport),
+              // Bound font loading so a slow CDN leaves time to persist a retryable failure.
+              setContent: (content, options) => page.setContent(content, { ...options, timeout: 20_000 }),
+              screenshot: (options) => page.screenshot(options),
+            };
+          },
+          close: () => browser.close(),
+        };
+      },
+    }),
+  });
 
-    let url: string;
-    if (process.env.BLOB_READ_WRITE_TOKEN) {
-      const filename = `certificates/${eventId}-${winnerTeamId}-${Date.now()}.png`;
-      const { put } = await import("@vercel/blob");
-      const result = await put(filename, pngBuffer, { access: "public", contentType: "image/png" });
-      url = result.url;
-    } else {
-      // Local dev fallback: write to public/certificates/
-      const dir = path.join(process.cwd(), "public", "certificates");
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      const filename = `${eventId}-${winnerTeamId}-${Date.now()}.png`;
-      fs.writeFileSync(path.join(dir, filename), pngBuffer);
-      url = `/certificates/${filename}`;
-    }
-
-    await recordCertificateSuccess(eventId, winnerTeamId, url);
-    return url;
-  } finally {
-    await browser.close();
+  let url: string;
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const filename = `certificates/${eventId}-${winnerTeamId}-${Date.now()}.png`;
+    const { put } = await import("@vercel/blob");
+    const result = await put(filename, pngBuffer, { access: "public", contentType: "image/png" });
+    url = result.url;
+  } else {
+    // Local dev fallback: write to public/certificates/
+    const dir = path.join(process.cwd(), "public", "certificates");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const filename = `${eventId}-${winnerTeamId}-${Date.now()}.png`;
+    fs.writeFileSync(path.join(dir, filename), pngBuffer);
+    url = `/certificates/${filename}`;
   }
+
+  await recordCertificateSuccess(eventId, winnerTeamId, url);
+  return url;
 }

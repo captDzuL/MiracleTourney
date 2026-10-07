@@ -63,7 +63,7 @@ export function PublicHomeV2({
   const filters = [{ id: "all", name: labels.allGames }, ...games];
 
   return (
-    <div className="pv-home grid gap-10 pb-12">
+    <div className="public-visual-v2 pv-home grid gap-10 pb-12">
       <section className="pv-hero pv-grain relative isolate overflow-hidden bg-[var(--pv-canvas-raised)]">
         <div className="relative z-[2] grid gap-6 px-5 py-8 md:px-8 md:py-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] lg:items-end">
           <div className="relative flex h-full flex-col justify-end gap-4 lg:self-stretch">

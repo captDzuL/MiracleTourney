@@ -17,10 +17,12 @@ const { checkE2eDatabaseConnection } = await import(preflightModulePath) as Pref
 
 function prismaClientMock(connectImpl: () => Promise<void>) {
   const disconnect = vi.fn().mockResolvedValue(undefined);
-  const PrismaClient = vi.fn(() => ({
-    $connect: connectImpl,
-    $disconnect: disconnect,
-  }));
+  const PrismaClient = vi.fn(function PrismaClientMock() {
+    return {
+      $connect: connectImpl,
+      $disconnect: disconnect,
+    };
+  });
 
   return { PrismaClient, disconnect };
 }

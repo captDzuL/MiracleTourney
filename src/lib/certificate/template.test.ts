@@ -104,4 +104,32 @@ describe("buildCertificateHtml", () => {
     expect(html).not.toContain("external-art");
     expect(html).not.toContain("team-art.png");
   });
+
+  it("renders the MVP portrait and badge when mvp fields are provided", async () => {
+    const html = await buildCertificateHtml({
+      ...baseData,
+      mvpArtUrl: "/character-art/roster/striker/Orion.png",
+      mvpName: "Bagas Wirawan",
+      mvpRoleLabel: "Forward · 11 goals",
+    });
+
+    expect(html).toContain('<img class="mvp-portrait-img" src="/character-art/roster/striker/Orion.png"');
+    expect(html).toContain('class="mvp-name">Bagas Wirawan<');
+    expect(html).toContain('class="mvp-role">Forward · 11 goals<');
+    expect(html).not.toContain('class="hero-illustration"'); // replaced by the MVP portrait, not layered on top
+    // the center emblem and right motto collide with the full-body portrait, so they're dropped when it's shown
+    expect(html).not.toContain('class="center-emblem"');
+    expect(html).not.toContain('class="theme-copy right"');
+    expect(html).toContain('class="theme-copy">'); // left motto is clear of the portrait and stays
+  });
+
+  it("falls back to the theme hero illustration when no MVP art is provided", async () => {
+    const html = await buildCertificateHtml(baseData);
+
+    expect(html).not.toContain("<img class=\"mvp-portrait-img\"");
+    expect(html).not.toContain("<div class=\"mvp-badge\">");
+    expect(html).toContain("hero-illustration");
+    expect(html).toContain('class="center-emblem"');
+    expect(html).toContain('class="theme-copy right"');
+  });
 });

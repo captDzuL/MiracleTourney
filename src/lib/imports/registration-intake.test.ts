@@ -47,6 +47,28 @@ describe("registration intake source parsing", () => {
     });
   });
 
+  it("marks formula-leading CSV cells before mapping or persistence", async () => {
+    const result = await parseRegistrationSource({
+      kind: "csv",
+      fileName: "formula.csv",
+      buffer: Buffer.from("Nama Tim,Nama Kapten,Email Kapten\n\"=HYPERLINK(\"\"https://evil.example\"\")\",+SUM(A1:A2),@attacker\n", "utf8"),
+    });
+
+    expect(result.worksheets[0].rows[1]).toEqual([
+      { value: '=HYPERLINK("https://evil.example")', formula: true },
+      { value: "+SUM(A1:A2)", formula: true },
+      { value: "@attacker", formula: true },
+    ]);
+  });
+
+  it("rejects traversal filenames before parsing an upload", async () => {
+    await expect(parseRegistrationSource({
+      kind: "csv",
+      fileName: "../secrets.csv",
+      buffer: Buffer.from("Nama Tim\nRed Clover\n", "utf8"),
+    })).rejects.toThrow("Nama file");
+  });
+
   it("parses a selected worksheet from XLSX and marks formula cells", async () => {
     const buffer = await workbookBuffer([
       ["Nama Tim", "Nama Kapten", "Email Kapten"],

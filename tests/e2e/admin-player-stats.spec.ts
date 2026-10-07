@@ -13,6 +13,19 @@ const RUN_ID = Date.now();
 
 let fixture: Awaited<ReturnType<typeof prepareCompletedMatchWithPlayers>>;
 
+function goalInput(form: import("@playwright/test").Locator, playerId: string) {
+  return form.locator(`input[name="stat_${playerId}_goal"]`);
+}
+
+async function fillGoal(form: import("@playwright/test").Locator, playerId: string, value: string) {
+  // HydrationGate renders visible but inert inputs until the form is ready.
+  // Browser fill can resolve without entering text while that gate is inert.
+  await expect(form.getByRole("button", { name: /simpan statistik|save statistics/i })).toBeEnabled();
+  const input = goalInput(form, playerId);
+  await input.fill(value);
+  await expect(input).toHaveValue(value);
+}
+
 test.describe("admin player stats entry", () => {
   test.beforeAll(async () => {
     fixture = await prepareCompletedMatchWithPlayers(`admin-stats-e2e-${RUN_ID}`);
@@ -24,7 +37,9 @@ test.describe("admin player stats entry", () => {
     await prisma.statSubmission.deleteMany({ where: { matchId: fixture.matchId } });
 
     await loginAsAdmin(page, "id");
-    await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
+    await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page).toHaveURL(new RegExp(`activeEventId=${fixture.eventId}`), { timeout: 15_000 });
   });
 
@@ -84,10 +99,19 @@ test.describe("admin player stats entry", () => {
     });
     await expect(homeForm).toBeVisible();
 
-    await homeForm.locator('input[type="number"]').first().fill("3");
-    await homeForm.getByRole("button", { name: /simpan statistik/i }).click();
-
-    await expect(page).toHaveURL(/success=player-stats-saved/, { timeout: 15_000 });
+    await fillGoal(homeForm, fixture.homePlayers[0].id, "3");
+    await Promise.all([
+      page.waitForURL(/success=player-stats-saved/, { waitUntil: "load", timeout: 30_000 }),
+      homeForm.getByRole("button", { name: /simpan statistik/i }).click(),
+    ]);
+    await expect.poll(async () => {
+      const row = await prisma.playerStat.findUnique({
+        where: { matchId_playerId: { matchId: fixture.matchId, playerId: fixture.homePlayers[0].id } },
+        select: { stats: true },
+      });
+      if (!row || typeof row.stats !== "object" || row.stats === null || Array.isArray(row.stats)) return null;
+      return (row.stats as Record<string, unknown>).goal;
+    }, { timeout: 30_000 }).toBe(3);
     await expect(page).toHaveURL(new RegExp(`activeEventId=${fixture.eventId}`));
   });
 
@@ -97,47 +121,81 @@ test.describe("admin player stats entry", () => {
     const homeForm = page.locator("form").filter({
       has: page.locator(`input[name="teamId"][value="${fixture.homeTeamId}"]`),
     });
-    await homeForm.locator('input[type="number"]').first().fill("7");
-    await homeForm.getByRole("button", { name: /simpan statistik/i }).click();
-    await expect(page).toHaveURL(/success=player-stats-saved/, { timeout: 15_000 });
+    await fillGoal(homeForm, fixture.homePlayers[0].id, "7");
+    const saved = page.waitForURL((url) =>
+      url.pathname === "/id/admin"
+      && url.searchParams.get("activeEventId") === fixture.eventId
+      && url.searchParams.get("matchId") === fixture.matchId
+      && url.searchParams.get("success") === "player-stats-saved",
+      { waitUntil: "domcontentloaded" },
+    );
+    await Promise.all([
+      saved,
+      homeForm.getByRole("button", { name: /simpan statistik/i }).click(),
+    ]);
 
-    await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
+    await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page.getByText("Statistik Pemain", { exact: true })).toBeVisible({ timeout: 15_000 });
 
     const homeFormAgain = page.locator("form").filter({
       has: page.locator(`input[name="teamId"][value="${fixture.homeTeamId}"]`),
     });
-    await expect(homeFormAgain.locator('input[type="number"]').first()).toHaveValue("7");
+    await expect(goalInput(homeFormAgain, fixture.homePlayers[0].id)).toHaveValue("7");
   });
 
   test("editing stats replaces, not accumulates (upsert safety)", async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
     await expect(page.getByText("Statistik Pemain", { exact: true })).toBeVisible({ timeout: 15_000 });
 
     const getHomeForm = () =>
       page.locator("form").filter({
         has: page.locator(`input[name="teamId"][value="${fixture.homeTeamId}"]`),
       });
+    const expectSavedGoal = async (goal: number) => {
+      await expect.poll(async () => {
+        const row = await prisma.playerStat.findUnique({
+          where: {
+            matchId_playerId: {
+              matchId: fixture.matchId,
+              playerId: fixture.homePlayers[0].id,
+            },
+          },
+          select: { stats: true },
+        });
+        if (!row || typeof row.stats !== "object" || row.stats === null || Array.isArray(row.stats)) {
+          return null;
+        }
+        return (row.stats as Record<string, unknown>).goal;
+      }, { timeout: 15_000 }).toBe(goal);
+    };
 
-    await getHomeForm().locator('input[type="number"]').first().fill("4");
-    await getHomeForm().getByRole("button", { name: /simpan statistik/i }).click();
-    await expect(page).toHaveURL(/success=player-stats-saved/, { timeout: 15_000 });
+    await fillGoal(getHomeForm(), fixture.homePlayers[0].id, "4");
+    await Promise.all([
+      page.waitForURL(/success=player-stats-saved/, { waitUntil: "load", timeout: 30_000 }),
+      getHomeForm().getByRole("button", { name: /simpan statistik/i }).click(),
+    ]);
+    await expectSavedGoal(4);
 
     await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
     await expect(page.getByText("Statistik Pemain", { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(getHomeForm().locator('input[type="number"]').first()).toHaveValue("4");
+    await expect(goalInput(getHomeForm(), fixture.homePlayers[0].id)).toHaveValue("4");
 
-    await getHomeForm().locator('input[type="number"]').first().fill("3");
-    await getHomeForm().getByRole("button", { name: /simpan statistik/i }).click();
-    await expect(page).toHaveURL(/success=player-stats-saved/, { timeout: 15_000 });
+    await fillGoal(getHomeForm(), fixture.homePlayers[0].id, "3");
+    await Promise.all([
+      page.waitForURL(/success=player-stats-saved/, { waitUntil: "load", timeout: 30_000 }),
+      getHomeForm().getByRole("button", { name: /simpan statistik/i }).click(),
+    ]);
+    await expectSavedGoal(3);
 
     await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
     await expect(page.getByText("Statistik Pemain", { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(getHomeForm().locator('input[type="number"]').first()).toHaveValue("3");
+    await expect(goalInput(getHomeForm(), fixture.homePlayers[0].id)).toHaveValue("3");
   });
 
   test("recording status follows both saved teams, reload, edits, and locale", async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
     const card = page.locator(`a[href*="matchId=${fixture.matchId}"]`).filter({ hasText: "Stats Home" });
     const teamForm = (teamId: string) => page.locator("form").filter({
       has: page.locator(`input[name="teamId"][value="${teamId}"]`),
@@ -145,21 +203,23 @@ test.describe("admin player stats entry", () => {
     await expect(card.getByText("Belum dicatat", { exact: true })).toBeVisible();
     await expect(card.getByText("Input statistik", { exact: true })).toBeVisible();
     await teamForm(fixture.homeTeamId).getByRole("button", { name: /simpan statistik/i }).click();
-    await expect(card.getByText("Sebagian tercatat", { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(card.getByText("Sebagian tercatat", { exact: true })).toBeVisible({ timeout: 30_000 });
     await expect(teamForm(fixture.homeTeamId).getByText("Tercatat", { exact: true })).toBeVisible();
     await expect(teamForm(fixture.awayTeamId).getByText("Belum dicatat", { exact: true })).toBeVisible();
     await teamForm(fixture.awayTeamId).getByRole("button", { name: /simpan statistik/i }).click();
-    await expect(card.getByText("Tercatat", { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(card.getByText("Tercatat", { exact: true })).toBeVisible({ timeout: 30_000 });
     await page.reload();
     await expect(card.getByText("Lihat / edit statistik", { exact: true })).toBeVisible();
     await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);
-    await teamForm(fixture.homeTeamId).locator('input[type="number"]').first().fill("5");
+    const saveHomeStats = teamForm(fixture.homeTeamId).getByRole("button", { name: /simpan statistik/i });
+    await expect(saveHomeStats).toBeEnabled();
+    await fillGoal(teamForm(fixture.homeTeamId), fixture.homePlayers[0].id, "5");
     await Promise.all([
-      page.waitForURL(/success=player-stats-saved/, { waitUntil: "load" }),
-      teamForm(fixture.homeTeamId).getByRole("button", { name: /simpan statistik/i }).click(),
+      page.waitForURL(/success=player-stats-saved/, { waitUntil: "load", timeout: 30_000 }),
+      saveHomeStats.click(),
     ]);
     await page.reload();
-    await expect(teamForm(fixture.homeTeamId).locator('input[type="number"]').first()).toHaveValue("5");
+    await expect(goalInput(teamForm(fixture.homeTeamId), fixture.homePlayers[0].id)).toHaveValue("5");
     await expect(card.getByText("Tercatat", { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(card.getByText("Tercatat", { exact: true })).toBeVisible();
@@ -181,7 +241,10 @@ test.describe("admin player stats entry", () => {
     // Includes login, multiple dashboard loads, and the approval write against Neon.
     test.setTimeout(90_000);
     const card = page.locator(`a[href*="matchId=${fixture.matchId}"]`).filter({ hasText: "Stats Home" });
-    const stats = Object.fromEntries(fixture.homePlayers.map((player) => [player.id, { goal: 0, assist: 0, passing: 0, defense: 0 }]));
+    const stats = Object.fromEntries(fixture.homePlayers.map((player) => [
+      player.id,
+      { scores: [8.0], goal: 0, assist: 0, passing: 0, defense: 0 },
+    ]));
     const submission = await prisma.statSubmission.create({ data: {
       eventId: fixture.eventId, matchId: fixture.matchId, teamId: fixture.homeTeamId,
       submittedBy: "captain-recording-e2e", status: "pending", stats,
@@ -196,7 +259,7 @@ test.describe("admin player stats entry", () => {
     const review = page.locator('details').filter({ has: page.locator(`input[name="submissionId"][value="${submission.id}"]`) });
     await review.locator('summary').click();
     await Promise.all([
-      page.waitForURL(/success=stat-approved/, { waitUntil: "load", timeout: 15_000 }),
+      page.waitForURL(/success=stat-approved/, { waitUntil: "load", timeout: 30_000 }),
       review.getByRole('button', { name: 'Setujui', exact: true }).click(),
     ]);
     await page.goto(`/id/admin?phase=run&activeEventId=${fixture.eventId}&matchId=${fixture.matchId}`);

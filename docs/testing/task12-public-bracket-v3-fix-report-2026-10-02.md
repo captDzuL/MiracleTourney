@@ -1,0 +1,217 @@
+# Task 12 — Public bracket V3 surface fix
+
+Date: 2026-10-02
+
+## Root cause
+
+The single root-cause hypothesis is that `ui_v3_foundation` selected the dark `V3ShellRouter`, while the public event detail routes still selected legacy `BackToEvent` + `Section`/`DataTable` markup. The adaptive bracket branch added in `1ef64e1` returned `AdaptiveBracketBoard` inside that legacy composition, and the League/elimination fallback paths retained the same legacy wrappers. Those wrappers intentionally emit white `pv-section-card`/`bg-white` surfaces and slate text, so the route became a dark V3 shell around a legacy white surface. The same wrapper boundary was present on schedule, standings, and participants, which made them the same evidence-backed bug class.
+
+The approved V3 route pattern in `ee02ad1` (the V3 leaderboard page) provided the comparison: use a route-owned `miracle-public-v3` frame, `PublicV3Action`, token-backed V3 table/section surfaces, and preserve the legacy branch when the visual flag is off.
+
+## Implementation
+
+- Added V3-gated composition for the adaptive bracket route, the legacy League table fallback, and the legacy elimination bracket/detail fallback. The flag-off branches retain the existing `BackToEvent`, `Section`, `DataTable`, and legacy match-card markup.
+- Reused V3 route primitives and tokens through `PublicV3Action`, a shared `PublicV3DetailFrame`, `mpv3-section`, `mpv3-panel`, `mpv3-table-wrap`, V3 badges, and the existing V3 bracket board tokens. The V3 bracket board is bounded by `max-width: 100%` horizontal scrolling and its page frame uses `min-height: 0`, avoiding a nested full-viewport canvas.
+- Extended the same flag-on/flag-off composition boundary to public schedule, standings, and participants routes. The adaptive participants directory remains the same data component; only its containing route surface changes under the V3 foundation flag.
+- Kept match, round, series, game-detail, bye/TBD, standings, empty-state, and schedule data readers unchanged. Completed scores and BO series detail continue to use the same source records. Added Indonesian/English V3 adaptive and schedule status labels (`Dijadwalkan`/`Scheduled`, etc.) rather than exposing raw status tokens, while preserving the legacy adaptive `Menunggu hasil`/`Awaiting result` copy when the V3 presentation is disabled.
+- Kept interactive bracket detail summaries at `min-h-11` and retained the established V3 action/button sizing and focus treatment. No database, schema, seed, or fixture changes were made.
+
+## TDD evidence
+
+Focused route regression tests were written before the implementation. The bracket RED run was:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/app/events/[slug]/bracket/page.test.ts"
+```
+
+RED result: 1 test file ran, 19 tests total; 2 failed and 17 passed. The two new V3 assertions failed because the rendered adaptive and League fallback markup still contained the legacy `pv-section-card`/`bg-white` composition instead of the expected `miracle-public-v3` frame.
+
+The sibling-route RED run was:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/app/events/[slug]/schedule/page.test.ts" "src/app/events/[slug]/standings/page.test.ts" "src/app/events/[slug]/participants/page.test.ts"
+```
+
+RED result: 3 test files ran, 8 tests total; 3 failed and 5 passed. Each failure was the new `ui_v3_foundation` assertion observing `pv-section-card bg-white` rather than the V3 route frame.
+
+The adaptive board localization RED run was:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/components/v3/public-event/AdaptiveBracketBoard.test.tsx"
+```
+
+RED result: 1 test file ran, 4 tests total; 1 failed and 3 passed. Indonesian scheduled output was the legacy `Menunggu hasil` text rather than the required localized status label.
+
+The focused GREEN run after implementation was:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/app/events/[slug]/bracket/page.test.ts" "src/components/v3/public-event/AdaptiveBracketBoard.test.tsx" "src/app/events/[slug]/schedule/page.test.ts" "src/app/events/[slug]/standings/page.test.ts" "src/app/events/[slug]/participants/page.test.ts"
+```
+
+GREEN result: 5 test files passed and 31 tests passed.
+
+The nearby public-event regression run was:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/components/v3/public-event/PublicScheduleBoard.test.tsx" "src/components/v3/public-event/PublicParticipantsDirectory.test.tsx" "src/components/v3/public-event/AdaptiveRegistrationEventPage.test.tsx" "src/components/v3/public-event/AdaptivePhaseEventPage.test.tsx" "src/components/v3/public-event/AdaptiveOngoingEventPage.test.tsx"
+```
+
+GREEN result: 5 test files passed and 22 tests passed.
+
+## Verification
+
+TypeScript:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\tsc.CMD --noEmit; Write-Output "tsc-exit=$LASTEXITCODE"
+```
+
+Result: `tsc-exit=0`.
+
+ESLint was run against the changed route, component, test, and shared-frame files with:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\eslint.CMD "src/app/events/[slug]/bracket/bracket-page-content.tsx" "src/app/events/[slug]/bracket/page.test.ts" "src/app/events/[slug]/participants/participants-page.tsx" "src/app/events/[slug]/participants/page.test.ts" "src/app/events/[slug]/schedule/schedule-page-content.tsx" "src/app/events/[slug]/schedule/page.test.ts" "src/app/events/[slug]/standings/standings-page.tsx" "src/app/events/[slug]/standings/page.test.ts" "src/components/v3/public-event/AdaptiveBracketBoard.tsx" "src/components/v3/public-event/AdaptiveBracketBoard.test.tsx" "src/components/v3/public-event/PublicV3DetailFrame.tsx"; Write-Output "eslint-exit=$LASTEXITCODE"
+```
+
+Result: `eslint-exit=0` and 0 errors, with 2 warnings for unused `store` parameters in existing test mock callbacks in `src/app/events/[slug]/bracket/page.test.ts`.
+
+`git diff --check` completed without whitespace errors.
+
+No database-backed browser smoke was run. The task explicitly forbids DB/seed changes and broad E2E/CI, and a live visual check would require a configured database fixture. Static route rendering, flag branches, localized status output, typechecking, linting, and nearby component tests were used instead.
+
+## Review follow-up
+
+The independent review identified three focused coverage/compatibility gaps:
+
+1. The new adaptive status labels were being applied even when `AdaptiveBracketBoard` was rendered through the legacy presentation boundary. The fix now gates V3 labels on `presentation="v3"` and restores the exact flag-off waiting copy.
+2. `PublicScheduleBoard` exposed the internal `scheduled`, `delayed`, and `postponed` values (and the Indonesian live state as `Live`). The fix maps every displayed status for both Indonesian and English viewers.
+3. The first report had only indirect bracket fallback coverage and no drawn adaptive route fixture. Direct tests now exercise drawn adaptive V3/legacy composition and non-adaptive single-elimination V3/legacy composition, including V3 bounded scrolling, BO3 game detail/series output, bye auto-advance, and TBD semantics.
+
+The review RED command was:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/components/v3/public-event/AdaptiveBracketBoard.test.tsx" "src/components/v3/public-event/PublicScheduleBoard.test.tsx" "src/app/events/[slug]/bracket/page.test.ts"
+```
+
+RED result: 3 test files ran, 31 tests total; 5 failed and 26 passed. Failures were the missing legacy adaptive waiting copy, missing Indonesian schedule status labels, missing drawn adaptive legacy waiting copy, and the newly direct BO3 assertions in both V3 and legacy fallback fixtures (the fixture was then corrected to record the selected match before production changes).
+
+The review GREEN command was:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/components/v3/public-event/AdaptiveBracketBoard.test.tsx" "src/components/v3/public-event/PublicScheduleBoard.test.tsx" "src/app/events/[slug]/bracket/page.test.ts"
+```
+
+GREEN result: 3 test files passed and 31 tests passed.
+
+The expanded focused route/component command was:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/app/events/[slug]/bracket/page.test.ts" "src/components/v3/public-event/AdaptiveBracketBoard.test.tsx" "src/components/v3/public-event/PublicScheduleBoard.test.tsx" "src/app/events/[slug]/schedule/page.test.ts" "src/app/events/[slug]/standings/page.test.ts" "src/app/events/[slug]/participants/page.test.ts"
+```
+
+Result: 6 test files passed and 39 tests passed.
+
+The nearby public-event component command was:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/components/v3/public-event/PublicScheduleBoard.test.tsx" "src/components/v3/public-event/PublicParticipantsDirectory.test.tsx" "src/components/v3/public-event/AdaptiveRegistrationEventPage.test.tsx" "src/components/v3/public-event/AdaptivePhaseEventPage.test.tsx" "src/components/v3/public-event/AdaptiveOngoingEventPage.test.tsx"
+```
+
+Result: 5 test files passed and 23 tests passed.
+
+Review follow-up typecheck:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\tsc.CMD --noEmit; Write-Output "tsc-exit=$LASTEXITCODE"
+```
+
+Result: `tsc-exit=0`.
+
+Review follow-up ESLint:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\eslint.CMD "src/components/v3/public-event/AdaptiveBracketBoard.tsx" "src/components/v3/public-event/AdaptiveBracketBoard.test.tsx" "src/components/v3/public-event/PublicScheduleBoard.tsx" "src/components/v3/public-event/PublicScheduleBoard.test.tsx" "src/app/events/[slug]/bracket/page.test.ts"; Write-Output "eslint-exit=$LASTEXITCODE"
+```
+
+Result: `eslint-exit=0` and 0 errors, with the same 2 unused `store`-parameter warnings in the existing bracket test mock callbacks. `git diff --check` passed.
+
+## Re-review follow-up
+
+The re-review found one remaining presentation-boundary regression: `PublicScheduleBoard` localized statuses unconditionally even though `schedule-page-content.tsx` uses the board for both flag-on and flag-off routes. The flag-off route therefore changed its established non-empty status expression (`scheduled`/`delayed`/`postponed`, `Live`, and localized completed copy) without authorization.
+
+The minimal resolution adds `presentation="v3" | "legacy"` to `PublicScheduleBoard`, defaults it to `legacy`, keeps the exact prior legacy expression for the default branch, and passes the flag-derived presentation from `schedule-page-content.tsx`. The route tests now render a non-empty published schedule in both Indonesian and English for both branches.
+
+Re-review RED command:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/app/events/[slug]/schedule/page.test.ts" "src/components/v3/public-event/PublicScheduleBoard.test.tsx"
+```
+
+RED result: 2 test files ran, 10 tests total; 2 failed and 8 passed. The failures were the new component-level legacy status assertion and the new non-empty flag-off route assertion; the V3 localized assertions passed against the unconditional formatter.
+
+Re-review GREEN command:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/app/events/[slug]/schedule/page.test.ts" "src/components/v3/public-event/PublicScheduleBoard.test.tsx"
+```
+
+GREEN result: 2 test files passed and 10 tests passed.
+
+The full focused route set was rerun with:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/app/events/[slug]/bracket/page.test.ts" "src/components/v3/public-event/AdaptiveBracketBoard.test.tsx" "src/components/v3/public-event/PublicScheduleBoard.test.tsx" "src/app/events/[slug]/schedule/page.test.ts" "src/app/events/[slug]/standings/page.test.ts" "src/app/events/[slug]/participants/page.test.ts"
+```
+
+Result: 6 test files passed and 42 tests passed.
+
+Nearby component verification:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\vitest.CMD run "src/components/v3/public-event/PublicScheduleBoard.test.tsx" "src/components/v3/public-event/PublicParticipantsDirectory.test.tsx" "src/components/v3/public-event/AdaptiveRegistrationEventPage.test.tsx" "src/components/v3/public-event/AdaptivePhaseEventPage.test.tsx" "src/components/v3/public-event/AdaptiveOngoingEventPage.test.tsx"
+```
+
+Result: 5 test files passed and 24 tests passed.
+
+Re-review typecheck:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\tsc.CMD --noEmit; Write-Output "tsc-exit=$LASTEXITCODE"
+```
+
+Result: `tsc-exit=0`.
+
+Re-review ESLint:
+
+```text
+E:\dev\MiracleTourney-gitnative\node_modules\.bin\eslint.CMD "src/app/events/[slug]/schedule/schedule-page-content.tsx" "src/app/events/[slug]/schedule/page.test.ts" "src/components/v3/public-event/PublicScheduleBoard.tsx" "src/components/v3/public-event/PublicScheduleBoard.test.tsx"; Write-Output "eslint-exit=$LASTEXITCODE"
+```
+
+Result: `eslint-exit=0`, 0 errors, and no warnings. `git diff --check` passed.
+
+## Changed files
+
+- `src/app/events/[slug]/bracket/bracket-page-content.tsx`
+- `src/app/events/[slug]/bracket/page.test.ts`
+- `src/app/events/[slug]/schedule/schedule-page-content.tsx`
+- `src/app/events/[slug]/schedule/page.test.ts`
+- `src/app/events/[slug]/standings/standings-page.tsx`
+- `src/app/events/[slug]/standings/page.test.ts`
+- `src/app/events/[slug]/participants/participants-page.tsx`
+- `src/app/events/[slug]/participants/page.test.ts`
+- `src/components/v3/public-event/AdaptiveBracketBoard.tsx`
+- `src/components/v3/public-event/AdaptiveBracketBoard.test.tsx`
+- `src/components/v3/public-event/PublicScheduleBoard.tsx`
+- `src/components/v3/public-event/PublicScheduleBoard.test.tsx`
+- `src/components/v3/public-event/PublicV3DetailFrame.tsx`
+- `src/styles/miracle-public-v3.css`
+- this report
+
+## Protected artifact check
+
+The pre-existing task11 report, reviewer-owned `task12-public-bracket-v3-review-brief-2026-10-02.md`, and both certificate directories remained untracked and were not edited, staged, or committed. They were excluded from every staging command. Final status inspection must continue to show those paths only as untracked entries, and none may appear in the tracked diff or commit.
+
+## Remaining limitations
+
+There is no live-data screenshot/browser assertion for Flashpeak Rising 64 in this isolated checkout because no database fixture was available and no fixture was created. The focused render tests verify both V3 and legacy markup boundaries, including adaptive and fallback paths, but cannot replace a visual check against the production event data.

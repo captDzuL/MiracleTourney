@@ -12,7 +12,6 @@ import {
   aggregatePlayerLeaderboard,
   buildLeagueStandings,
   generateRoundRobinSchedule,
-  generateSingleEliminationBracket,
   getPublicVisibleSingleEliminationBracket,
   getLiveStreamPresentation,
   projectSingleEliminationBracket,

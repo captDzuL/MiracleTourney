@@ -1,19 +1,10 @@
 import { PrismaClient as DefaultPrismaClient } from "@prisma/client";
 import { pathToFileURL } from "node:url";
+import { loadE2eEnvironment } from "./e2e-env.mjs";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-
-function configuredDatabaseUrl(env) {
-  return env.DIRECT_URL || env.DATABASE_URL || "";
-}
-
-function safeHostFromUrl(value) {
-  try {
-    return new URL(value).host || "(unknown host)";
-  } catch {
-    return "(invalid database URL)";
-  }
-}
+import { validateE2eDatabaseConfiguration } from "./e2e-db-configuration.mjs";
+export { validateE2eDatabaseConfiguration } from "./e2e-db-configuration.mjs";
 
 function describeError(error) {
   if (!(error instanceof Error)) return "Unknown database connection error.";
@@ -41,23 +32,9 @@ export async function checkE2eDatabaseConnection({
   PrismaClient = DefaultPrismaClient,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) {
-  const databaseUrl = configuredDatabaseUrl(env);
-  if (!databaseUrl) {
-    return {
-      ok: false,
-      host: "(not configured)",
-      message: "DATABASE_URL or DIRECT_URL must be set before running DB-backed E2E tests.",
-    };
-  }
-
-  const host = safeHostFromUrl(databaseUrl);
-  const prodHost = (env.NEON_PROD_HOST ?? "").trim();
-  if (prodHost && host.includes(prodHost)) {
-    return {
-      ok: false,
-      host,
-      message: "Blocked: DATABASE_URL points to the production Neon branch. Set DIRECT_URL / DATABASE_URL to the test branch before running E2E tests.",
-    };
+  const configuration = validateE2eDatabaseConfiguration(env);
+  if (!configuration.ok) {
+    return configuration;
   }
 
   const prisma = new PrismaClient();
@@ -65,13 +42,13 @@ export async function checkE2eDatabaseConnection({
     await withTimeout(prisma.$connect(), timeoutMs);
     return {
       ok: true,
-      host,
+      host: configuration.host,
       message: "Database connection is reachable for DB-backed E2E tests.",
     };
   } catch (error) {
     return {
       ok: false,
-      host,
+      host: configuration.host,
       message: describeError(error),
     };
   } finally {
@@ -79,7 +56,14 @@ export async function checkE2eDatabaseConnection({
   }
 }
 
+export function requireE2eDatabaseResetPermission(env = process.env) {
+  if (env.E2E_DATABASE_RESET_ALLOWED !== "true") {
+    throw new Error("Blocked: set E2E_DATABASE_RESET_ALLOWED=true in .env.test before resetting the E2E database.");
+  }
+}
+
 async function main() {
+  loadE2eEnvironment();
   const result = await checkE2eDatabaseConnection();
   const prefix = result.ok ? "[e2e-db-preflight] OK" : "[e2e-db-preflight] BLOCKED";
   const output = `${prefix}: ${result.message} Host: ${result.host}`;

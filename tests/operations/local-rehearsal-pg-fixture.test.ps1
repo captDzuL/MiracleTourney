@@ -1,0 +1,433 @@
+param([switch]$RunMigrationIntegration)
+
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+. (Join-Path $PSScriptRoot 'fixture-safety.ps1')
+if ($RunMigrationIntegration) { Add-Type -Path (Join-Path $PSScriptRoot 'FixtureBoundedProcess.cs') }
+
+$zipPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\.superpowers\sdd\2026-10-04-local-encrypted-backup\runtime\postgresql-18.6-windows-x64-binaries.zip'))
+$fixtureRoot = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'miracle-task3-pg-' + [guid]::NewGuid().ToString('N'))
+$serverRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\.superpowers\sdd\2026-10-04-v3-release-pr-readiness\runtime\catalog-server'))
+$port = $null
+$startAttempted = $false
+$bin = [IO.Path]::Combine($serverRoot,'pgsql','bin')
+$data = [IO.Path]::Combine($fixtureRoot, 'cluster')
+$bootstrapPassword = [Convert]::ToBase64String(([byte[]](1..32 | ForEach-Object { [byte](Get-Random -Maximum 256) }))).TrimEnd('=').Replace('+','-').Replace('/','_')
+$ownerPassword = [Convert]::ToBase64String(([byte[]](1..32 | ForEach-Object { [byte](Get-Random -Maximum 256) }))).TrimEnd('=').Replace('+','-').Replace('/','_')
+
+function Assert-That([bool]$Condition, [string]$Label) { if (-not $Condition) { throw "FIXTURE_ASSERTION_FAILED:$Label" } }
+function Invoke-Tool([string]$Path, [string]$Arguments, [int]$TimeoutMs = 90000) {
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = New-Object Diagnostics.ProcessStartInfo
+    $process.StartInfo.FileName = $Path; $process.StartInfo.Arguments = $Arguments
+    $process.StartInfo.UseShellExecute = $false; $process.StartInfo.CreateNoWindow = $true
+    # Never redirect a background server launcher's handles: postmaster can retain them.
+    $process.StartInfo.RedirectStandardOutput = $false; $process.StartInfo.RedirectStandardError = $false
+    try {
+        Assert-That ($process.Start()) 'tool-start'
+        if (-not $process.WaitForExit($TimeoutMs)) { $process.Kill(); throw 'FIXTURE_TOOL_TIMEOUT' }
+        Assert-That ($process.ExitCode -eq 0) 'tool-exit'
+    } finally { $process.Dispose() }
+}
+function Test-OwnedClusterStopped {
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = New-Object Diagnostics.ProcessStartInfo
+    $process.StartInfo.FileName = [IO.Path]::Combine($bin,'pg_ctl.exe')
+    $process.StartInfo.Arguments = '-D "' + $data + '" status'
+    $process.StartInfo.UseShellExecute = $false; $process.StartInfo.CreateNoWindow = $true
+    try {
+        Assert-That ($process.Start()) 'cluster-status-start'
+        if (-not $process.WaitForExit(15000)) { $process.Kill(); return $false }
+        # pg_ctl status returns 3 only when this exact data directory has no running server.
+        return $process.ExitCode -eq 3
+    } finally { $process.Dispose() }
+}
+function Invoke-Sql([string]$Database, [string]$User, [string]$Password, [string]$Sql,
+    [switch]$ExpectFailure, [switch]$ExpectAuthDenial) {
+    $env:PGHOST = '127.0.0.1'; $env:PGPORT = [string]$port; $env:PGDATABASE = $Database
+    $env:PGUSER = $User; $env:PGPASSWORD = $Password; $env:PGSSLMODE = 'disable'
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = New-Object Diagnostics.ProcessStartInfo
+    $process.StartInfo.FileName = [IO.Path]::Combine($bin,'psql.exe')
+    $process.StartInfo.Arguments = '-X -w -A -t -q -v ON_ERROR_STOP=1 -h 127.0.0.1 -p ' + $port + ' -U ' + $User + ' -d ' + $Database
+    $process.StartInfo.UseShellExecute = $false; $process.StartInfo.CreateNoWindow = $true
+    $process.StartInfo.RedirectStandardInput = $true; $process.StartInfo.RedirectStandardOutput = $true
+    $process.StartInfo.RedirectStandardError = $true
+    try {
+        Assert-That ($process.Start()) 'psql-start'
+        $outputTask = $process.StandardOutput.ReadToEndAsync()
+        $errorTask = if ($ExpectAuthDenial) { $process.StandardError.ReadToEndAsync() }
+            else { $process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null) }
+        $writeTask = $process.StandardInput.WriteLineAsync($Sql)
+        $completed = [Threading.Tasks.Task]::WhenAny($writeTask, [Threading.Tasks.Task]::Delay(45000)).GetAwaiter().GetResult()
+        if (-not [object]::ReferenceEquals($completed,$writeTask)) { $process.Kill(); throw 'FIXTURE_PSQL_INPUT_TIMEOUT' }
+        if ($writeTask.IsFaulted -and -not ($ExpectFailure -or $ExpectAuthDenial)) { throw 'FIXTURE_PSQL_INPUT_FAILED' }
+        try { $process.StandardInput.Close() }
+        catch { if (-not ($ExpectFailure -or $ExpectAuthDenial)) { throw } }
+        if (-not $process.WaitForExit(45000)) { $process.Kill(); throw 'FIXTURE_PSQL_TIMEOUT' }
+        $privateError = $errorTask.GetAwaiter().GetResult()
+        $output = @($outputTask.GetAwaiter().GetResult() -split '\r?\n' | Where-Object { $_ })
+        $code = $process.ExitCode
+    } finally { if (-not $process.HasExited) { $process.Kill() }; $process.Dispose() }
+    if ($ExpectAuthDenial) {
+        Assert-That ($code -eq 2 -and $privateError -match 'password authentication failed for user "fixture_bootstrap"') 'scram-auth-denial'
+        return @()
+    }
+    if ($ExpectFailure) { Assert-That ($code -ne 0) 'expected-sql-failure'; return @() }
+    Assert-That ($code -eq 0) 'sql-exit'
+    return $output
+}
+function Query-Json([string]$Sql) {
+    $output = @(Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword $Sql)
+    $line = @($output | Where-Object { $_.StartsWith("MIRACLE_LOCAL_CHECKPOINT`t") })
+    Assert-That ($line.Count -eq 1) 'json-marker'
+    return ($line[0].Substring('MIRACLE_LOCAL_CHECKPOINT'.Length + 1) | ConvertFrom-Json)
+}
+function Build-Sql([string]$Mode, [string]$Token = '') {
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = New-Object Diagnostics.ProcessStartInfo
+    $process.StartInfo.FileName = (Get-Command node).Source
+    $helper = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'local-rehearsal-sql-fixture.mjs'))
+    $process.StartInfo.Arguments = '"' + $helper + '" ' + $Mode + ' ' + $Token
+    $process.StartInfo.WorkingDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+    $process.StartInfo.UseShellExecute = $false; $process.StartInfo.CreateNoWindow = $true
+    $process.StartInfo.RedirectStandardOutput = $true; $process.StartInfo.RedirectStandardError = $true
+    try {
+        Assert-That ($process.Start()) 'sql-build-start'
+        $outputTask = $process.StandardOutput.ReadToEndAsync()
+        $errorTask = $process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        if (-not $process.WaitForExit(15000)) { $process.Kill(); throw 'FIXTURE_SQL_BUILD_TIMEOUT' }
+        [void]$errorTask.GetAwaiter().GetResult()
+        Assert-That ($process.ExitCode -eq 0) 'sql-build'
+        return $outputTask.GetAwaiter().GetResult()
+    } finally { $process.Dispose() }
+}
+function Invoke-Pipeline([string]$SourceDb, [string]$TargetDb) {
+    $dump = New-Object Diagnostics.Process
+    $dump.StartInfo = New-Object Diagnostics.ProcessStartInfo
+    $dump.StartInfo.FileName = [IO.Path]::Combine($bin, 'pg_dump.exe')
+    $dump.StartInfo.Arguments = '--host=127.0.0.1 --port=' + $port + ' --username=fixture_owner --dbname=' + $SourceDb + ' --format=custom --no-owner --no-acl'
+    $dump.StartInfo.UseShellExecute = $false; $dump.StartInfo.CreateNoWindow = $true
+    $dump.StartInfo.RedirectStandardOutput = $true; $dump.StartInfo.RedirectStandardError = $true
+    $restore = New-Object Diagnostics.Process
+    $restore.StartInfo = New-Object Diagnostics.ProcessStartInfo
+    $restore.StartInfo.FileName = [IO.Path]::Combine($bin, 'pg_restore.exe')
+    # The filename is intentionally omitted for pg_restore stdin.
+    $restore.StartInfo.Arguments = '--host=127.0.0.1 --port=' + $port + ' --username=fixture_owner --dbname=' + $TargetDb + ' --single-transaction --exit-on-error --no-owner --no-acl'
+    $restore.StartInfo.UseShellExecute = $false; $restore.StartInfo.CreateNoWindow = $true
+    $restore.StartInfo.RedirectStandardInput = $true; $restore.StartInfo.RedirectStandardOutput = $true
+    $restore.StartInfo.RedirectStandardError = $true
+    $env:PGPASSWORD = $ownerPassword; $env:PGUSER = 'fixture_owner'; $env:PGSSLMODE = 'disable'
+    try {
+        Assert-That ($restore.Start()) 'restore-start'
+        Assert-That ($dump.Start()) 'dump-start'
+        $dumpError = $dump.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $restoreOutput = $restore.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $restoreError = $restore.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $copy = $dump.StandardOutput.BaseStream.CopyToAsync($restore.StandardInput.BaseStream)
+        Assert-That ($copy.Wait(120000)) 'dump-copy-timeout'
+        [void]$copy.GetAwaiter().GetResult()
+        $restore.StandardInput.Close()
+        Assert-That ($dump.WaitForExit(120000) -and $restore.WaitForExit(120000)) 'pipeline-timeout'
+        foreach ($task in @($dumpError,$restoreOutput,$restoreError)) { Assert-That ($task.Wait(120000)) 'pipeline-drain'; [void]$task.GetAwaiter().GetResult() }
+        Assert-That ($dump.ExitCode -eq 0 -and $restore.ExitCode -eq 0) 'dump-restore-exit'
+        return @{ dumpExit = $dump.ExitCode; restoreExit = $restore.ExitCode }
+    } finally {
+        if (-not $dump.HasExited) { $dump.Kill() }
+        if (-not $restore.HasExited) { $restore.Kill() }
+        $dump.Dispose(); $restore.Dispose()
+    }
+}
+
+function Invoke-MigrationChild([string[]]$Arguments, [int]$TimeoutMs, [string]$DatabaseUrl) {
+    $startInfo = New-Object Diagnostics.ProcessStartInfo
+    $startInfo.FileName = (Get-Command node).Source
+    $startInfo.WorkingDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+    # These are fixed repository-relative switches and paths; credentials stay in environment only.
+    $startInfo.Arguments = $Arguments -join ' '
+    $startInfo.UseShellExecute = $false; $startInfo.CreateNoWindow = $true
+    # Do not inherit any caller database or production-host routing into either child.
+    foreach ($name in @('DATABASE_URL','DIRECT_URL','MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL','NEON_PROD_HOST')) {
+        [void]$startInfo.Environment.Remove($name)
+    }
+    foreach ($name in @($startInfo.Environment.Keys)) {
+        if ($name -like 'PG*') { [void]$startInfo.Environment.Remove($name) }
+    }
+    $startInfo.Environment['DATABASE_URL'] = $DatabaseUrl
+    $startInfo.Environment['DIRECT_URL'] = $DatabaseUrl
+    if ($Arguments[0] -eq 'node_modules/vitest/vitest.mjs') {
+        $startInfo.Environment['MATCHDAY_V3_MIGRATION_TEST_DATABASE_URL'] = $DatabaseUrl
+    }
+    return [FixtureBoundedProcess]::Run($startInfo, $TimeoutMs, 5000, 2000000, 200000)
+}
+
+function Run-MigrationIntegration {
+    $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+    $migrationFile = [IO.Path]::Combine($repoRoot,'prisma','migrations','20260912000000_competition_operations_v3_foundation','migration.sql')
+    $migrationSql = [IO.File]::ReadAllText($migrationFile)
+    $fkLine = @($migrationSql -split '\r?\n' | Where-Object {
+        $_ -match '^ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_eventId_winnerTeamId_fkey"'
+    })
+    Assert-That ($fkLine.Count -eq 1 -and $fkLine[0] -eq 'ALTER TABLE "MatchResultRevision" ADD CONSTRAINT "MatchResultRevision_eventId_winnerTeamId_fkey" FOREIGN KEY ("eventId", "winnerTeamId") REFERENCES "Team"("eventId", "id") ON DELETE NO ACTION ON UPDATE CASCADE DEFERRABLE INITIALLY DEFERRED;') 'reviewed-fk-exact'
+    $databaseUrl = 'postgresql://fixture_owner:' + $ownerPassword + '@127.0.0.1:' + $port + '/migration_fixture?schema=public'
+    $empty = @(Invoke-Sql 'migration_fixture' 'fixture_owner' $ownerPassword "SELECT count(*) FROM pg_class WHERE relkind='r' AND relnamespace='public'::regnamespace;")
+    Assert-That ($empty[-1] -eq '0') 'migration-db-empty'
+    $role = @(Invoke-Sql 'migration_fixture' 'fixture_owner' $ownerPassword 'SELECT rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname=current_user;')
+    Assert-That ($role[-1] -eq 'f|f|f') 'migration-owner-unprivileged'
+    $diff = Invoke-MigrationChild @('node_modules/prisma/build/index.js','migrate','diff','--from-empty','--to-schema-datamodel','prisma/schema.prisma','--script') 90000 $databaseUrl
+    Assert-That ($diff.output.Contains('CREATE TABLE "MatchResultRevision"')) 'migration-schema-diff'
+    [void](Invoke-Sql 'migration_fixture' 'fixture_owner' $ownerPassword $diff.output)
+    [void](Invoke-Sql 'migration_fixture' 'fixture_owner' $ownerPassword ('ALTER TABLE "MatchResultRevision" DROP CONSTRAINT "MatchResultRevision_eventId_winnerTeamId_fkey"; ' + $fkLine[0]))
+    $test = Invoke-MigrationChild @('node_modules/vitest/vitest.mjs','run','tests/competition/persistence-migration.integration.test.ts','--reporter=dot') 90000 $databaseUrl
+    Assert-That ($test.output -match 'Tests\s+1 passed \(1\)' -and $test.output -notmatch 'Tests\s+.*skipped') 'migration-one-pass-no-skip'
+    [Console]::WriteLine($test.output.Trim())
+    [Console]::WriteLine('MIGRATION_INTEGRATION_PASS tests=1 childExit=' + $test.exitCode + ' loopback=127.0.0.1 owner=fixture_owner')
+}
+
+try {
+    Assert-That (([IO.FileInfo]$zipPath).Length -eq 384620317) 'zip-size'
+    Assert-That ((Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash.ToLowerInvariant() -eq 'e2246ba91d22345bc3d017586c09ede52d9df180b1eeb480f050445f1cad84e2') 'zip-hash'
+    $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $acl = New-Object Security.AccessControl.DirectorySecurity
+    $acl.SetOwner($owner); $acl.SetAccessRuleProtection($true,$false)
+    $rule = New-Object Security.AccessControl.FileSystemAccessRule($owner, [Security.AccessControl.FileSystemRights]::FullControl,
+        ([Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit),
+        [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)
+    $acl.AddAccessRule($rule)
+    [void][IO.Directory]::CreateDirectory($fixtureRoot,$acl)
+    Assert-That ([IO.Directory]::GetAccessControl($fixtureRoot).AreAccessRulesProtected) 'private-root'
+    Assert-That ([IO.Directory]::Exists($bin)) 'retained-server-runtime'
+    $zip = [IO.Compression.ZipFile]::OpenRead($zipPath)
+    try {
+        foreach ($name in @('postgres.exe','initdb.exe','pg_ctl.exe','psql.exe','pg_dump.exe','pg_restore.exe')) {
+            $entry = $zip.GetEntry('pgsql/bin/' + $name)
+            Assert-That ($null -ne $entry) 'zip-entry'
+            $sha = [Security.Cryptography.SHA256]::Create()
+            $source = $entry.Open()
+            try { $expected = [BitConverter]::ToString($sha.ComputeHash($source)).Replace('-','').ToLowerInvariant() }
+            finally { $source.Dispose(); $sha.Dispose() }
+            $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath ([IO.Path]::Combine($bin,$name))).Hash.ToLowerInvariant()
+            Assert-That ($actual -eq $expected) ('exe-pin-' + $name)
+        }
+    } finally { $zip.Dispose() }
+    $dllPins = Build-Sql 'dllhashes' | ConvertFrom-Json
+    foreach ($entry in $dllPins.PSObject.Properties) {
+        $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath ([IO.Path]::Combine($bin,$entry.Name))).Hash.ToLowerInvariant()
+        Assert-That ($actual -eq $entry.Value) ('dll-pin-' + $entry.Name)
+    }
+    Invoke-Tool ([IO.Path]::Combine($bin,'postgres.exe')) '--version' 15000
+    $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Parse('127.0.0.1'),0)
+    $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop()
+    Assert-That ($port -ne 55438) 'port-separation'
+    $pwfile = [IO.Path]::Combine($fixtureRoot,'initdb-pw.txt')
+    [IO.File]::WriteAllText($pwfile,$bootstrapPassword + "`n")
+    try {
+        Invoke-Tool ([IO.Path]::Combine($bin,'initdb.exe')) ('-D "' + $data + '" -U fixture_bootstrap --auth-host=scram-sha-256 --auth-local=reject --pwfile="' + $pwfile + '" --encoding=UTF8 --no-instructions') 120000
+    } finally { [IO.File]::Delete($pwfile) }
+    [IO.File]::AppendAllText([IO.Path]::Combine($data,'postgresql.conf'),"`nlisten_addresses='127.0.0.1'`nport=$port`npassword_encryption='scram-sha-256'`nlog_statement='none'`nlog_min_error_statement='panic'`n")
+    [IO.File]::WriteAllText([IO.Path]::Combine($data,'pg_hba.conf'),"host all all 127.0.0.1/32 scram-sha-256`nhost all all ::1/128 reject`nlocal all all reject`n")
+    $startAttempted = $true
+    Invoke-Tool ([IO.Path]::Combine($bin,'pg_ctl.exe')) ('-D "' + $data + '" -l "' + ([IO.Path]::Combine($fixtureRoot,'server.log')) + '" -w -t 60 start') 90000
+    $wrongPassword = $(if ($bootstrapPassword[0] -eq 'A') { 'B' } else { 'A' }) + $bootstrapPassword.Substring(1)
+    [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $wrongPassword 'SELECT 1;' -ExpectAuthDenial)
+    [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $bootstrapPassword "CREATE ROLE fixture_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '$ownerPassword';")
+    $databases = if ($RunMigrationIntegration) { @('migration_fixture') } else { @('synthetic_source','synthetic_restore','synthetic_candidate') }
+    foreach ($db in $databases) {
+        [void](Invoke-Sql 'postgres' 'fixture_bootstrap' $bootstrapPassword "CREATE DATABASE $db OWNER fixture_owner TEMPLATE template0 ENCODING 'UTF8';")
+    }
+    if ($RunMigrationIntegration) {
+        Run-MigrationIntegration
+        return
+    }
+    [void](Invoke-Sql 'synthetic_source' 'fixture_owner' $ownerPassword 'CREATE TABLE public.synthetic_probe (id integer PRIMARY KEY, dropped_note text, note text NOT NULL); INSERT INTO public.synthetic_probe VALUES (1, ''discarded'', ''synthetic only''); ALTER TABLE public.synthetic_probe DROP COLUMN dropped_note;')
+    $pipeline = Invoke-Pipeline 'synthetic_source' 'synthetic_restore'
+    $restored = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword 'SELECT count(*) FROM public.synthetic_probe;')
+    Assert-That ($restored[-1] -eq '1') 'fresh-default-db-restore'
+    $fingerprintSql = "SELECT md5((SELECT t::text FROM public.synthetic_probe t)), (SELECT string_agg(column_name || ':' || ordinal_position, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'synthetic_probe');"
+    $sourceFingerprint = @(Invoke-Sql 'synthetic_source' 'fixture_owner' $ownerPassword $fingerprintSql)
+    $restoreFingerprint = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword $fingerprintSql)
+    $sourceParts = $sourceFingerprint[-1] -split '\|'
+    $restoreParts = $restoreFingerprint[-1] -split '\|'
+    Assert-That ($sourceParts[0] -eq $restoreParts[0]) 'dropped-attribute-composite-hash-stable'
+    Assert-That ($sourceParts[1] -ne $restoreParts[1]) 'dropped-attribute-ordinal-drift'
+
+    $schema = @'
+CREATE TABLE public."User" ("id" text PRIMARY KEY, "email" text NOT NULL UNIQUE, "name" text NOT NULL,
+ "role" text NOT NULL, "passwordHash" text NOT NULL, "sessionVersion" integer NOT NULL DEFAULT 0,
+ "createdAt" timestamp NOT NULL, "updatedAt" timestamp NOT NULL);
+CREATE TABLE public."Event" ("id" text PRIMARY KEY, "slug" text NOT NULL UNIQUE, "name" text NOT NULL,
+ "description" text NOT NULL, "gameId" text NOT NULL, "gameModeId" text NOT NULL, "format" text NOT NULL,
+ "status" text NOT NULL, "participantCap" integer NOT NULL, "registrationWindow" text NOT NULL,
+ "startsAt" text NOT NULL, "venue" text NOT NULL, "createdAt" timestamp NOT NULL, "updatedAt" timestamp NOT NULL);
+CREATE TABLE public."Team" ("id" text PRIMARY KEY, "eventId" text NOT NULL REFERENCES public."Event"("id"),
+ "name" text NOT NULL, "logoText" text NOT NULL, "tag" text NOT NULL, "createdAt" timestamp NOT NULL);
+CREATE TABLE public."Certificate" ("id" text PRIMARY KEY, "eventId" text NOT NULL REFERENCES public."Event"("id"),
+ "teamId" text NOT NULL REFERENCES public."Team"("id"), "type" text NOT NULL, "recipientKind" text NOT NULL,
+ "recipientId" text NOT NULL, "recipientName" text NOT NULL, "version" integer NOT NULL,
+ "verificationCode" text NOT NULL, "imageUrl" text NOT NULL, "status" text NOT NULL,
+ "attemptCount" integer NOT NULL, "createdAt" timestamp NOT NULL, "updatedAt" timestamp NOT NULL);
+CREATE UNIQUE INDEX "Certificate_verificationCode_key" ON public."Certificate"("verificationCode");
+CREATE UNIQUE INDEX "Certificate_eventId_type_recipientKind_recipientId_version_key"
+ ON public."Certificate"("eventId","type","recipientKind","recipientId","version");
+CREATE TABLE public."PasswordResetToken" ("id" text PRIMARY KEY, "userId" text NOT NULL REFERENCES public."User"("id"),
+ "token" text NOT NULL UNIQUE, "tokenFormat" text NOT NULL DEFAULT 'legacy_raw',
+ "expiresAt" timestamp NOT NULL, "usedAt" timestamp, "createdAt" timestamp NOT NULL);
+CREATE UNIQUE INDEX "PasswordResetToken_userId_key" ON public."PasswordResetToken"("userId");
+CREATE TABLE public."RateLimitBucket" ("id" text PRIMARY KEY, "key" text NOT NULL, "count" integer NOT NULL,
+ "resetAt" timestamp NOT NULL);
+CREATE UNIQUE INDEX "RateLimitBucket_key_key" ON public."RateLimitBucket"("key");
+CREATE TABLE public."EventBracketAppearance" ("id" text PRIMARY KEY, "eventId" text NOT NULL,
+ "backgroundUrl" text, "positionX" integer NOT NULL DEFAULT 50,
+ "positionY" integer NOT NULL DEFAULT 50, "overlay" integer NOT NULL DEFAULT 35,
+ "createdAt" timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" timestamp(3) NOT NULL,
+ CONSTRAINT "EventBracketAppearance_eventId_fkey" FOREIGN KEY ("eventId")
+ REFERENCES public."Event"("id") ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE UNIQUE INDEX "EventBracketAppearance_eventId_key" ON public."EventBracketAppearance"("eventId");
+CREATE TABLE public."Player" ("id" text PRIMARY KEY);
+CREATE TABLE public."PlayerStat" ("id" text PRIMARY KEY);
+'@
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword $schema)
+    $metadataOutput = @(Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword (Build-Sql 'source-metadata'))
+    $metadataMarker = @($metadataOutput | Where-Object { $_.StartsWith("MIRACLE_SOURCE_METADATA`t") })
+    Assert-That ($metadataMarker.Count -eq 1) 'source-metadata-marker'
+    $metadata = $metadataMarker[0].Substring('MIRACLE_SOURCE_METADATA'.Length + 1) | ConvertFrom-Json
+    Assert-That ($metadata.schema.Count -gt 0 -and $metadata.tableMetadata.User.tableFound -and
+      $metadata.tableMetadata.Team.tableFound -and $metadata.tableMetadata.Player.tableFound -and
+      $metadata.tableMetadata.PlayerStat.tableFound) 'source-metadata-catalog'
+    $digestOutput = @(Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword (Build-Sql 'source-digest'))
+    $digestMarker = @($digestOutput | Where-Object { $_.StartsWith("MIRACLE_SOURCE_DIGEST`t") })
+    Assert-That ($digestMarker.Count -eq 1) 'source-digest-marker'
+    $digest = $digestMarker[0].Substring('MIRACLE_SOURCE_DIGEST'.Length + 1) | ConvertFrom-Json
+    $digestCountOk = @($digest.PSObject.Properties).Count -eq 5
+    $digestValuesOk = @(@('User','Team','Player','PlayerStat','Event') | Where-Object {
+      [string]$digest.PSObject.Properties[$_].Value -notmatch '^[a-f0-9]{32}$'
+    }).Count -eq 0
+    Assert-That ($digestCountOk -and $digestValuesOk) ('source-digest-shape-' + $digestCountOk + '-' + $digestValuesOk)
+    foreach ($mode in @('deep-source','deep-local')) {
+        $deepOutput = @(Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword (Build-Sql $mode))
+        $deepPrefix = $(if ($mode -eq 'deep-source') { 'MIRACLE_SOURCE_DEEP' } else { 'MIRACLE_LOCAL_CHECKPOINT' })
+        $deepMarker = @($deepOutput | Where-Object { $_.StartsWith($deepPrefix + "`t") })
+        Assert-That ($deepMarker.Count -eq 1) ('deep-marker-' + $mode)
+        $deep = $deepMarker[0].Substring($deepPrefix.Length + 1) | ConvertFrom-Json
+        Assert-That ($deep.schema.Count -gt 0 -and
+          @($deep.canonical.PSObject.Properties).Count -eq 5 -and
+          @($deep.composite.PSObject.Properties).Count -eq 5) ('deep-shape-' + $mode)
+    }
+    $legacyTables = ConvertFrom-Json -InputObject (Build-Sql 'legacy-tables')
+    Assert-That ($legacyTables.Count -eq 23) 'recovery-table-list'
+    foreach ($db in @('synthetic_source','synthetic_restore')) {
+        foreach ($table in $legacyTables) {
+            $create = if ($table -eq 'Event' -and $db -eq 'synthetic_source') {
+                'CREATE TABLE public."Event" (id text, discarded text, note text); ALTER TABLE public."Event" DROP COLUMN discarded;'
+            } elseif ($table -eq 'Event') {
+                'CREATE TABLE public."Event" (id text, note text);'
+            } elseif ($table -eq 'User') {
+                'CREATE TABLE public."User" (id text, note text);'
+            } else {
+                'CREATE TABLE public."' + $table + '" (id text);'
+            }
+            [void](Invoke-Sql $db 'fixture_owner' $ownerPassword $create)
+        }
+        [void](Invoke-Sql $db 'fixture_owner' $ownerPassword 'CREATE TABLE public._prisma_migrations (id text, migration_name text, checksum text, finished_at timestamp, rolled_back_at timestamp, started_at timestamp);')
+        [void](Invoke-Sql $db 'fixture_owner' $ownerPassword 'INSERT INTO public."User" (id,note) VALUES (''same'',NULL),(''same'',''quote " and comma, preserved''); INSERT INTO public."Event" (id,note) VALUES (''event'',NULL);')
+    }
+    $sourceReferenceOutput = @(Invoke-Sql 'synthetic_source' 'fixture_owner' $ownerPassword (Build-Sql 'recovery-source'))
+    $originalMarker = @($sourceReferenceOutput | Where-Object { $_.StartsWith("MIRACLE_CHECKPOINT`t") })
+    $logicalMarker = @($sourceReferenceOutput | Where-Object { $_.StartsWith("MIRACLE_LOGICAL_REFERENCE`t") })
+    Assert-That ($originalMarker.Count -eq 1 -and $logicalMarker.Count -eq 1) 'source-reference-markers'
+    $sourceOriginal = $originalMarker[0].Substring('MIRACLE_CHECKPOINT'.Length+1) | ConvertFrom-Json
+    $sourceLogical = $logicalMarker[0].Substring('MIRACLE_LOGICAL_REFERENCE'.Length+1) | ConvertFrom-Json
+    Assert-That (@($sourceOriginal.counts.PSObject.Properties).Count -eq 23 -and
+      @($sourceOriginal.checksums.PSObject.Properties).Count -eq 23 -and
+      @($sourceLogical.canonical.PSObject.Properties).Count -eq 23) 'source-reference-all-tables'
+    $localLogicalOutput = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword (Build-Sql 'recovery-local'))
+    $localLogicalMarker = @($localLogicalOutput | Where-Object { $_.StartsWith("MIRACLE_LOCAL_CHECKPOINT`t") })
+    Assert-That ($localLogicalMarker.Count -eq 1) 'local-logical-marker'
+    $localLogical = $localLogicalMarker[0].Substring('MIRACLE_LOCAL_CHECKPOINT'.Length+1) | ConvertFrom-Json
+    foreach ($table in $legacyTables) {
+        Assert-That ($sourceLogical.canonical.$table -eq $localLogical.canonical.$table) ('logical-value-' + $table)
+    }
+    Assert-That (($sourceLogical.schema | ConvertTo-Json -Compress -Depth 5) -eq
+      ($localLogical.schema | ConvertTo-Json -Compress -Depth 5)) 'logical-schema-equal-despite-ordinal'
+    $sourceEventOrdinal = @(Invoke-Sql 'synthetic_source' 'fixture_owner' $ownerPassword "SELECT ordinal_position FROM information_schema.columns WHERE table_schema='public' AND table_name='Event' AND column_name='note';")[-1]
+    $localEventOrdinal = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword "SELECT ordinal_position FROM information_schema.columns WHERE table_schema='public' AND table_name='Event' AND column_name='note';")[-1]
+    Assert-That ($sourceEventOrdinal -ne $localEventOrdinal) 'logical-equal-despite-ordinal'
+    [void](Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword 'ALTER TABLE public."User" ALTER COLUMN note TYPE character varying(200);')
+    $typeOutput = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword (Build-Sql 'recovery-local'))
+    $typeMarker = @($typeOutput | Where-Object { $_.StartsWith("MIRACLE_LOCAL_CHECKPOINT`t") })
+    Assert-That ($typeMarker.Count -eq 1) 'type-logical-marker'
+    $changedType = $typeMarker[0].Substring('MIRACLE_LOCAL_CHECKPOINT'.Length+1) | ConvertFrom-Json
+    Assert-That ($changedType.canonical.User -eq $sourceLogical.canonical.User -and
+      ($changedType.schema | ConvertTo-Json -Compress -Depth 5) -ne
+      ($sourceLogical.schema | ConvertTo-Json -Compress -Depth 5)) 'type-modifier-mutation-rejected'
+    [void](Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword 'UPDATE public."User" SET note=''changed'' WHERE note IS NULL;')
+    $mutatedOutput = @(Invoke-Sql 'synthetic_restore' 'fixture_owner' $ownerPassword (Build-Sql 'recovery-local'))
+    $mutatedMarker = @($mutatedOutput | Where-Object { $_.StartsWith("MIRACLE_LOCAL_CHECKPOINT`t") })
+    Assert-That ($mutatedMarker.Count -eq 1) 'mutated-logical-marker'
+    $mutated = $mutatedMarker[0].Substring('MIRACLE_LOCAL_CHECKPOINT'.Length+1) | ConvertFrom-Json
+    Assert-That ($mutated.canonical.User -ne $sourceLogical.canonical.User) 'logical-value-mutation-rejected'
+    $postcheckSql = Build-Sql 'postcheck'
+    $good = Query-Json $postcheckSql
+    Assert-That ($good.certificateConstraints -and $good.sessionVersion -and $good.resetTokenUnique -and $good.rateLimitBucket) 'catalog-good'
+    Assert-That ($good.bracketAppearanceTable -and $good.bracketAppearanceDefaults -and $good.bracketAppearanceConstraints) 'bracket-catalog-good'
+    Assert-That (-not (Query-Json ('BEGIN; DROP TABLE public."EventBracketAppearance"; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceTable) 'bracket-missing-table-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" DROP CONSTRAINT "EventBracketAppearance_pkey"; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceTable) 'bracket-missing-primary-key-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" ALTER COLUMN "backgroundUrl" SET NOT NULL; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceTable) 'bracket-nullability-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" ALTER COLUMN "positionX" SET DEFAULT 51; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceDefaults) 'bracket-position-x-default-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" ALTER COLUMN "positionY" SET DEFAULT 49; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceDefaults) 'bracket-position-y-default-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" ALTER COLUMN "overlay" SET DEFAULT 36; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceDefaults) 'bracket-overlay-default-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; DROP INDEX public."EventBracketAppearance_eventId_key"; CREATE INDEX "EventBracketAppearance_eventId_key" ON public."EventBracketAppearance"("eventId"); ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceConstraints) 'bracket-nonunique-index-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; DROP INDEX public."EventBracketAppearance_eventId_key"; CREATE UNIQUE INDEX "EventBracketAppearance_eventId_key" ON public."EventBracketAppearance"("eventId") WHERE "backgroundUrl" IS NOT NULL; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceConstraints) 'bracket-partial-index-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; DROP INDEX public."EventBracketAppearance_eventId_key"; CREATE UNIQUE INDEX "EventBracketAppearance_eventId_key" ON public."EventBracketAppearance"("id"); ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceConstraints) 'bracket-wrong-column-index-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" DROP CONSTRAINT "EventBracketAppearance_eventId_fkey"; ALTER TABLE public."EventBracketAppearance" ADD CONSTRAINT "EventBracketAppearance_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES public."Event"("id") ON DELETE RESTRICT ON UPDATE CASCADE; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceConstraints) 'bracket-wrong-delete-rule-rejected'
+    Assert-That (-not (Query-Json ('BEGIN; ALTER TABLE public."EventBracketAppearance" DROP CONSTRAINT "EventBracketAppearance_eventId_fkey"; ALTER TABLE public."EventBracketAppearance" ADD CONSTRAINT "EventBracketAppearance_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES public."Event"("id") ON DELETE CASCADE ON UPDATE RESTRICT; ' + $postcheckSql + ' ROLLBACK;')).bracketAppearanceConstraints) 'bracket-wrong-update-rule-rejected'
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."PasswordResetToken_userId_key"; CREATE UNIQUE INDEX "PasswordResetToken_userId_key" ON public."PasswordResetToken"("tokenFormat");')
+    Assert-That (-not (Query-Json $postcheckSql).resetTokenUnique) 'wrong-reset-column-rejected'
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."PasswordResetToken_userId_key"; CREATE UNIQUE INDEX "PasswordResetToken_userId_key" ON public."PasswordResetToken"("userId") WHERE "usedAt" IS NULL;')
+    Assert-That (-not (Query-Json $postcheckSql).resetTokenUnique) 'partial-reset-index-rejected'
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."PasswordResetToken_userId_key"; CREATE UNIQUE INDEX "PasswordResetToken_userId_key" ON public."PasswordResetToken"(lower("userId"));')
+    Assert-That (-not (Query-Json $postcheckSql).resetTokenUnique) 'expression-reset-index-rejected'
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."PasswordResetToken_userId_key"; CREATE UNIQUE INDEX "PasswordResetToken_userId_key" ON public."PasswordResetToken"("userId") INCLUDE ("token");')
+    Assert-That (-not (Query-Json $postcheckSql).resetTokenUnique) 'included-reset-index-rejected'
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."PasswordResetToken_userId_key"; CREATE UNIQUE INDEX "PasswordResetToken_userId_key" ON public."User"("sessionVersion");')
+    Assert-That (-not (Query-Json $postcheckSql).resetTokenUnique) 'wrong-reset-table-rejected'
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."PasswordResetToken_userId_key"; CREATE UNIQUE INDEX "PasswordResetToken_userId_key" ON public."PasswordResetToken"("userId");')
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'ALTER TABLE public."User" ALTER COLUMN "sessionVersion" SET DEFAULT 10;')
+    Assert-That (-not (Query-Json $postcheckSql).sessionVersion) 'default-ten-rejected'
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'ALTER TABLE public."User" ALTER COLUMN "sessionVersion" SET DEFAULT 0;')
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."Certificate_verificationCode_key"; CREATE UNIQUE INDEX "Certificate_verificationCode_key" ON public."Certificate"("recipientName");')
+    Assert-That (-not (Query-Json $postcheckSql).certificateConstraints) 'wrong-certificate-column-rejected'
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."Certificate_verificationCode_key"; CREATE UNIQUE INDEX "Certificate_verificationCode_key" ON public."Certificate"("verificationCode");')
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."Certificate_eventId_type_recipientKind_recipientId_version_key"; CREATE UNIQUE INDEX "Certificate_eventId_type_recipientKind_recipientId_version_key" ON public."Certificate"("eventId","type","recipientId","recipientKind","version");')
+    Assert-That (-not (Query-Json $postcheckSql).certificateConstraints) 'wrong-certificate-order-rejected'
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."Certificate_eventId_type_recipientKind_recipientId_version_key"; CREATE UNIQUE INDEX "Certificate_eventId_type_recipientKind_recipientId_version_key" ON public."Certificate"("eventId","type","recipientKind","recipientId","version");')
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."RateLimitBucket_key_key"; CREATE UNIQUE INDEX "RateLimitBucket_key_key" ON public."RateLimitBucket"("count");')
+    Assert-That (-not (Query-Json $postcheckSql).rateLimitBucket) 'wrong-rate-limit-column-rejected'
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."RateLimitBucket_key_key"; CREATE UNIQUE INDEX "RateLimitBucket_key_key" ON public."RateLimitBucket"("key");')
+    $flowSql = Build-Sql 'flow' ([guid]::NewGuid().ToString('N'))
+    $flowOutput = @(Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword $flowSql)
+    $flowLine = @($flowOutput | Where-Object { $_.StartsWith("MIRACLE_LOCAL_CHECKPOINT`t") })
+    Assert-That ($flowLine.Count -eq 1) 'flow-marker'
+    $flow = $flowLine[0].Substring('MIRACLE_LOCAL_CHECKPOINT'.Length+1) | ConvertFrom-Json
+    Assert-That ($flow.certificateUnique -and $flow.sessionIncrement -and $flow.resetOnePerUser -and $flow.resetConsumed -and $flow.rateLimitUnique) 'flow-result'
+    $remaining = @(Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'SELECT (SELECT count(*) FROM public."User")+(SELECT count(*) FROM public."Event")+(SELECT count(*) FROM public."Certificate")+(SELECT count(*) FROM public."PasswordResetToken")+(SELECT count(*) FROM public."RateLimitBucket");')
+    Assert-That ($remaining[-1] -eq '0') 'flow-rollback'
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword 'DROP INDEX public."PasswordResetToken_userId_key";')
+    [void](Invoke-Sql 'synthetic_candidate' 'fixture_owner' $ownerPassword $flowSql -ExpectFailure)
+    [Console]::WriteLine('SYNTHETIC_PG18_PASS catalog=22 flow=2 dumpRestore=1 port=' + $port + ' dumpExit=' + $pipeline.dumpExit + ' restoreExit=' + $pipeline.restoreExit)
+} finally {
+    $approvedPrefix = [IO.Path]::Combine([IO.Path]::GetTempPath(),'miracle-task3-pg-')
+    try {
+        Invoke-OwnedClusterCleanup $startAttempted {
+            Invoke-Tool ([IO.Path]::Combine($bin,'pg_ctl.exe')) ('-D "' + $data + '" -m fast -w -t 60 stop') 90000
+        } {
+            Test-OwnedClusterStopped
+        } {
+            Assert-That ($fixtureRoot.StartsWith($approvedPrefix,[StringComparison]::OrdinalIgnoreCase)) 'owned-cleanup-prefix'
+            if ([IO.Directory]::Exists($fixtureRoot)) { [IO.Directory]::Delete($fixtureRoot,$true) }
+        }
+    } catch {
+        [Console]::Error.WriteLine('FIXTURE_STOP_UNVERIFIED ' + $fixtureRoot)
+        throw
+    }
+}

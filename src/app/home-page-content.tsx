@@ -1,17 +1,28 @@
 import { unstable_cache } from "next/cache";
 import { BarChart3, CalendarDays, ListTree, Shield, Trophy, Users } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import { PublicHomeV2 } from "@/components/public-v2/PublicHomeV2";
+import { PublicDiscoveryHomeV3 } from "@/components/v3/public-discovery/PublicDiscoveryV3";
+import { chooseFeaturedDiscoveryEvent, filterDiscoveryEvents } from "@/lib/events/public-discovery";
+import { readPublicHomeFeaturedEvent } from "@/lib/events/public-home-read";
+import { createFeaturedTrace } from "@/lib/events/public-home-trace";
+import type { PublicHomeFeaturedEvent } from "@/lib/events/public-v3-types";
+import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getDefaultModeLabel } from "@/lib/platform/config";
 import { getPublicEvents as getDemoPublicEvents } from "@/lib/platform/demo-store";
-import { getAllGames, getBracketPreview, getGameForEvent, getPublicEvents, getTeamsForEvent } from "@/lib/platform/repository";
+import { getAllGames, getBracketPreview, getGameForEvent, getPublicDiscoveryEvents, getPublicEvents, getTeamsForEvent } from "@/lib/platform/repository";
 import type { Event, Game } from "@/lib/platform/types";
 
 const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });
+const getCachedPublicDiscoveryEvents = unstable_cache(
+  getPublicDiscoveryEvents,
+  ["public-discovery-events-v3"],
+  { revalidate: 30 },
+);
 const PUBLIC_EVENTS_TIMEOUT_MS = 2_000;
 
 async function getHomepageEvents() {
@@ -84,7 +95,8 @@ async function EventCard({
         <div className="mt-auto">
           <Link
             href={ctaHref(event)}
-            className="block w-full rounded-xl bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-blue-700"
+            aria-label={`${ctaLabel}: ${event.name}`}
+            className="block w-full rounded-xl bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2"
           >
             {ctaLabel}
           </Link>
@@ -102,8 +114,45 @@ export async function HomePageContent({
   const t = await getTranslations("home");
   const resolved = await searchParams;
   const gameFilter = resolved?.game ?? "all";
+  const games = getAllGames();
 
-  const [events, games] = await Promise.all([getHomepageEvents(), Promise.resolve(getAllGames())]);
+  if (isFeatureEnabled("public_discovery_v3")) {
+    const localeValue = await getLocale().catch(() => "id");
+    const locale = localeValue === "en" ? "en" : "id";
+    const discovery = await loadPublicDiscovery(getCachedPublicDiscoveryEvents);
+    const entries = filterDiscoveryEvents(discovery.entries, { game: gameFilter, status: "all" });
+    const featured = chooseFeaturedDiscoveryEvent(entries);
+    let featuredView: PublicHomeFeaturedEvent | null = null;
+    let featuredReadState: "none" | "ready" | "unavailable" | "read_failure" | "mismatch" = "none";
+    if (featured) {
+      const featuredTrace = createFeaturedTrace();
+      try {
+        featuredTrace.mark("reader_await");
+        featuredView = await readPublicHomeFeaturedEvent(featured.event.slug);
+        featuredTrace.mark("identity_check");
+        featuredReadState = !featuredView ? "unavailable" : featuredView.identity.id === featured.event.id ? "ready" : "mismatch";
+        if (featuredReadState !== "ready") console.error("Homepage featured event unavailable", { code: featuredReadState });
+        featuredTrace.mark("reader_done");
+      } catch (error) {
+        featuredTrace.fail(error);
+        featuredReadState = "read_failure";
+        console.error("Homepage featured event unavailable", { code: featuredReadState });
+      }
+    }
+    return (
+      <PublicDiscoveryHomeV3
+        locale={locale}
+        entries={entries}
+        games={games}
+        gameFilter={gameFilter}
+        loadState={discovery.loadState}
+        featuredView={featuredView}
+        diagnostics={{ discovery: discovery.failureCode ?? "ready", featured: featuredReadState }}
+      />
+    );
+  }
+
+  const events = await getHomepageEvents();
 
   const filteredEvents = gameFilter === "all" ? events : events.filter((event) => event.gameId === gameFilter);
   const featuredEvent = filteredEvents[0];
@@ -175,20 +224,21 @@ export async function HomePageContent({
             <p className="mt-4 max-w-xl text-base leading-relaxed text-blue-50">{t("description")}</p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
-                href={featuredEvent ? ctaHref(featuredEvent) : "/events"}
-                className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
+                href={featuredEvent ? `/events/${featuredEvent.slug}` : "/events"}
+                aria-label={featuredEvent ? `${t("viewDemoEvent")}: ${featuredEvent.name}` : t("allEvents")}
+                className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               >
                 {featuredEvent ? t("viewDemoEvent") : t("allEvents")}
               </Link>
               <Link
                 href="/events"
-                className="rounded-full border border-white/25 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+                className="rounded-full border border-white/25 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               >
                 {t("allEvents")}
               </Link>
               <Link
                 href="/organizer"
-                className="rounded-full border border-white/25 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+                className="rounded-full border border-white/25 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               >
                 Buat Turnamen
               </Link>
@@ -262,7 +312,7 @@ export async function HomePageContent({
                 <Link
                   key={item.href}
                   href={item.href as `/events/${string}`}
-                  className="flex min-h-20 items-center gap-3 rounded-2xl bg-white p-4 font-semibold text-slate-800 shadow-sm transition hover:-translate-y-0.5 hover:text-blue-700 hover:shadow-md"
+                  className="flex min-h-20 items-center gap-3 rounded-2xl bg-white p-4 font-semibold text-slate-800 shadow-sm transition hover:-translate-y-0.5 hover:text-blue-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                 >
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                     <Icon className="h-5 w-5" />
@@ -280,7 +330,8 @@ export async function HomePageContent({
           <Link
             key={game.id}
             href={(game.id === "all" ? "/" : `/?game=${game.id}`) as "/"}
-            className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+            aria-current={gameFilter === game.id ? "page" : undefined}
+            className={`rounded-full border px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 ${
               gameFilter === game.id
                 ? "border-blue-600 bg-blue-600 text-white"
                 : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-600"

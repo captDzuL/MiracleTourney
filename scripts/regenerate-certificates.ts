@@ -1,12 +1,12 @@
 /**
  * Regenerates certificates for all events that have a completed Final match.
- * Deletes existing placeholder/stale certificate records and re-renders the premium template.
+ * Appends a premium certificate version and preserves prior verification history.
  * Run with: pnpm exec tsx scripts/regenerate-certificates.ts
  */
 
 import path from "path";
 import fs from "fs";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { chromium } from "playwright-core";
 
 const prisma = new PrismaClient();
@@ -27,7 +27,9 @@ async function renderCertificate(eventId: string, winnerTeamId: string): Promise
   const gameName = game.name ?? event.gameId;
   const gameSlug = game.slug ?? event.gameId.replace("game-", "");
 
-  const certCount = await prisma.certificate.count({ where: { team: { eventId: event.id } } }).catch(() => 0);
+  const certCount = await prisma.certificate.count({
+    where: { eventId: event.id, type: "champion", recipientKind: "team" },
+  }).catch(() => 0);
   const certId = `${gameSlug.toUpperCase().slice(0, 2)}-${new Date().getFullYear()}-${String(certCount + 1).padStart(5, "0")}`;
 
   const date = new Intl.DateTimeFormat("id-ID", { year: "numeric", month: "long", day: "numeric" }).format(new Date());
@@ -82,18 +84,42 @@ async function main() {
     const eventName = match.event.name;
     console.log(`📋 Event: ${eventName}`);
 
-    // Delete existing certificate
-    const deleted = await prisma.certificate.deleteMany({ where: { eventId: match.eventId } });
-    if (deleted.count > 0) {
-      console.log(`  Deleted ${deleted.count} existing certificate(s).`);
-    }
-
     console.log(`  Rendering premium certificate for winner team: ${match.winnerTeamId}...`);
     try {
       const url = await renderCertificate(match.eventId, match.winnerTeamId!);
-      await prisma.certificate.create({
-        data: { eventId: match.eventId, teamId: match.winnerTeamId!, imageUrl: url },
+      const winnerTeam = await prisma.team.findUnique({
+        where: { id: match.winnerTeamId! },
+        select: { name: true },
       });
+      const generatedAt = new Date();
+      await prisma.$transaction(async (tx) => {
+        const previous = await tx.certificate.findFirst({
+          where: { eventId: match.eventId, type: "champion", recipientKind: "team" },
+          orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+        });
+        const nextVersion = (previous?.version ?? 0) + 1;
+        if (previous) {
+          await tx.certificate.update({
+            where: { id: previous.id },
+            data: { supersededByVersion: nextVersion },
+          });
+        }
+        await tx.certificate.create({
+          data: {
+            eventId: match.eventId,
+            teamId: match.winnerTeamId!,
+            type: "champion",
+            recipientKind: "team",
+            recipientId: match.winnerTeamId!,
+            recipientName: winnerTeam?.name ?? match.winnerTeamId!,
+            version: nextVersion,
+            imageUrl: url,
+            publishedUrl: url,
+            generatedAt,
+            publishedAt: generatedAt,
+          },
+        });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
       console.log(`  ✅ Certificate saved: ${url}\n`);
     } catch (err) {
       console.error(`  ❌ Failed:`, err);

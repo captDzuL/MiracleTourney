@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
 import { setRequestLocale } from "next-intl/server";
+import { permanentRedirect } from "next/navigation";
 
-import { getPublicEventBySlug } from "@/lib/platform/repository";
+import { PublicV3EventPage } from "@/components/v3/public-event/PublicV3EventPage";
+import { getSessionUser } from "@/lib/auth/session";
+import { readPublicV3Event } from "@/lib/events/public-v3-read";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { serializeJsonLd } from "@/lib/seo/json-ld";
+import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
 import { renderEventDetailPage } from "../../../events/[slug]/event-detail-page";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
+
 
 export async function generateMetadata({
   params,
@@ -15,10 +22,14 @@ export async function generateMetadata({
   const event = await getPublicEventBySlug(slug);
   if (!event) return {};
 
+  const ogImage = isFeatureEnabled("adaptive_public_event_v3")
+    ? (event.activeVisualAsset?.status === "approved" && event.activeVisualAsset.url ? event.activeVisualAsset.url : null)
+      ?? event.gameImageUrl ?? event.logoUrl
+    : event.logoUrl ?? event.gameImageUrl;
+
   const title = event.name;
   const description = event.description;
   const url = `${BASE_URL}/${locale}/events/${slug}`;
-  const ogImage = event.logoUrl ?? event.gameImageUrl;
 
   return {
     title,
@@ -51,8 +62,46 @@ export default async function LocalizedEventDetailPage({
 }: {
   params: Promise<{ locale: string; slug: string }>;
 }) {
-  const { locale, slug } = await params;
-  setRequestLocale(locale as "id" | "en");
+  const { locale: rawLocale, slug } = await params;
+  const locale = rawLocale === "en" ? "en" : "id";
+  setRequestLocale(locale);
+  const event = await getPublicEventBySlug(slug);
+  if (!event) {
+    const redirectSlug = await getPublicEventSlugRedirect(slug);
+    if (redirectSlug) permanentRedirect(`/${locale}/events/${redirectSlug}`);
+  }
 
-  return renderEventDetailPage(slug, locale as "id" | "en");
+  if (event && isFeatureEnabled("adaptive_public_event_v3") && ["Published", "Registration Closed", "Ongoing", "Finished"].includes(event.status)) {
+    try {
+      let viewer: Awaited<ReturnType<typeof getSessionUser>> = null;
+      try {
+        viewer = await getSessionUser();
+      } catch {
+        // Public event data remains readable when the optional session lookup is unavailable.
+      }
+      const view = await readPublicV3Event(slug, viewer);
+      if (view) {
+        const jsonLd = {
+          "@context": "https://schema.org",
+          "@type": "SportsEvent",
+          name: view.identity.title,
+          description: view.identity.description,
+          location: { "@type": "Place", name: view.identity.facts.venue },
+          organizer: { "@type": "Organization", name: view.identity.organizer.name },
+          sport: view.identity.game.name,
+          ...(view.identity.facts.startsAt !== "TBD" ? { startDate: view.identity.facts.startsAt } : {}),
+          ...(view.identity.facts.prize ? { prize: view.identity.facts.prize } : {}),
+        };
+        return <>
+          <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
+          <PublicV3EventPage view={view} locale={locale} />
+        </>;
+      }
+      return <PublicV3EventPage view={null} locale={locale} error />;
+    } catch {
+      return <PublicV3EventPage view={null} locale={locale} error />;
+    }
+  }
+
+  return renderEventDetailPage(slug, locale, event ?? undefined);
 }

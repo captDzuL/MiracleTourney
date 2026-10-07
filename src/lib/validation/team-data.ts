@@ -8,10 +8,16 @@ export type TeamDataInput = {
 };
 export type ValidationError = { field: string; message: string };
 
+function containsMarkup(value: string): boolean {
+  return /[<>]/.test(value);
+}
+
 export function validateTeamData(input: TeamDataInput): ValidationError[] {
   const errors: ValidationError[] = [];
 
-  if (input.teamName.trim().length < 2 || input.teamName.trim().length > 64) {
+  if (containsMarkup(input.teamName)) {
+    errors.push({ field: "team_name", message: "Nama tim mengandung markup yang tidak diizinkan" });
+  } else if (input.teamName.trim().length < 2 || input.teamName.trim().length > 64) {
     errors.push({ field: "team_name", message: "Nama tim harus antara 2-64 karakter" });
   } else if (containsProfanity(input.teamName)) {
     errors.push({ field: "team_name", message: "Nama tim mengandung kata yang tidak diizinkan" });
@@ -23,7 +29,9 @@ export function validateTeamData(input: TeamDataInput): ValidationError[] {
     errors.push({ field: "team_tag", message: "Tag tim mengandung kata yang tidak diizinkan" });
   }
 
-  if (input.captainName.trim().length < 2 || input.captainName.trim().length > 64) {
+  if (containsMarkup(input.captainName)) {
+    errors.push({ field: "captain_name", message: "Nama kapten mengandung markup yang tidak diizinkan" });
+  } else if (input.captainName.trim().length < 2 || input.captainName.trim().length > 64) {
     errors.push({ field: "captain_name", message: "Nama kapten harus antara 2-64 karakter" });
   } else if (containsProfanity(input.captainName)) {
     errors.push({ field: "captain_name", message: "Nama kapten mengandung kata yang tidak diizinkan" });

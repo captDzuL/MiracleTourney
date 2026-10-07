@@ -1,8 +1,12 @@
 import { assertUserCanManageEvent, getCaptainCredentialsForEvent } from "@/lib/platform/repository";
 import { requireRole } from "@/lib/auth/session";
+import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
+import { getRequestId, withRouteLog } from "@/lib/observability/logger";
+import { requireSameOrigin, neutralizeSpreadsheetFormula, isSafeEntityId } from "@/lib/security/request-guard";
+import { toPublicError } from "@/lib/security/public-error";
 
 function csvEscape(value: string): string {
-  const safeValue = /^[=+\-@]/.test(value.trimStart()) ? `'${value}` : value;
+  const safeValue = neutralizeSpreadsheetFormula(value);
 
   if (safeValue.includes(",") || safeValue.includes('"') || safeValue.includes("\n")) {
     return `"${safeValue.replace(/"/g, '""')}"`;
@@ -10,24 +14,52 @@ function csvEscape(value: string): string {
   return safeValue;
 }
 
-function isSafeEventId(eventId: string) {
-  return /^[a-zA-Z0-9_-]+$/.test(eventId);
+export async function GET(req: Request) {
+  return withRouteLog(req, "api_admin_captain_credentials", (request) => handleGet(request));
 }
 
-export async function GET(req: Request) {
-  const user =
-    await requireRole("platform_admin")
-    ?? await requireRole("organizer")
-    ?? await requireRole("admin");
-  if (!user) return new Response("Unauthorized", { status: 401 });
+async function handleGet(req: Request) {
+  const originFailure = requireSameOrigin(req);
+  if (originFailure) return originFailure;
+
+  const requestId = getRequestId(req);
+  const privateHeaders = { "Cache-Control": "no-store, max-age=0", "Vary": "Cookie" };
+  let user;
+  try {
+    user =
+      await requireRole("platform_admin")
+      ?? await requireRole("organizer")
+      ?? await requireRole("admin");
+  } catch {
+    return Response.json({ code: "internal_error", requestId }, { status: 500, headers: privateHeaders });
+  }
+  if (!user) return Response.json({ code: "forbidden", requestId }, { status: 401, headers: privateHeaders });
 
   const { searchParams } = new URL(req.url);
   const eventId = searchParams.get("eventId");
-  if (!eventId) return new Response("Missing eventId", { status: 400 });
-  if (!isSafeEventId(eventId)) return new Response("Invalid eventId", { status: 400 });
-  await assertUserCanManageEvent(user, eventId);
+  if (!eventId || !isSafeEntityId(eventId)) {
+    const error = toPublicError({ code: "invalid_input" }, requestId);
+    return Response.json(error.body, { status: error.status, headers: privateHeaders });
+  }
+  const access = authorizeWorkspaceResource(
+    user as WorkspaceActor,
+    { eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
+    user.role === "organizer" ? user.id : null,
+  );
+  if (!access.ok) return Response.json({ code: "forbidden", requestId }, { status: 403, headers: privateHeaders });
+  try {
+    await assertUserCanManageEvent(user, eventId);
+  } catch {
+    return Response.json({ code: "forbidden", requestId }, { status: 403, headers: privateHeaders });
+  }
 
-  const credentials = await getCaptainCredentialsForEvent(eventId);
+  let credentials;
+  try {
+    credentials = await getCaptainCredentialsForEvent(eventId);
+  } catch (error) {
+    const publicError = toPublicError(error, requestId);
+    return Response.json(publicError.body, { status: publicError.status, headers: privateHeaders });
+  }
 
   const lines = [
     "team_name,team_tag,captain_name,captain_contact,login_email,temp_password",
@@ -41,6 +73,7 @@ export async function GET(req: Request) {
   return new Response(lines.join("\n"), {
     headers: {
       "Cache-Control": "no-store, max-age=0",
+      "Vary": "Cookie",
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="captain-credentials-${eventId}.csv"`,
       "X-Robots-Tag": "noindex, nofollow, noarchive",

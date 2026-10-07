@@ -1,5 +1,6 @@
 import { requestPasswordResetAction } from "@/lib/actions";
 import { SubmitButton } from "@/components/submit-button";
+import Link from "next/link";
 
 export async function renderForgotPasswordPage(
   searchParams?: Promise<{ sent?: string; error?: string }>,
@@ -42,9 +43,9 @@ export async function renderForgotPasswordPage(
         </form>
       )}
       <p className="mt-6 text-center text-sm text-slate-400">
-        <a href="/login" className="text-cyan-400 hover:text-cyan-300">
+        <Link href="/login" className="text-cyan-400 hover:text-cyan-300">
           Kembali ke Login
-        </a>
+        </Link>
       </p>
     </div>
   );

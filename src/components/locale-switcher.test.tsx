@@ -61,4 +61,19 @@ describe("LocaleSwitcher", () => {
     expect(replace).toHaveBeenCalledWith("/en");
     expect(refresh).toHaveBeenCalledTimes(1);
   });
-});
+
+  it("uses tokenized controls and visible focus only in the V3 variant", async () => {
+    await act(async () => {
+      root.render(<LocaleSwitcher variant="v3" />);
+    });
+    const buttons = Array.from(container.querySelectorAll("button"));
+    expect(container.firstElementChild?.className).toContain("var(--color-border)");
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) expect(button.className).toContain("miracle-focus-ring");
+
+    await act(async () => {
+      root.render(<LocaleSwitcher />);
+    });
+    expect(container.firstElementChild?.className).toContain("border-slate-200");
+    for (const button of container.querySelectorAll("button")) expect(button.className).not.toContain("miracle-focus-ring");
+  });});

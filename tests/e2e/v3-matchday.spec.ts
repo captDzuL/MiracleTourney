@@ -1,0 +1,449 @@
+import { expect, test, type Page } from "@playwright/test";
+import { loginAsOrganizer, normalizeReleasePage, waitForReleaseFonts } from "./helpers/auth";
+import { matchdayDb, matchdaySchedule, prepareMatchdayFixture, type MatchdayKind } from "./helpers/matchday";
+import type { CompetitionWorkspaceState } from "../../src/lib/competition/workspace-types";
+import type { PublicOngoingEventViewModel } from "../../src/lib/events/public-ongoing-types";
+
+type Fixture = Awaited<ReturnType<typeof prepareMatchdayFixture>>;
+let fixture: Fixture;
+
+test.setTimeout(120_000);
+
+const POLL_TIMEOUT_MS = 60_000;
+const ASSERT_TIMEOUT_MS = 20_000;
+const NAV_TIMEOUT_MS = 60_000;
+const API_TIMEOUT_MS = 20_000;
+const API_RETRY_COUNT = 3;
+const MAX_ERROR_BODY_LENGTH = 2_000;
+
+test.afterEach(async () => {
+  if (fixture) await fixture.cleanup();
+});
+
+async function requestJson<T>(page: Page, path: string) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= API_RETRY_COUNT; attempt += 1) {
+    try {
+      const response = await page.request.fetch(path, {
+        maxRedirects: 0,
+        timeout: API_TIMEOUT_MS,
+      });
+      if (!response.ok()) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`Request failed for ${path}: ${response.status()} ${response.statusText()}\n${body}`.trim());
+      }
+      return (await response.json()) as T;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= API_RETRY_COUNT) {
+        throw error instanceof Error ? error : new Error(`Request failed for ${path}: ${String(error)}`);
+      }
+      await page.waitForTimeout(500 * attempt);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`Request failed for ${path}`);
+}
+
+async function state(page: Page) {
+  return requestJson<CompetitionWorkspaceState>(page, `/api/organizer/events/${fixture.id}/competition`);
+}
+
+async function publicState(page: Page) {
+  return requestJson<PublicOngoingEventViewModel>(page, `/api/events/${fixture.slug}/ongoing`);
+}
+
+function boundedBody(body: string) {
+  return body.length > MAX_ERROR_BODY_LENGTH ? `${body.slice(0, MAX_ERROR_BODY_LENGTH)}…` : body;
+}
+
+async function navigateChecked(page: Page, path: string) {
+  const response = await page.goto(path, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
+  if (!response) throw new Error(`GET ${path} returned no response`);
+  if (!response.ok()) {
+    const body = boundedBody(await response.text().catch(() => ""));
+    throw new Error(`GET ${path} failed: ${response.status()} ${response.statusText()}\n${body}`.trim());
+  }
+  return response;
+}
+
+async function openMatch(page: Page, id: string) {
+  const response = await page.goto(`/en/organizer/events/${fixture.id}/matches/${id}`, {
+    waitUntil: "domcontentloaded",
+    timeout: NAV_TIMEOUT_MS,
+  });
+  if (!response) {
+    throw new Error(`No response while opening /en/organizer/events/${fixture.id}/matches/${id}`);
+  }
+  if (!response.ok()) {
+    throw new Error(`openMatch failed: ${response.status()} ${response.statusText()} for match ${id}`);
+  }
+  await expect(page.getByRole("heading", { name: "Official result", exact: true })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
+}
+
+async function openSchedule(page: Page, linkName: "Schedule" | "Review schedule impact") {
+  await page.getByRole("link", { name: linkName, exact: true }).click();
+  await page.waitForURL(/\/schedule$/, { timeout: NAV_TIMEOUT_MS });
+  await expect(page.getByRole("heading", { name: "Schedule generation", exact: true })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
+}
+
+async function result(page: Page, matchId: string, home = "2", away = "0") {
+  const form = page.getByRole("form", { name: "Official result", exact: true });
+  const submit = form.getByRole("button", { name: "Submit official result", exact: true });
+  await expect(submit).toBeEnabled({ timeout: ASSERT_TIMEOUT_MS });
+  await form.locator('input[name="home-1"]').fill(home);
+  await form.locator('input[name="away-1"]').fill(away);
+  await submit.click();
+  await expect.poll(
+    async () => (await matchdayDb.match.findUnique({ where: { id: matchId }, select: { resultVersion: true } }))?.resultVersion,
+    { timeout: POLL_TIMEOUT_MS },
+  ).toBe(1);
+  if(process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3==="true"){
+    await page.getByRole("button",{name:"Reopen for correction",exact:true}).click();
+  }
+  await expect(form.getByRole("button", { name: "Preview correction", exact: true })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
+}
+
+test("generates competition, reviews the initial schedule and publishes explicitly", async ({ page }) => {
+  fixture = await prepareMatchdayFixture("single_elimination", "empty");
+  await loginAsOrganizer(page, "en");
+  await page.goto(`/en/organizer/events/${fixture.id}/competition`);
+  await page.getByRole("button", { name: "Save drawing draft", exact: true }).click();
+  await expect.poll(async () => (await state(page)).drawing?.status, { timeout: POLL_TIMEOUT_MS }).toBe("draft");
+  await page.getByRole("button", { name: "Publish drawing", exact: true }).click();
+  await expect.poll(async () => (await state(page)).drawing?.status, { timeout: POLL_TIMEOUT_MS }).toBe("published");
+  await expect.poll(async () => (await state(page)).matches.length, { timeout: POLL_TIMEOUT_MS }).toBe(3);
+  await matchdayDb.event.update({
+    where: { id: fixture.id },
+    data: { status: "Ongoing" },
+  });
+  await openSchedule(page, "Schedule");
+  await page.getByLabel("Window end", { exact: true }).fill("2026-01-02T09:00");
+  await page.getByLabel("Rooms (comma separated)", { exact: true }).fill("Arena A, Arena B");
+  await page.getByRole("button", { name: "Generate schedule preview", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /Impact preview/ })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
+
+  const [organizerPreview, unpublishedPublic] = await Promise.all([state(page), publicState(page)]);
+  expect(organizerPreview.publishedSchedule).toBeNull();
+  expect(JSON.stringify(unpublishedPublic)).not.toContain("Arena A");
+
+  await page.getByRole("button", { name: "Reload schedule", exact: true }).click();
+  await page.getByRole("button", { name: "Publish schedule", exact: true }).click();
+  await expect.poll(async () => (await state(page)).publishedSchedule?.draft.assignments.length, { timeout: POLL_TIMEOUT_MS }).toBe(3);
+  await expect.poll(async () => JSON.stringify(await publicState(page)), { timeout: POLL_TIMEOUT_MS }).toContain("Arena A");
+});
+
+test("marks a delay, reviews downstream impact and publishes a schedule revision", async ({ page }) => {
+  fixture = await prepareMatchdayFixture();
+  const graph = await fixture.graph();
+  await loginAsOrganizer(page, "en");
+  await openMatch(page, graph.matches[0].id);
+
+  const before = (await state(page)).publishedSchedule;
+  const form = page.getByRole("form", { name: "Mark delayed and preview impact" });
+  await form.getByLabel("Revised estimated end").fill("2026-01-01T10:30");
+  await form.getByLabel("Delay reason").fill("Room equipment outage");
+  await form.getByRole("button", { name: "Mark delayed and preview impact" }).click();
+  await expect.poll(async () => (await state(page)).matches[0].scheduleStatus, { timeout: POLL_TIMEOUT_MS }).toBe("delayed");
+  expect((await state(page)).publishedSchedule?.version).toBe(before?.version);
+
+  await openSchedule(page, "Review schedule impact");
+  await expect(page.getByRole("heading", { name: /Impact preview/ })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
+  await expect(page.getByText("Before:", { exact: false }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Publish schedule", exact: true }).click();
+  await expect.poll(async () => (await state(page)).publishedSchedule?.version, { timeout: POLL_TIMEOUT_MS }).not.toBe(before?.version);
+  expect(JSON.stringify(await publicState(page))).toContain("2026-01-01T03:30:00.000Z");
+});
+
+test("reviews a live overrun without moving the live match or exposing its estimate before publish", async ({ page }) => {
+  fixture = await prepareMatchdayFixture();
+  const id = (await fixture.graph()).matches[0].id;
+  await fixture.run({ kind: "match_start", matchId: id, reason: "Both teams at desk" });
+  const original = await matchdayDb.match.findUniqueOrThrow({ where: { id } });
+
+  await loginAsOrganizer(page, "en");
+  await openMatch(page, id);
+
+  const before = (await publicState(page)).liveMatches.find((m: { id: string }) => m.id === id);
+  if (!before) {
+    throw new Error(`Expected match ${id} to be present in public live state`);
+  }
+  const form = page.getByRole("form", { name: "Mark delayed and preview impact" });
+  await form.getByLabel("Revised estimated end").fill("2026-01-01T10:30");
+  await form.getByLabel("Delay reason").fill("Live series technical pause");
+  await form.getByRole("button", { name: "Mark delayed and preview impact" }).click();
+
+  await expect.poll(async () => (await state(page)).matches.find(m => m.id === id)?.scheduleStatus, { timeout: POLL_TIMEOUT_MS }).toBe("delayed");
+  expect((await publicState(page)).liveMatches.find((m: { id: string }) => m.id === id)).toMatchObject({ status: "live", end: before.end });
+
+  await openSchedule(page, "Review schedule impact");
+  await expect(page.getByRole("heading", { name: /Impact preview/ })).toBeVisible({ timeout: ASSERT_TIMEOUT_MS });
+  await page.getByRole("button", { name: "Publish schedule", exact: true }).click();
+  await expect.poll(async () => (await publicState(page)).liveMatches.find((m: { id: string }) => m.id === id)?.end, { timeout: POLL_TIMEOUT_MS }).toBe("2026-01-01T03:30:00.000Z");
+
+  const persisted = await matchdayDb.match.findUniqueOrThrow({ where: { id } });
+  expect(persisted).toMatchObject({
+    status: "Live",
+    scheduledAt: original.scheduledAt,
+    scheduleRoom: original.scheduleRoom,
+    actualStartedAt: original.actualStartedAt,
+  });
+});
+
+test("readiness deadline raises an action without walkover, organizer can override start", async ({ page }) => {
+  fixture = await prepareMatchdayFixture();
+  const graph = await fixture.graph();
+  const id = graph.matches[0].id;
+
+  await loginAsOrganizer(page, "en");
+  await openMatch(page, id);
+
+  await page.getByRole("button", { name: "Check readiness deadline" }).click();
+  await expect.poll(async () => (await state(page)).actions.length, { timeout: POLL_TIMEOUT_MS }).toBe(2);
+  const pending = (await state(page)).matches.find(m => m.id === id)!;
+  expect(pending.resultVersion).toBe(0);
+  expect(pending.status).toBe("Scheduled");
+
+  await page.getByRole("button", { name: "Team 1: checked in", exact: true }).click();
+  await expect.poll(async () => (await state(page)).readiness[0]?.status, { timeout: POLL_TIMEOUT_MS }).toBe("checked_in");
+
+  const start = page.getByRole("form", { name: "Start match", exact: true });
+  const startButton = start.getByRole("button", { name: "Start match", exact: true });
+  await expect(startButton).toBeEnabled();
+  await start.getByLabel("Override reason (if needed)").fill("Confirmed both captains at desk");
+  await startButton.click();
+  await expect.poll(async () => (await state(page)).matches.find(m => m.id === id)?.status, { timeout: POLL_TIMEOUT_MS }).toBe("Live");
+  expect((await matchdayDb.match.findUniqueOrThrow({ where: { id } })).actualStartedAt).not.toBeNull();
+
+  await page.goto(`/en/events/${fixture.slug}`);
+  await expect(page.getByRole("heading", { name: /Live now/i })).toBeVisible();
+});
+
+for (const kind of ["single_elimination", "double_elimination", "round_robin", "group_playoffs"] as MatchdayKind[]) {
+  test(`official ${kind} result advances the authoritative competition and public state`, async ({ page }) => {
+    fixture = await prepareMatchdayFixture(kind);
+    const graph = await fixture.graph();
+    const match = graph.matches[0];
+
+    await fixture.run({ kind: "match_start", matchId: match.id, reason: "Both teams confirmed at desk" });
+    await loginAsOrganizer(page, "en");
+    await openMatch(page, match.id);
+    await result(page, match.id);
+    if (kind === "group_playoffs") {
+      for (const groupMatch of graph.matches.filter(m => m.groupId && m.id !== match.id)) {
+        await fixture.run({ kind: "match_start", matchId: groupMatch.id, reason: "Group fixture setup" });
+        await fixture.run({ kind: "result_submit", matchId: groupMatch.id, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
+      }
+    }
+
+    const updated = await state(page);
+    const completed = updated.matches.find(m => m.id === match.id)!;
+
+    if (kind === "group_playoffs") {
+      for (const node of graph.matches.filter(m => !m.groupId && m.round === 1)) {
+        expect(updated.matches.find(m => m.id === node.id)?.homeTeamId).toBeTruthy();
+        expect(updated.matches.find(m => m.id === node.id)?.awayTeamId).toBeTruthy();
+      }
+    }
+
+    expect(completed).toMatchObject({ status: "Completed", resultVersion: 1, homeScore: 2, awayScore: 0 });
+    for (const edge of graph.dependencies.filter(d => d.sourceMatchId === match.id)) {
+      expect(updated.matches.find(m => m.id === edge.targetMatchId)?.[`${edge.targetSlot}TeamId`]).toBe(edge.outcome === "winner" ? completed.homeTeamId : completed.awayTeamId);
+    }
+    if (kind === "round_robin" || kind === "group_playoffs") {
+      expect(updated.standings.flatMap(t => t.rows).find(r => r.teamId === completed.homeTeamId)?.points).toBe(3);
+    }
+
+    const publicData = JSON.stringify(await publicState(page));
+    expect(publicData).toContain(match.id);
+    expect(publicData).not.toContain("Official result submission");
+
+    await page.goto(`/en/events/${fixture.slug}`);
+    await expect(page.getByRole("heading", { name: "Latest official results", exact: true })).toBeVisible();
+    await expect(page.getByText(/2\s(?:-|–)\s0/, { exact: true }).first()).toBeVisible();
+  });
+}
+
+test("allows a reviewed correction, then rejects correction once its downstream match is live", async ({ page }) => {
+  fixture = await prepareMatchdayFixture();
+  const graph = await fixture.graph();
+  const first = graph.matches[0];
+
+  await fixture.run({ kind: "match_start", matchId: first.id, reason: "Both teams confirmed at desk" });
+  await loginAsOrganizer(page, "en");
+  await openMatch(page, first.id);
+  await result(page, first.id);
+  if(process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3!=="true")await page.getByRole("button", { name: "Reload official result", exact: true }).click();
+  const form = page.getByRole("form", { name: "Official result", exact: true });
+  await form.locator('input[name="home-1"]').fill("0");
+  await form.locator('input[name="away-1"]').fill("2");
+  await form.getByLabel("Correction reason").fill("Confirmed official score sheet");
+  await form.getByRole("button", { name: "Preview correction" }).click();
+
+  await expect(form.getByRole("button", { name: "Confirm correction" })).toBeEnabled();
+  await form.getByRole("button", { name: "Confirm correction" }).click();
+  await expect.poll(async () => (await state(page)).matches.find(m => m.id === first.id)?.resultVersion, { timeout: POLL_TIMEOUT_MS }).toBe(2);
+
+  await fixture.run({ kind: "match_start", matchId: graph.matches[1].id, reason: "Both teams confirmed at desk" });
+  await fixture.run({ kind: "result_submit", matchId: graph.matches[1].id, games: [{ gameNumber: 1, homeScore: 2, awayScore: 0 }] });
+  await fixture.run({ kind: "match_start", matchId: graph.matches[2].id, reason: "Both finalists confirmed" });
+
+  await page.reload();
+  if(process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3==="true")await page.getByRole("button",{name:"Reopen for correction",exact:true}).click();
+  await form.locator('input[name="home-1"]').fill("2");
+  await form.locator('input[name="away-1"]').fill("0");
+  await form.getByLabel("Correction reason").fill("Another review");
+  await form.getByRole("button", { name: "Preview correction" }).click();
+
+  await expect(form.getByRole("alert")).toContainText("Blocked by live or completed matches");
+  await expect(form.getByRole("button", { name: "Confirm correction" })).toBeDisabled();
+  expect((await matchdayDb.match.findUniqueOrThrow({ where: { id: first.id } })).resultVersion).toBe(2);
+});
+
+test("canonical match statistics saves organizer values and reviews a pending captain submission",async({page})=>{
+  fixture=await prepareMatchdayFixture();
+  const matchId=(await fixture.graph()).matches[0].id;
+  if(process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3!=="true"){
+    await loginAsOrganizer(page,"en");
+    await page.goto(`/en/organizer/events/${fixture.id}/matches/${encodeURIComponent(matchId)}?view=statistics`);
+    await expect(page.getByRole("heading",{name:"Official result",exact:true})).toBeVisible();
+    await expect(page.locator("[data-match-workspace]")).toHaveCount(0);
+    return;
+  }
+  await fixture.run({kind:"match_start",matchId,reason:"Captains ready"});
+  await fixture.run({kind:"result_submit",matchId,games:[{gameNumber:1,homeScore:2,awayScore:0}]});
+  const match=await matchdayDb.match.findUniqueOrThrow({where:{id:matchId}});
+  const player=await matchdayDb.player.create({data:{teamId:match.homeTeamId,eventId:fixture.id,nickname:"Task8 Player",displayName:"Task8 Player",position:"Forward"}});
+  await loginAsOrganizer(page,"en");
+  const url=`/en/organizer/events/${fixture.id}/matches/${encodeURIComponent(matchId)}?view=statistics`;
+  await page.goto(url);
+  const form=page.locator(`[data-player-form="${match.homeTeamId}"]`);
+  await form.locator(`input[name="score_${player.id}_1"]`).fill("7.6");
+  await form.locator(`input[name="stat_${player.id}_goal"]`).fill("3");
+  await form.getByRole("button",{name:"Save player statistics",exact:true}).click();
+  await expect.poll(async()=> (await matchdayDb.playerStat.findUnique({where:{matchId_playerId:{matchId,playerId:player.id}}}))?.stats,{timeout:POLL_TIMEOUT_MS}).toEqual({scores:[7.6],goal:3,assist:0,passing:0,defense:0});
+  expect(await matchdayDb.competitionAuditLog.count({where:{eventId:fixture.id,matchId,action:"player_stats_save"}})).toBe(1);
+  const pending=await matchdayDb.statSubmission.create({data:{eventId:fixture.id,matchId,teamId:match.homeTeamId,submittedBy:"task8-captain",stats:{[player.id]:{scores:[8.1],goal:4,assist:2,passing:3,defense:1}},status:"pending"}});
+  await page.reload();
+  expect((await matchdayDb.playerStat.findUniqueOrThrow({where:{matchId_playerId:{matchId,playerId:player.id}}})).stats).toMatchObject({goal:3});
+  const review=page.locator(`[data-submission="${pending.id}"]`);
+  await review.getByRole("button",{name:"Approve submission",exact:true}).click();
+  await expect.poll(async()=> (await matchdayDb.statSubmission.findUniqueOrThrow({where:{id:pending.id}})).status,{timeout:POLL_TIMEOUT_MS}).toBe("approved");
+  expect((await matchdayDb.playerStat.findUniqueOrThrow({where:{matchId_playerId:{matchId,playerId:player.id}}}))).toMatchObject({source:"captain",stats:{scores:[8.1],goal:4}});
+  await page.getByRole("link",{name:"History",exact:true}).click();
+  await expect(page.getByText("Captain statistics approved",{exact:true})).toBeVisible();
+});
+
+test("match control preserves ID/EN parity, visible focus, aria-sort values, and bounded overflow", async ({ page }) => {
+  test.slow();
+  fixture = await prepareMatchdayFixture("single_elimination", "published", "release-matchday-parity");
+  for (const [locale, viewport] of [["id", { width: 390, height: 844 }], ["en", { width: 1440, height: 900 }]] as const) {
+    await normalizeReleasePage(page);
+    await page.setViewportSize(viewport);
+    await loginAsOrganizer(page, locale);
+    await page.goto(`/${locale}/organizer/events/${fixture.id}/match-control`);
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    const operationsRoot = process.env.FEATURE_FLAG_ORGANIZER_MASTER_SHELL_V3 === "true"
+      ? page.locator("[data-operations]")
+      : page.getByRole("region", { name: locale === "id" ? "Ruang kerja Match Day" : "Match Day workspace" });
+    await expect(operationsRoot).toBeVisible();
+    const contract = await operationsRoot.evaluate((root) => ({
+      overflow: (root as HTMLElement).scrollWidth > (root as HTMLElement).clientWidth,
+      controls: Array.from(root.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, summary'))
+        .filter((element) => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0)
+        .map((element) => ({ label: element.textContent?.trim() || element.getAttribute("aria-label") || element.tagName, height: element.getBoundingClientRect().height })),
+      ariaSort: Array.from(root.querySelectorAll<HTMLElement>("[aria-sort]"), (element) => element.getAttribute("aria-sort")),
+    }));
+    expect(contract.overflow, `${locale} Match Control overflows`).toBe(false);
+    expect(contract.controls.filter(({ height }) => height < 44), `${locale} Match Control control below 44px`).toEqual([]);
+    expect(contract.ariaSort.every((value) => ["ascending", "descending", "none", "other"].includes(value ?? ""))).toBe(true);
+    await page.keyboard.press("Tab");
+    const focused = page.locator(":focus");
+    await expect(focused).toBeVisible();
+    expect(await focused.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+    expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+    await waitForReleaseFonts(page);
+    await page.screenshot({
+      path: test.info().outputPath(`match-control-${locale}-${viewport.width}.png`),
+      animations: "disabled",
+    });
+  }
+});
+
+test("public ongoing API hides an unpublished schedule and private draft data", async ({ request }) => {
+  let privateRoom = "";
+  fixture = await test.step("create four-team graph with an unpublished private schedule", async () => {
+    const created = await prepareMatchdayFixture("single_elimination", "graph");
+    fixture = created;
+    privateRoom = `Private draft room ${created.slug}`;
+    const draft = await created.run({
+      kind: "schedule_save",
+      input: { ...matchdaySchedule, rooms: [privateRoom] },
+    });
+    expect(draft.resourceId).toBeTruthy();
+    return created;
+  });
+
+  const publicView = await test.step("fetch public ongoing API", async () => {
+    const path = `/api/events/${fixture.slug}/ongoing`;
+    const response = await request.get(path, { maxRedirects: 0, timeout: API_TIMEOUT_MS });
+    expect(response, `GET ${path} response`).toBeTruthy();
+    if (!response.ok()) {
+      const body = boundedBody(await response.text().catch(() => ""));
+      throw new Error(`GET ${path} failed: ${response.status()} ${response.statusText()}\n${body}`.trim());
+    }
+    expect(response.ok(), `GET ${path} should succeed`).toBe(true);
+
+    const contentType = response.headers()["content-type"] ?? "unknown";
+    const body = await response.text();
+    try {
+      return JSON.parse(body) as PublicOngoingEventViewModel;
+    } catch (error) {
+      const reason = error instanceof Error ? `: ${error.message}` : "";
+      throw new Error(`GET ${path} returned malformed JSON (content-type ${contentType})${reason}\n${boundedBody(body)}`.trim());
+    }
+  });
+
+  expect(publicView.schedule).toBeNull();
+  for (const match of publicView.matches) {
+    expect(match.start).toBeNull();
+    expect(match.end).toBeNull();
+    expect(match.room).toBeNull();
+  }
+  const serialized = JSON.stringify(publicView);
+  expect(serialized).not.toContain(privateRoom);
+  for (const privateKey of ["audit", "readiness", "resultSnapshot", "actorUserId"]) {
+    expect(serialized).not.toContain(privateKey);
+  }
+});
+
+test("public ongoing shows only active announcements and has no mobile overflow", async ({ page }) => {
+  fixture = await test.step("create four-team graph and announcement fixtures", async () => {
+    const created = await prepareMatchdayFixture("single_elimination", "graph");
+    fixture = created;
+    const active = await created.run({ kind: "announcement_save", title: "Active urgent notice", body: "Active urgent notice", urgency: "urgent" });
+    await created.run({ kind: "announcement_publish", announcementId: active.resourceId! });
+    const expired = await created.run({
+      kind: "announcement_save",
+      title: "Expired notice",
+      body: "Expired notice",
+      urgency: "important",
+      startsAt: "2025-01-01T00:00:00Z",
+      endsAt: "2025-01-02T00:00:00Z",
+    });
+    await created.run({ kind: "announcement_publish", announcementId: expired.resourceId! });
+    await created.run({ kind: "announcement_save", title: "Private draft notice", body: "Private draft notice", urgency: "info" });
+    return created;
+  });
+
+  await test.step("navigate to the public event at the mobile viewport", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await navigateChecked(page, `/id/events/${fixture.slug}`);
+  });
+
+  await test.step("verify announcement filtering and bounded mobile layout", async () => {
+    await expect(page.getByText("Active urgent notice", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Private draft notice", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Expired notice", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+});

@@ -1,0 +1,83 @@
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
+import type { ShellNavigationItem } from "./PublicShell";
+
+type EventWorkspaceShellProps = {
+  children: ReactNode;
+  eventTitle: string;
+  navigation: ShellNavigationItem[];
+  nextAction?: ReactNode;
+  organizerLabel: string;
+  operations?: { eventId: string; locale: "en" | "id" };
+};
+
+/** Shared draft workspace shell. Setup stays visible as numbered, horizontal progress. */
+export function EventWorkspaceShell({ children, eventTitle, navigation, nextAction, organizerLabel, operations }: EventWorkspaceShellProps) {
+  const t = useTranslations("v3Shell");
+  const master = useTranslations("organizerMaster");
+  const pathname = usePathname();
+  const setupRoute = /\/events\/(?:new|[^/]+\/edit)\/?$/.test(pathname);
+  const effectiveNavigation = useMemo(() => pathname.endsWith("/edit")
+    ? navigation.map((item) => ({ ...item, href: item.href.replace("/overview#", "/edit#") }))
+    : navigation, [navigation, pathname]);
+  const [activeIndex, setActiveIndex] = useState(() => Math.max(0, effectiveNavigation.findIndex((item) => item.active)));
+
+  useEffect(() => {
+    const syncActiveStep = () => {
+      const index = effectiveNavigation.findIndex((item) => window.location.hash && item.href.endsWith(window.location.hash));
+      if (index >= 0) setActiveIndex(index);
+    };
+    syncActiveStep();
+    window.addEventListener("hashchange", syncActiveStep);
+    return () => window.removeEventListener("hashchange", syncActiveStep);
+  }, [effectiveNavigation]);
+  const operationsRoute = operations && /\/(competition|schedule|match-control|matches\/[^/]+)$/.test(pathname);
+  if (operationsRoute) {
+    const base = `/organizer/events/${operations.eventId}`;
+    const labels = operations.locale === "id" ? ["Kompetisi", "Jadwal", "Kontrol pertandingan"] : ["Competition", "Schedule", "Match control"];
+    return <section className="grid min-w-0 gap-5">
+      <header className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"><p className="text-xs text-[var(--color-text-subtle)]">{organizerLabel}</p><h1 className="mt-2 break-words font-bold text-[var(--color-text)]">{eventTitle}</h1><h2 className="mt-2 text-3xl font-extrabold text-[var(--color-text)]">Match Day</h2><Link className="miracle-focus-ring mt-2 inline-flex min-h-11 items-center text-sm text-[var(--color-brand-cyan)]" href={`${base}/overview`}>{operations.locale === "id" ? "Pengaturan event" : "Event setup"}</Link></header>
+      <nav aria-label={t("eventNavigation")} className="grid min-w-0 grid-cols-3 gap-2">{["competition", "schedule", "match-control"].map((path, index) => <Link key={path} href={`${base}/${path}`} aria-current={pathname.endsWith(`/${path}`) || path === "match-control" && pathname.includes("/matches/") ? "page" : undefined} className="miracle-focus-ring flex min-h-11 min-w-0 items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-3 text-center text-sm font-bold text-[var(--color-text)] aria-[current=page]:border-[var(--color-brand-cyan)] aria-[current=page]:text-[var(--color-brand-cyan)]">{labels[index]}</Link>)}</nav>
+      <div className="min-w-0">{children}</div>
+    </section>;
+  }
+  return <section className="grid min-w-0 gap-6">
+    <header className="min-w-0 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 min-[700px]:p-7">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-subtle)]">{organizerLabel}</p>
+      <h1 className="mt-2 break-words text-sm font-semibold text-[var(--color-text)]">{eventTitle}</h1>
+      {setupRoute && <><h2 className="mt-4 text-2xl font-extrabold text-[var(--color-text)]">{master("setup.title")}</h2>
+      <p className="mt-2 text-sm text-[var(--color-text-subtle)]">{master("setup.description")}</p></>}
+      {operations && <Link className="miracle-focus-ring mt-3 inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-brand-cyan)]" href={`/organizer/events/${operations.eventId}/competition`}>{master("setup.matchDay")}</Link>}
+    </header>
+    {setupRoute && <nav aria-label={t("eventNavigation")} className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 min-[700px]:p-3">
+      <ol className="grid min-w-0 grid-cols-[repeat(var(--setup-step-count),minmax(0,1fr))] gap-1 min-[700px]:gap-2" style={{ "--setup-step-count": effectiveNavigation.length } as React.CSSProperties}>
+        {effectiveNavigation.map((item, index) => <li key={item.href}>
+          <Link aria-current={index === activeIndex ? "step" : undefined} className="miracle-focus-ring group flex min-h-11 min-w-0 items-center justify-center rounded-[var(--radius-control)] px-1 text-sm font-bold text-[var(--color-text-subtle)] transition hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)] aria-[current=step]:bg-[var(--color-surface-strong)] aria-[current=step]:text-[var(--color-text)] min-[900px]:min-h-12 min-[900px]:justify-start min-[900px]:gap-3 min-[900px]:px-3" href={item.href} onClick={(event) => {
+            setActiveIndex(index);
+            const target = new URL(event.currentTarget.href, window.location.href);
+            if (target.origin !== window.location.origin || target.pathname !== window.location.pathname || !target.hash) return;
+            event.preventDefault();
+            if (window.location.hash !== target.hash) {
+              window.history.replaceState(null, "", `${target.pathname}${target.search}${target.hash}`);
+              window.dispatchEvent(new HashChangeEvent("hashchange"));
+            }
+          }}>
+            <span className="grid size-7 shrink-0 place-items-center rounded-full border border-[var(--color-border-strong)] text-xs group-aria-[current=step]:border-[var(--color-brand-cyan)] group-aria-[current=step]:bg-[var(--color-brand-cyan)] group-aria-[current=step]:text-slate-950">{index + 1}</span>
+            <span className="sr-only min-w-0 min-[900px]:not-sr-only min-[900px]:break-words">{item.label}</span>
+          </Link>
+        </li>)}
+      </ol>
+    </nav>}
+    <div className={`grid min-w-0 gap-6 ${nextAction ? "min-[1100px]:grid-cols-[minmax(0,1fr)_16rem]" : ""}`}>
+      <div className="min-w-0">{children}</div>
+      {nextAction && <aside aria-label={t("nextAction")} className="h-fit rounded-[var(--radius-panel)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-4 min-[1100px]:sticky min-[1100px]:top-24">
+        <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[var(--color-brand-cream)]">{t("nextStep")}</p>{nextAction}
+      </aside>}
+    </div>
+  </section>;
+}

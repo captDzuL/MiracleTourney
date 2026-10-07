@@ -1,0 +1,68 @@
+"use client";
+
+import { useCallback, useState } from "react";
+import Image from "next/image";
+import { cn } from "@/lib/utils";
+
+export type EventPosterStageProps = {
+  eventName: string;
+  gameSlug?: string | null;
+  posterUrl?: string | null;
+  posterAlt?: string | null;
+  eyebrow?: string;
+  variant?: "hero" | "compact";
+  priority?: boolean;
+  className?: string;
+};
+
+function validPosterSource(value?: string | null): string | null {
+  const source = value?.trim();
+  if (!source || /[\\\s]/.test(source)) return null;
+  if (source.startsWith("/") && !source.startsWith("//")) return source;
+  try {
+    const url = new URL(source);
+    return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password ? source : null;
+  } catch { return null; }
+}
+
+/** Reset image failures when the consumer switches event or poster. */
+export function EventPosterStage(props: EventPosterStageProps) {
+  const source = validPosterSource(props.posterUrl);
+  return <PosterContent key={`${props.eventName}:${props.gameSlug}:${source}`} {...props} source={source} />;
+}
+
+function PosterContent({ eventName, gameSlug, posterAlt, eyebrow, variant = "hero", priority = false, className, source }: EventPosterStageProps & { source: string | null }) {
+  const [posterFailed, setPosterFailed] = useState(false);
+  const [artFailed, setArtFailed] = useState(false);
+  // SSR image errors can occur before React attaches onError during hydration.
+  // Stable refs inspect settled failures once; pending and successful loads stay intact.
+  const checkPoster = useCallback((image: HTMLImageElement | null) => {
+    if (image?.complete && image.naturalWidth === 0) setPosterFailed(true);
+  }, []);
+  const checkCharacter = useCallback((image: HTMLImageElement | null) => {
+    if (image?.complete && image.naturalWidth === 0) setArtFailed(true);
+  }, []);
+  const showPoster = Boolean(source && !posterFailed);
+  const showCharacters = !showPoster && gameSlug === "flashpeak" && !artFailed;
+  const loading = priority ? "eager" : "lazy";
+  return (
+    <figure className={cn("mpv3-poster-stage", `mpv3-poster-stage--${variant}`, showPoster && "mpv3-poster-stage--poster", className)}>
+      {showPoster ? (
+        <Image ref={checkPoster} className="mpv3-event-poster" src={source!} alt={posterAlt?.trim() || eventName} fill sizes="(max-width: 580px) 100vw, (max-width: 1000px) 50vw, 33vw" loading={loading} fetchPriority={priority ? "high" : "auto"} unoptimized onError={() => setPosterFailed(true)} />
+      ) : (
+        <>
+          <div className="mpv3-poster-lines" aria-hidden="true" />
+          {showCharacters && <>
+            <Image ref={checkCharacter} className="mpv3-character mpv3-character--first" src="/character-art/roster/midfielder/Kelly.png" alt="" width={2525} height={3500} loading={loading} unoptimized onError={() => setArtFailed(true)} />
+            <Image ref={checkCharacter} className="mpv3-character mpv3-character--second" src="/character-art/roster/striker/Rafael.png" alt="" width={2227} height={3184} loading={loading} unoptimized onError={() => setArtFailed(true)} />
+          </>}
+          <span className="mpv3-poster-brand" aria-hidden="true">MIRACLE</span>
+          <figcaption className="mpv3-poster-caption">
+            {eyebrow && <span className="mpv3-eyebrow">{eyebrow}</span>}
+            <strong>{eventName}</strong>
+          </figcaption>
+        </>
+      )}
+    </figure>
+  );
+}

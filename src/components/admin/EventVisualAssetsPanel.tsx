@@ -1,4 +1,5 @@
 import { CheckCircle2, History, ImageUp, Move, XCircle } from "lucide-react";
+import Image from "next/image";
 
 import {
   adminActivateEventVisualAction,
@@ -126,12 +127,16 @@ export function EventVisualAssetsPanel({
               <li key={asset.id} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-[12rem_minmax(0,1fr)]">
                 <div className="overflow-hidden rounded-md border border-slate-200 bg-slate-900">
                   {asset.url ? (
-                    <img
+                    <span className="relative block aspect-video w-full"><Image
                       src={asset.url}
                       alt={`Preview revisi ${asset.id}`}
-                      className="aspect-video w-full object-cover"
+                      fill
+                      sizes="(max-width: 640px) 100vw, 192px"
+                      loading="eager"
+                      unoptimized
+                      className="object-cover"
                       style={{ objectPosition: `${asset.focalX * 100}% ${asset.focalY * 100}%` }}
-                    />
+                    /></span>
                   ) : (
                     <div className="flex aspect-video items-center justify-center text-xs text-slate-400">
                       Tanpa preview

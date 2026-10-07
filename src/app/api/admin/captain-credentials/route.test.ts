@@ -32,6 +32,21 @@ describe("captain credentials export API", () => {
     const response = await GET(new Request("http://localhost/api/admin/captain-credentials?eventId=../secrets"));
 
     expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "invalid_input" });
+    expect(getCaptainCredentialsForEvent).not.toHaveBeenCalled();
+  });
+
+  it("maps session-provider failures to a generic private error", async () => {
+    requireRole.mockRejectedValue(new Error("session secret stack"));
+
+    const response = await GET(new Request("https://app.example/api/admin/captain-credentials?eventId=event-safe", {
+      headers: { "x-vercel-id": "req-captain-auth-failure" },
+    }));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ code: "internal_error", requestId: "req-captain-auth-failure" });
+    expect(response.headers.get("Cache-Control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("Vary")).toBe("Cookie");
     expect(getCaptainCredentialsForEvent).not.toHaveBeenCalled();
   });
 
@@ -43,6 +58,33 @@ describe("captain credentials export API", () => {
     );
 
     expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "invalid_input" });
+    expect(getCaptainCredentialsForEvent).not.toHaveBeenCalled();
+  });
+
+  it("maps repository failures to a generic internal error with a request id", async () => {
+    requireRole.mockResolvedValue({ id: "admin-1", role: "admin" });
+    getCaptainCredentialsForEvent.mockRejectedValue(new Error("Prisma P2028 secret stack"));
+
+    const response = await GET(new Request("https://app.example/api/admin/captain-credentials?eventId=event-safe", {
+      headers: { "x-vercel-id": "req-captain-1" },
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({ code: "internal_error", requestId: "req-captain-1" });
+    expect(JSON.stringify(body)).not.toMatch(/Prisma|P2028|secret|stack/i);
+    expect(response.headers.get("Vary")).toBe("Cookie");
+  });
+
+  it("returns a generic denial for an organizer outside the requested event", async () => {
+    requireRole.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "organizer-a", role: "organizer" });
+    assertUserCanManageEvent.mockRejectedValue(new Error("Not authorized"));
+
+    const response = await GET(new Request("http://localhost/api/admin/captain-credentials?eventId=event-b"));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "forbidden", requestId: expect.any(String) });
     expect(getCaptainCredentialsForEvent).not.toHaveBeenCalled();
   });
 
@@ -77,6 +119,7 @@ describe("captain credentials export API", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("Vary")).toBe("Cookie");
     expect(response.headers.get("X-Robots-Tag")).toBe("noindex, nofollow, noarchive");
   });
 });

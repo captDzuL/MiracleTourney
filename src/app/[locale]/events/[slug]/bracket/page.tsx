@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import { permanentRedirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 
-import { getPublicEventBySlug } from "@/lib/platform/repository";
+import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
 import { renderBracketPage } from "../../../../events/[slug]/bracket/bracket-page-content";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,12 @@ export default async function LocalizedBracketPage({
 }) {
   const { locale, slug } = await params;
   setRequestLocale(locale as "id" | "en");
+
+  const event = await getPublicEventBySlug(slug);
+  if (!event) {
+    const redirectSlug = await getPublicEventSlugRedirect(slug);
+    if (redirectSlug) permanentRedirect(`/${locale}/events/${redirectSlug}/bracket`);
+  }
 
   return renderBracketPage(slug, locale as "id" | "en");
 }

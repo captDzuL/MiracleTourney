@@ -5,11 +5,12 @@ const port = process.env.PRESSURE_SMOKE_PORT ?? "3102";
 const baseUrl = `http://127.0.0.1:${port}`;
 const readyUrl = `${baseUrl}/id/login`;
 const isWindows = process.platform === "win32";
+const PRESSURE_P95_BUDGET_MS = 3_000;
 
 const scenarios = [
-  { path: "/id/login", requests: 80, concurrency: 20, p95Ms: 8_000 },
-  { path: "/api/me", requests: 80, concurrency: 20, p95Ms: 2_000 },
-  { path: "/id/admin", requests: 40, concurrency: 10, allowedStatuses: new Set([200, 307]), p95Ms: 8_000 },
+  { path: "/id/login", requests: 80, concurrency: 20, p95Ms: PRESSURE_P95_BUDGET_MS },
+  { path: "/api/me", requests: 80, concurrency: 20, p95Ms: PRESSURE_P95_BUDGET_MS },
+  { path: "/id/admin", requests: 40, concurrency: 10, allowedStatuses: new Set([200, 307]), p95Ms: PRESSURE_P95_BUDGET_MS },
 ];
 
 function sleep(ms) {
@@ -102,6 +103,8 @@ async function runScenario(scenario) {
     throw new Error(`${scenario.path} p95 ${Math.round(p95)}ms exceeded ${scenario.p95Ms}ms.`);
   }
 }
+
+console.log(`[pressure-smoke] contract: p95 < ${PRESSURE_P95_BUDGET_MS}ms, zero fetch/status failures`);
 
 async function warmScenario(scenario) {
   const allowedStatuses = scenario.allowedStatuses ?? new Set([200]);

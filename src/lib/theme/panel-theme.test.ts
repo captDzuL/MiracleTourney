@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -52,9 +54,9 @@ describe("toPanelThemeMode", () => {
     expect(toPanelThemeMode("dark")).toBe("dark");
   });
 
-  it("falls back to system for corrupted storage values", () => {
+  it("defaults new and corrupted preferences to dark", () => {
     expect(toPanelThemeMode("nonsense")).toBe(DEFAULT_PANEL_THEME_MODE);
-    expect(toPanelThemeMode(null)).toBe("system");
+    expect(toPanelThemeMode(null)).toBe("dark");
   });
 });
 
@@ -68,7 +70,7 @@ describe("PANEL_THEME_INIT_SCRIPT", () => {
     expect(PANEL_THEME_INIT_SCRIPT).not.toContain("</script");
   });
 
-  it("sets light when storage throws", () => {
+  it("sets dark when storage throws", () => {
     const documentElement = { attributes: new Map<string, string>() };
     const fakeDocument = {
       documentElement: {
@@ -88,7 +90,7 @@ describe("PANEL_THEME_INIT_SCRIPT", () => {
 
     new Function("window", "document", PANEL_THEME_INIT_SCRIPT)(fakeWindow, fakeDocument);
 
-    expect(documentElement.attributes.get(PANEL_THEME_ATTRIBUTE)).toBe("light");
+    expect(documentElement.attributes.get(PANEL_THEME_ATTRIBUTE)).toBe("dark");
   });
 
   it.each([
@@ -97,7 +99,8 @@ describe("PANEL_THEME_INIT_SCRIPT", () => {
     ["system", true, "dark"],
     ["system", false, "light"],
     [null, true, "dark"],
-    ["corrupted", false, "light"],
+    [null, false, "dark"],
+    ["corrupted", false, "dark"],
   ])("stored=%s prefersDark=%s resolves to %s", (stored, prefersDark, expected) => {
     const written = new Map<string, string>();
     const fakeDocument = {
@@ -115,5 +118,22 @@ describe("PANEL_THEME_INIT_SCRIPT", () => {
     new Function("window", "document", PANEL_THEME_INIT_SCRIPT)(fakeWindow, fakeDocument);
 
     expect(written.get(PANEL_THEME_ATTRIBUTE)).toBe(expected);
+  });
+});
+describe("V3 panel theme integration", () => {
+  it("keeps separate V3 and legacy toggle contracts", () => {
+    const source = readFileSync(join(process.cwd(), "src", "components", "panel", "PanelThemeToggle.tsx"), "utf8");
+    expect(source).toContain("var(--color-surface-subtle)");
+    expect(source).toContain("miracle-focus-ring");
+    expect(source).toContain("border-slate-200");
+    expect(source).toContain('variant?: "legacy" | "v3"');
+  });
+
+  it("maps the pre-paint html theme onto V3 operator scopes", () => {
+    const css = readFileSync(join(process.cwd(), "src", "styles", "miracle-v3-tokens.css"), "utf8");
+    expect(css).toContain('html[data-panel-theme="light"] .miracle-v3:has(.panel-scope)');
+    expect(css).toContain('html[data-panel-theme="dark"] .miracle-v3:has(.panel-scope)');
+    expect(css).toContain(".miracle-v3 .miracle-focus-ring:focus-visible");
+    expect(css).toContain("outline: 2px solid var(--color-focus-ring)");
   });
 });

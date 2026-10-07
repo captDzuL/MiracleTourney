@@ -88,7 +88,7 @@ describe("parseAndValidateTeamImport", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failed result");
     expect(result.message).toContain("kuroko-summer-cup");
-    expect(result.message).toContain("sudah memiliki hasil pertandingan");
+    expect(result.message).toContain("drawing yang telah dipublikasikan");
   });
 
   it("rejects duplicate team tags inside the same event", () => {

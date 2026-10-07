@@ -24,7 +24,12 @@ const labelCls = "block text-sm font-medium text-slate-300";
 
 
 
-export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
+export function RegisterWizard({ errorMsg, eventId, locale, returnTo }: {
+  errorMsg?: string;
+  eventId?: string;
+  locale?: "id" | "en";
+  returnTo?: string;
+}) {
 
   const t = useTranslations("register");
 
@@ -99,6 +104,11 @@ export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
         className="space-y-4"
 
       >
+        {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
+
+
+        {eventId ? <input type="hidden" name="eventId" value={eventId} /> : null}
+        {locale ? <input type="hidden" name="locale" value={locale} /> : null}
 
         <h1 className="text-3xl font-semibold text-white">{t("step1Title")}</h1>
 
@@ -108,10 +118,11 @@ export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
 
         <div>
 
-          <label className={labelCls}>{t("fullName")}</label>
+          <label className={labelCls} htmlFor="captain-full-name">{t("fullName")}</label>
 
           <input
 
+            id="captain-full-name"
             className={inputCls}
 
             type="text"
@@ -134,10 +145,11 @@ export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
 
         <div>
 
-          <label className={labelCls}>{t("email")}</label>
+          <label className={labelCls} htmlFor="captain-email">{t("email")}</label>
 
           <input
 
+            id="captain-email"
             className={inputCls}
 
             type="email"
@@ -160,10 +172,11 @@ export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
 
         <div>
 
-          <label className={labelCls}>{t("password")}</label>
+          <label className={labelCls} htmlFor="captain-password">{t("password")}</label>
 
           <input
 
+            id="captain-password"
             className={inputCls}
 
             type="password"
@@ -186,10 +199,11 @@ export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
 
         <div>
 
-          <label className={labelCls}>{t("confirmPassword")}</label>
+          <label className={labelCls} htmlFor="captain-confirm-password">{t("confirmPassword")}</label>
 
           <input
 
+            id="captain-confirm-password"
             className={inputCls}
 
             type="password"
@@ -222,7 +236,11 @@ export function RegisterWizard({ errorMsg }: { errorMsg?: string }) {
 
           {t("haveAccount")} {" "}
 
-          <Link href="/login" className="text-cyan-400 hover:text-cyan-300">
+          <Link href={(returnTo
+            ? `/login?returnTo=${encodeURIComponent(returnTo)}`
+            : eventId
+              ? `/login?eventId=${encodeURIComponent(eventId)}`
+              : "/login") as never} className="text-cyan-400 hover:text-cyan-300">
 
             {t("loginHere")}
 

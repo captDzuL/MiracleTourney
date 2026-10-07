@@ -29,12 +29,14 @@ type ArtworkSlot = {
 };
 
 /**
- * The v2 shell adds `.public-visual-v2` to the page root. When the flag is off
- * the legacy rendering is returned untouched and none of these budgets apply.
+ * The v2 shell adds `.public-visual-v2` to the page root. Its absence is a
+ * release-gate failure, never an eligible legacy-profile skip.
  */
-async function skipUnlessVisualV2(page: Page) {
-  const enabled = (await page.locator(".public-visual-v2").count()) > 0;
-  test.skip(!enabled, "public_visual_v2 is disabled - legacy rendering is out of scope for this gate");
+async function assertVisualV2Root(page: Page) {
+  await expect(
+    page.locator(".public-visual-v2"),
+    "public_visual_v2 smoke profile must render the required root",
+  ).toHaveCount(1);
 }
 
 /** Records the transferred byte length of every successful `/_next/image` response. */
@@ -98,7 +100,7 @@ test.describe("public visual v2 release budgets", () => {
   test("homepage exposes one heading and at most one eager artwork", async ({ page }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto("/id");
-    await skipUnlessVisualV2(page);
+    await assertVisualV2Root(page);
 
     const headings = page.locator("h1");
     await expect(headings).toHaveCount(1);
@@ -142,7 +144,7 @@ test.describe("public visual v2 release budgets", () => {
   test("hero CTA navigates to the featured event detail page", async ({ page }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto("/id");
-    await skipUnlessVisualV2(page);
+    await assertVisualV2Root(page);
 
     const cta = page.getByTestId("pv-hero-primary-cta");
     await expect(cta).toBeVisible();
@@ -165,7 +167,7 @@ test.describe("public visual v2 release budgets", () => {
     test(`homepage has no horizontal overflow at ${label}`, async ({ page }) => {
       await page.setViewportSize(viewport);
       await page.goto("/id");
-      await skipUnlessVisualV2(page);
+      await assertVisualV2Root(page);
 
       const overflow = await page.evaluate(() => ({
         scrollWidth: document.documentElement.scrollWidth,
@@ -190,7 +192,7 @@ test.describe("public visual v2 release budgets", () => {
 
       await page.setViewportSize(viewport);
       await page.goto("/id", { waitUntil: "networkidle" });
-      await skipUnlessVisualV2(page);
+      await assertVisualV2Root(page);
       await collector.settle();
 
       const slots = await readArtworkSlots(page);
@@ -248,7 +250,7 @@ test.describe("public visual v2 release budgets", () => {
   test("decorative texture costs zero network bytes", async ({ page }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto("/id");
-    await skipUnlessVisualV2(page);
+    await assertVisualV2Root(page);
 
     const textures = await page.evaluate(() => {
       const grain = document.querySelector(".pv-grain");
@@ -272,7 +274,7 @@ test.describe("public visual v2 release budgets", () => {
 
     await page.setViewportSize(DESKTOP);
     await page.goto("/id");
-    await skipUnlessVisualV2(page);
+    await assertVisualV2Root(page);
 
     await expect(page.locator("h1")).toBeVisible();
     await expect(page.getByTestId("pv-hero-meta")).toBeVisible();
@@ -286,7 +288,7 @@ test.describe("public visual v2 release budgets", () => {
   test("keyboard focus on the hero CTA is visibly indicated", async ({ page }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto("/id");
-    await skipUnlessVisualV2(page);
+    await assertVisualV2Root(page);
 
     const cta = page.getByTestId("pv-hero-primary-cta");
     await expect(cta).toBeVisible();
@@ -346,7 +348,7 @@ test.describe("public visual v2 reduced motion", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize(DESKTOP);
     await page.goto("/id");
-    await skipUnlessVisualV2(page);
+    await assertVisualV2Root(page);
 
     const emulated = await page.evaluate(
       () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,

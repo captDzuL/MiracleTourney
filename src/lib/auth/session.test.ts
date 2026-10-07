@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SignJWT } from "jose";
 
 const cookiesMock = vi.hoisted(() => vi.fn());
 const getUserWithPasswordByEmail = vi.hoisted(() => vi.fn());
@@ -202,6 +203,124 @@ describe("auth session hardening", () => {
       role: "captain",
       deactivatedAt: new Date(),
     });
+
+    await expect(getSessionUser()).resolves.toBeNull();
+  });
+
+  it("emits the current session version in the JWT", async () => {
+    const { signIn } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getUserWithPasswordByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      passwordHash: "$hash",
+      sessionVersion: 4,
+    });
+
+    await signIn("captain@test.com", "secret123");
+
+    const token = cookieStore.set.mock.calls[0][1] as string;
+    const payload = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString("utf8"));
+    expect(payload.sv).toBe(4);
+  });
+
+  it("rejects a JWT after the user session version is incremented", async () => {
+    const { getSessionUser, signIn } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getUserWithPasswordByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      passwordHash: "$hash",
+      sessionVersion: 4,
+    });
+    getCaptainById.mockResolvedValue(null);
+    getUserByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      sessionVersion: 5,
+    });
+
+    await signIn("captain@test.com", "secret123");
+    cookieStore.get.mockReturnValue({ value: cookieStore.set.mock.calls[0][1] });
+
+    await expect(getSessionUser()).resolves.toBeNull();
+  });
+
+  it("accepts a JWT whose session version matches the user row", async () => {
+    const { getSessionUser, signIn } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getUserWithPasswordByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      passwordHash: "$hash",
+      sessionVersion: 4,
+    });
+    getCaptainById.mockResolvedValue(null);
+    getUserByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      sessionVersion: 4,
+    });
+
+    await signIn("captain@test.com", "secret123");
+    cookieStore.get.mockReturnValue({ value: cookieStore.set.mock.calls[0][1] });
+
+    await expect(getSessionUser()).resolves.toMatchObject({ id: "captain-1", sessionVersion: 4 });
+  });
+
+  it("accepts a legacy JWT without sv while the account remains at version zero", async () => {
+    const { getSessionUser } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getCaptainById.mockResolvedValue(null);
+    getUserByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      sessionVersion: 0,
+    });
+    const token = await new SignJWT({ sub: "captain-1", role: "captain" })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(process.env.JWT_SECRET));
+    cookieStore.get.mockReturnValue({ value: token });
+
+    await expect(getSessionUser()).resolves.toMatchObject({ id: "captain-1", sessionVersion: 0 });
+  });
+
+  it("rejects a legacy JWT without sv after the account session version increments", async () => {
+    const { getSessionUser } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getCaptainById.mockResolvedValue(null);
+    getUserByEmail.mockResolvedValue({
+      id: "captain-1",
+      email: "captain@test.com",
+      name: "Captain",
+      role: "captain",
+      sessionVersion: 1,
+    });
+    const token = await new SignJWT({ sub: "captain-1", role: "captain" })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(process.env.JWT_SECRET));
+    cookieStore.get.mockReturnValue({ value: token });
 
     await expect(getSessionUser()).resolves.toBeNull();
   });

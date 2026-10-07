@@ -3,12 +3,13 @@ import { NextIntlClientProvider } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
 import localFont from "next/font/local";
 import { notFound } from "next/navigation";
+import React from "react";
 
-import { SpeedInsights } from "@vercel/speed-insights/next";
-
+import { PanelThemeSync } from "@/components/panel/PanelThemeSync";
 import { AppShell } from "@/components/shell";
 import { routing } from "@/i18n/routing";
 import { PANEL_THEME_INIT_SCRIPT } from "@/lib/theme/panel-theme";
+import { withServerActionLog } from "@/lib/observability/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +87,7 @@ export default async function LocaleLayout({
   }
 
   setRequestLocale(locale as "id" | "en");
-  const messages = await getMessages();
+  const messages = await withServerActionLog("locale_layout_render", "/layouts/locale", () => getMessages());
 
   return (
     <html lang={locale} suppressHydrationWarning>
@@ -99,9 +100,9 @@ export default async function LocaleLayout({
       </head>
       <body className={`${displayFont.variable} ${uiFont.variable}`}>
         <NextIntlClientProvider locale={locale} messages={messages}>
+          <PanelThemeSync />
           <AppShell>{children}</AppShell>
         </NextIntlClientProvider>
-        <SpeedInsights />
       </body>
     </html>
   );

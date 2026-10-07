@@ -1,3 +1,281 @@
+# Miracle UI v3 — Latest decision snapshot
+
+**Snapshot date:** 2026-09-05
+**Current status:** UI brainstorming paused for the night. Three organizer-facing interactive mockups are approved. No production implementation has been authorized.
+**Resume tomorrow:** Captain journey for direct paid registration through Miracle, from the public event CTA through evidence upload and visible status.
+
+## Authority
+
+This section is the latest concise handoff. It supersedes older entries below wherever they conflict. Preserve the older sections as history rather than current direction.
+
+## Approved tonight
+
+1. **Contextual event-creation wizard** — approved. Five stages with live public preview, local prototype persistence, visible guidance, Montserrat, dark default, remembered organizer theme toggle, logo-led palette, separate logo/poster, explicit registration window, and prominent organizer contact.
+2. **Draft Event Workspace / Ringkasan** — approved. The next action and readiness checklist lead; each issue returns to the correct wizard step. Supporting facts, preview, and simulated review-link controls remain easy to reach.
+3. **Registrasi and external import** — approved. Direct Miracle entries and spreadsheet imports share one organizer surface while retaining distinct source and payment semantics. Payment review uses a side panel with required rejection reason.
+4. **Import review** — approved. XLSX/CSV intake, worksheet and column review, New/Changed/Same/Error classifications, detailed row inspection, selective import, history, and captain access remain part of the flow.
+5. **Pagination** — required and approved. Default 25; 10/25/50 controls above and below the table; filters run before pagination; original source rows remain visible; page-only header selection is explicit; row selections and totals persist across pages and filters.
+
+## Durable references
+
+- `public/miracle-organizer-v3-contextual-mockup.html`
+- `public/miracle-organizer-v3-workspace-mockup.html`
+- `public/miracle-organizer-v3-registration-mockup.html`
+- `docs/snapshots/product-ux-redesign-2026-09/ui-v3-workspace-checkpoint.md`
+- `docs/snapshots/product-ux-redesign-2026-09/registration-import-v3-direction.md`
+- Miracle brand assets remain under `public/logo/`.
+
+The standalone mockups use local/session simulation. They do not modify production events, payments, users, credentials, or imported teams. `public/miracle-mockup-exceljs.min.js` and its license support local XLSX reading in the registration prototype.
+
+## Locked visual direction
+
+- Miracle logo is the color authority.
+- Three brand accents: cyan, violet, cream; dark/neutral surfaces provide functional contrast.
+- Avoid neon glow and visually painful saturation.
+- Montserrat is the primary UI family.
+- Dark default globally; organizer remembers light/dark preference.
+- Thin separators and sidebar organize work. Guidance is contextual and UI copy must explain the next action.
+- Public footer retains © Miracle plus clearly labeled contact/social links on complete public pages.
+
+## Production facts preserved
+
+- Existing event statuses and ownership remain the operational baseline.
+- Direct team registration is status-gated by Published and includes capacity, duplicate, payment, and bracket-result guards.
+- Existing paid registration uses evidence submission/review; existing imports create/update teams and can create captain access.
+- Import supports XLSX/CSV, not legacy XLS, and is blocked by the existing bracket lock.
+- Imported source does not equal verified payment.
+- Roster editing locks during Ongoing and Finished.
+- Current schedule/location values are strings; structured registration/start dates, timezone behavior, draft autosave, review links, and publish-readiness enforcement still require production design/implementation.
+
+## Immediate next task
+
+Create the direct Miracle registration experience for a captain using a paid event. Cover event-page CTA, auth return, choose/create team, roster review, fee summary, payment instructions/evidence, pending-review confirmation, rejection recovery, and approved state. After registration, replace the CTA with “Lihat pendaftaran saya”. Connect these states to the approved organizer Registrasi list.
+
+Do not begin production implementation yet. Continue brainstorming, get the captain-flow design approved, then consolidate the complete design specification and implementation plan.
+
+---
+
+## Previous snapshot history
+
+# Miracle League Product & UX Redesign — Latest Decision Snapshot
+
+**Snapshot date:** 2026-09-04
+**Status:** Direction approved in part; brainstorming paused before the field-level wizard specification.
+**Current working record:** [plan.md](./plan.md)
+
+> **Authority notice:** This section records the latest user decisions and supersedes the August 2026 street-sport/neon visual direction wherever they conflict. The earlier snapshot remains below as historical context and implementation evidence. Do not resume the old neon direction, Teko/Chakra Petch typography, or public-only scope without a new explicit user decision.
+
+## Current product diagnosis
+
+Miracle League is functional but has been judged **very uninformative**. The problem spans the whole product: content hierarchy, navigation, layout, components, onboarding, and visual consistency. A color swap or isolated homepage facelift will not solve it.
+
+The redesign now covers three connected experiences in this priority order:
+
+1. **Organizer / prospective organizer** — primary user and future premium customer.
+2. **Public visitor / participant** — must immediately understand the product, find an event, understand it, and know the next action.
+3. **Captain** — needs an efficient operational flow for registration, roster, payment, and statistics.
+
+The full redesign is intentionally larger than the public-only scope recorded in the old snapshot. It will be decomposed into separate specifications and implementation phases rather than delivered as one uncontrolled rewrite.
+
+## Consolidated user feedback
+
+The user asked for these changes during the September redesign discussion:
+
+- Center page titles where the context benefits from a focused heading.
+- Center the “Event” label in the public navbar.
+- Replace the current admin typography with a common, readable family.
+- Add a Miracle League logo and distinguish it from event logos.
+- Add an initial guide/onboarding, user journeys, and contextual tooltips.
+- Consider borders and a sidebar to make page regions and navigation clearer.
+- Rework the layout and component system comprehensively.
+- Remove neon because it is uncomfortable to look at.
+- Limit the brand palette to three functional colors.
+- Use Color Hunt as the color reference and hellodesign.id as a reference for restrained spacing, hierarchy, bordered cards, responsive grids, and a clear primary action.
+- Make event descriptions substantially more informative.
+- Add footer copyright, contact information, and labeled social links.
+- Improve every component family and its active, disabled, loading, success, warning, and error states.
+
+## Product priority and success criteria
+
+The user confirmed organizer → public → captain as the priority. All audiences remain first-class parts of the product.
+
+The organizer's first success moment is:
+
+> Create an event easily, keep it as a safe draft, see exactly how it will appear publicly, understand what can be customized, and publish it when the minimum information is complete.
+
+This organizer-first foundation must preserve a path to future premium capabilities such as advanced branding, larger events, staff permissions, automation, reports, custom domains, and priority support. Those features are not automatically in the first implementation phase.
+
+## Approved organizer creation model
+
+The user selected **A — wizard with live preview**.
+
+- The event-creation flow is a dedicated wizard, not the organizer's primary navbar.
+- The organizer shell contains Dashboard, Event Saya, Buat Event, Panduan & Bantuan, and Pengaturan.
+- On desktop, the wizard places the form on the left and live public preview on the right.
+- On mobile, preview opens through a dedicated action.
+- The organizer may revisit previous steps without losing information.
+- Draft creation begins with the first meaningful input.
+- Draft data is always autosaved.
+- The UI shows “Menyimpan…”, “Draft tersimpan”, and the last saved time.
+- Saving and previewing are never blocked.
+- Publishing is blocked until the minimum public information is valid.
+- Once a draft exists, it appears in Event Workspace for long-term operation.
+
+The current five-step proposal is:
+
+1. **Identitas** — event name, game, short description, and square event logo.
+2. **Format & Jadwal** — mode, tournament system, capacity, date, time, timezone, and location/platform.
+3. **Registrasi** — registration period and method, fee/free state, eligibility, and organizer contact.
+4. **Halaman Publik** — prize/no-prize state, full description, rules, portrait poster, and branding.
+5. **Tinjau & Terbitkan** — readiness checklist, full preview, review link, validation, and publish action.
+
+This sequence is directionally accepted through the approved organizer mockup. Exact fields, ordering, validation, and help copy remain the first topic for the next brainstorming session.
+
+## Minimum publishable event
+
+Publishing remains disabled until the event contains:
+
+- event name and short description;
+- game, format, and participant capacity;
+- date, time, and timezone;
+- physical location or online platform;
+- registration period and method;
+- fee or explicit “free” state;
+- prize or explicit “no prize” state;
+- organizer contact;
+- event logo or a valid visual fallback.
+
+Full rules, rundown, sponsors, livestream, and FAQ may be added after the initial draft. The readiness checklist must clearly expose missing information.
+
+## Draft review link approved for the initial design phase
+
+The user approved a draft review link that opens without login.
+
+- It is an unlisted, hard-to-guess URL.
+- It is excluded from event listings and search indexing.
+- It is view-only and cannot be used to edit or register.
+- It carries a prominent “Preview draft—belum dipublikasikan” label.
+- It exposes no internal organizer, participant, payment, or admin data.
+- The organizer can revoke or regenerate it at any time.
+
+## Event Workspace boundary
+
+The wizard creates and prepares the event. Event Workspace operates it after a draft exists.
+
+Proposed workspace areas:
+
+- Ringkasan
+- Halaman Publik
+- Registrasi
+- Peserta
+- Pertandingan
+- Hasil
+- Pengaturan
+
+Bracket, standings, leaderboard, statistics review, and certificates belong to the relevant operational areas rather than the creation wizard.
+
+## Latest visual direction
+
+### Typography
+
+The user selected **Montserrat** as the primary font after comparing Plus Jakarta Sans, Roboto, and Montserrat. The older Teko/Chakra Petch pairing is no longer the target for the redesign.
+
+### Functional three-color palette
+
+Current candidate from Color Hunt:
+
+- `#F9F7F7` — page background and light surfaces.
+- `#112D4E` — primary text, dark navigation, and strong identity regions.
+- `#3F72AF` — primary actions, links, progress, and active state.
+
+Neon is rejected. The treatment should feel calm, clear, and comfortable over long organizer sessions. Semantic success, warning, and error colors still require an explicit rule so they do not undermine the three-color constraint.
+
+### Layout and component language
+
+- Use generous whitespace and strong information hierarchy.
+- Use thin borders and a stable sidebar to clarify structure.
+- Keep one primary action per decision area.
+- Use a consistent spacing, radius, type, icon, and component-state system.
+- Center only the headings whose context benefits from it; long-form content remains scan-friendly.
+- Provide onboarding, helper copy, tooltips, empty states, and visible progress where users would otherwise lose direction.
+
+## Event logo and poster decisions
+
+The logo and poster are separate assets with separate jobs:
+
+- **Event logo:** square 1:1 identity asset uploaded during Identitas.
+- **Event poster:** portrait 4:5 promotional asset uploaded during Halaman Publik.
+- The wizard provides preview, size guidance, crop/focal controls, and fallbacks.
+- The poster appears on the right of the desktop event hero and before the summary on mobile.
+- The poster supplies event-card imagery through a controlled crop.
+
+The first logo-placement exploration was rejected as too busy. The approved simplification is:
+
+- one event title only;
+- a small event logo as a secondary identity marker;
+- organizer name as secondary copy;
+- one short event description and one primary CTA;
+- poster on the right as supporting promotional art;
+- date, location, fee, and prize moved into a metadata row below the hero;
+- full event detail and rules placed after the hero.
+
+The user explicitly approved this quieter density: “Nah lebih baik, oke bungkus yg ini.”
+
+## Durable visual artifact register
+
+| Artifact | Status | Decision captured |
+|---|---|---|
+| [organizer-first-event-layout.html](./docs/snapshots/product-ux-redesign-2026-09/organizer-first-event-layout.html) | **A selected** | Wizard with persistent live preview is the event-creation foundation. |
+| [organizer-wizard-workspace-approved.html](./docs/snapshots/product-ux-redesign-2026-09/organizer-wizard-workspace-approved.html) | **Direction approved** | Separation between event-creation wizard and long-term Event Workspace; updated to Montserrat for this durable copy. |
+| [font-poster-comparison.html](./docs/snapshots/product-ux-redesign-2026-09/font-poster-comparison.html) | **Montserrat selected** | Font comparison and initial 4:5 poster placement. |
+| [event-logo-placement-too-busy.html](./docs/snapshots/product-ux-redesign-2026-09/event-logo-placement-too-busy.html) | **Rejected as too busy** | Do not repeat the event name or make logo, poster, metadata, and title compete inside the hero. |
+| [event-hero-simplified-approved.html](./docs/snapshots/product-ux-redesign-2026-09/event-hero-simplified-approved.html) | **Approved** | Latest event hero density, hierarchy, logo scale, poster role, and metadata placement. |
+
+These HTML files are brainstorming references, not production components. They establish hierarchy and composition; production work must still define responsive behavior, accessibility, data states, and implementation boundaries.
+
+## Public information requirements
+
+The public event experience must explain:
+
+- event purpose and intended participant;
+- schedule, timezone, and location/platform;
+- competition format and important rules;
+- participant requirements and registration steps;
+- registration fee, prize, and deadline;
+- organizer identity and contact;
+- current registration/event status;
+- the next available action.
+
+The footer includes current-year copyright, contact channels, and labeled social links. Public navigation must make Event discovery obvious, and the entire public journey must be understandable without prior product knowledge.
+
+## Planned redesign sequence
+
+1. Finalize information architecture and user journeys for organizer, public, and captain.
+2. Define the Montserrat-based design system, three-color tokens, spacing, grid, icons, components, states, and accessibility patterns.
+3. Specify and implement the first-event wizard, autosave, preview, validation, and draft review link.
+4. Specify and implement Event Workspace.
+5. Redesign homepage, event listing, event detail, registration, participants, bracket, standings, and leaderboard.
+6. Redesign captain workflows.
+7. Add onboarding, contextual help, tooltips, empty states, footer, and support paths.
+8. Verify responsive, keyboard, contrast, failure, and end-to-end behavior before staged rollout.
+
+## Resume point
+
+The next session starts by validating the five wizard steps field by field. Then decide:
+
+1. per-step behavior, validation, helper copy, and preview mapping;
+2. semantic-color policy under the three-color brand limit;
+3. Event Workspace information architecture;
+4. public journey from landing → event discovery → event comprehension → registration;
+5. captain journey;
+6. the complete design sections and approval;
+7. final design spec under `docs/superpowers/specs/`, followed by an implementation plan only after explicit review.
+
+---
+
+# Historical Snapshot — Public Visual Redesign (August 2026)
+
+The content below records the previous design and implementation effort. It remains valuable as evidence about unsuccessful implementation fidelity, performance work, asset provenance, and existing code, but its neon/street-sport visual direction and public-only scope are superseded by the September 2026 decisions above.
 # Miracle Public Redesign — Conversation and Decision Snapshot
 
 **Snapshot date:** 2026-08-22

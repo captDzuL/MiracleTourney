@@ -1,117 +1,41 @@
-import { execSync } from "child_process";
-import { PrismaClient } from "@prisma/client";
+import { request, type FullConfig } from "@playwright/test";
 
-export default async function globalSetup() {
-  // Sync schema and seed users
-  if (!process.env.CI) {
-    execSync("pnpm prisma db push --accept-data-loss --skip-generate", { stdio: "inherit" });
+export default async function globalSetup(config?: FullConfig) {
+  if (process.env.E2E_DATABASE_RESET_ALLOWED !== "true" && process.env.PUBLIC_V3_NO_RESET !== "1") {
+    throw new Error("Blocked: set E2E_DATABASE_RESET_ALLOWED=true in .env.test before running DB-backed E2E tests.");
   }
-  execSync("pnpm db:seed", { stdio: "inherit" });
-
-  const prisma = new PrismaClient(
-    process.env.CI && process.env.DIRECT_URL
-      ? { datasources: { db: { url: process.env.DIRECT_URL } } }
-      : undefined
-  );
+  const baseURL = config?.projects[0]?.use.baseURL;
+  if (!baseURL) return;
+  // Compile route modules before a story's timer starts. This context has no
+  // fixture, login or browser storage; every request is read-only and discarded.
+  const context = await request.newContext({ baseURL });
   try {
-    // Clean up test-created events — explicit cascade to defeat any FK ordering issues
-    const testSlugs = ["flashpeak-24", "flashpeak-open-league", "admin-match-e2e", "admin-stats-e2e", "admin-stats-nav-e2e"];
-    const testEvents = await prisma.event.findMany({
-      where: {
-        OR: [
-          { slug: { in: testSlugs } },
-          { slug: { startsWith: "admin-match-e2e-" } },
-          { slug: { startsWith: "admin-stats-e2e-" } },
-          { slug: { startsWith: "admin-stats-nav-e2e-" } },
-          { slug: { startsWith: "flashpeak-24-" } },
-        ],
-      },
-      select: { id: true },
-    });
-    const testEventIds = testEvents.map((e) => e.id);
-    if (testEventIds.length > 0) {
-      await prisma.certificate.deleteMany({ where: { eventId: { in: testEventIds } } });
-      await prisma.matchGame.deleteMany({ where: { match: { eventId: { in: testEventIds } } } });
-      await prisma.playerStat.deleteMany({ where: { match: { eventId: { in: testEventIds } } } });
-      await prisma.statSubmission.deleteMany({ where: { eventId: { in: testEventIds } } });
-      await prisma.match.deleteMany({ where: { eventId: { in: testEventIds } } });
-      await prisma.player.deleteMany({ where: { eventId: { in: testEventIds } } });
-      await prisma.team.deleteMany({ where: { eventId: { in: testEventIds } } });
-      await prisma.event.deleteMany({ where: { id: { in: testEventIds } } });
-    }
-    // Ensure kuroko-summer-cup exists with Draft status
-    await prisma.event.upsert({
-      where: { slug: "kuroko-summer-cup" },
-      update: { status: "Draft" },
-      create: {
-        name: "Kuroko Street Rival Summer Cup",
-        slug: "kuroko-summer-cup",
-        status: "Draft",
-        format: "Single Elimination",
-        gameId: "game-kuroko",
-        gameModeId: "mode-kuroko-3v3",
-        participantCap: 8,
-        description: "Demo tournament for E2E tests",
-        registrationWindow: "Open",
-        startsAt: "2026-09-01",
-        venue: "Online",
-      },
-    });
-
-    const event = await prisma.event.findUniqueOrThrow({ where: { slug: "kuroko-summer-cup" } });
-
-    // Remove dependent records before teams so repeated E2E runs can start clean.
-    await prisma.certificate.deleteMany({ where: { eventId: event.id } });
-
-    // Remove match results and teams from previous runs to start clean
-    await prisma.match.deleteMany({ where: { eventId: event.id } });
-    await prisma.team.deleteMany({ where: { eventId: event.id } });
-
-    // Create two teams for bracket projection (so admin page shows a manageable match)
-    await prisma.team.createMany({
-      data: [
-        { eventId: event.id, name: "Seirin", tag: "SRI", logoText: "SRI", source: "demo" },
-        { eventId: event.id, name: "Shutoku", tag: "STK", logoText: "STK", source: "demo" },
-      ],
-    });
-
-    // Give the seed captain a team so the captain dashboard shows content
-    const captainUser = await prisma.user.findUnique({ where: { email: "captain@miraclefc.gg" } });
-    if (captainUser) {
-      await prisma.team.upsert({
-        where: { eventId_tag: { eventId: event.id, tag: "RKA" } },
-        update: {},
-        create: {
-          eventId: event.id,
-          captainId: captainUser.id,
-          name: "Rakuzan",
-          tag: "RKA",
-          logoText: "RKA",
-          source: "demo",
-        },
-      });
-
-      const captainTeam = await prisma.team.findUniqueOrThrow({
-        where: { eventId_tag: { eventId: event.id, tag: "RKA" } },
-      });
-
-      // Add a player to the captain's team for dashboard visibility
-      const existingPlayer = await prisma.player.findFirst({
-        where: { teamId: captainTeam.id, displayName: "Akashi Seijuro" },
-      });
-      if (!existingPlayer) {
-        await prisma.player.create({
-          data: {
-            teamId: captainTeam.id,
-            eventId: event.id,
-            displayName: "Akashi Seijuro",
-            nickname: "Akashi",
-            position: "Point Guard",
-          },
-        });
+    for (const path of [
+      "/en/login", "/en/organizer", "/en/events/__e2e_prewarm__",
+      "/en/organizer/events/__e2e_prewarm__/competition",
+      "/en/organizer/events/__e2e_prewarm__/schedule",
+      "/en/organizer/events/__e2e_prewarm__/matches/__e2e_prewarm__",
+      "/en/organizer/events/__e2e_prewarm__/legacy-match-day",
+      "/api/organizer/events/__e2e_prewarm__/competition",
+      "/api/events/__e2e_prewarm__/ongoing",
+      "/id",
+      "/id/events/flashpeak-champions-32/participants",
+      "/id/events/flashpeak-champions-32/schedule",
+      "/id/events/flashpeak-champions-32/bracket",
+      "/id/events/flashpeak-champions-32/leaderboards",
+      "/en/admin?phase=prepare",
+      "/en/admin?phase=import&activeEventId=__e2e_prewarm__",
+      "/id/admin?phase=run&activeEventId=__e2e_prewarm__&matchEventId=__e2e_prewarm__",
+      "/id/events/__e2e_prewarm__/bracket",
+      "/id/organizer/events/__e2e_prewarm__/registration?view=import",
+      "/en/organizer/events/__e2e_prewarm__/registration?view=import",
+      "/id/events/__e2e_prewarm__",
+    ]) {
+      const response = await context.get(path, { maxRedirects: 0 });
+      await response.body();
+      if (![200, 301, 302, 303, 307, 308, 401, 403, 404].includes(response.status())) {
+        throw new Error(`E2E route prewarm failed (${response.status()}): ${path}`);
       }
     }
-  } finally {
-    await prisma.$disconnect();
-  }
+  } finally { await context.dispose(); }
 }

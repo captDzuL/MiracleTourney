@@ -1,5 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { completeTournament } from "../src/lib/completion/complete";
+import { createPrismaCompletionDependencies } from "../src/lib/completion/prisma-adapter";
+import { createCompetitionOperations, type OperationCommand } from "../src/lib/tournament/operations";
+import { TOURNAMENT_FORMAT_PRESETS, type TournamentFormatConfig } from "../src/lib/tournament/formats/types";
 
 const prisma = new PrismaClient();
 const isTestMode = process.argv.includes("--test");
@@ -13,10 +17,258 @@ function teamTag(name: string) {
     .toUpperCase();
 }
 
+async function seedPlatformProfile() {
+  await prisma.platformProfile.upsert({
+    where: { id: "global" },
+    update: { displayName: "Miracle", contactChannel: "WhatsApp", contactValue: "+62 811 0000 0000" },
+    create: { id: "global", displayName: "Miracle", contactChannel: "WhatsApp", contactValue: "+62 811 0000 0000" },
+  });
+}
 function demoTeamId(eventSlug: string, index: number) {
   return `team-${eventSlug}-${index + 1}`;
 }
 
+const seededOngoingSchedule = {
+  timezone: "Asia/Jakarta",
+  eventWindow: { start: "2026-08-12T02:00:00.000Z", end: "2026-08-13T02:00:00.000Z" },
+  matchDurationMinutes: 45,
+  bufferMinutes: 10,
+  minimumRestMinutes: 15,
+  rooms: ["Flashpeak Arena A", "Flashpeak Arena B"],
+};
+
+const seededFinishedSchedule = {
+  ...seededOngoingSchedule,
+  eventWindow: { start: "2026-06-28T02:00:00.000Z", end: "2026-06-28T10:00:00.000Z" },
+  rooms: ["Flashpeak Arena Final A", "Flashpeak Arena Final B"],
+};
+
+const seededFinishedFormat: TournamentFormatConfig = {
+  version: 1,
+  kind: "single_elimination",
+  bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 },
+  thirdPlace: "required",
+};
+const finishedCompletionIdempotencyKey = "00000000-0000-4000-8000-000000000032";
+
+const legacyFlashpeakMatchIds = new Set([
+  "match-flash-o-1", "match-flash-o-2", "match-flash-o-3", "match-flash-o-4",
+  "match-flash-f-1", "match-flash-f-2", "match-flash-f-3", "match-flash-f-4",
+  "match-flash-f-5", "match-flash-f-6", "match-flash-f-7",
+]);
+
+async function clearLegacyFlashpeakFixture(eventId: string) {
+  if (await prisma.competitionPhase.count({ where: { eventId } })) return;
+
+  const allMatches = await prisma.match.findMany({ where: { eventId }, select: { id: true } });
+  if (!allMatches.length) return;
+  if (allMatches.some((match) => !legacyFlashpeakMatchIds.has(match.id))) {
+    throw new Error(`Refusing to replace non-fixture matches while upgrading Flashpeak event ${eventId}`);
+  }
+  const ids = allMatches.map((match) => match.id);
+  await prisma.$transaction(async (tx) => {
+    await tx.tournamentCompletion.deleteMany({ where: { eventId } });
+    await tx.match.deleteMany({ where: { eventId, id: { in: ids } } });
+    await tx.scheduleRevision.deleteMany({ where: { eventId, idempotencyKey: { startsWith: "seed-v3-flashpeak-" } } });
+    await tx.competitionAuditLog.deleteMany({ where: { eventId, idempotencyKey: { startsWith: "seed-v3-flashpeak-" } } });
+    await tx.event.update({ where: { id: eventId }, data: { publishedScheduleVersion: null } });
+  });
+}
+
+function createSeedOperationRunner(eventId: string, organizerId: string) {
+  const operations = createCompetitionOperations(prisma);
+  const actor = { id: organizerId, role: "organizer" };
+  return async (idempotencyKey: string, command: OperationCommand) => {
+    const event = await prisma.event.findUniqueOrThrow({
+      where: { id: eventId },
+      select: { competitionVersion: true },
+    });
+    return operations.execute({
+      eventId,
+      actor,
+      expectedVersion: event.competitionVersion,
+      idempotencyKey,
+      command,
+    });
+  };
+}
+
+async function ensureAuthoritativeCompetition(
+  eventId: string,
+  organizerId: string,
+  teams: Array<{ id: string }>,
+  namespace: string,
+  schedule?: typeof seededOngoingSchedule,
+  config: TournamentFormatConfig = TOURNAMENT_FORMAT_PRESETS.singleElimination,
+) {
+  await clearLegacyFlashpeakFixture(eventId);
+  const run = createSeedOperationRunner(eventId, organizerId);
+  let event = await prisma.event.findUniqueOrThrow({
+    where: { id: eventId },
+    select: { status: true, publishedScheduleVersion: true },
+  });
+  let phase = await prisma.competitionPhase.findFirst({ where: { eventId, sequence: 1 } });
+
+  if (!phase || phase.status === "draft") {
+    if (event.status !== "Registration Closed") {
+      await prisma.event.update({ where: { id: eventId }, data: { status: "Registration Closed" } });
+    }
+    if (!phase) {
+      await run(`seed-v3-${namespace}-drawing`, {
+        kind: "drawing_save",
+        config,
+        teams: teams.map((team, index) => ({ id: team.id, seed: index + 1 })),
+      });
+    }
+    await run(`seed-v3-${namespace}-drawing-publish`, { kind: "drawing_publish" });
+  }
+
+  if (!schedule) return run;
+
+  await prisma.event.update({ where: { id: eventId }, data: { status: "Ongoing" } });
+  event = await prisma.event.findUniqueOrThrow({
+    where: { id: eventId },
+    select: { status: true, publishedScheduleVersion: true },
+  });
+  if (event.publishedScheduleVersion == null) {
+    const draft = await run(`seed-v3-${namespace}-schedule-save`, { kind: "schedule_save", input: schedule });
+    const revisionId = draft.resourceId
+      ?? (await prisma.scheduleRevision.findFirst({
+        where: { eventId, idempotencyKey: `seed-v3-${namespace}-schedule-save` },
+        select: { id: true },
+      }))?.id;
+    if (!revisionId) throw new Error(`Seeded ${namespace} schedule draft did not return a revision id`);
+    await run(`seed-v3-${namespace}-schedule-publish`, { kind: "schedule_publish", revisionId });
+  }
+  return run;
+}
+
+async function seedAuthoritativeDrawingCompetition(eventId: string, organizerId: string, teams: Array<{ id: string }>) {
+  await ensureAuthoritativeCompetition(eventId, organizerId, teams, "flashpeak-revision-closed");
+}
+
+async function seedAuthoritativeOngoingCompetition(eventId: string, organizerId: string, teams: Array<{ id: string }>) {
+  const run = await ensureAuthoritativeCompetition(eventId, organizerId, teams, "flashpeak-rising", seededOngoingSchedule);
+  const liveMatch = await prisma.match.findFirst({ where: { eventId, status: "Live" }, select: { id: true } });
+  if (!liveMatch) {
+    const playableMatch = await prisma.match.findFirst({
+      where: { eventId, status: "Scheduled", homeTeamId: { not: "" }, awayTeamId: { not: "" } },
+      orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }],
+      select: { id: true },
+    });
+    if (!playableMatch) throw new Error("Seeded ongoing competition has no playable match to start");
+    await run("seed-v3-flashpeak-rising-match-start", {
+      kind: "match_start",
+      matchId: playableMatch.id,
+      reason: "Deterministic public V3 showcase fixture",
+    });
+  }
+}
+
+async function seedFinishedCompletionSource(eventId: string, organizerId: string) {
+  const sourceMatch = await prisma.match.findFirst({
+    where: { eventId, status: "Completed", homeTeamId: { not: "" }, awayTeamId: { not: "" } },
+    orderBy: [{ round: "desc" }, { slot: "desc" }, { id: "asc" }],
+    select: { id: true, homeTeamId: true },
+  });
+  if (!sourceMatch) throw new Error("Seeded finished competition has no completed source match");
+
+  const player = await prisma.player.findFirst({
+    where: { eventId, teamId: sourceMatch.homeTeamId },
+    orderBy: [{ id: "asc" }],
+  });
+  if (!player) throw new Error("Seeded finished competition has no player source");
+
+  const stats = { goal: 10, assist: 10, passing: 10, defense: 10 };
+  await prisma.playerStat.upsert({
+    where: { matchId_playerId: { matchId: sourceMatch.id, playerId: player.id } },
+    update: {
+      playerName: player.displayName,
+      teamId: player.teamId,
+      position: player.position,
+      gameSlug: "flashpeak",
+      stats,
+      source: "admin",
+      lastUpdatedBy: organizerId,
+    },
+    create: {
+      id: "stat-" + sourceMatch.id + "-" + player.id,
+      matchId: sourceMatch.id,
+      playerId: player.id,
+      playerName: player.displayName,
+      teamId: player.teamId,
+      position: player.position,
+      gameSlug: "flashpeak",
+      stats,
+      source: "admin",
+      lastUpdatedBy: organizerId,
+    },
+  });
+
+  const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId }, select: { competitionVersion: true } });
+  const actor = { id: organizerId, role: "organizer" as const };
+  const decisions = [
+    { award: "mvp" as const, playerId: player.id },
+    { award: "top_scorer" as const, playerId: player.id },
+    { award: "top_defender" as const, playerId: player.id },
+    { award: "top_assist" as const, playerId: player.id },
+  ];
+  const result = await completeTournament(
+    eventId,
+    decisions,
+    event.competitionVersion,
+    finishedCompletionIdempotencyKey,
+    createPrismaCompletionDependencies(actor, prisma),
+  );
+  if (result.status !== "completed" && result.status !== "already_applied") {
+    throw new Error("Seeded finished completion was not committed: " + JSON.stringify(result));
+  }
+}
+
+async function seedAuthoritativeFinishedCompetition(eventId: string, organizerId: string, teams: Array<{ id: string }>) {
+  const existingCompletion = await prisma.tournamentCompletion.findUnique({
+    where: { eventId },
+    select: { id: true, status: true, podiumPlacements: { select: { id: true } }, awards: { select: { id: true } } },
+  });
+  if (existingCompletion?.status === "completed"
+    && existingCompletion.podiumPlacements.length === 3
+    && existingCompletion.awards.length === 4) return;
+
+  const run = await ensureAuthoritativeCompetition(
+    eventId,
+    organizerId,
+    teams,
+    "flashpeak-champions",
+    seededFinishedSchedule,
+    seededFinishedFormat,
+  );
+
+  for (;;) {
+    const match = await prisma.match.findFirst({
+      where: { eventId, status: { in: ["Scheduled", "Live"] }, homeTeamId: { not: "" }, awayTeamId: { not: "" } },
+      orderBy: [{ round: "asc" }, { slot: "asc" }, { id: "asc" }],
+      select: { id: true, status: true, scheduleMetadata: true },
+    });
+    if (!match) break;
+    const graphMatch = (match.scheduleMetadata as { graphMatch?: { bestOf?: number } } | null)?.graphMatch;
+    const bestOf = graphMatch?.bestOf ?? 1;
+    if (match.status === "Scheduled") {
+      await run("seed-v3-flashpeak-champions-match-start-" + match.id, {
+        kind: "match_start",
+        matchId: match.id,
+        reason: "Deterministic public V3 completed fixture",
+      });
+    }
+    const gameCount = bestOf === 1 ? 1 : Math.ceil(bestOf / 2);
+    await run("seed-v3-flashpeak-champions-result-" + match.id, {
+      kind: "result_submit",
+      matchId: match.id,
+      games: Array.from({ length: gameCount }, (_, index) => ({ gameNumber: index + 1, homeScore: 2, awayScore: 0 })),
+    });
+  }
+
+  await seedFinishedCompletionSource(eventId, organizerId);
+}
 async function seedTest() {
   const adminPasswordHash = await bcrypt.hash("TestAdmin123!", 10);
   const captainPasswordHash = await bcrypt.hash("TestCaptain123!", 10);
@@ -27,6 +279,18 @@ async function seedTest() {
     create: { email: "test-admin@miraclefc.gg", name: "Test Admin", role: "platform_admin", passwordHash: adminPasswordHash },
   });
 
+  const organizerPasswordHash = await bcrypt.hash("TestOrganizer123!", 10);
+  const organizer = await prisma.user.upsert({
+    where: { email: "test-organizer@miraclefc.gg" },
+    update: { name: "Test Organizer", role: "organizer", passwordHash: organizerPasswordHash },
+    create: { email: "test-organizer@miraclefc.gg", name: "Test Organizer", role: "organizer", passwordHash: organizerPasswordHash },
+  });
+  await prisma.organizerProfile.upsert({
+    where: { userId: organizer.id },
+    update: { organizationName: "Test Organizer", contactChannel: "WhatsApp", contactValue: "+62 811 0000 0001" },
+    create: { userId: organizer.id, organizationName: "Test Organizer", contactChannel: "WhatsApp", contactValue: "+62 811 0000 0001" },
+  });
+  await seedPlatformProfile();
   const captain = await prisma.user.upsert({
     where: { email: "test-captain@miraclefc.gg" },
     update: { name: "Test Captain", role: "captain", passwordHash: captainPasswordHash },
@@ -89,6 +353,8 @@ async function main() {
     return;
   }
 
+  await seedPlatformProfile();
+
   const adminPasswordHash = await bcrypt.hash(
     process.env.SEED_ADMIN_PASSWORD ?? "Miracle2026!",
     12,
@@ -146,6 +412,90 @@ async function main() {
     },
   });
 
+  await prisma.organizerProfile.upsert({
+    where: { userId: organizerA.id },
+    update: { organizationName: "Flashpeak Organizer", contactChannel: "WhatsApp", contactValue: "+62 812 0000 0000" },
+    create: { userId: organizerA.id, organizationName: "Flashpeak Organizer", contactChannel: "WhatsApp", contactValue: "+62 812 0000 0000" },
+  });
+
+  const kurokoSummerEvent = await prisma.event.upsert({
+    where: { slug: "kuroko-summer-cup" },
+    update: {
+      name: "Kuroko Street Rival Summer Cup", description: "Deterministic draft event used by legacy registration and bracket E2E.",
+      gameId: "game-kuroko", gameModeId: "mode-kuroko-3v3", format: "Single Elimination", formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      status: "Draft", participantCap: 8, registrationWindow: "October 1, 2026 - October 7, 2026", startsAt: "October 10, 2026",
+      registrationOpensAt: new Date("2026-10-01T02:00:00.000Z"), registrationClosesAt: new Date("2026-10-07T14:00:00.000Z"), eventStartsAt: new Date("2026-10-10T03:00:00.000Z"),
+      timezone: "Asia/Jakarta", venue: "Miracle Test Arena", registrationFeeRequired: false, registrationFeeAmount: null,
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+    },
+    create: {
+      slug: "kuroko-summer-cup", name: "Kuroko Street Rival Summer Cup", description: "Deterministic draft event used by legacy registration and bracket E2E.",
+      gameId: "game-kuroko", gameModeId: "mode-kuroko-3v3", format: "Single Elimination", formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      status: "Draft", participantCap: 8, registrationWindow: "October 1, 2026 - October 7, 2026", startsAt: "October 10, 2026",
+      registrationOpensAt: new Date("2026-10-01T02:00:00.000Z"), registrationClosesAt: new Date("2026-10-07T14:00:00.000Z"), eventStartsAt: new Date("2026-10-10T03:00:00.000Z"),
+      timezone: "Asia/Jakarta", venue: "Miracle Test Arena", registrationFeeRequired: false,
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+    },
+  });
+  for (const index of Array.from({ length: 8 }, (_, value) => value + 1)) {
+    const tag = `KS${index}`;
+    await prisma.team.upsert({
+      where: { eventId_tag: { eventId: kurokoSummerEvent.id, tag } },
+      update: { name: `Kuroko Seed Team ${index}`, captainId: captain.id, source: "e2e" },
+      create: { eventId: kurokoSummerEvent.id, name: `Kuroko Seed Team ${index}`, tag, logoText: tag, captainId: captain.id, source: "e2e" },
+    });
+  }
+
+  await prisma.event.upsert({
+    where: { slug: "flashpeak-revision-published" },
+    update: {
+      name: "Flashpeak Revision Published", description: "Original public description for revision E2E.",
+      gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", format: "Single Elimination",
+      formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination, status: "Published", participantCap: 16,
+      registrationWindow: "September 10, 2026 - September 20, 2026", startsAt: "September 28, 2026",
+      registrationOpensAt: new Date("2026-09-10T02:00:00.000Z"), registrationClosesAt: new Date("2026-09-20T14:00:00.000Z"),
+      eventStartsAt: new Date("2026-09-28T03:00:00.000Z"), timezone: "Asia/Jakarta", venue: "Revision Arena",
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+      registrationFeeRequired: false, registrationFeeAmount: null, prizePoolLabel: "Original prize",
+    },
+    create: {
+      slug: "flashpeak-revision-published", name: "Flashpeak Revision Published",
+      description: "Original public description for revision E2E.",
+      gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", format: "Single Elimination",
+      formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination, status: "Published", participantCap: 16,
+      registrationWindow: "September 10, 2026 - September 20, 2026", startsAt: "September 28, 2026",
+      registrationOpensAt: new Date("2026-09-10T02:00:00.000Z"), registrationClosesAt: new Date("2026-09-20T14:00:00.000Z"),
+      eventStartsAt: new Date("2026-09-28T03:00:00.000Z"), timezone: "Asia/Jakarta", venue: "Revision Arena",
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+      registrationFeeRequired: false, prizePoolLabel: "Original prize",
+    },
+  });
+
+  const flashpeakDrawingEvent = await prisma.event.upsert({
+    where: { slug: "flashpeak-revision-closed" },
+    update: {
+      name: "Flashpeak Registration Closed", description: "Closed registration revision fixture.",
+      gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", format: "Single Elimination",
+      formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination, status: "Registration Closed", participantCap: 16,
+      registrationWindow: "September 1, 2026 - September 5, 2026", startsAt: "September 15, 2026",
+      registrationOpensAt: new Date("2026-09-01T02:00:00.000Z"), registrationClosesAt: new Date("2026-09-05T14:00:00.000Z"),
+      eventStartsAt: new Date("2026-09-15T03:00:00.000Z"), timezone: "Asia/Jakarta", venue: "Closed Arena",
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+      registrationFeeRequired: true, registrationFeeAmount: 50000,
+    },
+    create: {
+      slug: "flashpeak-revision-closed", name: "Flashpeak Registration Closed",
+      description: "Closed registration revision fixture.",
+      gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", format: "Single Elimination",
+      formatConfig: TOURNAMENT_FORMAT_PRESETS.singleElimination, status: "Registration Closed", participantCap: 16,
+      registrationWindow: "September 1, 2026 - September 5, 2026", startsAt: "September 15, 2026",
+      registrationOpensAt: new Date("2026-09-01T02:00:00.000Z"), registrationClosesAt: new Date("2026-09-05T14:00:00.000Z"),
+      eventStartsAt: new Date("2026-09-15T03:00:00.000Z"), timezone: "Asia/Jakarta", venue: "Closed Arena",
+      organizerUserId: organizerA.id, organizerName: "Flashpeak Organizer", organizerVerified: true,
+      registrationFeeRequired: true, registrationFeeAmount: 50000,
+    },
+  });
+
   const flashpeakFinishedEvent = await prisma.event.upsert({
     where: { slug: "flashpeak-champions-32" },
     update: {
@@ -174,7 +524,7 @@ async function main() {
       gameId: "game-flashpeak",
       gameModeId: "mode-flashpeak-5v5",
       format: "Single Elimination",
-      status: "Finished",
+      status: "Registration Closed",
       participantCap: 32,
       registrationWindow: "June 1, 2026 - June 20, 2026",
       startsAt: "June 28, 2026",
@@ -215,7 +565,7 @@ async function main() {
       gameId: "game-flashpeak",
       gameModeId: "mode-flashpeak-5v5",
       format: "Single Elimination",
-      status: "Ongoing",
+      status: "Registration Closed",
       participantCap: 64,
       registrationWindow: "August 1, 2026 - August 9, 2026",
       startsAt: "August 12, 2026",
@@ -311,6 +661,11 @@ async function main() {
   });
 
   const eventTeamSets = [
+    {
+      event: flashpeakDrawingEvent,
+      names: ["Closed Circuit", "Bracket Bloom", "Seeded Sparks", "Draw District"],
+      positions: ["Forward", "Midfielder", "Defender", "Goalkeeper"],
+    },
     {
       event: flashpeakFinishedEvent,
       names: [
@@ -423,18 +778,23 @@ async function main() {
     teamsByEventSlug.set(event.slug, teams);
   }
 
+  await seedAuthoritativeDrawingCompetition(
+    flashpeakDrawingEvent.id,
+    organizerA.id,
+    teamsByEventSlug.get(flashpeakDrawingEvent.slug) ?? [],
+  );
+  await seedAuthoritativeOngoingCompetition(
+    flashpeakOngoingEvent.id,
+    organizerA.id,
+    teamsByEventSlug.get(flashpeakOngoingEvent.slug) ?? [],
+  );
+  await seedAuthoritativeFinishedCompetition(
+    flashpeakFinishedEvent.id,
+    organizerA.id,
+    teamsByEventSlug.get(flashpeakFinishedEvent.slug) ?? [],
+  );
+
   const matchSeeds = [
-    { id: "match-flash-f-1", event: flashpeakFinishedEvent, roundLabel: "Quarterfinal", teams: [0, 7], score: [3, 1], status: "Completed", round: 1, slot: 1 },
-    { id: "match-flash-f-2", event: flashpeakFinishedEvent, roundLabel: "Quarterfinal", teams: [3, 4], score: [2, 0], status: "Completed", round: 1, slot: 2 },
-    { id: "match-flash-f-3", event: flashpeakFinishedEvent, roundLabel: "Quarterfinal", teams: [1, 6], score: [1, 2], status: "Completed", round: 1, slot: 3 },
-    { id: "match-flash-f-4", event: flashpeakFinishedEvent, roundLabel: "Quarterfinal", teams: [2, 5], score: [4, 2], status: "Completed", round: 1, slot: 4 },
-    { id: "match-flash-f-5", event: flashpeakFinishedEvent, roundLabel: "Semifinal", teams: [0, 3], score: [2, 1], status: "Completed", round: 2, slot: 1 },
-    { id: "match-flash-f-6", event: flashpeakFinishedEvent, roundLabel: "Semifinal", teams: [6, 2], score: [1, 3], status: "Completed", round: 2, slot: 2 },
-    { id: "match-flash-f-7", event: flashpeakFinishedEvent, roundLabel: "Final", teams: [0, 2], score: [3, 2], status: "Completed", round: 3, slot: 1 },
-    { id: "match-flash-o-1", event: flashpeakOngoingEvent, roundLabel: "Round 1", teams: [0, 7], score: [2, 1], status: "Completed", round: 1, slot: 1 },
-    { id: "match-flash-o-2", event: flashpeakOngoingEvent, roundLabel: "Round 1", teams: [3, 4], score: [0, 2], status: "Completed", round: 1, slot: 2 },
-    { id: "match-flash-o-3", event: flashpeakOngoingEvent, roundLabel: "Round 1", teams: [1, 6], score: [0, 0], status: "Scheduled", round: 1, slot: 3, scheduledLabel: "Tonight 20:00 WIB" },
-    { id: "match-flash-o-4", event: flashpeakOngoingEvent, roundLabel: "Round 1", teams: [2, 5], score: [0, 0], status: "Scheduled", round: 1, slot: 4, scheduledLabel: "Tonight 21:00 WIB" },
     { id: "match-mlbb-f-1", event: mlbbFinishedEvent, roundLabel: "Quarterfinal", teams: [0, 7], score: [2, 0], status: "Completed", round: 1, slot: 1 },
     { id: "match-mlbb-f-2", event: mlbbFinishedEvent, roundLabel: "Quarterfinal", teams: [3, 4], score: [2, 1], status: "Completed", round: 1, slot: 2 },
     { id: "match-mlbb-f-3", event: mlbbFinishedEvent, roundLabel: "Quarterfinal", teams: [1, 6], score: [1, 2], status: "Completed", round: 1, slot: 3 },
@@ -525,17 +885,59 @@ async function main() {
 
   if (flashpeakChampion) {
     await prisma.certificate.upsert({
-      where: { eventId: flashpeakFinishedEvent.id },
-      update: { teamId: flashpeakChampion.id, imageUrl: "/certificates/demo-flashpeak-champions-32.png" },
-      create: { eventId: flashpeakFinishedEvent.id, teamId: flashpeakChampion.id, imageUrl: "/certificates/demo-flashpeak-champions-32.png" },
+      where: {
+        eventId_type_recipientKind_recipientId_version: {
+          eventId: flashpeakFinishedEvent.id,
+          type: "champion",
+          recipientKind: "team",
+          recipientId: flashpeakChampion.id,
+          version: 1,
+        },
+      },
+      update: {
+        teamId: flashpeakChampion.id,
+        recipientName: flashpeakChampion.name,
+        imageUrl: "/certificates/demo-flashpeak-champions-32.png",
+      },
+      create: {
+        eventId: flashpeakFinishedEvent.id,
+        teamId: flashpeakChampion.id,
+        type: "champion",
+        recipientKind: "team",
+        recipientId: flashpeakChampion.id,
+        recipientName: flashpeakChampion.name,
+        version: 1,
+        imageUrl: "/certificates/demo-flashpeak-champions-32.png",
+      },
     });
   }
 
   if (mlbbChampion) {
     await prisma.certificate.upsert({
-      where: { eventId: mlbbFinishedEvent.id },
-      update: { teamId: mlbbChampion.id, imageUrl: "/certificates/demo-mlbb-dawn-finals-16.png" },
-      create: { eventId: mlbbFinishedEvent.id, teamId: mlbbChampion.id, imageUrl: "/certificates/demo-mlbb-dawn-finals-16.png" },
+      where: {
+        eventId_type_recipientKind_recipientId_version: {
+          eventId: mlbbFinishedEvent.id,
+          type: "champion",
+          recipientKind: "team",
+          recipientId: mlbbChampion.id,
+          version: 1,
+        },
+      },
+      update: {
+        teamId: mlbbChampion.id,
+        recipientName: mlbbChampion.name,
+        imageUrl: "/certificates/demo-mlbb-dawn-finals-16.png",
+      },
+      create: {
+        eventId: mlbbFinishedEvent.id,
+        teamId: mlbbChampion.id,
+        type: "champion",
+        recipientKind: "team",
+        recipientId: mlbbChampion.id,
+        recipientName: mlbbChampion.name,
+        version: 1,
+        imageUrl: "/certificates/demo-mlbb-dawn-finals-16.png",
+      },
     });
   }
 

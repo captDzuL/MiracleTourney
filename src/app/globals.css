@@ -1,3 +1,10 @@
+@import "@fontsource/montserrat/400.css";
+@import "@fontsource/montserrat/500.css";
+@import "@fontsource/montserrat/600.css";
+@import "@fontsource/montserrat/700.css";
+@import "@fontsource/montserrat/800.css";
+@import "../styles/miracle-v3-tokens.css";
+@import "../styles/miracle-public-v3.css";
 @import "tailwindcss";
 @source "../**/*.{js,ts,jsx,tsx,mdx}";
 
@@ -34,11 +41,9 @@ thead th,
   letter-spacing: 0.05em;
 }
 
-button,
-input,
-select,
-textarea {
-  outline: none;
+:focus-visible {
+  outline: 2px solid #0891b2;
+  outline-offset: 3px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

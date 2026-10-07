@@ -1,0 +1,82 @@
+name: V3 go-live
+
+# Manual only. A live run changes production: it takes a Neon checkpoint, migrates the production database, deploys this
+# commit to Vercel production with every V3 flag off, then enables the flags step by step and rolls a step back when its
+# smoke check fails. Run "dry-run" first; it only reads. Secrets live in the `production-go-live` environment, which
+# should require a reviewer.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run reads only; go-live changes production"
+        type: choice
+        options: [dry-run, go-live]
+        default: dry-run
+      confirm:
+        description: 'Live run only: type GO-LIVE followed by the first 8 characters of the commit (the dry-run prints it)'
+        type: string
+        required: false
+      writes_paused:
+        description: "Live run only: organizer and registration writes are paused"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v3-go-live
+  cancel-in-progress: false
+
+jobs:
+  go-live:
+    name: Go-live (${{ inputs.mode }})
+    runs-on: ubuntu-latest
+    environment: production-go-live
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: miracle_reference
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d miracle_reference"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build the reference catalog from the migrations (throwaway PostgreSQL 18)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/miracle_reference
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/miracle_reference
+          CATALOG_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/miracle_reference
+        run: |
+          pnpm exec prisma migrate deploy
+          node scripts/operations/catalog-postcheck.mjs snapshot "$RUNNER_TEMP/catalog-reference.json"
+      - name: Run go-live
+        env:
+          GOLIVE_MODE: ${{ inputs.mode }}
+          GOLIVE_CONFIRM: ${{ inputs.confirm }}
+          GOLIVE_WRITES_PAUSED: ${{ inputs.writes_paused }}
+          GOLIVE_SHA: ${{ github.sha }}
+          GOLIVE_REF: ${{ github.ref_name }}
+          CATALOG_REFERENCE_FILE: ${{ runner.temp }}/catalog-reference.json
+          PROD_DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          NEON_PROD_HOST: ${{ secrets.NEON_PROD_HOST }}
+          VERCEL_TEAM_SLUG: miracle25
+        run: node scripts/operations/golive.mjs

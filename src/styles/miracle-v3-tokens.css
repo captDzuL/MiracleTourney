@@ -1,0 +1,122 @@
+.miracle-v3 {
+  color-scheme: dark;
+  --font-miracle-v3: "Montserrat", sans-serif;
+
+  --color-brand-cyan: #49D1EC;
+  --color-brand-violet: #AA8BFF;
+  --color-brand-cream: #F6DFB1;
+  --color-on-accent: #09111E;
+  --color-accent-cyan-foreground: #49D1EC;
+  --color-accent-violet-foreground: #AA8BFF;
+  --color-accent-cream-foreground: #F6DFB1;
+
+  --color-bg: #09111E;
+  --color-surface: #101B2B;
+  --color-surface-subtle: #0C1523;
+  --color-surface-selected: #1C293E;
+  --color-text: #F3EFE7;
+  --color-text-muted: #AAB7C9;
+  --color-text-subtle: #77869A;
+  --color-text-inverse: #09111E;
+  --color-border: #29374A;
+  --color-border-strong: #647892;
+  --color-focus-ring: #49D1EC;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+  --control-height-compact: 36px;
+  --control-height-default: 40px;
+  --control-height-prominent: 48px;
+  --content-width-public: 1220px;
+  --content-width-operator: 1500px;
+  --sidebar-width-operator: 220px;
+
+  --elevation-card: 0 8px 24px rgb(0 0 0 / 0.2);
+  --elevation-panel: 0 16px 40px rgb(0 0 0 / 0.28);
+  --motion-duration-fast: 140ms;
+  --motion-duration-default: 200ms;
+  --motion-ease-standard: ease-out;
+
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-miracle-v3);
+}
+
+html[data-panel-theme="dark"] .miracle-v3:has(.panel-scope),
+html[data-panel-theme="dark"] .miracle-v3.panel-scope {
+  color-scheme: dark;
+}
+
+.miracle-v3[data-theme="light"],
+html[data-panel-theme="light"] .miracle-v3:has(.panel-scope),
+html[data-panel-theme="light"] .miracle-v3.panel-scope {
+  color-scheme: light;
+  --color-bg: #F7F9FC;
+  --color-surface: #FFFFFF;
+  --color-surface-subtle: #EEF2F7;
+  --color-surface-selected: #E2E8F0;
+  --color-text: #102033;
+  --color-text-muted: #5B6B7F;
+  --color-text-subtle: #748196;
+  --color-text-inverse: #F7F9FC;
+  --color-border: #CBD5E1;
+  --color-border-strong: #647892;
+  --color-on-accent: #09111E;
+  --color-accent-cyan-foreground: #087389;
+  --color-accent-violet-foreground: #5F3CAD;
+  --color-accent-cream-foreground: #6A4B16;
+  --color-focus-ring: #087389;
+  --elevation-card: 0 8px 24px rgb(16 32 51 / 0.08);
+  --elevation-panel: 0 16px 40px rgb(16 32 51 / 0.12);
+}
+
+.miracle-v3 .miracle-focus-ring:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+.miracle-v3 .miracle-focus-within-ring:has(:focus-visible) {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+.miracle-v3 .miracle-v3-feedback {
+  --color-feedback-success: var(--color-brand-cyan);
+  --color-feedback-warning: var(--color-brand-cream);
+  --color-feedback-error: #E69393;
+}
+
+/*
+ * The V3 shells use a sticky header (4rem + border). Keep keyboard focus and in-page
+ * anchor targets below it (WCAG 2.2 SC 2.4.11 Focus Not Obscured). Per-element
+ * scroll-margin alone does not hold when Shift+Tab scrolls the viewport upward, so
+ * reserve the space on the scrolling box itself.
+ */
+html:has(.miracle-v3) {
+  scroll-padding-top: 6rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .miracle-v3 {
+    --motion-duration-fast: 0ms;
+    --motion-duration-default: 0ms;
+  }
+  .miracle-v3,
+  .miracle-v3 *,
+  .miracle-v3 *::before,
+  .miracle-v3 *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
