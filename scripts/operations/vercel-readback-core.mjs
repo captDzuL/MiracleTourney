@@ -42,6 +42,13 @@ export function evaluateReadback({ project, envs }) {
     findings.push({ id: "build-command-custom", level: "warning", message: `Build command override differs from \`pnpm vercel-build\`: ${buildCommand}` });
   }
 
+  // scripts/vercel-build.mjs refuses Preview builds unless all three exist for the Preview target.
+  const buildUsesGuard = buildCommand === null || /\bvercel-build\b/.test(buildCommand);
+  const missingForPreview = ["DATABASE_URL", "DIRECT_URL", "NEON_PROD_HOST"].filter((key) => !envs.some((env) => env.key === key && targetsOf(env).includes("preview")));
+  if (buildUsesGuard && missingForPreview.length > 0) {
+    findings.push({ id: "preview-build-guard-env-missing", level: "blocker", message: `Preview builds will fail: ${missingForPreview.join(", ")} missing for the Preview target (required by scripts/vercel-build.mjs).` });
+  }
+
   if (productionBranch === null) {
     findings.push({ id: "production-branch-unknown", level: "warning", message: "Production branch could not be read." });
   } else {

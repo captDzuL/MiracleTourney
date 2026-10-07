@@ -47,12 +47,19 @@ Steps 1–3 change nothing in the database. Run them in this order.
 2. **Replace the build override (Vercel setting, owner approval).** Set the project
    build command to `pnpm vercel-build` (or clear the override, since `package.json`
    already defines `vercel-build`). `scripts/vercel-build.mjs` only builds and refuses a
-   preview build that points at the production database; it never migrates. Read back:
-   the `build-runs-migrate-deploy` finding must be gone.
-3. **Production branch (Vercel setting, owner approval).** Either set the production
-   branch to `main`, or create `master` from the release SHA. Prefer `main`: it avoids a
-   second long-lived branch. `scripts/vercel-build.mjs` already treats trusted `main`
-   builds as production candidates.
+   preview build that points at the production database; it never migrates. That guard
+   needs `DATABASE_URL`, `DIRECT_URL` **and `NEON_PROD_HOST`** in the Preview target: the
+   first Preview build after the change failed on 7 October because `NEON_PROD_HOST` did
+   not exist in Vercel (it now does, target Preview, value is the production host name,
+   not a secret). Check all three exist for Preview before changing the command. Read
+   back: the `build-runs-migrate-deploy` finding must be gone.
+3. **Production branch: no change needed when the go-live workflow is used.** The
+   workflow (`go-live.yml`, see `v3-golive-button.md`) creates the production deployment
+   through the Vercel API with `target: production` and the exact commit SHA, so the
+   Vercel production branch (`master`, absent on GitHub) can stay as it is and merging to
+   `main` creates no production deployment. Only a manual deploy outside the workflow
+   needs a production branch: then set it to `main` (or create `master` from the release
+   SHA), preferring `main`, and expect the next push to it to deploy to production.
 4. **Pause writes and take the checkpoint.** Announce the window, stop organizer and
    registration activity, create the fresh backup/checkpoint (precondition 4).
 5. **Migrate manually, once.** From a trusted machine with the production

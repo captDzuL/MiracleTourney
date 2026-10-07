@@ -28,7 +28,9 @@ Workflow GitHub `V3 go-live` (`.github/workflows/go-live.yml`), dijalankan manua
    sebelumnya tetap menyala.
 7. Menampilkan nilai akhir flag.
 
-Yang **tidak** dilakukan: mengubah cabang produksi Vercel, menyalakan
+Yang **tidak** dilakukan (dan tidak perlu): mengubah cabang produksi Vercel. Deploy produksi
+dibuat lewat API dengan SHA commit, jadi cabang produksi `master` boleh dibiarkan dan
+merge ke `main` tidak memicu deploy produksi. Yang juga tidak dilakukan: menyalakan
 `email_password_reset`, menghapus branch checkpoint, atau menjeda penulisan (itu
 tugasmu, lihat "Sebelum menekan tombol").
 

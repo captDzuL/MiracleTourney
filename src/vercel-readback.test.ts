@@ -20,8 +20,11 @@ type Core = {
 const corePath = "../scripts/operations/vercel-readback-core.mjs";
 const load = () => import(corePath) as Promise<Core>;
 
-const flagEnvs = (core: Core, value: string): Env[] =>
-  core.V3_FLAGS.map((key) => ({ key, target: ["production", "preview"], value }));
+const guardEnvs: Env[] = ["DATABASE_URL", "DIRECT_URL", "NEON_PROD_HOST"].map((key) => ({ key, target: ["preview"] }));
+const flagEnvs = (core: Core, value: string): Env[] => [
+  ...core.V3_FLAGS.map((key) => ({ key, target: ["production", "preview"], value })),
+  ...guardEnvs,
+];
 
 describe("Vercel read-back cutover evaluation", () => {
   it("blocks while the build override still runs prisma migrate deploy", async () => {
@@ -47,6 +50,19 @@ describe("Vercel read-back cutover evaluation", () => {
       const result = core.evaluateReadback({ project: { buildCommand, link: { productionBranch: "main" } }, envs: flagEnvs(core, "false") });
       expect(result.ok, String(buildCommand)).toBe(true);
     }
+  });
+
+  it("blocks when the Preview build guard variables are missing (the 7 October Preview failure)", async () => {
+    const core = await load();
+    const withoutHost = flagEnvs(core, "false").filter((env) => env.key !== "NEON_PROD_HOST");
+    const result = core.evaluateReadback({ project: { buildCommand: "pnpm vercel-build" }, envs: withoutHost });
+    expect(result.ok).toBe(false);
+    expect(result.findings.find((finding) => finding.id === "preview-build-guard-env-missing")?.message).toContain("NEON_PROD_HOST");
+    // A production-only variable does not satisfy the Preview target.
+    const productionOnly = flagEnvs(core, "false").map((env) => (env.key === "NEON_PROD_HOST" ? { ...env, target: ["production"] } : env));
+    expect(core.evaluateReadback({ project: { buildCommand: "pnpm vercel-build" }, envs: productionOnly }).ok).toBe(false);
+    // The old override does not use the guard, so the variables are not required for it.
+    expect(core.evaluateReadback({ project: { buildCommand: "pnpm build" }, envs: withoutHost }).ok).toBe(true);
   });
 
   it("warns instead of passing silently when a flag value cannot be read", async () => {
