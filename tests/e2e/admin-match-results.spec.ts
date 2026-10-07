@@ -129,7 +129,19 @@ test.describe("public bracket page", () => {
 
       await page.goto(`/id/events/${fixture.slug}/bracket`);
       await expect(page.getByRole("main")).toBeVisible();
-      await expect(page.getByText(/19\s*[\u2013-]\s*17/).first()).toBeVisible({ timeout: 15_000 });
+      // The social bracket card shows each team's score on its own row. The combined per-game
+      // score lives inside the collapsed "match details" disclosure, so it is not visible until opened.
+      const card = page.locator(`.sb-match[data-match-id="${firstMatch.id}"]:visible`).first();
+      await expect(card).toBeVisible({ timeout: 15_000 });
+      await expect(card.locator(".sb-status")).toHaveText("SELESAI");
+      await expect(card.locator('[data-side="home"] .sb-score')).toHaveText("19");
+      await expect(card.locator('[data-side="away"] .sb-score')).toHaveText("17");
+
+      const details = card.locator("details.sb-details");
+      await expect(details).not.toHaveAttribute("open", "");
+      await details.locator("summary").click();
+      await expect(details.getByText("Game 1")).toBeVisible();
+      await expect(details.getByText(/19\s*[\u2013-]\s*17/)).toBeVisible();
     } finally {
       await fixture.cleanup();
     }
