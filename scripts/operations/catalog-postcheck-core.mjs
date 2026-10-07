@@ -41,6 +41,17 @@ export function diffCatalogs(reference, actual) {
   return differences.sort((a, b) => `${a.category}${a.key}`.localeCompare(`${b.category}${b.key}`));
 }
 
+// Differences between the production database and a database built from the migrations that were verified harmless on
+// 2026-10-07 (nothing in the application references either by name). Anything else is a real difference.
+export const KNOWN_PRODUCTION_DIFFERENCES = Object.freeze([
+  { category: "constraints", key: "Match.Match_eventId_round_slot_key", kind: "missing" },
+  { category: "functions", key: "show_db_tree", kind: "extra" },
+]);
+
+export function withoutKnownProductionDifferences(differences) {
+  return differences.filter((diff) => !KNOWN_PRODUCTION_DIFFERENCES.some((known) => known.category === diff.category && known.key === diff.key && known.kind === diff.kind));
+}
+
 export function formatDifferences(differences) {
   if (differences.length === 0) return "Physical catalog matches the reference.";
   const lines = [`Physical catalog differs from the reference in ${differences.length} place(s):`];

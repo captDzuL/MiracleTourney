@@ -111,3 +111,20 @@ describe("catalog read", () => {
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("known production differences", () => {
+  it("only removes the two verified differences and nothing else", async () => {
+    const mod = await core() as Core & { withoutKnownProductionDifferences(d: Diff[]): Diff[] };
+    const known: Diff[] = [
+      { category: "constraints", key: "Match.Match_eventId_round_slot_key", kind: "missing" },
+      { category: "functions", key: "show_db_tree", kind: "extra" },
+    ];
+    const real: Diff[] = [
+      { category: "constraints", key: "Match.Match_eventId_round_slot_key", kind: "changed" },
+      { category: "functions", key: "show_db_tree", kind: "missing" },
+      { category: "tables", key: "Match", kind: "missing" },
+      { category: "indexes", key: "Event.Event_status_idx", kind: "missing" },
+    ];
+    expect(mod.withoutKnownProductionDifferences([...known, ...real])).toEqual(real);
+  });
+});
