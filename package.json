@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "vercel-build": "node scripts/vercel-build.mjs",
+    "ops:vercel-readback": "node scripts/operations/vercel-readback.mjs",
     "start": "next start",
     "lint": "tsc --noEmit",
     "test": "vitest run",
