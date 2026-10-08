@@ -46,6 +46,11 @@ evidence.
    suppressed today. Enabling it also requires `RESEND_API_KEY` and a verified
    `RESEND_FROM_EMAIL`; both names exist in Vercel (values not read). Decide
    explicitly whether V3 go-live needs working reset emails.
+   **Decision 2026-10-07 (organizer reset):** reset emails are wanted for captains and
+   organizers. `.env.example` now ships `FEATURE_FLAG_EMAIL_PASSWORD_RESET=true`; the code
+   default stays `false` (see `src/feature-flag-matrix.test.ts`). The Prod value in the table
+   above is still the read-back and must be changed in Vercel by the owner, together with
+   `RESEND_API_KEY` and a verified `RESEND_FROM_EMAIL`; Preview stays `false` (finding 5).
 3. **Six flags have no read site** (the five `premium_*` flags and `ai_event_art`).
    Setting them changes nothing; they must not be presented as gating anything.
 4. **The legacy `legacy_raw` password-reset token window is bounded in code**

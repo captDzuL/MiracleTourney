@@ -6,7 +6,7 @@ import { loginAction } from "@/lib/actions";
 import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 
 export async function renderLoginPage(
-  searchParams?: Promise<{ error?: string; eventId?: string; returnTo?: string }>,
+  searchParams?: Promise<{ error?: string; eventId?: string; reset?: string; returnTo?: string }>,
   locale?: "id" | "en",
 ) {
   const t = await getTranslations("login");
@@ -23,6 +23,12 @@ export async function renderLoginPage(
       <section className="miracle-v3 rounded-[var(--radius-panel,16px)] border border-[color:var(--color-border,#29374A)] bg-[color:var(--color-surface,#101B2B)] p-6 shadow-[var(--elevation-panel,0_16px_40px_rgb(0_0_0_/_0.28))] sm:p-8">
         <h1 className="text-3xl font-semibold text-[color:var(--color-text,#F3EFE7)]">{t("title")}</h1>
         <p id="login-description" className="mt-2 text-sm leading-6 text-[color:var(--color-text-muted,#AAB7C9)]">{t("description")}</p>
+
+        {resolvedSearchParams?.reset === "success" ? (
+          <p id="login-reset-success" role="status" className="mt-4 rounded-[var(--radius-control,8px)] border border-emerald-300/40 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
+            {t("resetSuccess")}
+          </p>
+        ) : null}
 
         {resolvedSearchParams?.error ? (
           <p role="alert" className="mt-4 rounded-[var(--radius-control,8px)] border border-red-300/40 bg-red-400/10 px-4 py-3 text-sm text-red-200">

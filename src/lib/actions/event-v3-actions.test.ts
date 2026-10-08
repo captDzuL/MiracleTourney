@@ -130,6 +130,21 @@ describe("event V3 actions", () => {
     }));
     expect(createEvent).not.toHaveBeenCalled();
   });
+  it("stores a new organizer's email trimmed and lowercased so the password-reset lookup can match it", async () => {
+    requireAnyRole.mockResolvedValue({ id: "admin-1", role: "platform_admin", email: "admin@test.com", name: "League Commissioner" });
+    createOrganizerAndEventDraft.mockResolvedValue({ event: { id: "event-new-org" }, organizer: { id: "organizer-new" } });
+    const formData = new FormData();
+    formData.set("locale", "id"); formData.set("name", "Community Cup"); formData.set("slug", "community-cup");
+    formData.set("gameModeId", "mode-flashpeak-5v5"); formData.set("formatKind", "single_elimination"); formData.set("participantCap", "16");
+    formData.set("ownerKind", "new_organizer"); formData.set("organizerName", "Rival Community"); formData.set("organizerAccountName", "Rival Admin");
+    formData.set("organizerEmail", "  Rival.Admin@Example.COM "); formData.set("organizerContactChannel", "WhatsApp"); formData.set("organizerContactValue", "+62 811 1234 5678"); formData.set("temporaryPassword", "Temporary123!");
+
+    await expect(createEventV3Action(formData)).rejects.toThrow("REDIRECT:/id/admin/events/event-new-org/overview");
+    expect(createOrganizerAndEventDraft).toHaveBeenCalledWith(expect.objectContaining({
+      organizer: expect.objectContaining({ email: "rival.admin@example.com" }),
+    }));
+  });
+
   it("rejects advanced competition formats while their feature flag is off", async () => {
     isFeatureEnabled.mockReturnValue(false);
     const formData = new FormData();

@@ -45,7 +45,7 @@ const createEventActionSchema = z.object({
   organizerUserId: safeEntityIdSchema.optional(),
   organizerName: z.string().trim().min(2).optional(),
   organizerAccountName: z.string().trim().min(2).optional(),
-  organizerEmail: z.string().email().optional(),
+  organizerEmail: z.string().trim().toLowerCase().email().optional(),
   organizerContactChannel: z.string().trim().min(1).max(40).optional(),
   organizerContactValue: z.string().trim().min(1).max(200).optional(),
   temporaryPassword: z.string().min(8).optional(),
@@ -121,7 +121,7 @@ async function createEventV3ActionImpl(formData: FormData) {
 
   const ownerKind = parsed.ownerKind ?? "platform";
   if (ownerKind === "new_organizer") {
-    const organizer = z.object({ name: z.string().trim().min(2), organizationName: z.string().trim().min(2), email: z.string().email(), contactChannel: z.string().trim().min(1).max(40), contactValue: z.string().trim().min(1).max(200), temporaryPassword: z.string().min(8) }).parse({ name: parsed.organizerAccountName, organizationName: parsed.organizerName, email: parsed.organizerEmail, contactChannel: parsed.organizerContactChannel, contactValue: parsed.organizerContactValue, temporaryPassword: parsed.temporaryPassword });
+    const organizer = z.object({ name: z.string().trim().min(2), organizationName: z.string().trim().min(2), email: z.string().trim().toLowerCase().email(), contactChannel: z.string().trim().min(1).max(40), contactValue: z.string().trim().min(1).max(200), temporaryPassword: z.string().min(8) }).parse({ name: parsed.organizerAccountName, organizationName: parsed.organizerName, email: parsed.organizerEmail, contactChannel: parsed.organizerContactChannel, contactValue: parsed.organizerContactValue, temporaryPassword: parsed.temporaryPassword });
     const result = await createOrganizerAndEventDraft({ actorId: user.id, organizer, event: { name: parsed.name, slug: parsed.slug, gameModeId: parsed.gameModeId, format: getLegacyTournamentFormat(formatConfig), formatConfig, participantCap: parsed.participantCap, organizerName: organizer.organizationName } });
     revalidateTag("events");
     redirect(`/${parsed.locale}/admin/events/${result.event.id}/overview`);

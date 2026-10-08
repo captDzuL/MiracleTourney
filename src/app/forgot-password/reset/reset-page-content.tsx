@@ -1,6 +1,17 @@
 import { resetPasswordAction } from "@/lib/actions";
 import { SubmitButton } from "@/components/submit-button";
+import { verifyPasswordResetToken } from "@/lib/platform/password-reset";
 import Link from "next/link";
+
+async function isUsableResetToken(token: string): Promise<boolean> {
+  if (!token) return false;
+  try {
+    return (await verifyPasswordResetToken(token)) !== null;
+  } catch {
+    // A failed lookup must not look like a valid link; the person can request a new one.
+    return false;
+  }
+}
 
 export async function renderResetPasswordPage(
   searchParams?: Promise<{ token?: string; error?: string }>,
@@ -9,11 +20,12 @@ export async function renderResetPasswordPage(
   const token = params?.token ?? "";
   const error = params?.error ? decodeURIComponent(params.error) : undefined;
 
-  if (!token) {
+  if (!(await isUsableResetToken(token))) {
     return (
       <div className="mx-auto w-full max-w-sm rounded-2xl border border-white/10 bg-white/5 p-8 shadow-xl">
+        <h1 className="mb-3 text-xl font-semibold text-white">Link tidak berlaku</h1>
         <p className="text-sm text-slate-300">
-          Link tidak valid.{" "}
+          Link reset password ini tidak valid, sudah dipakai atau kedaluwarsa (berlaku 30 menit).{" "}
           <Link href="/forgot-password" className="text-cyan-400 hover:text-cyan-300">
             Minta link baru
           </Link>
