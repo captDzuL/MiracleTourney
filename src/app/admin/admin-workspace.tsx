@@ -1131,12 +1131,22 @@ function ImportRegistrationPhase({
   return (
     <PhaseSection
       action={
-        activeEvent && activeEventHasCredentials ? (
-          <a className={quietButton} href={`/api/admin/captain-credentials?eventId=${activeEvent.id}`}>
-            <KeyRound className="h-4 w-4" />
-            {t("downloadCredentials")}
+        <div className="flex flex-wrap gap-2">
+          <a className={quietButton} href="/templates/registration-import-template.xlsx" download>
+            <Download className="h-4 w-4" />
+            {t("downloadTemplateXlsx")}
           </a>
-        ) : null
+          <a className={quietButton} href="/templates/registration-import-template.csv" download>
+            <Download className="h-4 w-4" />
+            {t("downloadTemplate")}
+          </a>
+          {activeEvent && activeEventHasCredentials ? (
+            <a className={quietButton} href={`/api/admin/captain-credentials?eventId=${activeEvent.id}`}>
+              <KeyRound className="h-4 w-4" />
+              {t("downloadCredentials")}
+            </a>
+          ) : null}
+        </div>
       }
       description={t("importDescription")}
       title={t("importWorkspaceTitle")}
