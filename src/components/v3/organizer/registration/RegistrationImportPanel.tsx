@@ -83,6 +83,13 @@ export function RegistrationImportPanel({ locale, eventId, returnTo, history }: 
    </div>
    {file && <p className={muted + " break-all"}>{file.name} · {new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(file.size / 1024)} KB</p>}
    <p className={muted}>{t("importHelp")}</p>
+   <div className="grid gap-3">
+    <div className="flex flex-wrap gap-3">
+     <a className={control} href="/templates/registration-import-template.xlsx" download>{t("downloadTemplateXlsx")}</a>
+     <a className={control} href="/templates/registration-import-template.csv" download>{t("downloadTemplateCsv")}</a>
+    </div>
+    <p className={muted}>{t("templateHelp")}</p>
+   </div>
    {mapping && <div className="grid gap-4">
     <h3 style={headingStyle} className="font-bold">{t("mappingTitle")}</h3>
     <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">{columns.map(key => <React.Fragment key={key}>
