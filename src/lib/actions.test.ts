@@ -627,6 +627,11 @@ describe("requestPasswordResetAction", () => {
     });
     checkRateLimit.mockReturnValue(true);
     createPasswordResetToken.mockResolvedValue("a".repeat(64));
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://miracle.example");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("redirects to sent=1 and sends an email for an existing captain", async () => {
@@ -640,6 +645,47 @@ describe("requestPasswordResetAction", () => {
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: "cap@test.com" }),
     );
+  });
+
+  it("issues a token and sends a reset link to an existing organizer", async () => {
+    getUserByEmail.mockResolvedValue({ id: "organizer-1", role: "organizer" });
+    sendEmail.mockResolvedValue(undefined);
+
+    await expect(requestPasswordResetAction(fd({ email: "Organizer@Test.com " }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+    await afterCallbacks[0]?.();
+
+    expect(getUserByEmail).toHaveBeenCalledWith("organizer@test.com");
+    expect(createPasswordResetToken).toHaveBeenCalledWith("organizer-1");
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({
+      to: "organizer@test.com",
+      html: expect.stringContaining(`https://miracle.example/forgot-password/reset?token=${"a".repeat(64)}`),
+    }));
+  });
+
+  it("does not issue a token or email for admin accounts, but still redirects to sent=1", async () => {
+    getUserByEmail.mockResolvedValue({ id: "admin-1", role: "admin" });
+
+    await expect(requestPasswordResetAction(fd({ email: "admin@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+    await afterCallbacks[0]?.();
+
+    expect(createPasswordResetToken).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it.each(["captain", "organizer"])("does not issue a token or email for a deactivated %s", async (role) => {
+    getUserByEmail.mockResolvedValue({ id: "user-1", role, deactivatedAt: new Date("2026-09-01T00:00:00.000Z") });
+
+    await expect(requestPasswordResetAction(fd({ email: "gone@test.com" }))).rejects.toThrow(
+      "REDIRECT:/forgot-password?sent=1",
+    );
+    await afterCallbacks[0]?.();
+
+    expect(createPasswordResetToken).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 
   it("redirects to sent=1 without sending an email when the account does not exist", async () => {
@@ -854,7 +900,7 @@ describe("resetPasswordAction", () => {
       token,
       password: "new-password",
       confirmPassword: "new-password",
-    }))).rejects.toThrow("REDIRECT:/login?message=");
+    }))).rejects.toThrow("REDIRECT:/login?reset=success");
 
     expect(consumePasswordResetToken).toHaveBeenCalledWith(token, "$new-hash$");
   });
@@ -867,7 +913,7 @@ describe("resetPasswordAction", () => {
       token,
       password: "new-password",
       confirmPassword: "new-password",
-    }))).rejects.toThrow("REDIRECT:/login?message=");
+    }))).rejects.toThrow("REDIRECT:/login?reset=success");
 
     const operations = info.mock.calls.map(([line]) => JSON.parse(String(line)).operation);
     expect(operations).toContain("password_reset_consume");

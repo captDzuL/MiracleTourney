@@ -14,8 +14,8 @@ export async function renderForgotPasswordPage(
       <h1 className="mb-6 text-xl font-semibold text-white">Lupa Password</h1>
       {sent ? (
         <p className="text-sm text-slate-300">
-          Jika email terdaftar, link reset password telah dikirim. Periksa log server atau
-          hubungi penyelenggara.
+          Jika email terdaftar, link reset password telah dikirim. Periksa kotak masuk dan folder
+          spam; link berlaku 30 menit. Belum menerima apa pun? Hubungi penyelenggara.
         </p>
       ) : (
         <form action={requestPasswordResetAction} className="space-y-4">

@@ -822,6 +822,7 @@
     "passwordLabel": "Password",
     "forgotPassword": "Forgot password?",
     "error": "Invalid email or password.",
+    "resetSuccess": "Your password was reset. Sign in with your new password.",
     "databaseError": "The database is not reachable right now. Check the local database connection before signing in.",
     "submit": "Sign in",
     "submitPending": "Signing in…",

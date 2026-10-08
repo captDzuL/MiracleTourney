@@ -1822,8 +1822,18 @@ export async function adminRegenerateCertificateAction(formData: FormData) {
   await redirectToActiveLocale(`/admin?success=certificate-regenerated`);
 }
 
+/** Roles that may self-serve a password reset by email. Admin accounts are intentionally excluded. */
+const PASSWORD_RESET_ROLES: ReadonlySet<string> = new Set(["captain", "organizer"]);
+
+/** Absolute base for reset links; an email must never carry a relative (unclickable) URL, so a missing base fails the delivery. */
+function getPasswordResetBaseUrl(): string {
+  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(baseUrl)) throw new Error("password_reset_base_url_missing");
+  return baseUrl;
+}
+
 /**
- * Requests a password reset link for a captain account.
+ * Requests a password reset link for a captain or organizer account.
  * Always redirects to sent=1 regardless of whether the email exists (security best practice).
  * Queues the reset link through Next's post-response hook; delivery failures are
  * converted into a safe structured signal by the deferred logger boundary.
@@ -1856,11 +1866,11 @@ async function requestPasswordResetActionImpl(formData: FormData): Promise<Passw
         async () => {
           try {
             await equalizePasswordResetResponse(async () => {
-              if (!user || user.role !== "captain") return;
+              if (!user || user.deactivatedAt || !PASSWORD_RESET_ROLES.has(user.role)) return;
 
+              const baseUrl = getPasswordResetBaseUrl();
               const token = await createPasswordResetToken(user.id);
-              const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-              const resetUrl = `${appUrl}/forgot-password/reset?token=${token}`;
+              const resetUrl = `${baseUrl}/forgot-password/reset?token=${token}`;
               await sendEmail({
                 to: email.data,
                 subject: "Reset Password Miracle League",
@@ -1888,7 +1898,7 @@ async function requestPasswordResetActionImpl(formData: FormData): Promise<Passw
 }
 
 /**
- * Resets a captain's password using a one-time token.
+ * Resets a captain's or organizer's password using a one-time token.
  * Validates token length, password length, and confirmation match before consuming the token.
  */
 async function resetPasswordActionImpl(formData: FormData): Promise<PasswordResetActionResult> {
@@ -1940,7 +1950,7 @@ async function resetPasswordActionImpl(formData: FormData): Promise<PasswordRese
 
   return {
     status: "ok",
-    redirectPath: `/login?message=${encodeURIComponent("Password berhasil direset. Silakan login.")}`,
+    redirectPath: "/login?reset=success",
   };
 }
 

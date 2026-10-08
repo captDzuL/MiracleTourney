@@ -141,6 +141,8 @@ export async function consumePasswordResetToken(
       data: {
         passwordHash: newPasswordHash,
         tempPassword: null,
+        // The user just chose this password themselves, so the first-login forced change is satisfied.
+        mustChangePassword: false,
         sessionVersion: { increment: 1 },
       },
     });

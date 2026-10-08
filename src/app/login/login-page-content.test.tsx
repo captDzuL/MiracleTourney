@@ -26,6 +26,23 @@ describe("renderLoginPage", () => {
     expect(html).toContain('href="/forgot-password" data-i18n-link="true"');
   });
 
+  it("confirms a finished password reset with a fixed translated message", async () => {
+    const page = await renderLoginPage(Promise.resolve({ reset: "success" }));
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain('id="login-reset-success"');
+    expect(html).toContain("resetSuccess");
+    expect(html).not.toContain('role="alert"');
+  });
+
+  it("never renders free text from the URL as a login banner", async () => {
+    const page = await renderLoginPage(Promise.resolve({ reset: "Your account was hacked, call 0800" }));
+    const html = renderToStaticMarkup(page);
+
+    expect(html).not.toContain("hacked");
+    expect(html).not.toContain('id="login-reset-success"');
+  });
+
   it("preserves a safe event registration return path", async () => {
     const page = await renderLoginPage(Promise.resolve({ returnTo: "/events/nusantara-cup/register" }));
     const html = renderToStaticMarkup(page);

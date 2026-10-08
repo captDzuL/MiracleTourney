@@ -822,6 +822,7 @@
     "passwordLabel": "Password",
     "forgotPassword": "Lupa password?",
     "error": "Email atau password salah.",
+    "resetSuccess": "Password berhasil direset. Silakan masuk dengan password baru.",
     "databaseError": "Database belum bisa dijangkau. Cek koneksi database lokal sebelum masuk.",
     "submit": "Masuk",
     "submitPending": "Memproses…",

@@ -13,7 +13,7 @@ type TokenRow = {
 
 const state = vi.hoisted(() => ({
   tokens: [] as TokenRow[],
-  users: new Map<string, { passwordHash: string; tempPassword: string | null; sessionVersion: number }>(),
+  users: new Map<string, { passwordHash: string; tempPassword: string | null; sessionVersion: number; mustChangePassword: boolean }>(),
 }));
 
 type TestPrisma = {
@@ -91,12 +91,13 @@ const prisma = vi.hoisted(() => {
     user: {
       update: vi.fn(async ({ where, data }: {
         where: { id: string };
-        data: { passwordHash: string; tempPassword: null; sessionVersion: { increment: number } };
+        data: { passwordHash: string; tempPassword: null; mustChangePassword: false; sessionVersion: { increment: number } };
       }) => {
         const user = state.users.get(where.id);
         if (!user) throw new Error("user missing");
         user.passwordHash = data.passwordHash;
         user.tempPassword = data.tempPassword;
+        user.mustChangePassword = data.mustChangePassword;
         user.sessionVersion += data.sessionVersion.increment;
         return user;
       }),
@@ -122,7 +123,7 @@ describe("password reset token hardening", () => {
   beforeEach(() => {
     state.tokens = [];
     state.users.clear();
-    state.users.set("user-1", { passwordHash: "old-hash", tempPassword: "temporary", sessionVersion: 7 });
+    state.users.set("user-1", { passwordHash: "old-hash", tempPassword: "temporary", sessionVersion: 7, mustChangePassword: true });
     vi.clearAllMocks();
   });
 
@@ -220,7 +221,7 @@ describe("password reset token hardening", () => {
     await expect(verifyPasswordResetToken(rawToken, checkAt)).resolves.toMatchObject({ id: "digest-1" });
   });
 
-  it("updates the password, clears temporary state, and revokes sessions once", async () => {
+  it("updates the password, clears temporary state and the forced-change flag, and revokes sessions once", async () => {
     const token = await createPasswordResetToken("user-1", new Date("2026-09-21T00:00:00.000Z"));
 
     await consumePasswordResetToken(token, "new-hash", new Date("2026-09-21T00:10:00.000Z"));
@@ -230,12 +231,14 @@ describe("password reset token hardening", () => {
       passwordHash: "new-hash",
       tempPassword: null,
       sessionVersion: 8,
+      mustChangePassword: false,
     });
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
       data: {
         passwordHash: "new-hash",
         tempPassword: null,
+        mustChangePassword: false,
         sessionVersion: { increment: 1 },
       },
     });
