@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 Object.assign(globalThis, { React });
 
-const { notFound, resolveEventPreviewToken, renderEventDetailPage, setRequestLocale } = vi.hoisted(() => ({
+const { notFound, resolveEventPreviewToken, renderEventDetailPage, setRequestLocale, isFeatureEnabled, projectPreviewPublicV3Event } = vi.hoisted(() => ({
   notFound: vi.fn(),
   resolveEventPreviewToken: vi.fn(),
   renderEventDetailPage: vi.fn(),
   setRequestLocale: vi.fn(),
+  isFeatureEnabled: vi.fn(),
+  projectPreviewPublicV3Event: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ notFound }));
@@ -21,13 +23,40 @@ vi.mock("next-intl/server", () => ({
 }));
 vi.mock("@/lib/events/preview-token", () => ({ resolveEventPreviewToken }));
 vi.mock("@/app/events/[slug]/event-detail-page", () => ({ renderEventDetailPage }));
+vi.mock("@/lib/events/event-revision", () => ({ resolveEventRevisionPreviewToken: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/events/public-v3-read", () => ({ projectPreviewPublicV3Event }));
+vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
+vi.mock("@/components/v3/public-event/PublicV3EventPage", () => ({
+  PublicV3EventPage: ({ view, readOnly }: { view: { identity: { title: string } }; readOnly?: boolean }) => (
+    <section data-v3-page data-read-only={String(Boolean(readOnly))}>{view.identity.title}</section>
+  ),
+}));
 
 import PreviewEventPage, { dynamic, metadata, revalidate } from "./page";
 
 describe("private event preview route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isFeatureEnabled.mockReturnValue(false);
     notFound.mockImplementation(() => { throw new Error("NEXT_NOT_FOUND"); });
+  });
+
+  it("renders the Draft with the V3 public event page when the adaptive public event flag is on", async () => {
+    const event = { id: "event-1", slug: "miracle-open", status: "Draft", name: "Miracle Open" };
+    resolveEventPreviewToken.mockResolvedValue({ id: "preview-1", event });
+    isFeatureEnabled.mockImplementation((flag: string) => flag === "adaptive_public_event_v3");
+    projectPreviewPublicV3Event.mockReturnValue({ identity: { title: "Miracle Open" } });
+
+    const page = await PreviewEventPage({
+      params: Promise.resolve({ locale: "id", token: "a".repeat(64) }),
+    });
+    const markup = renderToStaticMarkup(page);
+
+    expect(projectPreviewPublicV3Event).toHaveBeenCalledWith(event);
+    expect(renderEventDetailPage).not.toHaveBeenCalled();
+    expect(markup).toContain("Private preview");
+    expect(markup).toContain('data-v3-page="true" data-read-only="true"');
+    expect(markup).toContain("Miracle Open");
   });
 
   it("renders the validated Draft through the shared public event view with a persistent banner", async () => {

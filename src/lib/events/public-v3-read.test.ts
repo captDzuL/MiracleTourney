@@ -28,6 +28,7 @@ vi.mock("./public-finished", () => ({ readPublicFinished: mocks.finished }));
 
 import {
   projectCompatiblePublicV3Event,
+  projectPreviewPublicV3Event,
   projectPublicHomeFeaturedEvent,
   readPublicV3Event,
 } from "./public-v3-read";
@@ -611,5 +612,15 @@ describe("normalized public V3 event reader", () => {
     expect(view.certificates.items).toEqual([]);
     expect(view.podium).toEqual([]);
     expect(view.awards).toEqual([]);
+  });
+
+  it("projects a Draft preview into the V3 registration view with a disabled entry point", () => {
+    const view = projectPreviewPublicV3Event({ ...baseEvent, status: "Draft" });
+    expect(view.mode).toBe("registration");
+    expect(view.identity.title).toBe("Miracle Cup");
+    expect(view.cta).toMatchObject({ kind: "disabled", enabled: false, href: null });
+    expect(view.identity.cta.enabled).toBe(false);
+    if (view.mode !== "registration") throw new Error("Expected registration projection");
+    expect(view.viewer.cta).toMatchObject({ kind: "disabled", enabled: false });
   });
 });
