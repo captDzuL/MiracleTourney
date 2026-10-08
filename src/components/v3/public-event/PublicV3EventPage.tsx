@@ -73,12 +73,12 @@ function frameCopy(locale: PublicV3Locale) {
   return copy[locale];
 }
 
-export function PublicV3EventPage({ view, locale, error = false }: { view: PublicV3EventViewModel | null; locale: PublicV3Locale; error?: boolean }) {
+export function PublicV3EventPage({ view, locale, error = false, readOnly = false }: { view: PublicV3EventViewModel | null; locale: PublicV3Locale; error?: boolean; readOnly?: boolean }) {
   const t = frameCopy(locale);
   const globalNavigation = [
     { href: publicV3LocalizedHref("/")[locale], label: t.home },
     { href: publicV3LocalizedHref("/events")[locale], label: t.events },
-    ...(view ? [{ href: view.identity.routes.overview.hrefByLocale[locale], label: view.identity.title, active: true }] : []),
+    ...(view && !readOnly ? [{ href: view.identity.routes.overview.hrefByLocale[locale], label: view.identity.title, active: true }] : []),
   ];
   return <PublicV3Frame
     className="mpv3-event-overview"
@@ -93,7 +93,7 @@ export function PublicV3EventPage({ view, locale, error = false }: { view: Publi
     {view && !error ? <div data-public-v3-event="true" data-public-source={view.source}>
       <nav className="mpv3-directory-breadcrumb" aria-label={locale === "id" ? "Jejak halaman" : "Breadcrumb"}><a href={publicV3LocalizedHref("/")[locale]}>{t.home}</a><span aria-hidden="true">/</span><a href={publicV3LocalizedHref("/events")[locale]}>{t.events}</a><span aria-hidden="true">/</span><span>{view.identity.title}</span></nav>
       <div className="mt-5"><PublicV3EventHero view={view} locale={locale} /></div>
-      <PublicV3EventNavigation view={view} locale={locale} />
+      {readOnly ? null : <PublicV3EventNavigation view={view} locale={locale} />}
       <div className="mpv3-two-col mt-2">
         <div className="min-w-0">{lifecycle(view, locale)}</div>
         <aside className="mpv3-stack" aria-label={t.organizer}>

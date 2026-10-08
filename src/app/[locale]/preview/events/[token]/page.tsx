@@ -3,8 +3,11 @@ import { notFound } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { renderEventDetailPage } from "@/app/events/[slug]/event-detail-page";
+import { PublicV3EventPage } from "@/components/v3/public-event/PublicV3EventPage";
 import { resolveEventRevisionPreviewToken } from "@/lib/events/event-revision";
 import { resolveEventPreviewToken } from "@/lib/events/preview-token";
+import { projectPreviewPublicV3Event } from "@/lib/events/public-v3-read";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -39,7 +42,9 @@ export default async function PreviewEventPage({
           <p className="text-sm">{t("bannerDescription")}</p>
         </div>
       </aside>
-      {await renderEventDetailPage(preview.event.slug, locale, preview.event, { readOnly: true })}
+      {isFeatureEnabled("adaptive_public_event_v3")
+        ? <PublicV3EventPage view={projectPreviewPublicV3Event(preview.event)} locale={locale} readOnly />
+        : await renderEventDetailPage(preview.event.slug, locale, preview.event, { readOnly: true })}
     </>
   );
 }

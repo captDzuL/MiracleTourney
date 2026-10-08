@@ -639,6 +639,24 @@ export function projectCompatiblePublicV3Event(input: CompatiblePublicEventInput
   return finishedInput(event, input, teams, "compatible");
 }
 
+/**
+ * Projects an unpublished (Draft or in-revision) event into the same V3 public view model the
+ * published page uses. Only saved event fields are shown; registration stays disabled because a
+ * private preview must never offer a live entry point.
+ */
+export function projectPreviewPublicV3Event(event: CompatiblePublicEventRecord, now = new Date()): PublicV3EventViewModel {
+  const view = projectCompatiblePublicV3Event({ event, now });
+  if (view.mode !== "registration") return view;
+  const cta: PublicV3Cta = { kind: "disabled", label: "registration_unavailable", href: null, hrefByLocale: null, reason: "registration_unavailable", enabled: false };
+  return {
+    ...view,
+    cta,
+    identity: { ...view.identity, cta },
+    event: { ...view.event, cta },
+    viewer: { state: "anonymous", cta: { kind: "disabled", label: "registration_unavailable", reason: "registration_unavailable", enabled: false } },
+  };
+}
+
 function identityEvent(event: AnyRecord): CompatiblePublicEventRecord {
   return {
     id: text(event.id),
