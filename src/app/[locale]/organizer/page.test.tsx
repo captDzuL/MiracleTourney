@@ -178,6 +178,28 @@ describe("organizer command center", () => {
   });
 
 
+  it.each(["admin", "platform_admin"] as const)("lets %s use the shared V3 command center for every event", async role => {
+    isFeatureEnabled.mockReturnValue(true);
+    requireAnyRole.mockResolvedValue({ id: "admin-1", role, name: "Miracle Admin" });
+    getOrganizerProfileForUser.mockResolvedValue(null);
+    const markup = renderToStaticMarkup(await OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "en" }) }));
+    const doc = new DOMParser().parseFromString(markup, "text/html");
+    expect(requireAnyRole).toHaveBeenCalledWith(["organizer", "admin", "platform_admin"]);
+    expect(getManageableEventsForUser).toHaveBeenCalledWith(expect.objectContaining({ id: "admin-1", role }));
+    expect(getActiveEventEditRevisionIds).toHaveBeenCalledWith({ eventIds: ["draft-1", "live-1"], actor: { id: "admin-1", role } });
+    expect(doc.querySelector("article a")?.getAttribute("href")).toBe("/en/organizer/events/draft-1/edit");
+    expect(doc.querySelector('a[href="/en/organizer/events/new"]')).not.toBeNull();
+    expect(doc.querySelector('a[href="/en/admin/platform-profile"]')?.textContent).toBe("Edit Miracle contact");
+    expect(doc.querySelector('a[href$="/organizer/profile"]')).toBeNull();
+    expect(markup).not.toContain("Add your public contact before publishing an event.");
+  });
+
+  it("keeps admins on the legacy admin list when the master shell is off", async () => {
+    requireAnyRole.mockResolvedValue(null);
+    await expect(OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "en" }) })).rejects.toThrow("REDIRECT");
+    expect(requireAnyRole).toHaveBeenCalledWith(["organizer"]);
+  });
+
   it("shows Continue revision when a private revision is active", async () => {
     getActiveEventEditRevisionIds.mockResolvedValue({ "live-1": { id: "revision-1", revision: 2 } });
     const markup = renderToStaticMarkup(await OrganizerCommandCenterPage({ params: Promise.resolve({ locale: "id" }) }));

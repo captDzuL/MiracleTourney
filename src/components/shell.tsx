@@ -61,7 +61,12 @@ function ExistingAppShell({ children }: { children: React.ReactNode }) {
           { href: "/captain", label: t("captain"), roles: ["captain"] },
           { href: "/captain/stats", label: t("matchStats"), roles: ["captain"] },
           { href: "/admin", label: t("admin"), roles: ["platform_admin", "admin"] },
-          { href: "/admin/events/new", label: "Create event", roles: ["platform_admin", "admin"] },
+          ...(isFeatureEnabled("organizer_master_shell_v3") && isFeatureEnabled("organizer_workspace_v3")
+            ? [
+                { href: "/organizer", label: v3Shell("organizerHome"), roles: ["platform_admin", "admin"] },
+                { href: "/organizer/events/new", label: "Create event", roles: ["platform_admin", "admin"] },
+              ]
+            : [{ href: "/admin/events/new", label: "Create event", roles: ["platform_admin", "admin"] }]),
           { href: "/admin/platform-profile", label: "Miracle contact", roles: ["platform_admin", "admin"] },
           { href: "/events", label: t("events") },
         ]}

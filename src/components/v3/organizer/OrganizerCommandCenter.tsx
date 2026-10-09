@@ -4,10 +4,11 @@ import { Link } from "@/i18n/navigation";
 import type { Event } from "@/lib/platform/types";
 import { eventLifecycle, lifecycleAction, OrganizerEventCard, organizerControl, type OrganizerTranslator } from "./OrganizerEventCard";
 
-export function OrganizerCommandCenter({ events, teamCounts, activeRevisions, organizerName, hasProfile, locale, t }: {
+export function OrganizerCommandCenter({ events, teamCounts, activeRevisions, organizerName, hasProfile, role = "organizer", locale, t }: {
   events: Event[]; teamCounts: Map<string, number>; activeRevisions: Record<string, { id: string; revision: number }>;
-  organizerName: string; hasProfile: boolean; locale: "id" | "en"; t: OrganizerTranslator;
+  organizerName: string; hasProfile: boolean; role?: "organizer" | "admin" | "platform_admin"; locale: "id" | "en"; t: OrganizerTranslator;
 }) {
+  const isOrganizer = role === "organizer";
   const drafts = events.filter(event => event.status === "Draft");
   const ongoing = events.filter(event => event.status === "Ongoing");
   // Only known unfinished setup and saved private revisions belong in this queue.
@@ -30,7 +31,9 @@ export function OrganizerCommandCenter({ events, teamCounts, activeRevisions, or
         <h2 style={{ fontFamily: "var(--font-miracle-v3)" }} className="text-lg font-extrabold">{t("overview.needsAction")}</h2>
         {attention.length ? <ul className="mt-3 grid gap-3">{attention.map(event => <li key={event.id} className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3"><div className="min-w-0"><p className="break-words font-bold">{event.name}</p><p className="mt-1 text-sm text-[var(--color-text-muted)]">{t(event.status === "Draft" ? "commandCenter.privateDraft" : "commandCenter.activeRevision")}</p></div><Link locale={locale} className={organizerControl} href={`/organizer/events/${encodeURIComponent(event.id)}/${event.status === "Draft" ? lifecycleAction.draft : "edit"}`}>{t(event.status === "Draft" ? "commandCenter.actions.draft" : "commandCenter.continueRevision")}</Link></li>)}</ul> : <p className="mt-3 text-sm text-[var(--color-text-muted)]">{t("commandCenter.noAttention")}</p>}
       </section>
-      <aside className="grid min-w-0 content-start gap-3 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-5"><h2 style={{ fontFamily: "var(--font-miracle-v3)" }} className="text-xs font-extrabold uppercase tracking-wide text-[var(--color-accent-cream-foreground)]">{t("commandCenter.profile")}</h2><p className="break-words font-bold">{organizerName}</p>{!hasProfile && <p className="text-sm text-[var(--color-text-muted)]">{t("commandCenter.profileMissing")}</p>}<Link locale={locale} className={organizerControl} href="/organizer/profile">{t(hasProfile ? "commandCenter.editProfile" : "commandCenter.setupProfile")}</Link></aside>
+      <aside className="grid min-w-0 content-start gap-3 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-5"><h2 style={{ fontFamily: "var(--font-miracle-v3)" }} className="text-xs font-extrabold uppercase tracking-wide text-[var(--color-accent-cream-foreground)]">{t(isOrganizer ? "commandCenter.profile" : "commandCenter.platformProfile")}</h2><p className="break-words font-bold">{organizerName}</p>{isOrganizer && !hasProfile && <p className="text-sm text-[var(--color-text-muted)]">{t("commandCenter.profileMissing")}</p>}{isOrganizer
+        ? <Link locale={locale} className={organizerControl} href="/organizer/profile">{t(hasProfile ? "commandCenter.editProfile" : "commandCenter.setupProfile")}</Link>
+        : <Link locale={locale} className={organizerControl} href="/admin/platform-profile">{t("commandCenter.editPlatformProfile")}</Link>}</aside>
     </div>
     <section className="grid min-w-0 gap-4"><h2 style={{ fontFamily: "var(--font-miracle-v3)" }} className="text-xl font-extrabold">{t("commandCenter.allEvents")}</h2>{events.length ? <div className="grid min-w-0 gap-4 min-[700px]:grid-cols-2">{events.map(event => <OrganizerEventCard key={event.id} event={event} teamCount={teamCounts.get(event.id) ?? 0} hasActiveRevision={Boolean(activeRevisions[event.id])} locale={locale} t={t} />)}</div> : <p className="rounded-[var(--radius-panel)] border border-dashed border-[var(--color-border)] p-6 text-sm text-[var(--color-text-muted)]">{t("commandCenter.empty")}</p>}</section>
   </div>;

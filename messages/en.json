@@ -1616,6 +1616,8 @@
       "profileMissing": "Add your public contact before publishing an event.",
       "editProfile": "Edit organizer profile",
       "setupProfile": "Set up organizer profile",
+      "platformProfile": "Platform contact",
+      "editPlatformProfile": "Edit Miracle contact",
       "empty": "No events yet. Create a private draft to get started.",
       "actions": {
         "draft": "Continue setup",

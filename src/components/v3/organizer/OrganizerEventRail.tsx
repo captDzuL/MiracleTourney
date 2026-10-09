@@ -25,6 +25,6 @@ export function OrganizerEventRail({ summary, navigation, locale, onNavigate }: 
         </Link>;
       })}
     </nav>
-    <Link href={summary.role === "organizer" ? "/organizer" : "/admin"} locale={locale} onClick={onNavigate} className="miracle-focus-ring mt-auto flex min-h-11 items-center gap-3 border-t border-[var(--color-border)] px-3 py-3 text-sm text-[var(--color-text-muted)]"><ArrowLeft className="size-[18px]" aria-hidden="true" />{t("shell.allEvents")}</Link>
+    <Link href="/organizer" locale={locale} onClick={onNavigate} className="miracle-focus-ring mt-auto flex min-h-11 items-center gap-3 border-t border-[var(--color-border)] px-3 py-3 text-sm text-[var(--color-text-muted)]"><ArrowLeft className="size-[18px]" aria-hidden="true" />{t("shell.allEvents")}</Link>
   </div>;
 }
