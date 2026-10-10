@@ -91,8 +91,64 @@ beforeEach(() => {
   prisma.teamRegistrationRequest.create.mockResolvedValue(requestRow());
 });
 
-// KNOWN QUIRK: the capacity, duplicate-captain and identity checks below run outside the transaction (no
-// Serializable isolation, no roster lock), unlike createCaptainWithTeam. Pinned as-is; a fix is a behavior change.
+describe("createTeamRegistrationRequest transaction", () => {
+  const base = { eventId: "event-paid", captainId: "captain-1", name: "Session United", tag: "ses" };
+
+  // Records whether each read happens while the transaction callback is running.
+  function trackReads() {
+    const state = { open: false, inside: new Set<string>(), outside: new Set<string>() };
+    const record = (name: string) => (state.open ? state.inside : state.outside).add(name);
+    prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) => {
+      state.open = true;
+      try {
+        return await callback(prisma);
+      } finally {
+        state.open = false;
+      }
+    });
+    prisma.event.findUnique.mockImplementation(async () => (record("event"), paidEvent));
+    prisma.team.count.mockImplementation(async () => (record("teamCount"), 0));
+    prisma.team.findFirst.mockImplementation(async () => (record("teamFind"), null));
+    prisma.teamRegistrationRequest.findFirst.mockImplementation(async () => (record("requestFind"), null));
+    return state;
+  }
+
+  it("runs every check and the insert inside one Serializable transaction", async () => {
+    const state = trackReads();
+
+    await createTeamRegistrationRequest(base);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction.mock.calls[0]?.[1]).toMatchObject({ isolationLevel: "Serializable" });
+    expect([...state.outside]).toEqual([]);
+    expect([...state.inside].sort()).toEqual(["event", "requestFind", "teamCount", "teamFind"]);
+  });
+
+  it("retries a write conflict (P2034) and succeeds on the next attempt", async () => {
+    prisma.$transaction
+      .mockRejectedValueOnce(Object.assign(new Error("write conflict"), { code: "P2034" }))
+      .mockImplementation(async (callback: (tx: typeof prisma) => unknown) => callback(prisma));
+
+    await expect(createTeamRegistrationRequest(base)).resolves.toMatchObject({ id: "request-1" });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a locked roster without claiming the event version", async () => {
+    prisma.competitionPhase.count.mockResolvedValue(1);
+
+    await expect(createTeamRegistrationRequest(base)).rejects.toThrow("Roster tim sudah terkunci");
+    expect(prisma.event.updateMany).not.toHaveBeenCalled();
+    expect(prisma.teamRegistrationRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("reports a closed event before a locked roster", async () => {
+    prisma.competitionPhase.count.mockResolvedValue(1);
+    prisma.event.findUnique.mockResolvedValue({ ...paidEvent, status: "Draft" });
+
+    await expect(createTeamRegistrationRequest(base)).rejects.toThrow("Event tidak valid atau sudah tidak membuka pendaftaran.");
+  });
+});
+
 describe("createTeamRegistrationRequest guards", () => {
   const base = { eventId: "event-paid", captainId: "captain-1", name: "Session United", tag: "ses" };
 
@@ -147,9 +203,11 @@ describe("createTeamRegistrationRequest guards", () => {
     await expect(createTeamRegistrationRequest(base)).rejects.toThrow("Slot pendaftaran event ini sudah penuh.");
   });
 
-  it("closes a Single Elimination event after a completed match, before the identity check", async () => {
+  // Defensive branch: the roster-lock read already counts Live/Completed matches, so this check only fires if
+  // the two counts disagree. Pinned so a move keeps both checks.
+  it("keeps the completed-match check for Single Elimination, before the identity check", async () => {
     prisma.event.findUnique.mockResolvedValue({ ...paidEvent, format: "Single Elimination" });
-    prisma.match.count.mockResolvedValue(1);
+    prisma.match.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
     prisma.team.findFirst.mockResolvedValue(null);
     prisma.teamRegistrationRequest.findFirst
       .mockResolvedValueOnce(null)
@@ -332,9 +390,14 @@ describe("setMatchResult (legacy write path)", () => {
     await expect(setMatchResult({ ...input, homeScore: 0, awayScore: 3 })).resolves.toMatchObject({ winnerTeamId: "team-away" });
   });
 
-  // KNOWN QUIRK: `homeScore > awayScore ? home : away` makes the away team the winner of a drawn match.
-  it("allows a draw outside Single Elimination and records the away team as winner", async () => {
-    await expect(setMatchResult({ ...input, homeScore: 1, awayScore: 1 })).resolves.toMatchObject({ winnerTeamId: "team-away" });
+  it("allows a draw outside Single Elimination and records no winner", async () => {
+    const result = await setMatchResult({ ...input, homeScore: 1, awayScore: 1 });
+
+    expect(result).toMatchObject({ homeScore: 1, awayScore: 1, status: "Completed" });
+    expect(result).not.toHaveProperty("winnerTeamId");
+    expect(prisma.match.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: expect.objectContaining({ winnerTeamId: null }), create: expect.objectContaining({ winnerTeamId: null }) }),
+    );
   });
 
   it("rejects a draw in Single Elimination", async () => {

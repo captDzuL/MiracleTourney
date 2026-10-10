@@ -1111,6 +1111,16 @@ export const getMatchesForEvent = cache(
 );
 
 const ROSTER_LOCKED_MESSAGE = "Roster tim sudah terkunci setelah drawing dipublikasikan atau turnamen berjalan.";
+const EMAIL_ALREADY_REGISTERED_MESSAGE = "Email ini sudah terdaftar. Coba login.";
+const TEAM_IDENTITY_TAKEN_MESSAGE = "Tag atau nama tim sudah digunakan di event ini.";
+
+/** Maps a unique-constraint failure (P2002) from a sign-up write to a message the captain can act on. */
+function signUpConflictMessage(error: unknown): string | null {
+  const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined;
+  if (code !== "P2002") return null;
+  const target = JSON.stringify((error as { meta?: { target?: unknown } }).meta?.target ?? "").toLowerCase();
+  return target.includes("email") ? EMAIL_ALREADY_REGISTERED_MESSAGE : TEAM_IDENTITY_TAKEN_MESSAGE;
+}
 
 type RosterLockReader = Pick<Prisma.TransactionClient, "event" | "competitionPhase" | "match">;
 
@@ -1302,7 +1312,8 @@ async function setLegacyMatchResult(prisma: Prisma.TransactionClient, input: { e
     return null;
   }
 
-  const winnerTeamId = input.homeScore > input.awayScore ? homeTeamId : awayTeamId;
+  // A drawn match (only possible outside Single Elimination) has no winner.
+  const winnerTeamId = input.homeScore > input.awayScore ? homeTeamId : input.awayScore > input.homeScore ? awayTeamId : null;
 
   const row = await prisma.match.upsert({
     where: { id: input.matchId },
@@ -1770,18 +1781,21 @@ type CaptainRegistrationDraft = {
   }>;
 };
 
-async function resolveCaptainRegistrationTeam(input: {
-  captainId: string;
-  name?: string;
-  tag?: string;
-  draftTeamId?: string;
-}): Promise<{ name: string; tag: string; draftTeam: CaptainRegistrationDraft | null }> {
+async function resolveCaptainRegistrationTeam(
+  input: {
+    captainId: string;
+    name?: string;
+    tag?: string;
+    draftTeamId?: string;
+  },
+  db: Pick<Prisma.TransactionClient, "team"> = prisma,
+): Promise<{ name: string; tag: string; draftTeam: CaptainRegistrationDraft | null }> {
   let name = input.name?.trim() ?? "";
   let tag = input.tag?.trim().toUpperCase() ?? "";
   let draftTeam: CaptainRegistrationDraft | null = null;
 
   if (input.draftTeamId) {
-    draftTeam = await prisma.team.findFirst({
+    draftTeam = await db.team.findFirst({
       where: { id: input.draftTeamId, captainId: input.captainId, eventId: null, source: "draft" },
       include: { players: { orderBy: { createdAt: "asc" } } },
     });
@@ -1939,62 +1953,68 @@ export async function createTeamRegistrationRequest(input: {
   draftTeamId?: string;
 }): Promise<TeamRegistrationRequest> {
   await expireStaleRegistrationRequests();
-  const event = await prisma.event.findUnique({
-    where: { id: input.eventId },
-    select: {
-      id: true,
-      slug: true,
-      status: true,
-      participantCap: true,
-      format: true,
-      registrationFeeRequired: true,
-      gameModeId: true,
-      registrationOpensAt: true,
-      registrationClosesAt: true,
-    },
-  });
-  if (!event) throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
-  assertNewRegistrationWindowOpen(event);
-  if (!event.registrationFeeRequired) {
-    throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");
-  }
-
-  const { name, tag, draftTeam } = await resolveCaptainRegistrationTeam(input);
-  assertDraftRosterFitsGameMode(draftTeam, event.gameModeId);
-  const [registeredTeams, pendingReviewRequests, existingCaptainTeam, existingCaptainRequest, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
-    prisma.team.count({ where: { eventId: input.eventId } }),
-    prisma.teamRegistrationRequest.count({ where: { eventId: input.eventId, status: "pending_review" } }),
-    prisma.team.findFirst({ where: { eventId: input.eventId, captainId: input.captainId }, select: { id: true } }),
-    prisma.teamRegistrationRequest.findFirst({
-      where: { eventId: input.eventId, captainId: input.captainId, status: { in: ACTIVE_REGISTRATION_REQUEST_STATUSES } },
-      select: { id: true },
-    }),
-    prisma.team.findFirst({
-      where: { eventId: input.eventId, OR: [{ name }, { tag }] },
-      select: { id: true },
-    }),
-    prisma.teamRegistrationRequest.findFirst({
-      where: { eventId: input.eventId, status: { in: RESERVED_REGISTRATION_REQUEST_STATUSES }, OR: [{ teamName: name }, { teamTag: tag }] },
-      select: { id: true },
-    }),
-    event.format === "Single Elimination" ? prisma.match.count({ where: { eventId: input.eventId, status: "Completed" } }) : Promise.resolve(0),
-  ]);
-
-  if (registeredTeams + (pendingReviewRequests ?? 0) >= event.participantCap) {
-    throw new Error("Slot pendaftaran event ini sudah penuh.");
-  }
-  if (existingCaptainTeam || existingCaptainRequest) {
-    throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
-  }
-  if (completedMatches > 0) {
-    throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
-  }
-  if (existingTeamIdentity || existingRequestIdentity) {
-    throw new Error("Tag atau nama tim sudah digunakan di event ini.");
-  }
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    // Capacity, duplicate and identity checks share one Serializable transaction with the insert, so two
+    // captains cannot both pass the checks for the last slot or the same team name.
+    return await runSerializableRegistrationTransaction(async (tx) => {
+      const event = await tx.event.findUnique({
+        where: { id: input.eventId },
+        select: {
+          id: true,
+          slug: true,
+          status: true,
+          participantCap: true,
+          format: true,
+          registrationFeeRequired: true,
+          gameModeId: true,
+          registrationOpensAt: true,
+          registrationClosesAt: true,
+        },
+      });
+      if (!event) throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
+      assertNewRegistrationWindowOpen(event);
+      if (!event.registrationFeeRequired) {
+        throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");
+      }
+      // A pending request does not change the roster, so only read the lock. Claiming competitionVersion here
+      // would make a concurrent drawing publish fail. Approval claims it later, when the team is created.
+      if (await readEventRosterLocked(tx, input.eventId)) throw new Error(ROSTER_LOCKED_MESSAGE);
+
+      const { name, tag, draftTeam } = await resolveCaptainRegistrationTeam(input, tx);
+      assertDraftRosterFitsGameMode(draftTeam, event.gameModeId);
+      const [registeredTeams, pendingReviewRequests, existingCaptainTeam, existingCaptainRequest, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
+        tx.team.count({ where: { eventId: input.eventId } }),
+        tx.teamRegistrationRequest.count({ where: { eventId: input.eventId, status: "pending_review" } }),
+        tx.team.findFirst({ where: { eventId: input.eventId, captainId: input.captainId }, select: { id: true } }),
+        tx.teamRegistrationRequest.findFirst({
+          where: { eventId: input.eventId, captainId: input.captainId, status: { in: ACTIVE_REGISTRATION_REQUEST_STATUSES } },
+          select: { id: true },
+        }),
+        tx.team.findFirst({
+          where: { eventId: input.eventId, OR: [{ name }, { tag }] },
+          select: { id: true },
+        }),
+        tx.teamRegistrationRequest.findFirst({
+          where: { eventId: input.eventId, status: { in: RESERVED_REGISTRATION_REQUEST_STATUSES }, OR: [{ teamName: name }, { teamTag: tag }] },
+          select: { id: true },
+        }),
+        event.format === "Single Elimination" ? tx.match.count({ where: { eventId: input.eventId, status: "Completed" } }) : Promise.resolve(0),
+      ]);
+
+      if (registeredTeams + (pendingReviewRequests ?? 0) >= event.participantCap) {
+        throw new Error("Slot pendaftaran event ini sudah penuh.");
+      }
+      if (existingCaptainTeam || existingCaptainRequest) {
+        throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
+      }
+      if (completedMatches > 0) {
+        throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
+      }
+      if (existingTeamIdentity || existingRequestIdentity) {
+        throw new Error("Tag atau nama tim sudah digunakan di event ini.");
+      }
+
       let pendingTeamId: string | undefined;
       if (draftTeam) {
         const pendingTeam = await tx.team.create({
@@ -3857,7 +3877,7 @@ export async function updateEventStream(eventId: string, url: string, label: str
 
 /**
  * Atomically creates a captain User and their first Team in a Prisma transaction.
- * Used by the self sign-up flow; teamTag is uppercased and used as the logoText.
+ * Used by the self sign-up flow; teamTag is uppercased and its first two letters are used as the logoText.
  */
 /** Creates a captain User without requiring an active event or team registration. */
 export async function createCaptainAccount(input: {
@@ -3865,15 +3885,21 @@ export async function createCaptainAccount(input: {
   name: string;
   passwordHash: string;
 }): Promise<{ userId: string }> {
-  const user = await prisma.user.create({
-    data: {
-      email: input.email,
-      name: input.name,
-      role: "captain",
-      passwordHash: input.passwordHash,
-    },
-  });
-  return { userId: user.id };
+  try {
+    const user = await prisma.user.create({
+      data: {
+        email: input.email,
+        name: input.name,
+        role: "captain",
+        passwordHash: input.passwordHash,
+      },
+    });
+    return { userId: user.id };
+  } catch (error) {
+    // The only unique column on User that this write can hit is the email.
+    if (signUpConflictMessage(error)) throw new Error(EMAIL_ALREADY_REGISTERED_MESSAGE);
+    throw error;
+  }
 }
 
 export async function createCaptainWithTeam(input: {
@@ -3885,6 +3911,18 @@ export async function createCaptainWithTeam(input: {
   teamTag: string;
 }): Promise<{ userId: string; teamId: string }> {
   const tag = input.teamTag.toUpperCase();
+  try {
+    return await createCaptainWithTeamTransaction(input, tag);
+  } catch (error) {
+    const conflict = signUpConflictMessage(error);
+    throw conflict ? new Error(conflict) : error;
+  }
+}
+
+async function createCaptainWithTeamTransaction(
+  input: { email: string; name: string; passwordHash: string; eventId: string; teamName: string },
+  tag: string,
+): Promise<{ userId: string; teamId: string }> {
   return runSerializableRegistrationTransaction(async (tx) => {
     await assertEventRosterMutable(tx, input.eventId);
     const event = await tx.event.findUnique({
@@ -3939,7 +3977,7 @@ export async function createCaptainWithTeam(input: {
         captainId: user.id,
         name: input.teamName,
         tag,
-        logoText: tag,
+        logoText: tag.slice(0, 2),
         source: "registration",
       },
     });
@@ -3961,7 +3999,18 @@ export async function createCaptainWithPendingPayment(input: {
   teamTag: string;
 }): Promise<{ userId: string; requestId: string }> {
   const tag = input.teamTag.toUpperCase();
+  try {
+    return await createCaptainWithPendingPaymentTransaction(input, tag);
+  } catch (error) {
+    const conflict = signUpConflictMessage(error);
+    throw conflict ? new Error(conflict) : error;
+  }
+}
 
+async function createCaptainWithPendingPaymentTransaction(
+  input: { email: string; name: string; passwordHash: string; eventId: string; teamName: string },
+  tag: string,
+): Promise<{ userId: string; requestId: string }> {
   return runSerializableRegistrationTransaction(async (tx) => {
     const event = await tx.event.findUnique({
       where: { id: input.eventId },
@@ -3981,6 +4030,8 @@ export async function createCaptainWithPendingPayment(input: {
     if (!event.registrationFeeRequired) {
       throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");
     }
+    // Read-only on purpose: a pending request does not change the roster (see createTeamRegistrationRequest).
+    if (await readEventRosterLocked(tx, input.eventId)) throw new Error(ROSTER_LOCKED_MESSAGE);
 
     const [registeredTeams, pendingReviewRequests, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
       tx.team.count({ where: { eventId: input.eventId } }),

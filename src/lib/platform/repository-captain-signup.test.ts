@@ -56,6 +56,10 @@ function mockEvent(row: Record<string, unknown> | null) {
   );
 }
 
+function uniqueViolation(target: unknown) {
+  return Object.assign(new Error("Unique constraint failed"), { code: "P2002", meta: { target } });
+}
+
 function p2034() {
   return Object.assign(new Error("write conflict"), { code: "P2034" });
 }
@@ -76,8 +80,6 @@ beforeEach(() => {
   prisma.teamRegistrationRequest.create.mockResolvedValue({ id: "request-1" });
 });
 
-// KNOWN QUIRK: a duplicate-email P2002 from user.create is rethrown raw by every sign-up write below; only
-// registerTeam and createTeamRegistrationRequest translate it into a friendly message.
 describe("createCaptainAccount", () => {
   it("creates a captain user without opening a transaction or touching an event", async () => {
     await expect(createCaptainAccount({ email: "a@test.com", name: "A", passwordHash: "hash" })).resolves.toEqual({
@@ -90,11 +92,23 @@ describe("createCaptainAccount", () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.event.findUnique).not.toHaveBeenCalled();
   });
+
+  it("turns a duplicate email into a clear message", async () => {
+    prisma.user.create.mockRejectedValueOnce(uniqueViolation(["email"]));
+
+    await expect(createCaptainAccount({ email: "a@test.com", name: "A", passwordHash: "hash" })).rejects.toThrow("Email ini sudah terdaftar. Coba login.");
+  });
+
+  it("rethrows other database errors unchanged", async () => {
+    const failure = Object.assign(new Error("connection lost"), { code: "P1001" });
+    prisma.user.create.mockRejectedValueOnce(failure);
+
+    await expect(createCaptainAccount({ email: "a@test.com", name: "A", passwordHash: "hash" })).rejects.toBe(failure);
+  });
 });
 
 describe("createCaptainWithTeam", () => {
-  // KNOWN QUIRK: logoText is the full tag here, while registerTeam and createTeamRegistrationRequest use tag.slice(0, 2).
-  it("creates the captain and an uppercased registration team inside one Serializable transaction", async () => {
+  it("creates the captain and an uppercased registration team, with the first two tag letters as logo text, inside one Serializable transaction", async () => {
     await expect(createCaptainWithTeam(signUp)).resolves.toEqual({ userId: "user-1", teamId: "team-1" });
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
@@ -112,7 +126,7 @@ describe("createCaptainWithTeam", () => {
         captainId: "user-1",
         name: "Session United",
         tag: "SES",
-        logoText: "SES",
+        logoText: "SE",
         source: "registration",
       },
     });
@@ -218,10 +232,23 @@ describe("createCaptainWithTeam", () => {
   });
 
   it("does not retry other database errors", async () => {
-    prisma.$transaction.mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" }));
+    prisma.$transaction.mockRejectedValue(Object.assign(new Error("connection lost"), { code: "P1001" }));
 
-    await expect(createCaptainWithTeam(signUp)).rejects.toMatchObject({ code: "P2002" });
+    await expect(createCaptainWithTeam(signUp)).rejects.toMatchObject({ code: "P1001" });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns a duplicate email into a clear message, without retrying", async () => {
+    prisma.user.create.mockRejectedValueOnce(uniqueViolation(["email"]));
+
+    await expect(createCaptainWithTeam(signUp)).rejects.toThrow("Email ini sudah terdaftar. Coba login.");
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns a duplicate team name or tag that slipped past the check into a clear message", async () => {
+    prisma.team.create.mockRejectedValueOnce(uniqueViolation(["eventId", "tag"]));
+
+    await expect(createCaptainWithTeam(signUp)).rejects.toThrow("Tag atau nama tim sudah digunakan di event ini.");
   });
 });
 
@@ -249,12 +276,32 @@ describe("createCaptainWithPendingPayment", () => {
     expect(prisma.$transaction.mock.calls[0]?.[1]).toMatchObject({ isolationLevel: "Serializable" });
   });
 
-  // KNOWN QUIRK: paid sign-ups skip assertEventRosterMutable, so they take no competitionVersion claim and no
-  // roster-lock check and can race a drawing publish. Pinned as-is; any fix is a separate behavior change.
-  it("does not claim the roster lock, unlike the free-event flow", async () => {
+  // A pending request does not change the roster, so it only reads the lock. It must not bump competitionVersion,
+  // which would make a concurrent drawing publish fail for no reason.
+  it("rejects a locked roster without claiming the event version", async () => {
+    prisma.competitionPhase.count.mockResolvedValue(1);
+
+    await expect(createCaptainWithPendingPayment(signUp)).rejects.toThrow("Roster tim sudah terkunci");
+    expect(prisma.event.updateMany).not.toHaveBeenCalled();
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it("does not claim the event version on success either", async () => {
     await createCaptainWithPendingPayment(signUp);
 
     expect(prisma.event.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("turns a duplicate email into a clear message", async () => {
+    prisma.user.create.mockRejectedValueOnce(uniqueViolation(["email"]));
+
+    await expect(createCaptainWithPendingPayment(signUp)).rejects.toThrow("Email ini sudah terdaftar. Coba login.");
+  });
+
+  it("turns a duplicate request identity that slipped past the check into a clear message", async () => {
+    prisma.teamRegistrationRequest.create.mockRejectedValueOnce(uniqueViolation(["eventId", "teamTag"]));
+
+    await expect(createCaptainWithPendingPayment(signUp)).rejects.toThrow("Tag atau nama tim sudah digunakan di event ini.");
   });
 
   it("rejects events that do not require payment", async () => {
@@ -298,8 +345,17 @@ describe("createCaptainWithPendingPayment", () => {
     expect(prisma.user.create).not.toHaveBeenCalled();
   });
 
-  it("closes new registrations once a Single Elimination match is completed", async () => {
+  it("treats a completed match as a locked roster", async () => {
     prisma.match.count.mockResolvedValue(1);
+
+    await expect(createCaptainWithPendingPayment(signUp)).rejects.toThrow("Roster tim sudah terkunci");
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  // Defensive branch: the roster-lock read already counts Live/Completed matches, so this check only fires if
+  // the two counts disagree. Pinned so a move keeps both checks.
+  it("keeps the completed-match check for Single Elimination after the roster lock", async () => {
+    prisma.match.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
 
     await expect(createCaptainWithPendingPayment(signUp)).rejects.toThrow('Event "open-cup" sudah memiliki hasil match');
     expect(prisma.user.create).not.toHaveBeenCalled();

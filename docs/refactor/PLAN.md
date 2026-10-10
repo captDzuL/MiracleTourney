@@ -259,12 +259,16 @@ Dua file ini dibuat terpisah supaya `repository.test.ts` (3.037 baris) tidak mak
 - Banyak di antaranya pembaca sederhana yang memakai data demo. Bagian itu berubah di PR 0.6.
 - Karena itu tiap PR Fase 2 menutup celah potongannya sendiri. Tidak ada satu PR besar di depan.
 
-**Lima kebiasaan aneh yang ditemukan di PR 0.3.** Test hanya mencatatnya apa adanya (label `KNOWN QUIRK`). Semuanya kandidat perbaikan terpisah setelah refactor, bukan bagian PR pemindahan.
-1. Pendaftaran berbayar (`createCaptainWithPendingPayment`) tidak mengambil klaim `competitionVersion` dan tidak mengecek roster terkunci. Pendaftaran bisa tabrakan dengan pengumuman drawing. Ini yang paling serius.
-2. `createTeamRegistrationRequest` mengecek kapasitas dan nama kembar di luar transaksi.
-3. `setMatchResult` mencatat tim tandang menang kalau skor seri di format selain Single Elimination.
-4. `createCaptainWithTeam` mengisi `logoText` dengan tag penuh. Jalur lain memakai 2 huruf pertama (`tag.slice(0, 2)`).
-5. Error P2002 dari `user.create` di alur sign up dilempar mentah.
+**Lima kebiasaan aneh dari PR 0.3: sudah diperbaiki.** Perbaikannya terpisah dari pemindahan kode, jadi test di Fase 2 tidak perlu berubah.
+1. Pendaftaran berbayar tidak mengecek roster terkunci. Sekarang `createTeamRegistrationRequest` dan `createCaptainWithPendingPayment` membaca kunci roster di dalam transaksi. Keduanya hanya membaca, tidak menaikkan `competitionVersion`, karena permintaan daftar belum mengubah roster. Penilaian awal terlalu keras: alur aplikasi lewat `registerTeam` dulu, yang sudah mengecek kunci, dan persetujuan juga mengecek ulang. Yang tersisa hanya celah kecil di antara dua langkah itu.
+2. `createTeamRegistrationRequest` sekarang menjalankan semua pengecekan dan penyimpanan dalam satu transaksi Serializable, dengan ulang otomatis saat bentrok (P2034).
+3. `setMatchResult` tidak lagi mencatat pemenang untuk skor seri (`winnerTeamId` kosong). Klasemen dihitung dari skor, jadi tidak terpengaruh.
+4. `createCaptainWithTeam` memakai 2 huruf pertama tag untuk `logoText`, sama seperti jalur lain. Tim lama yang dibuat lewat jalur itu tetap memakai tag penuh.
+5. Email kembar saat daftar memberi pesan "Email ini sudah terdaftar. Coba login." Pesan itu dan pesan roster terkunci masuk daftar pesan aman (`SAFE_ACTION_MESSAGES`), supaya sampai ke pengguna.
+
+**Temuan tambahan:** `createCaptainWithTeam` dan `createCaptainWithPendingPayment` tidak dipanggil dari kode produksi. Hanya test yang memakainya. Putuskan sebelum PR 2.13: hapus, atau pakai.
+
+**Belum diperbaiki, hanya dicatat:** pesan "Tag atau nama tim sudah digunakan di event ini." tidak ada di daftar pesan aman. Pengguna yang kena duplikat nama tim di `captainRegisterTeamAction` melihat pesan umum "Gagal mendaftarkan tim."
 
 **Belum dites di `setMatchResult`:** jalur sukses Single Elimination yang membuat baris pertandingan dari bracket proyeksi. Tutup di PR 2.5 sebelum dipindah.
 
