@@ -36,7 +36,7 @@ Urutannya dari yang paling berisiko.
    - Pengubah bentuk data: `mapEvent` (sekitar 20 tempat), `mapTeam` (13 tempat).
    - Cache dengan tag `teams` dipakai bersama oleh pembaca tim, pertandingan, dan pengaturan babak.
    - Di `actions.ts`: `requireAdminSession` (30 tempat), `requireCaptainSession`, `assertWorkspaceEventAction`, `actionEntityId` (sekitar 50 tempat), `redirectToRequestedLocale`, dan seluruh kode upload gambar.
-5. **Beberapa fungsi tidak masuk ke bidang mana pun di rencana awal.** Contohnya pengaturan game dan mode, profil platform dan organizer, pengaturan pembayaran global, gambar visual event, pengaturan babak, stream, dan daftar event publik. `createCaptainWithTeam` dan `createCaptainWithPendingPayment` menyentuh tiga bidang sekaligus: identitas, tim, dan pendaftaran.
+5. **Beberapa fungsi tidak masuk ke bidang mana pun di rencana awal.** Contohnya pengaturan game dan mode, profil platform dan organizer, pengaturan pembayaran global, gambar visual event, pengaturan babak, stream, dan daftar event publik. Dua fungsi yang menyentuh tiga bidang sekaligus (`createCaptainWithTeam` dan `createCaptainWithPendingPayment`) sudah dihapus karena tidak terpakai (lihat catatan di bawah).
 6. **Test bisa memanggil database asli tanpa ketahuan.**
    - 47 file test me-mock `@/lib/platform/repository`.
    - Kalau sebuah file pindah ke alamat impor baru, tetapi mock-nya masih di alamat lama, mock tidak lagi menahan panggilan. Test lalu memanggil Prisma sungguhan.
@@ -153,7 +153,7 @@ Tiap PR melakukan empat hal:
 | 2.10 | stats | konteks form, pembaca, leaderboard | S |
 | 2.11 | stats | `upsertStatSubmission`, setuju atau tolak, `adminWriteMatchPlayerStats` | B |
 | 2.12 | certificate | semua fungsi sertifikat | R |
-| 2.13 | identity | user, password, `createCaptain*` (mengimpor dari teams dan registration) | S |
+| 2.13 | identity | user, password, `createCaptainAccount` | S |
 | 2.14 | sapuan | Hapus file perantara. Ganti impor dan `vi.mock` di 115 file lewat skrip, dibagi per folder (2 sampai 3 PR). | B |
 
 Risiko: impor melingkar antar modul. Aturannya: modul belakang boleh mengimpor modul depan. Kalau ada lingkaran, pindahkan fungsi bersama ke modul depan atau ke `platform/shared`.
@@ -248,7 +248,7 @@ Fase 3:
 ## Catatan dari pengerjaan
 
 **PR 0.3 selesai.** Dua file test baru: `repository-captain-signup.test.ts` dan `repository-registration-edges.test.ts`. Isinya:
-- `createCaptainAccount`, `createCaptainWithTeam`, `createCaptainWithPendingPayment`.
+- `createCaptainAccount`, `createCaptainWithTeam`, `createCaptainWithPendingPayment` (dua yang terakhir sudah dihapus, lihat bawah).
 - Jalur draft dan semua pengecekan di `createTeamRegistrationRequest`.
 - Jalur simpan hasil pertandingan versi lama di `setMatchResult`, termasuk cabang Single Elimination tanpa baris pertandingan.
 
@@ -260,13 +260,13 @@ Dua file ini dibuat terpisah supaya `repository.test.ts` (3.037 baris) tidak mak
 - Karena itu tiap PR Fase 2 menutup celah potongannya sendiri. Tidak ada satu PR besar di depan.
 
 **Lima kebiasaan aneh dari PR 0.3: sudah diperbaiki.** Perbaikannya terpisah dari pemindahan kode, jadi test di Fase 2 tidak perlu berubah.
-1. Pendaftaran berbayar tidak mengecek roster terkunci. Sekarang `createTeamRegistrationRequest` dan `createCaptainWithPendingPayment` membaca kunci roster di dalam transaksi. Keduanya hanya membaca, tidak menaikkan `competitionVersion`, karena permintaan daftar belum mengubah roster. Penilaian awal terlalu keras: alur aplikasi lewat `registerTeam` dulu, yang sudah mengecek kunci, dan persetujuan juga mengecek ulang. Yang tersisa hanya celah kecil di antara dua langkah itu.
+1. Pendaftaran berbayar tidak mengecek roster terkunci. Sekarang `createTeamRegistrationRequest` membaca kunci roster di dalam transaksi. Keduanya hanya membaca, tidak menaikkan `competitionVersion`, karena permintaan daftar belum mengubah roster. Penilaian awal terlalu keras: alur aplikasi lewat `registerTeam` dulu, yang sudah mengecek kunci, dan persetujuan juga mengecek ulang. Yang tersisa hanya celah kecil di antara dua langkah itu.
 2. `createTeamRegistrationRequest` sekarang menjalankan semua pengecekan dan penyimpanan dalam satu transaksi Serializable, dengan ulang otomatis saat bentrok (P2034).
 3. `setMatchResult` tidak lagi mencatat pemenang untuk skor seri (`winnerTeamId` kosong). Klasemen dihitung dari skor, jadi tidak terpengaruh.
-4. `createCaptainWithTeam` memakai 2 huruf pertama tag untuk `logoText`, sama seperti jalur lain. Tim lama yang dibuat lewat jalur itu tetap memakai tag penuh.
+4. `createCaptainWithTeam` memakai 2 huruf pertama tag untuk `logoText`, sama seperti jalur lain. Fungsi ini lalu dihapus (lihat bawah).
 5. Email kembar saat daftar memberi pesan "Email ini sudah terdaftar. Coba login." Pesan itu dan pesan roster terkunci masuk daftar pesan aman (`SAFE_ACTION_MESSAGES`), supaya sampai ke pengguna.
 
-**Temuan tambahan:** `createCaptainWithTeam` dan `createCaptainWithPendingPayment` tidak dipanggil dari kode produksi. Hanya test yang memakainya. Putuskan sebelum PR 2.13: hapus, atau pakai.
+**Dua fungsi dihapus:** `createCaptainWithTeam` dan `createCaptainWithPendingPayment` tidak dipanggil dari kode produksi sejak commit `37626cd` (30 Agustus), saat form daftar berubah jadi hanya membuat akun. Alurnya sekarang dua langkah: buat akun, lalu isi form tim di halaman daftar event. Kedua fungsi bisa dipulihkan dari git (commit `37626cd^`). Perbaikan nomor 1, 4, dan 5 di atas hanya berefek di `createTeamRegistrationRequest` dan `createCaptainAccount`.
 
 **Belum diperbaiki, hanya dicatat:** pesan "Tag atau nama tim sudah digunakan di event ini." tidak ada di daftar pesan aman. Pengguna yang kena duplikat nama tim di `captainRegisterTeamAction` melihat pesan umum "Gagal mendaftarkan tim."
 

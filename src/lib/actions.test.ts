@@ -12,8 +12,6 @@ const {
   autoTransitionEventToOngoing,
   blobPut,
   createCaptainAccount,
-  createCaptainWithPendingPayment,
-  createCaptainWithTeam,
   createOrUpdateCaptainDraftTeam,
   createEvent,
   createEventVisualAsset,
@@ -79,8 +77,6 @@ const {
   autoTransitionEventToOngoing: vi.fn(),
   blobPut: vi.fn(),
   createCaptainAccount: vi.fn(),
-  createCaptainWithPendingPayment: vi.fn(),
-  createCaptainWithTeam: vi.fn(),
   createOrUpdateCaptainDraftTeam: vi.fn(),
   createEvent: vi.fn(),
   createEventVisualAsset: vi.fn(),
@@ -168,8 +164,6 @@ vi.mock("@/lib/platform/repository", () => ({
   assertUserCanReviewStatSubmission,
   autoTransitionEventToOngoing,
   createCaptainAccount,
-  createCaptainWithPendingPayment,
-  createCaptainWithTeam,
   createOrUpdateCaptainDraftTeam,
   createEvent,
   createEventVisualAsset,
@@ -441,8 +435,6 @@ describe("captainSignUpAction", () => {
     getPublishedEvents.mockResolvedValue([{ id: "event-abc", registrationFeeRequired: false }]);
     getEventsByIds.mockResolvedValue([{ id: "event-abc", status: "Published" }]);
     createCaptainAccount.mockResolvedValue({ userId: "captain-new" });
-    createCaptainWithTeam.mockResolvedValue({ id: "captain-new" });
-    createCaptainWithPendingPayment.mockResolvedValue({ userId: "captain-new", requestId: "request-new" });
     signIn.mockResolvedValue({ ok: true, user: { role: "captain" } });
   });
 
@@ -453,8 +445,8 @@ describe("captainSignUpAction", () => {
     expect(createCaptainAccount).toHaveBeenCalledWith(
       expect.objectContaining({ email: "budi@test.com", name: "Budi Santoso", passwordHash: expect.any(String) }),
     );
-    expect(createCaptainWithTeam).not.toHaveBeenCalled();
-    expect(createCaptainWithPendingPayment).not.toHaveBeenCalled();
+    expect(registerTeam).not.toHaveBeenCalled();
+    expect(createTeamRegistrationRequest).not.toHaveBeenCalled();
   });
 
   it("hashes password before creating account", async () => {
@@ -539,8 +531,8 @@ describe("captainSignUpAction", () => {
     expect(createCaptainAccount).toHaveBeenCalledWith(
       expect.objectContaining({ email: "budi@test.com", name: "Budi Santoso" }),
     );
-    expect(createCaptainWithPendingPayment).not.toHaveBeenCalled();
-    expect(createCaptainWithTeam).not.toHaveBeenCalled();
+    expect(createTeamRegistrationRequest).not.toHaveBeenCalled();
+    expect(registerTeam).not.toHaveBeenCalled();
   });
 });
 
