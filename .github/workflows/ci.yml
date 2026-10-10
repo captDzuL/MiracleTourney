@@ -48,6 +48,31 @@ jobs:
       - name: Unit tests
         run: pnpm test:unit
 
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Next.js build
+        # Compile check only: placeholder values keep the build away from any real database, and no browser tests run here.
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci_build_unused
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/ci_build_unused
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: |
+          JWT_SECRET="$(openssl rand -base64 32)"
+          echo "::add-mask::$JWT_SECRET"
+          JWT_SECRET="$JWT_SECRET" pnpm build
+
   schema-drift:
     name: Schema drift
     runs-on: ubuntu-latest

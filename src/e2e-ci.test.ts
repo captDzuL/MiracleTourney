@@ -46,13 +46,13 @@ describe("CI E2E release sequence", () => {
     }
   });
 
-  it("runs lint, unit and schema-drift jobs and never touches a shared database", async () => {
+  it("runs lint, unit, build and schema-drift jobs and never touches a shared database", async () => {
     const workflow = await readWorkflow();
     const jobsSection = workflow.slice(workflow.search(/^jobs:\r?$/m));
     const jobIds = [...jobsSection.matchAll(/^  ([a-z][\w-]*):\r?$/gm)].map((match) => match[1]);
 
     // E2E is run on demand with the repository scripts; CI must not reset or seed a shared database.
-    expect(jobIds).toEqual(["lint-and-typecheck", "unit-tests", "schema-drift"]);
+    expect(jobIds).toEqual(["lint-and-typecheck", "unit-tests", "build", "schema-drift"]);
     expect(workflow).not.toMatch(/NEON_|secrets\.|E2E_DATABASE_RESET_ALLOWED|test:e2e|playwright/i);
   });
 
