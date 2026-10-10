@@ -4,7 +4,7 @@ export type OperationsText = (key: string, values?: Record<string, string | numb
 export const surface = "min-w-0 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5";
 export const control = "miracle-focus-ring min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm";
 export const link = "miracle-focus-ring inline-flex min-h-11 items-center justify-center rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-brand-cyan)]";
-export const terminal = (match: WorkspaceMatch) => ["Live", "Completed", "Bye"].includes(match.status) || ["live", "completed"].includes(match.scheduleStatus) || match.resultVersion > 0;
+export const terminal = (match: WorkspaceMatch) => ["Live", "Completed", "Bye", "Voided"].includes(match.status) || ["live", "completed"].includes(match.scheduleStatus) || match.resultVersion > 0;
 export const activeCompetition = (state: CompetitionWorkspaceState) => ["Registration Closed", "Ongoing"].includes(state.event.status ?? "");
 export const teamName = (state: CompetitionWorkspaceState, id: string, t: OperationsText) => state.teams.find(team => team.id === id)?.name ?? t("tbd");
 export const actionLabel = (title: string, t: OperationsText) => t(title==="Standings require a tiebreak decision"?"tiebreakDecision":title==="Team readiness deadline missed"||title==="Missing readiness"?"readinessDeadline":title==="Review delayed match schedule"?"reviewDelay":"reviewAction");
@@ -17,6 +17,7 @@ export function matchLabel(state: CompetitionWorkspaceState, match: WorkspaceMat
 }
 export function matchStatus(match: WorkspaceMatch) {
   if (match.status === "Bye") return "bye";
+  if (match.status === "Voided") return "voided";
   if (match.resultVersion > 0) return "completed";
   if (match.status === "Live") return "live";
   return ["live", "completed", "delayed", "postponed", "confirmed", "locked", "estimated"].includes(match.scheduleStatus) ? match.scheduleStatus : "pending";

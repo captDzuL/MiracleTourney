@@ -14,7 +14,7 @@ type ResultCommand = Extract<ParsedCommand, { kind: "result_submit" | "result_co
 // Preview collections carry explicit identity/order fields (matchId, rank,
 // gameNumber). Canonicalize their content, including nested collections and
 // object keys, so database/presentation order cannot invalidate a review.
-function canonicalPreview(value: unknown): unknown {
+export function canonicalPreview(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalPreview).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, nested]) => [key, canonicalPreview(nested)]));
   return value;
@@ -53,24 +53,28 @@ function projectedMatches(graph: CompetitionGraph, matches: Match[], matchId: st
   return { next, projection };
 }
 
-async function resultSchedule(tx: Prisma.TransactionClient, eventId: string, graph: CompetitionGraph, matches: Match[], changedMatchId: string) {
+export async function resultSchedule(tx: Prisma.TransactionClient, eventId: string, graph: CompetitionGraph, matches: Match[], changedMatchIds: string[]) {
   const revisions = await tx.scheduleRevision.findMany({ where: { eventId } });
   const revision = revisions.sort((a, b) => b.version - a.version)[0];
   if (!revision) return null;
   const stored = revision.snapshot as unknown as StoredSchedule;
   // Older Task 4 snapshots lack the planner input. Keep them immutable and
   // expose a review conflict instead of inventing scheduling constraints.
-  if (!stored.input) return { draft: { ...stored.draft, feasible: false, conflicts: [{ code: "MISSING_SCHEDULE_INPUT", matchIds: [changedMatchId], message: "Save a new schedule draft with scheduling constraints." }] }, baseMatches: matchSnapshot(matches) };
+  if (!stored.input) return { draft: { ...stored.draft, feasible: false, conflicts: [{ code: "MISSING_SCHEDULE_INPUT", matchIds: changedMatchIds, message: "Save a new schedule draft with scheduling constraints." }] }, baseMatches: matchSnapshot(matches) };
   const playable = matches.filter(m => graph.matches.some(g => g.id === m.id && g.status === "pending"));
-  const assignments = new Map(stored.draft.assignments.map(a => [a.matchId, a]));
+  // Cancelled (disqualified) fixtures are no longer playable graph matches; the
+  // planner rejects assignments, locks and overrides that still point at them.
+  const isPlayable = (id: string) => playable.some(m => m.id === id);
+  const assignments = new Map(stored.draft.assignments.filter(a => isPlayable(a.matchId)).map(a => [a.matchId, a]));
   for (const m of playable.filter(isTerminal)) if (m.scheduledAt && m.scheduledEndsAt && m.scheduleRoom) assignments.set(m.id, { matchId: m.id, roomId: m.scheduleRoom, start: m.scheduledAt.toISOString(), end: (m.status === "Live" || m.scheduleStatus === "live" ? stored.delayEstimates?.[m.id] : undefined) ?? m.scheduledEndsAt.toISOString() });
-  const draft = recalculateSchedule({ ...stored.input, graph,
+  const input = { ...stored.input, lockedMatchIds: stored.input.lockedMatchIds?.filter(isPlayable), manualOverrides: stored.input.manualOverrides?.filter(a => isPlayable(a.matchId)) };
+  const draft = recalculateSchedule({ ...input, graph,
     existingAssignments: [...assignments.values()],
-    lockedMatchIds: [...new Set([...stored.input.lockedMatchIds ?? [], ...playable.filter(m => m.scheduleStatus === "locked").map(m => m.id)])],
+    lockedMatchIds: [...new Set([...input.lockedMatchIds ?? [], ...playable.filter(m => m.scheduleStatus === "locked").map(m => m.id)])],
     matchStates: Object.fromEntries(playable.map(m => [m.id, isTerminal(m) ? m.status === "Live" || m.scheduleStatus === "live" ? "live" : "completed" : "scheduled"])),
-    changedMatchIds: [changedMatchId],
+    changedMatchIds,
   });
-  return { draft, input: stored.input, baseMatches: matchSnapshot(matches), ...(stored.delayEstimates ? { delayEstimates: stored.delayEstimates } : {}) };
+  return { draft, input, baseMatches: matchSnapshot(matches), ...(stored.delayEstimates ? { delayEstimates: stored.delayEstimates } : {}) };
 }
 
 /** Called under the service's authorized repeatable-read or write transaction. */
@@ -83,13 +87,48 @@ export async function correctionPreview(tx: Prisma.TransactionClient, eventId: s
   const affectedMatchIds = dependentMatchIds(graph, matchId);
   const blockedMatchIds = matches.filter(m => affectedMatchIds.includes(m.id) && isTerminal(m)).map(m => m.id).sort();
   const { next, projection } = projectedMatches(graph, matches, matchId, score);
-  const schedule = await resultSchedule(tx, eventId, graph, next, matchId);
+  const schedule = await resultSchedule(tx, eventId, graph, next, [matchId]);
   const impact = { eventId, matchId, competitionVersion: version, resultVersion: match.resultVersion, score,
     affectedMatchIds, blockedMatchIds,
     participants: next.filter(m => affectedMatchIds.includes(m.id)).map(m => ({ matchId: m.id, homeTeamId: m.homeTeamId, awayTeamId: m.awayTeamId })).sort((a, b) => a.matchId.localeCompare(b.matchId)),
     standings: projection.standings, placements: projection.placements, schedule: schedule?.draft ?? null,
   };
   return { ...impact, token: createHash("sha256").update(JSON.stringify(canonicalPreview(impact))).digest("hex") };
+}
+
+/**
+ * Re-derive standings and playoff slots from the stored rows and write the
+ * result back: refill unresolved participants (resetting their readiness) and
+ * persist the projection on every phase. Shared by result and disqualification
+ * writers so both resolve qualification the same way.
+ */
+export async function syncProjection(tx: Prisma.TransactionClient, eventId: string, graph: CompetitionGraph, version: number, now: Date) {
+  const matches = await tx.match.findMany({ where: { eventId } });
+  const projection = competitionProjection(graph, matches);
+  for (const node of graph.matches) {
+    const row = matches.find(m => m.id === node.id)!;
+    const homeTeamId = projection.resolve(node.home), awayTeamId = projection.resolve(node.away);
+    if (!isTerminal(row) && (row.homeTeamId !== homeTeamId || row.awayTeamId !== awayTeamId)) {
+      await tx.match.update({ where: { id: row.id }, data: { homeTeamId, awayTeamId } });
+      // Participant changes invalidate previously collected readiness, including
+      // teams removed by a correction. Old readiness must never start new slots.
+      await tx.matchReadiness.updateMany({ where: { eventId, matchId: row.id }, data: { status: "pending", readyAt: null, checkedInAt: null } });
+      row.homeTeamId = homeTeamId; row.awayTeamId = awayTeamId;
+      await reconcileReadinessActions(tx, eventId, row, now);
+    }
+  }
+  for (const phase of await tx.competitionPhase.findMany({ where: { eventId } })) {
+    await tx.competitionPhase.update({ where: { id: phase.id }, data: { configuration: json({ ...phase.configuration as object, projection: { version, standings: projection.standings.filter(t => t.phaseId === phase.id), placements: projection.placements } }) } });
+  }
+  return { matches, projection };
+}
+
+export async function syncStandingsActions(tx: Prisma.TransactionClient, eventId: string, projection: ReturnType<typeof competitionProjection>, now: Date) {
+  for (const table of projection.standings) {
+    const conditionKey = `standings-tie:${table.groupId ?? table.phaseId}`;
+    if (table.complete && table.rows.some(r => r.tied)) await tx.competitionActionItem.upsert({ where: { eventId_conditionKey: { eventId, conditionKey } }, create: { eventId, conditionKey, priority: "critical", title: "Standings require a tiebreak decision", detail: "Unresolved ranks cannot qualify automatically", resolvedAt: null }, update: { resolvedAt: null } });
+    else await tx.competitionActionItem.updateMany({ where: { eventId, conditionKey, resolvedAt: null }, data: { resolvedAt: now } });
+  }
 }
 
 /** Internal command handler: the caller owns authorization, CAS, audit and commit. */
@@ -126,30 +165,10 @@ export async function applyResult(tx: Prisma.TransactionClient, eventId: string,
       awayScore: game.awayScore,
     })),
   });
-  const matches = await tx.match.findMany({ where: { eventId } });
-  const projection = competitionProjection(graph, matches);
-  for (const node of graph.matches) {
-    const row = matches.find(m => m.id === node.id)!;
-    const homeTeamId = projection.resolve(node.home), awayTeamId = projection.resolve(node.away);
-    if (!isTerminal(row) && (row.homeTeamId !== homeTeamId || row.awayTeamId !== awayTeamId)) {
-      await tx.match.update({ where: { id: row.id }, data: { homeTeamId, awayTeamId } });
-      // Participant changes invalidate previously collected readiness, including
-      // teams removed by a correction. Old readiness must never start new slots.
-      await tx.matchReadiness.updateMany({ where: { eventId, matchId: row.id }, data: { status: "pending", readyAt: null, checkedInAt: null } });
-      row.homeTeamId = homeTeamId; row.awayTeamId = awayTeamId;
-      await reconcileReadinessActions(tx, eventId, row, now);
-    }
-  }
-  for (const phase of await tx.competitionPhase.findMany({ where: { eventId } })) {
-    await tx.competitionPhase.update({ where: { id: phase.id }, data: { configuration: json({ ...phase.configuration as object, projection: { version, standings: projection.standings.filter(t => t.phaseId === phase.id), placements: projection.placements } }) } });
-  }
-  const schedule = await resultSchedule(tx, eventId, graph, matches, match.id);
+  const { matches, projection } = await syncProjection(tx, eventId, graph, version, now);
+  const schedule = await resultSchedule(tx, eventId, graph, matches, [match.id]);
   if (schedule) await tx.scheduleRevision.create({ data: { eventId, version, status: "draft", snapshot: json(schedule), idempotencyKey, createdById: actorId } });
   await tx.competitionActionItem.updateMany({ where: { eventId, matchId: match.id, conditionKey: { in: [`result:${match.id}`, ...[match.homeTeamId, match.awayTeamId].map(id => `readiness:${match.id}:${id}`)] }, resolvedAt: null }, data: { resolvedAt: now } });
-  for (const table of projection.standings) {
-    const conditionKey = `standings-tie:${table.groupId ?? table.phaseId}`;
-    if (table.complete && table.rows.some(r => r.tied)) await tx.competitionActionItem.upsert({ where: { eventId_conditionKey: { eventId, conditionKey } }, create: { eventId, conditionKey, priority: "critical", title: "Standings require a tiebreak decision", detail: "Unresolved ranks cannot qualify automatically", resolvedAt: null }, update: { resolvedAt: null } });
-    else await tx.competitionActionItem.updateMany({ where: { eventId, conditionKey, resolvedAt: null }, data: { resolvedAt: now } });
-  }
+  await syncStandingsActions(tx, eventId, projection, now);
   return revision.id;
 }

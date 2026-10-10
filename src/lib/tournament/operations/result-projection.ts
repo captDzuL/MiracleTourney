@@ -2,7 +2,12 @@ import type { Match } from "@prisma/client";
 import type { CompetitionGraph, ParticipantSource, StandingsRules } from "../competition/types";
 
 export type Standing = { teamId: string; played: number; wins: number; draws: number; losses: number; points: number; scoreFor: number; scoreAgainst: number; scoreDifference: number; rank: number; tied: boolean };
-export type StandingsTable = { groupId: string | null; phaseId: string; complete: boolean; rows: Standing[] };
+/** `disqualified` lists teams removed from this table; they have no rank. */
+export type StandingsTable = { groupId: string | null; phaseId: string; complete: boolean; rows: Standing[]; disqualified?: string[] };
+
+export function disqualifiedTeamIds(graph: CompetitionGraph): Set<string> {
+  return new Set((graph.disqualifications ?? []).map(entry => entry.teamId));
+}
 
 function rankTeams(teamIds: string[], results: Match[], rules: StandingsRules): Standing[] {
   const rows = teamIds.map(teamId => ({ teamId, played: 0, wins: 0, draws: 0, losses: 0, points: 0, scoreFor: 0, scoreAgainst: 0, scoreDifference: 0, rank: 0, tied: false }));
@@ -49,14 +54,21 @@ function rankTeams(teamIds: string[], results: Match[], rules: StandingsRules): 
 
 export function competitionProjection(graph: CompetitionGraph, matches: Match[]) {
   const standings: StandingsTable[] = [];
+  const dq = disqualifiedTeamIds(graph);
+  const involvesDq = (m: CompetitionGraph["matches"][number]) => [m.home, m.away].some(s => s.kind === "team" && dq.has(s.teamId));
   for (const phase of graph.phases.filter(p => p.standingsRules)) {
     const groups = graph.groups.filter(g => g.phaseId === phase.id);
     for (const groupId of groups.length ? groups.map(g => g.id) : [null]) {
-      const fixtures = graph.matches.filter(m => m.phaseId === phase.id && m.groupId === groupId);
+      const allFixtures = graph.matches.filter(m => m.phaseId === phase.id && m.groupId === groupId);
+      // A disqualified team's matches are void: neither the recorded results
+      // nor the unplayed fixtures count toward the table or its completeness.
+      const fixtures = allFixtures.filter(m => !involvesDq(m));
       const ids = new Set(fixtures.map(m => m.id));
-      const results = matches.filter(m => ids.has(m.id) && m.resultVersion > 0);
-      const teams = groupId ? graph.groups.find(g => g.id === groupId)!.teams.map(t => t.id) : [...new Set(fixtures.flatMap(m => [m.home, m.away].flatMap(s => s.kind === "team" ? [s.teamId] : [])))];
-      standings.push({ phaseId: phase.id, groupId, complete: results.length === fixtures.length, rows: rankTeams(teams, results, phase.standingsRules!) });
+      const results = matches.filter(m => ids.has(m.id) && m.resultVersion > 0 && !dq.has(m.homeTeamId) && !dq.has(m.awayTeamId));
+      const allTeams = groupId ? graph.groups.find(g => g.id === groupId)!.teams.map(t => t.id) : [...new Set(allFixtures.flatMap(m => [m.home, m.away].flatMap(s => s.kind === "team" ? [s.teamId] : [])))];
+      const teams = allTeams.filter(id => !dq.has(id));
+      const disqualified = allTeams.filter(id => dq.has(id));
+      standings.push({ phaseId: phase.id, groupId, complete: results.length === fixtures.length, rows: rankTeams(teams, results, phase.standingsRules!), ...(disqualified.length ? { disqualified } : {}) });
     }
   }
   const resolve = (source: ParticipantSource): string => {

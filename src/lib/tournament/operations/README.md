@@ -38,6 +38,21 @@ Supported commands:
   A readiness override never bypasses schedule publication.
 - `incident_report`, `incident_resolve`, `action_resolve`: scoped incident/action
   management; resolutions require reasons.
+- `team_disqualify`: removes one team from a published competition with an
+  audited reason. Every match against the team is void: unplayed fixtures are
+  cancelled (`Match.status = "Voided"`, graph status `empty`) and results already
+  recorded stay in the rows as history but stop counting. There is no walkover and
+  no points go to opponents, so standings are computed from the remaining teams
+  only. The bracket size and qualifying ranks stay fixed; playoff slots filled
+  from the standings are re-derived. The team is recorded in
+  `graph.disqualifications` (with reason, actor, time and voided match IDs), which
+  every standings reader already consumes. A preview (`previewTeamDisqualification`)
+  returns the impact and a token that the command must echo, exactly like result
+  corrections. Live matches of the team, playoff matches it already played, and
+  slots it still holds through an earlier result are blockers that need a manual
+  decision. A group left with fewer teams than qualifying ranks raises a critical
+  `group-slot:<groupId>` action; empty slots are never guessed. Disqualification
+  is not reversible from the app.
 - `announcement_save`, `announcement_publish`, `announcement_unpublish`: saved
   announcements start as drafts and require explicit publication.
 - `result_submit`: submits `matchId` and consecutive `games` containing

@@ -62,6 +62,20 @@ export type CompetitionGroup = {
   qualificationCutline: number;
 };
 
+/**
+ * A disqualified team leaves the standings: every match against it is void (no
+ * walkover, no points to opponents). Recorded results stay in the match rows as
+ * history; projections ignore them. `voidedMatchIds` are the unplayed fixtures
+ * that were cancelled (their graph status is "empty" while the DQ is active).
+ */
+export type TeamDisqualification = {
+  teamId: string;
+  reason: string;
+  actorUserId: string;
+  disqualifiedAt: string;
+  voidedMatchIds: string[];
+};
+
 export type CompetitionGraph = {
   eventId: string;
   config: TournamentFormatConfig;
@@ -71,6 +85,7 @@ export type CompetitionGraph = {
   dependencies: MatchDependency[];
   qualificationDependencies: QualificationDependency[];
   placements: { rank: number; source: ParticipantSource }[];
+  disqualifications?: TeamDisqualification[];
 };
 
 export type GenerateCompetitionGraphInput = {

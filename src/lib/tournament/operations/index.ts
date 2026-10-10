@@ -1,10 +1,11 @@
 import { isDeepStrictEqual } from "node:util";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { ScheduleDraft } from "../scheduling";
-import { correctionPreviewSchema, internalCorrectionPreviewSchema, internalOperationRequestSchema, operationRequestSchema } from "./schema";
+import { correctionPreviewSchema, disqualificationPreviewSchema, internalCorrectionPreviewSchema, internalOperationRequestSchema, operationRequestSchema } from "./schema";
 import type { ParsedCommand } from "./schema";
 import { applyCommand } from "./commands";
 import { correctionPreview, type ResultGame } from "./results";
+import { disqualificationPreview } from "./disqualification";
 import { CompetitionExpectedError } from "./errors";
 import {
   classifyCompetitionFailure,
@@ -163,5 +164,15 @@ export function createCompetitionOperations(
       return correctionPreview(tx, request.eventId, request.matchId, request.games, event.competitionVersion);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
-  return { execute, readPublishedSchedule, readScheduleDraft, previewResultCorrection };
+  async function previewTeamDisqualification(input: { eventId: string; teamId: string; actor: OperationInput["actor"] }) {
+    const { actor } = input;
+    const request = disqualificationPreviewSchema.parse({ eventId: input.eventId, teamId: input.teamId });
+    if (!actor?.id || !["organizer", "platform_admin", "admin"].includes(actor.role)) throw new CompetitionExpectedError("unauthorized", "Not authorized");
+    return db.$transaction(async tx => {
+      const event = await tx.event.findUnique({ where: { id: request.eventId } });
+      if (!event || actor.role === "organizer" && event.organizerUserId !== actor.id) throw new CompetitionExpectedError("unauthorized", "Not authorized");
+      return disqualificationPreview(tx, request.eventId, request.teamId, event.competitionVersion);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+  return { execute, readPublishedSchedule, readScheduleDraft, previewResultCorrection, previewTeamDisqualification };
 }
