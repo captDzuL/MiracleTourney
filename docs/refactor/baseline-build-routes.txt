@@ -1,0 +1,120 @@
+Route (app)                                                    Size  First Load JS
+┌ ƒ /                                                         196 B         103 kB
+├ ○ /_not-found                                               196 B         103 kB
+├ ● /[locale]                                               3.19 kB         135 kB
+├   ├ /id
+├   └ /en
+├ ● /[locale]/admin                                         4.15 kB         127 kB
+├   ├ /id/admin
+├   └ /en/admin
+├ ƒ /[locale]/admin/events/[eventId]/edit                     218 B         194 kB
+├ ƒ /[locale]/admin/events/[eventId]/overview                 210 B         194 kB
+├ ● /[locale]/admin/events/new                                123 B         106 kB
+├   ├ /id/admin/events/new
+├   └ /en/admin/events/new
+├ ● /[locale]/admin/platform-profile                          196 B         103 kB
+├   ├ /id/admin/platform-profile
+├   └ /en/admin/platform-profile
+├ ● /[locale]/bracket-design-preview                          190 B         120 kB
+├   ├ /id/bracket-design-preview
+├   └ /en/bracket-design-preview
+├ ● /[locale]/captain                                       2.83 kB         126 kB
+├   ├ /id/captain
+├   └ /en/captain
+├ ● /[locale]/captain/settings                              2.26 kB         120 kB
+├   ├ /id/captain/settings
+├   └ /en/captain/settings
+├ ● /[locale]/captain/stats                                   490 B         115 kB
+├   ├ /id/captain/stats
+├   └ /en/captain/stats
+├ ƒ /[locale]/certificates/verify/[verificationCode]          196 B         103 kB
+├ ● /[locale]/events                                        1.56 kB         133 kB
+├   ├ /id/events
+├   └ /en/events
+├ ƒ /[locale]/events/[slug]                                   137 B         137 kB
+├ ƒ /[locale]/events/[slug]/bracket                           319 B         129 kB
+├ ƒ /[locale]/events/[slug]/leaderboards                      133 B         127 kB
+├ ƒ /[locale]/events/[slug]/participants                    2.41 kB         126 kB
+├ ƒ /[locale]/events/[slug]/register                          134 B         132 kB
+├ ƒ /[locale]/events/[slug]/schedule                        1.57 kB         120 kB
+├ ƒ /[locale]/events/[slug]/standings                         303 B         124 kB
+├ ● /[locale]/forgot-password                                 423 B         106 kB
+├   ├ /id/forgot-password
+├   └ /en/forgot-password
+├ ● /[locale]/forgot-password/reset                           423 B         106 kB
+├   ├ /id/forgot-password/reset
+├   └ /en/forgot-password/reset
+├ ● /[locale]/login                                         2.42 kB         120 kB
+├   ├ /id/login
+├   └ /en/login
+├ ● /[locale]/organizer                                     4.35 kB         122 kB
+├   ├ /id/organizer
+├   └ /en/organizer
+├ ● /[locale]/organizer/change-password                       196 B         103 kB
+├   ├ /id/organizer/change-password
+├   └ /en/organizer/change-password
+├ ƒ /[locale]/organizer/events/[eventId]/announcements      3.12 kB         118 kB
+├ ƒ /[locale]/organizer/events/[eventId]/certificates       7.86 kB         131 kB
+├ ƒ /[locale]/organizer/events/[eventId]/competition          516 B         176 kB
+├ ƒ /[locale]/organizer/events/[eventId]/completion         8.42 kB         126 kB
+├ ƒ /[locale]/organizer/events/[eventId]/edit                 218 B         194 kB
+├ ƒ /[locale]/organizer/events/[eventId]/legacy-match-day   4.15 kB         127 kB
+├ ƒ /[locale]/organizer/events/[eventId]/match-control        176 B         161 kB
+├ ƒ /[locale]/organizer/events/[eventId]/matches/[matchId]  6.43 kB         167 kB
+├ ƒ /[locale]/organizer/events/[eventId]/overview             210 B         194 kB
+├ ƒ /[locale]/organizer/events/[eventId]/participants         132 B         131 kB
+├ ƒ /[locale]/organizer/events/[eventId]/registration         133 B         131 kB
+├ ƒ /[locale]/organizer/events/[eventId]/schedule             176 B         161 kB
+├ ƒ /[locale]/organizer/events/[eventId]/settings            4.4 kB         122 kB
+├ ● /[locale]/organizer/events/new                            123 B         106 kB
+├   ├ /id/organizer/events/new
+├   └ /en/organizer/events/new
+├ ● /[locale]/organizer/profile                               196 B         103 kB
+├   ├ /id/organizer/profile
+├   └ /en/organizer/profile
+├ ƒ /[locale]/preview/events/[token]                          137 B         137 kB
+├ ● /[locale]/register                                      4.31 kB         122 kB
+├   ├ /id/register
+├   └ /en/register
+├ ƒ /admin                                                  4.15 kB         127 kB
+├ ƒ /api/admin/captain-credentials                            196 B         103 kB
+├ ƒ /api/debug-locale                                         196 B         103 kB
+├ ƒ /api/events/[slug]/bracket.png                            196 B         103 kB
+├ ƒ /api/events/[slug]/ongoing                                196 B         103 kB
+├ ƒ /api/health/env                                           196 B         103 kB
+├ ƒ /api/me                                                   196 B         103 kB
+├ ƒ /api/organizer/events/[eventId]/bracket-appearance        196 B         103 kB
+├ ƒ /api/organizer/events/[eventId]/bracket.png               196 B         103 kB
+├ ƒ /api/organizer/events/[eventId]/competition               196 B         103 kB
+├ ƒ /captain                                                2.83 kB         126 kB
+├ ƒ /captain/settings                                       2.26 kB         120 kB
+├ ƒ /captain/stats                                            490 B         115 kB
+├ ƒ /events                                                 1.56 kB         133 kB
+├ ƒ /events/[slug]                                          1.38 kB         125 kB
+├ ƒ /events/[slug]/bracket                                    319 B         129 kB
+├ ƒ /events/[slug]/leaderboards                               135 B         127 kB
+├ ƒ /events/[slug]/participants                             2.41 kB         126 kB
+├ ƒ /events/[slug]/register                                   134 B         132 kB
+├ ƒ /events/[slug]/schedule                                 1.57 kB         120 kB
+├ ƒ /events/[slug]/standings                                  303 B         124 kB
+├ ƒ /login                                                  2.42 kB         120 kB
+├ ƒ /organizer                                                 2 kB         120 kB
+├ ƒ /register                                               4.31 kB         122 kB
+├ ○ /robots.txt                                               196 B         103 kB
+└ ○ /sitemap.xml                                              196 B         103 kB
++ First Load JS shared by all                                102 kB
+  ├ chunks/4847-9c5cb862f9bdc5e9.js                         46.2 kB
+  ├ chunks/b67649a2-d92ce3df6f059732.js                     54.2 kB
+  └ other shared chunks (total)                             2.02 kB
+
+
+ƒ Middleware                                                51.4 kB
+
+○  (Static)   prerendered as static content
+●  (SSG)      prerendered as static HTML (uses generateStaticParams)
+ƒ  (Dynamic)  server-rendered on demand
+
+
+real	1m16.066s
+user	0m0.091s
+sys	0m0.031s
