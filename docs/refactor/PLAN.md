@@ -1,150 +1,271 @@
-# Plan Refactor Tech Debt Miracle (revisi, berbasis audit kode)
+# Rencana Refactor Miracle
 
-## Context
+## Tujuan
 
-Plan awal (Fase 0–3, 49 PR) memecah `src/lib/platform/repository.ts` dan `src/lib/actions.ts` menjadi modul per domain tanpa mengubah perilaku. Arah besarnya benar: facade dulu, test ikut pindah, satu slice per PR. Tapi audit kode menemukan beberapa asumsi yang sudah usang atau belum dihitung. Dokumen ini berisi daftar concern (jawaban untuk "any concern?") dan plan yang sudah dikoreksi. Setelah disetujui, langkah pertama adalah menyimpannya ke repo sebagai `docs/refactor/PLAN.md` dengan checklist.
+Dua file kode terlalu besar:
+- `src/lib/platform/repository.ts`: 4.460 baris, 118 fungsi.
+- `src/lib/actions.ts`: 1.993 baris, 53 action.
 
-Keputusan user: (1) struktur konsolidasi ke `src/lib/<domain>`, bukan `src/modules`; (2) branch lama `origin/fix/modular-build-and-test-stability` hanya jadi referensi; (3) fallback `demoStore` diputuskan dan dihapus dulu sebelum repository dipecah.
+Rencana ini memecahnya jadi modul per bidang. Modul artinya kelompok kode untuk satu bidang, misalnya event, tim, atau sertifikat. Cara kerja aplikasi tidak boleh berubah. Satu pengecualian disengaja: PR 0.6 (lihat bawah).
 
-## Concern (urut dari yang paling berisiko)
+Rencana awal punya 49 PR. Setelah kode diperiksa, angkanya jadi 37 PR. Beberapa angka di rencana awal sudah usang, dan beberapa hal belum dihitung.
 
-1. **Angka di plan usang.** `repository.ts` 4.460 baris (plan: 3.001), 118 fungsi + 143 export (plan: 91). `actions.ts` 1.993 baris, 53 action (plan: 1.726 / 44). `repository.test.ts` 3.037 baris, `actions.test.ts` 2.638 baris (plan: 1.399 / 1.736). Importer repository: 115 file (64 non-test), bukan 22. Estimasi beban per PR harus dihitung ulang.
-2. **Paste plan terpotong.** Fase 1 (1.3–1.6) dan Fase 2 (2.1–2.18) tidak ada di teks yang dikirim, jadi tidak bisa direview. Fase 2 di bawah saya susun ulang dari hasil audit.
-3. **"Tanpa mengubah perilaku" bertabrakan dengan keputusan demoStore.** Fallback demo adalah try/catch di 22 titik (events, teams, players, matches, bracket, satu di certificates), bukan mode. Registration, imports, stats, identity tidak memakainya. Menghapusnya mengubah perilaku produksi (saat DB error, halaman publik tidak lagi menampilkan data demo). Karena itu dipisah jadi PR sendiri di Fase 0 dan harus mendarat sebelum ekstraksi.
-4. **Helper lintas domain belum punya rumah.** Perlu lapisan shared dulu sebelum domain mana pun dipindah:
-   - `assertUserCanManageEvent` (~20 call site), `assertUserCanManageTeam`, `assertUserCanReviewStatSubmission`. Ini kode otorisasi.
-   - `runSerializableRegistrationTransaction` (11 site), `assertEventRosterMutable`, `assertNewRegistrationWindowOpen`, `expireStaleRegistrationRequests`.
-   - Mapper (`mapEvent` ~20 site, `mapTeam` 13) dan konstanta include.
-   - Tag cache `teams` dipakai bersama oleh reader team, match, dan round-config.
-   - Di `actions.ts`: `requireAdminSession` (30 pakai), `requireCaptainSession`, `assertWorkspaceEventAction`, `actionEntityId` (~50), `redirectToRequestedLocale`, dan seluruh pipeline upload gambar dipakai lintas domain.
-5. **Domain di plan tidak mencakup semuanya.** Yang belum punya tempat: config game/mode, profil platform dan organizer, payment settings global, visual assets event (AI pipeline), round config + match games, discovery/sitemap feed, stream, serta `createCaptainWithTeam` dan `createCaptainWithPendingPayment` yang menyilang identity, teams, registration.
-6. **Layout ketiga.** `src/lib` sudah punya folder domain (`events`, `registration`, `imports`, `bracket`, `certificate`, `tournament`, `player-stats`) dan `src/lib/actions/*-v3-actions.ts`. Menambah `src/modules` dan `src/shared` membuat tiga layout hidup bersamaan. Sudah diputuskan: pakai `src/lib/<domain>`.
-7. **Mock test akan diam-diam lolos ke Prisma asli.** 47 file me-mock `@/lib/platform/repository` dan `actions.test.ts` memakai daftar named export (~44). Kalau satu consumer pindah import ke path modul baru sementara mock masih di path facade, mock tidak lagi mencegat dan test memanggil Prisma sungguhan. Aturan: consumer tetap impor facade sampai sapuan akhir; sapuan akhir memakai codemod yang mengubah import dan `vi.mock` dalam satu PR per direktori.
-8. **Gate regresi lemah.** `pnpm lint` hanya `tsc --noEmit`; ESLint jalan terpisah di CI dengan `--quiet`. CI tidak menjalankan `next build`, e2e, maupun coverage. Tidak ada konfigurasi coverage sama sekali, jadi "coverage" di baseline 0.1 butuh `@vitest/coverage-v8` dulu. Smoke e2e (3 spec, jalan di `next dev`) tidak menyentuh fungsi repository, jadi bukan pengaman utama. `server-action-bundle.test.ts` hanya mencocokkan string di `./actions.ts` dan akan gagal (ENOENT) atau lolos kosong saat file dipindah.
-9. **ESLint boundaries `warn` tidak terlihat.** CI memakai `eslint --quiet`, jadi warning tersembunyi. Plugin boundaries juga belum terpasang. Pakai `no-restricted-imports` bawaan dengan level `error` dan daftar pengecualian baseline yang menyusut, tanpa dependency baru.
-10. **Safety net memakai mock, bukan DB.** Semua test repository me-mock Prisma. Tiga transaksi Serializable registrasi dan 16 `$transaction` tidak punya verifikasi nyata. CI sudah punya Postgres 18 (job `schema-drift`), jadi test integrasi bisa ditambah di sana.
-11. **Characterization test sudah sebagian ada.** `registerTeam`, `commitRegistrationImportBatch`, `adminWriteMatchPlayerStats` sudah dites cukup dalam. Celah sebenarnya: `upsertStatSubmission` (2 call site), jalur tulis `setMatchResult` (hanya guard), dan `createTeamRegistrationRequest` (sedang). Jadi PR 0.2–0.4 yang berlabel B bisa menyusut jadi satu PR sedang.
-12. **Laju perubahan tinggi.** `repository.ts` berubah 11 kali dan `actions.ts` 7 kali dalam 100 commit terakhir (7 hari), dan `HANDOFF.md` menandai release 1.0 BLOCKED. Refactor berminggu-minggu akan bertabrakan dengan pekerjaan fitur. Mitigasi: PR kecil, merge cepat, rebase harian, dan aturan bahwa setelah satu domain diekstrak, perubahan baru untuk domain itu hanya boleh di modul barunya.
-13. **Fase 3 melanggar aturan sendiri.** Aturan 1 bilang "move + import, tanpa perubahan logic", tapi tiap PR Fase 3 juga mengekstrak `service.ts`. Pisahkan: pindahkan dulu, ekstraksi service jadi fase opsional terpisah.
-14. **Spike 3.0 sebagian sudah terjawab.** Pola "use server" per file sudah terbukti oleh `src/lib/actions/*-v3-actions.ts` (14 file). Spike cukup berupa verifikasi `next build`, bukan PR sendiri. Batasan nyata: file "use server" hanya boleh export async function, jadi 6 wrapper di akhir `actions.ts` (baris 1975–1993) harus dipertahankan atau diganti import langsung, bukan `export ... from`.
-15. **Siklus yang sudah ada.** `actions.ts` ↔ `registration-v3-actions.ts` (diakali dengan dynamic import), dan `uploadImageAsset` diimpor dari `@/lib/actions` oleh 3 file lib plus satu route handler. Ekstraksi pipeline upload di Fase 1 sekaligus memutus siklus ini.
-16. **Hot spot di luar scope.** `admin-workspace.tsx` (2.245), `captain/page.tsx` (1.147), `public-v3-read.ts` (1.319), `certificate/template.ts` (957), ~35 file lib yang memakai Prisma langsung, dan repository kedua (`registration/captain-repository.ts`, `platform/stat-recording-repository.ts`). Dicatat sebagai Fase 4 (backlog), tidak dikerjakan di rangkaian ini.
+## Keputusan yang sudah diambil
 
-## Struktur target
+1. Folder tujuannya `src/lib/<bidang>`, bukan `src/modules`. Folder `src/lib` sudah punya bidang sendiri (`events`, `registration`, `bracket`, `certificate`, dan lainnya). Folder baru akan menambah satu susunan lagi.
+2. Branch lama `origin/fix/modular-build-and-test-stability` hanya dipakai sebagai contoh. Branch itu tertinggal 511 commit dari `main`.
+3. Data demo (`demoStore`) dihapus dulu, sebelum `repository.ts` dipecah.
+
+## Temuan yang mengubah rencana
+
+Urutannya dari yang paling berisiko.
+
+1. **Angka di rencana awal usang.**
+   - `repository.ts`: 4.460 baris (rencana awal: 3.001) dan 118 fungsi (rencana awal: 91).
+   - `actions.ts`: 1.993 baris dan 53 action (rencana awal: 1.726 baris dan 44 action).
+   - `repository.test.ts`: 3.037 baris. `actions.test.ts`: 2.638 baris.
+   - File yang memakai `repository.ts`: 115 (64 bukan file test). Rencana awal menulis 22.
+2. **Sebagian rencana awal terpotong.** Fase 1 (1.3 sampai 1.6) dan Fase 2 (2.1 sampai 2.18) tidak ikut terkirim. Fase 2 di bawah disusun ulang dari hasil pemeriksaan kode.
+3. **Data demo bertentangan dengan janji "tanpa ubah cara kerja".**
+   - `repository.ts` memakai data demo sebagai cadangan di 22 tempat. Kalau database error, halaman menampilkan data demo.
+   - Menghapusnya mengubah hasil di produksi: halaman publik tidak lagi menampilkan data demo.
+   - Jadi penghapusan jadi PR sendiri di Fase 0 (PR 0.5 dan 0.6). PR itu harus selesai dan diamati sebelum kode dipindah.
+4. **Banyak fungsi dipakai lintas bidang, dan belum punya tempat.** Fungsi-fungsi ini harus pindah lebih dulu ke folder bersama.
+   - Pengecekan izin: `assertUserCanManageEvent` (dipakai sekitar 20 tempat), `assertUserCanManageTeam`, `assertUserCanReviewStatSubmission`.
+   - Pembantu transaksi: `runSerializableRegistrationTransaction` (11 tempat), `assertEventRosterMutable`, `assertNewRegistrationWindowOpen`, `expireStaleRegistrationRequests`.
+   - Pengubah bentuk data: `mapEvent` (sekitar 20 tempat), `mapTeam` (13 tempat).
+   - Cache dengan tag `teams` dipakai bersama oleh pembaca tim, pertandingan, dan pengaturan babak.
+   - Di `actions.ts`: `requireAdminSession` (30 tempat), `requireCaptainSession`, `assertWorkspaceEventAction`, `actionEntityId` (sekitar 50 tempat), `redirectToRequestedLocale`, dan seluruh kode upload gambar.
+5. **Beberapa fungsi tidak masuk ke bidang mana pun di rencana awal.** Contohnya pengaturan game dan mode, profil platform dan organizer, pengaturan pembayaran global, gambar visual event, pengaturan babak, stream, dan daftar event publik. `createCaptainWithTeam` dan `createCaptainWithPendingPayment` menyentuh tiga bidang sekaligus: identitas, tim, dan pendaftaran.
+6. **Test bisa memanggil database asli tanpa ketahuan.**
+   - 47 file test me-mock `@/lib/platform/repository`.
+   - Kalau sebuah file pindah ke alamat impor baru, tetapi mock-nya masih di alamat lama, mock tidak lagi menahan panggilan. Test lalu memanggil Prisma sungguhan.
+   - Aturannya: semua file tetap mengimpor lewat file perantara (`export *` di `repository.ts`) sampai satu sapuan di akhir. Sapuan itu mengganti alamat impor dan mock sekaligus, lewat skrip, per folder.
+7. **Pengaman lama lemah.**
+   - `pnpm lint` hanya menjalankan `tsc --noEmit`. ESLint jalan terpisah di CI dengan `--quiet`.
+   - CI tidak menjalankan `next build`, test e2e, ataupun coverage.
+   - Tidak ada pengaturan coverage. Paket `@vitest/coverage-v8` harus dipasang dulu.
+   - Test e2e smoke (3 file) tidak menyentuh fungsi di `repository.ts`, jadi bukan pengaman utama.
+   - `server-action-bundle.test.ts` hanya membaca `./actions.ts`. Kalau file itu pindah, test gagal atau lolos tanpa mengecek apa-apa.
+8. **Aturan ESLint berlevel `warn` tidak kelihatan.** CI memakai `--quiet`. Pakai `no-restricted-imports` bawaan ESLint dengan level `error`, plus daftar pengecualian yang terus mengecil. Tidak perlu paket baru.
+9. **Test repository memakai mock, bukan database.** Tiga transaksi Serializable untuk pendaftaran dan 16 pemakaian `$transaction` tidak pernah dites dengan database asli. CI sudah punya Postgres 18 (job `schema-drift`), jadi test database bisa ditambah di sana.
+10. **Sebagian fungsi sudah dites.** `registerTeam`, `commitRegistrationImportBatch`, dan `adminWriteMatchPlayerStats` sudah dites cukup dalam. Celah yang tersisa lebih kecil dari perkiraan, jadi PR 0.3 cukup satu.
+11. **File ini sering berubah.** `repository.ts` berubah 11 kali dan `actions.ts` 7 kali dalam 100 commit terakhir (7 hari). `HANDOFF.md` juga menandai rilis 1.0 sebagai BLOCKED. Refactor yang lama akan bertabrakan dengan kerja fitur.
+    - Kerjakan lewat PR kecil dan cepat di-merge.
+    - Rebase tiap hari.
+    - Setelah satu bidang dipindah, perubahan baru untuk bidang itu hanya boleh di modul barunya.
+12. **Fase 3 melanggar aturannya sendiri.** Aturan 1 melarang ubah logika, tetapi tiap PR Fase 3 juga memisahkan `service.ts`. Pemisahan itu dipindah ke Fase 4 (opsional).
+13. **Pola `"use server"` per file sudah terbukti.** Ada 14 file `src/lib/actions/*-v3-actions.ts` yang memakainya. Jadi "spike" 3.0 cukup berupa pengecekan `next build`. Satu batasan: file `"use server"` hanya boleh mengekspor fungsi `async`. Enam fungsi pembungkus di akhir `actions.ts` (baris 1975 sampai 1993) harus tetap ada. `export ... from` tidak boleh dipakai.
+14. **Sudah ada saling-impor yang melingkar.** `actions.ts` dan `registration-v3-actions.ts` saling mengimpor (sekarang ditutupi dengan `import()` dinamis). Fungsi `uploadImageAsset` diimpor dari `@/lib/actions` oleh 3 file di `src/lib` dan 1 route. Memindahkan kode upload di Fase 1 sekaligus memutus lingkaran ini.
+15. **Di luar cakupan rencana ini:** `admin-workspace.tsx` (2.245 baris), `captain/page.tsx` (1.147 baris), `public-v3-read.ts` (1.319 baris), `certificate/template.ts` (957 baris), sekitar 35 file di `src/lib` yang memakai Prisma langsung, dan dua file akses data lain (`registration/captain-repository.ts`, `platform/stat-recording-repository.ts`). Semuanya masuk Fase 4.
+
+## Susunan folder tujuan
 
 ```
-src/lib/platform/shared/      # authz, transaksi, mapper, konstanta, cache tag (bukan "use server")
-src/lib/actions/shared/       # guard sesi, redirect, actionEntityId, pipeline upload (bukan "use server")
-src/lib/<domain>/repository.ts   # data access (dari repository.ts)
-src/lib/<domain>/actions.ts      # "use server" (dari actions.ts)
-src/lib/platform/repository.ts   # facade `export *` sampai sapuan akhir, lalu dihapus
+src/lib/platform/shared/         # pengecekan izin, transaksi, pengubah data, konstanta, tag cache (tanpa "use server")
+src/lib/actions/shared/          # pengecekan sesi, redirect, actionEntityId, kode upload (tanpa "use server")
+src/lib/<bidang>/repository.ts   # akses data (asalnya dari repository.ts)
+src/lib/<bidang>/actions.ts      # "use server" (asalnya dari actions.ts)
+src/lib/platform/repository.ts   # file perantara `export *`, dihapus di akhir Fase 2
 ```
-Domain: `platform` (config, profil, payment settings), `events` (+ visual assets, discovery, stream), `teams` (+ players), `bracket` (matches, standings, round config, match games), `registration` (requests, drafts, review, payment), `imports`, `stats` (`player-stats`), `certificate`, `identity` (users, password, captain account). Folder yang sudah ada dipakai ulang; hanya `teams` dan `identity` baru.
 
-Urutan dependensi (hilir boleh impor hulu): shared → platform → events → teams → bracket → registration → imports → stats → certificate → identity. Contoh dependensi nyata: bracket memanggil `getTeamsForEvent`; stats memanggil `getPlayersForTeams`; imports memanggil `isEventBracketLocked`.
+Daftar bidang:
+- `platform`: pengaturan game, profil, pengaturan pembayaran.
+- `events`: event, gambar visual, daftar publik, stream.
+- `teams`: tim dan pemain.
+- `bracket`: pertandingan, klasemen, pengaturan babak, game per pertandingan.
+- `registration`: permintaan daftar, draft, review, pembayaran.
+- `imports`: impor tim.
+- `stats`: statistik pemain (folder `player-stats`).
+- `certificate`: sertifikat.
+- `identity`: user, password, akun captain.
+
+Folder yang sudah ada dipakai lagi. Hanya `teams` dan `identity` yang baru.
+
+Urutan antar bidang: shared, platform, events, teams, bracket, registration, imports, stats, certificate, identity. Bidang di belakang boleh mengimpor bidang di depannya, tidak sebaliknya. Contohnya: `bracket` memanggil `getTeamsForEvent`, `stats` memanggil `getPlayersForTeams`, dan `imports` memanggil `isEventBracketLocked`.
 
 ## Aturan tiap PR
 
-1. Satu slice per PR: pindah kode + ubah import, tanpa ubah logic. Pindah dengan skrip/codemod, bukan tulis ulang.
-2. Lolos `pnpm lint`, `pnpm exec eslint . --quiet`, `pnpm test`, dan `pnpm build` (CI tidak menjalankan build, jadi dijalankan lokal) sebelum push.
-3. Test ikut pindah ke samping modulnya di PR yang sama.
-4. Tidak ada dua PR yang menyentuh file sumber yang sama secara paralel. Merge berurutan, rebase tiap hari.
-5. Eksekusi dengan agen ECC per PR: `ecc:tdd-guide` untuk celah test, `ecc:refactor-cleaner` / `code-simplifier` untuk pemindahan, `ecc:code-reviewer` dan `ecc:typescript-reviewer` setelahnya. `ecc:security-reviewer` wajib untuk PR authz, identity/password, dan upload; `ecc:database-reviewer` untuk PR transaksi Serializable.
-6. Checklist di `docs/refactor/PLAN.md` dicentang di PR yang bersangkutan.
+1. Satu PR memindahkan satu potongan. Isinya pindah kode dan ubah impor. Logika tidak berubah.
+2. Pindahkan kode dengan skrip, bukan ditulis ulang.
+3. Sebelum push, jalankan lima perintah ini sampai lolos:
+   - `pnpm lint`
+   - `pnpm exec eslint . --quiet`
+   - `pnpm test`
+   - `pnpm build`
+   - `pnpm test:e2e:smoke`
+4. Test ikut pindah ke samping modulnya di PR yang sama.
+5. Dua PR tidak boleh mengubah file sumber yang sama bersamaan. Merge satu per satu.
+6. Tiap PR dikerjakan dengan agen ECC:
+   - `ecc:tdd-guide` untuk menutup celah test.
+   - `ecc:refactor-cleaner` atau `code-simplifier` untuk memindahkan kode.
+   - `ecc:code-reviewer` dan `ecc:typescript-reviewer` setelahnya.
+   - `ecc:security-reviewer` wajib untuk PR izin, identitas/password, dan upload.
+   - `ecc:database-reviewer` wajib untuk PR transaksi.
+7. Centang daftar di bawah, di PR yang bersangkutan.
 
-## Fase 0 — Safety net dan keputusan (7 PR)
-
-| PR | Isi | Beban |
-|---|---|---|
-| 0.1 | Baseline: `tsc`, eslint, vitest, `next build` (ukuran bundle, waktu), coverage (tambah `@vitest/coverage-v8`) → `docs/refactor/baseline.md`. Simpan plan ini sebagai `docs/refactor/PLAN.md`. | S |
-| 0.2 | Gate: `server-action-bundle.test.ts` jadi berbasis glob (path-agnostic, gagal jika target tidak ditemukan). Tambah job `next build` di CI atau dokumentasikan sebagai langkah wajib lokal. | S |
-| 0.3 | Characterization: isi celah saja (`upsertStatSubmission`, jalur tulis `setMatchResult`, `createTeamRegistrationRequest` edge). | S |
-| 0.4 | Test integrasi DB asli untuk 3 transaksi Serializable registrasi, jalan di job Postgres CI (dilewati tanpa DB, mengikuti pola `persistence-migration.integration.test.ts`). | B |
-| 0.5 | Keputusan demoStore, bagian 1: inventaris 22 titik + `home-page-content.tsx`, tentukan pengganti (error propagate dengan log konteks lewat `observability/logger`, dan pastikan `error.tsx` ada untuk rute publik terkait). Dokumen keputusan, belum ubah kode. | S |
-| 0.6 | Keputusan demoStore, bagian 2: hapus try/catch fallback, hapus atau pindahkan `demo-store.ts`, perbarui test. Ini satu-satunya PR dengan perubahan perilaku yang disengaja; deploy dan amati sebelum Fase 1. | B |
-| 0.7 | Test tabel-driven: setiap action yang memanggil `revalidatePath/Tag` (43 + 24 panggilan di `actions.ts`) punya asersi. | S |
-| 0.8 | `docs/architecture.md` (layout, arah dependensi, aturan API publik) dan ESLint `no-restricted-imports` level `error` dengan baseline pengecualian. | S |
-
-## Fase 1 — Lapisan shared (5 PR)
+## Fase 0: Pengaman dan keputusan (8 PR)
 
 | PR | Isi | Beban |
 |---|---|---|
-| 1.1 | `platform/shared`: konstanta, include, mapper, tag cache. | S |
-| 1.2 | `platform/shared/authz`: tiga guard `assertUserCan*`. Review keamanan wajib. | S |
-| 1.3 | `platform/shared/tx`: `runSerializableRegistrationTransaction`, guard window/roster, `expireStaleRegistrationRequests`. | S |
-| 1.4 | `actions/shared`: `requireAdminSession`, `requireCaptainSession`, `assertWorkspaceEventAction`, `redirectToRequestedLocale`, `actionEntityId`. Non-"use server". | S |
-| 1.5 | `actions/shared/uploads`: `uploadImageAsset` impl, validasi gambar, `MAX_*`. Wrapper async `uploadImageAsset` tetap di `actions.ts` sampai Fase 3. Memutus siklus dengan `registration-v3-actions`. | S |
+| 0.1 | Ukuran awal: hasil `tsc`, eslint, test, `next build`, ukuran bundle, dan coverage. Tulis di `baseline.md`. Simpan rencana ini. | S |
+| 0.2 | Pengaman: `server-action-bundle.test.ts` membaca semua file `"use server"`, bukan satu file. Tambah job `next build` di CI. | S |
+| 0.3 | Test pengunci: tutup celah test untuk sign up captain, pendaftaran berbayar, dan hasil pertandingan versi lama. | S |
+| 0.4 | Test dengan database asli untuk tiga transaksi Serializable pendaftaran. Jalan di job Postgres CI. Dilewati kalau tidak ada database (ikuti `persistence-migration.integration.test.ts`). | B |
+| 0.5 | Keputusan data demo, bagian 1: catat 22 tempatnya dan `home-page-content.tsx`. Tentukan penggantinya: error diteruskan dan dicatat di log, lalu pastikan rute publik punya `error.tsx`. Hanya dokumen. | S |
+| 0.6 | Keputusan data demo, bagian 2: hapus cadangan data demo, hapus atau pindahkan `demo-store.ts`, perbarui test. Ini satu-satunya PR yang mengubah cara kerja dengan sengaja. Deploy dan amati dulu sebelum Fase 1. | B |
+| 0.7 | Test berbentuk tabel: tiap action yang memanggil `revalidatePath` atau `revalidateTag` (43 dan 24 panggilan di `actions.ts`) punya pengecekan. | S |
+| 0.8 | Tulis `docs/architecture.md` (susunan folder, arah impor, aturan API publik). Pasang `no-restricted-imports` berlevel `error` dengan daftar pengecualian. | S |
 
-`AppError` / `ActionResult` ditunda: tidak dibutuhkan untuk pemindahan.
+Beban: R = ringan, S = sedang, B = berat.
 
-## Fase 2 — Pecah repository.ts (13 PR + sapuan)
+## Fase 1: Folder bersama (5 PR)
 
-Tiap PR: pindahkan fungsi ke `<domain>/repository.ts`, tambah re-export di facade, pindahkan bagian `repository.test.ts` terkait, jalankan test mock facade.
+| PR | Isi | Beban |
+|---|---|---|
+| 1.1 | `platform/shared`: konstanta, include, pengubah data, tag cache. | S |
+| 1.2 | `platform/shared/authz`: tiga pengecekan `assertUserCan*`. Wajib review keamanan. | S |
+| 1.3 | `platform/shared/tx`: `runSerializableRegistrationTransaction`, pengecekan jendela dan roster, `expireStaleRegistrationRequests`. | S |
+| 1.4 | `actions/shared`: `requireAdminSession`, `requireCaptainSession`, `assertWorkspaceEventAction`, `redirectToRequestedLocale`, `actionEntityId`. Tanpa `"use server"`. | S |
+| 1.5 | `actions/shared/uploads`: kode `uploadImageAsset`, cek gambar, dan konstanta `MAX_*`. Fungsi `uploadImageAsset` yang `async` tetap di `actions.ts` sampai Fase 3. Memutus lingkaran impor dengan `registration-v3-actions`. | S |
 
-| PR | Domain | Isi utama | Beban |
+`AppError` dan `ActionResult` ditunda. Pemindahan kode tidak butuh keduanya.
+
+## Fase 2: Pecah repository.ts (14 PR)
+
+Tiap PR melakukan empat hal:
+1. Tutup celah test untuk fungsi di potongan itu (lihat `repository-uncovered-functions.txt`).
+2. Pindahkan fungsi ke `<bidang>/repository.ts`.
+3. Tambah `export *` di file perantara.
+4. Pindahkan bagian `repository.test.ts` yang terkait.
+
+| PR | Bidang | Isi utama | Beban |
 |---|---|---|---|
-| 2.1 | platform | config game/mode, profil platform/organizer, payment settings | R |
-| 2.2 | events | read/write event, discovery, stream, lifecycle | S |
-| 2.3 | events | visual assets, brand/certificate asset update | S |
-| 2.4 | teams | team, player, display captain, logo | S |
-| 2.5 | bracket | matches, lock, standings, preview, `setMatchResult` | S |
-| 2.6 | bracket | round config, match games | S |
-| 2.7 | registration | `registerTeam`, requests, draft, proof | B |
-| 2.8 | registration | review approve/reject, payment review, payment settings manager | S |
-| 2.9 | imports | snapshot, preview batch, history, `commitRegistrationImportBatch` | B |
-| 2.10 | stats | form context, reads, leaderboard | S |
-| 2.11 | stats | `upsertStatSubmission`, approve/reject, `adminWriteMatchPlayerStats` | B |
-| 2.12 | certificate | semua fungsi certificate | R |
-| 2.13 | identity | users, password, `createCaptain*` (impor dari teams dan registration) | S |
-| 2.14 | sapuan | codemod hapus facade, ubah import dan `vi.mock` di 115 file, dibagi per direktori (2–3 PR) | B |
+| 2.1 | platform | pengaturan game dan mode, profil platform dan organizer, pengaturan pembayaran | R |
+| 2.2 | events | baca dan ubah event, daftar publik, stream, siklus status | S |
+| 2.3 | events | gambar visual, gambar merek dan sertifikat | S |
+| 2.4 | teams | tim, pemain, captain tampilan, logo | S |
+| 2.5 | bracket | pertandingan, kunci bracket, klasemen, `setMatchResult` | S |
+| 2.6 | bracket | pengaturan babak, game per pertandingan | S |
+| 2.7 | registration | `registerTeam`, permintaan daftar, draft, bukti bayar | B |
+| 2.8 | registration | setuju atau tolak, review pembayaran, pengaturan pembayaran event | S |
+| 2.9 | imports | snapshot, preview batch, riwayat, `commitRegistrationImportBatch` | B |
+| 2.10 | stats | konteks form, pembaca, leaderboard | S |
+| 2.11 | stats | `upsertStatSubmission`, setuju atau tolak, `adminWriteMatchPlayerStats` | B |
+| 2.12 | certificate | semua fungsi sertifikat | R |
+| 2.13 | identity | user, password, `createCaptain*` (mengimpor dari teams dan registration) | S |
+| 2.14 | sapuan | Hapus file perantara. Ganti impor dan `vi.mock` di 115 file lewat skrip, dibagi per folder (2 sampai 3 PR). | B |
 
-Risiko: siklus antar modul. Aturan: modul hilir impor `index` modul hulu; kalau ada siklus, pindahkan fungsi bersama ke hulu atau `platform/shared`.
+Risiko: impor melingkar antar modul. Aturannya: modul belakang boleh mengimpor modul depan. Kalau ada lingkaran, pindahkan fungsi bersama ke modul depan atau ke `platform/shared`.
 
-## Fase 3 — Pecah actions.ts (10 PR)
+## Fase 3: Pecah actions.ts (10 PR)
 
 | PR | Isi | Beban |
 |---|---|---|
-| 3.0 | Verifikasi `next build` dengan satu action contoh per modul (pola sudah terbukti oleh `*-v3-actions.ts`). | R |
-| 3.1 | identity: sign up, login, change/reset password, deactivate, assign captain | S |
-| 3.2 | events: create/status/archive/stream/public info/accent color/character art | S |
-| 3.3 | events: logo dan visual asset (8 action). Update `EventVisualAssetsPanel`, `EventDraftForm`. | S |
-| 3.4 | registration: register, draft, payment proof, payment settings, approve/reject, 6 wrapper V3 | S |
+| 3.0 | Cek `next build` dengan satu action contoh per modul. Polanya sudah terbukti oleh `*-v3-actions.ts`. | R |
+| 3.1 | identity: sign up, login, ganti dan reset password, nonaktifkan user, tetapkan captain | S |
+| 3.2 | events: buat, status, arsip, stream, info publik, warna aksen, gambar karakter | S |
+| 3.3 | events: logo dan gambar visual (8 action). Ubah `EventVisualAssetsPanel` dan `EventDraftForm`. | S |
+| 3.4 | registration: daftar, draft, bukti bayar, pengaturan bayar, setuju atau tolak, 6 fungsi pembungkus V3 | S |
 | 3.5 | imports: CSV, preview, commit | S |
-| 3.6 | teams: logo, player CRUD, display captain, delete team | S |
-| 3.7 | bracket + stats: match result, round config, match games, submit/approve/reject/save stats. Pemicu certificate tetap lazy. | S |
-| 3.8 | certificate: `adminRegenerateCertificate`. Hapus `lib/actions.ts`, perbarui 24 importer dan 8 `vi.mock("@/lib/actions")`. | S |
-| 3.9 | Pecah `actions.test.ts`; evaluasi: build penuh, e2e, bandingkan bundle dan waktu build dengan baseline 0.1. | S |
+| 3.6 | teams: logo, tambah dan ubah pemain, captain tampilan, hapus tim | S |
+| 3.7 | bracket dan stats: hasil pertandingan, pengaturan babak, game per pertandingan, kirim dan setujui statistik. Pembuatan sertifikat tetap dimuat saat dibutuhkan. | S |
+| 3.8 | certificate: `adminRegenerateCertificate`. Hapus `lib/actions.ts`. Ubah 24 file pengimpor dan 8 `vi.mock("@/lib/actions")`. | S |
+| 3.9 | Pecah `actions.test.ts`. Evaluasi: build penuh, e2e, bandingkan ukuran bundle dan waktu build dengan `baseline.md`. | S |
 
-## Fase 4 — Backlog (di luar scope, putuskan setelah Fase 3)
+## Fase 4: Nanti, di luar rencana ini
 
-Ekstraksi `service.ts` (mulai dari `adminPreviewRegistrationImportAction`, ~44 baris logic di action), interface repository, `admin-workspace.tsx`, `captain/page.tsx`, `public-v3-read.ts`, konsolidasi akses Prisma langsung di ~35 file lib.
+Putuskan setelah Fase 3:
+- Pisahkan logika ke `service.ts`, mulai dari `adminPreviewRegistrationImportAction`.
+- Buat antarmuka repository.
+- Pecah `admin-workspace.tsx`, `captain/page.tsx`, dan `public-v3-read.ts`.
+- Gabungkan pemakaian Prisma langsung di sekitar 35 file `src/lib`.
 
-## Total dan ritme
+## Waktu dan titik evaluasi
 
-~35 PR (Fase 0: 8, Fase 1: 5, Fase 2: ~15, Fase 3: 10). Satu sesi pendek per PR; PR berlabel B satu per sesi. Titik evaluasi: akhir Fase 0 (demo fallback sudah di produksi tanpa insiden), akhir Fase 1 (shared stabil), akhir Fase 2.
+37 PR: Fase 0 ada 8, Fase 1 ada 5, Fase 2 ada 14, Fase 3 ada 10. Satu PR per sesi pendek. PR berat (B) satu per sesi.
 
-## File kritis
+Titik evaluasi:
+- Akhir Fase 0: data demo sudah hilang di produksi tanpa masalah.
+- Akhir Fase 1: folder bersama sudah stabil.
+- Akhir Fase 2: `repository.ts` sudah habis.
 
-- `src/lib/platform/repository.ts`, `src/lib/platform/repository.test.ts`, `src/lib/platform/demo-store.ts`, `src/lib/platform/db.ts`
-- `src/lib/actions.ts`, `src/lib/actions.test.ts`, `src/lib/server-action-bundle.test.ts`, `src/lib/actions/*-v3-actions.ts`
-- `eslint.config.mjs`, `vitest.config.ts`, `.github/workflows/ci.yml`, `package.json`
-- Dipakai ulang: pola "use server" per file di `src/lib/actions/*-v3-actions.ts`; test integrasi bergerbang DB di `tests/competition/persistence-migration.integration.test.ts`; job Postgres 18 di CI; referensi desain (bukan kode) dari `origin/fix/modular-build-and-test-stability` (policy murni, guardrail arsitektur).
+## Cara cek hasil
 
-## Verifikasi
+Tiap PR: lima perintah di "Aturan tiap PR". Jumlah test tidak boleh turun. Ringkasan perubahan (`git diff --stat -M`) harus menunjukkan file yang dipindah, bukan ditulis ulang.
 
-Per PR: `pnpm lint`, `pnpm exec eslint . --quiet`, `pnpm test`, `pnpm build`, dan `pnpm test:e2e:smoke`. Jumlah test unit tidak boleh turun, diff harus berupa pindahan murni (`git diff --stat -M` menunjukkan rename). Per fase: bandingkan ukuran bundle dan waktu build dengan `docs/refactor/baseline.md`. Untuk PR 0.6: setelah deploy, pantau log error DB di halaman publik sebelum lanjut ke Fase 1.
+Tiap akhir fase: bandingkan ukuran bundle dan waktu build dengan `baseline.md`.
 
-## Checklist progres
+Setelah PR 0.6 di-deploy: pantau log error database di halaman publik sebelum lanjut ke Fase 1.
 
-Fase 0: [x] 0.1 [x] 0.2 [x] 0.3 [ ] 0.4 [ ] 0.5 [ ] 0.6 [ ] 0.7 [ ] 0.8
-Fase 1: [ ] 1.1 [ ] 1.2 [ ] 1.3 [ ] 1.4 [ ] 1.5
-Fase 2: [ ] 2.1 [ ] 2.2 [ ] 2.3 [ ] 2.4 [ ] 2.5 [ ] 2.6 [ ] 2.7 [ ] 2.8 [ ] 2.9 [ ] 2.10 [ ] 2.11 [ ] 2.12 [ ] 2.13 [ ] 2.14
-Fase 3: [ ] 3.0 [ ] 3.1 [ ] 3.2 [ ] 3.3 [ ] 3.4 [ ] 3.5 [ ] 3.6 [ ] 3.7 [ ] 3.8 [ ] 3.9
+## Daftar kemajuan
 
-## Catatan eksekusi
+Fase 0:
+- [x] 0.1
+- [x] 0.2
+- [x] 0.3
+- [ ] 0.4
+- [ ] 0.5
+- [ ] 0.6
+- [ ] 0.7
+- [ ] 0.8
 
-- **PR 0.3 (selesai):** dikerjakan sebagai dua file test baru (`repository-captain-signup.test.ts`, `repository-registration-edges.test.ts`) yang mencakup `createCaptainAccount`, `createCaptainWithTeam`, `createCaptainWithPendingPayment`, jalur draft dan guard `createTeamRegistrationRequest`, serta jalur tulis legacy `setMatchResult` (termasuk cabang Single Elimination tanpa baris match). Kedua file dipisah dari `repository.test.ts` (3.037 baris) agar tidak menambah file yang akan dipecah.
-- **Celah sisanya dikerjakan just-in-time.** Coverage `repository.ts` menunjukkan 123 dari 297 fungsi belum dieksekusi (`repository-uncovered-functions.txt`). Sebagian besar adalah pembaca sederhana dengan fallback `demoStore` yang berubah di PR 0.6. Karena itu tiap PR Fase 2 menutup celah slice-nya sendiri sebelum memindahkan, bukan satu PR besar di depan.
-- **Flaky yang diamati:** `tests/performance/organizer-readers.test.ts` ("runs scripts/load-test.mjs ...") pernah timeout 5 detik saat dijalankan dengan coverage; lolos pada run ulang.
-- **Temuan dari karakterisasi PR 0.3 (perilaku yang di-pin apa adanya, diberi label `KNOWN QUIRK` di test):** (1) pendaftaran berbayar (`createCaptainWithPendingPayment`) tidak mengambil klaim `competitionVersion` dan tidak memeriksa roster-lock, sehingga bisa balapan dengan publish drawing; (2) `createCaptainWithTeam` memakai `logoText` = tag penuh, sedangkan jalur lain `tag.slice(0, 2)`; (3) `createTeamRegistrationRequest` menjalankan cek kapasitas dan identitas di luar transaksi; (4) `setMatchResult` mencatat tim tandang sebagai pemenang pada skor seri di format non-Single Elimination; (5) P2002 dari `user.create` di alur sign-up dilempar mentah. Semuanya kandidat perbaikan terpisah setelah refactor, bukan bagian PR pemindahan.
-- **Belum tercakup di `setMatchResult`:** jalur sukses Single Elimination yang membuat baris match dari bracket proyeksi. Tutup di slice bracket (PR 2.5) sebelum dipindah.
+Fase 1:
+- [ ] 1.1
+- [ ] 1.2
+- [ ] 1.3
+- [ ] 1.4
+- [ ] 1.5
+
+Fase 2:
+- [ ] 2.1
+- [ ] 2.2
+- [ ] 2.3
+- [ ] 2.4
+- [ ] 2.5
+- [ ] 2.6
+- [ ] 2.7
+- [ ] 2.8
+- [ ] 2.9
+- [ ] 2.10
+- [ ] 2.11
+- [ ] 2.12
+- [ ] 2.13
+- [ ] 2.14
+
+Fase 3:
+- [ ] 3.0
+- [ ] 3.1
+- [ ] 3.2
+- [ ] 3.3
+- [ ] 3.4
+- [ ] 3.5
+- [ ] 3.6
+- [ ] 3.7
+- [ ] 3.8
+- [ ] 3.9
+
+## Catatan dari pengerjaan
+
+**PR 0.3 selesai.** Dua file test baru: `repository-captain-signup.test.ts` dan `repository-registration-edges.test.ts`. Isinya:
+- `createCaptainAccount`, `createCaptainWithTeam`, `createCaptainWithPendingPayment`.
+- Jalur draft dan semua pengecekan di `createTeamRegistrationRequest`.
+- Jalur simpan hasil pertandingan versi lama di `setMatchResult`, termasuk cabang Single Elimination tanpa baris pertandingan.
+
+Dua file ini dibuat terpisah supaya `repository.test.ts` (3.037 baris) tidak makin panjang.
+
+**Celah test lain dikerjakan tepat sebelum fungsinya dipindah.**
+- Sekarang 123 dari 297 fungsi di `repository.ts` belum dijalankan test mana pun. Daftarnya ada di `repository-uncovered-functions.txt`.
+- Banyak di antaranya pembaca sederhana yang memakai data demo. Bagian itu berubah di PR 0.6.
+- Karena itu tiap PR Fase 2 menutup celah potongannya sendiri. Tidak ada satu PR besar di depan.
+
+**Lima kebiasaan aneh yang ditemukan di PR 0.3.** Test hanya mencatatnya apa adanya (label `KNOWN QUIRK`). Semuanya kandidat perbaikan terpisah setelah refactor, bukan bagian PR pemindahan.
+1. Pendaftaran berbayar (`createCaptainWithPendingPayment`) tidak mengambil klaim `competitionVersion` dan tidak mengecek roster terkunci. Pendaftaran bisa tabrakan dengan pengumuman drawing. Ini yang paling serius.
+2. `createTeamRegistrationRequest` mengecek kapasitas dan nama kembar di luar transaksi.
+3. `setMatchResult` mencatat tim tandang menang kalau skor seri di format selain Single Elimination.
+4. `createCaptainWithTeam` mengisi `logoText` dengan tag penuh. Jalur lain memakai 2 huruf pertama (`tag.slice(0, 2)`).
+5. Error P2002 dari `user.create` di alur sign up dilempar mentah.
+
+**Belum dites di `setMatchResult`:** jalur sukses Single Elimination yang membuat baris pertandingan dari bracket proyeksi. Tutup di PR 2.5 sebelum dipindah.
+
+**Test yang kadang gagal:** `tests/performance/organizer-readers.test.ts` ("runs scripts/load-test.mjs ...") pernah kena batas waktu 5 detik saat jalan bersama coverage. Run ulang lolos.

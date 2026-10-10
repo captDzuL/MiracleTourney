@@ -1,39 +1,43 @@
-# Baseline refactor (PR 0.1)
+# Ukuran awal refactor (PR 0.1)
 
-Diukur sebelum refactor dimulai, pada commit `d7d0541` (2026-10-10). Semua angka bisa direproduksi dengan perintah di bagian bawah. Pakai angka ini sebagai pembanding di akhir tiap fase (lihat `PLAN.md`).
+Angka di bawah diukur sebelum refactor dimulai, di commit `d7d0541` (2026-10-10). Semuanya bisa diulang dengan perintah di bagian "Cara mengulang". Pakai angka ini sebagai pembanding di akhir tiap fase (lihat `PLAN.md`).
 
 ## Lingkungan
 
 | Item | Nilai |
 |---|---|
-| OS | Windows 11 Pro |
+| Sistem operasi | Windows 11 Pro |
 | Node | 24.18.1 |
-| pnpm | 11.18.0 lokal (CI memakai 10) |
-| Next.js | 15.5.25 (terpasang dari lockfile) |
+| pnpm | 11.18.0 di laptop, 10 di CI |
+| Next.js | 15.5.25 (sesuai lockfile) |
 | Vitest | 4.1.11 |
-| Install | `pnpm install --frozen-lockfile`, 16 detik, lockfile tidak berubah |
+| Pasang paket | `pnpm install --frozen-lockfile`, 16 detik, lockfile tidak berubah |
 
-Waktu di bawah adalah satu kali ukur di mesin lokal, hanya untuk perbandingan kasar, bukan target.
+Waktu di bawah diukur sekali di laptop ini. Pakai sebagai gambaran kasar, bukan target.
 
-## Hasil gate
+## Hasil pengecekan
 
-| Langkah | Hasil | Waktu |
+| Perintah | Hasil | Waktu |
 |---|---|---|
 | `pnpm lint` (`tsc --noEmit`) | lolos | 21 detik |
 | `pnpm exec eslint . --quiet` | lolos | 37 detik |
-| `pnpm test:unit` | 263 file lolos + 2 dilewati; 2.904 test lolos + 6 dilewati | 53 detik |
+| `pnpm test:unit` | 263 file lolos, 2 dilewati. 2.904 test lolos, 6 dilewati. | 53 detik |
 | `pnpm build` | lolos | 76 detik |
 
-Peringatan build yang sudah ada (bukan regresi): `jose` memakai `CompressionStream` yang tidak didukung runtime Edge (2 peringatan); peringatan "multiple lockfiles" hanya muncul karena build dijalankan dari git worktree.
+Peringatan build yang sudah ada sebelum refactor:
+- `jose` memakai `CompressionStream`, yang tidak didukung runtime Edge (2 peringatan).
+- Peringatan "multiple lockfiles" muncul karena build jalan dari git worktree.
 
-## Coverage (v8, seluruh `src`, tanpa file test)
+## Coverage
 
-| Metrik | Nilai |
+Coverage adalah persentase kode yang dijalankan oleh test. Diukur dengan v8 untuk seluruh `src`, tanpa file test.
+
+| Ukuran | Nilai |
 |---|---|
-| Statements | 79,81% (12.154 / 15.228) |
-| Branches | 71,75% (11.201 / 15.611) |
-| Functions | 79,07% (2.970 / 3.756) |
-| Lines | 82,68% (9.949 / 12.032) |
+| Statements | 79,81% (12.154 dari 15.228) |
+| Branches | 71,75% (11.201 dari 15.611) |
+| Functions | 79,07% (2.970 dari 3.756) |
+| Lines | 82,68% (9.949 dari 12.032) |
 
 File yang akan dipecah:
 
@@ -43,32 +47,32 @@ File yang akan dipecah:
 | `src/lib/actions.ts` | 77,94% | 74,71% | 82,97% |
 | `src/lib/platform/demo-store.ts` | 69,02% | 51,55% | 68,31% |
 
-`repository.ts` adalah file dengan coverage terendah dari ketiganya, padahal paling besar. Sekitar 43% fungsinya tidak dieksekusi oleh test mana pun. Pemindahan di Fase 2 untuk bagian itu tidak punya jaring pengaman selain `tsc`, jadi prioritaskan PR 0.3 dan 0.4 untuk fungsi yang tidak tercakup sebelum slice yang memuatnya dipindah.
+`repository.ts` paling besar dan coverage-nya paling rendah. Sekitar 43% fungsinya tidak dijalankan test mana pun. Kalau fungsi itu dipindah, hanya `tsc` yang menjaga. Karena itu tiap PR Fase 2 menutup celah test potongannya sebelum memindahkan.
 
 ## Build
 
-Ukuran per rute ada di `baseline-build-routes.txt` (output asli `next build`). Ringkasan:
+Ukuran tiap rute ada di `baseline-build-routes.txt`. Isinya salinan asli dari output `next build`. Ringkasannya:
 
 | Item | Nilai |
 |---|---|
-| First Load JS bersama semua rute | 102 kB |
+| JS yang dimuat pertama kali, dipakai semua rute (First Load JS) | 102 kB |
 | Middleware | 51,4 kB |
 | `.next/static` | 3,0 MB |
 | `.next/server` | 17,8 MB |
-| Jumlah baris tabel rute | 120 |
+| Baris di tabel rute | 120 |
 
-Build memakai nilai placeholder untuk `DATABASE_URL`, `DIRECT_URL`, dan `JWT_SECRET`, sehingga tidak menyentuh database mana pun.
+Build memakai nilai contoh untuk `DATABASE_URL`, `DIRECT_URL`, dan `JWT_SECRET`. Jadi build tidak menyentuh database mana pun.
 
-## Ukuran target refactor
+## Ukuran file yang akan dipecah
 
-| File | Baris | Export |
+| File | Baris | Isi |
 |---|---|---|
 | `src/lib/platform/repository.ts` | 4.460 | 118 fungsi, 143 export |
 | `src/lib/actions.ts` | 1.993 | 53 action |
 | `src/lib/platform/repository.test.ts` | 3.037 | |
 | `src/lib/actions.test.ts` | 2.638 | |
 
-## Cara mereproduksi
+## Cara mengulang
 
 ```bash
 pnpm install --frozen-lockfile
@@ -81,4 +85,4 @@ DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:5432/unused \
 JWT_SECRET="$(openssl rand -base64 32)" pnpm build
 ```
 
-Tabel rute diambil dari bagian `Route (app)` pada output `pnpm build`.
+Tabel rute diambil dari bagian `Route (app)` di output `pnpm build`.

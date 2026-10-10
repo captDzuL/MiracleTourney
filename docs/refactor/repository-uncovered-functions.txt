@@ -1,7 +1,8 @@
-# Named functions in src/lib/platform/repository.ts never executed by a unit test (after PR 0.3).
-# Anonymous callbacks inside cached readers are omitted. Each Phase 2 slice PR should cover its own entries
-# (or note why not) before moving them. Regenerate with the coverage JSON reporter limited to repository.ts.
-# format: <line at commit time> <function>
+# Fungsi bernama di src/lib/platform/repository.ts yang belum dijalankan test mana pun (setelah PR 0.3).
+# Fungsi kecil di dalam pembaca ber-cache tidak ikut dihitung.
+# Tiap PR Fase 2 menutup bagiannya sendiri sebelum memindahkan fungsi, atau mencatat alasannya.
+# Buat ulang daftar ini dengan reporter coverage JSON yang hanya mengukur repository.ts.
+# Format: <nomor baris saat commit> <nama fungsi>
 367 getBracketSlotCount
 378 generateCaptainEmail
 393 generateSyntheticRegistrationEmail
