@@ -47,16 +47,19 @@ export default async function OrganizerCommandCenterPage({ params }: OrganizerCo
   if (locale !== "id" && locale !== "en") notFound();
   if (!isFeatureEnabled("organizer_workspace_v3")) return <LegacyOrganizerPage />;
 
-  const user = await requireAnyRole(["organizer"]);
+  const masterShell = isFeatureEnabled("organizer_master_shell_v3");
+  // Admins share the V3 command center only with the master shell; otherwise they keep the legacy /admin list.
+  const user = await requireAnyRole(masterShell ? ["organizer", "admin", "platform_admin"] : ["organizer"]);
   if (!user) return redirectToActiveLocale("/login");
   if (user.role === "organizer" && user.mustChangePassword) return redirectToActiveLocale("/organizer/change-password");
+  const role = user.role === "admin" || user.role === "platform_admin" ? user.role : "organizer";
 
   const [events, profile] = await Promise.all([getManageableEventsForUser(user), getOrganizerProfileForUser(user)]);
   const teamCounts = await getTeamCountsForEvents(events.map(event => event.id));
-  const activeRevisions = await getActiveEventEditRevisionIds({ eventIds: events.map((event) => event.id), actor: { id: user.id, role: "organizer" } });
-  if (isFeatureEnabled("organizer_master_shell_v3")) {
+  const activeRevisions = await getActiveEventEditRevisionIds({ eventIds: events.map((event) => event.id), actor: { id: user.id, role } });
+  if (masterShell) {
     const t = await getTranslations({ locale, namespace: "organizerMaster" });
-    return <OrganizerCommandCenter events={events} teamCounts={teamCounts} activeRevisions={activeRevisions} organizerName={profile?.organizationName ?? user.name} hasProfile={Boolean(profile)} locale={locale} t={t} />;
+    return <OrganizerCommandCenter events={events} teamCounts={teamCounts} activeRevisions={activeRevisions} organizerName={profile?.organizationName ?? user.name} hasProfile={Boolean(profile)} role={role} locale={locale} t={t} />;
   }
   const drafts = events.filter(event => event.status === "Draft");
   const published = events.filter(event => event.status !== "Draft");

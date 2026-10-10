@@ -46,6 +46,8 @@ describe("OrganizerMasterShell", () => {
     expect(host.querySelector("time")?.textContent).toContain("14 Sept 2026");
     expect(host.querySelector("time")?.getAttribute("dateTime")).toBe(summary.updatedAt);
     expect(host.querySelector('aside a[href$="/registration"]')?.textContent).toContain("3");
+    expect(host.querySelector('aside a[href="/en/organizer"]')).not.toBeNull();
+    expect(host.querySelector('aside a[href="/en/admin"]')).toBeNull();
   });
   it("localizes labels and update time and selects the route after navigation", async () => {
     route.locale = "id"; route.pathname = "/organizer/events/cup/schedule"; await render();

@@ -1616,6 +1616,8 @@
       "profileMissing": "Tambahkan kontak publik sebelum menerbitkan acara.",
       "editProfile": "Edit profil organizer",
       "setupProfile": "Lengkapi profil organizer",
+      "platformProfile": "Kontak platform",
+      "editPlatformProfile": "Edit kontak Miracle",
       "empty": "Belum ada acara. Buat draf privat untuk memulai.",
       "actions": {
         "draft": "Lanjutkan pengaturan",
