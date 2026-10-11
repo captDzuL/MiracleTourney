@@ -1,5 +1,7 @@
 import { createRequire } from "node:module";
 
+import { importBoundaryConfigs } from "./eslint.import-rules.mjs";
+
 // eslint-config-next@15 still loads its legacy Rushstack resolver patch, which
 // is incompatible with ESLint 9 on Node 24. Resolve its bundled plugins from
 // the package boundary and compose their supported flat configs directly.
@@ -52,4 +54,6 @@ export default [
     files: ["**/*.test.js", "**/*.test.jsx", "**/*.test.ts", "**/*.test.tsx", "**/*.spec.js", "**/*.spec.jsx", "**/*.spec.ts", "**/*.spec.tsx"],
     rules: { "react/display-name": "off", "react-hooks/rules-of-hooks": "off" },
   },
+  // Import boundaries: see docs/architecture.md. Known violations are listed in eslint.import-baseline.mjs.
+  ...importBoundaryConfigs(),
 ];

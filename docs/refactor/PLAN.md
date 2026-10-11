@@ -208,7 +208,7 @@ Fase 0:
 - [x] 0.5
 - [x] 0.6
 - [x] 0.7
-- [ ] 0.8
+- [x] 0.8
 
 Fase 1:
 - [ ] 1.1
@@ -265,6 +265,13 @@ Dua file ini dibuat terpisah supaya `repository.test.ts` (3.037 baris) tidak mak
 3. `setMatchResult` tidak lagi mencatat pemenang untuk skor seri (`winnerTeamId` kosong). Klasemen dihitung dari skor, jadi tidak terpengaruh.
 4. `createCaptainWithTeam` memakai 2 huruf pertama tag untuk `logoText`, sama seperti jalur lain. Fungsi ini lalu dihapus (lihat bawah).
 5. Email kembar saat daftar memberi pesan "Email ini sudah terdaftar. Coba login." Pesan itu dan pesan roster terkunci masuk daftar pesan aman (`SAFE_ACTION_MESSAGES`), supaya sampai ke pengguna.
+
+**PR 0.8 selesai. Fase 0 selesai.** Dua hal:
+- `docs/architecture.md`: lapisan dan arah panggilan, susunan folder sekarang dan tujuan, aturan impor, aturan server action, penanganan error, pengaman otomatis, dan cara menambah fitur selama refactor.
+- Aturan impor ESLint (`no-restricted-imports`, level `error`, tanpa paket baru): R1 `demo-store` terlarang di kode produksi, R2 jangan impor `@/lib/actions`, R3 komponen tidak mengimpor nilai dari repository, R4 halaman dan komponen tidak memakai Prisma langsung, R5 `src/lib` tidak mengimpor halaman atau komponen. Definisi di `eslint.import-rules.mjs`, daftar pengecualian di `eslint.import-baseline.mjs` (15 file, hanya boleh mengecil). ESLint hanya menyimpan satu pengaturan `no-restricted-imports` per file, jadi modul itu membuat satu blok konfigurasi per kombinasi aturan, dibaca dari daftar file saat ESLint mulai. Folder seperti `[locale]` di-escape karena dianggap pola glob.
+- `src/eslint-import-rules.test.ts` (15 test) menjaga aturan itu: tiap aturan menandai pelanggaran baru, impor yang diizinkan lolos, pengecualian hanya berlaku untuk aturan yang tertulis, dan daftar pengecualian tidak berisi file yang sudah hilang.
+
+Yang tidak dibekukan: `@/lib/platform/repository` (65 file mengimpornya). Selama Fase 2 kode baru masih membutuhkannya. Pembekuan dipikirkan lagi di PR 2.14. Impor dinamis (`import()`) tidak dijangkau aturan bawaan ESLint.
 
 **PR 0.7 selesai.** Dua lapis test untuk `revalidatePath` dan `revalidateTag`:
 - `src/lib/revalidation-map.test.ts`: tabel 60 fungsi dengan 112 panggilan di 11 file `"use server"`. Tabel dihasilkan dari pemindaian kode (TypeScript compiler), dikunci dengan nama fungsi. Memindahkan action ke file lain tetap lolos. Menghapus, menambah, atau mengubah satu panggilan membuat test gagal. Aturan Fase 3: kalau perubahan itu disengaja, ubah tabelnya di PR yang sama.
