@@ -28,12 +28,16 @@ import {
   hasTempPassword,
 } from "@/lib/platform/repository";
 import { getCaptainPaymentSettings } from "@/lib/registration/captain-repository";
+import { gameModes } from "@/lib/platform/config";
 import type { Certificate } from "@/lib/platform/types";
 import type { Event, Game, GameMode, PaymentSettings, Player, Team, TeamRegistrationRequest } from "@/lib/platform/types";
 import { ShareCertificateButton } from "@/components/ShareCertificateButton";
 import { SubmitButton } from "@/components/submit-button";
 
 type TFn = (key: string, values?: Record<string, string | number>) => string;
+
+// A draft team has no event yet, so it has no game mode; offer every known position (position is optional free text).
+const DRAFT_POSITION_OPTIONS = [...new Set(gameModes.flatMap((mode) => mode.positions))];
 
 const inputClass = "rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100";
 const labelClass = "grid gap-2 text-sm font-medium text-slate-700";
@@ -722,7 +726,7 @@ function TeamSection({
 
 }) {
 
-  const positionOptions = mode?.positions ?? [];
+  const positionOptions = mode?.positions ?? DRAFT_POSITION_OPTIONS;
 
 
 

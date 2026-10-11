@@ -180,6 +180,20 @@ describe("captain dashboard event registration", () => {
     expect(getCaptainPaymentSettings).toHaveBeenCalledWith("event-paid");
   });
 
+  it("offers position choices for a draft team that has no event yet", async () => {
+    getCaptainRegistrationRequests.mockResolvedValue([]);
+    getOpenRegistrationEventsForCaptain.mockResolvedValue([]);
+    getCaptainTeams.mockResolvedValue([
+      { id: "draft-1", name: "Draft FC", tag: "DFC", captainId: "captain-1", eventId: null, source: "draft" },
+    ]);
+
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({ tab: "roster" }) }));
+
+    expect(html).toContain("id=\"add-player-form\"");
+    expect(html).toContain("<option value=\"Jungler\">Jungler</option>");
+    expect(html).toContain("<option value=\"Guard\">Guard</option>");
+  });
+
   it("shows the organizer-missing notice instead of any Miracle QRIS when the event has none", async () => {
     getOpenRegistrationEventsForCaptain.mockResolvedValue([]);
     getCaptainPaymentSettings.mockResolvedValue({ id: "event-payment-event-paid", eventId: "event-paid", source: "event" });
