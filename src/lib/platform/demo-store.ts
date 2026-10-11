@@ -1,3 +1,5 @@
+// TEST FIXTURE ONLY. Production code must not import this file: since PR 0.6 the app no longer falls back to demo
+// data when the database fails (see docs/refactor/demo-fallback-decision.md). Tests use it for bracket and standings logic.
 import {
   gameModes,
   games,

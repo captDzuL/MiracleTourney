@@ -43,7 +43,6 @@ import {
 } from "@/lib/tournament/engine";
 import type { BracketMatch, MatchResultInput, PlayerMatchStatInput } from "@/lib/tournament/types";
 import { Prisma } from "@prisma/client";
-import * as demoStore from "./demo-store";
 import { prisma } from "./db";
 import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
 
@@ -426,17 +425,16 @@ export function getModeForEvent(event: Event) {
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
-/** Returns all publicly-visible events (Published, Registration Closed, Ongoing, Finished). Used by sitemap. */
+/**
+ * Returns all publicly-visible events (Published, Registration Closed, Ongoing, Finished). Used by sitemap.
+ * A database error is passed on: an empty list would give search engines a "successful" sitemap without any event.
+ */
 export async function getAllPublicEvents(): Promise<Array<{ slug: string; updatedAt: Date }>> {
-  try {
-    return await prisma.event.findMany({
-      where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
-      select: { slug: true, updatedAt: true },
-      orderBy: { updatedAt: "desc" },
-    });
-  } catch {
-    return [];
-  }
+  return prisma.event.findMany({
+    where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
+    select: { slug: true, updatedAt: true },
+    orderBy: { updatedAt: "desc" },
+  });
 }
 
 /** Returns all events (all statuses), ordered newest first. For admin use only. */
@@ -448,17 +446,12 @@ export async function getEvents(): Promise<Event[]> {
 /** Returns selected events by ID, preserving database ordering newest first. */
 export async function getEventsByIds(eventIds: string[]): Promise<Event[]> {
   if (!eventIds.length) return [];
-  try {
-    const rows = await prisma.event.findMany({
-      where: { id: { in: eventIds } },
-      include: eventPublicInclude,
-      orderBy: { createdAt: "desc" },
-    });
-    return rows.map(mapEvent);
-  } catch {
-    const eventIdSet = new Set(eventIds);
-    return demoStore.getEvents().filter((event) => eventIdSet.has(event.id));
-  }
+  const rows = await prisma.event.findMany({
+    where: { id: { in: eventIds } },
+    include: eventPublicInclude,
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map(mapEvent);
 }
 
 export async function getManageableEventsForUser(user: AppUser): Promise<Event[]> {
@@ -627,34 +620,23 @@ export async function updateEventPublicInfo(
   eventId: string,
   updates: EventPublicInfoUpdates,
 ): Promise<Event> {
-  try {
-    await assertUserCanManageEvent(user, eventId);
-    const row = await prisma.event.update({
-      where: { id: eventId },
-      data: updates,
-      include: eventPublicInclude,
-    });
-    return mapEvent(row);
-  } catch (error) {
-    if (error instanceof Error && error.message === "Not authorized") throw error;
-    const event = demoStore.updateEventPublicInfo(user, eventId, updates);
-    if (!event) throw new Error("Not authorized");
-    return event;
-  }
+  await assertUserCanManageEvent(user, eventId);
+  const row = await prisma.event.update({
+    where: { id: eventId },
+    data: updates,
+    include: eventPublicInclude,
+  });
+  return mapEvent(row);
 }
 
 /** Returns events with publicly visible statuses: Published, Registration Closed, Ongoing, Finished. */
 export async function getPublicEvents(): Promise<Event[]> {
-  try {
-    const rows = await prisma.event.findMany({
-      where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
-      include: eventPublicInclude,
-      orderBy: { createdAt: "desc" },
-    });
-    return rows.map(mapEvent);
-  } catch {
-    return demoStore.getPublicEvents();
-  }
+  const rows = await prisma.event.findMany({
+    where: { status: { in: [...PUBLIC_EVENT_STATUSES] } },
+    include: eventPublicInclude,
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map(mapEvent);
 }
 
 /**
@@ -735,12 +717,8 @@ export async function getOpenRegistrationEventsForCaptain(captainId: string): Pr
 
 /** Direct DB lookup by slug with no status filter. For admin pages that need to see Draft events. */
 export async function getEventBySlug(slug: string): Promise<Event | null> {
-  try {
-    const row = await prisma.event.findUnique({ where: { slug }, include: eventPublicInclude });
-    return row ? mapEvent(row) : null;
-  } catch {
-    return demoStore.getEventBySlug(slug) ?? null;
-  }
+  const row = await prisma.event.findUnique({ where: { slug }, include: eventPublicInclude });
+  return row ? mapEvent(row) : null;
 }
 
 /**
@@ -750,15 +728,11 @@ export async function getEventBySlug(slug: string): Promise<Event | null> {
 export const getPublicEventBySlug = cache(
   unstable_cache(
     async (slug: string): Promise<Event | null> => {
-      try {
-        const row = await prisma.event.findFirst({
-          where: { slug, status: { in: [...PUBLIC_EVENT_STATUSES] } },
-          include: eventPublicInclude,
-        });
-        return row ? mapEvent(row) : null;
-      } catch {
-        return demoStore.getPublicEventBySlug(slug) ?? null;
-      }
+      const row = await prisma.event.findFirst({
+        where: { slug, status: { in: [...PUBLIC_EVENT_STATUSES] } },
+        include: eventPublicInclude,
+      });
+      return row ? mapEvent(row) : null;
     },
     ["public-event-by-slug"],
     { revalidate: 60, tags: ["events"] },
@@ -835,15 +809,11 @@ function clampFocalCoordinate(value: number): number {
 /** Lists every revision for an event, newest first. Organizer-scoped. */
 export async function listEventVisualAssets(user: AppUser, eventId: string): Promise<EventVisualAsset[]> {
   await assertUserCanManageEvent(user, eventId);
-  try {
-    const rows = await prisma.eventVisualAsset.findMany({
-      where: { eventId },
-      orderBy: { createdAt: "desc" },
-    });
-    return rows.map(mapEventVisualAsset);
-  } catch {
-    return demoStore.listEventVisualAssets(eventId);
-  }
+  const rows = await prisma.eventVisualAsset.findMany({
+    where: { eventId },
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map(mapEventVisualAsset);
 }
 
 export async function createEventVisualAsset(
@@ -950,12 +920,8 @@ export async function countAiVisualAttempts(eventId: string, since: Date): Promi
 export const getTeamsForEvent = cache(
   unstable_cache(
     async (eventId: string): Promise<Team[]> => {
-      try {
-        const rows = await prisma.team.findMany({ where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], include: { captain: { select: { id: true, name: true } } } });
-        return rows.map(mapTeam);
-      } catch {
-        return demoStore.getTeamsForEvent(eventId);
-      }
+      const rows = await prisma.team.findMany({ where: { eventId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], include: { captain: { select: { id: true, name: true } } } });
+      return rows.map(mapTeam);
     },
     ["teams-for-event"],
     { revalidate: 30, tags: ["teams"] },
@@ -967,19 +933,13 @@ export async function getTeamsForEvents(eventIds: string[]): Promise<Map<string,
   const teamsByEvent = new Map(eventIds.map((eventId) => [eventId, [] as Team[]]));
   if (!eventIds.length) return teamsByEvent;
 
-  try {
-    const rows = await prisma.team.findMany({
-      where: { eventId: { in: eventIds } },
-      orderBy: [{ eventId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-      include: { captain: { select: { id: true, name: true } } },
-    });
-    for (const team of rows.map(mapTeam)) {
-      if (team.eventId) teamsByEvent.get(team.eventId)?.push(team);
-    }
-  } catch {
-    for (const eventId of eventIds) {
-      teamsByEvent.set(eventId, demoStore.getTeamsForEvent(eventId));
-    }
+  const rows = await prisma.team.findMany({
+    where: { eventId: { in: eventIds } },
+    orderBy: [{ eventId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    include: { captain: { select: { id: true, name: true } } },
+  });
+  for (const team of rows.map(mapTeam)) {
+    if (team.eventId) teamsByEvent.get(team.eventId)?.push(team);
   }
 
   return teamsByEvent;
@@ -990,19 +950,13 @@ export async function getTeamCountsForEvents(eventIds: string[]): Promise<Map<st
   const counts = new Map(eventIds.map((eventId) => [eventId, 0]));
   if (!eventIds.length) return counts;
 
-  try {
-    const rows = await prisma.team.groupBy({
-      by: ["eventId"],
-      where: { eventId: { in: eventIds } },
-      _count: { _all: true },
-    });
-    for (const row of rows) {
-      if (row.eventId) counts.set(row.eventId, row._count._all);
-    }
-  } catch {
-    for (const eventId of eventIds) {
-      counts.set(eventId, demoStore.getTeamsForEvent(eventId).length);
-    }
+  const rows = await prisma.team.groupBy({
+    by: ["eventId"],
+    where: { eventId: { in: eventIds } },
+    _count: { _all: true },
+  });
+  for (const row of rows) {
+    if (row.eventId) counts.set(row.eventId, row._count._all);
   }
 
   return counts;
@@ -1016,76 +970,50 @@ export async function getCaptainTeams(userId: string | undefined): Promise<Team[
 }
 
 export async function updateTeamLogo(user: AppUser, teamId: string, logoUrl: string): Promise<Team> {
-  try {
-    await assertUserCanManageTeam(user, teamId);
-    const row = await prisma.team.update({
-      where: { id: teamId },
-      data: { logoUrl },
-    });
-    return mapTeam(row);
-  } catch (error) {
-    if (error instanceof Error && error.message === "Not authorized") throw error;
-    const team = demoStore.updateTeamLogo(user, teamId, logoUrl);
-    if (!team) throw new Error("Not authorized");
-    return team;
-  }
+  await assertUserCanManageTeam(user, teamId);
+  const row = await prisma.team.update({
+    where: { id: teamId },
+    data: { logoUrl },
+  });
+  return mapTeam(row);
 }
 
 export async function updateCaptainTeamLogo(captainId: string, teamId: string, logoUrl: string): Promise<Team> {
-  try {
-    const team = await prisma.team.findFirst({
-      where: { id: teamId, captainId },
-      select: { id: true },
-    });
-    if (!team) throw new Error("Not authorized");
+  const team = await prisma.team.findFirst({
+    where: { id: teamId, captainId },
+    select: { id: true },
+  });
+  if (!team) throw new Error("Not authorized");
 
-    const row = await prisma.team.update({
-      where: { id: teamId },
-      data: { logoUrl },
-    });
-    return mapTeam(row);
-  } catch (error) {
-    if (error instanceof Error && error.message === "Not authorized") throw error;
-    const team = demoStore.updateCaptainTeamLogo(captainId, teamId, logoUrl);
-    if (!team) throw new Error("Not authorized");
-    return team;
-  }
+  const row = await prisma.team.update({
+    where: { id: teamId },
+    data: { logoUrl },
+  });
+  return mapTeam(row);
 }
 
 // ── Players ───────────────────────────────────────────────────────────────────
 
 /** Returns all players for a single team, ordered by registration time. */
 export async function getPlayersForTeam(teamId: string): Promise<Player[]> {
-  try {
-    const rows = await prisma.player.findMany({ where: { teamId }, orderBy: { createdAt: "asc" } });
-    return rows.map(mapPlayer);
-  } catch {
-    return demoStore.getPlayersForTeam(teamId);
-  }
+  const rows = await prisma.player.findMany({ where: { teamId }, orderBy: { createdAt: "asc" } });
+  return rows.map(mapPlayer);
 }
 
 /** Batch-fetches players for multiple teams in a single query, ordered by team then jersey number. */
 export async function getPlayersForTeams(teamIds: string[]): Promise<Player[]> {
   if (!teamIds.length) return [];
-  try {
-    const rows = await prisma.player.findMany({
-      where: { teamId: { in: teamIds } },
-      orderBy: [{ teamId: "asc" }, { jerseyNumber: "asc" }],
-    });
-    return rows.map(mapPlayer);
-  } catch {
-    return teamIds.flatMap((teamId) => demoStore.getPlayersForTeam(teamId));
-  }
+  const rows = await prisma.player.findMany({
+    where: { teamId: { in: teamIds } },
+    orderBy: [{ teamId: "asc" }, { jerseyNumber: "asc" }],
+  });
+  return rows.map(mapPlayer);
 }
 
 /** Returns all players across all teams registered in a given event. */
 export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
-  try {
-    const rows = await prisma.player.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
-    return rows.map(mapPlayer);
-  } catch {
-    return demoStore.getPlayersForEvent(eventId);
-  }
+  const rows = await prisma.player.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
+  return rows.map(mapPlayer);
 }
 
 // ── Matches ───────────────────────────────────────────────────────────────────
@@ -1098,12 +1026,8 @@ export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
 export const getMatchesForEvent = cache(
   unstable_cache(
     async (eventId: string): Promise<Match[]> => {
-      try {
-        const rows = await prisma.match.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
-        return rows.map(mapMatch);
-      } catch {
-        return demoStore.getMatchesForEvent(eventId);
-      }
+      const rows = await prisma.match.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
+      return rows.map(mapMatch);
     },
     ["matches-for-event"],
     { revalidate: 30, tags: ["teams"] },
@@ -1111,7 +1035,6 @@ export const getMatchesForEvent = cache(
 );
 
 const ROSTER_LOCKED_MESSAGE = "Roster tim sudah terkunci setelah drawing dipublikasikan atau turnamen berjalan.";
-
 type RosterLockReader = Pick<Prisma.TransactionClient, "event" | "competitionPhase" | "match">;
 
 async function readEventRosterLocked(db: RosterLockReader, eventId: string): Promise<boolean> {
@@ -1302,7 +1225,8 @@ async function setLegacyMatchResult(prisma: Prisma.TransactionClient, input: { e
     return null;
   }
 
-  const winnerTeamId = input.homeScore > input.awayScore ? homeTeamId : awayTeamId;
+  // A drawn match (only possible outside Single Elimination) has no winner.
+  const winnerTeamId = input.homeScore > input.awayScore ? homeTeamId : input.awayScore > input.homeScore ? awayTeamId : null;
 
   const row = await prisma.match.upsert({
     where: { id: input.matchId },
@@ -1325,21 +1249,10 @@ const _getLeaderboardForEvent = unstable_cache(
     if (!game) return [];
 
     const metric = getGamePrimaryStatKey(game.id);
-    let playerIds: string[];
-    try {
-      playerIds = (await prisma.player.findMany({ where: { eventId }, select: { id: true } })).map((p) => p.id);
-    } catch {
-      return demoStore.getLeaderboardForEvent(eventId);
-    }
-
-    let stats;
-    try {
-      stats = await prisma.playerStat.findMany({
-        where: { gameSlug: game.slug, playerId: { in: playerIds } },
-      });
-    } catch {
-      return demoStore.getLeaderboardForEvent(eventId);
-    }
+    const playerIds = (await prisma.player.findMany({ where: { eventId }, select: { id: true } })).map((p) => p.id);
+    const stats = await prisma.playerStat.findMany({
+      where: { gameSlug: game.slug, playerId: { in: playerIds } },
+    });
 
     const statInputs: PlayerMatchStatInput[] = stats.map((s) => ({
       matchId: s.matchId,
@@ -1362,13 +1275,9 @@ const _getLeaderboardForEvent = unstable_cache(
  * Cached (60s, tag "stats"). Primary metric is "goals" for Flashpeak, "points" for others.
  */
 export async function getLeaderboardForEvent(eventId: string, gameId?: string) {
-  try {
-    const resolvedGameId = gameId ?? (await prisma.event.findUnique({ where: { id: eventId }, select: { gameId: true } }))?.gameId;
-    if (!resolvedGameId) return [];
-    return _getLeaderboardForEvent(eventId, resolvedGameId);
-  } catch {
-    return demoStore.getLeaderboardForEvent(eventId);
-  }
+  const resolvedGameId = gameId ?? (await prisma.event.findUnique({ where: { id: eventId }, select: { gameId: true } }))?.gameId;
+  if (!resolvedGameId) return [];
+  return _getLeaderboardForEvent(eventId, resolvedGameId);
 }
 
 /** Computes league standings from completed match results for an event. Ranked by points → score diff → score for. */
@@ -1397,12 +1306,7 @@ export async function getTeamStandings(eventId: string) {
  * For league: returns the round-robin schedule. Used internally and in the admin bracket view.
  */
 export async function getBracketPreview(eventId: string) {
-  let event;
-  try {
-    event = await prisma.event.findUnique({ where: { id: eventId } });
-  } catch {
-    return demoStore.getBracketPreview(eventId);
-  }
+  const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) return [];
 
   const [teams, matches] = await Promise.all([getTeamsForEvent(eventId), getMatchesForEvent(eventId)]);
@@ -1426,12 +1330,7 @@ export async function getBracketPreview(eventId: string) {
  * shows the full projected bracket including TBD placeholders for undecided rounds.
  */
 export async function getPublicVisibleBracketPreview(eventId: string) {
-  let event;
-  try {
-    event = await prisma.event.findUnique({ where: { id: eventId } });
-  } catch {
-    return demoStore.getPublicVisibleBracketPreview(eventId);
-  }
+  const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event || event.format !== "Single Elimination") return getBracketPreview(eventId);
 
   const [teams, matches] = await Promise.all([getTeamsForEvent(eventId), getMatchesForEvent(eventId)]);
@@ -1770,18 +1669,21 @@ type CaptainRegistrationDraft = {
   }>;
 };
 
-async function resolveCaptainRegistrationTeam(input: {
-  captainId: string;
-  name?: string;
-  tag?: string;
-  draftTeamId?: string;
-}): Promise<{ name: string; tag: string; draftTeam: CaptainRegistrationDraft | null }> {
+async function resolveCaptainRegistrationTeam(
+  input: {
+    captainId: string;
+    name?: string;
+    tag?: string;
+    draftTeamId?: string;
+  },
+  db: Pick<Prisma.TransactionClient, "team"> = prisma,
+): Promise<{ name: string; tag: string; draftTeam: CaptainRegistrationDraft | null }> {
   let name = input.name?.trim() ?? "";
   let tag = input.tag?.trim().toUpperCase() ?? "";
   let draftTeam: CaptainRegistrationDraft | null = null;
 
   if (input.draftTeamId) {
-    draftTeam = await prisma.team.findFirst({
+    draftTeam = await db.team.findFirst({
       where: { id: input.draftTeamId, captainId: input.captainId, eventId: null, source: "draft" },
       include: { players: { orderBy: { createdAt: "asc" } } },
     });
@@ -1939,62 +1841,68 @@ export async function createTeamRegistrationRequest(input: {
   draftTeamId?: string;
 }): Promise<TeamRegistrationRequest> {
   await expireStaleRegistrationRequests();
-  const event = await prisma.event.findUnique({
-    where: { id: input.eventId },
-    select: {
-      id: true,
-      slug: true,
-      status: true,
-      participantCap: true,
-      format: true,
-      registrationFeeRequired: true,
-      gameModeId: true,
-      registrationOpensAt: true,
-      registrationClosesAt: true,
-    },
-  });
-  if (!event) throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
-  assertNewRegistrationWindowOpen(event);
-  if (!event.registrationFeeRequired) {
-    throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");
-  }
-
-  const { name, tag, draftTeam } = await resolveCaptainRegistrationTeam(input);
-  assertDraftRosterFitsGameMode(draftTeam, event.gameModeId);
-  const [registeredTeams, pendingReviewRequests, existingCaptainTeam, existingCaptainRequest, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
-    prisma.team.count({ where: { eventId: input.eventId } }),
-    prisma.teamRegistrationRequest.count({ where: { eventId: input.eventId, status: "pending_review" } }),
-    prisma.team.findFirst({ where: { eventId: input.eventId, captainId: input.captainId }, select: { id: true } }),
-    prisma.teamRegistrationRequest.findFirst({
-      where: { eventId: input.eventId, captainId: input.captainId, status: { in: ACTIVE_REGISTRATION_REQUEST_STATUSES } },
-      select: { id: true },
-    }),
-    prisma.team.findFirst({
-      where: { eventId: input.eventId, OR: [{ name }, { tag }] },
-      select: { id: true },
-    }),
-    prisma.teamRegistrationRequest.findFirst({
-      where: { eventId: input.eventId, status: { in: RESERVED_REGISTRATION_REQUEST_STATUSES }, OR: [{ teamName: name }, { teamTag: tag }] },
-      select: { id: true },
-    }),
-    event.format === "Single Elimination" ? prisma.match.count({ where: { eventId: input.eventId, status: "Completed" } }) : Promise.resolve(0),
-  ]);
-
-  if (registeredTeams + (pendingReviewRequests ?? 0) >= event.participantCap) {
-    throw new Error("Slot pendaftaran event ini sudah penuh.");
-  }
-  if (existingCaptainTeam || existingCaptainRequest) {
-    throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
-  }
-  if (completedMatches > 0) {
-    throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
-  }
-  if (existingTeamIdentity || existingRequestIdentity) {
-    throw new Error("Tag atau nama tim sudah digunakan di event ini.");
-  }
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    // Capacity, duplicate and identity checks share one Serializable transaction with the insert, so two
+    // captains cannot both pass the checks for the last slot or the same team name.
+    return await runSerializableRegistrationTransaction(async (tx) => {
+      const event = await tx.event.findUnique({
+        where: { id: input.eventId },
+        select: {
+          id: true,
+          slug: true,
+          status: true,
+          participantCap: true,
+          format: true,
+          registrationFeeRequired: true,
+          gameModeId: true,
+          registrationOpensAt: true,
+          registrationClosesAt: true,
+        },
+      });
+      if (!event) throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
+      assertNewRegistrationWindowOpen(event);
+      if (!event.registrationFeeRequired) {
+        throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");
+      }
+      // A pending request does not change the roster, so only read the lock. Claiming competitionVersion here
+      // would make a concurrent drawing publish fail. Approval claims it later, when the team is created.
+      if (await readEventRosterLocked(tx, input.eventId)) throw new Error(ROSTER_LOCKED_MESSAGE);
+
+      const { name, tag, draftTeam } = await resolveCaptainRegistrationTeam(input, tx);
+      assertDraftRosterFitsGameMode(draftTeam, event.gameModeId);
+      const [registeredTeams, pendingReviewRequests, existingCaptainTeam, existingCaptainRequest, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
+        tx.team.count({ where: { eventId: input.eventId } }),
+        tx.teamRegistrationRequest.count({ where: { eventId: input.eventId, status: "pending_review" } }),
+        tx.team.findFirst({ where: { eventId: input.eventId, captainId: input.captainId }, select: { id: true } }),
+        tx.teamRegistrationRequest.findFirst({
+          where: { eventId: input.eventId, captainId: input.captainId, status: { in: ACTIVE_REGISTRATION_REQUEST_STATUSES } },
+          select: { id: true },
+        }),
+        tx.team.findFirst({
+          where: { eventId: input.eventId, OR: [{ name }, { tag }] },
+          select: { id: true },
+        }),
+        tx.teamRegistrationRequest.findFirst({
+          where: { eventId: input.eventId, status: { in: RESERVED_REGISTRATION_REQUEST_STATUSES }, OR: [{ teamName: name }, { teamTag: tag }] },
+          select: { id: true },
+        }),
+        event.format === "Single Elimination" ? tx.match.count({ where: { eventId: input.eventId, status: "Completed" } }) : Promise.resolve(0),
+      ]);
+
+      if (registeredTeams + (pendingReviewRequests ?? 0) >= event.participantCap) {
+        throw new Error("Slot pendaftaran event ini sudah penuh.");
+      }
+      if (existingCaptainTeam || existingCaptainRequest) {
+        throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
+      }
+      if (completedMatches > 0) {
+        throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
+      }
+      if (existingTeamIdentity || existingRequestIdentity) {
+        throw new Error("Tag atau nama tim sudah digunakan di event ini.");
+      }
+
       let pendingTeamId: string | undefined;
       if (draftTeam) {
         const pendingTeam = await tx.team.create({
@@ -3855,77 +3763,16 @@ export async function updateEventStream(eventId: string, url: string, label: str
 
 // ── Captain self sign-up ──────────────────────────────────────────────────────
 
-/**
- * Atomically creates a captain User and their first Team in a Prisma transaction.
- * Used by the self sign-up flow; teamTag is uppercased and used as the logoText.
- */
+const EMAIL_ALREADY_REGISTERED_MESSAGE = "Email ini sudah terdaftar. Coba login.";
+
 /** Creates a captain User without requiring an active event or team registration. */
 export async function createCaptainAccount(input: {
   email: string;
   name: string;
   passwordHash: string;
 }): Promise<{ userId: string }> {
-  const user = await prisma.user.create({
-    data: {
-      email: input.email,
-      name: input.name,
-      role: "captain",
-      passwordHash: input.passwordHash,
-    },
-  });
-  return { userId: user.id };
-}
-
-export async function createCaptainWithTeam(input: {
-  email: string;
-  name: string;
-  passwordHash: string;
-  eventId: string;
-  teamName: string;
-  teamTag: string;
-}): Promise<{ userId: string; teamId: string }> {
-  const tag = input.teamTag.toUpperCase();
-  return runSerializableRegistrationTransaction(async (tx) => {
-    await assertEventRosterMutable(tx, input.eventId);
-    const event = await tx.event.findUnique({
-      where: { id: input.eventId },
-      select: {
-        id: true,
-        slug: true,
-        status: true,
-        participantCap: true,
-        format: true,
-        registrationFeeRequired: true,
-        registrationOpensAt: true,
-        registrationClosesAt: true,
-      },
-    });
-    if (!event) throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
-    assertNewRegistrationWindowOpen(event);
-    if (event.registrationFeeRequired) {
-      throw new Error("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.");
-    }
-
-    const [registeredTeams, pendingReviewRequests, existingIdentity, completedMatches] = await Promise.all([
-      tx.team.count({ where: { eventId: input.eventId } }),
-      tx.teamRegistrationRequest.count({ where: { eventId: input.eventId, status: "pending_review" } }),
-      tx.team.findFirst({
-        where: { eventId: input.eventId, OR: [{ name: input.teamName }, { tag }] },
-        select: { id: true },
-      }),
-      event.format === "Single Elimination"
-        ? tx.match.count({ where: { eventId: input.eventId, status: "Completed" } })
-        : Promise.resolve(0),
-    ]);
-    if (registeredTeams + pendingReviewRequests >= event.participantCap) {
-      throw new Error("Slot pendaftaran event ini sudah penuh.");
-    }
-    if (existingIdentity) throw new Error("Tag atau nama tim sudah digunakan di event ini.");
-    if (completedMatches > 0) {
-      throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
-    }
-
-    const user = await tx.user.create({
+  try {
+    const user = await prisma.user.create({
       data: {
         email: input.email,
         name: input.name,
@@ -3933,101 +3780,13 @@ export async function createCaptainWithTeam(input: {
         passwordHash: input.passwordHash,
       },
     });
-    const team = await tx.team.create({
-      data: {
-        eventId: input.eventId,
-        captainId: user.id,
-        name: input.teamName,
-        tag,
-        logoText: tag,
-        source: "registration",
-      },
-    });
-    return { userId: user.id, teamId: team.id };
-  });
-}
-
-/**
- * Atomically creates a captain User and a pending-payment TeamRegistrationRequest
- * (no Team row yet) for paid events. Used by the self sign-up flow when the target
- * event has registrationFeeRequired enabled.
- */
-export async function createCaptainWithPendingPayment(input: {
-  email: string;
-  name: string;
-  passwordHash: string;
-  eventId: string;
-  teamName: string;
-  teamTag: string;
-}): Promise<{ userId: string; requestId: string }> {
-  const tag = input.teamTag.toUpperCase();
-
-  return runSerializableRegistrationTransaction(async (tx) => {
-    const event = await tx.event.findUnique({
-      where: { id: input.eventId },
-      select: {
-        id: true,
-        slug: true,
-        status: true,
-        participantCap: true,
-        format: true,
-        registrationFeeRequired: true,
-        registrationOpensAt: true,
-        registrationClosesAt: true,
-      },
-    });
-    if (!event) throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
-    assertNewRegistrationWindowOpen(event);
-    if (!event.registrationFeeRequired) {
-      throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");
-    }
-
-    const [registeredTeams, pendingReviewRequests, existingTeamIdentity, existingRequestIdentity, completedMatches] = await Promise.all([
-      tx.team.count({ where: { eventId: input.eventId } }),
-      tx.teamRegistrationRequest.count({ where: { eventId: input.eventId, status: "pending_review" } }),
-      tx.team.findFirst({ where: { eventId: input.eventId, OR: [{ name: input.teamName }, { tag }] }, select: { id: true } }),
-      tx.teamRegistrationRequest.findFirst({
-        where: {
-          eventId: input.eventId,
-          status: { in: RESERVED_REGISTRATION_REQUEST_STATUSES },
-          OR: [{ teamName: input.teamName }, { teamTag: tag }],
-        },
-        select: { id: true },
-      }),
-      event.format === "Single Elimination"
-        ? tx.match.count({ where: { eventId: input.eventId, status: "Completed" } })
-        : Promise.resolve(0),
-    ]);
-    if (registeredTeams + pendingReviewRequests >= event.participantCap) {
-      throw new Error("Slot pendaftaran event ini sudah penuh.");
-    }
-    if (existingTeamIdentity || existingRequestIdentity) {
-      throw new Error("Tag atau nama tim sudah digunakan di event ini.");
-    }
-    if (completedMatches > 0) {
-      throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
-    }
-
-    const user = await tx.user.create({
-      data: {
-        email: input.email,
-        name: input.name,
-        role: "captain",
-        passwordHash: input.passwordHash,
-      },
-    });
-    const request = await tx.teamRegistrationRequest.create({
-      data: {
-        eventId: input.eventId,
-        captainId: user.id,
-        teamName: input.teamName,
-        teamTag: tag,
-        status: "pending_payment",
-        expiresAt: new Date(Date.now() + PAYMENT_REQUEST_TTL_MS),
-      },
-    });
-    return { userId: user.id, requestId: request.id };
-  });
+    return { userId: user.id };
+  } catch (error) {
+    // The only unique column on User that this write can hit is the email.
+    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined;
+    if (code === "P2002") throw new Error(EMAIL_ALREADY_REGISTERED_MESSAGE);
+    throw error;
+  }
 }
 
 // ── Round config (Best of N) ──────────────────────────────────────────────────
@@ -4208,11 +3967,7 @@ export async function updateEventBrandAssets(
   eventId: string,
   updates: { logoUrl?: string; gameImageUrl?: string },
 ): Promise<void> {
-  try {
-    await prisma.event.update({ where: { id: eventId }, data: updates });
-  } catch {
-    demoStore.updateEventBrandAssets(eventId, updates);
-  }
+  await prisma.event.update({ where: { id: eventId }, data: updates });
 }
 
 /** Longest error message we persist on a failed certificate row. */

@@ -3,6 +3,7 @@ import { permanentRedirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 
 import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
+import { readEventForMetadata } from "@/lib/events/public-event-metadata";
 import { renderLeaderboardsPage } from "../../../../events/[slug]/leaderboards/leaderboards-page";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
@@ -13,7 +14,7 @@ export async function generateMetadata({
   params: Promise<{ locale: string; slug: string }>;
 }): Promise<Metadata> {
   const { locale, slug } = await params;
-  const event = await getPublicEventBySlug(slug);
+  const event = await readEventForMetadata(slug);
   if (!event) return {};
 
   const title = `Leaderboard — ${event.name}`;

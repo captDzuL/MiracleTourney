@@ -51,7 +51,7 @@ export default async function EventsPage({
     );
   }
 
-  const eventsRaw = await getCachedPublicEvents().catch(() => []);
+  const eventsRaw = await getCachedPublicEvents();
   const events = eventsRaw.filter((event) => {
     const gameMatches = gameFilter === "all" || event.gameId === gameFilter;
     const statusMatches = statusFilter === "all" || event.status.toLowerCase().replaceAll(" ", "-") === statusFilter;

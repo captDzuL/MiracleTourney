@@ -23,38 +23,6 @@ import {
 } from "@/lib/platform/repository";
 import { getLiveStreamPresentation } from "@/lib/tournament/engine";
 
-const fallbackEventsBySlug: Record<string, Event> = {
-  "miracle-league": {
-    id: "fallback-miracle-league",
-    slug: "miracle-league",
-    name: "Miracle League",
-    description: "New event created from admin panel.",
-    logoUrl: "https://lh3.googleusercontent.com/d/1m01dWpxKA6qXRzfFRrEovFzho1nTnV9B",
-    gameId: "game-flashpeak",
-    gameModeId: "mode-flashpeak-5v5",
-    format: "Single Elimination",
-    status: "Ongoing",
-    participantCap: 32,
-    registrationWindow: "TBD",
-    startsAt: "TBD",
-    venue: "Online",
-  },
-  "kuroko-summer-cup": {
-    id: "fallback-kuroko-summer-cup",
-    slug: "kuroko-summer-cup",
-    name: "Kuroko Street Rival Summer Cup",
-    description: "Demo tournament for public browsing and testing flows.",
-    gameId: "game-kuroko",
-    gameModeId: "mode-kuroko-3v3",
-    format: "Single Elimination",
-    status: "Published",
-    participantCap: 8,
-    registrationWindow: "Open",
-    startsAt: "2026-09-01",
-    venue: "Online",
-  },
-};
-
 function buildEventHref(slug: string, section: "participants" | "bracket" | "standings" | "leaderboards", locale?: "id" | "en") {
   const prefix = locale ? `/${locale}` : "";
   return `${prefix}/events/${slug}/${section}`;
@@ -76,8 +44,7 @@ export async function renderEventDetailPage(
   options: { readOnly?: boolean } = {},
 ) {
   const t = await getTranslations("eventDetail");
-  const fallbackEvent = fallbackEventsBySlug[slug];
-  const event = eventOverride ?? await getPublicEventBySlug(slug).catch(() => fallbackEvent ?? null);
+  const event = eventOverride ?? await getPublicEventBySlug(slug);
 
   if (!event) notFound();
 
@@ -85,9 +52,9 @@ export async function renderEventDetailPage(
   const mode = getModeForEvent(event);
   const trackedStatKeys = getStatKeysForMode(event.gameModeId, event.gameId);
   const [teams, bracket, leaderboard] = await Promise.all([
-    getTeamsForEvent(event.id).catch(() => []),
-    getBracketPreview(event.id).catch(() => []),
-    getLeaderboardForEvent(event.id, event.gameId).catch(() => []),
+    getTeamsForEvent(event.id),
+    getBracketPreview(event.id),
+    getLeaderboardForEvent(event.id, event.gameId),
   ]);
   const liveView = event.stream?.enabled ? getLiveStreamPresentation(event.stream.url) : null;
   const certificate = event.status === "Finished" ? await getCertificateByEvent(event.id).catch(() => null) : null;

@@ -1,0 +1,64 @@
+# Fungsi bernama di src/lib/platform/repository.ts yang belum dijalankan test mana pun (setelah PR 0.3).
+# Fungsi kecil di dalam pembaca ber-cache tidak ikut dihitung.
+# Tiap PR Fase 2 menutup bagiannya sendiri sebelum memindahkan fungsi, atau mencatat alasannya.
+# Buat ulang daftar ini dengan reporter coverage JSON yang hanya mengukur repository.ts.
+# Format: <nomor baris saat commit> <nama fungsi>
+367 getBracketSlotCount
+378 generateCaptainEmail
+393 generateSyntheticRegistrationEmail
+408 getAllGames
+413 getGameModes
+418 getGameForEvent
+423 getModeForEvent
+430 getAllPublicEvents
+482 getPlatformProfile
+489 updatePlatformProfile
+571 updateEventOrganizerContact
+591 assertUserCanReviewStatSubmission
+647 getPublicEvents
+665 getPublishedEvents
+737 getEventBySlug
+798 getPublicEventSlugRedirect
+1012 getCaptainTeams
+1034 updateCaptainTeamLogo
+1058 getPlayersForTeam
+1068 getPlayersForTeams
+1082 getPlayersForEvent
+1149 getBracketRoundLabel
+1158 getProjectedBracketMatches
+1204 getBracketManageableMatchesForEvent
+1216 getBracketManageableMatches
+1375 getTeamStandings
+1399 getBracketPreview
+1465 getCaptainById
+1492 getUserByEmail
+1499 getUserWithPasswordByEmail
+1506 getUserPasswordHashById
+1512 getCaptainUsersForAdmin
+1521 hasTempPassword
+1527 updateUserPassword
+1535 updateCaptainPassword
+1544 getImportSnapshot
+1576 getImportedTeams
+1592 getCaptainCredentialsForEvent
+1641 createOrganizerAndEventDraft
+1702 createEvent
+1742 autoTransitionEventToOngoing
+1812 copyDraftPlayersForEvent
+2058 createOrUpdateCaptainDraftTeam
+2134 getCaptainRegistrationRequests
+2145 getPaymentRegistrationRequestsForAdmin
+2297 getPaymentSettings
+2327 importTeams
+2386 saveRegistrationImportPreviewBatch
+2728 getRegistrationImportBatchForAdmin
+3008 setTeamCaptainDisplay
+3055 getPlayerStatFormContext
+3247 getCompletedMatchesForCaptain
+3607 getPendingStatSubmissions
+3785 getMatchWithRosterAndStats
+3841 updateEventStream
+4064 getMatchGames
+4203 updateEventCertificateAssets
+4210 updateEventBrandAssets
+4456 countCertificatesForGame

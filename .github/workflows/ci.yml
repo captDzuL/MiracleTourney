@@ -48,6 +48,68 @@ jobs:
       - name: Unit tests
         run: pnpm test:unit
 
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Next.js build
+        # Compile check only: placeholder values keep the build away from any real database, and no browser tests run here.
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci_build_unused
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/ci_build_unused
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: |
+          JWT_SECRET="$(openssl rand -base64 32)"
+          echo "::add-mask::$JWT_SECRET"
+          JWT_SECRET="$JWT_SECRET" pnpm build
+
+  database-tests:
+    name: Database tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: miracle_registration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d miracle_registration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # A throwaway database inside this job. It never touches Neon or any shared database.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/miracle_registration_test
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/miracle_registration_test
+      REGISTRATION_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/miracle_registration_test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Apply every migration to an empty database
+        run: pnpm exec prisma migrate deploy
+      - name: Registration transactions against a real database
+        run: pnpm exec vitest run src/lib/platform/repository.db.test.ts
+
   schema-drift:
     name: Schema drift
     runs-on: ubuntu-latest
