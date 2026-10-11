@@ -18,6 +18,7 @@ import {
   equalizePasswordResetResponse,
 } from "@/lib/platform/password-reset";
 
+import { resolvePostLoginPath } from "@/lib/auth/post-login-path";
 import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { commitRegistrationImportForUser, previewRegistrationImportForUser } from "@/lib/actions/registration-v3-actions";
@@ -443,20 +444,8 @@ export async function loginAction(formData: FormData) {
     return await redirectToRequestedLocale(loginErrorPath("invalid"), requestedLocale);
   }
 
-  if (user.role === "captain" && returnTo) {
-    await redirectToRequestedLocale(returnTo, requestedLocale);
-  }
-  if (user.role === "captain" && hasSafeEventId) {
-    await redirectToRequestedLocale(
-      `/captain?tab=registration&eventId=${encodeURIComponent(eventId)}`,
-      requestedLocale,
-    );
-  }
-
   await redirectToRequestedLocale(
-    user.role === "organizer" && user.mustChangePassword
-      ? "/organizer/change-password"
-      : user.role === "organizer" ? "/organizer" : user.role === "platform_admin" || user.role === "admin" ? "/admin" : "/captain",
+    resolvePostLoginPath({ role: user.role, mustChangePassword: user.mustChangePassword, returnTo, eventId }),
     requestedLocale,
   );
 }

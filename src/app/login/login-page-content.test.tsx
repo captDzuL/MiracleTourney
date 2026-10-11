@@ -13,6 +13,7 @@ vi.mock("@/i18n/navigation", () => ({
   ),
 }));
 vi.mock("@/lib/actions", () => ({ loginAction: vi.fn() }));
+vi.mock("@/lib/auth/session", () => ({ getSessionUser: vi.fn(async () => null) }));
 
 Object.assign(globalThis, { React });
 

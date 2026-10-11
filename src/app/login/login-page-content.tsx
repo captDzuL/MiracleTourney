@@ -1,8 +1,12 @@
 import { getTranslations } from "next-intl/server";
+import { redirect } from "next/navigation";
 
 import { LoginSubmitButton } from "@/components/v3/LoginSubmitButton";
 import { Link } from "@/i18n/navigation";
+import { getLocalizedRedirectPath, redirectToActiveLocale } from "@/i18n/redirect";
 import { loginAction } from "@/lib/actions";
+import { resolvePostLoginPath } from "@/lib/auth/post-login-path";
+import { getSessionUser } from "@/lib/auth/session";
 import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 
 export async function renderLoginPage(
@@ -15,6 +19,21 @@ export async function renderLoginPage(
   const eventId = resolvedSearchParams?.eventId && /^[A-Za-z0-9_-]+$/.test(resolvedSearchParams.eventId)
     ? resolvedSearchParams.eventId
     : undefined;
+
+  // A visitor who already holds a session has no use for the form. A failed
+  // session lookup must not lock anyone out, so it falls through to the form.
+  let user: Awaited<ReturnType<typeof getSessionUser>> = null;
+  try {
+    user = await getSessionUser();
+  } catch {
+    user = null;
+  }
+  if (user) {
+    const destination = resolvePostLoginPath({ role: user.role, mustChangePassword: user.mustChangePassword, returnTo, eventId });
+    if (locale) redirect(getLocalizedRedirectPath(destination, locale) as never);
+    return redirectToActiveLocale(destination);
+  }
+
   const errorMessage =
     resolvedSearchParams?.error === "database" ? t("databaseError") : t("error");
 
