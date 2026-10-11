@@ -244,7 +244,7 @@ async function getViewerState(
       select: { status: true, expiresAt: true },
     }),
     prisma.team.findMany({
-      where: { eventId: null, captainId: viewer.id },
+      where: { eventId: null, captainId: viewer.id, source: "draft" },
       select: { _count: { select: { players: true } } },
       orderBy: { createdAt: "desc" },
     }),

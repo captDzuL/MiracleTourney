@@ -25,8 +25,38 @@ const SAFE_ACTION_MESSAGES = new Set([
   "Konfirmasi hak publikasi artwork terlebih dahulu.",
 ]);
 
-/** Preserves only deliberately allowlisted user-facing action messages. */
+/**
+ * A business-rule rejection whose message is written for the end user and is safe to show as-is
+ * (for example "Slot pendaftaran event ini sudah penuh."). Never put internal details in one.
+ */
+export class UserFacingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UserFacingError";
+  }
+}
+
+export type ActionErrorDescription = Readonly<{ name: string; code: string | undefined }>;
+
+/**
+ * Loggable identity of an unexpected action failure: error class and Prisma code only.
+ * The message is left out on purpose; Prisma messages embed the failing query arguments (team names, contacts).
+ */
+export function describeActionError(error: unknown): ActionErrorDescription {
+  if (!(error instanceof Error)) return { name: "NonError", code: undefined };
+  const code = (error as { code?: unknown }).code;
+  return { name: error.name, code: typeof code === "string" ? code : undefined };
+}
+
+/** True when the error is an expected rejection whose message may reach the user (as opposed to an unexpected failure). */
+export function isUserSafeActionError(error: unknown): boolean {
+  if (error instanceof UserFacingError) return true;
+  return error instanceof Error && SAFE_ACTION_MESSAGES.has(error.message);
+}
+
+/** Preserves user-facing errors and deliberately allowlisted action messages; everything else becomes the fallback. */
 export function toSafeActionMessage(error: unknown, fallback: string): string {
+  if (error instanceof UserFacingError) return error.message;
   const message = error instanceof Error ? error.message : "";
   if (error instanceof Error && error.name === "ImageUploadValidationError" && "code" in error) {
     const code = (error as { code?: unknown }).code;

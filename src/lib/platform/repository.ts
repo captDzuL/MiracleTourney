@@ -32,6 +32,7 @@ import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventS
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import { mapRequestStatus, normalizeRegistrationSource, type RegistrationRecord } from "@/lib/registration/records";
 import type { ResolvedEventPaymentSettings } from "@/lib/registration/event-payment-settings";
+import { UserFacingError } from "@/lib/security/public-error";
 import { tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 import {
   aggregatePlayerLeaderboard,
@@ -73,7 +74,7 @@ function isNewRegistrationWindowOpen(event: RegistrationWindowEvent, now = new D
 
 function assertNewRegistrationWindowOpen(event: RegistrationWindowEvent, now = new Date()): void {
   if (!isNewRegistrationWindowOpen(event, now)) {
-    throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
+    throw new UserFacingError("Event tidak valid atau sudah tidak membuka pendaftaran.");
   }
 }
 
@@ -1011,7 +1012,11 @@ export async function getTeamCountsForEvents(eventIds: string[]): Promise<Map<st
 /** Returns all teams registered by a specific captain across all events. Returns empty array for undefined userId. */
 export async function getCaptainTeams(userId: string | undefined): Promise<Team[]> {
   if (!userId) return [];
-  const rows = await prisma.team.findMany({ where: { captainId: userId }, include: { captain: { select: { id: true, name: true } } } });
+  const rows = await prisma.team.findMany({
+    where: { captainId: userId },
+    include: { captain: { select: { id: true, name: true } } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
   return rows.map(mapTeam);
 }
 
@@ -1135,8 +1140,8 @@ async function assertEventRosterMutable(tx: Prisma.TransactionClient, eventId: s
     where: { id: eventId },
     data: { competitionVersion: { increment: 1 } },
   });
-  if (claimed.count !== 1) throw new Error("Event tidak ditemukan.");
-  if (await readEventRosterLocked(tx, eventId)) throw new Error(ROSTER_LOCKED_MESSAGE);
+  if (claimed.count !== 1) throw new UserFacingError("Event tidak ditemukan.");
+  if (await readEventRosterLocked(tx, eventId)) throw new UserFacingError(ROSTER_LOCKED_MESSAGE);
 }
 
 /** Returns true for every format once the public drawing or tournament is authoritative. */
@@ -1786,7 +1791,7 @@ async function resolveCaptainRegistrationTeam(input: {
       include: { players: { orderBy: { createdAt: "asc" } } },
     });
     if (!draftTeam) {
-      throw new Error("Draft tim tidak ditemukan untuk akun ini.");
+      throw new UserFacingError("Draft tim tidak ditemukan untuk akun ini.");
     }
 
     name = draftTeam.name.trim();
@@ -1795,15 +1800,15 @@ async function resolveCaptainRegistrationTeam(input: {
       (player) => player.displayName.trim().length < 2 || player.nickname.trim().length < 2,
     );
     if (draftTeam.players.length === 0 || hasInvalidRoster) {
-      throw new Error("Lengkapi UID dan IGN roster draft sebelum mendaftar event.");
+      throw new UserFacingError("Lengkapi UID dan IGN roster draft sebelum mendaftar event.");
     }
   }
 
   if (name.length < 2) {
-    throw new Error("Nama tim minimal 2 karakter.");
+    throw new UserFacingError("Nama tim minimal 2 karakter.");
   }
   if (tag.length < 2 || tag.length > 5) {
-    throw new Error("Tag tim harus 2-5 karakter.");
+    throw new UserFacingError("Tag tim harus 2-5 karakter.");
   }
 
   return { name, tag, draftTeam };
@@ -1828,7 +1833,7 @@ function assertDraftRosterFitsGameMode(
   if (!draftTeam) return;
   const maximumRoster = getGameModeConfig(gameModeId).maxRosterSize;
   if (draftTeam.players.length > maximumRoster) {
-    throw new Error(`Roster tim maksimal ${maximumRoster} pemain untuk mode pertandingan ini.`);
+    throw new UserFacingError(`Roster tim maksimal ${maximumRoster} pemain untuk mode pertandingan ini.`);
   }
 }
 
@@ -1859,11 +1864,11 @@ export async function registerTeam(input: {
           registrationClosesAt: true,
         },
       });
-      if (!event) throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
+      if (!event) throw new UserFacingError("Event tidak valid atau sudah tidak membuka pendaftaran.");
       assertNewRegistrationWindowOpen(event);
       assertDraftRosterFitsGameMode(draftTeam, event.gameModeId);
       if (event.registrationFeeRequired) {
-        throw new Error("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.");
+        throw new UserFacingError("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.");
       }
 
       const [registeredTeams, pendingReviewRequests, existingCaptainTeam, completedMatches] = await Promise.all([
@@ -1879,13 +1884,13 @@ export async function registerTeam(input: {
       ]);
 
       if (registeredTeams + pendingReviewRequests >= event.participantCap) {
-        throw new Error("Slot pendaftaran event ini sudah penuh.");
+        throw new UserFacingError("Slot pendaftaran event ini sudah penuh.");
       }
       if (existingCaptainTeam) {
-        throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
+        throw new UserFacingError("Kamu sudah mendaftarkan tim untuk event ini.");
       }
       if (completedMatches > 0) {
-        throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
+        throw new UserFacingError(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
       }
 
       if (draftTeam) {
@@ -1925,7 +1930,7 @@ export async function registerTeam(input: {
     const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : "";
     const message = error instanceof Error ? error.message : "";
     if (code === "P2002" || message.includes("Unique constraint")) {
-      throw new Error("Tag atau nama tim sudah digunakan di event ini.");
+      throw new UserFacingError("Tag atau nama tim sudah digunakan di event ini.");
     }
     throw error;
   }
@@ -1953,10 +1958,10 @@ export async function createTeamRegistrationRequest(input: {
       registrationClosesAt: true,
     },
   });
-  if (!event) throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
+  if (!event) throw new UserFacingError("Event tidak valid atau sudah tidak membuka pendaftaran.");
   assertNewRegistrationWindowOpen(event);
   if (!event.registrationFeeRequired) {
-    throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");
+    throw new UserFacingError("Event ini tidak membutuhkan verifikasi pembayaran.");
   }
 
   const { name, tag, draftTeam } = await resolveCaptainRegistrationTeam(input);
@@ -1981,16 +1986,16 @@ export async function createTeamRegistrationRequest(input: {
   ]);
 
   if (registeredTeams + (pendingReviewRequests ?? 0) >= event.participantCap) {
-    throw new Error("Slot pendaftaran event ini sudah penuh.");
+    throw new UserFacingError("Slot pendaftaran event ini sudah penuh.");
   }
   if (existingCaptainTeam || existingCaptainRequest) {
-    throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
+    throw new UserFacingError("Kamu sudah mendaftarkan tim untuk event ini.");
   }
   if (completedMatches > 0) {
-    throw new Error(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
+    throw new UserFacingError(`Event "${event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
   }
   if (existingTeamIdentity || existingRequestIdentity) {
-    throw new Error("Tag atau nama tim sudah digunakan di event ini.");
+    throw new UserFacingError("Tag atau nama tim sudah digunakan di event ini.");
   }
 
   try {
@@ -2043,7 +2048,7 @@ export async function createTeamRegistrationRequest(input: {
     const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : "";
     const message = error instanceof Error ? error.message : "";
     if (code === "P2002" || message.includes("Unique constraint")) {
-      throw new Error("Tag atau nama tim sudah digunakan di event ini.");
+      throw new UserFacingError("Tag atau nama tim sudah digunakan di event ini.");
     }
     throw error;
   }
@@ -2764,7 +2769,7 @@ export async function commitRegistrationImportBatch(
   await assertUserCanManageEvent(user, batch.eventId);
   const locked = await isEventBracketLocked(batch.eventId);
   if (locked) {
-    throw new Error(ROSTER_LOCKED_MESSAGE);
+    throw new UserFacingError(ROSTER_LOCKED_MESSAGE);
   }
 
   if (batch.status === "committed") return { importedCount: 0, credentials: [] };
