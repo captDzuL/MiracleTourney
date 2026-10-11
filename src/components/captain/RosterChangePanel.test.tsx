@@ -68,6 +68,25 @@ describe("RosterChangePanel", () => {
     expect(html).not.toContain('name="kind"');
   });
 
+  it("lists the waiting request once: in the waiting card, not again in the history", () => {
+    const html = render(overview({ remaining: 1, pending: item("pending"), history: [item("pending"), item("approved", { id: "r-old" })] }));
+    const occurrences = html.split("rosterChange.pendingSwap(out=Bee,incoming=NewGuy)").length - 1;
+    // once in the waiting card, once for the decided request in the history
+    expect(occurrences).toBe(2);
+    expect(html).not.toContain("rosterChange.status.pending");
+  });
+
+  it("hides the history block when only the waiting request exists", () => {
+    const html = render(overview({ remaining: 1, pending: item("pending"), history: [item("pending")] }));
+    expect(html).not.toContain("rosterChange.historyTitle");
+  });
+
+  it("styles the waiting card like the page's other warnings so its title stays readable", () => {
+    const html = render(overview({ remaining: 1, pending: item("pending"), history: [item("pending")] }));
+    for (const className of ["border-amber-200", "bg-amber-50", "text-amber-800"]) expect(html).toContain(className);
+    expect(html).not.toContain("text-amber-900");
+  });
+
   it("tells the captain when no change is left", () => {
     const html = render(overview({ used: 2, remaining: 0, history: [item("approved"), item("approved")] }));
     expect(html).toContain("rosterChange.allowanceUsedUp");

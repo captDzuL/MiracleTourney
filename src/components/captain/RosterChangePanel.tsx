@@ -36,6 +36,8 @@ export function RosterChangePanel({ team, players, positionOptions, overview, t 
   if (overview.window === "free") return null;
 
   const canRequest = overview.window === "limited" && overview.remaining > 0 && !overview.pending;
+  // The waiting request already has its own card above; the history lists decided ones only.
+  const decidedHistory = overview.history.filter((item) => item.status !== "pending");
 
   return (
     <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby={`roster-change-${team.id}`}>
@@ -54,10 +56,10 @@ export function RosterChangePanel({ team, players, positionOptions, overview, t 
       </div>
 
       {overview.pending ? (
-        <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-amber-900">{t("rosterChange.pendingTitle")}</p>
-            <p className="text-sm text-amber-800">{describe(overview.pending, t)}</p>
+            <p className="text-sm font-semibold">{t("rosterChange.pendingTitle")}</p>
+            <p className="text-sm">{describe(overview.pending, t)}</p>
           </div>
           <form action={captainCancelRosterChangeAction}>
             <input type="hidden" name="requestId" value={overview.pending.id} />
@@ -113,11 +115,11 @@ export function RosterChangePanel({ team, players, positionOptions, overview, t 
         </form>
       ) : null}
 
-      {overview.history.length > 0 ? (
+      {decidedHistory.length > 0 ? (
         <div>
           <h4 className="mb-2 text-sm font-semibold text-slate-950">{t("rosterChange.historyTitle")}</h4>
           <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-            {overview.history.map((item) => (
+            {decidedHistory.map((item) => (
               <li key={item.id} className="flex flex-col gap-1 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
                 <span className="text-slate-700">{describe(item, t)}</span>
                 <span className="text-xs font-semibold text-slate-500">
