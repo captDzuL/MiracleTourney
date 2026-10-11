@@ -17,7 +17,10 @@ export type VercelBuildEnvironment = {
   DATABASE_URL?: string;
   DIRECT_URL?: string;
   NEON_PROD_HOST?: string;
+  SKIP_MIGRATION_CHECK?: string;
 };
+
+export type MigrationChecker = (env: VercelBuildEnvironment) => Promise<void>;
 
 export function assertVercelBuildDatabaseSafety(env: VercelBuildEnvironment): void;
 
@@ -25,3 +28,9 @@ export function runVercelBuild(
   env: VercelBuildEnvironment,
   runCommand?: BuildCommandRunner,
 ): number;
+
+export function runVercelBuildWithMigrationCheck(
+  env: VercelBuildEnvironment,
+  runCommand?: BuildCommandRunner,
+  checkMigrations?: MigrationChecker,
+): Promise<number>;

@@ -229,6 +229,13 @@ pnpm db:seed
 
 Untuk production/Vercel, pastikan migration sudah jalan sebelum deploy app yang membaca field baru.
 
+Build Vercel tidak menjalankan migration. Dua pengaman:
+
+- **CI** (job `New migrations`): kalau PR atau push ke `main` menambah migration, muncul peringatan di tab Checks beserta daftar migration yang harus dipasang ke produksi.
+- **Build produksi** (`scripts/vercel-build.mjs` + `scripts/migration-ledger.mjs`): sebelum `next build`, tabel `_prisma_migrations` dibaca (baca-saja) dan dibandingkan dengan folder `prisma/migrations`. Kalau ada yang belum terpasang, build gagal dan deploy lama tetap melayani. Preview dan build lokal tidak dicek.
+
+Kalau build gagal karena ini: jalankan `pnpm prisma migrate deploy` dengan `DIRECT_URL` produksi, lalu deploy ulang. Kalau SQL-nya sudah dipasang manual (mis. di Neon SQL Editor), catat dengan `pnpm prisma migrate resolve --applied <nama_migration>`. Untuk melewati cek satu kali, set `SKIP_MIGRATION_CHECK=1` di environment Vercel.
+
 ---
 
 ## Testing
