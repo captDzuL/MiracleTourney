@@ -91,7 +91,8 @@ export default async function CaptainPage({
     team,
     players: allPlayers.filter((player) => player.teamId === team.id),
   }));
-  const draftTeamWithPlayers = teamsWithPlayers.find(({ team }) => !team.eventId || team.source === "draft") ?? null;
+  // Only the reusable draft qualifies: "registration-intake" copies also have no event but the server rejects them as a draft.
+  const draftTeamWithPlayers = teamsWithPlayers.find(({ team }) => !team.eventId && team.source === "draft") ?? null;
 
   const requestedEvent = requestedEventId
     ? openRegistrationEvents.find((event) => event.id === requestedEventId)

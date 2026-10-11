@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { UserFacingError } from "@/lib/security/public-error";
+
 const { prisma } = vi.hoisted(() => ({
   prisma: {
     match: {
@@ -143,6 +145,7 @@ import {
   countAiVisualAttempts,
   createEventVisualAsset,
   deletePlayer,
+  getCaptainTeams,
   getEventRoundConfigs,
   getEventsByIds,
   getOpenRegistrationEventsForCaptain,
@@ -1989,6 +1992,29 @@ describe("existing captain event registration", () => {
       captainId: "captain-1",
       draftTeamId: "draft-large",
     })).rejects.toThrow("Roster tim maksimal");
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
+  it("lists a captain's teams in a stable creation order", async () => {
+    prisma.team.findMany.mockResolvedValue([]);
+
+    await expect(getCaptainTeams("captain-1")).resolves.toEqual([]);
+
+    expect(prisma.team.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { captainId: "captain-1" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
+    );
+  });
+
+  it("rejects a registration whose draft id is not a draft with a message the captain may see", async () => {
+    prisma.team.findFirst.mockResolvedValue(null);
+
+    const rejection = registerTeam({ eventId: "event-open", captainId: "captain-1", draftTeamId: "intake-copy" });
+
+    await expect(rejection).rejects.toBeInstanceOf(UserFacingError);
+    await expect(rejection).rejects.toThrow("Draft tim tidak ditemukan untuk akun ini.");
+    expect(prisma.team.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "intake-copy", captainId: "captain-1", eventId: null, source: "draft" } }),
+    );
     expect(prisma.team.create).not.toHaveBeenCalled();
   });
 

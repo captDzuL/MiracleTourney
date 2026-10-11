@@ -194,6 +194,34 @@ describe("captain dashboard event registration", () => {
     expect(html).toContain("<option value=\"Guard\">Guard</option>");
   });
 
+  it("registers with the draft team even when leftover intake copies are listed first", async () => {
+    getCaptainRegistrationRequests.mockResolvedValue([]);
+    getOpenRegistrationEventsForCaptain.mockResolvedValue([{ ...openEvent, registrationFeeRequired: true }]);
+    getCaptainTeams.mockResolvedValue([
+      { id: "intake-2", name: "Teil E-sports", tag: "TEL", captainId: "captain-1", eventId: null, source: "registration-intake" },
+      { id: "draft-1", name: "Teil E-sports", tag: "TEL", captainId: "captain-1", eventId: null, source: "draft" },
+      { id: "intake-1", name: "Teil E-sports", tag: "TEL", captainId: "captain-1", eventId: null, source: "registration-intake" },
+    ]);
+
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({}) }));
+
+    expect(html).toContain("name=\"draftTeamId\" value=\"draft-1\"");
+    expect(html).not.toContain("value=\"intake-2\"");
+    expect(html).not.toContain("value=\"intake-1\"");
+  });
+
+  it("does not treat a registration intake copy as the captain's draft", async () => {
+    getCaptainRegistrationRequests.mockResolvedValue([]);
+    getOpenRegistrationEventsForCaptain.mockResolvedValue([openEvent]);
+    getCaptainTeams.mockResolvedValue([
+      { id: "intake-1", name: "Teil E-sports", tag: "TEL", captainId: "captain-1", eventId: null, source: "registration-intake" },
+    ]);
+
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({}) }));
+
+    expect(html).not.toContain("name=\"draftTeamId\"");
+  });
+
   it("shows the organizer-missing notice instead of any Miracle QRIS when the event has none", async () => {
     getOpenRegistrationEventsForCaptain.mockResolvedValue([]);
     getCaptainPaymentSettings.mockResolvedValue({ id: "event-payment-event-paid", eventId: "event-paid", source: "event" });
