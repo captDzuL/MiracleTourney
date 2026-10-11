@@ -28,6 +28,7 @@ const { prisma } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       groupBy: vi.fn(),
       update: vi.fn(),
+      deleteMany: vi.fn(),
     },
     teamRegistrationRequest: {
       count: vi.fn(),
@@ -145,6 +146,7 @@ import {
   countAiVisualAttempts,
   createEventVisualAsset,
   deletePlayer,
+  getCaptainRegistrationRequests,
   getCaptainTeams,
   getEventRoundConfigs,
   getEventsByIds,
@@ -2488,6 +2490,45 @@ describe("existing captain event registration", () => {
     });
   });
 });
+describe("expired payment request cleanup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.teamRegistrationRequest.findMany.mockResolvedValue([]);
+  });
+
+  it("removes the leftover team copy of an expired payment request, and nothing else", async () => {
+    await getCaptainRegistrationRequests("captain-1");
+
+    expect(prisma.team.deleteMany).toHaveBeenCalledTimes(1);
+    expect(prisma.team.deleteMany).toHaveBeenCalledWith({
+      where: { eventId: null, source: "registration-intake", registrationRequest: { is: { status: "expired" } } },
+    });
+  });
+
+  it("expires stale requests before removing their team copies", async () => {
+    await getCaptainRegistrationRequests("captain-1");
+
+    const expireOrder = prisma.teamRegistrationRequest.updateMany.mock.invocationCallOrder[0];
+    const deleteOrder = prisma.team.deleteMany.mock.invocationCallOrder[0];
+    expect(expireOrder).toBeLessThan(deleteOrder);
+  });
+
+  it("keeps the page working and logs only the error code when the cleanup fails", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    prisma.team.deleteMany.mockRejectedValueOnce(
+      Object.assign(new Error("Invalid prisma.team.deleteMany() invocation: { name: 'Teil secret' }"), { name: "PrismaClientKnownRequestError", code: "P2003" }),
+    );
+
+    await expect(getCaptainRegistrationRequests("captain-1")).resolves.toEqual([]);
+
+    const lines = info.mock.calls.map(([line]) => String(line));
+    const failure = lines.map((line) => JSON.parse(line)).find((event) => event.operation === "expired_request_cleanup");
+    expect(failure).toEqual(expect.objectContaining({ phase: "failed", status: 500, errorCode: "p2003" }));
+    expect(lines.join("|")).not.toContain("secret");
+    info.mockRestore();
+  });
+});
+
 describe("public demo fallback reads", () => {
   beforeEach(() => {
     vi.clearAllMocks();
