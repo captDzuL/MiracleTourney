@@ -3,6 +3,7 @@ import { permanentRedirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 
 import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
+import { readEventForMetadata } from "@/lib/events/public-event-metadata";
 import { renderBracketPage } from "../../../../events/[slug]/bracket/bracket-page-content";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export async function generateMetadata({
   params: Promise<{ locale: string; slug: string }>;
 }): Promise<Metadata> {
   const { locale, slug } = await params;
-  const event = await getPublicEventBySlug(slug);
+  const event = await readEventForMetadata(slug);
   if (!event) return {};
 
   const title = `Bracket — ${event.name}`;

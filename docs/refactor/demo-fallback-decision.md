@@ -82,9 +82,9 @@ Ini hanya terjadi di **jalur beranda lama**. Flag `public_discovery_v3` bernilai
    - Alasan menghapus batas waktu: tanpa data demo, batas 2 detik akan menampilkan pesan error padahal database hanya baru bangun dari tidur. Lebih baik menunggu jawaban asli.
    - Beranda V3 tidak diubah.
 4. **Halaman error.** Sekarang hanya 4 halaman organizer yang punya `error.tsx`. Tidak ada `global-error.tsx`. Tambahkan:
-   - `src/app/[locale]/error.tsx` untuk rute yang punya locale.
-   - `src/app/error.tsx` untuk rute tanpa locale (`/events`, `/captain`, `/login`, `/register`, `/admin`, `/organizer`).
+   - `src/app/[locale]/error.tsx` untuk semua rute yang punya locale.
    - `src/app/global-error.tsx` sebagai pengaman terakhir.
+   - `src/app/error.tsx` **tidak perlu**: middleware mengalihkan semua jalur tanpa locale ke `/[locale]/...`.
 5. **Cache.** Setelah cadangan dihapus, error tidak lagi disimpan di cache, karena `unstable_cache` tidak menyimpan hasil yang melempar error.
 6. **`demo-store.ts`.** Tidak dihapus. Tambahkan komentar "hanya untuk test". Aturan ESLint di PR 0.8 melarang kode produksi mengimpornya. Pemindahannya ke folder test dibahas setelah Fase 3.
 
@@ -122,3 +122,35 @@ Teks baru ditaruh di `messages/id.json` dan `messages/en.json`. Untuk beranda la
 - **Cold start Neon.** Database yang baru bangun bisa menjawab lambat. Tanpa batas 2 detik, beranda menunggu lebih lama, tetapi menampilkan data asli.
 - **Pantau setelah deploy.** Lihat log error Prisma di halaman publik selama beberapa hari sebelum lanjut ke Fase 1. Kalau banyak, itu masalah database yang tadinya tertutup, bukan masalah PR ini.
 - **Rollback.** PR 0.6 berdiri sendiri, jadi cukup di-revert.
+
+## Hasil PR 0.6
+
+Dikerjakan sesuai keputusan di atas. Yang berbeda dari rencana atau baru ditemukan:
+
+1. **Halaman event publik memang terdampak.** Semua enam halaman event (`bracket`, `leaderboards`, detail, `participants`, `schedule`, `standings`) memanggil `getPublicEventBySlug`, jadi klaim "pengunjung melihat event palsu" benar untuk jalur produksi.
+2. **`generateMetadata` menjatuhkan seluruh halaman.** Error yang dilempar di `generateMetadata` tidak tertangkap `error.tsx` segmen itu, dan berakhir di `global-error` tanpa navigasi. Sebelum PR ini, cadangan data demo menutupi masalah tersebut. Perbaikannya: fungsi `readEventForMetadata` mengembalikan `null` kalau pembacaan gagal. Isi halaman lalu membaca event yang sama dan gagal di dalam layout, sehingga `[locale]/error.tsx` yang menangkap.
+3. **Tidak ada `src/app/error.tsx`.** Lihat bagian "Pengganti" butir 4.
+4. **Beranda jalur lama** memakai fungsi baru `loadHomepageEvents` (`src/lib/events/homepage-events-read.ts`). Hasilnya `{ events, failed }`, jadi daftar kosong dan gagal tidak tertukar. Kedua tampilan jalur lama (V2 dan polos) menampilkan `home.loadError`.
+5. **Teks.** Teks halaman error memakai kalimat umum "Data belum dapat dimuat. Coba lagi beberapa saat." Beranda memakai kalimat yang sama dengan V3 ("Data event belum dapat dimuat..."). Teks baru: `errorPage.title`, `errorPage.description`, `errorPage.retry`, `home.loadError`, `home.retry` (id dan en).
+
+6. **Salinan data demo yang tidak memakai `demoStore`.** Review independen menemukan `event-detail-page.tsx` punya dua event palsu yang ditulis langsung di kode ("miracle-league" dan "kuroko-summer-cup"). Pencarian `demoStore` tidak menemukannya. Keduanya dihapus, begitu juga `.catch(() => [])` untuk tim, bracket, dan leaderboard di halaman itu, yang membuat turnamen kosong tampak seperti nyata.
+7. **Daftar event jalur lama.** `src/app/events/page.tsx` memakai `getCachedPublicEvents().catch(() => [])`. Setelah cadangan dihapus, baris itu jadi menampilkan "tidak ada event" saat database gagal. Catch-nya dihapus, sehingga halaman error yang tampil.
+8. **`global-error.tsx` memuat `globals.css` sendiri**, karena file itu menggantikan layout root dan tidak mewarisi gayanya.
+
+### Cara dibuktikan
+
+- Test baru `repository-database-errors.test.ts` (23 test): 14 pembaca, 3 titik di leaderboard, 4 penulis, dan satu test bahwa kegagalan tidak diingat. Semuanya merah sebelum kode diubah.
+- Smoke test tanpa database: 24 lolos.
+- Mode produksi tanpa database, dibuka di browser sungguhan: halaman event menampilkan "Halaman ini bermasalah" dengan tombol "Coba lagi" dan navigasi atas tetap ada (id dan en). Beranda menampilkan pesan error dengan `role="alert"` dan tidak ada event demo.
+- Status HTTP halaman event saat database mati adalah 500. Itu disengaja: pengunjung dan mesin pencari sebaiknya tahu ini gangguan, bukan halaman kosong yang normal.
+
+### Temuan yang belum ditangani
+
+Dari review independen, belum diubah dan sengaja ditunda:
+- `getAllPublicEvents` (sitemap) mengembalikan daftar kosong saat database gagal. Crawler akan melihat sitemap tanpa event. Sebaiknya melempar error supaya crawler menerima 5xx.
+- Beranda jalur lama memakai `.catch(() => [])` untuk tim dan bracket event unggulan. Dibiarkan: daftar event tetap benar, dan bagian itu hanya pelengkap.
+- Teks di `global-error.tsx` ditulis ulang dengan tangan dan bisa menyimpang dari `messages/id.json`. Layout root tidak punya penyedia terjemahan, jadi teks tetap statis.
+
+Ada pembaca lain yang juga menelan error database dan mengembalikan nilai kosong, **tanpa** data demo: `getAllPublicEvents` (sitemap), `getEventRoundConfigs`, `getMatchGames`, dan `getMatchGamesForEvent`. Dua yang pertama juga di-cache. Kasusnya sama dengan beranda kosong tadi: "kosong" bisa berarti "database gagal". Tidak diubah di PR ini supaya cakupannya tetap satu masalah. Dicatat sebagai pekerjaan lanjutan.
+
+`public-visual-v2.smoke.spec.ts` masih mengandalkan data demo dan masih diabaikan oleh `playwright.smoke.config.ts`. Perlu diputuskan: pakai data seed, atau dihapus.

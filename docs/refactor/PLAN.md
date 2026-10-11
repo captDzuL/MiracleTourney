@@ -206,7 +206,7 @@ Fase 0:
 - [x] 0.3
 - [x] 0.4
 - [x] 0.5
-- [ ] 0.6
+- [x] 0.6
 - [ ] 0.7
 - [ ] 0.8
 
@@ -265,6 +265,8 @@ Dua file ini dibuat terpisah supaya `repository.test.ts` (3.037 baris) tidak mak
 3. `setMatchResult` tidak lagi mencatat pemenang untuk skor seri (`winnerTeamId` kosong). Klasemen dihitung dari skor, jadi tidak terpengaruh.
 4. `createCaptainWithTeam` memakai 2 huruf pertama tag untuk `logoText`, sama seperti jalur lain. Fungsi ini lalu dihapus (lihat bawah).
 5. Email kembar saat daftar memberi pesan "Email ini sudah terdaftar. Coba login." Pesan itu dan pesan roster terkunci masuk daftar pesan aman (`SAFE_ACTION_MESSAGES`), supaya sampai ke pengguna.
+
+**PR 0.6 selesai.** Cadangan data demo dihapus dari 21 tempat di `repository.ts` dan dari beranda jalur lama. Error database sekarang diteruskan ke halaman error yang ramah (`[locale]/error.tsx`, `global-error.tsx`). Hasil dan temuan ada di bagian "Hasil PR 0.6" di `demo-fallback-decision.md`. Dua temuan penting: error di `generateMetadata` menjatuhkan seluruh halaman (diperbaiki dengan `readEventForMetadata`), dan ada empat pembaca lain yang menelan error dengan nilai kosong (belum ditangani).
 
 **PR 0.4 selesai.** File `repository.db.test.ts` menjalankan empat test dengan Postgres asli: balapan slot di `registerTeam`, nama tim sama dan captain ganda di `createTeamRegistrationRequest`, dan batas slot di `approveTeamRegistrationRequest`. Test dilewati kalau `REGISTRATION_TEST_DATABASE_URL` tidak ada. Test menolak database yang bukan lokal, yang namanya tidak mengandung "test", atau yang host-nya diganti lewat parameter URL, karena kode yang dites ikut mengubah baris kedaluwarsa lain di database itu. Job CI `database-tests` menjalankannya di Postgres 18 sementara. Cara menjalankan di laptop ada di komentar paling atas file test.
 
