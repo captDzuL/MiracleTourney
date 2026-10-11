@@ -70,11 +70,23 @@ describe("events page public cards", () => {
     expect(`${homeSource}\n${eventsSource}\n${detailSource}`).not.toContain("Miracle Fast Tour");
   });
 
-  test("homepage keeps demo events visible when public event loading falls back", () => {
+  test("homepage says events could not be loaded instead of showing demo events when loading fails", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "../home-page-content.tsx"), "utf8");
 
-    expect(source).toContain('getPublicEvents as getDemoPublicEvents');
-    expect(source).toContain("getDemoPublicEvents()");
+    expect(source).not.toContain("demo-store");
+    expect(source).not.toContain("getDemoPublicEvents");
+    expect(source).toContain("loadHomepageEvents(getCachedPublicEvents)");
+    expect(source).toContain('t("loadError")');
+  });
+
+  test("public event pages have no built-in demo events and do not turn a failed load into an empty tournament", () => {
+    const detailSource = fs.readFileSync(path.resolve(__dirname, "./[slug]/event-detail-page.tsx"), "utf8");
+    const eventsSource = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+
+    expect(detailSource).not.toContain("fallbackEventsBySlug");
+    expect(detailSource).not.toContain("getPublicEventBySlug(slug).catch");
+    expect(detailSource).not.toMatch(/get(TeamsForEvent|BracketPreview|LeaderboardForEvent)([^)]*).catch/);
+    expect(eventsSource).not.toContain("getCachedPublicEvents().catch");
   });
 
   test("front event controls preserve visible keyboard focus styles", () => {

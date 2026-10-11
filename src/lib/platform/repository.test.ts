@@ -150,7 +150,6 @@ import {
   createTeamRegistrationRequest,
   getCertificateByEvent,
   getCertificatesForEvents,
-  getLeaderboardForEvent,
   getFlashpeakLeaderboardForEvent,
   getFlashpeakLeaderboardForEventResult,
   getPublicDiscoveryEvents,
@@ -158,11 +157,8 @@ import {
   getManageableEventDraft,
   getOrganizerProfileForUser,
   getMatchGamesForEvent,
-  getMatchesForEvent,
   getOrganizerUserById,
   getOrganizerUsers,
-  getPublicEventBySlug,
-  getPublicVisibleBracketPreview,
   commitRegistrationImportBatch,
   getRegistrationRecordsForEvent,
   getRegistrationImportBatchesForEvent,
@@ -173,7 +169,6 @@ import {
   getEventPaymentSettingsForManager,
   RegistrationMutationConflictError,
   getTeamCountsForEvents,
-  getTeamsForEvent,
   getTeamsForEvents,
   listEventVisualAssets,
   rejectEventVisualAsset,
@@ -2462,61 +2457,18 @@ describe("existing captain event registration", () => {
     });
   });
 });
-describe("public demo fallback reads", () => {
+// Reads of Best-of-N metadata still return empty values when the database fails. This is separate from the demo data
+// fallback, which was removed in PR 0.6 (see repository-database-errors.test.ts).
+describe("bracket metadata reads", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    prisma.event.findFirst.mockRejectedValue(new Error("database unavailable"));
-    prisma.event.findUnique.mockRejectedValue(new Error("database unavailable"));
-    prisma.team.findMany.mockRejectedValue(new Error("database unavailable"));
-    prisma.match.findMany.mockRejectedValue(new Error("database unavailable"));
     prisma.eventRoundConfig.findMany.mockRejectedValue(new Error("database unavailable"));
     prisma.matchGame.findMany.mockRejectedValue(new Error("database unavailable"));
-    prisma.player.findMany.mockRejectedValue(new Error("database unavailable"));
-    prisma.playerStat.findMany.mockRejectedValue(new Error("database unavailable"));
-  });
-
-  it("resolves a public demo event by slug when Prisma cannot connect", async () => {
-    await expect(getPublicEventBySlug("kuroko-summer-cup")).resolves.toMatchObject({
-      id: "event-kuroko-summer",
-      slug: "kuroko-summer-cup",
-      status: "Ongoing",
-    });
-  });
-
-  it("resolves demo teams and matches for public demo event pages when Prisma cannot connect", async () => {
-    await expect(getTeamsForEvent("event-kuroko-summer")).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "team-seirin", name: "Seirin" }),
-      ]),
-    );
-    await expect(getMatchesForEvent("event-kuroko-summer")).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "match-kuroko-1", status: "Completed" }),
-      ]),
-    );
-  });
-
-  it("resolves demo public bracket projection when Prisma cannot connect", async () => {
-    const preview = await getPublicVisibleBracketPreview("event-kuroko-summer");
-
-    expect(preview).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: expect.stringMatching(/^event-kuroko-summer-r\d+-m\d+$/) }),
-      ]),
-    );
   });
 
   it("resolves empty bracket metadata when Prisma cannot connect", async () => {
-    await expect(getEventRoundConfigs("event-kuroko-summer")).resolves.toEqual([]);
-    await expect(getMatchGamesForEvent("event-kuroko-summer")).resolves.toEqual(new Map());
-  });
-
-  it("resolves demo leaderboard when Prisma cannot connect", async () => {
-    await expect(getLeaderboardForEvent("event-kuroko-summer", "game-kuroko")).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ playerName: "Taiga Kagami" }),
-      ]),
-    );
+    await expect(getEventRoundConfigs("event-1")).resolves.toEqual([]);
+    await expect(getMatchGamesForEvent("event-1")).resolves.toEqual(new Map());
   });
 });
 

@@ -7,13 +7,13 @@ import { GameArt, StatusBadge } from "@/components/GameArt";
 import { PublicHomeV2 } from "@/components/public-v2/PublicHomeV2";
 import { PublicDiscoveryHomeV3 } from "@/components/v3/public-discovery/PublicDiscoveryV3";
 import { chooseFeaturedDiscoveryEvent, filterDiscoveryEvents } from "@/lib/events/public-discovery";
+import { loadHomepageEvents } from "@/lib/events/homepage-events-read";
 import { readPublicHomeFeaturedEvent } from "@/lib/events/public-home-read";
 import { createFeaturedTrace } from "@/lib/events/public-home-trace";
 import type { PublicHomeFeaturedEvent } from "@/lib/events/public-v3-types";
 import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getDefaultModeLabel } from "@/lib/platform/config";
-import { getPublicEvents as getDemoPublicEvents } from "@/lib/platform/demo-store";
 import { getAllGames, getBracketPreview, getGameForEvent, getPublicDiscoveryEvents, getPublicEvents, getTeamsForEvent } from "@/lib/platform/repository";
 import type { Event, Game } from "@/lib/platform/types";
 
@@ -23,22 +23,6 @@ const getCachedPublicDiscoveryEvents = unstable_cache(
   ["public-discovery-events-v3"],
   { revalidate: 30 },
 );
-const PUBLIC_EVENTS_TIMEOUT_MS = 2_000;
-
-async function getHomepageEvents() {
-  try {
-    return await Promise.race([
-      getCachedPublicEvents(),
-      new Promise<Event[]>((resolve) => {
-        setTimeout(() => resolve(getDemoPublicEvents()), PUBLIC_EVENTS_TIMEOUT_MS);
-      }),
-    ]);
-  } catch (error) {
-    console.warn("homepage public events fallback", error);
-    return getDemoPublicEvents();
-  }
-}
-
 function ctaHref(event: Event) {
   if (event.status === "Ongoing" && !event.stream?.enabled) return `/events/${event.slug}/bracket` as `/events/${string}/bracket`;
   if (event.status === "Finished") return `/events/${event.slug}/standings` as `/events/${string}/standings`;
@@ -152,7 +136,7 @@ export async function HomePageContent({
     );
   }
 
-  const events = await getHomepageEvents();
+  const { events, failed } = await loadHomepageEvents(getCachedPublicEvents);
 
   const filteredEvents = gameFilter === "all" ? events : events.filter((event) => event.gameId === gameFilter);
   const featuredEvent = filteredEvents[0];
@@ -197,7 +181,7 @@ export async function HomePageContent({
           eventDrop: t("eventDrop"),
           liveFeed: t("liveFeed"),
           tickerEmpty: t("tickerEmpty"),
-          noEvents: t("noEvents"),
+          noEvents: failed ? t("loadError") : t("noEvents"),
           issue: t("issueLabel"),
         }}
       />
@@ -354,6 +338,12 @@ export async function HomePageContent({
               priority={index === 0}
             />
           ))}
+        </div>
+      ) : failed ? (
+        <div role="alert" className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 py-16 text-center">
+          <Trophy className="mx-auto h-8 w-8 text-slate-300" />
+          <p className="mt-3 text-sm text-slate-500">{t("loadError")}</p>
+          <Link href="/" className="mt-4 inline-block text-sm font-semibold text-blue-600 hover:underline">{t("retry")}</Link>
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 py-16 text-center">

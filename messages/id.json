@@ -679,6 +679,8 @@
     "viewEvent": "Lihat Event",
     "upToTeams": "Maks {cap} tim · {venue}",
     "noEvents": "Belum ada event publik untuk game ini.",
+    "loadError": "Data event belum dapat dimuat. Coba lagi beberapa saat.",
+    "retry": "Coba lagi",
     "eventDrop": "Event Drop",
     "liveFeed": "Live Feed",
     "tickerEmpty": "Jadwal muncul setelah tim siap.",
@@ -822,6 +824,11 @@
     "title": "Halaman Tidak Ditemukan",
     "description": "Halaman yang kamu cari tidak tersedia atau sudah dipindahkan.",
     "backHome": "Kembali ke Beranda"
+  },
+  "errorPage": {
+    "title": "Halaman ini bermasalah",
+    "description": "Data belum dapat dimuat. Coba lagi beberapa saat.",
+    "retry": "Coba lagi"
   },
   "login": {
     "title": "Masuk",

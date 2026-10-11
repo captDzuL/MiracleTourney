@@ -8,6 +8,7 @@ import { readPublicV3Event } from "@/lib/events/public-v3-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { serializeJsonLd } from "@/lib/seo/json-ld";
 import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
+import { readEventForMetadata } from "@/lib/events/public-event-metadata";
 import { renderEventDetailPage } from "../../../events/[slug]/event-detail-page";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
@@ -19,7 +20,7 @@ export async function generateMetadata({
   params: Promise<{ locale: string; slug: string }>;
 }): Promise<Metadata> {
   const { locale, slug } = await params;
-  const event = await getPublicEventBySlug(slug);
+  const event = await readEventForMetadata(slug);
   if (!event) return {};
 
   const ogImage = isFeatureEnabled("adaptive_public_event_v3")

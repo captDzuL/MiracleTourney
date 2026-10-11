@@ -22,6 +22,8 @@ const SAFE_ACTION_MESSAGES = new Set([
   "Cannot reject the active visual revision",
   "Series winner not yet determined",
   "Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.",
+  "Email ini sudah terdaftar. Coba login.",
+  "Roster tim sudah terkunci setelah drawing dipublikasikan atau turnamen berjalan.",
   "Konfirmasi hak publikasi artwork terlebih dahulu.",
 ]);
 
