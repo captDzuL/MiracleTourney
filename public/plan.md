@@ -198,7 +198,7 @@ For elimination tournaments that contain two semifinals, Miracle V3 adds a Third
 - Tournament completion and final podium publication require official results for both the Final and Third Place Match.
 - Champion and runner-up come from the Final; third place comes from the Third Place Match winner.
 - Public brackets show a separate Perebutan Juara 3 card beneath the Final, with clear loser-from-semifinal provenance.
-- A normal semifinal loser advances to the Third Place Match. Disqualification does not advance automatically and requires an organizer decision with an audit record.
+- A normal semifinal loser advances to the Third Place Match. Disqualification does not advance automatically and requires an organizer decision with an audit record. Group-stage disqualifications are handled by the `team_disqualify` operation (see `src/lib/tournament/operations/README.md`); a disqualification inside the playoffs is still a manual decision.
 - The current production bracket only propagates winners and currently generates one champion certificate after the Final. Loser routing, completion gating, third-place configuration, public display, and multi-recipient certificate generation are v3 enhancements.
 
 

@@ -91,7 +91,7 @@ export function MatchControlWorkspace({initialState,locale,view,query={}}:{
     </form>
     {view==="competition"?<>
       {state.event.status==="Finished"?<p className={surface}>{t("finished")}</p>:drawingMutable?<DrawingControls key={state.event.id} state={localizedState} busy={busy} run={run} t={translateControl}/>:<p className={surface}>{t(drawingPublished?"drawingLocked":"closeRegistration")}</p>}
-      <FormatContextPanel state={state} locale={locale} groupId={group} phaseId={phase}/>
+      <FormatContextPanel state={state} locale={locale} groupId={group} phaseId={phase} run={run} busy={busy||lifecycleLocked} canDisqualify={drawingPublished&&!lifecycleLocked&&state.event.status!=="Finished"}/>
     </>:view==="schedule"?<>
       <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-subtle)]"><CalendarDays aria-hidden="true" size={18}/>{state.event.publishedScheduleVersion===null?t("unpublished"):t("published",{version:state.event.publishedScheduleVersion})}</div>
       <MatchQueue state={state} matches={matches} selectedId={selected?.id} base={base} query={query} locale={locale} schedule/>

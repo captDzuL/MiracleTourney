@@ -6,6 +6,7 @@ import { planSchedule } from "../scheduling";
 import type { ParsedCommand } from "./schema";
 import { json, isTerminal, matchSnapshot, eventMatch, readGraph, type StoredSchedule } from "./state";
 import { applyResult } from "./results";
+import { applyDisqualification } from "./disqualification";
 import { reconcileReadinessActions } from "./readiness";
 import { scheduleBaseline } from "./schedule-source";
 import { diagnoseLegacyCompetition } from "./legacy-compatibility";
@@ -151,7 +152,7 @@ async function requirePublishedDrawing(tx: Prisma.TransactionClient, eventId: st
 
 /** Internal: must run only after authorization and event CAS in execute(). */
 export async function applyCommand(tx: Prisma.TransactionClient, eventId: string, actorId: string, command: ParsedCommand, version: number, idempotencyKey: string, now: Date, readinessActor: "organizer" | "captain" = "organizer", reporter?: OperationStageReporter): Promise<string | undefined> {
-  if (["schedule_publish", "match_start", "result_submit", "result_correct"].includes(command.kind)) {
+  if (["schedule_publish", "match_start", "result_submit", "result_correct", "team_disqualify"].includes(command.kind)) {
     await requirePublishedDrawing(tx, eventId);
   }
   if (["readiness_update", "readiness_deadline", "match_start", "match_timing"].includes(command.kind)) {
@@ -159,6 +160,7 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
     if (!("matchId" in command) || !graph.matches.some(m => m.id === command.matchId)) throw new Error("Match not found in competition");
   }
   switch (command.kind) {
+    case "team_disqualify": return applyDisqualification(tx, eventId, actorId, command, version, idempotencyKey, now);
     case "delay_preview": return applyDelay(tx, eventId, actorId, command, version, idempotencyKey);
     case "legacy_upgrade": {
       if (await tx.competitionPhase.count({ where: { eventId } })) throw new Error("Competition already initialized");
@@ -286,12 +288,14 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
       requireReason(command.reason);
       const match = await eventMatch(tx, eventId, command.matchId);
       if (isTerminal(match)) throw new Error("Cannot move a live or completed match");
+      if (match.status === "Voided") throw new Error("Match was cancelled by a disqualification");
       await tx.match.update({ where: { id: match.id }, data: { scheduleStatus: command.status } });
       return match.id;
     }
     case "readiness_update": {
       const match = await eventMatch(tx, eventId, command.matchId);
       if (isTerminal(match)) throw new Error("Cannot change readiness for a live or completed match");
+      if (match.status === "Voided") throw new Error("Match was cancelled by a disqualification");
       if (![match.homeTeamId, match.awayTeamId].includes(command.teamId)) throw new Error("Team is not a match participant");
       const prior = await tx.matchReadiness.findUnique({ where: { matchId_teamId: { matchId: match.id, teamId: command.teamId } } });
       const data = { status: command.status, actor: readinessActor, actorUserId: actorId, note: command.note ?? null,
@@ -312,6 +316,7 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
     case "match_start": {
       const match = await eventMatch(tx, eventId, command.matchId);
       if (isTerminal(match)) throw new Error("Match is already live or completed");
+      if (match.status === "Voided") throw new Error("Match was cancelled by a disqualification");
       if (!match.homeTeamId || !match.awayTeamId || match.homeTeamId === match.awayTeamId || match.status === "Bye") throw new Error("Match participants are unresolved");
       const event = await tx.event.findUnique({ where: { id: eventId } });
       const revision = event?.publishedScheduleVersion == null ? null : await tx.scheduleRevision.findFirst({

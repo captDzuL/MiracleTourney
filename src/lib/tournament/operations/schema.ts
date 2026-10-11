@@ -21,6 +21,7 @@ const drawingTeams = z.array(z.object({
 }).strict()).min(2);
 export const resultGamesSchema = z.array(z.object({ gameNumber: z.number().int().positive(), homeScore: z.number().int().nonnegative().max(2147483647), awayScore: z.number().int().nonnegative().max(2147483647) }).strict()).max(999);
 export const correctionPreviewSchema = z.object({ eventId: entityId, matchId: operationMatchId, games: resultGamesSchema }).strict();
+export const disqualificationPreviewSchema = z.object({ eventId: entityId, teamId: entityId }).strict();
 export const internalCorrectionPreviewSchema = z.object({ eventId: entityId, matchId: id, games: resultGamesSchema }).strict();
 const scheduling = z.object({
   timezone: id, eventWindow: z.object({ start: instant, end: instant }).strict(),
@@ -44,6 +45,7 @@ export const internalOperationCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("match_start"), matchId: id, reason }).strict(),
   z.object({ kind: z.literal("result_submit"), matchId: id, games: resultGamesSchema }).strict(),
   z.object({ kind: z.literal("result_correct"), matchId: id, games: resultGamesSchema, reason: z.string().trim().min(1).max(4000), previewToken: id }).strict(),
+  z.object({ kind: z.literal("team_disqualify"), teamId: id, reason: z.string().trim().min(1).max(4000), previewToken: id }).strict(),
   z.object({ kind: z.literal("incident_report"), matchId: id.optional(), incidentKind: id, description: z.string().trim().min(1).max(8000) }).strict(),
   z.object({ kind: z.literal("incident_resolve"), incidentId: id, reason }).strict(),
   z.object({ kind: z.literal("action_resolve"), actionId: id, reason }).strict(),
@@ -77,6 +79,7 @@ function validatePublicEntityIds(command: z.infer<typeof internalOperationComman
     case "match_timing": case "readiness_deadline": case "match_start": case "result_submit": case "result_correct":
       checkMatch(command.matchId, ["matchId"]); break;
     case "readiness_update": checkMatch(command.matchId, ["matchId"]); check(command.teamId, ["teamId"]); break;
+    case "team_disqualify": check(command.teamId, ["teamId"]); break;
     case "incident_report": if (command.matchId) checkMatch(command.matchId, ["matchId"]); break;
     case "incident_resolve": check(command.incidentId, ["incidentId"]); break;
     case "action_resolve": check(command.actionId, ["actionId"]); break;

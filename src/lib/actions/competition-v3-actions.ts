@@ -7,7 +7,7 @@ import { prisma } from "@/lib/platform/db";
 import { createCompetitionOperations, type OperationReceipt } from "@/lib/tournament/operations";
 import { CompetitionExpectedError, isCompetitionExpectedError } from "@/lib/tournament/operations/errors";
 import { classifyCompetitionFailure, isCompetitionSerializationConflict, type CompetitionFailureCode } from "@/lib/tournament/operations/observability";
-import { correctionPreviewSchema, operationRequestSchema } from "@/lib/tournament/operations/schema";
+import { correctionPreviewSchema, disqualificationPreviewSchema, operationRequestSchema } from "@/lib/tournament/operations/schema";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { withServerActionLog, type ServerActionLogContext } from "@/lib/observability/logger";
 
@@ -67,6 +67,25 @@ async function previewCompetitionResultCorrectionActionImpl(input: unknown) {
   );
   if (!access.ok) throw new CompetitionExpectedError("unauthorized", "Not authorized");
   return createCompetitionOperations(prisma).previewResultCorrection({ ...request, actor: { id: user.id, role: user.role } });
+}
+
+export async function previewCompetitionTeamDisqualificationAction(input: unknown) {
+  return withServerActionLog("competition_preview_disqualification", "/server-actions/competition/preview-disqualification", () => previewCompetitionTeamDisqualificationActionImpl(input));
+}
+
+async function previewCompetitionTeamDisqualificationActionImpl(input: unknown) {
+  const request = disqualificationPreviewSchema.parse(input);
+  const user = await requireAnyRole(["organizer", "platform_admin", "admin"]);
+  if (!user) throw new CompetitionExpectedError("unauthorized", "Unauthorized");
+  if (user.role === "organizer" && user.mustChangePassword) throw new CompetitionExpectedError("password_change_required", "Password change required");
+  if (!isFeatureEnabled("competition_operations_v3")) throw new CompetitionExpectedError("unavailable", "Competition operations are unavailable");
+  const access = authorizeWorkspaceResource(
+    user as WorkspaceActor,
+    { eventId: request.eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
+    user.role === "organizer" ? user.id : null,
+  );
+  if (!access.ok) throw new CompetitionExpectedError("unauthorized", "Not authorized");
+  return createCompetitionOperations(prisma).previewTeamDisqualification({ ...request, actor: { id: user.id, role: user.role } });
 }
 
 /** Expected failures must cross the production Server Action boundary as data;
