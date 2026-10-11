@@ -58,6 +58,22 @@ describe("readOrganizerWorkspaceSummary", () => {
     expect(view?.blockers.every(b => view.capabilities[b.section])).toBe(true);
   });
 
+  it("raises a settings blocker and badge only while roster change requests wait for a decision", async () => {
+    findFirst.mockResolvedValue({ ...row, _count: { ...row._count, rosterChangeRequests: 2 } });
+    const view = await readOrganizerWorkspaceSummary("cup", { id: "owner", role: "organizer" });
+    expect(view?.badges.settings).toBe(2);
+    expect(view?.blockers.at(-1)).toMatchObject({
+      code: "roster_change_review", section: "settings", message: "blockers.roster_change_review", href: "/organizer/events/cup/settings",
+    });
+    expect(findFirst.mock.calls[0][0].select._count.select.rosterChangeRequests.where.status).toBe("pending");
+  });
+  it("shows neither when no request waits", async () => {
+    findFirst.mockResolvedValue({ ...row, _count: { ...row._count, rosterChangeRequests: 0 } });
+    const view = await readOrganizerWorkspaceSummary("cup", { id: "owner", role: "organizer" });
+    expect(view?.badges.settings).toBeUndefined();
+    expect(view?.blockers.map((b) => b.code)).not.toContain("roster_change_review");
+  });
+
   it("exposes announcements and settings because their physical event routes exist", async () => {
     const view = await readOrganizerWorkspaceSummary("cup", { id: "owner", role: "organizer" });
     expect(view?.capabilities.announcements).toBe(true);

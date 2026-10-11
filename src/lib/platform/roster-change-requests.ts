@@ -3,28 +3,21 @@ import { disqualifiedTeamIds } from "../tournament/operations/result-projection"
 import { gameModes } from "./config";
 import { prisma } from "./db";
 import { readRosterChangeState, runSerializableRegistrationTransaction } from "./repository";
+import {
+  assertPositionAllowed,
+  assertRosterSizeAfter,
+  checkJoiningPlayer,
+  isCaptainPlayer,
+  normalizeIncoming,
+  RosterChangeError,
+  type IncomingPlayer,
+  type KnownPlayer,
+} from "./roster-change-rules";
 import { isActivePlayer } from "./roster-membership";
 import type { RosterChangeWindow } from "./roster-change-window";
 
-export type RosterChangeErrorCode =
-  | "team_not_found" | "not_open" | "locked" | "no_allowance" | "pending_exists"
-  | "team_disqualified" | "match_live" | "player_not_found" | "captain_player"
-  | "roster_size" | "already_on_roster" | "nickname_taken" | "invalid_change"
-  | "request_not_found" | "request_not_pending" | "rate_limited";
-
-/** Carries a code, never user-facing text: the action layer picks the wording. */
-export class RosterChangeError extends Error {
-  constructor(readonly code: RosterChangeErrorCode) {
-    super(code);
-    this.name = "RosterChangeError";
-  }
-}
-
-export interface IncomingPlayer {
-  displayName: string;
-  nickname: string;
-  position: string;
-}
+export { RosterChangeError } from "./roster-change-rules";
+export type { IncomingPlayer, RosterChangeErrorCode } from "./roster-change-rules";
 
 export type RosterChange =
   | { kind: "swap"; outPlayerId: string; incoming: IncomingPlayer }
@@ -38,13 +31,6 @@ export interface RequestRosterChangeInput {
 }
 
 type Tx = Prisma.TransactionClient;
-type KnownPlayer = { id: string; displayName: string; nickname: string; position: string; removedAt: Date | null };
-
-const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
-
-function normalizeIncoming(player: IncomingPlayer): IncomingPlayer {
-  return { displayName: player.displayName.trim(), nickname: player.nickname.trim(), position: player.position.trim() };
-}
 
 /**
  * Files a request for the organizer to decide. It never edits Player rows: the
@@ -93,10 +79,8 @@ async function createRosterChangeRequest(tx: Tx, input: RequestRosterChangeInput
   if (leaving && isCaptainPlayer(team, leaving)) throw new RosterChangeError("captain_player");
   const joining = input.change.kind === "remove" ? null : normalizeIncoming(input.change.incoming);
 
-  if (input.change.kind !== "swap") {
-    const sizeAfter = active.length - (leaving ? 1 : 0) + (joining ? 1 : 0);
-    if (sizeAfter < mode.teamSize || sizeAfter > mode.maxRosterSize) throw new RosterChangeError("roster_size");
-  }
+  assertRosterSizeAfter(input.change.kind, active.length, mode);
+  if (joining) assertPositionAllowed(joining.position, mode.positions);
 
   let returning: KnownPlayer | undefined;
   let activeElsewhere: { teamId: string; teamName: string }[] = [];
@@ -120,51 +104,15 @@ async function createRosterChangeRequest(tx: Tx, input: RequestRosterChangeInput
   return { requestId: created.id, remaining: event.rosterChangeLimit - counted.length - 1 };
 }
 
-/** Matches by UID, and by IGN when the team has no captain UID on file. */
-function isCaptainPlayer(
-  team: { captainUid: string | null; captainIgn: string | null; captainIsPlayer: boolean },
-  player: { displayName: string; nickname: string },
-): boolean {
-  if (!team.captainIsPlayer) return false;
-  const sameUid = Boolean(team.captainUid) && sameText(player.displayName, team.captainUid ?? "");
-  const sameIgn = Boolean(team.captainIgn) && sameText(player.nickname, team.captainIgn ?? "");
-  return sameUid || sameIgn;
-}
-
-function resolveLeavingPlayer<T extends { id: string }>(change: RosterChange, active: T[]): T | null {
+export function resolveLeavingPlayer<T extends { id: string }>(change: RosterChange, active: T[]): T | null {
   if (change.kind === "add") return null;
   const leaving = active.find((player) => player.id === change.outPlayerId);
   if (!leaving) throw new RosterChangeError("player_not_found");
   return leaving;
 }
 
-/**
- * UID and IGN are not unique across teams or over time. Only two things block a
- * joining player: someone with the same UID or IGN is already on this roster, or
- * their IGN belongs to a different former player of this team (the table keeps
- * one row per team and IGN). A former player with the same UID simply returns.
- */
-function checkJoiningPlayer<T extends KnownPlayer>(joining: IncomingPlayer, players: T[], active: T[], leaving: T | null): T | undefined {
-  if (leaving && sameText(leaving.displayName, joining.displayName)) throw new RosterChangeError("invalid_change");
-  const stayingOnRoster = active.filter((player) => player.id !== leaving?.id);
-  if (stayingOnRoster.some((player) => sameText(player.displayName, joining.displayName) || sameText(player.nickname, joining.nickname))) {
-    throw new RosterChangeError("already_on_roster");
-  }
-  const returning = latestFormerPlayer(players, joining.displayName);
-  if (players.some((player) => player.id !== returning?.id && sameText(player.nickname, joining.nickname))) {
-    throw new RosterChangeError("nickname_taken");
-  }
-  return returning;
-}
-
-/** The row of a former player with this UID; the most recent one if the UID left more than once. */
-function latestFormerPlayer<T extends KnownPlayer>(players: T[], uid: string): T | undefined {
-  return players
-    .filter((player) => !isActivePlayer(player) && sameText(player.displayName, uid))
-    .sort((a, b) => (b.removedAt?.getTime() ?? 0) - (a.removedAt?.getTime() ?? 0))[0];
-}
-
-async function findActiveOnOtherTeams(tx: Tx, eventId: string, teamId: string, uid: string): Promise<{ teamId: string; teamName: string }[]> {
+/** Other teams in the event that currently field this UID; shown to the organizer, never to captains. */
+export async function findActiveOnOtherTeams(tx: Pick<Tx, "player">, eventId: string, teamId: string, uid: string): Promise<{ teamId: string; teamName: string }[]> {
   const rows = await tx.player.findMany({
     where: { eventId, teamId: { not: teamId }, removedAt: null, displayName: { equals: uid, mode: "insensitive" } },
     select: { teamId: true, team: { select: { name: true } } },

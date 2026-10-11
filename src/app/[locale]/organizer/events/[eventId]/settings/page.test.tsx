@@ -1,6 +1,6 @@
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireAnyRole: vi.fn(),
@@ -8,11 +8,18 @@ const mocks = vi.hoisted(() => ({
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
   redirectToActiveLocale: vi.fn((path: string) => ({ redirect: path })),
   setRequestLocale: vi.fn(),
+  getRosterChangeSettings: vi.fn(),
+  getTranslations: vi.fn(),
 }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
 vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft: mocks.getManageableEventDraft }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
-vi.mock("next-intl/server", () => ({ setRequestLocale: mocks.setRequestLocale, getTranslations: vi.fn() }));
+vi.mock("next-intl/server", () => ({ setRequestLocale: mocks.setRequestLocale, getTranslations: mocks.getTranslations }));
+vi.mock("@/lib/platform/roster-change-settings", () => ({ getRosterChangeSettings: mocks.getRosterChangeSettings }));
+vi.mock("@/components/v3/organizer/RosterChangeSettingsPanel", () => ({
+  RosterChangeSettingsPanel: (props: { eventId: string; result?: string; error?: string }) => <div data-roster-panel={props.eventId} data-result={props.result} data-error={props.error} />,
+  RosterChangeSettingsError: () => <div data-roster-error="true" />,
+}));
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale: mocks.redirectToActiveLocale }));
 vi.mock("@/i18n/navigation", () => ({ Link: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} {...props}>{children}</a> }));
@@ -21,6 +28,13 @@ import SettingsPage from "./page";
 import { EventSettingsWorkspace } from "@/components/v3/organizer/EventSettingsWorkspace";
 
 describe("SettingsPage", () => {
+  beforeEach(() => {
+    mocks.getRosterChangeSettings.mockReset();
+    mocks.getRosterChangeSettings.mockRejectedValue(new Error("not configured in this test"));
+    mocks.getTranslations.mockReset();
+    mocks.getTranslations.mockResolvedValue((key: string) => key);
+  });
+
   it("rejects unsupported locales and missing events", async () => {
     await expect(SettingsPage({ params: Promise.resolve({ locale: "fr", eventId: "event-1" }) })).rejects.toThrow("NOT_FOUND");
     mocks.requireAnyRole.mockResolvedValue({ id: "owner", role: "organizer", mustChangePassword: false, name: "Organizer" });
@@ -57,5 +71,44 @@ describe("SettingsPage", () => {
     mocks.getManageableEventDraft.mockResolvedValue({ id: "event-1", organizerUserId: "organizer-1", name: "Organizer Cup", status: "Published", organizerName: "Other", organizer: null });
     const result = await SettingsPage({ params: Promise.resolve({ locale: "id", eventId: "event-1" }) });
     expect((result as React.ReactElement<{ contact: { href: string | null } }>).props.contact.href).toBeNull();
+  });
+
+  describe("roster change panel", () => {
+    const eventRow = { id: "event-1", organizerUserId: "owner", slug: "miracle-open", name: "Miracle Open", status: "Published", organizerName: "Miracle", organizer: null };
+    const asOwner = () => {
+      mocks.requireAnyRole.mockResolvedValue({ id: "owner", role: "organizer", mustChangePassword: false, name: "Organizer" });
+      mocks.getManageableEventDraft.mockResolvedValue(eventRow);
+    };
+    type Page = React.ReactElement<{ children?: React.ReactElement<{ eventId: string; result?: string; error?: string }> | null }>;
+
+    it("puts the panel inside the settings page for this event, loaded for the signed-in user", async () => {
+      asOwner();
+      mocks.getRosterChangeSettings.mockResolvedValue({ limit: 2 });
+      const page = (await SettingsPage({ params: Promise.resolve({ locale: "id", eventId: "event-1" }) })) as Page;
+      expect(page.props.children?.props.eventId).toBe("event-1");
+      expect(mocks.getRosterChangeSettings).toHaveBeenCalledWith(expect.objectContaining({ id: "owner" }), "event-1");
+    });
+
+    it("passes the result and error codes from the address bar to the panel", async () => {
+      asOwner();
+      mocks.getRosterChangeSettings.mockResolvedValue({ limit: 2 });
+      const page = (await SettingsPage({
+        params: Promise.resolve({ locale: "id", eventId: "event-1" }),
+        searchParams: Promise.resolve({ rcResult: "approved", rcError: "window_closed" }),
+      })) as Page;
+      expect(page.props.children?.props.result).toBe("approved");
+      expect(page.props.children?.props.error).toBe("window_closed");
+    });
+
+    it("keeps the rest of the page and says so when the panel cannot load", async () => {
+      asOwner();
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      mocks.getRosterChangeSettings.mockRejectedValue(new Error("db down: postgres://user:secret@host"));
+      const page = (await SettingsPage({ params: Promise.resolve({ locale: "id", eventId: "event-1" }) })) as Page;
+      expect(page.props.children).toBeTruthy();
+      expect(renderToStaticMarkup(page.props.children as React.ReactElement)).toContain("data-roster-error");
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret");
+      consoleError.mockRestore();
+    });
   });
 });

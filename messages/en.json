@@ -1843,7 +1843,69 @@
       "contactMissing": "No contact has been added.",
       "openPublication": "Open publication settings",
       "openContact": "Open contact settings",
-      "openPreferences": "Open safe preferences"
+      "openPreferences": "Open safe preferences",
+      "rosterChange": {
+        "title": "Roster Change",
+        "description": "Set how many times each team may change players after the drawing. You approve every request.",
+        "limitLabel": "Changes per team",
+        "save": "Save",
+        "limitHelp": "0 keeps the roster locked after the drawing. Changes close when the first playoff match starts.",
+        "unsupported": "Only for group + playoffs events.",
+        "loadFailed": "Roster change settings could not be loaded. Reload the page.",
+        "window": {
+          "free": "The roster is not locked yet.",
+          "limited": "Teams can request a change now.",
+          "locked": "Roster changes are closed."
+        },
+        "pendingTitle": "Waiting for a decision",
+        "noPending": "No requests are waiting.",
+        "kind": {
+          "swap": "Replace a player",
+          "add": "Add a player",
+          "remove": "Remove a player"
+        },
+        "usage": "Changes used: {used} of {limit}",
+        "leaving": "Leaving",
+        "joining": "Joining",
+        "returning": "Former player coming back",
+        "alsoOn": "This UID is also active on: {teams}",
+        "note": "Note (optional)",
+        "approve": "Approve",
+        "reject": "Reject",
+        "recentTitle": "Recent decisions",
+        "status": {
+          "approved": "Approved",
+          "rejected": "Rejected",
+          "cancelled": "Cancelled"
+        },
+        "result": {
+          "approved": "Approved. The team's roster has changed.",
+          "rejected": "Request rejected.",
+          "limit_saved": "Change limit saved."
+        },
+        "error": {
+          "request_not_found": "Request not found.",
+          "request_not_pending": "This request was already decided.",
+          "window_closed": "Roster changes are closed. This cannot be approved.",
+          "team_disqualified": "The team has been disqualified.",
+          "match_live": "The team is playing. Try again after the match.",
+          "no_allowance": "The team has no changes left.",
+          "player_not_found": "That player is not on the roster.",
+          "captain_player": "The captain who plays cannot be replaced.",
+          "roster_size": "The number of players does not fit the game limit.",
+          "already_on_roster": "This player is already on the roster.",
+          "nickname_taken": "Another player on that team already uses this IGN.",
+          "invalid_change": "The request data is not valid.",
+          "team_not_found": "Team or event not found.",
+          "rate_limited": "Too many tries. Wait a few minutes and try again.",
+          "invalid_limit": "The limit must be a number from 0 to 5.",
+          "limit_below_used": "The limit cannot be below what a team already used.",
+          "format_not_supported": "Only for group + playoffs events.",
+          "locked": "The event is finished. The limit cannot be changed.",
+          "forbidden": "You do not have access to this event.",
+          "unknown": "Could not save. Try again."
+        }
+      }
     },
     "guide": {
       "draft": "Complete event identity, format, and registration details before publishing.",
@@ -1862,6 +1924,7 @@
       "match_results": "Match results are still outstanding.",
       "statistics_review": "Player statistics need review.",
       "schedule_unpublished": "The match schedule has not been published.",
+      "roster_change_review": "Roster change requests need a decision.",
       "title": "Remaining blockers",
       "review": "Review",
       "none": "No blockers remain."

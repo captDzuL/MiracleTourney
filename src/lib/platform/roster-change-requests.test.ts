@@ -169,6 +169,21 @@ describe("requestRosterChange", () => {
     });
   });
 
+  describe("position", () => {
+    it("accepts a position the game mode offers, ignoring case", async () => {
+      arrange();
+      expect(await codeOf(requestRosterChange(swap({ incoming: { ...incoming, position: "defender" } })))).toBe("no-error");
+    });
+    it("accepts no position at all", async () => {
+      arrange();
+      expect(await codeOf(requestRosterChange(swap({ incoming: { ...incoming, position: "" } })))).toBe("no-error");
+    });
+    it("rejects a made-up position so stat screens cannot be polluted", async () => {
+      arrange();
+      expect(await codeOf(requestRosterChange(swap({ incoming: { ...incoming, position: "God Mode" } })))).toBe("invalid_change");
+    });
+  });
+
   describe("bringing a former player back", () => {
     const former = player("p-old", "UID-old", "OldAce", new Date("2026-10-05T00:00:00Z"));
 
