@@ -232,7 +232,9 @@
 .miracle-public-v3 .mpv3-character { position: absolute; bottom: -8%; width: auto; max-width: none; object-fit: contain; z-index: 1; filter: drop-shadow(0 0 25px #0006); }
 .miracle-public-v3 .mpv3-character--first { left: 4%; height: 86%; opacity: .9; }
 .miracle-public-v3 .mpv3-character--second { right: 2%; height: 94%; }
-.miracle-public-v3 .mpv3-event-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+/* Poster stays uncropped (contain); a blurred copy fills the side bands so it reads as filling the panel. */
+.miracle-public-v3 .mpv3-event-poster-backdrop { position: absolute; inset: -24px; background-size: cover; background-position: center; filter: blur(28px) saturate(1.2) brightness(.55); }
+.miracle-public-v3 .mpv3-event-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 1; }
 .miracle-public-v3 .mpv3-poster-stage--poster::after, .miracle-public-v3 .mpv3-poster-stage--poster::before { display: none; }
 .miracle-public-v3 .mpv3-poster-stage--compact { min-height: 210px; }
 .miracle-public-v3 .mpv3-poster-stage--compact .mpv3-poster-caption { padding: 60px 18px 18px; }
