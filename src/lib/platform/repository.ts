@@ -32,7 +32,8 @@ import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventS
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import { mapRequestStatus, normalizeRegistrationSource, type RegistrationRecord } from "@/lib/registration/records";
 import type { ResolvedEventPaymentSettings } from "@/lib/registration/event-payment-settings";
-import { UserFacingError } from "@/lib/security/public-error";
+import { writeServerLog } from "@/lib/observability/logger";
+import { UserFacingError, describeActionError } from "@/lib/security/public-error";
 import { tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 import {
   aggregatePlayerLeaderboard,
@@ -233,6 +234,33 @@ async function expireStaleRegistrationRequests() {
     },
     data: { status: "expired" },
   });
+  await deleteExpiredRequestTeamCopies();
+}
+
+/**
+ * Each payment request keeps a "registration-intake" copy of the captain's draft (no event yet) so an approval can
+ * promote it. Once the request has expired it can no longer be approved or resubmitted, so the copy is dead weight.
+ * Scoped to copies still tied to an expired request: imported and approved teams have an eventId and are never touched,
+ * and the captain's own draft has a different source. Its players go with it (cascade); the request keeps its history.
+ */
+async function deleteExpiredRequestTeamCopies() {
+  // Housekeeping only: it runs inside page loads and registrations, so a failure must never break them.
+  try {
+    await prisma.team.deleteMany({
+      where: { eventId: null, source: "registration-intake", registrationRequest: { is: { status: "expired" } } },
+    });
+  } catch (error) {
+    const { name, code } = describeActionError(error);
+    writeServerLog({
+      phase: "failed",
+      operation: "expired_request_cleanup",
+      route: "/captain",
+      requestId: randomUUID(),
+      durationMs: 0,
+      status: 500,
+      errorCode: code ?? name,
+    });
+  }
 }
 
 function mapPaymentSettings(row: { id: string; qrisImageUrl: string | null; instructions: string | null; updatedAt?: Date } | null): PaymentSettings {
