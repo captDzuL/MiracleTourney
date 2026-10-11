@@ -27,7 +27,7 @@ Urutannya dari yang paling berisiko.
    - File yang memakai `repository.ts`: 115 (64 bukan file test). Rencana awal menulis 22.
 2. **Sebagian rencana awal terpotong.** Fase 1 (1.3 sampai 1.6) dan Fase 2 (2.1 sampai 2.18) tidak ikut terkirim. Fase 2 di bawah disusun ulang dari hasil pemeriksaan kode.
 3. **Data demo bertentangan dengan janji "tanpa ubah cara kerja".**
-   - `repository.ts` memakai data demo sebagai cadangan di 22 tempat. Kalau database error, halaman menampilkan data demo.
+   - `repository.ts` memakai data demo sebagai cadangan di 21 tempat. Kalau database error, halaman menampilkan data demo.
    - Menghapusnya mengubah hasil di produksi: halaman publik tidak lagi menampilkan data demo.
    - Jadi penghapusan jadi PR sendiri di Fase 0 (PR 0.5 dan 0.6). PR itu harus selesai dan diamati sebelum kode dipindah.
 4. **Banyak fungsi dipakai lintas bidang, dan belum punya tempat.** Fungsi-fungsi ini harus pindah lebih dulu ke folder bersama.
@@ -112,7 +112,7 @@ Urutan antar bidang: shared, platform, events, teams, bracket, registration, imp
 | 0.2 | Pengaman: `server-action-bundle.test.ts` membaca semua file `"use server"`, bukan satu file. Tambah job `next build` di CI. | S |
 | 0.3 | Test pengunci: tutup celah test untuk sign up captain, pendaftaran berbayar, dan hasil pertandingan versi lama. | S |
 | 0.4 | Test dengan database asli untuk tiga transaksi Serializable pendaftaran. Jalan di job Postgres CI. Dilewati kalau tidak ada database (ikuti `persistence-migration.integration.test.ts`). | B |
-| 0.5 | Keputusan data demo, bagian 1: catat 22 tempatnya dan `home-page-content.tsx`. Tentukan penggantinya: error diteruskan dan dicatat di log, lalu pastikan rute publik punya `error.tsx`. Hanya dokumen. | S |
+| 0.5 | Keputusan data demo, bagian 1: catat 21 tempatnya dan `home-page-content.tsx`. Hasilnya ada di `demo-fallback-decision.md`. Tentukan penggantinya: error diteruskan dan dicatat di log, lalu pastikan rute publik punya `error.tsx`. Hanya dokumen. | S |
 | 0.6 | Keputusan data demo, bagian 2: hapus cadangan data demo, hapus atau pindahkan `demo-store.ts`, perbarui test. Ini satu-satunya PR yang mengubah cara kerja dengan sengaja. Deploy dan amati dulu sebelum Fase 1. | B |
 | 0.7 | Test berbentuk tabel: tiap action yang memanggil `revalidatePath` atau `revalidateTag` (43 dan 24 panggilan di `actions.ts`) punya pengecekan. | S |
 | 0.8 | Tulis `docs/architecture.md` (susunan folder, arah impor, aturan API publik). Pasang `no-restricted-imports` berlevel `error` dengan daftar pengecualian. | S |
@@ -205,7 +205,7 @@ Fase 0:
 - [x] 0.2
 - [x] 0.3
 - [x] 0.4
-- [ ] 0.5
+- [x] 0.5
 - [ ] 0.6
 - [ ] 0.7
 - [ ] 0.8
