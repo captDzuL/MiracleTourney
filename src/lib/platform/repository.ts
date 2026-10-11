@@ -3102,7 +3102,7 @@ export async function getPlayerStatFormContext(matchId: string, eventId: string)
  * Callers own timeout/error presentation so they can state honestly that live
  * tournament data is temporarily unavailable.
  */
-export async function getPublicDiscoveryEvents(): Promise<PublicDiscoveryEvent[]> {
+export async function getPublicDiscoveryEvents(now: Date = new Date()): Promise<PublicDiscoveryEvent[]> {
   const trace = process.env.PUBLIC_V3_HOME_DISCOVERY_TRACE === "1";
   const elapsed = (started: number) => Math.min(99999, Math.round(performance.now() - started));
   if (trace) {
@@ -3133,6 +3133,11 @@ export async function getPublicDiscoveryEvents(): Promise<PublicDiscoveryEvent[]
         select: { id: true },
         take: 1,
       },
+      promotions: {
+        where: { type: "featured", active: true, startsAt: { lte: now }, endsAt: { gte: now } },
+        select: { id: true },
+        take: 1,
+      },
       _count: { select: { teams: true } },
     },
     orderBy: [{ updatedAt: "desc" }, { slug: "asc" }],
@@ -3146,6 +3151,7 @@ export async function getPublicDiscoveryEvents(): Promise<PublicDiscoveryEvent[]
     hasLiveMatch: row.matches.length > 0,
     teamCount: row._count.teams,
     updatedAt: row.updatedAt.toISOString(),
+    pinnedFeatured: row.promotions.length > 0,
   }));
   if (trace) console.info(`[public-v3-discovery] map-done ms=${elapsed(mapStarted)}`);
   return entries;
