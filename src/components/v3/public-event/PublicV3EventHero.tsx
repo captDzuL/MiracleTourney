@@ -171,7 +171,7 @@ export function PublicV3EventHero({ view, locale }: { view: PublicV3EventViewMod
           <PublicV3Action href={identity.routes.participants.hrefByLocale[locale]} variant="text">{locale === "id" ? "Peserta" : "Participants"}</PublicV3Action>
         </div>
       </div>
-      <div data-testid="adaptive-event-poster" className="min-w-0"><EventPosterStage
+      <div data-testid="adaptive-event-poster" className="grid min-w-0"><EventPosterStage
           eventName={identity.title}
           gameSlug={gameSlug}
           posterUrl={posterUrl(view)}
