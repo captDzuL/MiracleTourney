@@ -21,6 +21,7 @@ async function readOrganizerWorkspaceSummaryImpl(eventId: string, actor: Pick<Ap
         matches: { where: { status: { not: "Completed" } } },
         statSubmissions: { where: { status: "pending" } },
         competitionActionItems: { where: { resolvedAt: null } },
+        rosterChangeRequests: { where: { status: "pending" } },
       } },
     },
   });
@@ -52,12 +53,16 @@ async function readOrganizerWorkspaceSummaryImpl(eventId: string, actor: Pick<Ap
   if (counts.matches && (lifecycle === "ongoing" || lifecycle === "finished")) add("match_results", "match-control");
   if (counts.statSubmissions) add("statistics_review", "completion");
   if (event.publishedScheduleVersion === null && (lifecycle === "drawing" || lifecycle === "ongoing")) add("schedule_unpublished", "schedule");
+  if (counts.rosterChangeRequests) add("roster_change_review", "settings");
   return {
     event: { id: event.id, title: event.name, game: findGameConfig(event.gameId)?.name ?? event.gameId, format: event.format },
     lifecycle,
     publication: event.completion?.status === "completed" && lifecycle === "finished" ? "completed" : lifecycle === "draft" ? "private" : "published",
     role: actor.role as OrganizerWorkspaceSummary["role"], capabilities,
-    badges: { participants: counts.teams, registration: counts.teamRegistrationRequests, "match-control": counts.competitionActionItems, completion: counts.matches + counts.statSubmissions },
+    badges: {
+      participants: counts.teams, registration: counts.teamRegistrationRequests, "match-control": counts.competitionActionItems, completion: counts.matches + counts.statSubmissions,
+      ...(counts.rosterChangeRequests ? { settings: counts.rosterChangeRequests } : {}),
+    },
     blockers, updatedAt: event.updatedAt.toISOString(),
   };
 }

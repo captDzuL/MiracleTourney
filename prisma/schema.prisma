@@ -93,6 +93,7 @@ model Event {
   previewRevision                Int                             @default(0)
   publishedRevision              Int                             @default(0)
   competitionVersion             Int                             @default(0)
+  rosterChangeLimit              Int                             @default(0)
   publishedScheduleVersion       Int?
   venue                          String
   organizerUserId                String?
@@ -138,6 +139,7 @@ model Event {
   competitionActionItems         CompetitionActionItem[]
   competitionIncidents           CompetitionIncident[]
   competitionAuditLogs           CompetitionAuditLog[]
+  rosterChangeRequests           RosterChangeRequest[]
   scheduleRevisions              ScheduleRevision[]
   announcements                  EventAnnouncement[]
   createdAt                      DateTime                        @default(now())
@@ -266,6 +268,7 @@ model Team {
   matchReadiness              MatchReadiness[]
   competitionActionItems      CompetitionActionItem[]
   winningResultRevisions      MatchResultRevision[]    @relation("MatchResultRevisionWinner")
+  rosterChangeRequests        RosterChangeRequest[]
   createdAt                   DateTime                 @default(now())
 
   @@unique([eventId, tag])
@@ -348,6 +351,11 @@ model Player {
   stats        PlayerStat[]
   checkIns     CheckIn[]
   createdAt    DateTime     @default(now())
+  /// Set when an approved roster change replaces this player. The row stays so
+  /// PlayerStat history, leaderboards and awards keep working.
+  removedAt    DateTime?
+  /// Closed absences [{ from, to }] (ISO strings) of a player who left and later came back.
+  rosterGaps   Json         @default("[]")
 
   @@unique([teamId, nickname])
   @@index([teamId])
@@ -1015,6 +1023,50 @@ model CompetitionAuditLog {
   @@index([eventId, createdAt])
   @@index([matchId, createdAt])
   @@index([eventId, idempotencyKey])
+}
+
+enum RosterChangeKind {
+  swap
+  add
+  remove
+}
+
+enum RosterChangeStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+/// A captain's request to change the roster while the group stage runs.
+/// Pending and approved rows use up the team's allowance (Event.rosterChangeLimit); rejected and cancelled give it back.
+model RosterChangeRequest {
+  id            String             @id @default(cuid())
+  eventId       String
+  event         Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  teamId        String
+  team          Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  requestedById String
+  kind          RosterChangeKind
+  outPlayerId   String?
+  /// Set at request time when the incoming player is a former member of this team (same UID).
+  returnPlayerId String?
+  /// The Player row that joined or came back, filled in when the request is approved.
+  inPlayerId    String?
+  /// Snapshot of the leaving player { displayName, nickname, position } so the history survives later edits.
+  outgoing      Json?
+  /// The joining player { displayName, nickname, position }.
+  incoming      Json?
+  status        RosterChangeStatus @default(pending)
+  note          String?
+  decisionNote  String?
+  decidedById   String?
+  decidedAt     DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([eventId, status])
+  @@index([teamId, status])
 }
 
 model ScheduleRevision {

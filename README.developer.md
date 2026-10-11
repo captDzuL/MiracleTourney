@@ -181,7 +181,7 @@ File utama:
 Captain bisa:
 
 - melihat event/tim terkait,
-- mengelola roster,
+- mengelola roster (setelah drawing, ganti pemain lewat permintaan yang disetujui organizer, jika organizer mengaktifkan jatah ganti di Pengaturan event),
 - submit statistik match,
 - mengganti password.
 

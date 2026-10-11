@@ -32,6 +32,7 @@ import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventS
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import { mapRequestStatus, normalizeRegistrationSource, type RegistrationRecord } from "@/lib/registration/records";
 import type { ResolvedEventPaymentSettings } from "@/lib/registration/event-payment-settings";
+import type { CompetitionGraph } from "@/lib/tournament/competition/types";
 import { writeServerLog } from "@/lib/observability/logger";
 import { UserFacingError, describeActionError } from "@/lib/security/public-error";
 import { tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
@@ -47,6 +48,8 @@ import type { BracketMatch, MatchResultInput, PlayerMatchStatInput } from "@/lib
 import { Prisma } from "@prisma/client";
 import * as demoStore from "./demo-store";
 import { prisma } from "./db";
+import { graphFromPhaseConfiguration, resolveRosterChangeWindow, type RosterChangeWindow } from "./roster-change-window";
+import { matchRosterReferenceTime, rosterForMatch } from "./roster-membership";
 import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
 
 const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration Closed", "Ongoing", "Finished"]);
@@ -79,7 +82,7 @@ function assertNewRegistrationWindowOpen(event: RegistrationWindowEvent, now = n
   }
 }
 
-async function runSerializableRegistrationTransaction<T>(
+export async function runSerializableRegistrationTransaction<T>(
   operation: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1090,7 +1093,7 @@ export async function updateCaptainTeamLogo(captainId: string, teamId: string, l
 /** Returns all players for a single team, ordered by registration time. */
 export async function getPlayersForTeam(teamId: string): Promise<Player[]> {
   try {
-    const rows = await prisma.player.findMany({ where: { teamId }, orderBy: { createdAt: "asc" } });
+    const rows = await prisma.player.findMany({ where: { teamId, removedAt: null }, orderBy: { createdAt: "asc" } });
     return rows.map(mapPlayer);
   } catch {
     return demoStore.getPlayersForTeam(teamId);
@@ -1102,7 +1105,7 @@ export async function getPlayersForTeams(teamIds: string[]): Promise<Player[]> {
   if (!teamIds.length) return [];
   try {
     const rows = await prisma.player.findMany({
-      where: { teamId: { in: teamIds } },
+      where: { teamId: { in: teamIds }, removedAt: null },
       orderBy: [{ teamId: "asc" }, { jerseyNumber: "asc" }],
     });
     return rows.map(mapPlayer);
@@ -1114,7 +1117,7 @@ export async function getPlayersForTeams(teamIds: string[]): Promise<Player[]> {
 /** Returns all players across all teams registered in a given event. */
 export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
   try {
-    const rows = await prisma.player.findMany({ where: { eventId }, orderBy: { createdAt: "asc" } });
+    const rows = await prisma.player.findMany({ where: { eventId, removedAt: null }, orderBy: { createdAt: "asc" } });
     return rows.map(mapPlayer);
   } catch {
     return demoStore.getPlayersForEvent(eventId);
@@ -1175,6 +1178,47 @@ async function assertEventRosterMutable(tx: Prisma.TransactionClient, eventId: s
 /** Returns true for every format once the public drawing or tournament is authoritative. */
 export async function isEventBracketLocked(eventId: string): Promise<boolean> {
   return readEventRosterLocked(prisma, eventId);
+}
+
+type RosterChangeWindowReader = RosterLockReader;
+
+/**
+ * Which roster rule applies right now. `free` and `locked` match the existing
+ * all-or-nothing lock; `limited` means the organizer allowed approved roster
+ * changes and the group stage is still running. A missing or unreadable
+ * competition graph resolves to `locked`.
+ */
+export async function readRosterChangeState(
+  db: RosterChangeWindowReader,
+  eventId: string,
+): Promise<{ window: RosterChangeWindow; graph: CompetitionGraph | null }> {
+  const event = await db.event.findUnique({ where: { id: eventId }, select: { status: true, rosterChangeLimit: true } });
+  if (!event) return { window: "free", graph: null };
+  const baseLocked = await readEventRosterLocked(db, eventId);
+  if (!baseLocked) return { window: "free", graph: null };
+  if (event.rosterChangeLimit <= 0) return { window: "locked", graph: null };
+
+  const [firstPhase, matches] = await Promise.all([
+    db.competitionPhase.findFirst({ where: { eventId, sequence: 1 }, select: { configuration: true } }),
+    db.match.findMany({ where: { eventId } }),
+  ]);
+  const graph = graphFromPhaseConfiguration(firstPhase?.configuration, eventId);
+  const window = resolveRosterChangeWindow({
+    baseLocked,
+    eventStatus: event.status,
+    rosterChangeLimit: event.rosterChangeLimit,
+    graph,
+    matches,
+  });
+  return { window, graph };
+}
+
+async function readRosterChangeWindow(db: RosterChangeWindowReader, eventId: string): Promise<RosterChangeWindow> {
+  return (await readRosterChangeState(db, eventId)).window;
+}
+
+export async function getRosterChangeWindow(eventId: string): Promise<RosterChangeWindow> {
+  return readRosterChangeWindow(prisma, eventId);
 }
 
 // ── Bracket helpers (copied from demo-store, now async) ───────────────────────
@@ -2552,7 +2596,7 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
     prisma.team.findMany({
       where: { eventId },
       include: {
-        players: { select: { id: true }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) },
+        players: { where: { removedAt: null }, select: { id: true }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) },
         captain: { select: { id: true, name: true, email: true } },
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -2705,7 +2749,7 @@ export async function getRegistrationImportEventContext(user: AppUser, eventId: 
         take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT),
         select: {
           id: true, name: true, tag: true, captainName: true, captainContact: true,
-          players: { select: { nickname: true, displayName: true, position: true }, orderBy: { createdAt: "asc" }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) },
+          players: { where: { removedAt: null }, select: { nickname: true, displayName: true, position: true }, orderBy: { createdAt: "asc" }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) },
         },
       },
     },
@@ -3040,7 +3084,7 @@ export async function deletePlayer(id: string, captainUserId: string): Promise<v
 
 export async function setTeamCaptainDisplay(teamId: string, captainUserId: string, playerId: string): Promise<void> {
   const player = await prisma.player.findFirst({
-    where: { id: playerId, teamId, team: { captainId: captainUserId } },
+    where: { id: playerId, teamId, removedAt: null, team: { captainId: captainUserId } },
     select: { displayName: true },
   });
   if (!player) {
@@ -3464,6 +3508,7 @@ export async function readEventMatchStatistics(eventId:string,matchId:string,act
     if(!actor||!event||!["admin","platform_admin","organizer"].includes(actor.role)||actor.role==="organizer"&&(actor.mustChangePassword||event.organizerUserId!==actor.id))throw new Error("Not authorized");
     const match=await tx.match.findFirst({where:{id:matchId,eventId},select:{
       id:true,status:true,homeTeamId:true,awayTeamId:true,resultVersion:true,roundLabel:true,resultSnapshot:true,
+      actualStartedAt:true,actualEndedAt:true,resultConfirmedAt:true,
       games:{select:{gameNumber:true,homeScore:true,awayScore:true},orderBy:{gameNumber:"asc"}},
       event:{select:{gameId:true,gameModeId:true}},
     }});
@@ -3471,12 +3516,16 @@ export async function readEventMatchStatistics(eventId:string,matchId:string,act
     const teamIds=[match.homeTeamId,match.awayTeamId].filter(Boolean);
     const [teams,players,statRows,submissions,revisions,round]=await Promise.all([
       tx.team.findMany({where:{eventId,id:{in:teamIds}},select:{id:true,name:true}}),
-      tx.player.findMany({where:{teamId:{in:teamIds}},select:{id:true,teamId:true,nickname:true,position:true},orderBy:{id:"asc"}}),
+      tx.player.findMany({where:{teamId:{in:teamIds}},select:{id:true,teamId:true,nickname:true,position:true,createdAt:true,removedAt:true,rosterGaps:true},orderBy:{id:"asc"}}),
       tx.playerStat.findMany({where:{matchId},select:{playerId:true,stats:true}}),
       tx.statSubmission.findMany({where:{eventId,matchId},orderBy:{submittedAt:"desc"},take:20}),
       tx.matchResultRevision.findMany({where:{eventId,matchId},orderBy:{version:"desc"},take:100,select:{id:true,version:true,homeScore:true,awayScore:true,reason:true,actorUserId:true,createdAt:true}}),
       tx.eventRoundConfig.findUnique({where:{eventId_roundLabel:{eventId,roundLabel:match.roundLabel}},select:{bestOf:true}}),
     ]);
+    const rosterAt=matchRosterReferenceTime(match);
+    const playerIdsWithStats=new Set(statRows.map(row=>row.playerId));
+    const rosterOf=(teamId:string)=>rosterForMatch(players.filter(player=>player.teamId===teamId),rosterAt,playerIdsWithStats)
+      .map(({id,teamId:ownerTeamId,nickname,position})=>({id,teamId:ownerTeamId,nickname,position}));
     const snapshot=match.resultSnapshot as {bestOf?:number;games?:{gameNumber:number;homeScore:number;awayScore:number}[]}|null;
     const games=[...(match.games.length?match.games:snapshot?.games??[])].sort((a,b)=>a.gameNumber-b.gameNumber);
     let scoreGameNumbers:number[]|null=null;
@@ -3488,7 +3537,7 @@ export async function readEventMatchStatistics(eventId:string,matchId:string,act
     return {
       eventId,matchId,eventVersion:event.competitionVersion,resultVersion:match.resultVersion,games,
       allowedStatKeys:getStatKeysForMode(match.event.gameModeId,match.event.gameId),scoreGameNumbers,scoreContextUnavailable,
-      teams:teamIds.map(id=>teams.find(team=>team.id===id)).filter((team):team is NonNullable<typeof team>=>!!team).map(team=>({...team,players:players.filter(player=>player.teamId===team.id)})),
+      teams:teamIds.map(id=>teams.find(team=>team.id===id)).filter((team):team is NonNullable<typeof team>=>!!team).map(team=>({...team,players:rosterOf(team.id)})),
       stats:Object.fromEntries(statRows.map(row=>[row.playerId,row.stats])) as PlayerStatPayloadMap,
       submissions:submissions.map(row=>({id:row.id,teamId:row.teamId,status:row.status,stats:row.stats as PlayerStatPayloadMap,submittedAt:row.submittedAt.toISOString(),reviewedAt:row.reviewedAt?.toISOString()??null,reviewedBy:row.reviewedBy,rejectionNote:row.rejectionNote})),
       revisions:revisions.map(row=>({...row,createdAt:row.createdAt.toISOString()})),
@@ -3742,7 +3791,7 @@ async function validatePlayerStatWriteContext(
   tx: Prisma.TransactionClient,
   input: { matchId: string; teamId: string; eventId: string; stats: PlayerStatPayloadMap; captainId?: string },
 ): Promise<{ gameSlug: string; roster: Map<string, { nickname: string; position: string }> }> {
-  const [match, team, players] = await Promise.all([
+  const [match, team, players, savedStats] = await Promise.all([
     tx.match.findFirst({
       where: {
         id: input.matchId,
@@ -3754,6 +3803,9 @@ async function validatePlayerStatWriteContext(
         id: true,
         roundLabel: true,
         resultSnapshot: true,
+        actualStartedAt: true,
+        actualEndedAt: true,
+        resultConfirmedAt: true,
         games: { select: { gameNumber: true }, orderBy: { gameNumber: "asc" } },
         event: { select: { gameId: true, gameModeId: true } },
       },
@@ -3768,7 +3820,11 @@ async function validatePlayerStatWriteContext(
     }),
     tx.player.findMany({
       where: { teamId: input.teamId },
-      select: { id: true, nickname: true, position: true },
+      select: { id: true, nickname: true, position: true, createdAt: true, removedAt: true, rosterGaps: true },
+    }),
+    tx.playerStat.findMany({
+      where: { matchId: input.matchId, teamId: input.teamId },
+      select: { playerId: true },
     }),
   ]);
   if (!match || !team) throw new Error("Match, team, and event relationship is invalid.");
@@ -3795,7 +3851,10 @@ async function validatePlayerStatWriteContext(
     scoreSlotCount: scoreGameNumbers?.length ?? null,
   });
 
-  const roster = new Map(players.map((player) => [player.id, { nickname: player.nickname, position: player.position }]));
+  // Judge against the roster the team had when the match started, so a later
+  // roster change neither blocks corrections nor credits a newcomer for an old match.
+  const matchRoster = rosterForMatch(players, matchRosterReferenceTime(match), new Set(savedStats.map((row) => row.playerId)));
+  const roster = new Map(matchRoster.map((player) => [player.id, { nickname: player.nickname, position: player.position }]));
   for (const playerId of Object.keys(input.stats)) {
     if (!roster.has(playerId)) throw new Error("Player does not belong to the submitted team and event.");
   }
@@ -3822,17 +3881,33 @@ export async function getMatchWithRosterAndStats(matchId: string): Promise<{
   existingStats: PlayerStatPayloadMap;
   scoreGameNumbers: number[] | null;
 } | null> {
-  const match = await prisma.match.findUnique({
+  const matchRow = await prisma.match.findUnique({
     where: { id: matchId },
-    select: { id: true, homeTeamId: true, awayTeamId: true, status: true, eventId: true },
+    select: {
+      id: true, homeTeamId: true, awayTeamId: true, status: true, eventId: true,
+      actualStartedAt: true, actualEndedAt: true, resultConfirmedAt: true,
+    },
   });
-  if (!match || !match.homeTeamId || !match.awayTeamId) return null;
+  if (!matchRow || !matchRow.homeTeamId || !matchRow.awayTeamId) return null;
+  const match = {
+    id: matchRow.id, homeTeamId: matchRow.homeTeamId, awayTeamId: matchRow.awayTeamId,
+    status: matchRow.status, eventId: matchRow.eventId,
+  };
 
-  const [allPlayers, statRows, statContext] = await Promise.all([
-    getPlayersForTeams([match.homeTeamId, match.awayTeamId]),
+  const [playerRows, statRows, statContext] = await Promise.all([
+    prisma.player.findMany({
+      where: { teamId: { in: [match.homeTeamId, match.awayTeamId] } },
+      orderBy: [{ teamId: "asc" }, { jerseyNumber: "asc" }],
+    }),
     prisma.playerStat.findMany({ where: { matchId } }),
     getPlayerStatFormContext(match.id, match.eventId).catch(() => null),
   ]);
+  // The roster the teams had when this match started, not today's roster.
+  const allPlayers = rosterForMatch(
+    playerRows,
+    matchRosterReferenceTime(matchRow),
+    new Set(statRows.map((row) => row.playerId)),
+  ).map(mapPlayer);
 
   const existingStats: PlayerStatPayloadMap = {};
   for (const row of statRows) {
