@@ -32,6 +32,7 @@ import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventS
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import { mapRequestStatus, normalizeRegistrationSource, type RegistrationRecord } from "@/lib/registration/records";
 import type { ResolvedEventPaymentSettings } from "@/lib/registration/event-payment-settings";
+import type { CompetitionGraph } from "@/lib/tournament/competition/types";
 import { tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 import {
   aggregatePlayerLeaderboard,
@@ -79,7 +80,7 @@ function assertNewRegistrationWindowOpen(event: RegistrationWindowEvent, now = n
   }
 }
 
-async function runSerializableRegistrationTransaction<T>(
+export async function runSerializableRegistrationTransaction<T>(
   operation: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1154,24 +1155,33 @@ type RosterChangeWindowReader = RosterLockReader;
  * changes and the group stage is still running. A missing or unreadable
  * competition graph resolves to `locked`.
  */
-async function readRosterChangeWindow(db: RosterChangeWindowReader, eventId: string): Promise<RosterChangeWindow> {
+export async function readRosterChangeState(
+  db: RosterChangeWindowReader,
+  eventId: string,
+): Promise<{ window: RosterChangeWindow; graph: CompetitionGraph | null }> {
   const event = await db.event.findUnique({ where: { id: eventId }, select: { status: true, rosterChangeLimit: true } });
-  if (!event) return "free";
+  if (!event) return { window: "free", graph: null };
   const baseLocked = await readEventRosterLocked(db, eventId);
-  if (!baseLocked) return "free";
-  if (event.rosterChangeLimit <= 0) return "locked";
+  if (!baseLocked) return { window: "free", graph: null };
+  if (event.rosterChangeLimit <= 0) return { window: "locked", graph: null };
 
   const [firstPhase, matches] = await Promise.all([
     db.competitionPhase.findFirst({ where: { eventId, sequence: 1 }, select: { configuration: true } }),
     db.match.findMany({ where: { eventId } }),
   ]);
-  return resolveRosterChangeWindow({
+  const graph = graphFromPhaseConfiguration(firstPhase?.configuration, eventId);
+  const window = resolveRosterChangeWindow({
     baseLocked,
     eventStatus: event.status,
     rosterChangeLimit: event.rosterChangeLimit,
-    graph: graphFromPhaseConfiguration(firstPhase?.configuration, eventId),
+    graph,
     matches,
   });
+  return { window, graph };
+}
+
+async function readRosterChangeWindow(db: RosterChangeWindowReader, eventId: string): Promise<RosterChangeWindow> {
+  return (await readRosterChangeState(db, eventId)).window;
 }
 
 export async function getRosterChangeWindow(eventId: string): Promise<RosterChangeWindow> {
@@ -3467,7 +3477,7 @@ export async function readEventMatchStatistics(eventId:string,matchId:string,act
     const teamIds=[match.homeTeamId,match.awayTeamId].filter(Boolean);
     const [teams,players,statRows,submissions,revisions,round]=await Promise.all([
       tx.team.findMany({where:{eventId,id:{in:teamIds}},select:{id:true,name:true}}),
-      tx.player.findMany({where:{teamId:{in:teamIds}},select:{id:true,teamId:true,nickname:true,position:true,createdAt:true,removedAt:true},orderBy:{id:"asc"}}),
+      tx.player.findMany({where:{teamId:{in:teamIds}},select:{id:true,teamId:true,nickname:true,position:true,createdAt:true,removedAt:true,rosterGaps:true},orderBy:{id:"asc"}}),
       tx.playerStat.findMany({where:{matchId},select:{playerId:true,stats:true}}),
       tx.statSubmission.findMany({where:{eventId,matchId},orderBy:{submittedAt:"desc"},take:20}),
       tx.matchResultRevision.findMany({where:{eventId,matchId},orderBy:{version:"desc"},take:100,select:{id:true,version:true,homeScore:true,awayScore:true,reason:true,actorUserId:true,createdAt:true}}),
@@ -3771,7 +3781,7 @@ async function validatePlayerStatWriteContext(
     }),
     tx.player.findMany({
       where: { teamId: input.teamId },
-      select: { id: true, nickname: true, position: true, createdAt: true, removedAt: true },
+      select: { id: true, nickname: true, position: true, createdAt: true, removedAt: true, rosterGaps: true },
     }),
     tx.playerStat.findMany({
       where: { matchId: input.matchId, teamId: input.teamId },

@@ -14,6 +14,7 @@ const {
   getPlayersForTeams,
   hasTempPassword,
   requireRole,
+  getRosterChangeOverview,
 } = vi.hoisted(() => ({
   getCaptainTeams: vi.fn(),
   getCertificatesForEvents: vi.fn(),
@@ -26,6 +27,7 @@ const {
   getPlayersForTeams: vi.fn(),
   hasTempPassword: vi.fn(),
   requireRole: vi.fn(),
+  getRosterChangeOverview: vi.fn(),
 }));
 
 vi.mock("next-intl/server", () => ({
@@ -88,6 +90,11 @@ vi.mock("@/lib/platform/repository", () => ({
   getPlayersForTeams,
   hasTempPassword,
 }));
+vi.mock("@/lib/platform/roster-change-requests", () => ({ getRosterChangeOverview }));
+vi.mock("@/lib/actions/captain-roster-change-actions", () => ({
+  captainRequestRosterChangeAction: vi.fn(),
+  captainCancelRosterChangeAction: vi.fn(),
+}));
 vi.mock("@/components/GameArt", () => ({
   GameArt: () => <div />,
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
@@ -123,6 +130,7 @@ describe("captain dashboard event registration", () => {
     getEventsByIds.mockResolvedValue([]);
     getPlayersForTeams.mockResolvedValue([]);
     getCertificatesForEvents.mockResolvedValue(new Map());
+    getRosterChangeOverview.mockResolvedValue(null);
   });
 
   it("renders registration and roster as separate tabs", async () => {
@@ -180,3 +188,79 @@ describe("captain dashboard event registration", () => {
     expect(html).toContain("name=\"paymentProof\"");
     expect(html).toContain("Upload Bukti Bayar");
   });});
+
+describe("captain roster tab and the roster lock", () => {
+  const team = { id: "team-1", eventId: "event-1", captainId: "captain-1", name: "Redclover", tag: "RC", source: "registration", logoText: "RC" };
+  const players = [
+    { id: "p-a", teamId: "team-1", displayName: "UID-a", nickname: "Ace", position: "Guard" },
+    { id: "p-b", teamId: "team-1", displayName: "UID-b", nickname: "Bee", position: "Guard" },
+  ];
+  const overview = (window: string, extra: Record<string, unknown> = {}) => ({
+    window, limit: 2, used: 0, remaining: 2, pending: null, history: [], rosterMin: 3, rosterMax: 5, activeCount: 2, ...extra,
+  });
+
+  async function renderRoster(params: Record<string, string> = {}) {
+    getCaptainRegistrationRequests.mockResolvedValue([]);
+    getPaymentSettings.mockResolvedValue({ id: "global" });
+    getOpenRegistrationEventsForCaptain.mockResolvedValue([]);
+    getCaptainTeams.mockResolvedValue([team]);
+    getEventsByIds.mockResolvedValue([{ ...openEvent, id: "event-1", status: "Registration Closed" }]);
+    getPlayersForTeams.mockResolvedValue(players);
+    getGameForEvent.mockReturnValue({ id: "game-kuroko", name: "Kuroko" });
+    getModeForEvent.mockReturnValue({ id: "mode-kuroko-3v3", name: "3v3", positions: ["Guard"] });
+    const page = await CaptainPage({ searchParams: Promise.resolve({ tab: "roster", ...params }) });
+    return renderToStaticMarkup(page);
+  }
+
+  it("keeps the direct add, edit and delete controls while the roster is free", async () => {
+    getRosterChangeOverview.mockResolvedValue(overview("free"));
+    const html = await renderRoster();
+    expect(html).toContain('id="add-player-form"');
+    expect(html).toContain("edit=p-a");
+    expect(html).not.toContain("rosterChange.title");
+  });
+
+  it("keeps today's controls when the overview cannot be read", async () => {
+    getRosterChangeOverview.mockRejectedValue(new Error("db down"));
+    const html = await renderRoster();
+    expect(html).toContain('id="add-player-form"');
+    expect(html).not.toContain("rosterChange.title");
+  });
+
+  it("swaps the direct controls for the request panel while changes are limited", async () => {
+    getRosterChangeOverview.mockResolvedValue(overview("limited"));
+    const html = await renderRoster();
+    expect(html).not.toContain('id="add-player-form"');
+    expect(html).not.toContain("edit=p-a");
+    expect(html).not.toContain("confirm=p-a");
+    expect(html).toContain("rosterChange.limitedNotice");
+    expect(html).toContain('name="kind"');
+    expect(html).toContain("Ace");
+  });
+
+  it("opens the edit and delete forms from the address bar only while the roster is free", async () => {
+    getRosterChangeOverview.mockResolvedValue(overview("free"));
+    const free = await renderRoster({ edit: "p-a", confirm: "p-b" });
+    expect(free).toContain("editPlayerTitle");
+    expect(free).toContain("deleteConfirm");
+
+    getRosterChangeOverview.mockResolvedValue(overview("limited"));
+    const limited = await renderRoster({ edit: "p-a", confirm: "p-b" });
+    expect(limited).not.toContain("editPlayerTitle");
+    expect(limited).not.toContain("deleteConfirm");
+  });
+
+  it("shows only the lock notice once the roster is locked", async () => {
+    getRosterChangeOverview.mockResolvedValue(overview("locked", { remaining: 0 }));
+    const html = await renderRoster();
+    expect(html).not.toContain('id="add-player-form"');
+    expect(html).toContain("rosterChange.lockedNotice");
+    expect(html).not.toContain('name="kind"');
+  });
+
+  it("confirms a filed request on the roster tab", async () => {
+    getRosterChangeOverview.mockResolvedValue(overview("limited"));
+    const html = await renderRoster({ success: "roster-change-requested" });
+    expect(html).toContain("rosterChange.requestedNotice");
+  });
+});

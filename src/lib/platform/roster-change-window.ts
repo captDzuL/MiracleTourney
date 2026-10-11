@@ -1,7 +1,6 @@
 import type { Match } from "@prisma/client";
 import type { CompetitionGraph } from "../tournament/competition/types";
 import { isTerminal } from "../tournament/operations/state";
-import { competitionProjection } from "../tournament/operations/result-projection";
 
 /**
  * `free`    – the roster lock is not active yet; captains edit as before.
@@ -23,7 +22,7 @@ export interface RosterChangeWindowInput {
 
 /**
  * Decides which roster rule applies. Every doubtful case resolves to `locked`:
- * a missing graph, an unreadable projection, or a format without a group stage.
+ * a missing or malformed graph, or a format without a group stage.
  */
 export function resolveRosterChangeWindow(input: RosterChangeWindowInput): RosterChangeWindow {
   if (!input.baseLocked) return "free";
@@ -38,10 +37,9 @@ export function resolveRosterChangeWindow(input: RosterChangeWindowInput): Roste
     if (groupPhaseIds.size === 0) return "locked";
 
     const playoffMatchIds = new Set(graph.matches.filter((match) => !groupPhaseIds.has(match.phaseId)).map((match) => match.id));
+    // The window stays open after the groups finish so a team can field its best
+    // roster for the playoffs. It closes when the first playoff match starts.
     if (input.matches.some((match) => playoffMatchIds.has(match.id) && isTerminal(match))) return "locked";
-
-    const { standings } = competitionProjection(graph, [...input.matches]);
-    if (standings.length === 0 || standings.every((table) => table.complete)) return "locked";
   } catch {
     return "locked";
   }

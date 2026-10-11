@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isActivePlayer, matchRosterReferenceTime, rosterForMatch, wasOnRosterAt } from "./roster-membership";
+import { isActivePlayer, matchRosterReferenceTime, parseRosterGaps, rosterForMatch, wasOnRosterAt } from "./roster-membership";
 
 const at = (iso: string) => new Date(iso);
 const player = (id: string, createdAt: string, removedAt: string | null = null) => ({
@@ -68,5 +68,51 @@ describe("rosterForMatch", () => {
 
   it("uses the current roster for a match without a reference time", () => {
     expect(rosterForMatch(roster, null, new Set()).map((p) => p.id)).toEqual(["p-steady", "p-new"]);
+  });
+});
+
+describe("a player who left and came back", () => {
+  // On the roster from Oct 1, off it Oct 5 to Oct 10, back since Oct 10.
+  const returning = {
+    ...player("p-return", "2026-10-01T00:00:00Z"),
+    rosterGaps: [{ from: "2026-10-05T00:00:00.000Z", to: "2026-10-10T00:00:00.000Z" }],
+  };
+
+  it("counts for matches before the gap and after the return, not inside it", () => {
+    expect(wasOnRosterAt(returning, at("2026-10-03T00:00:00Z"))).toBe(true);
+    expect(wasOnRosterAt(returning, at("2026-10-07T00:00:00Z"))).toBe(false);
+    expect(wasOnRosterAt(returning, at("2026-10-12T00:00:00Z"))).toBe(true);
+  });
+
+  it("treats the start of a gap as off the roster and its end as back", () => {
+    expect(wasOnRosterAt(returning, at("2026-10-05T00:00:00Z"))).toBe(false);
+    expect(wasOnRosterAt(returning, at("2026-10-10T00:00:00Z"))).toBe(true);
+  });
+
+  it("supports several gaps and a second departure still open", () => {
+    const twice = {
+      ...player("p-twice", "2026-10-01T00:00:00Z", "2026-10-20T00:00:00Z"),
+      rosterGaps: [{ from: "2026-10-05T00:00:00.000Z", to: "2026-10-10T00:00:00.000Z" }, { from: "2026-10-12T00:00:00.000Z", to: "2026-10-14T00:00:00.000Z" }],
+    };
+    expect(wasOnRosterAt(twice, at("2026-10-13T00:00:00Z"))).toBe(false);
+    expect(wasOnRosterAt(twice, at("2026-10-15T00:00:00Z"))).toBe(true);
+    expect(wasOnRosterAt(twice, at("2026-10-21T00:00:00Z"))).toBe(false);
+  });
+
+  it("is expected in a not-started match once back, and not while still off", () => {
+    expect(wasOnRosterAt(returning, null)).toBe(true);
+    expect(wasOnRosterAt({ ...returning, removedAt: at("2026-10-15T00:00:00Z") }, null)).toBe(false);
+  });
+});
+
+describe("parseRosterGaps", () => {
+  it("reads valid gaps and ignores anything malformed", () => {
+    expect(parseRosterGaps([{ from: "2026-10-05T00:00:00.000Z", to: "2026-10-10T00:00:00.000Z" }]))
+      .toEqual([{ from: at("2026-10-05T00:00:00.000Z"), to: at("2026-10-10T00:00:00.000Z") }]);
+    expect(parseRosterGaps(undefined)).toEqual([]);
+    expect(parseRosterGaps(null)).toEqual([]);
+    expect(parseRosterGaps("nope")).toEqual([]);
+    expect(parseRosterGaps([{ from: "bad", to: "2026-10-10T00:00:00.000Z" }, { from: "2026-10-05T00:00:00.000Z" }, 7, null]))
+      .toEqual([]);
   });
 });

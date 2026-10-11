@@ -25,7 +25,7 @@ export async function getMatchStatRecordings(
   const [players, rows, clocks] = await Promise.all([
     prisma.player.findMany({
       where: { teamId: { in: teamIds }, team: { eventId } },
-      select: { id: true, teamId: true, createdAt: true, removedAt: true },
+      select: { id: true, teamId: true, createdAt: true, removedAt: true, rosterGaps: true },
     }),
     prisma.playerStat.findMany({
       where: { matchId: { in: matchIds }, match: { eventId } },
@@ -85,7 +85,7 @@ export async function getMatchTeamRosters(
   const [players, rows, clocks] = await Promise.all([
     prisma.player.findMany({
       where: { teamId: { in: teamIds } },
-      select: { id: true, teamId: true, nickname: true, position: true, createdAt: true, removedAt: true },
+      select: { id: true, teamId: true, nickname: true, position: true, createdAt: true, removedAt: true, rosterGaps: true },
       orderBy: [{ teamId: "asc" }, { jerseyNumber: "asc" }],
     }),
     prisma.playerStat.findMany({

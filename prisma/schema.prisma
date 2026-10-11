@@ -354,6 +354,8 @@ model Player {
   /// Set when an approved roster change replaces this player. The row stays so
   /// PlayerStat history, leaderboards and awards keep working.
   removedAt    DateTime?
+  /// Closed absences [{ from, to }] (ISO strings) of a player who left and later came back.
+  rosterGaps   Json         @default("[]")
 
   @@unique([teamId, nickname])
   @@index([teamId])
@@ -1037,7 +1039,7 @@ enum RosterChangeStatus {
 }
 
 /// A captain's request to change the roster while the group stage runs.
-/// Only `approved` rows use up the team's allowance (Event.rosterChangeLimit).
+/// Pending and approved rows use up the team's allowance (Event.rosterChangeLimit); rejected and cancelled give it back.
 model RosterChangeRequest {
   id            String             @id @default(cuid())
   eventId       String
@@ -1047,6 +1049,10 @@ model RosterChangeRequest {
   requestedById String
   kind          RosterChangeKind
   outPlayerId   String?
+  /// Set at request time when the incoming player is a former member of this team (same UID).
+  returnPlayerId String?
+  /// The Player row that joined or came back, filled in when the request is approved.
+  inPlayerId    String?
   /// Snapshot of the leaving player { displayName, nickname, position } so the history survives later edits.
   outgoing      Json?
   /// The joining player { displayName, nickname, position }.

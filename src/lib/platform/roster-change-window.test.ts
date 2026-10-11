@@ -1,6 +1,5 @@
 import type { Match } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { competitionProjection } from "../tournament/operations/result-projection";
 import { generateCompetitionGraph, type CompetitionGraph, type GroupPlayoffsConfig } from "../tournament/competition";
 import { graphFromPhaseConfiguration, resolveRosterChangeWindow, type RosterChangeWindowInput } from "./roster-change-window";
 
@@ -56,11 +55,11 @@ describe("resolveRosterChangeWindow", () => {
     expect(resolveRosterChangeWindow(input({ rosterChangeLimit: 0 }))).toBe("locked");
   });
 
-  it("is limited once the drawing is published and group matches are still open", () => {
+  it("is limited once the drawing is published and no playoff match has started", () => {
     expect(resolveRosterChangeWindow(input())).toBe("limited");
   });
 
-  it("stays limited while some group matches are live or completed but a table is unfinished", () => {
+  it("stays limited while group matches are live or completed", () => {
     const ids = groupMatchIds(groupGraph);
     const matches = [
       completed(groupGraph, ids[0]),
@@ -71,15 +70,34 @@ describe("resolveRosterChangeWindow", () => {
     expect(resolveRosterChangeWindow(input({ matches }))).toBe("limited");
   });
 
-  it("locks once every group table is complete, before any playoff match starts", () => {
+  it("stays limited after every group table is complete, until a playoff match starts", () => {
+    // A team whose group is done can still field its best roster for the playoffs.
     const matches = [
       ...groupMatchIds(groupGraph).map((id) => completed(groupGraph, id)),
       ...playoffMatchIds(groupGraph).map((id) => dbMatch(groupGraph, id)),
     ];
+    expect(resolveRosterChangeWindow(input({ matches }))).toBe("limited");
+  });
+
+  it("locks once the first playoff match is live", () => {
+    const matches = [
+      ...groupMatchIds(groupGraph).map((id) => completed(groupGraph, id)),
+      ...playoffMatchIds(groupGraph).map((id, index) => dbMatch(groupGraph, id, index === 0 ? { status: "Live" } : {})),
+    ];
     expect(resolveRosterChangeWindow(input({ matches }))).toBe("locked");
   });
 
-  it("locks as soon as any playoff match is live, even if a group table is unfinished", () => {
+  it("locks once a playoff match has a recorded result", () => {
+    const [first, ...rest] = playoffMatchIds(groupGraph);
+    const matches = [
+      ...groupMatchIds(groupGraph).map((id) => completed(groupGraph, id)),
+      dbMatch(groupGraph, first, { resultVersion: 1 }),
+      ...rest.map((id) => dbMatch(groupGraph, id)),
+    ];
+    expect(resolveRosterChangeWindow(input({ matches }))).toBe("locked");
+  });
+
+  it("locks as soon as any playoff match is live, even while group matches are open", () => {
     const [firstPlayoff, ...restPlayoff] = playoffMatchIds(groupGraph);
     const matches = [
       ...groupMatchIds(groupGraph).map((id) => dbMatch(groupGraph, id)),
@@ -97,14 +115,7 @@ describe("resolveRosterChangeWindow", () => {
     expect(resolveRosterChangeWindow(input({ graph: null }))).toBe("locked");
   });
 
-  it("fails closed when the graph cannot be projected", () => {
-    // Without placements competitionProjection throws; the resolver must not.
-    const broken = { ...groupGraph, placements: undefined } as unknown as CompetitionGraph;
-    expect(() => competitionProjection(broken, [])).toThrow();
-    expect(resolveRosterChangeWindow(input({ graph: broken, matches: [] }))).toBe("locked");
-  });
-
-  it("fails closed when the stored graph is malformed before projection starts", () => {
+  it("fails closed when the stored graph is malformed before the window is judged", () => {
     const broken = { ...groupGraph, phases: [null], matches: [undefined] } as unknown as CompetitionGraph;
     expect(resolveRosterChangeWindow(input({ graph: broken, matches: [] }))).toBe("locked");
   });
@@ -118,29 +129,14 @@ describe("resolveRosterChangeWindow", () => {
     expect(resolveRosterChangeWindow(input({ graph, matches }))).toBe("locked");
   });
 
-  describe("with a disqualified team", () => {
-    const ids = groupMatchIds(groupGraph);
-    const dqSource = groupGraph.matches.find((m) => m.id === ids[0])!.home;
-    if (dqSource.kind !== "team") throw new Error("fixture");
-    const dqTeamId = dqSource.teamId;
+  it("is not affected by a disqualified team: the rule is about the stage, per-team checks live in the request flow", () => {
+    const source = groupGraph.matches.find((match) => match.groupId !== null)!.home;
+    if (source.kind !== "team") throw new Error("fixture");
     const graph: CompetitionGraph = {
       ...groupGraph,
-      disqualifications: [{ teamId: dqTeamId, reason: "x", actorUserId: "u", disqualifiedAt: "2026-10-11T00:00:00.000Z", voidedMatchIds: [] }],
+      disqualifications: [{ teamId: source.teamId, reason: "x", actorUserId: "u", disqualifiedAt: "2026-10-11T00:00:00.000Z", voidedMatchIds: [] }],
     };
-    const involvesDq = (id: string) => [graph.matches.find((m) => m.id === id)!.home, graph.matches.find((m) => m.id === id)!.away]
-      .some((source) => source.kind === "team" && source.teamId === dqTeamId);
-    const playoffs = playoffMatchIds(graph).map((id) => dbMatch(graph, id));
-
-    it("does not wait for the voided fixtures of the disqualified team", () => {
-      const matches = ids.map((id) => (involvesDq(id) ? dbMatch(graph, id) : completed(graph, id)));
-      expect(resolveRosterChangeWindow(input({ graph, matches: [...matches, ...playoffs] }))).toBe("locked");
-    });
-
-    it("stays limited while a fixture between two active teams is still open", () => {
-      const open = ids.find((id) => !involvesDq(id))!;
-      const matches = ids.map((id) => (involvesDq(id) || id === open ? dbMatch(graph, id) : completed(graph, id)));
-      expect(resolveRosterChangeWindow(input({ graph, matches: [...matches, ...playoffs] }))).toBe("limited");
-    });
+    expect(resolveRosterChangeWindow(input({ graph }))).toBe("limited");
   });
 });
 

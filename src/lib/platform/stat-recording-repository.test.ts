@@ -40,7 +40,7 @@ describe("batch match recording lookup", () => {
     expect(result.get("m2")?.status).toBe("unrecorded");
     expect(prisma.player.findMany).toHaveBeenCalledExactlyOnceWith({
       where: { teamId: { in: ["a", "b"] }, team: { eventId: "event" } },
-      select: { id: true, teamId: true, createdAt: true, removedAt: true },
+      select: { id: true, teamId: true, createdAt: true, removedAt: true, rosterGaps: true },
     });
     expect(prisma.match.findMany).toHaveBeenCalledExactlyOnceWith({
       where: { id: { in: ["m1", "m2"] }, eventId: "event" },
