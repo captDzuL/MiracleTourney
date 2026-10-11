@@ -24,16 +24,20 @@ import {
   getModeForEvent,
   getCaptainRegistrationRequests,
   getOpenRegistrationEventsForCaptain,
-  getPaymentSettings,
   getPlayersForTeams,
   hasTempPassword,
 } from "@/lib/platform/repository";
+import { getCaptainPaymentSettings } from "@/lib/registration/captain-repository";
+import { gameModes } from "@/lib/platform/config";
 import type { Certificate } from "@/lib/platform/types";
 import type { Event, Game, GameMode, PaymentSettings, Player, Team, TeamRegistrationRequest } from "@/lib/platform/types";
 import { ShareCertificateButton } from "@/components/ShareCertificateButton";
 import { SubmitButton } from "@/components/submit-button";
 
 type TFn = (key: string, values?: Record<string, string | number>) => string;
+
+// A draft team has no event yet, so it has no game mode; offer every known position (position is optional free text).
+const DRAFT_POSITION_OPTIONS = [...new Set(gameModes.flatMap((mode) => mode.positions))];
 
 const inputClass = "rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100";
 const labelClass = "grid gap-2 text-sm font-medium text-slate-700";
@@ -61,13 +65,18 @@ export default async function CaptainPage({
   const rosterSignals = new Set(["player-added", "player-updated", "player-deleted", "captain-display-updated", "draft-team-saved", "team-logo-updated"]);
   const activeTab = params?.tab === "roster" || editPlayerId || confirmDeleteId || (success && rosterSignals.has(success)) ? "roster" : "registration";
 
-  const [teams, usingTempPassword, openRegistrationEvents, paymentRequests, paymentSettings] = await Promise.all([
+  const [teams, usingTempPassword, openRegistrationEvents, paymentRequests] = await Promise.all([
     getCaptainTeams(user.id),
     hasTempPassword(user.id),
     getOpenRegistrationEventsForCaptain(user.id),
     getCaptainRegistrationRequests(user.id),
-    getPaymentSettings(),
   ]);
+  const paymentEventIds = [...new Set(paymentRequests.map((request) => request.eventId))];
+  const paymentSettingsByEvent = new Map<string, PaymentSettings>(
+    await Promise.all(
+      paymentEventIds.map(async (eventId) => [eventId, await getCaptainPaymentSettings(eventId)] as const),
+    ),
+  );
   const teamIds = teams.map((team) => team.id);
   const registeredEventIds = teams
     .map((team) => team.eventId)
@@ -144,7 +153,7 @@ export default async function CaptainPage({
             draftPlayerCount={draftTeamWithPlayers?.players.length ?? 0}
             t={t as TFn}
           />
-          <PaymentRequestsSection requests={focusedPaymentRequests} paymentSettings={paymentSettings} t={t as TFn} />
+          <PaymentRequestsSection requests={focusedPaymentRequests} paymentSettingsByEvent={paymentSettingsByEvent} t={t as TFn} />
         </div>
       ) : (
         <RosterManagementSection
@@ -504,7 +513,7 @@ function OpenRegistrationSection({
 
 }
 
-function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSettings: PaymentSettings; requests: TeamRegistrationRequest[]; t: TFn }) {
+function PaymentRequestsSection({ paymentSettingsByEvent, requests, t }: { paymentSettingsByEvent: Map<string, PaymentSettings>; requests: TeamRegistrationRequest[]; t: TFn }) {
   if (requests.length === 0) return null;
 
   return (
@@ -516,7 +525,9 @@ function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSetti
         </div>
       </div>
       <div className="mt-4 divide-y divide-slate-200 rounded-xl border border-slate-200 bg-slate-50">
-        {requests.map((request) => (
+        {requests.map((request) => {
+          const paymentSettings = paymentSettingsByEvent.get(request.eventId) ?? { id: request.eventId };
+          return (
           <div key={request.id} className="grid gap-4 p-4 lg:grid-cols-[minmax(14rem,1fr)_minmax(14rem,0.8fr)_minmax(16rem,24rem)] lg:items-start">
             <div className="min-w-0">
               <p className="truncate text-base font-semibold text-slate-950">{request.event?.name ?? request.eventId}</p>
@@ -554,7 +565,8 @@ function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSetti
               <p className="rounded-lg border border-slate-200 bg-white p-3 text-sm font-medium text-slate-600">{t(`paymentStatus_${request.status}`)}</p>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -714,7 +726,7 @@ function TeamSection({
 
 }) {
 
-  const positionOptions = mode?.positions ?? [];
+  const positionOptions = mode?.positions ?? DRAFT_POSITION_OPTIONS;
 
 
 

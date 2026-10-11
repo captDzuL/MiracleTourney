@@ -67,7 +67,7 @@ describe("event payment settings reader", () => {
     expect(prisma.paymentSettings.findUnique).not.toHaveBeenCalled();
   });
 
-  it("hides a draft from captains and falls back to the legacy global setting", async () => {
+  it("hides a draft from captains and never falls back to the Miracle-wide QRIS", async () => {
     prisma.eventPaymentSettings.findFirst.mockResolvedValue(null);
     prisma.paymentSettings.findUnique.mockResolvedValue({
       id: "global",
@@ -75,15 +75,15 @@ describe("event payment settings reader", () => {
       instructions: "Global instructions",
     });
 
-    await expect(getPublishedPaymentSettingsForEvent("event-1")).resolves.toMatchObject({
-      source: "global",
-      id: "global",
-      qrisImageUrl: "/payment/global.png",
-      instructions: "Global instructions",
-    });
+    const settings = await getPublishedPaymentSettingsForEvent("event-1");
+
+    expect(settings).toMatchObject({ source: "event", eventId: "event-1" });
+    expect(settings.qrisImageUrl).toBeUndefined();
+    expect(settings.instructions).toBeUndefined();
     expect(prisma.eventPaymentSettings.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { eventId: "event-1", status: "published" },
     }));
+    expect(prisma.paymentSettings.findUnique).not.toHaveBeenCalled();
   });
 });
 
