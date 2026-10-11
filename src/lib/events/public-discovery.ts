@@ -6,6 +6,8 @@ export type PublicDiscoveryEvent = {
   hasLiveMatch: boolean;
   teamCount: number;
   updatedAt: string;
+  /** An admin pinned this event as featured; the pin wins over the automatic order. */
+  pinnedFeatured?: boolean;
 };
 
 export type PublicDiscoveryStage = "ongoing" | "drawing" | "registration" | "finished";
@@ -61,7 +63,8 @@ export function sortDiscoveryEvents(
 export function chooseFeaturedDiscoveryEvent(
   entries: readonly PublicDiscoveryEvent[],
 ): PublicDiscoveryEvent | null {
-  return sortDiscoveryEvents(entries)[0] ?? null;
+  const ordered = sortDiscoveryEvents(entries);
+  return ordered.find((entry) => entry.pinnedFeatured) ?? ordered[0] ?? null;
 }
 
 export function groupDiscoveryEvents(entries: readonly PublicDiscoveryEvent[]) {
