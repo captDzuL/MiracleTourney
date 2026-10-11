@@ -27,6 +27,7 @@ const {
   getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
+  generateCertificate,
   generateCertificateIfFinal,
   importTeams,
   listEventVisualAssets,
@@ -92,6 +93,7 @@ const {
   getPublishedEvents: vi.fn(),
   getUserByEmail: vi.fn(),
   getUserPasswordHashById: vi.fn(),
+  generateCertificate: vi.fn(),
   generateCertificateIfFinal: vi.fn(),
   importTeams: vi.fn(),
   listEventVisualAssets: vi.fn(),
@@ -130,9 +132,9 @@ const {
   previewRegistrationImportForUser: vi.fn(),
   commitRegistrationImportForUser: vi.fn(),
   prisma: {
-    event: { findUnique: vi.fn() },
+    event: { findUnique: vi.fn(), update: vi.fn(), delete: vi.fn() },
     match: { findFirst: vi.fn() },
-    team: { findFirst: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
+    team: { findFirst: vi.fn(), findUnique: vi.fn(), delete: vi.fn(), update: vi.fn() },
     teamRegistrationRequest: { findFirst: vi.fn() },
     user: { findUnique: vi.fn(), update: vi.fn() },
   },
@@ -203,6 +205,7 @@ vi.mock("@/lib/platform/repository", () => ({
 }));
 vi.mock("@/lib/platform/db", () => ({ prisma }));
 vi.mock("@/lib/certificate/generate", () => ({
+  generateCertificate,
   generateCertificateIfFinal,
 }));
 vi.mock("@/lib/platform/password-reset", () => ({
@@ -233,6 +236,11 @@ import {
   adminPreviewRegistrationImportAction,
   adminCommitRegistrationImportAction,
   adminDeleteTeamAction,
+  adminAssignCaptainAction,
+  adminDeactivateUserAction,
+  adminArchiveEventAction,
+  adminSetAccentColorAction,
+  adminRegenerateCertificateAction,
   adminRejectEventVisualAction,
   adminRejectStatAction,
   adminSetEventVisualFocalPointAction,
@@ -2626,5 +2634,152 @@ describe("event visual revision actions", () => {
       "asset-new",
       { x: 1.4, y: -0.2 },
     );
+  });
+});
+
+// ───────────────────────────────────────────────────────
+// Revalidation after a successful action (refactor PR 0.7)
+// ───────────────────────────────────────────────────────
+//
+// Each row runs one action down its success path and checks exactly which cached pages it refreshes. These are the
+// actions that had no test of their revalidation. src/lib/revalidation-map.test.ts guards the revalidate calls in the
+// code of every action; these rows prove the calls run.
+
+type RevalidationRow = {
+  name: string;
+  role: "admin" | "captain";
+  setup: () => void;
+  run: () => Promise<unknown>;
+  redirectsTo: string;
+  paths: Array<[string] | [string, string]>;
+  tags: string[];
+};
+
+const revalidationRows: RevalidationRow[] = [
+  {
+    name: "adminAssignCaptainAction",
+    role: "admin",
+    setup: () => {
+      prisma.team.findUnique.mockResolvedValue({ id: "team-1", eventId: "event-1" });
+      prisma.user.findUnique.mockResolvedValue({ id: "captain-9", name: "Captain Nine" });
+      prisma.team.update.mockResolvedValue({});
+    },
+    run: () => adminAssignCaptainAction(fd({ teamId: "team-1", captainUserId: "captain-9" })),
+    redirectsTo: "/admin?success=captain-assigned",
+    paths: [["/", "layout"]],
+    tags: [],
+  },
+  {
+    name: "adminDeactivateUserAction",
+    role: "admin",
+    setup: () => {
+      prisma.user.findUnique.mockResolvedValue({ id: "captain-9", role: "captain" });
+      prisma.user.update.mockResolvedValue({});
+    },
+    run: () => adminDeactivateUserAction(fd({ userId: "captain-9" })),
+    redirectsTo: "/admin?success=user-deactivated",
+    paths: [["/", "layout"]],
+    tags: [],
+  },
+  {
+    name: "adminArchiveEventAction",
+    role: "admin",
+    setup: () => {
+      prisma.event.findUnique.mockResolvedValue({ id: "event-1", status: "Ongoing", _count: { teams: 2 } });
+      prisma.event.update.mockResolvedValue({});
+    },
+    run: () => adminArchiveEventAction(fd({ eventId: "event-1", action: "archive" })),
+    redirectsTo: "/admin?success=event-archived",
+    paths: [["/", "layout"]],
+    tags: [],
+  },
+  {
+    name: "adminDeleteTeamAction",
+    role: "admin",
+    setup: () => {
+      assertUserCanManageTeam.mockResolvedValue({ eventId: "event-1" });
+      prisma.team.findFirst.mockResolvedValue({ id: "team-1", eventId: "event-1", event: { id: "event-1", status: "Draft" } });
+      prisma.team.delete.mockResolvedValue({});
+    },
+    run: () => adminDeleteTeamAction(fd({ teamId: "team-1" })),
+    redirectsTo: "/admin?success=team-deleted",
+    paths: [["/", "layout"]],
+    tags: [],
+  },
+  {
+    name: "adminRejectStatAction",
+    role: "admin",
+    setup: () => {
+      assertUserCanReviewStatSubmission.mockResolvedValue(undefined);
+      rejectStatSubmission.mockResolvedValue(undefined);
+    },
+    run: () => adminRejectStatAction(fd({ submissionId: "submission-1", rejectionNote: "Skor tidak cocok." })),
+    redirectsTo: "/admin?success=stat-rejected",
+    paths: [["/", "layout"]],
+    tags: [],
+  },
+  {
+    name: "adminSetAccentColorAction",
+    role: "admin",
+    setup: () => {
+      updateEventCertificateAssets.mockResolvedValue(undefined);
+    },
+    run: () => adminSetAccentColorAction(fd({ eventId: "event-1", accentColor: "#aabbcc" })),
+    redirectsTo: "/admin?success=accent-color-saved",
+    paths: [["/admin"]],
+    tags: [],
+  },
+  {
+    name: "adminRegenerateCertificateAction",
+    role: "admin",
+    setup: () => {
+      checkRateLimit.mockReturnValue(true);
+      prisma.match.findFirst.mockResolvedValue({ winnerTeamId: "team-winner" });
+      generateCertificate.mockResolvedValue("/certificates/champion.png");
+    },
+    run: () => adminRegenerateCertificateAction(fd({ eventId: "event-1" })),
+    redirectsTo: "/admin?success=certificate-regenerated",
+    paths: [["/admin"]],
+    tags: [],
+  },
+  {
+    name: "captainSetDisplayCaptainAction",
+    role: "captain",
+    setup: () => {
+      setTeamCaptainDisplay.mockResolvedValue(undefined);
+    },
+    run: () => captainSetDisplayCaptainAction(fd({ teamId: "team-1", playerId: "player-1" })),
+    redirectsTo: "/captain?success=captain-display-updated",
+    paths: [["/", "layout"]],
+    tags: [],
+  },
+];
+
+describe("revalidation after a successful action", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    assertUserCanManageEvent.mockResolvedValue(undefined);
+  });
+
+  it.each(revalidationRows)("$name refreshes exactly the cached pages it changes", async (row) => {
+    requireRole.mockResolvedValue(row.role === "admin" ? adminSession() : captainSession());
+    row.setup();
+
+    await expect(row.run()).rejects.toThrow(`REDIRECT:${row.redirectsTo}`);
+
+    expect(revalidatePath.mock.calls).toEqual(row.paths);
+    expect(revalidateTag.mock.calls).toEqual(row.tags.map((tag) => [tag]));
+  });
+
+  it("does not refresh anything when the action stops before saving", async () => {
+    requireRole.mockResolvedValue(adminSession());
+    prisma.user.findUnique.mockResolvedValue({ id: "owner-1", role: "platform_admin" });
+
+    await expect(adminDeactivateUserAction(fd({ userId: "owner-1" }))).rejects.toThrow(
+      "REDIRECT:/admin?error=Hanya%20akun%20kapten%20yang%20dapat%20dinonaktifkan.",
+    );
+
+    expect(revalidatePath).not.toHaveBeenCalled();
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });

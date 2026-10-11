@@ -207,7 +207,7 @@ Fase 0:
 - [x] 0.4
 - [x] 0.5
 - [x] 0.6
-- [ ] 0.7
+- [x] 0.7
 - [ ] 0.8
 
 Fase 1:
@@ -265,6 +265,14 @@ Dua file ini dibuat terpisah supaya `repository.test.ts` (3.037 baris) tidak mak
 3. `setMatchResult` tidak lagi mencatat pemenang untuk skor seri (`winnerTeamId` kosong). Klasemen dihitung dari skor, jadi tidak terpengaruh.
 4. `createCaptainWithTeam` memakai 2 huruf pertama tag untuk `logoText`, sama seperti jalur lain. Fungsi ini lalu dihapus (lihat bawah).
 5. Email kembar saat daftar memberi pesan "Email ini sudah terdaftar. Coba login." Pesan itu dan pesan roster terkunci masuk daftar pesan aman (`SAFE_ACTION_MESSAGES`), supaya sampai ke pengguna.
+
+**PR 0.7 selesai.** Dua lapis test untuk `revalidatePath` dan `revalidateTag`:
+- `src/lib/revalidation-map.test.ts`: tabel 60 fungsi dengan 112 panggilan di 11 file `"use server"`. Tabel dihasilkan dari pemindaian kode (TypeScript compiler), dikunci dengan nama fungsi. Memindahkan action ke file lain tetap lolos. Menghapus, menambah, atau mengubah satu panggilan membuat test gagal. Aturan Fase 3: kalau perubahan itu disengaja, ubah tabelnya di PR yang sama.
+- Delapan baris test perilaku di `actions.test.ts` untuk action yang tadinya tidak punya test sama sekali: `adminAssignCaptainAction`, `adminDeactivateUserAction`, `adminArchiveEventAction`, `adminDeleteTeamAction`, `adminRejectStatAction`, `adminSetAccentColorAction`, `adminRegenerateCertificateAction`, `captainSetDisplayCaptainAction`. Tiap baris memeriksa daftar panggilan yang tepat setelah action sukses.
+
+Dicek dengan perusakan sengaja: menghapus panggilan, mengganti halaman, atau membuat panggilan tidak pernah jalan. Yang terakhir hanya tertangkap test perilaku, sehingga kedua lapis memang saling melengkapi.
+
+Belum ada test perilaku untuk sekitar 24 fungsi lain yang merevalidasi (misalnya `captainSaveDraftTeamAction`, `adminSaveMatchPlayerStatsAction`, `adminActivateEventVisualAction`, dan fungsi di `src/lib/actions/*`). Kodenya dijaga tabel statis. Tambahkan test perilakunya di PR Fase 3 yang memindahkan action itu, tepat sebelum dipindah.
 
 **PR 0.6 selesai.** Cadangan data demo dihapus dari 21 tempat di `repository.ts` dan dari beranda jalur lama. Error database sekarang diteruskan ke halaman error yang ramah (`[locale]/error.tsx`, `global-error.tsx`). Hasil dan temuan ada di bagian "Hasil PR 0.6" di `demo-fallback-decision.md`. Dua temuan penting: error di `generateMetadata` menjatuhkan seluruh halaman (diperbaiki dengan `readEventForMetadata`), dan ada empat pembaca lain yang menelan error dengan nilai kosong (belum ditangani).
 
