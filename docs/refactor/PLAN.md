@@ -204,7 +204,7 @@ Fase 0:
 - [x] 0.1
 - [x] 0.2
 - [x] 0.3
-- [ ] 0.4
+- [x] 0.4
 - [ ] 0.5
 - [ ] 0.6
 - [ ] 0.7
@@ -261,10 +261,18 @@ Dua file ini dibuat terpisah supaya `repository.test.ts` (3.037 baris) tidak mak
 
 **Lima kebiasaan aneh dari PR 0.3: sudah diperbaiki.** Perbaikannya terpisah dari pemindahan kode, jadi test di Fase 2 tidak perlu berubah.
 1. Pendaftaran berbayar tidak mengecek roster terkunci. Sekarang `createTeamRegistrationRequest` membaca kunci roster di dalam transaksi. Keduanya hanya membaca, tidak menaikkan `competitionVersion`, karena permintaan daftar belum mengubah roster. Penilaian awal terlalu keras: alur aplikasi lewat `registerTeam` dulu, yang sudah mengecek kunci, dan persetujuan juga mengecek ulang. Yang tersisa hanya celah kecil di antara dua langkah itu.
-2. `createTeamRegistrationRequest` sekarang menjalankan semua pengecekan dan penyimpanan dalam satu transaksi Serializable, dengan ulang otomatis saat bentrok (P2034).
+2. `createTeamRegistrationRequest` sekarang menjalankan semua pengecekan dan penyimpanan dalam satu transaksi Serializable, dengan ulang otomatis saat bentrok (P2034). Penilaian awal terlalu keras: database sudah menahan duplikat lewat indeks unik parsial (lihat PR 0.4), jadi bahayanya lebih kecil dari yang ditulis.
 3. `setMatchResult` tidak lagi mencatat pemenang untuk skor seri (`winnerTeamId` kosong). Klasemen dihitung dari skor, jadi tidak terpengaruh.
 4. `createCaptainWithTeam` memakai 2 huruf pertama tag untuk `logoText`, sama seperti jalur lain. Fungsi ini lalu dihapus (lihat bawah).
 5. Email kembar saat daftar memberi pesan "Email ini sudah terdaftar. Coba login." Pesan itu dan pesan roster terkunci masuk daftar pesan aman (`SAFE_ACTION_MESSAGES`), supaya sampai ke pengguna.
+
+**PR 0.4 selesai.** File `repository.db.test.ts` menjalankan empat test dengan Postgres asli: balapan slot di `registerTeam`, nama tim sama dan captain ganda di `createTeamRegistrationRequest`, dan batas slot di `approveTeamRegistrationRequest`. Test dilewati kalau `REGISTRATION_TEST_DATABASE_URL` tidak ada. Test menolak database yang bukan lokal, yang namanya tidak mengandung "test", atau yang host-nya diganti lewat parameter URL, karena kode yang dites ikut mengubah baris kedaluwarsa lain di database itu. Job CI `database-tests` menjalankannya di Postgres 18 sementara. Cara menjalankan di laptop ada di komentar paling atas file test.
+
+Temuan dari PR 0.4:
+- **Dua lapis pengaman.** Transaksi (klaim `competitionVersion` di baris event, ditambah Serializable) menjaga jumlah slot. Indeks unik parsial di `TeamRegistrationRequest` menahan captain ganda dan nama atau tag tim yang sama. Indeks itu dibuat lewat SQL migrasi dan **tidak ada di `schema.prisma`**. Jangan jalankan `prisma db push` ke database yang penting, karena indeks itu bisa hilang.
+- **Isolation bukan satu-satunya penjaga slot.** Kalau Serializable diganti ReadCommitted, test slot tetap lolos, karena klaim di baris event sudah membuat transaksi antre. Pengamannya berlapis, bukan satu.
+- **Test dicek dengan mutasi.** Test gagal kalau pengecekan slot di `registerTeam` atau persetujuan dihapus, kalau klaim versi event dihapus, atau kalau jalur permintaan bayar ikut menaikkan versi event. Dijalankan 20 kali berturut-turut tanpa gagal.
+- **Belum tertangkap oleh test database:** pemetaan error P2002 ke pesan yang jelas. Postgres melaporkan bentrok insert di Serializable sebagai kegagalan serialisasi, jadi jalur itu jarang terpicu. Pemetaannya dijaga test dengan mock.
 
 **Dua fungsi dihapus:** `createCaptainWithTeam` dan `createCaptainWithPendingPayment` tidak dipanggil dari kode produksi sejak commit `37626cd` (30 Agustus), saat form daftar berubah jadi hanya membuat akun. Alurnya sekarang dua langkah: buat akun, lalu isi form tim di halaman daftar event. Kedua fungsi bisa dipulihkan dari git (commit `37626cd^`). Perbaikan nomor 1, 4, dan 5 di atas hanya berefek di `createTeamRegistrationRequest` dan `createCaptainAccount`.
 

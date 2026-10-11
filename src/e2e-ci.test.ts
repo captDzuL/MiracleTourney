@@ -46,14 +46,26 @@ describe("CI E2E release sequence", () => {
     }
   });
 
-  it("runs lint, unit, build and schema-drift jobs and never touches a shared database", async () => {
+  it("runs lint, unit, build, database and schema-drift jobs and never touches a shared database", async () => {
     const workflow = await readWorkflow();
     const jobsSection = workflow.slice(workflow.search(/^jobs:\r?$/m));
     const jobIds = [...jobsSection.matchAll(/^  ([a-z][\w-]*):\r?$/gm)].map((match) => match[1]);
 
     // E2E is run on demand with the repository scripts; CI must not reset or seed a shared database.
-    expect(jobIds).toEqual(["lint-and-typecheck", "unit-tests", "build", "schema-drift"]);
+    expect(jobIds).toEqual(["lint-and-typecheck", "unit-tests", "build", "database-tests", "schema-drift"]);
     expect(workflow).not.toMatch(/NEON_|secrets\.|E2E_DATABASE_RESET_ALLOWED|test:e2e|playwright/i);
+  });
+
+  it("runs the registration database tests against a throwaway database inside the job", async () => {
+    const job = extractJob(await readWorkflow(), "database-tests");
+
+    expect(job).not.toMatch(/^    if:/m);
+    expect(job).toContain("image: postgres:");
+    for (const variable of ["DATABASE_URL", "DIRECT_URL", "REGISTRATION_TEST_DATABASE_URL"]) {
+      expect(job, variable).toContain(`${variable}: postgresql://postgres:postgres@localhost:5432/`);
+    }
+    expect(job).toContain("pnpm exec prisma migrate deploy");
+    expect(job).toContain("pnpm exec vitest run src/lib/platform/repository.db.test.ts");
   });
 
   it("checks schema drift against a throwaway database inside the job", async () => {
