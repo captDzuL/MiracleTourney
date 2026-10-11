@@ -23,6 +23,7 @@ vi.mock("next/cache", () => ({
 }));
 
 import {
+  getAllPublicEvents,
   getBracketPreview,
   getEventBySlug,
   getEventsByIds,
@@ -58,6 +59,7 @@ beforeEach(() => {
 
 describe("readers pass the database error on", () => {
   it.each([
+    ["getAllPublicEvents", () => getAllPublicEvents()],
     ["getEventsByIds", () => getEventsByIds([DEMO_EVENT_ID])],
     ["getPublicEvents", () => getPublicEvents()],
     ["getEventBySlug", () => getEventBySlug(DEMO_SLUG)],

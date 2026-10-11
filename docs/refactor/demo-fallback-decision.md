@@ -147,10 +147,27 @@ Dikerjakan sesuai keputusan di atas. Yang berbeda dari rencana atau baru ditemuk
 ### Temuan yang belum ditangani
 
 Dari review independen, belum diubah dan sengaja ditunda:
-- `getAllPublicEvents` (sitemap) mengembalikan daftar kosong saat database gagal. Crawler akan melihat sitemap tanpa event. Sebaiknya melempar error supaya crawler menerima 5xx.
 - Beranda jalur lama memakai `.catch(() => [])` untuk tim dan bracket event unggulan. Dibiarkan: daftar event tetap benar, dan bagian itu hanya pelengkap.
 - Teks di `global-error.tsx` ditulis ulang dengan tangan dan bisa menyimpang dari `messages/id.json`. Layout root tidak punya penyedia terjemahan, jadi teks tetap statis.
 
-Ada pembaca lain yang juga menelan error database dan mengembalikan nilai kosong, **tanpa** data demo: `getAllPublicEvents` (sitemap), `getEventRoundConfigs`, `getMatchGames`, dan `getMatchGamesForEvent`. Dua yang pertama juga di-cache. Kasusnya sama dengan beranda kosong tadi: "kosong" bisa berarti "database gagal". Tidak diubah di PR ini supaya cakupannya tetap satu masalah. Dicatat sebagai pekerjaan lanjutan.
+Ada pembaca lain yang juga menelan error database dan mengembalikan nilai kosong, **tanpa** data demo: `getEventRoundConfigs`, `getMatchGames`, dan `getMatchGamesForEvent`. `getEventRoundConfigs` juga di-cache. (`getAllPublicEvents` untuk sitemap sudah diperbaiki, lihat di bawah.) Kasusnya sama dengan beranda kosong tadi: "kosong" bisa berarti "database gagal". Tidak diubah di PR ini supaya cakupannya tetap satu masalah. Dicatat sebagai pekerjaan lanjutan.
 
 `public-visual-v2.smoke.spec.ts` masih mengandalkan data demo dan masih diabaikan oleh `playwright.smoke.config.ts`. Perlu diputuskan: pakai data seed, atau dihapus.
+
+## Sitemap (commit terpisah setelah PR 0.6)
+
+`sitemap.xml` memakai `getAllPublicEvents`, yang menelan error database dan mengembalikan daftar kosong. Ditambah lagi sitemap itu statis: dibuat sekali saat build dan tidak punya `revalidate`. Build tanpa database menghasilkan sitemap hanya dengan 4 alamat tetap, tanpa error. Bagi SEO, mesin pencari menerima sitemap "sukses" tanpa satu pun event.
+
+Perbaikan dua langkah, harus bersamaan:
+1. `getAllPublicEvents` meneruskan error database.
+2. `sitemap.ts` memakai `export const dynamic = "force-dynamic"`. Tanpa ini, build yang tidak bisa menjangkau database (termasuk job CI `Production build`) akan gagal.
+
+Dibuktikan dengan build tanpa database (berhasil, rute bertanda `ƒ`), lalu aplikasi dijalankan dengan Postgres sungguhan:
+
+| Keadaan | Hasil |
+|---|---|
+| Database kosong | HTTP 200, 4 alamat |
+| Event dibuat setelah server jalan | HTTP 200, 8 alamat, event muncul tanpa deploy ulang |
+| Database dimatikan | HTTP 500, tidak ada sitemap |
+
+Harga yang dibayar: setiap permintaan `sitemap.xml` membaca database sekali. Itu ringan karena crawler jarang datang.
