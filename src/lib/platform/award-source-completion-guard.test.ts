@@ -74,9 +74,10 @@ function delegates() {
     },
     player: {
       findUnique: async () => ({ displayName: "Player One", nickname: "P1", position: "Guard" }),
-      findMany: async () => [{ id: "player-1", nickname: "P1", position: "Guard" }],
+      findMany: async () => [{ id: "player-1", nickname: "P1", position: "Guard", createdAt: new Date("2026-10-01T00:00:00Z"), removedAt: null }],
     },
     playerStat: {
+      findMany: async () => [],
       upsert: async () => {
         if(boundary.failPlayerWrite)throw new Error("storage failure");
         boundary.playerStatWrites += 1;
