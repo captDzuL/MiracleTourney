@@ -3,6 +3,7 @@ import { ArrowRight, ExternalLink } from "lucide-react";
 
 import { PublicV3Action, PublicV3CompactEventIdentity, PublicV3EmptyState, PublicV3Eyebrow, PublicV3SectionHeading } from "@/components/v3/public-discovery/PublicV3Primitives";
 import { PublicV3Frame } from "@/components/v3/public-discovery/PublicV3Frame";
+import { PublicSessionNav } from "@/components/v3/public-discovery/PublicSessionNav";
 import { publicV3LocalizedHref, type PublicV3EventViewModel, type PublicV3Locale } from "@/lib/events/public-v3-types";
 import { PublicV3EventHero } from "./PublicV3EventHero";
 import { PublicV3EventNavigation } from "./PublicV3EventNavigation";
@@ -87,7 +88,7 @@ export function PublicV3EventPage({ view, locale, error = false, readOnly = fals
     skipLabel={locale === "id" ? "Lewati ke konten" : "Skip to content"}
     navigationLabel={locale === "id" ? "Navigasi utama" : "Main navigation"}
     navigation={globalNavigation}
-    headerEnd={<PublicV3Action href={publicV3LocalizedHref("/login")[locale]}>{t.login}<ArrowRight aria-hidden="true" /></PublicV3Action>}
+    headerEnd={<PublicSessionNav locale={locale} />}
     footer={<><span>MIRACLE</span><p>{t.footer}</p></>}
   >
     {view && !error ? <div data-public-v3-event="true" data-public-source={view.source}>
