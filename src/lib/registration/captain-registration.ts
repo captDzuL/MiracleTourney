@@ -9,6 +9,8 @@ export type CaptainCoreRosterInput = {
   captainUid: string;
   captainIsPlayer: boolean;
   requiredPlayers: number;
+  /** Total roster limit including substitutes; defaults to the core size. */
+  maxPlayers?: number;
   players: CaptainCorePlayer[];
 };
 
@@ -33,8 +35,12 @@ export function buildCaptainCoreRoster(input: CaptainCoreRosterInput): Required<
     ? [{ ign: captainIgn, uid: captainUid, position: "Captain" }, ...players]
     : players;
 
-  if (roster.length !== input.requiredPlayers) {
+  const maxPlayers = Math.max(input.maxPlayers ?? input.requiredPlayers, input.requiredPlayers);
+  if (roster.length < input.requiredPlayers) {
     throw new Error(`Roster inti harus berisi ${input.requiredPlayers} pemain.`);
+  }
+  if (roster.length > maxPlayers) {
+    throw new Error(`Roster maksimal ${maxPlayers} pemain, termasuk cadangan.`);
   }
 
   const normalizedUids = roster.map((player) => player.uid.toLocaleLowerCase());

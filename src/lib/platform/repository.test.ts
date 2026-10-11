@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { UserFacingError } from "@/lib/security/public-error";
+
 const { prisma } = vi.hoisted(() => ({
   prisma: {
     match: {
@@ -145,6 +147,7 @@ import {
   countAiVisualAttempts,
   createEventVisualAsset,
   deletePlayer,
+  getCaptainTeams,
   getEventRoundConfigs,
   getEventsByIds,
   getOpenRegistrationEventsForCaptain,
@@ -2000,6 +2003,29 @@ describe("existing captain event registration", () => {
     expect(prisma.team.create).not.toHaveBeenCalled();
   });
 
+  it("lists a captain's teams in a stable creation order", async () => {
+    prisma.team.findMany.mockResolvedValue([]);
+
+    await expect(getCaptainTeams("captain-1")).resolves.toEqual([]);
+
+    expect(prisma.team.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { captainId: "captain-1" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
+    );
+  });
+
+  it("rejects a registration whose draft id is not a draft with a message the captain may see", async () => {
+    prisma.team.findFirst.mockResolvedValue(null);
+
+    const rejection = registerTeam({ eventId: "event-open", captainId: "captain-1", draftTeamId: "intake-copy" });
+
+    await expect(rejection).rejects.toBeInstanceOf(UserFacingError);
+    await expect(rejection).rejects.toThrow("Draft tim tidak ditemukan untuk akun ini.");
+    expect(prisma.team.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "intake-copy", captainId: "captain-1", eventId: null, source: "draft" } }),
+    );
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
   it("rejects existing captain registration when the event is not published", async () => {
     prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-closed", status: "Registration Closed" }));
 
@@ -2884,7 +2910,7 @@ describe("public discovery V3 reads", () => {
     const logger = vi.spyOn(console, "info").mockImplementation((line: string) => { lines.push(line); });
     let finishConnect: (() => void) | undefined;
     prisma.$connect.mockImplementation(() => new Promise<void>((resolve) => { finishConnect = resolve; }));
-    prisma.event.findMany.mockResolvedValue([{ ...publishedEventRow({ id: "private-event-id", name: "private-event-name" }), updatedAt: new Date("2026-09-12T10:00:00.000Z"), competitionPhases: [], matches: [], _count: { teams: 0 } }]);
+    prisma.event.findMany.mockResolvedValue([{ ...publishedEventRow({ id: "private-event-id", name: "private-event-name" }), updatedAt: new Date("2026-09-12T10:00:00.000Z"), competitionPhases: [], matches: [], promotions: [], _count: { teams: 0 } }]);
     try {
       const pending = getPublicDiscoveryEvents();
       expect(prisma.event.findMany).not.toHaveBeenCalled();
@@ -2906,17 +2932,20 @@ describe("public discovery V3 reads", () => {
         updatedAt: new Date("2026-09-12T10:00:00.000Z"),
         competitionPhases: [{ status: "active" }],
         matches: [{ id: "match-live" }],
+        promotions: [],
         _count: { teams: 12 },
       },
     ]);
+    const now = new Date("2026-10-11T08:00:00.000Z");
 
-    await expect(getPublicDiscoveryEvents()).resolves.toEqual([
+    await expect(getPublicDiscoveryEvents(now)).resolves.toEqual([
       expect.objectContaining({
         event: expect.objectContaining({ id: "event-1", status: "Ongoing" }),
         phaseStatus: "active",
         hasLiveMatch: true,
         teamCount: 12,
         updatedAt: "2026-09-12T10:00:00.000Z",
+        pinnedFeatured: false,
       }),
     ]);
     expect(prisma.event.findMany).toHaveBeenCalledWith({
@@ -2927,10 +2956,19 @@ describe("public discovery V3 reads", () => {
         activeVisualAsset: true,
         competitionPhases: { where: { sequence: 1 }, select: { status: true }, take: 1 },
         matches: { where: { status: "Live" }, select: { id: true }, take: 1 },
+        promotions: { where: { type: "featured", active: true, startsAt: { lte: now }, endsAt: { gte: now } }, select: { id: true }, take: 1 },
         _count: { select: { teams: true } },
       },
       orderBy: [{ updatedAt: "desc" }, { slug: "asc" }],
     });
+  });
+
+  it("marks an event pinned when it has an active featured promotion", async () => {
+    prisma.event.findMany.mockResolvedValue([
+      { ...publishedEventRow({ id: "event-1", status: "Ongoing" }), updatedAt: new Date("2026-09-12T10:00:00.000Z"), competitionPhases: [], matches: [], promotions: [{ id: "promo-1" }], _count: { teams: 4 } },
+    ]);
+
+    await expect(getPublicDiscoveryEvents()).resolves.toEqual([expect.objectContaining({ pinnedFeatured: true })]);
   });
 
   it("rejects database failures instead of returning fixture events", async () => {

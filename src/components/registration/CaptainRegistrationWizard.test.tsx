@@ -29,6 +29,12 @@ describe("CaptainRegistrationWizard", () => {
     expect(source).toContain('name="playerPosition"');
   });
 
+  it("lets the captain add substitutes up to the mode roster limit", () => {
+    expect(source).toContain("maxPlayers - requiredPlayers");
+    expect(source).toContain("Tambah cadangan");
+    expect(source).toContain("Cadangan ${index - playerSlots + 1}");
+  });
+
   it("submits through the native captain registration action", () => {
     expect(source).toContain("captainRegisterEventTeamAction");
     expect(source).toContain("action={captainRegisterEventTeamAction}");

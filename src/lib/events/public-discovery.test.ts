@@ -58,6 +58,33 @@ describe("public discovery event priority", () => {
     expect(chooseFeaturedDiscoveryEvent([item("zulu", "Published"), item("alpha", "Published")])?.event.slug).toBe("alpha");
   });
 
+  it("keeps a pinned event featured over newer or live events", () => {
+    const pinned = item("sevbar-s2", "Ongoing", { pinnedFeatured: true });
+    const live = item("champions-s2", "Ongoing", { hasLiveMatch: true });
+    const newer = item("nusantara-s1", "Ongoing");
+
+    expect(chooseFeaturedDiscoveryEvent([live, newer, pinned])?.event.slug).toBe("sevbar-s2");
+  });
+
+  it("honors a pin even when the pinned event is in a lower stage", () => {
+    const pinned = item("pinned-registration", "Published", { pinnedFeatured: true });
+
+    expect(chooseFeaturedDiscoveryEvent([item("ongoing", "Ongoing"), pinned])?.event.slug).toBe("pinned-registration");
+  });
+
+  it("falls back to the normal order when nothing is pinned", () => {
+    const ongoing = item("ongoing", "Ongoing", { pinnedFeatured: false });
+
+    expect(chooseFeaturedDiscoveryEvent([item("registration", "Published"), ongoing])?.event.slug).toBe("ongoing");
+  });
+
+  it("ranks multiple pinned events by the normal order", () => {
+    const first = item("zulu", "Ongoing", { pinnedFeatured: true, hasLiveMatch: true });
+    const second = item("alpha", "Ongoing", { pinnedFeatured: true });
+
+    expect(chooseFeaturedDiscoveryEvent([second, first])?.event.slug).toBe("zulu");
+  });
+
   it("groups all other events without hiding the featured event's peers", () => {
     const ongoing = item("ongoing", "Ongoing");
     const registration = item("registration", "Published");

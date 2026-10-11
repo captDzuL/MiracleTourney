@@ -69,7 +69,7 @@ describe("native event registration route", () => {
     mocks.getCaptainTeams.mockResolvedValue([]);
     mocks.getCaptainRegistrationRequests.mockResolvedValue([]);
     mocks.getPlayersForTeam.mockResolvedValue([]);
-    mocks.getCaptainPaymentSettings.mockResolvedValue({ id: "global", source: "global" });
+    mocks.getCaptainPaymentSettings.mockResolvedValue({ id: "event-payment-event-1", eventId: "event-1", source: "event" });
   });
 
   it("passes the authoritative event id to the scoped captain payment reader", async () => {
@@ -84,7 +84,7 @@ describe("native event registration route", () => {
 
   it.each([
     ["published event settings", { id: "event-settings-1", eventId: "event-1", source: "event", status: "published" }],
-    ["draft/missing event settings fallback", { id: "global", source: "global", qrisImageUrl: "/payment/global.png" }],
+    ["draft/missing event settings", { id: "event-payment-event-1", eventId: "event-1", source: "event" }],
   ])("passes through %s without replacing the reader result", async (_label, settings) => {
     mocks.getCaptainPaymentSettings.mockResolvedValue(settings);
 

@@ -34,6 +34,7 @@ export async function saveCaptainRegistrationDraft(input: {
     captainUid: input.captainUid,
     captainIsPlayer: input.captainIsPlayer,
     requiredPlayers: mode.teamSize,
+    maxPlayers: mode.maxRosterSize,
     players: input.players,
   });
   const teamName = input.teamName.trim();

@@ -10,7 +10,7 @@ const {
   getModeForEvent,
   getCaptainRegistrationRequests,
   getOpenRegistrationEventsForCaptain,
-  getPaymentSettings,
+  getCaptainPaymentSettings,
   getPlayersForTeams,
   hasTempPassword,
   requireRole,
@@ -23,7 +23,7 @@ const {
   getModeForEvent: vi.fn(),
   getCaptainRegistrationRequests: vi.fn(),
   getOpenRegistrationEventsForCaptain: vi.fn(),
-  getPaymentSettings: vi.fn(),
+  getCaptainPaymentSettings: vi.fn(),
   getPlayersForTeams: vi.fn(),
   hasTempPassword: vi.fn(),
   requireRole: vi.fn(),
@@ -86,7 +86,6 @@ vi.mock("@/lib/platform/repository", () => ({
   getModeForEvent,
   getCaptainRegistrationRequests,
   getOpenRegistrationEventsForCaptain,
-  getPaymentSettings,
   getPlayersForTeams,
   hasTempPassword,
 }));
@@ -95,6 +94,7 @@ vi.mock("@/lib/actions/captain-roster-change-actions", () => ({
   captainRequestRosterChangeAction: vi.fn(),
   captainCancelRosterChangeAction: vi.fn(),
 }));
+vi.mock("@/lib/registration/captain-repository", () => ({ getCaptainPaymentSettings }));
 vi.mock("@/components/GameArt", () => ({
   GameArt: () => <div />,
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
@@ -135,7 +135,6 @@ describe("captain dashboard event registration", () => {
 
   it("renders registration and roster as separate tabs", async () => {
     getCaptainRegistrationRequests.mockResolvedValue([]);
-    getPaymentSettings.mockResolvedValue({ id: "global" });
     getOpenRegistrationEventsForCaptain.mockResolvedValue([openEvent]);
 
     const page = await CaptainPage({ searchParams: Promise.resolve({}) });
@@ -151,7 +150,6 @@ describe("captain dashboard event registration", () => {
 
   it("shows an empty state when no published event is available to this captain", async () => {
     getCaptainRegistrationRequests.mockResolvedValue([]);
-    getPaymentSettings.mockResolvedValue({ id: "global" });
     getOpenRegistrationEventsForCaptain.mockResolvedValue([]);
 
     const page = await CaptainPage({ searchParams: Promise.resolve({}) });
@@ -162,7 +160,7 @@ describe("captain dashboard event registration", () => {
 
   it("shows pending paid registration requests with QRIS and proof upload", async () => {
     getOpenRegistrationEventsForCaptain.mockResolvedValue([]);
-    getPaymentSettings.mockResolvedValue({ id: "global", qrisImageUrl: "/payment/qris.png", instructions: "Scan QRIS lalu upload bukti." });
+    getCaptainPaymentSettings.mockResolvedValue({ id: "event-settings-paid", eventId: "event-paid", source: "event", qrisImageUrl: "/payment/qris.png", instructions: "Scan QRIS lalu upload bukti." });
     getCaptainRegistrationRequests.mockResolvedValue([
       {
         id: "request-1",
@@ -187,7 +185,75 @@ describe("captain dashboard event registration", () => {
     expect(html).toContain("/payment/qris.png");
     expect(html).toContain("name=\"paymentProof\"");
     expect(html).toContain("Upload Bukti Bayar");
-  });});
+    expect(getCaptainPaymentSettings).toHaveBeenCalledWith("event-paid");
+  });
+
+  it("offers position choices for a draft team that has no event yet", async () => {
+    getCaptainRegistrationRequests.mockResolvedValue([]);
+    getOpenRegistrationEventsForCaptain.mockResolvedValue([]);
+    getCaptainTeams.mockResolvedValue([
+      { id: "draft-1", name: "Draft FC", tag: "DFC", captainId: "captain-1", eventId: null, source: "draft" },
+    ]);
+
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({ tab: "roster" }) }));
+
+    expect(html).toContain("id=\"add-player-form\"");
+    expect(html).toContain("<option value=\"Jungler\">Jungler</option>");
+    expect(html).toContain("<option value=\"Guard\">Guard</option>");
+  });
+
+  it("registers with the draft team even when leftover intake copies are listed first", async () => {
+    getCaptainRegistrationRequests.mockResolvedValue([]);
+    getOpenRegistrationEventsForCaptain.mockResolvedValue([{ ...openEvent, registrationFeeRequired: true }]);
+    getCaptainTeams.mockResolvedValue([
+      { id: "intake-2", name: "Teil E-sports", tag: "TEL", captainId: "captain-1", eventId: null, source: "registration-intake" },
+      { id: "draft-1", name: "Teil E-sports", tag: "TEL", captainId: "captain-1", eventId: null, source: "draft" },
+      { id: "intake-1", name: "Teil E-sports", tag: "TEL", captainId: "captain-1", eventId: null, source: "registration-intake" },
+    ]);
+
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({}) }));
+
+    expect(html).toContain("name=\"draftTeamId\" value=\"draft-1\"");
+    expect(html).not.toContain("value=\"intake-2\"");
+    expect(html).not.toContain("value=\"intake-1\"");
+  });
+
+  it("does not treat a registration intake copy as the captain's draft", async () => {
+    getCaptainRegistrationRequests.mockResolvedValue([]);
+    getOpenRegistrationEventsForCaptain.mockResolvedValue([openEvent]);
+    getCaptainTeams.mockResolvedValue([
+      { id: "intake-1", name: "Teil E-sports", tag: "TEL", captainId: "captain-1", eventId: null, source: "registration-intake" },
+    ]);
+
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({}) }));
+
+    expect(html).not.toContain("name=\"draftTeamId\"");
+  });
+
+  it("shows the organizer-missing notice instead of any Miracle QRIS when the event has none", async () => {
+    getOpenRegistrationEventsForCaptain.mockResolvedValue([]);
+    getCaptainPaymentSettings.mockResolvedValue({ id: "event-payment-event-paid", eventId: "event-paid", source: "event" });
+    getCaptainRegistrationRequests.mockResolvedValue([
+      {
+        id: "request-1",
+        eventId: "event-paid",
+        captainId: "captain-1",
+        teamName: "Paid United",
+        teamTag: "PDU",
+        status: "pending_payment",
+        expiresAt: new Date("2026-08-25T00:00:00.000Z"),
+        createdAt: new Date("2026-08-24T00:00:00.000Z"),
+        updatedAt: new Date("2026-08-24T00:00:00.000Z"),
+        event: { ...openEvent, id: "event-paid", name: "Paid Cup", registrationFeeRequired: true, registrationFeeAmount: 25000, registrationFeeLabel: "Rp25.000 / team" },
+      },
+    ]);
+
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({}) }));
+
+    expect(html).toContain("QRIS belum tersedia. Hubungi organizer.");
+    expect(html).not.toContain("alt=\"QRIS\"");
+  });
+});
 
 describe("captain roster tab and the roster lock", () => {
   const team = { id: "team-1", eventId: "event-1", captainId: "captain-1", name: "Redclover", tag: "RC", source: "registration", logoText: "RC" };
@@ -201,7 +267,6 @@ describe("captain roster tab and the roster lock", () => {
 
   async function renderRoster(params: Record<string, string> = {}) {
     getCaptainRegistrationRequests.mockResolvedValue([]);
-    getPaymentSettings.mockResolvedValue({ id: "global" });
     getOpenRegistrationEventsForCaptain.mockResolvedValue([]);
     getCaptainTeams.mockResolvedValue([team]);
     getEventsByIds.mockResolvedValue([{ ...openEvent, id: "event-1", status: "Registration Closed" }]);

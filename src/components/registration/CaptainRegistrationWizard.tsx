@@ -119,6 +119,7 @@ export function CaptainRegistrationWizard({
   event,
   positions,
   requiredPlayers,
+  maxPlayers = requiredPlayers,
   draftTeam,
   currentRequest,
   paymentSettings,
@@ -126,6 +127,7 @@ export function CaptainRegistrationWizard({
   event: RegistrationEvent;
   positions: string[];
   requiredPlayers: number;
+  maxPlayers?: number;
   draftTeam?: DraftTeam;
   currentRequest?: CurrentRequest;
   paymentSettings?: PaymentSettings;
@@ -140,16 +142,24 @@ export function CaptainRegistrationWizard({
   const [captainUid, setCaptainUid] = useState(draftTeam?.captainUid ?? "");
   const [captainContact, setCaptainContact] = useState(draftTeam?.captainContact ?? "");
   const playerSlots = requiredPlayers - (captainIsPlayer ? 1 : 0);
-  const [roster, setRoster] = useState(() => {
-    const players = draftTeam?.players ?? [];
-    const nonCaptainPlayers = (draftTeam?.captainIsPlayer ?? true) && players[0]?.displayName === (draftTeam?.captainUid ?? "") ? players.slice(1) : players;
-    return Array.from({ length: requiredPlayers }, (_, index) => ({
-      ign: nonCaptainPlayers[index]?.nickname ?? "",
-      uid: nonCaptainPlayers[index]?.displayName ?? "",
-      position: nonCaptainPlayers[index]?.position ?? "",
-    }));
+  const maxSubstitutes = Math.max(maxPlayers - requiredPlayers, 0);
+  const draftPlayers = draftTeam?.players ?? [];
+  const draftNonCaptainPlayers = (draftTeam?.captainIsPlayer ?? true) && draftPlayers[0]?.displayName === (draftTeam?.captainUid ?? "") ? draftPlayers.slice(1) : draftPlayers;
+  const [substituteCount, setSubstituteCount] = useState(() => {
+    const draftCaptainSlot = draftTeam ? ((draftTeam.captainIsPlayer ?? true) ? 1 : 0) : 0;
+    return Math.min(Math.max(draftNonCaptainPlayers.length + draftCaptainSlot - requiredPlayers, 0), maxSubstitutes);
   });
-  const visibleRoster = roster.slice(0, playerSlots);
+  const [roster, setRoster] = useState(() => Array.from({ length: requiredPlayers + maxSubstitutes }, (_, index) => ({
+    ign: draftNonCaptainPlayers[index]?.nickname ?? "",
+    uid: draftNonCaptainPlayers[index]?.displayName ?? "",
+    position: draftNonCaptainPlayers[index]?.position ?? "",
+  })));
+  const visibleRoster = roster.slice(0, playerSlots + substituteCount);
+  const addSubstitute = () => setSubstituteCount((count) => Math.min(count + 1, maxSubstitutes));
+  const removeSubstitute = () => {
+    setRoster((current) => current.map((player, playerIndex) => playerIndex === playerSlots + substituteCount - 1 ? { ign: "", uid: "", position: "" } : player));
+    setSubstituteCount((count) => Math.max(count - 1, 0));
+  };
   const updatePlayer = (index: number, field: "ign" | "uid" | "position", value: string) => setRoster((current) => current.map((player, playerIndex) => playerIndex === index ? { ...player, [field]: value } : player));
 
   if (currentRequest && currentRequest.status !== "pending_payment" && currentRequest.status !== "rejected") {
@@ -210,13 +220,21 @@ export function CaptainRegistrationWizard({
                 <label className={`${fieldClass} sm:col-span-2`}>WhatsApp captain<input className={inputClass} name="captainContact" value={captainContact} onChange={(event) => setCaptainContact(event.target.value)} minLength={6} required /></label>
               </div>
               <label className="mt-4 flex min-h-11 items-center gap-3 rounded-xl border border-[#29374a] bg-[#0c1523] px-4 text-sm font-semibold text-[#f3efe7]"><input type="checkbox" name="captainIsPlayer" checked={captainIsPlayer} onChange={(event) => setCaptainIsPlayer(event.target.checked)} className="h-4 w-4 accent-[#7250d1]" />Kapten juga pemain inti</label>
-              <div className="mt-5 border-t border-[#29374a] pt-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-sm font-bold text-[#f3efe7]">Roster awal</h3><p className="text-[10px] text-[#aab7c9]">{requiredPlayers} pemain inti · UID dan IGN wajib · posisi opsional</p></div><span className="text-[10px] font-bold text-[#56d6a1]">{captainIsPlayer ? "Kapten mengisi slot pertama" : "Kapten tidak dihitung sebagai pemain"}</span></div>
+              <div className="mt-5 border-t border-[#29374a] pt-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-sm font-bold text-[#f3efe7]">Roster awal</h3><p className="text-[10px] text-[#aab7c9]">{requiredPlayers} pemain inti{maxSubstitutes > 0 ? ` · maksimal ${maxSubstitutes} cadangan` : ""} · UID dan IGN wajib · posisi opsional</p></div><span className="text-[10px] font-bold text-[#56d6a1]">{captainIsPlayer ? "Kapten mengisi slot pertama" : "Kapten tidak dihitung sebagai pemain"}</span></div>
                 <div className="mt-3 grid gap-3">
                   {visibleRoster.map((player, index) => {
-                    const number = index + 1 + (captainIsPlayer ? 1 : 0);
-                    return <div key={`${number}-${captainIsPlayer}`} className="grid gap-2 rounded-xl border border-[#29374a] bg-[#0c1523] p-3 sm:grid-cols-[1fr_1fr_160px]"><label className={fieldClass}>Player {number} IGN<input className={inputClass} name="playerIgn" value={player.ign} onChange={(event) => updatePlayer(index, "ign", event.target.value)} minLength={2} required /></label><label className={fieldClass}>Player {number} UID<input className={inputClass} name="playerUid" value={player.uid} onChange={(event) => updatePlayer(index, "uid", event.target.value)} minLength={2} required /></label><label className={fieldClass}>Posisi · opsional<select className={inputClass} name="playerPosition" value={player.position} onChange={(event) => updatePlayer(index, "position", event.target.value)}><option value="">Tanpa posisi</option>{positions.map((position) => <option key={position}>{position}</option>)}</select></label></div>;
+                    const isSubstitute = index >= playerSlots;
+                    const label = isSubstitute ? `Cadangan ${index - playerSlots + 1}` : `Player ${index + 1 + (captainIsPlayer ? 1 : 0)}`;
+                    return <div key={`${label}-${captainIsPlayer}`} className="grid gap-2 rounded-xl border border-[#29374a] bg-[#0c1523] p-3 sm:grid-cols-[1fr_1fr_160px]"><label className={fieldClass}>{label} IGN<input className={inputClass} name="playerIgn" value={player.ign} onChange={(event) => updatePlayer(index, "ign", event.target.value)} minLength={2} required /></label><label className={fieldClass}>{label} UID<input className={inputClass} name="playerUid" value={player.uid} onChange={(event) => updatePlayer(index, "uid", event.target.value)} minLength={2} required /></label><label className={fieldClass}>Posisi · opsional<select className={inputClass} name="playerPosition" value={player.position} onChange={(event) => updatePlayer(index, "position", event.target.value)}><option value="">Tanpa posisi</option>{positions.map((position) => <option key={position}>{position}</option>)}</select></label></div>;
                   })}
                 </div>
+                {maxSubstitutes > 0 ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button type="button" className={softButton} onClick={addSubstitute} disabled={substituteCount >= maxSubstitutes}>Tambah cadangan</button>
+                    {substituteCount > 0 ? <button type="button" className={softButton} onClick={removeSubstitute}>Hapus cadangan terakhir</button> : null}
+                    <span className="text-[10px] text-[#aab7c9]">{substituteCount} dari {maxSubstitutes} cadangan</span>
+                  </div>
+                ) : null}
               </div>
               <div className="mt-6 flex justify-end border-t border-[#29374a] pt-5"><button type="button" onClick={() => { if (formRef.current?.reportValidity()) setStep(2); }} className={primaryButton}>Tinjau pilihan <ArrowRight className="h-4 w-4" /></button></div>
             </>
@@ -230,7 +248,7 @@ export function CaptainRegistrationWizard({
               {captainIsPlayer ? <input type="hidden" name="captainIsPlayer" value="true" /> : null}
               {visibleRoster.map((player, index) => <span key={`hidden-player-${index}`}><input type="hidden" name="playerIgn" value={player.ign} /><input type="hidden" name="playerUid" value={player.uid} /><input type="hidden" name="playerPosition" value={player.position} /></span>)}
               <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#aa8bff]">Langkah 2 dari 4</p><h2 className="mt-2 text-xl font-bold text-[#f3efe7]">Tinjau data sebelum mendaftar</h2><p className="mt-1 text-sm text-[#aab7c9]">Pastikan identitas captain dan roster sudah benar untuk event ini.</p></div><button type="button" className={softButton} onClick={() => setStep(1)}>Ganti tim</button></div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{visibleRoster.map((player, index) => <div key={`review-${index}`} className="rounded-lg border border-[#29374a] bg-[#0c1523] p-3"><b className="block text-xs text-[#f3efe7]">{player.ign || `Player ${index + 1}`}</b><span className="mt-1 block text-[10px] text-[#aab7c9]">UID {player.uid || "-"}{player.position ? ` · ${player.position}` : ""}</span></div>)}</div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{visibleRoster.map((player, index) => <div key={`review-${index}`} className="rounded-lg border border-[#29374a] bg-[#0c1523] p-3"><b className="block text-xs text-[#f3efe7]">{player.ign || (index >= playerSlots ? `Cadangan ${index - playerSlots + 1}` : `Player ${index + 1}`)}</b>{index >= playerSlots ? <em className="block text-[9px] not-italic text-[#f0bf68]">Cadangan</em> : null}<span className="mt-1 block text-[10px] text-[#aab7c9]">UID {player.uid || "-"}{player.position ? ` · ${player.position}` : ""}</span></div>)}</div>
               <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_300px]"><div className="rounded-xl border border-[#29374a] bg-[#0c1523] p-4"><h3 className="text-sm font-bold text-[#f3efe7]">Roster {teamName}</h3><p className="mt-2 text-sm text-[#aab7c9]">{requiredPlayers} pemain inti · Kapten {captainIsPlayer ? "termasuk roster" : "di luar roster"}</p><div className="mt-4 rounded-lg border border-[#29374a] p-3"><b className="text-[#f3efe7]">{captainIgn}</b><span className="ml-2 text-xs text-[#aab7c9]">UID {captainUid} · Captain</span></div></div><aside className="grid gap-2"><div className="flex justify-between gap-4 rounded-xl border border-[#29374a] bg-[#0c1523] p-3 text-sm"><span className="text-[#aab7c9]">Event</span><b className="text-right text-[#f3efe7]">{event.name}</b></div><div className="flex justify-between gap-4 rounded-xl border border-[#29374a] bg-[#0c1523] p-3 text-sm"><span className="text-[#aab7c9]">Tim</span><b className="text-right text-[#f3efe7]">{teamName} · {teamTag.toUpperCase()}</b></div><div className="flex justify-between gap-4 rounded-xl border border-[#29374a] bg-[#0c1523] p-3 text-sm"><span className="text-[#aab7c9]">Biaya</span><b className="text-right text-[#f3efe7]">{event.registrationFeeLabel ?? "Gratis"}</b></div><div className="flex justify-between gap-4 rounded-xl border border-[#29374a] bg-[#0c1523] p-3 text-sm"><span className="text-[#aab7c9]">Slot</span><b className="text-right text-[#f3efe7]">{event.registeredTeams} / {event.participantCap}</b></div></aside></div>
               <div className="mt-4 rounded-xl border border-[#49d1ec]/25 bg-[#49d1ec]/[0.07] p-4 text-sm text-[#aab7c9]"><b className="text-[#49d1ec]">Nama dan tag diamankan selama 24 jam.</b><br />Satu captain hanya dapat memiliki satu pendaftaran aktif pada event ini.</div>
               <div className="mt-6 flex flex-col-reverse justify-between gap-3 border-t border-[#29374a] pt-5 sm:flex-row"><button type="button" className={softButton} onClick={() => setStep(1)}><ArrowLeft className="h-4 w-4" /> Kembali</button><div className="flex flex-wrap justify-end gap-2"><button type="submit" className={softButton} name="intent" value="draft">Simpan Draft</button><SubmitButton className={primaryButton}>{event.registrationFeeRequired ? "Buat pendaftaran dan bayar" : "Kirim pendaftaran"}<ArrowRight className="h-4 w-4" /></SubmitButton></div></div>

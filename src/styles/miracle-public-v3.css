@@ -333,3 +333,14 @@
 @media (prefers-reduced-motion: reduce) {
   .miracle-public-v3, .miracle-public-v3 *, .miracle-public-v3 *::before, .miracle-public-v3 *::after { scroll-behavior: auto; transition: none !important; animation: none !important; }
 }
+
+/* The mobile header hides action icons; the sign-out button keeps its icon so a bare name never reads as a profile link. */
+.miracle-public-v3 .mpv3-header-end .mpv3-session-logout { gap: 8px; }
+.miracle-public-v3 .mpv3-header-end .mpv3-session-logout svg { display: inline-block; width: 14px; height: 14px; }
+.miracle-public-v3 .mpv3-header-end .mpv3-session-logout span { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A signed-in header carries up to three controls. On a phone they move to their own row instead of stacking in the space left beside the brand. */
+@media (max-width: 580px) {
+  .miracle-public-v3 .mpv3-header .mpv3-header-inner:has(.mpv3-session-logout) { flex-wrap: wrap; }
+  .miracle-public-v3 .mpv3-header .mpv3-header-inner:has(.mpv3-session-logout) .mpv3-header-end { order: 3; flex: 1 0 100%; justify-content: flex-end; flex-wrap: nowrap; margin-left: 0; }
+}
