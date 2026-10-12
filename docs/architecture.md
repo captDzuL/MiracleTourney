@@ -33,6 +33,7 @@ Catatan jujur: pembagian ini belum bersih. Sekitar 35 file di `src/lib` masih me
 | `src/app` | Halaman, route handler, `error.tsx`, `sitemap.ts`. Ada dua pohon: `src/app/[locale]/...` (yang dipakai pengunjung) dan `src/app/...` tanpa locale. Middleware mengalihkan jalur tanpa locale ke `/[locale]/...`. |
 | `src/components` | Komponen: `admin`, `panel`, `public-v2`, `registration`, `v3`. |
 | `src/lib/platform` | `repository.ts` (4.300 baris, akan dipecah), `db.ts` (klien Prisma), `config.ts` (daftar game dan mode), `types.ts`, `demo-store.ts` (hanya untuk test). |
+| `src/lib/platform/shared` | Konstanta (`constants.ts`, termasuk `CACHE_TAGS`) dan pemetaan baris database (`mappers.ts`) yang dipakai banyak fungsi. Sudah dipindah dari `repository.ts` (PR 1.1). Pengecekan izin dan pembantu transaksi menyusul (PR 1.2 dan 1.3). |
 | `src/lib/actions.ts` | Modul server action lama, 53 action. Akan dipecah di Fase 3. |
 | `src/lib/actions/*-actions.ts` | Server action yang lebih baru, satu file per bidang (`event-v3-actions`, `registration-v3-actions`, dan seterusnya). **Tempat action baru.** |
 | `src/lib/<bidang>` | `auth`, `bracket`, `certificate`, `competition`, `completion`, `events`, `imports`, `player-stats`, `registration`, `tournament`, dan lainnya. Logika per bidang. |

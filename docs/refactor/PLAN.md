@@ -211,7 +211,7 @@ Fase 0:
 - [x] 0.8
 
 Fase 1:
-- [ ] 1.1
+- [x] 1.1
 - [ ] 1.2
 - [ ] 1.3
 - [ ] 1.4
@@ -265,6 +265,14 @@ Dua file ini dibuat terpisah supaya `repository.test.ts` (3.037 baris) tidak mak
 3. `setMatchResult` tidak lagi mencatat pemenang untuk skor seri (`winnerTeamId` kosong). Klasemen dihitung dari skor, jadi tidak terpengaruh.
 4. `createCaptainWithTeam` memakai 2 huruf pertama tag untuk `logoText`, sama seperti jalur lain. Fungsi ini lalu dihapus (lihat bawah).
 5. Email kembar saat daftar memberi pesan "Email ini sudah terdaftar. Coba login." Pesan itu dilempar sebagai `UserFacingError` (kebiasaan baru dari `main`, lihat `src/lib/security/public-error.ts`), jadi sampai ke pengguna tanpa masuk daftar pesan aman.
+
+**PR 1.1 selesai.** Konstanta, pembantu pemetaan, dan tag cache pindah ke `src/lib/platform/shared/`:
+- `constants.ts`: status event publik, batas pembaca organizer, status permintaan daftar, masa berlaku pembayaran 24 jam, pesan roster terkunci, dan `CACHE_TAGS` (baru: `events`, `teams`, `stats`).
+- `mappers.ts`: `mapEvent`, `mapTeam`, `mapPlayer`, `mapMatch`, `mapUser`, `mapTeamRegistrationRequest`, `mapPaymentSettings`, `mapEventVisualAsset`, serta dua set `include` Prisma.
+
+Dipindah dengan skrip berbasis AST, bukan disalin tangan, lalu dibuktikan: 23 dari 23 deklarasi identik dengan aslinya (selain kata `export`), tidak ada yang tersisa di `repository.ts`. `repository.ts` turun dari 4.329 ke sekitar 4.090 baris dan tetap mengekspor `mapEvent` dan `eventPublicInclude` (dipakai `event-revision.ts` dan `preview-token.ts`). Satu-satunya perubahan lain: enam penanda `tags: ["..."]` memakai `CACHE_TAGS`. Server action tetap memakai teks biasa di `revalidateTag("...")`, supaya tabel revalidasi tidak berubah; `shared/constants.test.ts` memastikan setiap teks itu adalah salah satu tag di `CACHE_TAGS`.
+
+Aturan pemindahan yang berlaku untuk PR 1.2 sampai 1.5 dan seterusnya: pindahkan dengan skrip, buktikan identik, jangan ubah logika.
 
 **Fase 0 diperiksa ulang di atas `main` (2026-10-12).** Sejak rehearsal dibuat, `main` menambah 12 commit (fitur ganti roster, pin event unggulan di beranda, `UserFacingError`, job CI `New migrations`, dan lainnya). Penggabungan percobaan menghasilkan 5 konflik, semuanya sudah dibereskan:
 - `repository.ts` (4 tempat): `main` menambah filter `removedAt: null` di tiga pembaca pemain yang masih punya cadangan data demo. Hasilnya menggabungkan keduanya: tanpa cadangan, dengan filter. Fungsi `createTeamRegistrationRequest` versi transaksi kita memakai `UserFacingError` seperti konvensi `main`.
