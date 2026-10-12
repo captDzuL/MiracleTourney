@@ -70,6 +70,7 @@ export async function renderEventRegistrationPage(
           event={{ ...event, registeredTeams, registrationFeeRequired: event.registrationFeeRequired ?? false }}
           positions={mode.positions}
           requiredPlayers={mode.teamSize}
+          maxPlayers={mode.maxRosterSize}
           draftTeam={draft ? { ...draft, players } : undefined}
           currentRequest={currentRequest}
           paymentSettings={paymentSettings}

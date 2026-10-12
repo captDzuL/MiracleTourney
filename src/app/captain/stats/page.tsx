@@ -4,7 +4,8 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { captainSubmitStatsAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { getStatKeysForMode } from "@/lib/platform/config";
-import { getCompletedMatchesForCaptain, getPlayersForTeams } from "@/lib/platform/repository";
+import { getCompletedMatchesForCaptain } from "@/lib/platform/repository";
+import { getMatchTeamRosters } from "@/lib/platform/stat-recording-repository";
 import { getPlayerStatNumericValue } from "@/lib/player-stats/form";
 import { Section } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
@@ -20,9 +21,8 @@ export default async function CaptainStatsPage() {
   const t = await getTranslations("captainStats");
   const matchRows = await getCompletedMatchesForCaptain(user.id);
 
-  const teamIds = [...new Set(matchRows.map((r) => r.teamId))];
-  const players = await getPlayersForTeams(teamIds);
-  const playersByTeam = new Map(teamIds.map((id) => [id, players.filter((player) => player.teamId === id)] as const));
+  // Each match lists the roster the team had when it started, not today's roster.
+  const rostersByMatchTeam = await getMatchTeamRosters(matchRows.map(({ matchId, teamId }) => ({ matchId, teamId })));
 
   if (matchRows.length === 0) {
     return (
@@ -44,7 +44,7 @@ export default async function CaptainStatsPage() {
         <div className="space-y-4">
           {matchRows.map((row) => {
             const statKeys = getStatKeysForMode(row.gameModeId, row.gameId);
-            const players = playersByTeam.get(row.teamId) ?? [];
+            const players = rostersByMatchTeam.get(`${row.matchId}::${row.teamId}`) ?? [];
             const sub = row.submission;
             const canSubmit = !sub || sub.status === "rejected";
 

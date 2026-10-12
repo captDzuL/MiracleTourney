@@ -90,7 +90,7 @@ Ini hanya terjadi di **jalur beranda lama**. Flag `public_discovery_v3` bernilai
 
 ### Teks halaman error
 
-Tidak ada daftar tunggal semua pesan error di proyek ini. Pesan tersebar di tiga tempat: daftar `SAFE_ACTION_MESSAGES` di `src/lib/security/public-error.ts`, kunci di `messages/*.json`, dan teks di `src/components/v3/**/*-copy.ts`. Karena itu teks baru dibuat sesedikit mungkin dan memakai kalimat yang sudah ada.
+Tidak ada daftar tunggal semua pesan error di proyek ini. Pesan tersebar di tiga tempat: daftar `SAFE_ACTION_MESSAGES` dan `UserFacingError` di `src/lib/security/public-error.ts`, kunci di `messages/*.json`, dan teks di `src/components/v3/**/*-copy.ts`. Karena itu teks baru dibuat sesedikit mungkin dan memakai kalimat yang sudah ada.
 
 | | Indonesia | Inggris | Sumber |
 |---|---|---|---|

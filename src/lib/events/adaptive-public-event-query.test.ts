@@ -118,6 +118,22 @@ describe("getAdaptivePublicEventView", () => {
     expect(view?.viewer).toMatchObject({ state: "pending_payment", cta: { kind: "continue" } });
   });
 
+  it("judges a captain's roster readiness from the draft team only, not registration intake copies", async () => {
+    mocks.teamCount.mockResolvedValue(3);
+    mocks.requestCount.mockResolvedValue(0);
+    mocks.requestFindFirst.mockResolvedValue(null);
+    mocks.teamFindFirst.mockResolvedValue(null);
+    mocks.teamFindMany.mockResolvedValue([{ _count: { players: 0 } }]);
+
+    const captain = { id: "captain-1", email: "captain@miracle.id", name: "Captain", role: "captain" as const };
+    const view = await getAdaptivePublicEventView("miracle-cup", captain, new Date("2026-09-12T00:00:00Z"));
+
+    expect(mocks.teamFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { eventId: null, captainId: "captain-1", source: "draft" } }),
+    );
+    expect(view?.viewer).toMatchObject({ state: "draft_incomplete" });
+  });
+
   it("marks events without a structured start date as legacy", async () => {
     mocks.eventFindFirst.mockResolvedValue({ ...baseEvent, eventStartsAt: null, startsAt: "Segera" });
     const view = await getAdaptivePublicEventView("miracle-cup", null, new Date("2026-09-12T00:00:00Z"));

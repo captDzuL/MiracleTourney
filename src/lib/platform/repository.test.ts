@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { UserFacingError } from "@/lib/security/public-error";
+
 const { prisma } = vi.hoisted(() => ({
   prisma: {
     match: {
@@ -9,6 +11,7 @@ const { prisma } = vi.hoisted(() => ({
     },
     competitionPhase: {
       count: vi.fn(),
+      findFirst: vi.fn(),
     },
     matchResultRevision: { findMany: vi.fn() },
     eventRoundConfig: {
@@ -26,6 +29,7 @@ const { prisma } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       groupBy: vi.fn(),
       update: vi.fn(),
+      deleteMany: vi.fn(),
     },
     teamRegistrationRequest: {
       count: vi.fn(),
@@ -79,6 +83,7 @@ const { prisma } = vi.hoisted(() => ({
       createMany: vi.fn(),
       delete: vi.fn(),
       deleteMany: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
@@ -143,6 +148,8 @@ import {
   countAiVisualAttempts,
   createEventVisualAsset,
   deletePlayer,
+  getCaptainRegistrationRequests,
+  getCaptainTeams,
   getEventRoundConfigs,
   getEventsByIds,
   getOpenRegistrationEventsForCaptain,
@@ -190,7 +197,13 @@ import {
   approveStatSubmission,
   rejectStatSubmission,
   upsertStatSubmission,
+  getRosterChangeWindow,
+  getPlayersForTeam,
+  getPlayersForTeams,
+  getPlayersForEvent,
+  setTeamCaptainDisplay,
 } from "./repository";
+import { generateCompetitionGraph, type GroupPlayoffsConfig } from "@/lib/tournament/competition";
 
 const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
 const admin = { id: "admin-2", role: "admin" as const, email: "admin2@test.com", name: "Admin Two" };
@@ -1987,6 +2000,29 @@ describe("existing captain event registration", () => {
     expect(prisma.team.create).not.toHaveBeenCalled();
   });
 
+  it("lists a captain's teams in a stable creation order", async () => {
+    prisma.team.findMany.mockResolvedValue([]);
+
+    await expect(getCaptainTeams("captain-1")).resolves.toEqual([]);
+
+    expect(prisma.team.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { captainId: "captain-1" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
+    );
+  });
+
+  it("rejects a registration whose draft id is not a draft with a message the captain may see", async () => {
+    prisma.team.findFirst.mockResolvedValue(null);
+
+    const rejection = registerTeam({ eventId: "event-open", captainId: "captain-1", draftTeamId: "intake-copy" });
+
+    await expect(rejection).rejects.toBeInstanceOf(UserFacingError);
+    await expect(rejection).rejects.toThrow("Draft tim tidak ditemukan untuk akun ini.");
+    expect(prisma.team.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "intake-copy", captainId: "captain-1", eventId: null, source: "draft" } }),
+    );
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
   it("rejects existing captain registration when the event is not published", async () => {
     prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-closed", status: "Registration Closed" }));
 
@@ -2457,6 +2493,45 @@ describe("existing captain event registration", () => {
     });
   });
 });
+describe("expired payment request cleanup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.teamRegistrationRequest.findMany.mockResolvedValue([]);
+  });
+
+  it("removes the leftover team copy of an expired payment request, and nothing else", async () => {
+    await getCaptainRegistrationRequests("captain-1");
+
+    expect(prisma.team.deleteMany).toHaveBeenCalledTimes(1);
+    expect(prisma.team.deleteMany).toHaveBeenCalledWith({
+      where: { eventId: null, source: "registration-intake", registrationRequest: { is: { status: "expired" } } },
+    });
+  });
+
+  it("expires stale requests before removing their team copies", async () => {
+    await getCaptainRegistrationRequests("captain-1");
+
+    const expireOrder = prisma.teamRegistrationRequest.updateMany.mock.invocationCallOrder[0];
+    const deleteOrder = prisma.team.deleteMany.mock.invocationCallOrder[0];
+    expect(expireOrder).toBeLessThan(deleteOrder);
+  });
+
+  it("keeps the page working and logs only the error code when the cleanup fails", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    prisma.team.deleteMany.mockRejectedValueOnce(
+      Object.assign(new Error("Invalid prisma.team.deleteMany() invocation: { name: 'Teil secret' }"), { name: "PrismaClientKnownRequestError", code: "P2003" }),
+    );
+
+    await expect(getCaptainRegistrationRequests("captain-1")).resolves.toEqual([]);
+
+    const lines = info.mock.calls.map(([line]) => String(line));
+    const failure = lines.map((line) => JSON.parse(line)).find((event) => event.operation === "expired_request_cleanup");
+    expect(failure).toEqual(expect.objectContaining({ phase: "failed", status: 500, errorCode: "p2003" }));
+    expect(lines.join("|")).not.toContain("secret");
+    info.mockRestore();
+  });
+});
+
 // Reads of Best-of-N metadata still return empty values when the database fails. This is separate from the demo data
 // fallback, which was removed in PR 0.6 (see repository-database-errors.test.ts).
 describe("bracket metadata reads", () => {
@@ -2609,7 +2684,8 @@ describe("authoritative player-stat write boundary", () => {
       event: { gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5" },
     });
     prisma.team.findFirst.mockResolvedValue({ id: "team-1" });
-    prisma.player.findMany.mockResolvedValue([{ id: "player-1", nickname: "Nyx", position: "Forward" }]);
+    prisma.player.findMany.mockResolvedValue([{ id: "player-1", nickname: "Nyx", position: "Forward", createdAt: new Date("2026-10-01T00:00:00Z"), removedAt: null }]);
+    prisma.playerStat.findMany.mockResolvedValue([]);
     prisma.eventRoundConfig.findUnique.mockResolvedValue({ bestOf: 1 });
     prisma.statSubmission.updateMany.mockResolvedValue({ count: 1 });
   }
@@ -2625,7 +2701,7 @@ describe("authoritative player-stat write boundary", () => {
   it("reads only the authorized match with ordered games, roster, submissions and revisions", async () => {
     prisma.match.findFirst.mockResolvedValue({id:"match-1",eventId:"event-1",resultVersion:2,status:"Completed",homeTeamId:"team-1",awayTeamId:"team-2",roundLabel:"Final",resultSnapshot:{bestOf:3},games:[{gameNumber:2,homeScore:2,awayScore:1},{gameNumber:1,homeScore:2,awayScore:0}],event:{gameId:"game-flashpeak",gameModeId:"mode-flashpeak-5v5"}});
     prisma.team.findMany.mockResolvedValue([{id:"team-1",name:"Home"},{id:"team-2",name:"Away"}]);
-    prisma.player.findMany.mockResolvedValue([{id:"player-1",teamId:"team-1",nickname:"Nyx",position:"Forward"}]);
+    prisma.player.findMany.mockResolvedValue([{id:"player-1",teamId:"team-1",nickname:"Nyx",position:"Forward",createdAt:new Date("2026-10-01T00:00:00Z"),removedAt:null}]);
     prisma.playerStat.findMany.mockResolvedValue([{playerId:"player-1",stats:canonicalStats["player-1"]}]);
     prisma.statSubmission.findMany.mockResolvedValue([{...pending(),reviewedAt:null,reviewedBy:null,rejectionNote:null}]);
     prisma.matchResultRevision.findMany.mockResolvedValue([]);
@@ -2827,7 +2903,7 @@ describe("public discovery V3 reads", () => {
     const logger = vi.spyOn(console, "info").mockImplementation((line: string) => { lines.push(line); });
     let finishConnect: (() => void) | undefined;
     prisma.$connect.mockImplementation(() => new Promise<void>((resolve) => { finishConnect = resolve; }));
-    prisma.event.findMany.mockResolvedValue([{ ...publishedEventRow({ id: "private-event-id", name: "private-event-name" }), updatedAt: new Date("2026-09-12T10:00:00.000Z"), competitionPhases: [], matches: [], _count: { teams: 0 } }]);
+    prisma.event.findMany.mockResolvedValue([{ ...publishedEventRow({ id: "private-event-id", name: "private-event-name" }), updatedAt: new Date("2026-09-12T10:00:00.000Z"), competitionPhases: [], matches: [], promotions: [], _count: { teams: 0 } }]);
     try {
       const pending = getPublicDiscoveryEvents();
       expect(prisma.event.findMany).not.toHaveBeenCalled();
@@ -2849,17 +2925,20 @@ describe("public discovery V3 reads", () => {
         updatedAt: new Date("2026-09-12T10:00:00.000Z"),
         competitionPhases: [{ status: "active" }],
         matches: [{ id: "match-live" }],
+        promotions: [],
         _count: { teams: 12 },
       },
     ]);
+    const now = new Date("2026-10-11T08:00:00.000Z");
 
-    await expect(getPublicDiscoveryEvents()).resolves.toEqual([
+    await expect(getPublicDiscoveryEvents(now)).resolves.toEqual([
       expect.objectContaining({
         event: expect.objectContaining({ id: "event-1", status: "Ongoing" }),
         phaseStatus: "active",
         hasLiveMatch: true,
         teamCount: 12,
         updatedAt: "2026-09-12T10:00:00.000Z",
+        pinnedFeatured: false,
       }),
     ]);
     expect(prisma.event.findMany).toHaveBeenCalledWith({
@@ -2870,10 +2949,19 @@ describe("public discovery V3 reads", () => {
         activeVisualAsset: true,
         competitionPhases: { where: { sequence: 1 }, select: { status: true }, take: 1 },
         matches: { where: { status: "Live" }, select: { id: true }, take: 1 },
+        promotions: { where: { type: "featured", active: true, startsAt: { lte: now }, endsAt: { gte: now } }, select: { id: true }, take: 1 },
         _count: { select: { teams: true } },
       },
       orderBy: [{ updatedAt: "desc" }, { slug: "asc" }],
     });
+  });
+
+  it("marks an event pinned when it has an active featured promotion", async () => {
+    prisma.event.findMany.mockResolvedValue([
+      { ...publishedEventRow({ id: "event-1", status: "Ongoing" }), updatedAt: new Date("2026-09-12T10:00:00.000Z"), competitionPhases: [], matches: [], promotions: [{ id: "promo-1" }], _count: { teams: 4 } },
+    ]);
+
+    await expect(getPublicDiscoveryEvents()).resolves.toEqual([expect.objectContaining({ pinnedFeatured: true })]);
   });
 
   it("rejects database failures instead of returning fixture events", async () => {
@@ -2985,5 +3073,160 @@ describe("captain roster edits respect the event lifecycle", () => {
     expect(prisma.event.findUnique).not.toHaveBeenCalled();
     expect(prisma.player.update).not.toHaveBeenCalled();
     expect(prisma.player.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe("limited roster changes: current roster reads", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.player.findMany.mockResolvedValue([]);
+  });
+
+  it("hides players who were replaced when listing one team", async () => {
+    await getPlayersForTeam("team-1");
+    expect(prisma.player.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { teamId: "team-1", removedAt: null } }));
+  });
+
+  it("hides replaced players in the batch team lookup", async () => {
+    await getPlayersForTeams(["team-1", "team-2"]);
+    expect(prisma.player.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { teamId: { in: ["team-1", "team-2"] }, removedAt: null } }));
+  });
+
+  it("hides replaced players in the event lookup", async () => {
+    await getPlayersForEvent("event-1");
+    expect(prisma.player.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: "event-1", removedAt: null } }));
+  });
+
+  it("does not let a captain pick a replaced player as the displayed captain", async () => {
+    prisma.player.findFirst.mockResolvedValue({ displayName: "UID-1" });
+    await setTeamCaptainDisplay("team-1", "captain-1", "player-1");
+    expect(prisma.player.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "player-1", teamId: "team-1", removedAt: null, team: { captainId: "captain-1" } },
+    }));
+  });
+});
+
+describe("getRosterChangeWindow", () => {
+  const config: GroupPlayoffsConfig = {
+    version: 1, kind: "group_playoffs", groupCount: 2, qualifiersPerGroup: 2,
+    groupStage: { legs: 1, points: { win: 3, draw: 1, loss: 0 }, tiebreakers: ["score_difference"] },
+    playoffs: { version: 1, kind: "single_elimination", thirdPlace: "none", bestOf: { earlyRounds: 1, semifinals: 3, thirdPlace: 1, final: 5 }, avoidImmediateGroupRematches: true },
+  };
+  const graph = generateCompetitionGraph({ eventId: "event-1", config, teams: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ id: `t${n}`, seed: n })) });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.competitionPhase.count.mockResolvedValue(1);
+    prisma.match.count.mockResolvedValue(0);
+    prisma.match.findMany.mockResolvedValue([]);
+    prisma.competitionPhase.findFirst.mockResolvedValue({ configuration: { graph } });
+  });
+
+  it("is free before the drawing is published", async () => {
+    prisma.competitionPhase.count.mockResolvedValue(0);
+    prisma.event.findUnique.mockResolvedValue({ status: "Published", rosterChangeLimit: 2 });
+    await expect(getRosterChangeWindow("event-1")).resolves.toBe("free");
+  });
+
+  it("stays locked, without reading the graph, when the organizer allowed no changes", async () => {
+    prisma.event.findUnique.mockResolvedValue({ status: "Registration Closed", rosterChangeLimit: 0 });
+    await expect(getRosterChangeWindow("event-1")).resolves.toBe("locked");
+    expect(prisma.competitionPhase.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("is limited while the group stage runs and the organizer allowed changes", async () => {
+    prisma.event.findUnique.mockResolvedValue({ status: "Registration Closed", rosterChangeLimit: 2 });
+    await expect(getRosterChangeWindow("event-1")).resolves.toBe("limited");
+  });
+
+  it("is locked once a playoff match is live", async () => {
+    const playoff = graph.matches.find((match) => match.groupId === null)!;
+    prisma.event.findUnique.mockResolvedValue({ status: "Registration Closed", rosterChangeLimit: 2 });
+    prisma.match.findMany.mockResolvedValue([{ id: playoff.id, status: "Live", scheduleStatus: "live", resultVersion: 0 }]);
+    await expect(getRosterChangeWindow("event-1")).resolves.toBe("locked");
+  });
+
+  it("fails closed for a legacy event without a stored graph", async () => {
+    prisma.event.findUnique.mockResolvedValue({ status: "Ongoing", rosterChangeLimit: 2 });
+    prisma.competitionPhase.findFirst.mockResolvedValue(null);
+    await expect(getRosterChangeWindow("event-1")).resolves.toBe("locked");
+  });
+
+  it("is free for an unknown event, like the existing lock", async () => {
+    prisma.event.findUnique.mockResolvedValue(null);
+    await expect(getRosterChangeWindow("missing")).resolves.toBe("free");
+  });
+});
+
+describe("player-stat roster follows the roster the team had at match time", () => {
+  const stats = { scores: [7.6], goal: 3, assist: 4, passing: 28, defense: 12 };
+  const started = new Date("2026-10-12T10:00:00Z");
+  const before = new Date("2026-10-01T00:00:00Z");
+  const after = new Date("2026-10-14T00:00:00Z");
+  const roster = {
+    steady: { id: "steady", teamId: "team-1", nickname: "Steady", position: "Forward", createdAt: before, removedAt: null },
+    left: { id: "left", teamId: "team-1", nickname: "Left", position: "Guard", createdAt: before, removedAt: after },
+    joined: { id: "joined", teamId: "team-1", nickname: "Joined", position: "Guard", createdAt: after, removedAt: null },
+  };
+
+  function arrange(matchClock: { actualStartedAt: Date | null }, savedStatPlayerIds: string[] = []) {
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
+    prisma.user.findUnique.mockResolvedValue({ id: "admin-1", role: "admin", mustChangePassword: false });
+    prisma.event.findUnique.mockResolvedValue({ id: "event-1", competitionVersion: 7, organizerUserId: "owner-1" });
+    prisma.match.findFirst.mockResolvedValue({
+      id: "match-1", eventId: "event-1", status: "Completed", homeTeamId: "team-1", awayTeamId: "team-2", roundLabel: "Final",
+      resultSnapshot: { bestOf: 1, games: [{ gameNumber: 1 }] }, resultVersion: 2, games: [{ gameNumber: 1 }],
+      actualEndedAt: null, resultConfirmedAt: null, ...matchClock,
+      event: { gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5" },
+    });
+    prisma.team.findFirst.mockResolvedValue({ id: "team-1" });
+    prisma.team.findMany.mockResolvedValue([{ id: "team-1", name: "Home" }, { id: "team-2", name: "Away" }]);
+    prisma.player.findMany.mockResolvedValue(Object.values(roster));
+    prisma.playerStat.findMany.mockResolvedValue(savedStatPlayerIds.map((playerId) => ({ playerId, teamId: "team-1", stats })));
+    prisma.statSubmission.findMany.mockResolvedValue([]);
+    prisma.matchResultRevision.findMany.mockResolvedValue([]);
+    prisma.eventRoundConfig.findUnique.mockResolvedValue({ bestOf: 1 });
+    prisma.event.updateMany.mockResolvedValue({ count: 1 });
+    prisma.tournamentCompletion.findUnique.mockResolvedValue(null);
+    prisma.competitionAuditLog.findFirst.mockResolvedValue(null);
+    prisma.competitionAuditLog.create.mockResolvedValue({ id: "audit-1" });
+    prisma.playerStat.upsert.mockResolvedValue({});
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("the organizer editor lists the players who were on the roster when the match started", async () => {
+    arrange({ actualStartedAt: started });
+    const result = await readEventMatchStatistics("event-1", "match-1", "admin-1");
+    expect(result.teams[0].players.map((player) => player.id)).toEqual(["steady", "left"]);
+    expect(Object.keys(result.teams[0].players[0]).sort()).toEqual(["id", "nickname", "position", "teamId"]);
+  });
+
+  it("the organizer editor lists only active players for a match that has not started", async () => {
+    arrange({ actualStartedAt: null });
+    const result = await readEventMatchStatistics("event-1", "match-1", "admin-1");
+    expect(result.teams[0].players.map((player) => player.id)).toEqual(["steady", "joined"]);
+  });
+
+  it("accepts a correction for a player who left after the match", async () => {
+    arrange({ actualStartedAt: started });
+    await adminWriteMatchPlayerStats({
+      matchId: "match-1", teamId: "team-1", eventId: "event-1", adminId: "admin-1", stats: { left: stats },
+      guard: { eventId: "event-1", matchId: "match-1", expectedVersion: 7, expectedResultVersion: 2, operationId: "op-left", submittedAt: "2026-10-12T12:00:00.000Z" },
+    });
+    expect(prisma.playerStat.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ matchId_playerId: expect.objectContaining({ playerId: "left" }) }),
+    }));
+  });
+
+  it("refuses to credit a player who joined after the match started", async () => {
+    arrange({ actualStartedAt: started });
+    await expect(adminWriteMatchPlayerStats({
+      matchId: "match-1", teamId: "team-1", eventId: "event-1", adminId: "admin-1", stats: { joined: stats },
+      guard: { eventId: "event-1", matchId: "match-1", expectedVersion: 7, expectedResultVersion: 2, operationId: "op-joined", submittedAt: "2026-10-12T12:00:00.000Z" },
+    })).rejects.toThrow("Player does not belong");
+    expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
   });
 });

@@ -88,6 +88,7 @@ Daftar itu **hanya boleh mengecil**. Memperbaiki impornya, lalu hapus file dari 
 ## Error dan data kosong
 
 - Database gagal: error diteruskan. Pengunjung melihat `src/app/[locale]/error.tsx` (dua bahasa), atau `src/app/global-error.tsx` kalau layout utama yang gagal. Tidak ada data demo (lihat `docs/refactor/demo-fallback-decision.md`).
+- Pesan yang boleh dibaca pengguna dilempar sebagai `UserFacingError` (`src/lib/security/public-error.ts`). `toSafeActionMessage` meneruskan pesannya apa adanya; error biasa diganti pesan umum kecuali ada di daftar `SAFE_ACTION_MESSAGES`. Jangan menaruh detail internal di `UserFacingError`.
 - Daftar kosong dan gagal dimuat harus dibedakan di tampilan. "Belum ada event" tidak boleh muncul untuk error database.
 - `generateMetadata` di halaman event memakai `readEventForMetadata`, yang tidak melempar error. Isi halaman yang melaporkan kegagalannya, supaya `error.tsx` bisa menangkapnya.
 - Sitemap (`src/app/sitemap.ts`) dibuat setiap permintaan dan gagal dengan HTTP 500 kalau database mati.

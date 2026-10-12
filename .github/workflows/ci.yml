@@ -110,6 +110,47 @@ jobs:
       - name: Registration transactions against a real database
         run: pnpm exec vitest run src/lib/platform/repository.db.test.ts
 
+  new-migrations:
+    name: New migrations
+    # Vercel builds do not migrate production. A migration that merges without being applied there breaks the live site.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - name: Warn about migrations that still need to be applied to production
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: |
+          migrations="$(node scripts/operations/new-migrations.mjs "$BASE_REF")"
+          if [ -z "$migrations" ]; then
+            echo "No new migrations."
+            exit 0
+          fi
+          {
+            echo "### New migrations: apply them to production"
+            echo
+            echo "Vercel builds never migrate production. This change adds:"
+            echo
+            while IFS= read -r name; do echo "- \`$name\`"; done <<< "$migrations"
+            echo
+            echo "Apply them to the production database around the merge:"
+            echo
+            echo '```'
+            echo 'pnpm exec prisma migrate deploy   # with the production DIRECT_URL'
+            echo '```'
+            echo
+            echo "The production build checks this and fails until they are applied, so the live site keeps serving the previous deployment."
+          } >> "$GITHUB_STEP_SUMMARY"
+          while IFS= read -r name; do
+            echo "::warning title=New migration::$name must be applied to the production database (pnpm exec prisma migrate deploy)."
+          done <<< "$migrations"
+
   schema-drift:
     name: Schema drift
     runs-on: ubuntu-latest

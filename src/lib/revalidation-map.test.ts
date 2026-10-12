@@ -56,6 +56,9 @@ const EXPECTED: Record<string, string[]> = {
   captainUploadTeamLogoAction: ['path(/captain)', 'tag(teams)'],
   uploadEventLogo: ['path(/, layout)', 'tag(events)'],
   uploadEventVisual: ['path(/, layout)', 'tag(events)'],
+  // lib/actions/captain-roster-change-actions.ts
+  captainCancelRosterChangeAction: ['path(/captain)'],
+  captainRequestRosterChangeAction: ['path(/captain)'],
   // lib/actions/certificate-v3-actions.ts
   publishCertificateSetActionImpl: ['path(/organizer/events/${parsed.data.eventId}/certificates)'],
   regenerateCertificateActionImpl: ['path(/organizer/events/${parsed.data.eventId}/certificates)'],
@@ -77,6 +80,8 @@ const EXPECTED: Record<string, string[]> = {
   // lib/actions/organizer-profile-actions.ts
   completeOrganizerPasswordChangeActionImpl: ['path(/organizer)'],
   updateOrganizerProfileActionImpl: ['path(/organizer)', 'path(/organizer/profile)', 'tag(events)'],
+  // lib/actions/organizer-roster-change-actions.ts
+  refreshRosters: ['path(/captain)', 'tag(stats)', 'tag(teams)'],
   // lib/actions/platform-profile-actions.ts
   updatePlatformProfileActionImpl: ['path(/admin)', 'tag(events)'],
   // lib/actions/player-stats-v3-actions.ts

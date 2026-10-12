@@ -2,7 +2,7 @@ import type { AppUser, PaymentSettings } from "@/lib/platform/types";
 import { assertUserCanManageEvent } from "@/lib/platform/repository";
 import { prisma } from "@/lib/platform/db";
 
-export type EventPaymentSettingsSource = "event" | "global";
+export type EventPaymentSettingsSource = "event";
 export type ResolvedEventPaymentSettings = PaymentSettings & {
   source: EventPaymentSettingsSource;
   eventId?: string;
@@ -26,18 +26,9 @@ type EventPaymentSettingsRow = {
   updatedAt: Date;
 };
 
-type PaymentSettingsRow = {
-  id: string;
-  qrisImageUrl: string | null;
-  instructions: string | null;
-  updatedAt?: Date;
-};
-
 export type EventPaymentSettingsMutationResult =
   | { status: "saved" | "published"; settings: ResolvedEventPaymentSettings }
   | { status: "conflict"; version: number };
-
-const PAYMENT_SETTINGS_ID = "global";
 
 function mapEventPaymentSettings(row: EventPaymentSettingsRow): ResolvedEventPaymentSettings {
   return {
@@ -50,17 +41,6 @@ function mapEventPaymentSettings(row: EventPaymentSettingsRow): ResolvedEventPay
     ...(row.instructions ? { instructions: row.instructions } : {}),
     ...(row.publishedAt ? { publishedAt: row.publishedAt } : {}),
     updatedAt: row.updatedAt,
-  };
-}
-
-function mapGlobalPaymentSettings(row: PaymentSettingsRow | null): ResolvedEventPaymentSettings {
-  if (!row) return { id: PAYMENT_SETTINGS_ID, source: "global" };
-  return {
-    id: row.id,
-    source: "global",
-    ...(row.qrisImageUrl ? { qrisImageUrl: row.qrisImageUrl } : {}),
-    ...(row.instructions ? { instructions: row.instructions } : {}),
-    ...(row.updatedAt ? { updatedAt: row.updatedAt } : {}),
   };
 }
 
@@ -100,8 +80,8 @@ export async function getPublishedPaymentSettingsForEvent(eventId: string): Prom
   }) as unknown as EventPaymentSettingsRow | null;
   if (eventSettings) return mapEventPaymentSettings(eventSettings);
 
-  const globalSettings = await prisma.paymentSettings.findUnique({ where: { id: PAYMENT_SETTINGS_ID } }) as PaymentSettingsRow | null;
-  return mapGlobalPaymentSettings(globalSettings);
+  // Captains only see what the organizer published for this event; never the Miracle-wide QRIS.
+  return { id: `event-payment-${eventId}`, eventId, source: "event" };
 }
 
 export async function saveEventPaymentSettingsDraft(input: {

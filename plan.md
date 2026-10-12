@@ -81,7 +81,7 @@ Reference: `public/miracle-organizer-v3-registration-mockup.html`.
 - Paid registration remains pending until evidence is reviewed. Rejected evidence can be corrected through the existing flow.
 - Spreadsheet imports create or update teams/rosters directly and may create captain credentials; they do not create an ordinary payment-review request.
 - Import commit is blocked after the existing bracket-lock condition applies.
-- Rosters lock when an event is Ongoing or Finished.
+- Rosters lock when the drawing is published or the event is Ongoing or Finished. The organizer can allow a limited number of approved roster changes per team (`Event.rosterChangeLimit`, group + playoffs events only). A captain files a request, the organizer approves it, and the window closes when the first playoff match starts. Replaced players are marked removed, never deleted, so statistics stay.
 - Registration window, start date, and venue are currently stored as strings and lifecycle changes are primarily status-driven. Structured dates/timezones and server autosave remain production enhancements.
 
 ## Prototype boundaries and validation

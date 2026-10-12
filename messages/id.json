@@ -953,7 +953,56 @@
     "paymentStatus_pending_payment": "Menunggu pembayaran",
     "paymentStatus_pending_review": "Menunggu verifikasi",
     "paymentStatus_rejected": "Ditolak",
-    "paymentStatus_expired": "Kedaluwarsa"
+    "paymentStatus_expired": "Kedaluwarsa",
+    "rosterChange": {
+      "title": "Ganti Roster",
+      "lockedNotice": "Roster terkunci. Pemain tidak bisa diganti lagi.",
+      "limitedNotice": "Roster terkunci. Ganti pemain lewat permintaan ke organizer.",
+      "allowance": "Sisa jatah ganti: {remaining} dari {limit}",
+      "allowanceUsedUp": "Jatah ganti habis.",
+      "pendingTitle": "Menunggu organizer",
+      "pendingSwap": "{out} diganti {incoming}",
+      "pendingAdd": "Tambah {incoming}",
+      "pendingRemove": "Keluarkan {out}",
+      "cancel": "Batalkan",
+      "formTitle": "Ajukan ganti roster",
+      "kind": "Jenis",
+      "kindSwap": "Ganti pemain",
+      "kindAdd": "Tambah pemain",
+      "kindRemove": "Keluarkan pemain",
+      "leaving": "Pemain keluar",
+      "chooseLeaving": "Pilih pemain",
+      "returnHint": "Pemain lama boleh masuk lagi dengan UID yang sama.",
+      "submit": "Ajukan ke organizer",
+      "historyTitle": "Riwayat ganti",
+      "status": {
+        "pending": "Menunggu",
+        "approved": "Disetujui",
+        "rejected": "Ditolak",
+        "cancelled": "Dibatalkan"
+      },
+      "requestedNotice": "Permintaan terkirim. Tunggu organizer.",
+      "cancelledNotice": "Permintaan dibatalkan.",
+      "error": {
+        "team_not_found": "Tim tidak ditemukan.",
+        "not_open": "Roster belum terkunci. Ubah pemain langsung.",
+        "locked": "Roster sudah terkunci. Pemain tidak bisa diganti.",
+        "no_allowance": "Jatah ganti roster tim sudah habis.",
+        "pending_exists": "Masih ada permintaan yang menunggu organizer.",
+        "team_disqualified": "Tim sudah didiskualifikasi.",
+        "match_live": "Tim sedang bertanding. Coba lagi setelah selesai.",
+        "player_not_found": "Pemain tidak ada di roster.",
+        "captain_player": "Kapten tidak bisa diganti lewat permintaan ini.",
+        "roster_size": "Jumlah pemain tidak sesuai batas game.",
+        "already_on_roster": "Pemain ini sudah ada di roster.",
+        "nickname_taken": "IGN ini sudah dipakai pemain lain di tim ini. Pakai IGN lain.",
+        "invalid_change": "Data permintaan tidak valid.",
+        "request_not_found": "Permintaan tidak ditemukan.",
+        "request_not_pending": "Permintaan sudah diputuskan organizer.",
+        "rate_limited": "Terlalu sering. Coba lagi beberapa menit lagi.",
+        "unknown": "Permintaan gagal dikirim. Coba lagi."
+      }
+    }
   },
   "captainSettings": {
     "title": "Pengaturan Akun",
@@ -1801,7 +1850,69 @@
       "contactMissing": "Kontak belum ditambahkan.",
       "openPublication": "Buka pengaturan publikasi",
       "openContact": "Buka pengaturan kontak",
-      "openPreferences": "Buka preferensi aman"
+      "openPreferences": "Buka preferensi aman",
+      "rosterChange": {
+        "title": "Ganti Roster",
+        "description": "Atur berapa kali tiap tim boleh ganti pemain setelah drawing. Tiap permintaan harus kamu setujui.",
+        "limitLabel": "Jatah ganti per tim",
+        "save": "Simpan",
+        "limitHelp": "0 berarti roster terkunci setelah drawing. Jatah ditutup saat pertandingan playoff pertama mulai.",
+        "unsupported": "Hanya untuk format grup + playoff.",
+        "loadFailed": "Pengaturan ganti roster gagal dimuat. Muat ulang halaman.",
+        "window": {
+          "free": "Roster belum terkunci.",
+          "limited": "Tim bisa mengajukan ganti sekarang.",
+          "locked": "Ganti roster ditutup."
+        },
+        "pendingTitle": "Menunggu keputusan",
+        "noPending": "Tidak ada permintaan yang menunggu.",
+        "kind": {
+          "swap": "Ganti pemain",
+          "add": "Tambah pemain",
+          "remove": "Keluarkan pemain"
+        },
+        "usage": "Jatah terpakai: {used} dari {limit}",
+        "leaving": "Keluar",
+        "joining": "Masuk",
+        "returning": "Pemain lama kembali",
+        "alsoOn": "UID ini juga aktif di: {teams}",
+        "note": "Catatan (opsional)",
+        "approve": "Setujui",
+        "reject": "Tolak",
+        "recentTitle": "Keputusan terakhir",
+        "status": {
+          "approved": "Disetujui",
+          "rejected": "Ditolak",
+          "cancelled": "Dibatalkan"
+        },
+        "result": {
+          "approved": "Disetujui. Roster tim sudah berubah.",
+          "rejected": "Permintaan ditolak.",
+          "limit_saved": "Jatah ganti disimpan."
+        },
+        "error": {
+          "request_not_found": "Permintaan tidak ditemukan.",
+          "request_not_pending": "Permintaan ini sudah diputuskan.",
+          "window_closed": "Jatah ganti sudah ditutup. Tidak bisa disetujui.",
+          "team_disqualified": "Tim sudah didiskualifikasi.",
+          "match_live": "Tim sedang bertanding. Coba lagi setelah selesai.",
+          "no_allowance": "Jatah ganti tim sudah habis.",
+          "player_not_found": "Pemain tidak ada di roster.",
+          "captain_player": "Kapten yang ikut bermain tidak bisa diganti.",
+          "roster_size": "Jumlah pemain tidak sesuai batas game.",
+          "already_on_roster": "Pemain ini sudah ada di roster.",
+          "nickname_taken": "IGN ini sudah dipakai pemain lain di tim itu.",
+          "invalid_change": "Data permintaan tidak valid.",
+          "team_not_found": "Tim atau event tidak ditemukan.",
+          "rate_limited": "Terlalu sering. Coba lagi beberapa menit lagi.",
+          "invalid_limit": "Jatah harus angka 0 sampai 5.",
+          "limit_below_used": "Jatah tidak boleh di bawah yang sudah dipakai tim.",
+          "format_not_supported": "Hanya untuk format grup + playoff.",
+          "locked": "Event sudah selesai. Jatah tidak bisa diubah.",
+          "forbidden": "Kamu tidak punya akses ke event ini.",
+          "unknown": "Gagal menyimpan. Coba lagi."
+        }
+      }
     },
     "guide": {
       "draft": "Lengkapi identitas event, format, dan rincian registrasi sebelum menerbitkan.",
@@ -1820,6 +1931,7 @@
       "match_results": "Hasil pertandingan belum lengkap.",
       "statistics_review": "Statistik pemain perlu ditinjau.",
       "schedule_unpublished": "Jadwal pertandingan belum diterbitkan.",
+      "roster_change_review": "Permintaan ganti roster perlu diputuskan.",
       "title": "Pemblokir tersisa",
       "review": "Tinjau",
       "none": "Tidak ada pemblokir tersisa."

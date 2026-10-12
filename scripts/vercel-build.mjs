@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { assertMigrationsApplied } from "./migration-ledger.mjs";
+
 const KNOWN_NEON_PROD_HOST = "ep-sparkling-night-azr6wxwd";
 const TRUSTED_GITHUB_REPO_ID = "1316699241";
 
@@ -51,9 +53,19 @@ export function runVercelBuild(env, runCommand = executeCommand) {
   return result.status ?? 1;
 }
 
+export async function runVercelBuildWithMigrationCheck(env, runCommand = executeCommand, checkMigrations = assertMigrationsApplied) {
+  if (isProductionCandidate(env)) await checkMigrations(env);
+  return runVercelBuild(env, runCommand);
+}
+
 const isEntryPoint = process.argv[1]
   && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
 
 if (isEntryPoint) {
-  process.exitCode = runVercelBuild(process.env);
+  try {
+    process.exitCode = await runVercelBuildWithMigrationCheck(process.env);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
 }

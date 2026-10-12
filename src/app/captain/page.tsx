@@ -16,6 +16,7 @@ import {
 } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
+import { RosterChangePanel } from "@/components/captain/RosterChangePanel";
 import {
   getCaptainTeams,
   getCertificatesForEvents,
@@ -24,16 +25,21 @@ import {
   getModeForEvent,
   getCaptainRegistrationRequests,
   getOpenRegistrationEventsForCaptain,
-  getPaymentSettings,
   getPlayersForTeams,
   hasTempPassword,
 } from "@/lib/platform/repository";
+import { getRosterChangeOverview, type RosterChangeOverview } from "@/lib/platform/roster-change-requests";
+import { getCaptainPaymentSettings } from "@/lib/registration/captain-repository";
+import { gameModes } from "@/lib/platform/config";
 import type { Certificate } from "@/lib/platform/types";
 import type { Event, Game, GameMode, PaymentSettings, Player, Team, TeamRegistrationRequest } from "@/lib/platform/types";
 import { ShareCertificateButton } from "@/components/ShareCertificateButton";
 import { SubmitButton } from "@/components/submit-button";
 
 type TFn = (key: string, values?: Record<string, string | number>) => string;
+
+// A draft team has no event yet, so it has no game mode; offer every known position (position is optional free text).
+const DRAFT_POSITION_OPTIONS = [...new Set(gameModes.flatMap((mode) => mode.positions))];
 
 const inputClass = "rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100";
 const labelClass = "grid gap-2 text-sm font-medium text-slate-700";
@@ -58,16 +64,21 @@ export default async function CaptainPage({
   const success = params?.success;
   const error = params?.error;
   const requestedEventId = params?.eventId && /^[A-Za-z0-9_-]+$/.test(params.eventId) ? params.eventId : undefined;
-  const rosterSignals = new Set(["player-added", "player-updated", "player-deleted", "captain-display-updated", "draft-team-saved", "team-logo-updated"]);
+  const rosterSignals = new Set(["player-added", "player-updated", "player-deleted", "captain-display-updated", "draft-team-saved", "team-logo-updated", "roster-change-requested", "roster-change-cancelled"]);
   const activeTab = params?.tab === "roster" || editPlayerId || confirmDeleteId || (success && rosterSignals.has(success)) ? "roster" : "registration";
 
-  const [teams, usingTempPassword, openRegistrationEvents, paymentRequests, paymentSettings] = await Promise.all([
+  const [teams, usingTempPassword, openRegistrationEvents, paymentRequests] = await Promise.all([
     getCaptainTeams(user.id),
     hasTempPassword(user.id),
     getOpenRegistrationEventsForCaptain(user.id),
     getCaptainRegistrationRequests(user.id),
-    getPaymentSettings(),
   ]);
+  const paymentEventIds = [...new Set(paymentRequests.map((request) => request.eventId))];
+  const paymentSettingsByEvent = new Map<string, PaymentSettings>(
+    await Promise.all(
+      paymentEventIds.map(async (eventId) => [eventId, await getCaptainPaymentSettings(eventId)] as const),
+    ),
+  );
   const teamIds = teams.map((team) => team.id);
   const registeredEventIds = teams
     .map((team) => team.eventId)
@@ -78,11 +89,17 @@ export default async function CaptainPage({
     getPlayersForTeams(teamIds),
     getCertificatesForEvents(eventIds),
   ]);
+  const rosterOverviews = new Map(await Promise.all(
+    teams
+      .filter((team) => team.eventId)
+      .map(async (team) => [team.id, await getRosterChangeOverview(user.id, team.id).catch(() => null)] as const),
+  ));
   const teamsWithPlayers = teams.map((team) => ({
     team,
     players: allPlayers.filter((player) => player.teamId === team.id),
   }));
-  const draftTeamWithPlayers = teamsWithPlayers.find(({ team }) => !team.eventId || team.source === "draft") ?? null;
+  // Only the reusable draft qualifies: "registration-intake" copies also have no event but the server rejects them as a draft.
+  const draftTeamWithPlayers = teamsWithPlayers.find(({ team }) => !team.eventId && team.source === "draft") ?? null;
 
   const requestedEvent = requestedEventId
     ? openRegistrationEvents.find((event) => event.id === requestedEventId)
@@ -123,6 +140,8 @@ export default async function CaptainPage({
       {success === "draft-team-saved" ? <Notice tone="success">{t("draftTeamSaved")}</Notice> : null}
       {success === "team-logo-updated" ? <Notice tone="success">{t("teamLogoUpdated")}</Notice> : null}
       {success === "captain-display-updated" ? <Notice tone="success">Tampilan kapten berhasil diperbarui.</Notice> : null}
+      {success === "roster-change-requested" ? <Notice tone="success">{t("rosterChange.requestedNotice")}</Notice> : null}
+      {success === "roster-change-cancelled" ? <Notice tone="success">{t("rosterChange.cancelledNotice")}</Notice> : null}
       {error ? <Notice tone="danger">{decodeURIComponent(error)}</Notice> : null}
 
       {requestedEvent ? (
@@ -144,7 +163,7 @@ export default async function CaptainPage({
             draftPlayerCount={draftTeamWithPlayers?.players.length ?? 0}
             t={t as TFn}
           />
-          <PaymentRequestsSection requests={focusedPaymentRequests} paymentSettings={paymentSettings} t={t as TFn} />
+          <PaymentRequestsSection requests={focusedPaymentRequests} paymentSettingsByEvent={paymentSettingsByEvent} t={t as TFn} />
         </div>
       ) : (
         <RosterManagementSection
@@ -152,6 +171,7 @@ export default async function CaptainPage({
           draftTeamWithPlayers={draftTeamWithPlayers}
           events={events}
           certificates={certificates}
+          rosterOverviews={rosterOverviews}
           editPlayerId={editPlayerId}
           confirmDeleteId={confirmDeleteId}
           t={t as TFn}
@@ -191,7 +211,7 @@ function RosterManagementSection({
   events,
 
   certificates,
-
+  rosterOverviews,
   editPlayerId,
 
   confirmDeleteId,
@@ -207,7 +227,7 @@ function RosterManagementSection({
   events: Event[];
 
   certificates: Map<string, Certificate | null>;
-
+  rosterOverviews: Map<string, RosterChangeOverview | null>;
   editPlayerId?: string;
 
   confirmDeleteId?: string;
@@ -281,6 +301,8 @@ function RosterManagementSection({
             const mode = getModeForEvent(event);
 
             const cert = certificates.get(team.id) ?? null;
+            const rosterOverview = rosterOverviews.get(team.id) ?? null;
+            const rosterEditable = !rosterOverview || rosterOverview.window === "free";
 
 
 
@@ -301,17 +323,18 @@ function RosterManagementSection({
                   mode={mode}
 
                   players={players}
+                  rosterEditable={rosterEditable}
 
                   editPlayerId={editPlayerId}
 
                   confirmDeleteId={confirmDeleteId}
 
                   t={t}
-
                 />
-
+                {rosterOverview ? (
+                  <RosterChangePanel team={team} players={players} positionOptions={mode?.positions ?? []} overview={rosterOverview} t={t} />
+                ) : null}
               </div>
-
             );
 
           })}
@@ -504,7 +527,7 @@ function OpenRegistrationSection({
 
 }
 
-function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSettings: PaymentSettings; requests: TeamRegistrationRequest[]; t: TFn }) {
+function PaymentRequestsSection({ paymentSettingsByEvent, requests, t }: { paymentSettingsByEvent: Map<string, PaymentSettings>; requests: TeamRegistrationRequest[]; t: TFn }) {
   if (requests.length === 0) return null;
 
   return (
@@ -516,7 +539,9 @@ function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSetti
         </div>
       </div>
       <div className="mt-4 divide-y divide-slate-200 rounded-xl border border-slate-200 bg-slate-50">
-        {requests.map((request) => (
+        {requests.map((request) => {
+          const paymentSettings = paymentSettingsByEvent.get(request.eventId) ?? { id: request.eventId };
+          return (
           <div key={request.id} className="grid gap-4 p-4 lg:grid-cols-[minmax(14rem,1fr)_minmax(14rem,0.8fr)_minmax(16rem,24rem)] lg:items-start">
             <div className="min-w-0">
               <p className="truncate text-base font-semibold text-slate-950">{request.event?.name ?? request.eventId}</p>
@@ -554,7 +579,8 @@ function PaymentRequestsSection({ paymentSettings, requests, t }: { paymentSetti
               <p className="rounded-lg border border-slate-200 bg-white p-3 text-sm font-medium text-slate-600">{t(`paymentStatus_${request.status}`)}</p>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -687,13 +713,10 @@ function TeamSection({
   mode,
 
   players,
-
+  rosterEditable = true,
   editPlayerId,
-
   confirmDeleteId,
-
   t,
-
 }: {
 
   team: Team;
@@ -705,16 +728,14 @@ function TeamSection({
   mode?: GameMode;
 
   players: Player[];
-
+  /** False once the roster is locked: changes then go through an organizer-approved request. */
+  rosterEditable?: boolean;
   editPlayerId?: string;
-
   confirmDeleteId?: string;
-
   t: TFn;
-
 }) {
 
-  const positionOptions = mode?.positions ?? [];
+  const positionOptions = mode?.positions ?? DRAFT_POSITION_OPTIONS;
 
 
 
@@ -826,13 +847,13 @@ function TeamSection({
 
               return players.map((player) => {
 
-                if (confirmDeleteId === player.id) {
+                if (rosterEditable && confirmDeleteId === player.id) {
 
                   return <DeletePlayerCard key={player.id} player={player} t={t} />;
 
                 }
 
-                if (editPlayerId === player.id) {
+                if (rosterEditable && editPlayerId === player.id) {
 
                   return <EditPlayerForm key={player.id} positionOptions={positionOptions} player={player} t={t} />;
 
@@ -849,6 +870,7 @@ function TeamSection({
                     team={team}
 
                     isCaptain={player.displayName === resolvedCaptainName}
+                    readOnly={!rosterEditable}
 
                     t={t}
 
@@ -860,7 +882,8 @@ function TeamSection({
 
             })()}
 
-            <a
+            {rosterEditable ? (
+<a
 
               href="#add-player-form"
 
@@ -873,6 +896,7 @@ function TeamSection({
               <span className="text-sm font-medium">{t("addPlayerAnchor")}</span>
 
             </a>
+) : null}
 
           </div>
 
@@ -880,7 +904,8 @@ function TeamSection({
 
 
 
-        <form id="add-player-form" action={captainAddPlayerAction} className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        {rosterEditable ? (
+<form id="add-player-form" action={captainAddPlayerAction} className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
 
           <input type="hidden" name="teamId" value={team.id} />
 
@@ -937,6 +962,7 @@ function TeamSection({
           </div>
 
         </form>
+) : null}
 
       </div>
 
@@ -1060,7 +1086,7 @@ function EditPlayerForm({ positionOptions, player, t }: { positionOptions: strin
 
 
 
-function PlayerCard({ player, team, isCaptain, t }: { player: Player; team: Team; isCaptain: boolean; t: TFn }) {
+function PlayerCard({ player, team, isCaptain, readOnly = false, t }: { player: Player; team: Team; isCaptain: boolean; readOnly?: boolean; t: TFn }) {
 
   return (
 
@@ -1124,7 +1150,8 @@ function PlayerCard({ player, team, isCaptain, t }: { player: Player; team: Team
 
       ) : null}
 
-      <div className="mt-3 flex gap-2">
+      {readOnly ? null : (
+<div className="mt-3 flex gap-2">
 
         <Link href={`/captain?tab=roster&edit=${player.id}`} className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900">
 
@@ -1139,6 +1166,7 @@ function PlayerCard({ player, team, isCaptain, t }: { player: Player; team: Team
         </Link>
 
       </div>
+)}
 
     </div>
 

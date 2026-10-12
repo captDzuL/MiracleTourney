@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { assertVercelBuildDatabaseSafety, runVercelBuild } from "../scripts/vercel-build.mjs";
+import { assertVercelBuildDatabaseSafety, runVercelBuild, runVercelBuildWithMigrationCheck } from "../scripts/vercel-build.mjs";
 
 const testDatabaseUrl = "postgresql://user:pass@ep-delicate-forest-azuodo4q.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require";
 const productionDatabaseUrl = "postgresql://user:pass@ep-sparkling-night-azr6wxwd.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require";
@@ -73,5 +73,76 @@ describe("Vercel database safety", () => {
     const exitCode = runVercelBuild({ VERCEL_ENV: "production" }, runCommand);
     expect(exitCode).toBe(1);
     expect(runCommand).toHaveBeenCalledExactlyOnceWith("pnpm", ["exec", "next", "build"]);
+  });
+});
+
+describe("Vercel migration check", () => {
+  const nextBuild = ["pnpm", ["exec", "next", "build"]] as const;
+
+  it("does not build a production deployment while the database lacks a migration", async () => {
+    const runCommand = vi.fn(() => ({ status: 0 }));
+    const checkMigrations = vi.fn(async () => {
+      throw new Error("production database is missing 1 migration");
+    });
+
+    await expect(runVercelBuildWithMigrationCheck({ VERCEL_ENV: "production" }, runCommand, checkMigrations))
+      .rejects.toThrow(/missing 1 migration/);
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  it("builds a production deployment once the check passes", async () => {
+    const runCommand = vi.fn(() => ({ status: 0 }));
+    const checkMigrations = vi.fn(async () => undefined);
+    const env = { VERCEL_ENV: "production", DIRECT_URL: productionDatabaseUrl };
+
+    await expect(runVercelBuildWithMigrationCheck(env, runCommand, checkMigrations)).resolves.toBe(0);
+    expect(checkMigrations).toHaveBeenCalledExactlyOnceWith(env);
+    expect(runCommand).toHaveBeenCalledExactlyOnceWith(...nextBuild);
+  });
+
+  it("checks trusted main branch candidates", async () => {
+    const runCommand = vi.fn(() => ({ status: 0 }));
+    const checkMigrations = vi.fn(async () => undefined);
+
+    await runVercelBuildWithMigrationCheck({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "main",
+      VERCEL_GIT_REPO_ID: "1316699241",
+    }, runCommand, checkMigrations);
+    expect(checkMigrations).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not check Preview builds, which use the isolated test branch", async () => {
+    const runCommand = vi.fn(() => ({ status: 0 }));
+    const checkMigrations = vi.fn(async () => undefined);
+
+    await expect(runVercelBuildWithMigrationCheck({
+      VERCEL_ENV: "preview", DATABASE_URL: testDatabaseUrl, DIRECT_URL: testDatabaseUrl, NEON_PROD_HOST: productionHost,
+    }, runCommand, checkMigrations)).resolves.toBe(0);
+    expect(checkMigrations).not.toHaveBeenCalled();
+  });
+
+  it("does not check pull requests whose source branch is named main", async () => {
+    const runCommand = vi.fn(() => ({ status: 0 }));
+    const checkMigrations = vi.fn(async () => undefined);
+
+    await runVercelBuildWithMigrationCheck({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "main",
+      VERCEL_GIT_PULL_REQUEST_ID: "42",
+      VERCEL_GIT_REPO_ID: "1316699241",
+      DATABASE_URL: testDatabaseUrl,
+      DIRECT_URL: testDatabaseUrl,
+      NEON_PROD_HOST: productionHost,
+    }, runCommand, checkMigrations);
+    expect(checkMigrations).not.toHaveBeenCalled();
+  });
+
+  it("does not check a local build with no Vercel environment", async () => {
+    const runCommand = vi.fn(() => ({ status: 0 }));
+    const checkMigrations = vi.fn(async () => undefined);
+
+    await runVercelBuildWithMigrationCheck({}, runCommand, checkMigrations);
+    expect(checkMigrations).not.toHaveBeenCalled();
   });
 });
