@@ -18,6 +18,7 @@ import {
   equalizePasswordResetResponse,
 } from "@/lib/platform/password-reset";
 
+import { resolvePostLoginPath } from "@/lib/auth/post-login-path";
 import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { commitRegistrationImportForUser, previewRegistrationImportForUser } from "@/lib/actions/registration-v3-actions";
@@ -30,9 +31,9 @@ import { validateTeamData } from "@/lib/validation/team-data";
 import { parsePlayerStatForm } from "@/lib/player-stats/form";
 import type { AppUser } from "@/lib/platform/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
-import { toSafeActionMessage } from "@/lib/security/public-error";
+import { describeActionError, isUserSafeActionError, toSafeActionMessage } from "@/lib/security/public-error";
 import { isSafeHttpUrl, safeEntityIdSchema } from "@/lib/security/request-guard";
-import { withServerActionLog } from "@/lib/observability/logger";
+import { withServerActionLog, writeServerLog } from "@/lib/observability/logger";
 import {
   addPlayer,
   approveStatSubmission,
@@ -443,22 +444,27 @@ export async function loginAction(formData: FormData) {
     return await redirectToRequestedLocale(loginErrorPath("invalid"), requestedLocale);
   }
 
-  if (user.role === "captain" && returnTo) {
-    await redirectToRequestedLocale(returnTo, requestedLocale);
-  }
-  if (user.role === "captain" && hasSafeEventId) {
-    await redirectToRequestedLocale(
-      `/captain?tab=registration&eventId=${encodeURIComponent(eventId)}`,
-      requestedLocale,
-    );
-  }
-
   await redirectToRequestedLocale(
-    user.role === "organizer" && user.mustChangePassword
-      ? "/organizer/change-password"
-      : user.role === "organizer" ? "/organizer" : user.role === "platform_admin" || user.role === "admin" ? "/admin" : "/captain",
+    resolvePostLoginPath({ role: user.role, mustChangePassword: user.mustChangePassword, returnTo, eventId }),
     requestedLocale,
   );
+}
+
+/** Expected rejections reach the captain as-is; anything else is masked to the captain, so record it for operators. */
+function logUnexpectedRegistrationFailure(stage: string | undefined, error: unknown, eventId: string) {
+  if (isUserSafeActionError(error)) return;
+  const { name, code } = describeActionError(error);
+  writeServerLog({
+    phase: "failed",
+    operation: "captain_register_team",
+    route: "/captain",
+    requestId: randomUUID(),
+    durationMs: 0,
+    status: 500,
+    errorCode: code ?? name,
+    resourceId: eventId,
+    ...(stage ? { stage } : {}),
+  });
 }
 
 /** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
@@ -508,12 +514,14 @@ export async function captainRegisterTeamAction(formData: FormData) {
         await createTeamRegistrationRequest({ ...input, draftTeamId, captainId: captain.id });
       } catch (paymentError) {
         const paymentMsg = toSafeActionMessage(paymentError, "Gagal membuat pendaftaran pembayaran.");
+        logUnexpectedRegistrationFailure("creating_payment_request", paymentError, input.eventId);
         return await registrationError(paymentMsg);
       }
       revalidateTag("teams");
       revalidatePath("/captain");
       await redirectToActiveLocale(`${registrationBase}&success=payment-pending` as never);
     }
+    logUnexpectedRegistrationFailure(undefined, err, input.eventId);
     return await registrationError(msg);
   }
 

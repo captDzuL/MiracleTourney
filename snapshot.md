@@ -44,7 +44,7 @@ The standalone mockups use local/session simulation. They do not modify producti
 - Existing paid registration uses evidence submission/review; existing imports create/update teams and can create captain access.
 - Import supports XLSX/CSV, not legacy XLS, and is blocked by the existing bracket lock.
 - Imported source does not equal verified payment.
-- Roster editing locks during Ongoing and Finished.
+- Roster editing locks once the drawing is published, and during Ongoing and Finished. Group + playoffs events can allow a limited number of organizer-approved roster changes per team until the first playoff match starts.
 - Current schedule/location values are strings; structured registration/start dates, timezone behavior, draft autosave, review links, and publish-readiness enforcement still require production design/implementation.
 
 ## Immediate next task

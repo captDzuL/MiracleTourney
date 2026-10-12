@@ -47,9 +47,10 @@ function PosterContent({ eventName, gameSlug, posterAlt, eyebrow, variant = "her
   const loading = priority ? "eager" : "lazy";
   return (
     <figure className={cn("mpv3-poster-stage", `mpv3-poster-stage--${variant}`, showPoster && "mpv3-poster-stage--poster", className)}>
-      {showPoster ? (
+      {showPoster ? (<>
+        {variant === "hero" && <span className="mpv3-event-poster-backdrop" aria-hidden="true" style={{ backgroundImage: `url(${JSON.stringify(source)})` }} />}
         <Image ref={checkPoster} className="mpv3-event-poster" src={source!} alt={posterAlt?.trim() || eventName} fill sizes="(max-width: 580px) 100vw, (max-width: 1000px) 50vw, 33vw" loading={loading} fetchPriority={priority ? "high" : "auto"} unoptimized onError={() => setPosterFailed(true)} />
-      ) : (
+      </>) : (
         <>
           <div className="mpv3-poster-lines" aria-hidden="true" />
           {showCharacters && <>

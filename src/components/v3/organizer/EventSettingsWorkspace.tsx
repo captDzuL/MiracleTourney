@@ -5,8 +5,8 @@ import { Settings2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 
-type Props = { locale: "id" | "en"; event: { id: string; slug?: string | null; name: string | null; status: string; organizerName: string | null; organizer?: { organizerProfile: { contactChannel: string; contactValue: string } | null } | null }; contact: { href: string | null } };
-export function EventSettingsWorkspace({ locale, event, contact }: Props) {
+type Props = { locale: "id" | "en"; event: { id: string; slug?: string | null; name: string | null; status: string; organizerName: string | null; organizer?: { organizerProfile: { contactChannel: string; contactValue: string } | null } | null }; contact: { href: string | null }; children?: React.ReactNode };
+export function EventSettingsWorkspace({ locale, event, contact, children }: Props) {
   const t = useTranslations("organizerMaster.settings");
   const edit = `/${locale}/organizer/events/${encodeURIComponent(event.id)}/edit`;
   return <main className="grid min-w-0 gap-5" data-event-settings>
@@ -17,6 +17,7 @@ export function EventSettingsWorkspace({ locale, event, contact }: Props) {
       <SettingsEntry title={t("contact")} body={event.organizer?.organizerProfile?.contactValue ?? event.organizerName ?? t("contactMissing")} href={contact.href} label={t("openContact")} />
       <SettingsEntry title={t("preferences")} body={t("preferencesBody")} href={`${edit}#section-format`} label={t("openPreferences")} />
     </div>
+    {children}
   </main>;
 }
 function SettingsEntry({ title, body, href, label }: { title: string; body: string; href: string | null; label: string }) { return <section className="grid min-w-0 content-start gap-3 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"><h2 className="break-words text-base font-extrabold">{title}</h2><p className="break-words text-sm text-[var(--color-text-muted)]">{body}</p>{href ? <Link className="min-h-11 w-fit rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-4 py-3 text-sm font-bold miracle-focus-ring" href={href}>{label}</Link> : null}</section>; }

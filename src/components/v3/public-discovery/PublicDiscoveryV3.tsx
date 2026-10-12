@@ -1,6 +1,7 @@
 import React from "react";
 import { publicV3LocalizedHref, publicV3RouteTarget, resolvePublicV3Route, type PublicHomeFeaturedEvent } from "@/lib/events/public-v3-types";
 import { PublicV3Frame } from "./PublicV3Frame";
+import { PublicSessionNav } from "./PublicSessionNav";
 import { EventPosterStage } from "./EventPosterStage";
 import { FeaturedEventHero } from "./FeaturedEventHero";
 import { EventPulse } from "./EventPulse";
@@ -44,7 +45,7 @@ export function PublicDiscoveryHomeV3({ locale, entries, games, gameFilter, load
     { href: localized("/events"), label: locale === "id" ? "Semua event" : "All events" },
   ];
   return <PublicV3Frame className="mpv3-homepage" brandHref={localized("/")} homeLabel={t.home} skipLabel={t.skip} navigationLabel={t.mainNav} navigation={navigation}
-    headerEnd={<PublicV3Action href={localized("/login")}>{t.login}<ArrowRight aria-hidden="true" /></PublicV3Action>}
+    headerEnd={<PublicSessionNav locale={locale} />}
     footer={<><span>MIRACLE</span><p>{t.footer}</p></>}>
     <div className="mpv3-home-intro" data-public-home-discovery={diagnostics?.discovery} data-public-home-featured={diagnostics?.featured}><PublicV3Eyebrow>{t.frontRow}</PublicV3Eyebrow>{view && <span>{view.identity.game.name} / {view.identity.game.modeName}</span>}</div>
     {view ? <>

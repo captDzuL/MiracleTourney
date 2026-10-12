@@ -225,6 +225,7 @@ vi.mock("bcryptjs", () => ({
 }));
 
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
+import { UserFacingError } from "@/lib/security/public-error";
 import bcrypt from "bcryptjs";
 import {
   adminActivateEventVisualAction,
@@ -963,6 +964,64 @@ describe("captain actions", () => {
     expect(createTeamRegistrationRequest).not.toHaveBeenCalled();
   });
 
+
+  it("shows a business rejection from registration to the captain without logging it as a failure", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    registerTeam.mockRejectedValueOnce(new UserFacingError("Draft tim tidak ditemukan untuk akun ini."));
+
+    await expect(
+      captainRegisterTeamAction(fd({ eventId: "event-b", name: "Draft United", tag: "DRF" })),
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-b&error=Draft%20tim%20tidak%20ditemukan%20untuk%20akun%20ini.");
+
+    const operations = info.mock.calls.map(([line]) => JSON.parse(String(line)).operation);
+    expect(operations).not.toContain("captain_register_team");
+    info.mockRestore();
+  });
+
+  it("logs an unexpected registration failure without its message and keeps the captain-facing message generic", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    registerTeam.mockRejectedValueOnce(
+      Object.assign(new Error("Invalid prisma.team.create() invocation: { captainContact: '0812-secret' }"), {
+        name: "PrismaClientInitializationError",
+        code: "P1001",
+      }),
+    );
+
+    await expect(
+      captainRegisterTeamAction(fd({ eventId: "event-b", name: "Draft United", tag: "DRF" })),
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-b&error=Gagal%20mendaftarkan%20tim.");
+
+    const lines = info.mock.calls.map(([line]) => String(line));
+    const failure = lines.map((line) => JSON.parse(line)).find((event) => event.operation === "captain_register_team");
+    expect(failure).toEqual(expect.objectContaining({ phase: "failed", status: 500, errorCode: "p1001" }));
+    expect(failure.resourceId).toMatch(/^sha256:/);
+    expect(lines.join("\n")).not.toContain("secret");
+    info.mockRestore();
+  });
+
+  it("logs an unexpected failure while creating the payment request", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    registerTeam.mockRejectedValueOnce(new UserFacingError("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif."));
+    createTeamRegistrationRequest.mockRejectedValueOnce(new Error("deadlock detected"));
+
+    await expect(
+      captainRegisterTeamAction(fd({ eventId: "event-paid", name: "Paid United", tag: "PDU" })),
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&error=Gagal%20membuat%20pendaftaran%20pembayaran.");
+
+    const failure = info.mock.calls.map(([line]) => JSON.parse(String(line))).find((event) => event.operation === "captain_register_team");
+    expect(failure).toEqual(expect.objectContaining({ phase: "failed", errorCode: "error", stage: "creating_payment_request" }));
+    info.mockRestore();
+  });
+
+  it("falls back to a payment request when the fee-required rejection is a UserFacingError", async () => {
+    registerTeam.mockRejectedValueOnce(new UserFacingError("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif."));
+    createTeamRegistrationRequest.mockResolvedValueOnce({ id: "request-2", status: "pending_payment" });
+
+    await expect(
+      captainRegisterTeamAction(fd({ eventId: "event-paid", name: "Paid United", tag: "PDU" })),
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&success=payment-pending");
+    expect(createTeamRegistrationRequest).toHaveBeenCalled();
+  });
 
   it("creates a pending payment request when the event requires a fee", async () => {
     registerTeam.mockRejectedValue(new Error("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif."));

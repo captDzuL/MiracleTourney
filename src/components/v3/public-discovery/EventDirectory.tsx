@@ -3,6 +3,7 @@ import { chooseFeaturedDiscoveryEvent, filterDiscoveryEvents, getPublicDiscovery
 import { publicV3LocalizedHref, publicV3RouteTarget, resolvePublicV3Route, type PublicV3Locale } from "@/lib/events/public-v3-types";
 import type { Game } from "@/lib/platform/types";
 import { PublicV3Frame } from "./PublicV3Frame";
+import { PublicSessionNav } from "./PublicSessionNav";
 import { PublicV3Action, PublicV3Count, PublicV3EmptyState, PublicV3Eyebrow, PublicV3SectionHeading, PublicV3Tabs } from "./PublicV3Primitives";
 import { EventDirectoryCard } from "./EventDirectoryCard";
 import { homeCopy } from "./home-copy";
@@ -36,7 +37,7 @@ export function EventDirectory({ locale, entries, games, filters, loadState }: E
   };
   const statuses = [["all", t.all], ["ongoing", t.ongoing], ["upcoming", t.upcoming], ["registration", t.registration], ["drawing", t.drawing], ["finished", t.finished]] as const;
   return <PublicV3Frame className="mpv3-directory" brandHref={localized("/")} homeLabel={shared.home} skipLabel={shared.skip} navigationLabel={shared.mainNav} navigation={[{ href: localized("/"), label: shared.home }, ...(featured ? [{ href: resolvePublicV3Route(publicV3RouteTarget(featured.event.slug, "overview"), locale), label: shared.featured }] : []), { href: localized("/events"), label: t.allEvents, active: true }]}
-    headerEnd={<PublicV3Action href={localized("/login")}>{shared.login}<ArrowRight aria-hidden="true" /></PublicV3Action>}
+    headerEnd={<PublicSessionNav locale={locale} />}
     footer={<><span>MIRACLE</span><p>{shared.footer}</p></>}>
     <nav className="mpv3-directory-breadcrumb" aria-label={locale === "id" ? "Jejak halaman" : "Breadcrumb"}><a href={localized("/")}>{shared.home}</a><span aria-hidden="true">/</span><span>Event Center</span></nav>
     <div className="mpv3-directory-heading">
