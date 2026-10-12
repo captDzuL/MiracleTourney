@@ -52,6 +52,8 @@ import { matchRosterReferenceTime, rosterForMatch } from "./roster-membership";
 import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
 import { ACTIVE_REGISTRATION_REQUEST_STATUSES, CACHE_TAGS, EXPIRABLE_REGISTRATION_REQUEST_STATUSES, ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_PAYMENT_PROBE_LIMIT, ORGANIZER_READER_ROW_LIMIT, PAYMENT_REQUEST_TTL_MS, PAYMENT_SETTINGS_ID, PUBLIC_EVENT_STATUSES, RESERVED_REGISTRATION_REQUEST_STATUSES, ROSTER_LOCKED_MESSAGE } from "./shared/constants";
 import { eventPublicInclude, mapEvent, mapEventVisualAsset, mapMatch, mapPaymentSettings, mapPlayer, mapTeam, mapTeamRegistrationRequest, mapUser, registrationRequestInclude } from "./shared/mappers";
+import { assertUserCanManageEvent, assertUserCanManageTeam } from "./shared/authz";
+export { assertUserCanManageEvent, assertUserCanManageTeam, assertUserCanReviewStatSubmission } from "./shared/authz";
 export { eventPublicInclude, mapEvent } from "./shared/mappers";
 
 type RegistrationWindowEvent = {
@@ -315,17 +317,6 @@ export async function updateOrganizerProfileForUser(
     });
   });
 }
-export async function assertUserCanManageEvent(user: AppUser, eventId: string): Promise<void> {
-  if (user.role === "platform_admin" || user.role === "admin") return;
-  if (user.role !== "organizer") throw new Error("Not authorized");
-
-  const row = await prisma.event.findFirst({
-    where: { id: eventId, organizerUserId: user.id },
-    select: { id: true },
-  });
-  if (!row) throw new Error("Not authorized");
-}
-
 export async function getManageableEventDraft(user: AppUser, eventId: string) {
   if (user.role !== "organizer" && user.role !== "platform_admin" && user.role !== "admin") return null;
   const row = await prisma.event.findFirst({
@@ -375,28 +366,6 @@ export async function updateEventOrganizerContact(
       },
     });
   });
-}
-
-export async function assertUserCanReviewStatSubmission(user: AppUser, submissionId: string): Promise<void> {
-  if (user.role === "platform_admin" || user.role === "admin") return;
-  if (user.role !== "organizer") throw new Error("Not authorized");
-
-  const row = await prisma.statSubmission.findFirst({
-    where: { id: submissionId, status: "pending", event: { organizerUserId: user.id } },
-    select: { id: true },
-  });
-  if (!row) throw new Error("Not authorized");
-}
-
-export async function assertUserCanManageTeam(user: AppUser, teamId: string): Promise<{ eventId: string }> {
-  const team = await prisma.team.findFirst({
-    where: { id: teamId },
-    select: { id: true, eventId: true },
-  });
-
-  if (!team?.eventId) throw new Error("Not authorized");
-  await assertUserCanManageEvent(user, team.eventId);
-  return { eventId: team.eventId };
 }
 
 export type EventPublicInfoUpdates = {

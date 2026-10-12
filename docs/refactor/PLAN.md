@@ -29,7 +29,7 @@ Urutannya dari yang paling berisiko.
 3. **Data demo bertentangan dengan janji "tanpa ubah cara kerja".**
    - `repository.ts` memakai data demo sebagai cadangan di 21 tempat. Kalau database error, halaman menampilkan data demo.
    - Menghapusnya mengubah hasil di produksi: halaman publik tidak lagi menampilkan data demo.
-   - Jadi penghapusan jadi PR sendiri di Fase 0 (PR 0.5 dan 0.6). PR itu harus selesai dan diamati sebelum kode dipindah.
+   - Jadi penghapusan jadi PR sendiri di Fase 0 (PR 0.5 dan 0.6). PR itu dikerjakan lebih dulu, sebelum kode dipindah.
 4. **Banyak fungsi dipakai lintas bidang, dan belum punya tempat.** Fungsi-fungsi ini harus pindah lebih dulu ke folder bersama.
    - Pengecekan izin: `assertUserCanManageEvent` (dipakai sekitar 20 tempat), `assertUserCanManageTeam`, `assertUserCanReviewStatSubmission`.
    - Pembantu transaksi: `runSerializableRegistrationTransaction` (11 tempat), `assertEventRosterMutable`, `assertNewRegistrationWindowOpen`, `expireStaleRegistrationRequests`.
@@ -186,7 +186,7 @@ Putuskan setelah Fase 3:
 37 PR: Fase 0 ada 8, Fase 1 ada 5, Fase 2 ada 14, Fase 3 ada 10. Satu PR per sesi pendek. PR berat (B) satu per sesi.
 
 Titik evaluasi:
-- Akhir Fase 0: data demo sudah hilang di produksi tanpa masalah.
+- Akhir Fase 0: semua pengaman terpasang dan data demo sudah hilang (dicek lewat CI, test, dan browser).
 - Akhir Fase 1: folder bersama sudah stabil.
 - Akhir Fase 2: `repository.ts` sudah habis.
 
@@ -196,7 +196,7 @@ Tiap PR: lima perintah di "Aturan tiap PR". Jumlah test tidak boleh turun. Ringk
 
 Tiap akhir fase: bandingkan ukuran bundle dan waktu build dengan `baseline.md`.
 
-Setelah PR 0.6 di-deploy: pantau log error database di halaman publik sebelum lanjut ke Fase 1.
+Setelah deploy ke produksi, lihat log error database di halaman publik. Itu pemeriksaan biasa, bukan syarat untuk memulai Fase 1.
 
 ## Daftar kemajuan
 
