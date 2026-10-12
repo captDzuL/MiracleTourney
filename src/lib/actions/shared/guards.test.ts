@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Refactor PR 1.4: the session guards and request helpers every server action starts with, tested where they now live.
@@ -112,5 +115,35 @@ describe("actionEntityId", () => {
   it("rejects a missing or non-text value, as a form field that was not sent", () => {
     expect(() => actionEntityId.parse(null)).toThrow();
     expect(() => actionEntityId.parse(undefined)).toThrow();
+  });
+});
+
+// Refactor PR 1.5: these modules are shared by many server action files. They must stay plain modules: a file with the
+// server action directive turns every export into an endpoint the browser can call. And nothing that uploads images may
+// import the big actions.ts again, which is the cycle PR 1.5 removed.
+describe("the shared modules stay plain and cycle-free", () => {
+  const SHARED_DIR = __dirname;
+  const SRC_DIR = path.resolve(__dirname, "../../..");
+  const DIRECTIVE = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*["']use server["']/;
+
+  it("has no server action directive in any file of actions/shared", () => {
+    const files = fs.readdirSync(SHARED_DIR).filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"));
+
+    expect(files).toEqual(expect.arrayContaining(["ids.ts", "limits.ts", "request.ts", "session.ts", "uploads.ts"]));
+    expect(files.filter((name) => DIRECTIVE.test(fs.readFileSync(path.join(SHARED_DIR, name), "utf8")))).toEqual([]);
+  });
+
+  it("is imported from its own path by the files that upload images, not through actions.ts", () => {
+    const uploaders = [
+      "lib/actions/certificate-v3-actions.ts",
+      "lib/actions/event-revision-actions.ts",
+      "lib/actions/registration-v3-actions.ts",
+      "app/api/organizer/events/[eventId]/bracket-appearance/route.ts",
+    ];
+    for (const relative of uploaders) {
+      const text = fs.readFileSync(path.join(SRC_DIR, relative), "utf8");
+      expect(text, relative).toContain('from "@/lib/actions/shared/uploads"');
+      expect(text, relative).not.toMatch(/from ["']@\/lib\/actions["']|import\(["']@\/lib\/actions["']\)/);
+    }
   });
 });

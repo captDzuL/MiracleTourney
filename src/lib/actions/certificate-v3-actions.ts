@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAnyRole } from "@/lib/auth/session";
-import { uploadImageAsset } from "@/lib/actions";
+import { uploadImageAsset } from "@/lib/actions/shared/uploads";
 import { CERTIFICATE_REGENERATION_RATE_LIMIT, CERTIFICATE_REGENERATION_RATE_LIMIT_WINDOW_MS } from "@/lib/actions/certificate-v3-rate-limit";
 import { CERTIFICATE_ASSET_LIMITS, publishCertificateSet, publishCertificateSetInputSchema, regenerateCertificate, regenerateCertificateInputSchema, type CertificatePublicationActionResult, type CertificateStudioActor, type PublishCertificateSetResult, type RegenerateCertificateResult } from "@/lib/certificate/service";
 import { createPrismaCertificateStudioDependencies } from "@/lib/certificate/studio-repository";

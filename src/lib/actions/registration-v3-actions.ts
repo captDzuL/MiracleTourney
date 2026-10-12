@@ -32,6 +32,7 @@ import {
 import type { AppUser, TeamRegistrationRequestStatus } from "@/lib/platform/types";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createServerMilestoneLogger, withServerActionLog, type ServerMilestoneEvent } from "@/lib/observability/logger";
+import { uploadImageAsset, type UploadedImageAsset } from "@/lib/actions/shared/uploads";
 
 type Locale = "id" | "en";
 type BlockedCode =
@@ -629,7 +630,7 @@ export async function saveEventQrisDraftAction(formData: FormData): Promise<Acti
   if (!(await checkRateLimit(`registration-qris:${access.id}:${input.eventId}`, 5, 15 * 60 * 1000))) {
     return blocked(input.locale, "rate_limited", redirectTo);
   }
-  let uploaded: Awaited<ReturnType<typeof import("@/lib/actions").uploadImageAsset>> | undefined;
+  let uploaded: UploadedImageAsset | undefined;
   let stored = false;
   try {
     const current = await getEventPaymentSettingsForManager(access, input.eventId);
@@ -637,7 +638,6 @@ export async function saveEventQrisDraftAction(formData: FormData): Promise<Acti
     const file = formData.get("qrisImage");
     if (file instanceof File && file.size > 0) {
       if ((current.version ?? 0) !== input.expectedVersion) return { status: "conflict", code: "stale_mutation", version: current.version, message: localizedMessage(input.locale, "stale_mutation"), redirectTo };
-      const { uploadImageAsset } = await import("@/lib/actions");
       const asset = await uploadImageAsset({ file, folder: "event-payment-qris", entityId: input.eventId, label: "QRIS", maxBytes: MAX_REGISTRATION_INTAKE_BYTES, validationMode: "throw" });
       uploaded = asset;
       input.qrisImageUrl = asset.url;

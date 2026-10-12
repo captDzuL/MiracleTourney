@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
 }));
 vi.mock("@vercel/blob", () => ({ del: mocks.deleteBlob }));
-vi.mock("@/lib/actions", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
+vi.mock("@/lib/actions/shared/uploads", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
