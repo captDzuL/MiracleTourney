@@ -14,19 +14,18 @@ import {
   type FlashpeakLeaderboardEntry,
   type FlashpeakLeaderboardSource,
 } from "@/lib/player-stats/flashpeak";
-import type { AppUser, Certificate, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus } from "@/lib/platform/types";
+import type { AppUser, Certificate, Player, Team, TeamRegistrationRequestStatus } from "@/lib/platform/types";
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import { mapRequestStatus, normalizeRegistrationSource, type RegistrationRecord } from "@/lib/registration/records";
-import type { ResolvedEventPaymentSettings } from "@/lib/registration/event-payment-settings";
 import { UserFacingError } from "@/lib/security/public-error";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { matchRosterReferenceTime, rosterForMatch } from "./roster-membership";
-import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
-import { ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_PAYMENT_PROBE_LIMIT, ORGANIZER_READER_ROW_LIMIT, ROSTER_LOCKED_MESSAGE } from "./shared/constants";
-import { mapPlayer, mapTeam, mapTeamRegistrationRequest, mapUser, registrationRequestInclude } from "./shared/mappers";
+import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
+import { ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_ROW_LIMIT, ROSTER_LOCKED_MESSAGE } from "./shared/constants";
+import { mapPlayer, mapTeam, mapUser } from "./shared/mappers";
 import { assertUserCanManageEvent } from "./shared/authz";
-import { assertEventExists, assertEventRosterMutable, expireStaleRegistrationRequests, runSerializableRegistrationTransaction } from "./shared/tx";
+import { assertEventExists, assertEventRosterMutable, runSerializableRegistrationTransaction } from "./shared/tx";
 export { runSerializableRegistrationTransaction } from "./shared/tx";
 export { assertUserCanManageEvent, assertUserCanManageTeam, assertUserCanReviewStatSubmission } from "./shared/authz";
 export { eventPublicInclude, mapEvent } from "./shared/mappers";
@@ -40,10 +39,11 @@ export { addPlayer, deletePlayer, getCaptainTeams, getPlayersForEvent, getPlayer
 import { isEventBracketLocked } from "@/lib/bracket/repository";
 export { getBracketManageableMatches, getBracketManageableMatchesForEvent, getBracketPreview, getLeaderboardForEvent, getMatchesForEvent, getPublicVisibleBracketPreview, getTeamStandings, isEventBracketLocked, setMatchResult } from "@/lib/bracket/repository";
 export { getEventRoundConfigs, getMatchGames, getMatchGamesForEvent, setMatchGames, upsertRoundConfig } from "@/lib/bracket/rounds-repository";
-import { RegistrationMutationConflictError, generateSyntheticRegistrationEmail } from "@/lib/registration/repository";
-import type { RegistrationReviewPrecondition } from "@/lib/registration/repository";
+import { generateSyntheticRegistrationEmail } from "@/lib/registration/repository";
 export { RegistrationMutationConflictError, createOrUpdateCaptainDraftTeam, createTeamRegistrationRequest, getCaptainRegistrationRequests, getPaymentRegistrationRequestsForAdmin, getRosterChangeWindow, readRosterChangeState, registerTeam, updateTeamRegistrationProof } from "@/lib/registration/repository";
 export type { RegistrationReviewPrecondition } from "@/lib/registration/repository";
+export { PaymentReviewOverflowError, approveTeamRegistrationRequest, getEventPaymentSettingsForManager, getPaymentReviewForEvent, getTeamRegistrationRequestForEvent, rejectTeamRegistrationRequest } from "@/lib/registration/review-repository";
+export type { EventPaymentManagerSettings, PaymentReviewEntry, TeamRegistrationRequestTarget } from "@/lib/registration/review-repository";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -244,142 +244,6 @@ export async function getCaptainCredentialsForEvent(eventId: string) {
 
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
-export async function approveTeamRegistrationRequest(
-  user: AppUser,
-  requestId: string,
-  precondition?: RegistrationReviewPrecondition,
-): Promise<Team> {
-  const initial = await prisma.teamRegistrationRequest.findFirst({
-    where: { id: requestId },
-    select: { eventId: true, status: true, updatedAt: true },
-  });
-  if (!initial) throw new Error("Pendaftaran pembayaran tidak ditemukan.");
-  await assertUserCanManageEvent(user, initial.eventId);
-  if (
-    precondition?.expectedStatus && initial.status !== precondition.expectedStatus
-    || precondition?.expectedUpdatedAt && initial.updatedAt.getTime() !== precondition.expectedUpdatedAt.getTime()
-  ) {
-    throw new RegistrationMutationConflictError(undefined, initial.updatedAt);
-  }
-
-  const teamRow = await runSerializableRegistrationTransaction(async (tx) => {
-    const request = await tx.teamRegistrationRequest.findFirst({
-      where: { id: requestId },
-      include: registrationRequestInclude,
-    });
-    if (!request) throw new Error("Pendaftaran pembayaran tidak ditemukan.");
-    if (
-      precondition?.expectedStatus && request.status !== precondition.expectedStatus
-      || precondition?.expectedUpdatedAt && request.updatedAt.getTime() !== precondition.expectedUpdatedAt.getTime()
-    ) {
-      throw new RegistrationMutationConflictError(undefined, request.updatedAt);
-    }
-    if (request.status !== "pending_review") throw new Error("Pendaftaran belum siap diverifikasi.");
-    if (!["Published", "Registration Closed"].includes(request.event.status)) {
-      throw new Error("Event sudah dimulai sehingga pendaftaran tidak bisa disetujui.");
-    }
-    await assertEventRosterMutable(tx, request.eventId);
-
-    const [registeredTeams, existingCaptainTeam, completedMatches] = await Promise.all([
-      tx.team.count({ where: { eventId: request.eventId } }),
-      tx.team.findFirst({
-        where: {
-          eventId: request.eventId,
-          captainId: request.captainId,
-          ...(request.teamId ? { id: { not: request.teamId } } : {}),
-        },
-        select: { id: true },
-      }),
-      request.event.format === "Single Elimination"
-        ? tx.match.count({ where: { eventId: request.eventId, status: "Completed" } })
-        : Promise.resolve(0),
-    ]);
-    if (registeredTeams >= request.event.participantCap) throw new Error("Slot pendaftaran event ini sudah penuh.");
-    if (existingCaptainTeam) throw new Error("Kamu sudah mendaftarkan tim untuk event ini.");
-    if (completedMatches > 0) {
-      throw new Error(`Event "${request.event.slug}" sudah memiliki hasil match, jadi pendaftaran tim baru ditutup.`);
-    }
-
-    const row = request.teamId
-      ? await tx.team.update({ where: { id: request.teamId }, data: { eventId: request.eventId, source: "registration" } })
-      : await tx.team.create({
-          data: {
-            eventId: request.eventId,
-            captainId: request.captainId,
-            name: request.teamName,
-            logoText: request.teamTag.slice(0, 2),
-            tag: request.teamTag,
-            source: "registration",
-          },
-    });
-    await tx.player.updateMany({ where: { teamId: row.id }, data: { eventId: request.eventId } });
-    const approvalData = { status: "approved", teamId: row.id, approvedAt: new Date(), approvedById: user.id };
-    if (precondition) {
-      const claimed = await tx.teamRegistrationRequest.updateMany({
-        where: {
-          id: request.id,
-          status: precondition.expectedStatus ?? "pending_review",
-          ...(precondition.expectedUpdatedAt ? { updatedAt: precondition.expectedUpdatedAt } : {}),
-        },
-        data: approvalData,
-      });
-      if (claimed.count !== 1) {
-        const current = await tx.teamRegistrationRequest.findFirst({ where: { id: request.id }, select: { updatedAt: true } });
-        throw new RegistrationMutationConflictError(undefined, current?.updatedAt);
-      }
-    } else {
-      await tx.teamRegistrationRequest.update({
-        where: { id: request.id },
-        data: approvalData,
-        include: registrationRequestInclude,
-      });
-    }
-    return row;
-  });
-  return mapTeam(teamRow);
-}
-
-export async function rejectTeamRegistrationRequest(
-  user: AppUser,
-  requestId: string,
-  reason: string,
-  precondition?: RegistrationReviewPrecondition,
-): Promise<TeamRegistrationRequest> {
-  const request = await prisma.teamRegistrationRequest.findFirst({ where: { id: requestId }, include: registrationRequestInclude });
-  if (!request) throw new Error("Pendaftaran pembayaran tidak ditemukan.");
-  await assertUserCanManageEvent(user, request.eventId);
-  if (!["pending_review", "pending_payment"].includes(request.status)) throw new Error("Pendaftaran ini tidak bisa ditolak.");
-  if (
-    precondition?.expectedStatus && request.status !== precondition.expectedStatus
-    || precondition?.expectedUpdatedAt && request.updatedAt.getTime() !== precondition.expectedUpdatedAt.getTime()
-  ) {
-    throw new RegistrationMutationConflictError(undefined, request.updatedAt);
-  }
-  if (!precondition) {
-    const row = await prisma.teamRegistrationRequest.update({
-      where: { id: request.id },
-      data: { status: "rejected", rejectReason: reason, proofImageUrl: null },
-      include: registrationRequestInclude,
-    });
-    return mapTeamRegistrationRequest(row);
-  }
-  const update = await prisma.teamRegistrationRequest.updateMany({
-    where: {
-      id: request.id,
-      status: precondition.expectedStatus ?? { in: ["pending_review", "pending_payment"] },
-      ...(precondition.expectedUpdatedAt ? { updatedAt: precondition.expectedUpdatedAt } : {}),
-    },
-    data: { status: "rejected", rejectReason: reason, proofImageUrl: null },
-  });
-  if (update.count !== 1) {
-    const current = await prisma.teamRegistrationRequest.findFirst({ where: { id: request.id }, select: { updatedAt: true } });
-    throw new RegistrationMutationConflictError(undefined, current?.updatedAt);
-  }
-  const row = await prisma.teamRegistrationRequest.findFirst({ where: { id: request.id }, include: registrationRequestInclude });
-  if (!row) throw new Error("Pendaftaran pembayaran tidak ditemukan setelah penolakan.");
-  return mapTeamRegistrationRequest(row);
-}
-
 /**
  * Bulk-imports teams from a validated CSV row list. For each team, generates a captain User
  * (upserted by email) with a temp password, then creates the Team row.
@@ -524,30 +388,6 @@ export type RegistrationImportHistoryEntry = {
   items: Array<{ id: string; status: string; teamId?: string | null }>;
 };
 
-export type PaymentReviewEntry = {
-  id: string;
-  eventId: string;
-  captainId: string;
-  teamId?: string | null;
-  teamName: string;
-  teamTag: string;
-  status: TeamRegistrationRequestStatus;
-  proofImageUrl?: string | null;
-  rejectReason?: string | null;
-  expiresAt: Date;
-  createdAt: Date;
-  updatedAt: Date;
-  captain?: { id: string; name: string; email?: string } | null;
-};
-
-export class PaymentReviewOverflowError extends ReaderResultOverflowError {
-  constructor() {
-    super("payment review", ORGANIZER_READER_HISTORY_LIMIT);
-    this.name = "PaymentReviewOverflowError";
-    this.message = `Payment review contains more than ${ORGANIZER_READER_HISTORY_LIMIT} entries; use a paginated review reader.`;
-  }
-}
-
 export type RegistrationImportEventContext = {
   id: string;
   slug: string;
@@ -564,21 +404,6 @@ export type RegistrationImportEventContext = {
     players: Array<{ nickname: string; displayName: string; position: string }>;
   }>;
 };
-
-export type TeamRegistrationRequestTarget = {
-  id: string;
-  eventId: string;
-  captainId: string;
-  teamId: string | null;
-  teamName: string;
-  teamTag: string;
-  status: TeamRegistrationRequestStatus;
-  proofImageUrl: string | null;
-  updatedAt: Date;
-  createdAt: Date;
-};
-
-export type EventPaymentManagerSettings = ResolvedEventPaymentSettings & { eventId: string; source: "event" };
 
 export async function getRegistrationRecordsForEvent(user: AppUser, eventId: string): Promise<RegistrationRecord[]> {
   await assertUserCanManageEvent(user, eventId);
@@ -699,37 +524,6 @@ export async function getRegistrationImportHistoryForEvent(user: AppUser, eventI
   }));
 }
 
-export async function getPaymentReviewForEvent(user: AppUser, eventId: string, status?: TeamRegistrationRequestStatus): Promise<PaymentReviewEntry[]> {
-  await assertUserCanManageEvent(user, eventId);
-  await assertEventExists(eventId);
-  await expireStaleRegistrationRequests();
-  const rows = await prisma.teamRegistrationRequest.findMany({
-    where: {
-      eventId,
-      status: status ?? { in: ["pending_payment", "pending_review"] },
-    },
-    include: { captain: { select: { id: true, name: true, email: true } } },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: ORGANIZER_READER_PAYMENT_PROBE_LIMIT,
-  });
-  if (rows.length > ORGANIZER_READER_HISTORY_LIMIT) throw new PaymentReviewOverflowError();
-  return rows.map((row) => ({
-    id: row.id,
-    eventId: row.eventId,
-    captainId: row.captainId,
-    teamId: row.teamId,
-    teamName: row.teamName,
-    teamTag: row.teamTag,
-    status: row.status as TeamRegistrationRequestStatus,
-    proofImageUrl: row.proofImageUrl,
-    rejectReason: row.rejectReason,
-    expiresAt: row.expiresAt,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    captain: row.captain,
-  }));
-}
-
 export async function getRegistrationImportEventContext(user: AppUser, eventId: string): Promise<RegistrationImportEventContext | null> {
   await assertUserCanManageEvent(user, eventId);
   const row = await prisma.event.findUnique({
@@ -758,40 +552,6 @@ export async function getRegistrationImportUsersByEmails(user: AppUser, eventId:
   const normalized = [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))];
   if (normalized.length === 0) return [];
   return prisma.user.findMany({ where: { email: { in: normalized } }, select: { id: true, email: true, role: true } });
-}
-
-export async function getTeamRegistrationRequestForEvent(user: AppUser, eventId: string, requestId: string): Promise<TeamRegistrationRequestTarget | null> {
-  await assertUserCanManageEvent(user, eventId);
-  await assertEventExists(eventId);
-  const row = await prisma.teamRegistrationRequest.findFirst({
-    where: { id: requestId, eventId },
-    select: {
-      id: true, eventId: true, captainId: true, teamId: true, teamName: true, teamTag: true,
-      status: true, proofImageUrl: true, updatedAt: true, createdAt: true,
-    },
-  });
-  if (!row) return null;
-  return { ...row, status: row.status as TeamRegistrationRequestStatus };
-}
-
-export async function getEventPaymentSettingsForManager(user: AppUser, eventId: string): Promise<EventPaymentManagerSettings> {
-  await assertUserCanManageEvent(user, eventId);
-  await assertEventExists(eventId);
-  const row = await prisma.eventPaymentSettings.findUnique({ where: { eventId } });
-  if (!row) {
-    return { id: `event-payment-${eventId}`, eventId, source: "event", status: "draft", version: 0 };
-  }
-  return {
-    id: row.id,
-    eventId: row.eventId,
-    source: "event",
-    status: row.status === "published" ? "published" : "draft",
-    version: row.version,
-    ...(row.qrisImageUrl ? { qrisImageUrl: row.qrisImageUrl } : {}),
-    ...(row.instructions ? { instructions: row.instructions } : {}),
-    ...(row.publishedAt ? { publishedAt: row.publishedAt } : {}),
-    updatedAt: row.updatedAt,
-  };
 }
 
 export async function getRegistrationImportBatchForAdmin(user: AppUser, batchId: string) {
