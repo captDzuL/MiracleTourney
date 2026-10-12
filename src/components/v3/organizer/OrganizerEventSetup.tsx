@@ -9,7 +9,7 @@ import { eventDateToLocalInput } from "@/lib/events/event-datetime";
 import type { PublishReadiness as Readiness } from "@/lib/events/publish-readiness";
 import { getActiveEventEditRevisionIds } from "@/lib/events/event-revision";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import type { getManageableEventDraft } from "@/lib/platform/repository";
+import type { getManageableEventDraft } from "@/lib/events/repository";
 import type { AppUser } from "@/lib/platform/types";
 
 /** Shared existing setup composition for legacy overview and canonical draft editing. */

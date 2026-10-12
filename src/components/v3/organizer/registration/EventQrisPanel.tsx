@@ -3,7 +3,7 @@ import Image from "next/image";
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import type { EventPaymentManagerSettings } from "@/lib/platform/repository";
+import type { EventPaymentManagerSettings } from "@/lib/registration/review-repository";
 import { saveEventQrisDraftAction, publishEventQrisAction } from "@/lib/actions/registration-v3-actions";
 import { actionForm, control, field, muted, panel, primary, safeImage, Feedback, WorkspaceDialog } from "./shared";
 export function EventQrisPanel({ locale, eventId, returnTo, settings }: { locale: string; eventId: string; returnTo: string; settings: EventPaymentManagerSettings }) {

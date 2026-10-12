@@ -123,8 +123,8 @@ Semua action organizer/admin harus melewati guard server-side. Jangan mengandalk
 
 Guard utama:
 
-- `assertUserCanManageEvent(user, eventId)` di `src/lib/platform/repository.ts`
-- `requireAdminSession()` di `src/lib/actions.ts`
+- `assertUserCanManageEvent(user, eventId)` di `src/lib/platform/shared/authz.ts`
+- `requireAdminSession()` di `src/lib/actions/shared/session.ts`
 - `updateTeamLogo(user, teamId, logoUrl)` untuk memastikan team logo hanya bisa diubah pemilik event atau platform admin
 
 ---

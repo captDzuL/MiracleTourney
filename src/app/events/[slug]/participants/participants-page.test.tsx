@@ -9,7 +9,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: mocks.flag }));
-vi.mock("@/lib/platform/repository", () => ({ getPublicEventBySlug: mocks.event, getTeamsForEvent: mocks.teams, getPlayersForTeams: mocks.players }));
+vi.mock("@/lib/events/repository", () => ({
+  getPublicEventBySlug: mocks.event,
+}));
+vi.mock("@/lib/teams/repository", () => ({
+  getTeamsForEvent: mocks.teams,
+  getPlayersForTeams: mocks.players,
+}));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("next-intl/server", () => ({ getTranslations: async () => (key: string) => key }));
 vi.mock("@/components/public-v2/BackToEvent", () => ({ BackToEvent: () => <div>Back to event</div> }));

@@ -9,7 +9,7 @@ import { requireAnyRole } from "@/lib/auth/session";
 import { loadCertificateStudioState } from "@/lib/certificate/studio-repository";
 import { MIRACLE_V3_CERTIFICATE_TYPES, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3-contract";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getManageableEventDraft } from "@/lib/platform/repository";
+import { getManageableEventDraft } from "@/lib/events/repository";
 
 type Props = { params: Promise<{ locale: string; eventId: string }> };
 export default async function CertificateStudioPage({ params }: Props) {

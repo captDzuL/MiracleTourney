@@ -18,7 +18,8 @@ import {
 import { eventDateToLocalInput } from "@/lib/events/event-datetime";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getGameModeDisplayLabel } from "@/lib/platform/config";
-import { getGameModes, getManageableEventDraft, getPlatformProfile } from "@/lib/platform/repository";
+import { getManageableEventDraft } from "@/lib/events/repository";
+import { getGameModes, getPlatformProfile } from "@/lib/platform/settings-repository";
 
 type EditEventPageProps = { params: Promise<{ locale: string; eventId: string }> };
 

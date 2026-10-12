@@ -5,7 +5,8 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { findGameConfig } from "@/lib/platform/config";
-import { getGameModes, getOrganizerUsers } from "@/lib/platform/repository";
+import { getOrganizerUsers } from "@/lib/identity/repository";
+import { getGameModes } from "@/lib/platform/settings-repository";
 
 export default async function NewEventPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams?: Promise<{ error?: string }> }) {
   const { locale } = await params;

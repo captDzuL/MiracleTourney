@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { updatePlatformProfileAction } from "@/lib/actions/platform-profile-actions";
 import { requireAnyRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getPlatformProfile } from "@/lib/platform/repository";
+import { getPlatformProfile } from "@/lib/platform/settings-repository";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 
 export default async function PlatformProfilePage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ saved?: string }> }) {

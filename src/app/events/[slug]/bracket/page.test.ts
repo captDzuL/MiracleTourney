@@ -59,14 +59,32 @@ vi.mock("next-intl/server", async () => {
   };
 });
 
-vi.mock("@/lib/platform/repository", async () => {
+vi.mock("@/lib/events/repository", async () => {
   const store = await import("@/lib/platform/demo-store");
   return {
     getPublicEventBySlug: (slug: string) => Promise.resolve(store.getPublicEventBySlug(slug)),
+  };
+});
+
+vi.mock("@/lib/teams/repository", async () => {
+  const store = await import("@/lib/platform/demo-store");
+  return {
     getTeamsForEvent: (eventId: string) => Promise.resolve(store.getTeamsForEvent(eventId)),
+  };
+});
+
+vi.mock("@/lib/bracket/repository", async () => {
+  const store = await import("@/lib/platform/demo-store");
+  return {
     getPublicVisibleBracketPreview: (eventId: string) => Promise.resolve(store.getPublicVisibleBracketPreview(eventId)),
     getMatchesForEvent: (eventId: string) => getMatchesForEventMock(eventId, store),
     getBracketPreview: (eventId: string) => Promise.resolve(store.getBracketPreview(eventId)),
+  };
+});
+
+vi.mock("@/lib/bracket/rounds-repository", async () => {
+  const store = await import("@/lib/platform/demo-store");
+  return {
     getEventRoundConfigs: (eventId: string) => getEventRoundConfigsMock(eventId, store),
     getMatchGamesForEvent: (eventId: string) => getMatchGamesForEventMock(eventId, store),
   };

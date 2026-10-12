@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { updateOrganizerProfileAction } from "@/lib/actions/organizer-profile-actions";
 import { requireAnyRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getOrganizerProfileForUser } from "@/lib/platform/repository";
+import { getOrganizerProfileForUser } from "@/lib/platform/settings-repository";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 
 const inputClass = "min-h-11 w-full min-w-0 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]";

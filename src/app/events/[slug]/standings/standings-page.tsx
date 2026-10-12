@@ -7,7 +7,9 @@ import { PublicV3DetailFrame } from "@/components/v3/public-event/PublicV3Detail
 import { DataTable, Section } from "@/components/ui";
 import { TeamIdentity } from "@/components/TeamAvatar";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getPublicEventBySlug, getTeamsForEvent, getTeamStandings } from "@/lib/platform/repository";
+import { getTeamStandings } from "@/lib/bracket/repository";
+import { getPublicEventBySlug } from "@/lib/events/repository";
+import { getTeamsForEvent } from "@/lib/teams/repository";
 
 function V3StandingsTable({ columns, rows }: { columns: string[]; rows: Array<Array<React.ReactNode>> }) {
   return (

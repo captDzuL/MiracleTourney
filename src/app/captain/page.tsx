@@ -17,17 +17,12 @@ import {
 import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import { RosterChangePanel } from "@/components/captain/RosterChangePanel";
-import {
-  getCaptainTeams,
-  getCertificatesForEvents,
-  getEventsByIds,
-  getGameForEvent,
-  getModeForEvent,
-  getCaptainRegistrationRequests,
-  getOpenRegistrationEventsForCaptain,
-  getPlayersForTeams,
-  hasTempPassword,
-} from "@/lib/platform/repository";
+import { getCertificatesForEvents } from "@/lib/certificate/repository";
+import { getEventsByIds, getOpenRegistrationEventsForCaptain } from "@/lib/events/repository";
+import { hasTempPassword } from "@/lib/identity/repository";
+import { getGameForEvent, getModeForEvent } from "@/lib/platform/settings-repository";
+import { getCaptainRegistrationRequests } from "@/lib/registration/repository";
+import { getCaptainTeams, getPlayersForTeams } from "@/lib/teams/repository";
 import { getRosterChangeOverview, type RosterChangeOverview } from "@/lib/platform/roster-change-requests";
 import { getCaptainPaymentSettings } from "@/lib/registration/captain-repository";
 import { gameModes } from "@/lib/platform/config";

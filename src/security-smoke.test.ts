@@ -47,7 +47,7 @@ describe("security smoke checks", () => {
     const sourceFiles = collectApplicationSourceFiles();
 
     expect(sourceFiles).toContain(path.resolve(process.cwd(), "src/lib/actions.ts"));
-    expect(sourceFiles).toContain(path.resolve(process.cwd(), "src/lib/platform/repository.ts"));
+    expect(sourceFiles).toContain(path.resolve(process.cwd(), "src/lib/events/repository.ts"));
     expect(sourceFiles).toContain(path.resolve(process.cwd(), "src/app/api/admin/captain-credentials/route.ts"));
   });
 

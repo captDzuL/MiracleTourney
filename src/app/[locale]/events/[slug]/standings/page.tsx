@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { permanentRedirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 
-import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
+import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/events/repository";
 import { readEventForMetadata } from "@/lib/events/public-event-metadata";
 import { renderStandingsPage } from "../../../../events/[slug]/standings/standings-page";
 

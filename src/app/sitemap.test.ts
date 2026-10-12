@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { getAllPublicEvents } = vi.hoisted(() => ({ getAllPublicEvents: vi.fn() }));
 
-vi.mock("@/lib/platform/repository", () => ({ getAllPublicEvents }));
+vi.mock("@/lib/events/repository", () => ({
+  getAllPublicEvents,
+}));
 
 import sitemap, { dynamic } from "./sitemap";
 

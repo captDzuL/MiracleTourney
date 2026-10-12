@@ -12,15 +12,11 @@ import { getOrderedStatEntries, getStatKeysForMode } from "@/lib/platform/config
 import type { Event } from "@/lib/platform/types";
 import { serializeJsonLd } from "@/lib/seo/json-ld";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
-import {
-  getBracketPreview,
-  getCertificateByEvent,
-  getGameForEvent,
-  getLeaderboardForEvent,
-  getModeForEvent,
-  getPublicEventBySlug,
-  getTeamsForEvent,
-} from "@/lib/platform/repository";
+import { getBracketPreview, getLeaderboardForEvent } from "@/lib/bracket/repository";
+import { getCertificateByEvent } from "@/lib/certificate/repository";
+import { getPublicEventBySlug } from "@/lib/events/repository";
+import { getGameForEvent, getModeForEvent } from "@/lib/platform/settings-repository";
+import { getTeamsForEvent } from "@/lib/teams/repository";
 import { getLiveStreamPresentation } from "@/lib/tournament/engine";
 
 function buildEventHref(slug: string, section: "participants" | "bracket" | "standings" | "leaderboards", locale?: "id" | "en") {
