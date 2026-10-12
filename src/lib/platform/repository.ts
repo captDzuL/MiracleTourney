@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 
 import { applyEventLifecycleSideEffects } from "@/lib/events/event-lifecycle";
 import type { PublicDiscoveryEvent } from "@/lib/events/public-discovery";
-import { gameModes, games, findGameConfig, getGameConfig, getGameIdForMode, getGameModeConfig, getGamePrimaryStatKey, getStatKeysForMode } from "@/lib/platform/config";
+import { games, findGameConfig, getGameConfig, getGameIdForMode, getGameModeConfig, getGamePrimaryStatKey, getStatKeysForMode } from "@/lib/platform/config";
 import {
   resolvePlayerScoreGameNumbers,
   validatePlayerStatPayload,
@@ -18,7 +18,7 @@ import {
   type FlashpeakLeaderboardEntry,
   type FlashpeakLeaderboardSource,
 } from "@/lib/player-stats/flashpeak";
-import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventVisualAsset, Match, MatchGame, PaymentSettings, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
+import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventVisualAsset, Match, MatchGame, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import { mapRequestStatus, normalizeRegistrationSource, type RegistrationRecord } from "@/lib/registration/records";
 import type { ResolvedEventPaymentSettings } from "@/lib/registration/event-payment-settings";
@@ -39,14 +39,16 @@ import { prisma } from "./db";
 import { graphFromPhaseConfiguration, resolveRosterChangeWindow, type RosterChangeWindow } from "./roster-change-window";
 import { matchRosterReferenceTime, rosterForMatch } from "./roster-membership";
 import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
-import { ACTIVE_REGISTRATION_REQUEST_STATUSES, CACHE_TAGS, ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_PAYMENT_PROBE_LIMIT, ORGANIZER_READER_ROW_LIMIT, PAYMENT_REQUEST_TTL_MS, PAYMENT_SETTINGS_ID, PUBLIC_EVENT_STATUSES, RESERVED_REGISTRATION_REQUEST_STATUSES, ROSTER_LOCKED_MESSAGE } from "./shared/constants";
-import { eventPublicInclude, mapEvent, mapEventVisualAsset, mapMatch, mapPaymentSettings, mapPlayer, mapTeam, mapTeamRegistrationRequest, mapUser, registrationRequestInclude } from "./shared/mappers";
+import { ACTIVE_REGISTRATION_REQUEST_STATUSES, CACHE_TAGS, ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_PAYMENT_PROBE_LIMIT, ORGANIZER_READER_ROW_LIMIT, PAYMENT_REQUEST_TTL_MS, PUBLIC_EVENT_STATUSES, RESERVED_REGISTRATION_REQUEST_STATUSES, ROSTER_LOCKED_MESSAGE } from "./shared/constants";
+import { eventPublicInclude, mapEvent, mapEventVisualAsset, mapMatch, mapPlayer, mapTeam, mapTeamRegistrationRequest, mapUser, registrationRequestInclude } from "./shared/mappers";
 import { assertUserCanManageEvent, assertUserCanManageTeam } from "./shared/authz";
 import { assertEventExists, assertEventRosterMutable, assertNewRegistrationWindowOpen, expireStaleRegistrationRequests, isNewRegistrationWindowOpen, readEventRosterLocked, runSerializableRegistrationTransaction } from "./shared/tx";
 import type { RosterLockReader } from "./shared/tx";
 export { runSerializableRegistrationTransaction } from "./shared/tx";
 export { assertUserCanManageEvent, assertUserCanManageTeam, assertUserCanReviewStatSubmission } from "./shared/authz";
 export { eventPublicInclude, mapEvent } from "./shared/mappers";
+export { getAllGames, getGameForEvent, getGameModes, getModeForEvent, getOrganizerProfileForUser, getPaymentSettings, getPlatformProfile, updateOrganizerProfileForUser, updatePaymentSettings, updatePlatformProfile } from "@/lib/platform/settings-repository";
+export type { OrganizerProfileSummary, PlatformProfileSummary } from "@/lib/platform/settings-repository";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -112,26 +114,6 @@ function generateSyntheticRegistrationEmail(eventSlug: string, tag: string, used
 
 // ── Static config ─────────────────────────────────────────────────────────────
 
-/** Returns the static list of all supported games from config. */
-export function getAllGames() {
-  return games;
-}
-
-/** Returns the static list of all supported game modes from config. */
-export function getGameModes() {
-  return gameModes;
-}
-
-/** Resolves the game definition for a given event. Throws if the game ID is not found in config. */
-export function getGameForEvent(event: Event) {
-  return getGameConfig(event.gameId);
-}
-
-/** Resolves the game mode definition for a given event. Throws if the mode ID is not found in config. */
-export function getModeForEvent(event: Event) {
-  return getGameModeConfig(event.gameModeId);
-}
-
 // ── Events ────────────────────────────────────────────────────────────────────
 
 /**
@@ -175,59 +157,6 @@ export async function getManageableEventsForUser(user: AppUser): Promise<Event[]
   return rows.map(mapEvent);
 }
 
-export type PlatformProfileSummary = {
-  displayName: string;
-  contactChannel: string;
-  contactValue: string;
-};
-
-export async function getPlatformProfile(): Promise<PlatformProfileSummary | null> {
-  return prisma.platformProfile.findUnique({
-    where: { id: "global" },
-    select: { displayName: true, contactChannel: true, contactValue: true },
-  });
-}
-
-export async function updatePlatformProfile(input: PlatformProfileSummary): Promise<void> {
-  await prisma.platformProfile.upsert({
-    where: { id: "global" },
-    update: input,
-    create: { id: "global", ...input },
-  });
-}
-export type OrganizerProfileSummary = {
-  organizationName: string;
-  contactChannel: string;
-  contactValue: string;
-  verified: boolean;
-};
-
-export async function getOrganizerProfileForUser(user: AppUser): Promise<OrganizerProfileSummary | null> {
-  if (user.role !== "organizer") return null;
-  const profile = await prisma.organizerProfile.findUnique({
-    where: { userId: user.id },
-    select: { organizationName: true, contactChannel: true, contactValue: true, verified: true },
-  });
-  return profile;
-}
-
-export async function updateOrganizerProfileForUser(
-  user: AppUser,
-  input: { organizationName: string; contactChannel: string; contactValue: string },
-): Promise<void> {
-  if (user.role !== "organizer") throw new Error("Not authorized");
-  await prisma.$transaction(async (tx) => {
-    await tx.organizerProfile.upsert({
-      where: { userId: user.id },
-      update: input,
-      create: { userId: user.id, ...input },
-    });
-    await tx.event.updateMany({
-      where: { organizerUserId: user.id },
-      data: { organizerName: input.organizationName },
-    });
-  });
-}
 export async function getManageableEventDraft(user: AppUser, eventId: string) {
   if (user.role !== "organizer" && user.role !== "platform_admin" && user.role !== "admin") return null;
   const row = await prisma.event.findFirst({
@@ -1895,23 +1824,6 @@ export async function rejectTeamRegistrationRequest(
   return mapTeamRegistrationRequest(row);
 }
 
-export async function getPaymentSettings(): Promise<PaymentSettings> {
-  const row = await prisma.paymentSettings.findUnique({ where: { id: PAYMENT_SETTINGS_ID } });
-  return mapPaymentSettings(row);
-}
-
-export async function updatePaymentSettings(input: { qrisImageUrl?: string | null; instructions?: string | null }): Promise<PaymentSettings> {
-  const data = {
-    qrisImageUrl: input.qrisImageUrl ?? null,
-    instructions: input.instructions ?? null,
-  };
-  const row = await prisma.paymentSettings.upsert({
-    where: { id: PAYMENT_SETTINGS_ID },
-    update: data,
-    create: { id: PAYMENT_SETTINGS_ID, ...data },
-  });
-  return mapPaymentSettings(row);
-}
 /**
  * Bulk-imports teams from a validated CSV row list. For each team, generates a captain User
  * (upserted by email) with a temp password, then creates the Team row.
