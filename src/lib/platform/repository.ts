@@ -6,17 +6,7 @@ import bcrypt from "bcryptjs";
 
 import { applyEventLifecycleSideEffects } from "@/lib/events/event-lifecycle";
 import type { PublicDiscoveryEvent } from "@/lib/events/public-discovery";
-import {
-  gameModes,
-  games,
-  findGameConfig,
-  getFallbackLogoUrl,
-  getGameConfig,
-  getGameIdForMode,
-  getGameModeConfig,
-  getGamePrimaryStatKey,
-  getStatKeysForMode,
-} from "@/lib/platform/config";
+import { gameModes, games, findGameConfig, getGameConfig, getGameIdForMode, getGameModeConfig, getGamePrimaryStatKey, getStatKeysForMode } from "@/lib/platform/config";
 import {
   resolvePlayerScoreGameNumbers,
   validatePlayerStatPayload,
@@ -28,13 +18,12 @@ import {
   type FlashpeakLeaderboardEntry,
   type FlashpeakLeaderboardSource,
 } from "@/lib/player-stats/flashpeak";
-import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventStream, EventVisualAsset, Match, MatchGame, PaymentSettings, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, TournamentFormat, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
+import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventVisualAsset, Match, MatchGame, PaymentSettings, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import { mapRequestStatus, normalizeRegistrationSource, type RegistrationRecord } from "@/lib/registration/records";
 import type { ResolvedEventPaymentSettings } from "@/lib/registration/event-payment-settings";
 import type { CompetitionGraph } from "@/lib/tournament/competition/types";
-import { writeServerLog } from "@/lib/observability/logger";
-import { UserFacingError, describeActionError } from "@/lib/security/public-error";
+import { UserFacingError } from "@/lib/security/public-error";
 import { tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 import {
   aggregatePlayerLeaderboard,
@@ -50,7 +39,7 @@ import { prisma } from "./db";
 import { graphFromPhaseConfiguration, resolveRosterChangeWindow, type RosterChangeWindow } from "./roster-change-window";
 import { matchRosterReferenceTime, rosterForMatch } from "./roster-membership";
 import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
-import { ACTIVE_REGISTRATION_REQUEST_STATUSES, CACHE_TAGS, EXPIRABLE_REGISTRATION_REQUEST_STATUSES, ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_PAYMENT_PROBE_LIMIT, ORGANIZER_READER_ROW_LIMIT, PAYMENT_REQUEST_TTL_MS, PAYMENT_SETTINGS_ID, PUBLIC_EVENT_STATUSES, RESERVED_REGISTRATION_REQUEST_STATUSES, ROSTER_LOCKED_MESSAGE } from "./shared/constants";
+import { ACTIVE_REGISTRATION_REQUEST_STATUSES, CACHE_TAGS, ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_PAYMENT_PROBE_LIMIT, ORGANIZER_READER_ROW_LIMIT, PAYMENT_REQUEST_TTL_MS, PAYMENT_SETTINGS_ID, PUBLIC_EVENT_STATUSES, RESERVED_REGISTRATION_REQUEST_STATUSES, ROSTER_LOCKED_MESSAGE } from "./shared/constants";
 import { eventPublicInclude, mapEvent, mapEventVisualAsset, mapMatch, mapPaymentSettings, mapPlayer, mapTeam, mapTeamRegistrationRequest, mapUser, registrationRequestInclude } from "./shared/mappers";
 import { assertUserCanManageEvent, assertUserCanManageTeam } from "./shared/authz";
 import { assertEventExists, assertEventRosterMutable, assertNewRegistrationWindowOpen, expireStaleRegistrationRequests, isNewRegistrationWindowOpen, readEventRosterLocked, runSerializableRegistrationTransaction } from "./shared/tx";

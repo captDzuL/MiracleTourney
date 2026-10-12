@@ -31,7 +31,6 @@ import {
 } from "./tx";
 
 const T0 = new Date("2026-10-10T12:00:00.000Z");
-const before = (ms: number) => new Date(T0.getTime() - ms);
 const after = (ms: number) => new Date(T0.getTime() + ms);
 const window = (overrides: Partial<{ status: string; registrationOpensAt: Date | null; registrationClosesAt: Date | null }> = {}) => ({
   status: "Published",

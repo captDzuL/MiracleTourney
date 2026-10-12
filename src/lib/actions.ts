@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { z } from "zod";
 
-import { getLocalizedRedirectPath, redirectToActiveLocale } from "@/i18n/redirect";
+import { redirectToActiveLocale } from "@/i18n/redirect";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { publishEvent } from "@/lib/events/publish-readiness";
 import { prisma } from "@/lib/platform/db";
@@ -30,9 +30,8 @@ import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 import { validateTeamData } from "@/lib/validation/team-data";
 import { parsePlayerStatForm } from "@/lib/player-stats/form";
 import type { AppUser } from "@/lib/platform/types";
-import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { describeActionError, isUserSafeActionError, toSafeActionMessage } from "@/lib/security/public-error";
-import { isSafeHttpUrl, safeEntityIdSchema } from "@/lib/security/request-guard";
+import { isSafeHttpUrl } from "@/lib/security/request-guard";
 import { withServerActionLog, writeServerLog } from "@/lib/observability/logger";
 import {
   addPlayer,
@@ -82,54 +81,14 @@ import {
 } from "@/lib/platform/repository";
 import fs from "fs";
 import path from "path";
+import { assertWorkspaceEventAction, requireAdminSession, requireCaptainSession } from "@/lib/actions/shared/session";
+import { actionEntityId, redirectToRequestedLocale } from "@/lib/actions/shared/request";
 
 const MAX_TEAM_IMPORT_CSV_BYTES = 256 * 1024;
 const MAX_LOGO_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_BACKGROUND_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024;
 const MAX_QRIS_IMAGE_BYTES = 2 * 1024 * 1024;
-const actionEntityId = safeEntityIdSchema;
-
-async function requireAdminSession(): Promise<AppUser> {
-  const user =
-    await requireRole("platform_admin")
-    ?? await requireRole("organizer")
-    ?? await requireRole("admin");
-
-  if (!user) {
-    return redirectToActiveLocale("/login");
-  }
-
-  return user;
-}
-
-async function requireCaptainSession(): Promise<AppUser> {
-  const user = await requireRole("captain");
-
-  if (!user) {
-    return redirectToActiveLocale("/login");
-  }
-
-  return user;
-}
-
-function assertWorkspaceEventAction(user: AppUser, eventId: string) {
-  const access = authorizeWorkspaceResource(
-    user as WorkspaceActor,
-    { eventId, ownerUserId: user.role === "organizer" ? user.id : undefined },
-    user.role === "organizer" ? user.id : null,
-  );
-  if (!access.ok) throw new Error("Not authorized");
-}
-
-async function redirectToRequestedLocale(path: string, locale?: string): Promise<never> {
-  if (locale === "id" || locale === "en") {
-    redirect(getLocalizedRedirectPath(path, locale));
-  }
-
-  return redirectToActiveLocale(path);
-}
-
 function isDatabaseConnectionError(error: unknown) {
   if (!(error instanceof Error)) return false;
 
