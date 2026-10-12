@@ -218,20 +218,20 @@ Fase 1:
 - [x] 1.5
 
 Fase 2:
-- [ ] 2.1
-- [ ] 2.2
-- [ ] 2.3
-- [ ] 2.4
-- [ ] 2.5
-- [ ] 2.6
-- [ ] 2.7
-- [ ] 2.8
-- [ ] 2.9
-- [ ] 2.10
-- [ ] 2.11
-- [ ] 2.12
-- [ ] 2.13
-- [ ] 2.14
+- [x] 2.1
+- [x] 2.2
+- [x] 2.3
+- [x] 2.4
+- [x] 2.5
+- [x] 2.6
+- [x] 2.7
+- [x] 2.8
+- [x] 2.9
+- [x] 2.10
+- [x] 2.11
+- [x] 2.12
+- [x] 2.13
+- [x] 2.14
 
 Fase 3:
 - [ ] 3.0
@@ -287,6 +287,47 @@ Aturan pemindahan yang berlaku untuk PR 1.2 sampai 1.5 dan seterusnya: pindahkan
 2. Organizer selalu lolos `assertWorkspaceEventAction`. Pengecekan kepemilikan event yang sebenarnya ada di `assertUserCanManageEvent`, jadi setiap action organizer wajib memanggilnya.
 3. Parameter `folder` di `uploadImageAsset` tidak divalidasi terhadap daftar yang diizinkan.
 Masuk Fase 4.
+
+**Fase 2 selesai (2.1 sampai 2.14).** `src/lib/platform/repository.ts` (3.945 baris) sudah habis dan dihapus. Isinya pindah ke 13 modul, dipindah dengan skrip AST seperti di Fase 1:
+
+| PR | Modul | Baris |
+|---|---|---|
+| 2.1 | `platform/settings-repository.ts` | 101 |
+| 2.2 | `events/repository.ts` | 510 |
+| 2.3 | `events/visual-repository.ts` | 153 |
+| 2.4 | `teams/repository.ts` | 211 |
+| 2.5 | `bracket/repository.ts` | 322 |
+| 2.6 | `bracket/rounds-repository.ts` | 171 |
+| 2.7 | `registration/repository.ts` | 499 |
+| 2.8 | `registration/review-repository.ts` | 253 |
+| 2.9 | `imports/repository.ts` | 623 |
+| 2.10 | `player-stats/repository.ts` | 315 |
+| 2.11 | `player-stats/write-repository.ts` | 499 |
+| 2.12 | `certificate/repository.ts` | 250 |
+| 2.13 | `identity/repository.ts` | 108 |
+
+Setiap pemindahan dibuktikan begini: semua deklarasi yang dipindah identik dengan aslinya (selain kata `export`), dan daftar ekspor `repository.ts` sebelum dan sesudah pindah persis sama (dicek dengan compiler). Jadi tidak ada kode yang berubah dan tidak ada nama yang hilang. Modul belakang hanya mengimpor modul depan. Tidak ada impor melingkar yang dievaluasi saat dimuat (diperiksa reviewer).
+
+Pembantu yang tadinya privat (misalnya `getBracketRoundLabel`, `generateCaptainEmail`) sekarang diekspor dari modulnya supaya bisa dites dan dipakai modul lain. Tidak ada file `"use server"` yang mengekspor ulang satu pun. Jumlah server action tetap 95 (dicek di hasil build).
+
+**Celah test ditutup.** Dari 140 fungsi bernama di 13 modul, 44 belum dijalankan test mana pun. Sekarang semuanya dijalankan: 318 test baru di 11 file `repository.test.ts` (satu per modul yang punya celah). Pernyataan yang tercakup di 13 modul itu 87,7%. Test dicek dengan perusakan sengaja: 11 dari 11 perusakan di fungsi yang dites tertangkap.
+
+**Sapuan (2.14).** 130 file pengimpor diganti lewat skrip: impor dan `vi.mock` dipecah per modul. Lima kasus dikerjakan tangan (`bracket/page.test.ts`, `organizer-workspace-read.test.ts`, `repository.db.test.ts`, `roster-change.integration.test.ts`, skrip `generate-certificate.ts`). Dicek bahwa mock tidak diam-diam jatuh ke Prisma asli: seluruh test dijalankan dengan klien Prisma yang melempar error kalau disentuh. Hasil sebelum dan sesudah sapuan sama. Satu penyesuaian: tiga test yang mock `next/cache` perlu `unstable_cache`, karena modul asli kini ikut dimuat lewat impor tidak langsung.
+
+Aturan ESLint R3 sekarang menjaga 13 modul baru (komponen tidak boleh mengimpor nilainya).
+
+**Tidak dikerjakan.** Test lama `repository.test.ts` (3.200 baris, 22 blok) tetap satu file di `src/lib/platform/`. Isinya sudah mengimpor modul asli, tapi belum dipecah per modul karena semua blok berbagi satu tiruan Prisma besar. Namanya juga menyesatkan sekarang. Masuk Fase 4.
+
+**Kebiasaan aneh yang ditemukan test baru (tidak diubah, sudah ada sebelum refactor).** Masuk Fase 4:
+- `getPaymentRegistrationRequestsForAdmin` membersihkan permintaan kedaluwarsa sebelum cek peran, jadi pemanggil yang tidak berhak tetap memicu tulis ke database sebelum ditolak.
+- `createOrUpdateCaptainDraftTeam` tanpa transaksi dan tanpa validasi: cari lalu buat, bisa menghasilkan dua draft kalau dua permintaan datang bersamaan.
+- `saveRegistrationImportPreviewBatch` membuat profil dan batch tanpa transaksi: kalau batch gagal, profil tertinggal.
+- `updateEventStream` menulis lalu membaca ulang tanpa transaksi. URL YouTube tanpa `https://` melempar `TypeError`.
+- `getModeForEvent` tidak mengecek bahwa mode itu milik game event.
+- `updatePaymentSettings` mengubah `undefined` jadi `null`, jadi update sebagian menghapus kolom yang tidak dikirim.
+- `getMatchWithRosterAndStats` menelan semua error dari `getPlayerStatFormContext` jadi `scoreGameNumbers: null`.
+- `getBracketSlotCount` bertipe minimal 8, tapi untuk 4 tim atau kurang hasilnya 4 atau 2.
+- `generateCaptainEmail` tidak membuang duplikat email yang ditulis sendiri.
 
 **Fase 0 diperiksa ulang di atas `main` (2026-10-12).** Sejak rehearsal dibuat, `main` menambah 12 commit (fitur ganti roster, pin event unggulan di beranda, `UserFacingError`, job CI `New migrations`, dan lainnya). Penggabungan percobaan menghasilkan 5 konflik, semuanya sudah dibereskan:
 - `repository.ts` (4 tempat): `main` menambah filter `removedAt: null` di tiga pembaca pemain yang masih punya cadangan data demo. Hasilnya menggabungkan keduanya: tanpa cadangan, dengan filter. Fungsi `createTeamRegistrationRequest` versi transaksi kita memakai `UserFacingError` seperti konvensi `main`.

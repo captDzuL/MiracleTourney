@@ -1,3 +1,4 @@
+# SELESAI di Fase 2: semua fungsi bernama di daftar ini sekarang dijalankan test (file repository.test.ts di tiap modul). Daftar dibiarkan sebagai catatan.
 # Fungsi bernama di src/lib/platform/repository.ts yang belum dijalankan test mana pun (diukur ulang setelah Fase 0, di atas main 2026-10-12).
 # Fungsi kecil di dalam pembaca ber-cache tidak ikut dihitung.
 # Tiap PR Fase 2 menutup bagiannya sendiri sebelum memindahkan fungsi, atau mencatat alasannya.
