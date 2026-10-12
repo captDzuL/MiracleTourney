@@ -85,7 +85,7 @@ import { assertWorkspaceEventAction, requireAdminSession, requireCaptainSession 
 import { actionEntityId, redirectToRequestedLocale } from "@/lib/actions/shared/request";
 import { MAX_BACKGROUND_IMAGE_BYTES, MAX_LOGO_IMAGE_BYTES, MAX_PAYMENT_PROOF_BYTES, MAX_QRIS_IMAGE_BYTES, MAX_TEAM_IMPORT_CSV_BYTES } from "@/lib/actions/shared/limits";
 import { isSafeEntityId } from "@/lib/actions/shared/ids";
-import { appendActionError, uploadImageAsset as storeImageAsset, type UploadImageAssetInput, type UploadedImageAsset } from "@/lib/actions/shared/uploads";
+import { appendActionError, uploadImageAsset } from "@/lib/actions/shared/uploads";
 
 function isDatabaseConnectionError(error: unknown) {
   if (!(error instanceof Error)) return false;
@@ -115,10 +115,6 @@ const optionalPublicUrlSchema = z.preprocess(
   },
   z.string().refine(isHttpUrl, "Registration URL must use http or https.").nullable(),
 );
-
-export async function uploadImageAsset(input: UploadImageAssetInput): Promise<UploadedImageAsset> {
-  return storeImageAsset(input);
-}
 
 /**
  * Generates the champion certificate for a finished Final.

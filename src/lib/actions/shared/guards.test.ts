@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import ts from "typescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Refactor PR 1.4: the session guards and request helpers every server action starts with, tested where they now live.
@@ -78,7 +79,9 @@ describe("assertWorkspaceEventAction", () => {
     expect(() => assertWorkspaceEventAction(user(role), "event-1")).not.toThrow();
   });
 
-  it("lets an organizer work on an event in their own workspace", () => {
+  // The ownership check itself is assertUserCanManageEvent (see platform/shared/authz.test.ts). This guard only
+  // confirms the workspace, and an organizer is always placed in their own workspace.
+  it("always accepts an organizer, because the real ownership check is assertUserCanManageEvent", () => {
     expect(() => assertWorkspaceEventAction(user("organizer", "org-1"), "event-1")).not.toThrow();
   });
 
@@ -145,5 +148,44 @@ describe("the shared modules stay plain and cycle-free", () => {
       expect(text, relative).toContain('from "@/lib/actions/shared/uploads"');
       expect(text, relative).not.toMatch(/from ["']@\/lib\/actions["']|import\(["']@\/lib\/actions["']\)/);
     }
+  });
+});
+
+// Every export of a server action file can become an endpoint the browser may call, so the export list is the
+// attack surface. It must hold async functions and types only, and none of the shared helpers. In particular
+// uploadImageAsset takes a folder and an id from its caller and checks no session, so it must never be exported here.
+describe("what actions.ts exposes as server actions", () => {
+  const actionsFile = path.resolve(__dirname, "../../actions.ts");
+  const sourceFile = ts.createSourceFile(actionsFile, fs.readFileSync(actionsFile, "utf8"), ts.ScriptTarget.Latest, true);
+  const exported: Array<{ name: string; kind: "async function" | "type" | "other" }> = [];
+  for (const statement of sourceFile.statements) {
+    if (!ts.canHaveModifiers(statement) || !ts.getModifiers(statement)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) continue;
+    if (ts.isFunctionDeclaration(statement) && statement.name) {
+      const isAsync = Boolean(ts.getModifiers(statement)?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword));
+      exported.push({ name: statement.name.text, kind: isAsync ? "async function" : "other" });
+    } else if (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) {
+      exported.push({ name: statement.name.text, kind: "type" });
+    } else {
+      exported.push({ name: "<non-function export>", kind: "other" });
+    }
+  }
+
+  it("exports only async functions and types", () => {
+    expect(exported.filter((item) => item.kind === "other")).toEqual([]);
+    expect(exported.filter((item) => item.kind === "async function").length).toBeGreaterThanOrEqual(50);
+  });
+
+  it.each([
+    "uploadImageAsset",
+    "uploadImageAssetImpl",
+    "readImageDimensions",
+    "requireAdminSession",
+    "requireCaptainSession",
+    "assertWorkspaceEventAction",
+    "redirectToRequestedLocale",
+    "isSafeEntityId",
+    "appendActionError",
+  ])("does not export %s", (name) => {
+    expect(exported.map((item) => item.name)).not.toContain(name);
   });
 });
