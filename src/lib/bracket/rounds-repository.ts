@@ -2,7 +2,6 @@
 // Moved out of platform/repository.ts without changes (refactor PR 2.6).
 
 import { getProjectedBracketMatches, legacyResultTransaction } from "@/lib/bracket/repository";
-import { games } from "@/lib/platform/config";
 import { prisma } from "@/lib/platform/db";
 import { CACHE_TAGS } from "@/lib/platform/shared/constants";
 import { mapEvent } from "@/lib/platform/shared/mappers";

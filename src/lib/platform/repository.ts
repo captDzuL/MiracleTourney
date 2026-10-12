@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { cache } from "react";
-import { games, getGameConfig, getStatKeysForMode } from "@/lib/platform/config";
+import { getGameConfig, getStatKeysForMode } from "@/lib/platform/config";
 import {
   resolvePlayerScoreGameNumbers,
   validatePlayerStatPayload,
