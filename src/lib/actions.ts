@@ -79,8 +79,6 @@ import {
   setTeamCaptainDisplay,
   adminWriteMatchPlayerStats,
 } from "@/lib/platform/repository";
-import fs from "fs";
-import path from "path";
 import { assertWorkspaceEventAction, requireAdminSession, requireCaptainSession } from "@/lib/actions/shared/session";
 import { actionEntityId, redirectToRequestedLocale } from "@/lib/actions/shared/request";
 import { MAX_BACKGROUND_IMAGE_BYTES, MAX_LOGO_IMAGE_BYTES, MAX_PAYMENT_PROOF_BYTES, MAX_QRIS_IMAGE_BYTES, MAX_TEAM_IMPORT_CSV_BYTES } from "@/lib/actions/shared/limits";
