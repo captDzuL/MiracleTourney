@@ -32,8 +32,10 @@ Catatan jujur: pembagian ini belum bersih. Sekitar 35 file di `src/lib` masih me
 |---|---|
 | `src/app` | Halaman, route handler, `error.tsx`, `sitemap.ts`. Ada dua pohon: `src/app/[locale]/...` (yang dipakai pengunjung) dan `src/app/...` tanpa locale. Middleware mengalihkan jalur tanpa locale ke `/[locale]/...`. |
 | `src/components` | Komponen: `admin`, `panel`, `public-v2`, `registration`, `v3`. |
-| `src/lib/platform` | `repository.ts` (4.300 baris, akan dipecah), `db.ts` (klien Prisma), `config.ts` (daftar game dan mode), `types.ts`, `demo-store.ts` (hanya untuk test). |
-| `src/lib/actions.ts` | Modul server action lama, 53 action. Akan dipecah di Fase 3. |
+| `src/lib/platform` | `repository.ts` (3.900 baris, akan dipecah), `db.ts` (klien Prisma), `config.ts` (daftar game dan mode), `types.ts`, `demo-store.ts` (hanya untuk test). |
+| `src/lib/platform/shared` | Dipakai banyak fungsi, dipindah dari `repository.ts` (Fase 1): `constants.ts` (termasuk `CACHE_TAGS`), `mappers.ts` (pemetaan baris database), `authz.ts` (tiga pengecekan izin `assertUserCan*`), `tx.ts` (transaksi Serializable pendaftaran, jendela pendaftaran, kunci roster, kedaluwarsa permintaan). |
+| `src/lib/actions/shared` | Dipakai banyak server action (Fase 1): `session.ts` (pengecekan sesi), `request.ts` (id entitas, redirect locale), `limits.ts`, `ids.ts`, `uploads.ts` (upload gambar). Modul biasa, **tanpa `"use server"`**. |
+| `src/lib/actions.ts` | Modul server action lama, 1.800 baris. Akan dipecah di Fase 3. |
 | `src/lib/actions/*-actions.ts` | Server action yang lebih baru, satu file per bidang (`event-v3-actions`, `registration-v3-actions`, dan seterusnya). **Tempat action baru.** |
 | `src/lib/<bidang>` | `auth`, `bracket`, `certificate`, `competition`, `completion`, `events`, `imports`, `player-stats`, `registration`, `tournament`, dan lainnya. Logika per bidang. |
 
@@ -68,19 +70,21 @@ File test dikecualikan dari semua aturan.
 
 ### Daftar pengecualian
 
-Saat aturan dibuat, 15 file sudah melanggar (16 pelanggaran, karena satu route handler melanggar R2 dan R4): R2 ada 14 file, R4 ada 1 file, R5 ada 1 file. R1 dan R3 bersih.
+Saat aturan dibuat, 15 file sudah melanggar. Setelah PR 1.5 tinggal 13 file: R2 ada 11 file, R4 ada 1 file (route `bracket-appearance`), R5 ada 1 file (`competition/workspace-page.tsx`). R1 dan R3 bersih.
 
 Daftar itu **hanya boleh mengecil**. Memperbaiki impornya, lalu hapus file dari daftar. Jangan menambah file ke daftar supaya impor baru lolos. Kalau aturan menghalangi pekerjaan yang masuk akal, bicarakan aturannya.
 
 ### Batas aturan
 
-- Impor dinamis (`import("...")`) tidak dijangkau aturan bawaan ESLint. Satu kasus yang diketahui: `registration-v3-actions.ts` mengimpor `@/lib/actions` secara dinamis untuk menghindari lingkaran. Itu dibereskan di PR 1.5.
+- Impor dinamis (`import("...")`) tidak dijangkau aturan bawaan ESLint. Kasus lama, `registration-v3-actions.ts` yang mengimpor `@/lib/actions` secara dinamis untuk menghindari lingkaran, sudah dibereskan di PR 1.5.
 - Aturan hanya mengenali alamat yang persis sama. `@/lib/actions` terdeteksi, tetapi `../actions` dari folder lain tidak.
 - Aturan tidak membekukan `@/lib/platform/repository`. Selama Fase 2, 65 file masih mengimpornya dan kode baru butuh file itu. Pembekuan dipikirkan lagi setelah bidang-bidangnya terpisah.
 
 ## Server action
 
 - File server action diawali `"use server"`. File seperti itu **hanya boleh mengekspor fungsi `async`** (dan tipe). Konstanta, kelas, dan `export ... from` tidak boleh.
+- Daftar ekspor sebuah file `"use server"` adalah daftar pintu yang bisa dipanggil browser. Jangan mengekspor pembantu (cek sesi, upload, dan sejenisnya) dari file itu; taruh di `actions/shared`. `actions/shared/guards.test.ts` menjaga ini untuk `actions.ts` dan memastikan `actions/shared` tanpa `"use server"`.
+- Pembantu yang tidak mengecek sesi sendiri, seperti `uploadImageAsset`, tidak boleh jadi action. Action pemanggilnya yang wajib mengecek sesi dan izin (`assertUserCanManageEvent` untuk event).
 - Tempat mengubah cache: `revalidatePath` dan `revalidateTag` dipanggil di action, bukan di repository. Tag yang dipakai: `events`, `teams`, `stats`.
 - Daftar lengkap action dan halaman yang di-refresh ada di `src/lib/revalidation-map.test.ts`. Mengubah panggilan revalidate tanpa mengubah tabel itu membuat test gagal.
 - Kode berat dimuat saat dibutuhkan: `@vercel/blob` dan pembuatan sertifikat dipanggil lewat `import()` di dalam fungsi, supaya tidak ikut dimuat di setiap halaman. `src/lib/server-action-bundle.test.ts` menjaganya.

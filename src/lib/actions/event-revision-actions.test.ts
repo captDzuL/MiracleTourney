@@ -31,7 +31,7 @@ vi.mock("@/lib/platform/repository", () => ({
   updatePublishedEventSlugAsAdmin: mocks.updatePublishedEventSlugAsAdmin,
   createEventVisualAsset: mocks.createEventVisualAsset,
 }));
-vi.mock("@/lib/actions", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
+vi.mock("@/lib/actions/shared/uploads", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath, revalidateTag: mocks.revalidateTag }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));

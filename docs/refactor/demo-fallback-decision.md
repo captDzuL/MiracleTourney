@@ -120,7 +120,7 @@ Teks baru ditaruh di `messages/id.json` dan `messages/en.json`. Untuk beranda la
 
 - **Halaman publik yang tadinya "selalu tampil" bisa menampilkan halaman error saat database bermasalah.** Ini disengaja. Sebelumnya pengunjung melihat data palsu.
 - **Cold start Neon.** Database yang baru bangun bisa menjawab lambat. Tanpa batas 2 detik, beranda menunggu lebih lama, tetapi menampilkan data asli.
-- **Pantau setelah deploy.** Lihat log error Prisma di halaman publik selama beberapa hari sebelum lanjut ke Fase 1. Kalau banyak, itu masalah database yang tadinya tertutup, bukan masalah PR ini.
+- **Lihat log setelah deploy.** Kalau banyak error database di halaman publik, itu masalah database yang tadinya tertutup, bukan masalah PR ini. Ini pemeriksaan biasa dan tidak menahan pekerjaan berikutnya.
 - **Rollback.** PR 0.6 berdiri sendiri, jadi cukup di-revert.
 
 ## Hasil PR 0.6

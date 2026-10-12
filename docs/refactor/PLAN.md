@@ -29,7 +29,7 @@ Urutannya dari yang paling berisiko.
 3. **Data demo bertentangan dengan janji "tanpa ubah cara kerja".**
    - `repository.ts` memakai data demo sebagai cadangan di 21 tempat. Kalau database error, halaman menampilkan data demo.
    - Menghapusnya mengubah hasil di produksi: halaman publik tidak lagi menampilkan data demo.
-   - Jadi penghapusan jadi PR sendiri di Fase 0 (PR 0.5 dan 0.6). PR itu harus selesai dan diamati sebelum kode dipindah.
+   - Jadi penghapusan jadi PR sendiri di Fase 0 (PR 0.5 dan 0.6). PR itu dikerjakan lebih dulu, sebelum kode dipindah.
 4. **Banyak fungsi dipakai lintas bidang, dan belum punya tempat.** Fungsi-fungsi ini harus pindah lebih dulu ke folder bersama.
    - Pengecekan izin: `assertUserCanManageEvent` (dipakai sekitar 20 tempat), `assertUserCanManageTeam`, `assertUserCanReviewStatSubmission`.
    - Pembantu transaksi: `runSerializableRegistrationTransaction` (11 tempat), `assertEventRosterMutable`, `assertNewRegistrationWindowOpen`, `expireStaleRegistrationRequests`.
@@ -186,7 +186,7 @@ Putuskan setelah Fase 3:
 37 PR: Fase 0 ada 8, Fase 1 ada 5, Fase 2 ada 14, Fase 3 ada 10. Satu PR per sesi pendek. PR berat (B) satu per sesi.
 
 Titik evaluasi:
-- Akhir Fase 0: data demo sudah hilang di produksi tanpa masalah.
+- Akhir Fase 0: semua pengaman terpasang dan data demo sudah hilang (dicek lewat CI, test, dan browser).
 - Akhir Fase 1: folder bersama sudah stabil.
 - Akhir Fase 2: `repository.ts` sudah habis.
 
@@ -196,7 +196,7 @@ Tiap PR: lima perintah di "Aturan tiap PR". Jumlah test tidak boleh turun. Ringk
 
 Tiap akhir fase: bandingkan ukuran bundle dan waktu build dengan `baseline.md`.
 
-Setelah PR 0.6 di-deploy: pantau log error database di halaman publik sebelum lanjut ke Fase 1.
+Setelah deploy ke produksi, lihat log error database di halaman publik. Itu pemeriksaan biasa, bukan syarat untuk memulai Fase 1.
 
 ## Daftar kemajuan
 
@@ -211,11 +211,11 @@ Fase 0:
 - [x] 0.8
 
 Fase 1:
-- [ ] 1.1
-- [ ] 1.2
-- [ ] 1.3
-- [ ] 1.4
-- [ ] 1.5
+- [x] 1.1
+- [x] 1.2
+- [x] 1.3
+- [x] 1.4
+- [x] 1.5
 
 Fase 2:
 - [ ] 2.1
@@ -265,6 +265,28 @@ Dua file ini dibuat terpisah supaya `repository.test.ts` (3.037 baris) tidak mak
 3. `setMatchResult` tidak lagi mencatat pemenang untuk skor seri (`winnerTeamId` kosong). Klasemen dihitung dari skor, jadi tidak terpengaruh.
 4. `createCaptainWithTeam` memakai 2 huruf pertama tag untuk `logoText`, sama seperti jalur lain. Fungsi ini lalu dihapus (lihat bawah).
 5. Email kembar saat daftar memberi pesan "Email ini sudah terdaftar. Coba login." Pesan itu dilempar sebagai `UserFacingError` (kebiasaan baru dari `main`, lihat `src/lib/security/public-error.ts`), jadi sampai ke pengguna tanpa masuk daftar pesan aman.
+
+**PR 1.1 selesai.** Konstanta, pembantu pemetaan, dan tag cache pindah ke `src/lib/platform/shared/`:
+- `constants.ts`: status event publik, batas pembaca organizer, status permintaan daftar, masa berlaku pembayaran 24 jam, pesan roster terkunci, dan `CACHE_TAGS` (baru: `events`, `teams`, `stats`).
+- `mappers.ts`: `mapEvent`, `mapTeam`, `mapPlayer`, `mapMatch`, `mapUser`, `mapTeamRegistrationRequest`, `mapPaymentSettings`, `mapEventVisualAsset`, serta dua set `include` Prisma.
+
+Dipindah dengan skrip berbasis AST, bukan disalin tangan, lalu dibuktikan: 23 dari 23 deklarasi identik dengan aslinya (selain kata `export`), tidak ada yang tersisa di `repository.ts`. `repository.ts` turun dari 4.329 ke sekitar 4.090 baris dan tetap mengekspor `mapEvent` dan `eventPublicInclude` (dipakai `event-revision.ts` dan `preview-token.ts`). Satu-satunya perubahan lain: enam penanda `tags: ["..."]` memakai `CACHE_TAGS`. Server action tetap memakai teks biasa di `revalidateTag("...")`, supaya tabel revalidasi tidak berubah; `shared/constants.test.ts` memastikan setiap teks itu adalah salah satu tag di `CACHE_TAGS`.
+
+Aturan pemindahan yang berlaku untuk PR 1.2 sampai 1.5 dan seterusnya: pindahkan dengan skrip, buktikan identik, jangan ubah logika.
+
+**PR 1.2 sampai 1.5 selesai. Fase 1 selesai.** Semua dipindah dengan skrip AST dan dibuktikan identik dengan aslinya (1.2: 3 dari 3 deklarasi, 1.3: 10 dari 10, 1.4: 5 dari 5, 1.5: 17 dari 17). Test baru dicek dengan perusakan sengaja.
+- **1.2** `platform/shared/authz.ts`: `assertUserCanManageEvent`, `assertUserCanReviewStatSubmission`, `assertUserCanManageTeam` (21 test). `repository.ts` mengekspornya ulang, jadi pemanggil dan mock tidak berubah.
+- **1.3** `platform/shared/tx.ts`: `runSerializableRegistrationTransaction` (3 kali coba saat P2034), pengecekan jendela pendaftaran, kunci roster, `expireStaleRegistrationRequests` dan `deleteExpiredRequestTeamCopies` (33 test).
+- **1.4** `actions/shared`: `session.ts` (`requireAdminSession`, `requireCaptainSession`, `assertWorkspaceEventAction`), `request.ts` (`actionEntityId`, `redirectToRequestedLocale`), `limits.ts`, `ids.ts`. Semuanya modul biasa tanpa `"use server"`.
+- **1.5** `actions/shared/uploads.ts`: seluruh kode upload gambar. Lingkaran impor dengan `registration-v3-actions` putus: tiga file di `src/lib/actions` dan satu route kini mengimpor dari `@/lib/actions/shared/uploads`, bukan dari `@/lib/actions`. Daftar pengecualian ESLint mengecil dari 15 ke 13 file (R2 tinggal 11).
+
+**Perubahan perilaku yang disengaja di Fase 1 (commit terpisah `24f4baa`).** Saat PR 1.5, `uploadImageAsset` ternyata terdaftar sebagai server action: `actions.ts` mengekspornya sebagai fungsi `async`. Fungsi ini tidak mengecek sesi dan menerima `folder` serta `entityId` dari pemanggil. Jadi browser bisa memanggilnya langsung. Dicek di hasil build: 96 action terdaftar, setelah ekspor dihapus tinggal 95. Tidak ada kode aplikasi yang memanggilnya dari browser, jadi tidak ada fitur yang berubah. Kalau ingin dikembalikan, cukup revert commit itu. `guards.test.ts` kini menjaga daftar ekspor `actions.ts`: hanya fungsi `async` dan tipe, dan tidak ada pembantu bersama.
+
+**Temuan review keamanan (sudah ada sebelum refactor, belum diperbaiki karena di luar cakupan "pindah saja").**
+1. `requireAdminSession` versi lama tidak mengecek `mustChangePassword`.
+2. Organizer selalu lolos `assertWorkspaceEventAction`. Pengecekan kepemilikan event yang sebenarnya ada di `assertUserCanManageEvent`, jadi setiap action organizer wajib memanggilnya.
+3. Parameter `folder` di `uploadImageAsset` tidak divalidasi terhadap daftar yang diizinkan.
+Masuk Fase 4.
 
 **Fase 0 diperiksa ulang di atas `main` (2026-10-12).** Sejak rehearsal dibuat, `main` menambah 12 commit (fitur ganti roster, pin event unggulan di beranda, `UserFacingError`, job CI `New migrations`, dan lainnya). Penggabungan percobaan menghasilkan 5 konflik, semuanya sudah dibereskan:
 - `repository.ts` (4 tempat): `main` menambah filter `removedAt: null` di tiga pembaca pemain yang masih punya cadangan data demo. Hasilnya menggabungkan keduanya: tanpa cadangan, dengan filter. Fungsi `createTeamRegistrationRequest` versi transaksi kita memakai `UserFacingError` seperti konvensi `main`.

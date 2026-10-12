@@ -7,7 +7,7 @@ const blobPut = vi.hoisted(() => vi.fn());
 vi.mock("@vercel/blob", () => ({ put: blobPut }));
 vi.mock("next/navigation", () => ({ redirect: (url: string): never => { throw new Error(`REDIRECT:${url}`); } }));
 
-import { uploadImageAsset } from "./actions";
+import { uploadImageAsset } from "@/lib/actions/shared/uploads";
 
 async function imageFile(width: number, height: number) {
   const bytes = await sharp({ create: { width, height, channels: 4, background: "#aa8bff" } }).png().toBuffer();

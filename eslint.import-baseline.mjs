@@ -6,7 +6,6 @@ export const importBaseline = {
   // R2: the old @/lib/actions module; goes away in Phase 3
   R2: [
     "src/app/admin/admin-workspace.tsx",
-    "src/app/api/organizer/events/[eventId]/bracket-appearance/route.ts",
     "src/app/captain/page.tsx",
     "src/app/captain/settings/page.tsx",
     "src/app/captain/stats/page.tsx",
@@ -17,8 +16,6 @@ export const importBaseline = {
     "src/components/admin/EventVisualAssetsPanel.tsx",
     "src/components/registration/CaptainRegistrationWizard.tsx",
     "src/components/v3/events/EventDraftForm.tsx",
-    "src/lib/actions/certificate-v3-actions.ts",
-    "src/lib/actions/event-revision-actions.ts",
   ],
   // R3: components that read the repository
   R3: [],

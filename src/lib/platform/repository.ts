@@ -6,17 +6,7 @@ import bcrypt from "bcryptjs";
 
 import { applyEventLifecycleSideEffects } from "@/lib/events/event-lifecycle";
 import type { PublicDiscoveryEvent } from "@/lib/events/public-discovery";
-import {
-  gameModes,
-  games,
-  findGameConfig,
-  getFallbackLogoUrl,
-  getGameConfig,
-  getGameIdForMode,
-  getGameModeConfig,
-  getGamePrimaryStatKey,
-  getStatKeysForMode,
-} from "@/lib/platform/config";
+import { gameModes, games, findGameConfig, getGameConfig, getGameIdForMode, getGameModeConfig, getGamePrimaryStatKey, getStatKeysForMode } from "@/lib/platform/config";
 import {
   resolvePlayerScoreGameNumbers,
   validatePlayerStatPayload,
@@ -28,13 +18,12 @@ import {
   type FlashpeakLeaderboardEntry,
   type FlashpeakLeaderboardSource,
 } from "@/lib/player-stats/flashpeak";
-import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventStream, EventVisualAsset, Match, MatchGame, PaymentSettings, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, TournamentFormat, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
+import type { AppUser, Certificate, Event, EventRoundConfig, EventStatus, EventVisualAsset, Match, MatchGame, PaymentSettings, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import { mapRequestStatus, normalizeRegistrationSource, type RegistrationRecord } from "@/lib/registration/records";
 import type { ResolvedEventPaymentSettings } from "@/lib/registration/event-payment-settings";
 import type { CompetitionGraph } from "@/lib/tournament/competition/types";
-import { writeServerLog } from "@/lib/observability/logger";
-import { UserFacingError, describeActionError } from "@/lib/security/public-error";
+import { UserFacingError } from "@/lib/security/public-error";
 import { tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 import {
   aggregatePlayerLeaderboard,
@@ -50,273 +39,16 @@ import { prisma } from "./db";
 import { graphFromPhaseConfiguration, resolveRosterChangeWindow, type RosterChangeWindow } from "./roster-change-window";
 import { matchRosterReferenceTime, rosterForMatch } from "./roster-membership";
 import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
-
-const PUBLIC_EVENT_STATUSES = new Set<EventStatus>(["Published", "Registration Closed", "Ongoing", "Finished"]);
-
-// Organizer list readers keep the existing response shapes while preventing an
-// event-sized request from turning into an unbounded database read.
-const ORGANIZER_READER_ROW_LIMIT = 500;
-const ORGANIZER_READER_HISTORY_LIMIT = 100;
-const ORGANIZER_READER_IMPORT_BATCH_LIMIT = 8;
-const ORGANIZER_READER_IMPORT_ITEM_LIMIT = 512;
-const ORGANIZER_READER_PAYMENT_PROBE_LIMIT = ORGANIZER_READER_HISTORY_LIMIT + 1;
-
-
-type RegistrationWindowEvent = {
-  status: string;
-  registrationOpensAt: Date | null;
-  registrationClosesAt: Date | null;
-};
-
-function isNewRegistrationWindowOpen(event: RegistrationWindowEvent, now = new Date()): boolean {
-  if (event.status !== "Published") return false;
-  if (event.registrationOpensAt && now < event.registrationOpensAt) return false;
-  if (event.registrationClosesAt && now >= event.registrationClosesAt) return false;
-  return true;
-}
-
-function assertNewRegistrationWindowOpen(event: RegistrationWindowEvent, now = new Date()): void {
-  if (!isNewRegistrationWindowOpen(event, now)) {
-    throw new UserFacingError("Event tidak valid atau sudah tidak membuka pendaftaran.");
-  }
-}
-
-export async function runSerializableRegistrationTransaction<T>(
-  operation: (tx: Prisma.TransactionClient) => Promise<T>,
-): Promise<T> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      return await prisma.$transaction(operation, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        maxWait: 10_000,
-        timeout: 60_000,
-      });
-    } catch (error) {
-      const code = typeof error === "object" && error !== null && "code" in error
-        ? (error as { code?: string }).code
-        : undefined;
-      if (code !== "P2034" || attempt === 2) throw error;
-    }
-  }
-  throw new Error("Pendaftaran berubah bersamaan. Silakan coba lagi.");
-}
-
-/** Single relation set every mapped-event query loads, so `mapEvent` stays the only mapping site. */
-export const eventPublicInclude = { stream: true, activeVisualAsset: true } satisfies Prisma.EventInclude;
-
-type EventVisualAssetRow = {
-  id: string; eventId: string; source: string; status: string;
-  url?: string | null; mimeType?: string | null; width?: number | null; height?: number | null; byteSize?: number | null;
-  storageProvider?: string | null; storageKey?: string | null; contentSha256?: string | null; purpose?: string | null;
-  focalX: number; focalY: number;
-  provider?: string | null; model?: string | null; promptVersion?: string | null;
-  workflowRunId?: string | null; sourceUrl?: string | null; rightsAttestedAt?: Date | null;
-  errorCode?: string | null; createdByUserId?: string | null; approvedAt?: Date | null;
-  createdAt: Date; updatedAt: Date;
-};
+import { ACTIVE_REGISTRATION_REQUEST_STATUSES, CACHE_TAGS, ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_PAYMENT_PROBE_LIMIT, ORGANIZER_READER_ROW_LIMIT, PAYMENT_REQUEST_TTL_MS, PAYMENT_SETTINGS_ID, PUBLIC_EVENT_STATUSES, RESERVED_REGISTRATION_REQUEST_STATUSES, ROSTER_LOCKED_MESSAGE } from "./shared/constants";
+import { eventPublicInclude, mapEvent, mapEventVisualAsset, mapMatch, mapPaymentSettings, mapPlayer, mapTeam, mapTeamRegistrationRequest, mapUser, registrationRequestInclude } from "./shared/mappers";
+import { assertUserCanManageEvent, assertUserCanManageTeam } from "./shared/authz";
+import { assertEventExists, assertEventRosterMutable, assertNewRegistrationWindowOpen, expireStaleRegistrationRequests, isNewRegistrationWindowOpen, readEventRosterLocked, runSerializableRegistrationTransaction } from "./shared/tx";
+import type { RosterLockReader } from "./shared/tx";
+export { runSerializableRegistrationTransaction } from "./shared/tx";
+export { assertUserCanManageEvent, assertUserCanManageTeam, assertUserCanReviewStatSubmission } from "./shared/authz";
+export { eventPublicInclude, mapEvent } from "./shared/mappers";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function mapEventVisualAsset(row: EventVisualAssetRow): EventVisualAsset {
-  const asset: EventVisualAsset = {
-    id: row.id,
-    eventId: row.eventId,
-    source: row.source as VisualAssetSource,
-    status: row.status as VisualAssetStatus,
-    focalX: row.focalX,
-    focalY: row.focalY,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-  if (row.url) asset.url = row.url;
-  if (row.mimeType) asset.mimeType = row.mimeType;
-  if (row.width != null) asset.width = row.width;
-  if (row.height != null) asset.height = row.height;
-  if (row.byteSize != null) asset.byteSize = row.byteSize;
-  if (row.storageProvider === "vercel_blob" || row.storageProvider === "local") asset.storageProvider = row.storageProvider;
-  if (row.storageKey) asset.storageKey = row.storageKey;
-  if (row.contentSha256) asset.contentSha256 = row.contentSha256;
-  if (row.purpose === "certificate_team_logo" || row.purpose === "certificate_character_art") asset.purpose = row.purpose;
-  if (row.provider) asset.provider = row.provider;
-  if (row.model) asset.model = row.model;
-  if (row.promptVersion) asset.promptVersion = row.promptVersion;
-  if (row.workflowRunId) asset.workflowRunId = row.workflowRunId;
-  if (row.sourceUrl) asset.sourceUrl = row.sourceUrl;
-  if (row.rightsAttestedAt) asset.rightsAttestedAt = row.rightsAttestedAt;
-  if (row.errorCode) asset.errorCode = row.errorCode;
-  if (row.createdByUserId) asset.createdByUserId = row.createdByUserId;
-  if (row.approvedAt) asset.approvedAt = row.approvedAt;
-  return asset;
-}
-
-export function mapEvent(row: {
-  id: string; slug: string; name: string; description: string;
-  logoUrl: string | null; gameImageUrl: string | null;
-  gameId: string; gameModeId: string; format: string; status: string;
-  formatConfig?: Prisma.JsonValue | null;
-  participantCap: number; registrationWindow: string; startsAt: string;
-  venue: string; characterArtUrl?: string | null; accentColor?: string | null;
-  organizerUserId?: string | null; organizerName?: string | null; organizerVerified?: boolean | null;
-  prizePoolLabel?: string | null; registrationFeeRequired?: boolean | null; registrationFeeAmount?: number | null; registrationFeeLabel?: string | null; registrationUrl?: string | null;
-  stream?: { platform: string; url: string; label: string; enabled: boolean; isLive: boolean; } | null;
-  activeVisualAssetId?: string | null;
-  activeVisualAsset?: EventVisualAssetRow | null;
-}): Event {
-  const event: Event = {
-    id: row.id, slug: row.slug, name: row.name, description: row.description,
-    gameId: row.gameId, gameModeId: row.gameModeId,
-    format: row.format as TournamentFormat,
-    status: row.status as EventStatus,
-    participantCap: row.participantCap as Event["participantCap"],
-    registrationWindow: row.registrationWindow, startsAt: row.startsAt, venue: row.venue,
-    registrationFeeRequired: row.registrationFeeRequired ?? false,
-  };
-  const logoUrl = row.logoUrl ?? getFallbackLogoUrl(row.gameId);
-  if (logoUrl) event.logoUrl = logoUrl;
-  if (row.gameImageUrl) event.gameImageUrl = row.gameImageUrl;
-  if (row.characterArtUrl) event.characterArtUrl = row.characterArtUrl;
-  if (row.accentColor) event.accentColor = row.accentColor;
-  if (row.organizerUserId) event.organizerUserId = row.organizerUserId;
-  if (row.organizerName) event.organizerName = row.organizerName;
-  if (row.organizerVerified != null) event.organizerVerified = row.organizerVerified;
-  if (row.prizePoolLabel) event.prizePoolLabel = row.prizePoolLabel;
-  if (row.registrationFeeAmount != null) event.registrationFeeAmount = row.registrationFeeAmount;
-  if (row.registrationFeeLabel) event.registrationFeeLabel = row.registrationFeeLabel;
-  if (row.registrationUrl) event.registrationUrl = row.registrationUrl;
-  const formatConfig = tournamentFormatConfigSchema.safeParse(row.formatConfig);
-  if (formatConfig.success) event.formatConfig = formatConfig.data;
-  if (row.activeVisualAssetId) event.activeVisualAssetId = row.activeVisualAssetId;
-  if (row.activeVisualAsset) event.activeVisualAsset = mapEventVisualAsset(row.activeVisualAsset);
-  if (row.stream) {
-    event.stream = {
-      platform: row.stream.platform as EventStream["platform"],
-      url: row.stream.url, label: row.stream.label,
-      enabled: row.stream.enabled, isLive: row.stream.isLive,
-    };
-  }
-  return event;
-}
-
-function mapTeam(row: {
-  id: string; eventId: string | null; captainId: string | null;
-  name: string; logoText: string; logoUrl?: string | null; tag: string;
-  captainName: string | null; captainContact: string | null; captainIgn: string | null;
-  captainUid: string | null; captainIsPlayer: boolean; source: string;
-  captain?: { id: string; name: string } | null;
-}): Team {
-  return {
-    id: row.id, captainId: row.captainId ?? "",
-    ...(row.eventId ? { eventId: row.eventId } : {}),
-    name: row.name, logoText: row.logoText, tag: row.tag,
-    ...(row.logoUrl ? { logoUrl: row.logoUrl } : {}),
-    ...(row.captainName ? { captainName: row.captainName } : {}),
-    ...(row.captainContact ? { captainContact: row.captainContact } : {}),
-    ...(row.captainIgn ? { captainIgn: row.captainIgn } : {}),
-    ...(row.captainUid ? { captainUid: row.captainUid } : {}),
-    captainIsPlayer: row.captainIsPlayer,
-    ...(row.captain != null ? { captain: row.captain } : {}),
-    source: row.source as Team["source"],
-  };
-}
-
-
-const PAYMENT_SETTINGS_ID = "global";
-const ACTIVE_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "pending_review", "approved"];
-const RESERVED_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "pending_review"];
-const PAYMENT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
-// pending_review is deliberately excluded: once a captain has uploaded proof, the
-// deadline no longer applies - only an admin approve/reject should resolve the request.
-const EXPIRABLE_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "rejected"];
-
-async function expireStaleRegistrationRequests() {
-  await prisma.teamRegistrationRequest.updateMany({
-    where: {
-      status: { in: EXPIRABLE_REGISTRATION_REQUEST_STATUSES },
-      expiresAt: { lte: new Date() },
-    },
-    data: { status: "expired" },
-  });
-  await deleteExpiredRequestTeamCopies();
-}
-
-/**
- * Each payment request keeps a "registration-intake" copy of the captain's draft (no event yet) so an approval can
- * promote it. Once the request has expired it can no longer be approved or resubmitted, so the copy is dead weight.
- * Scoped to copies still tied to an expired request: imported and approved teams have an eventId and are never touched,
- * and the captain's own draft has a different source. Its players go with it (cascade); the request keeps its history.
- */
-async function deleteExpiredRequestTeamCopies() {
-  // Housekeeping only: it runs inside page loads and registrations, so a failure must never break them.
-  try {
-    await prisma.team.deleteMany({
-      where: { eventId: null, source: "registration-intake", registrationRequest: { is: { status: "expired" } } },
-    });
-  } catch (error) {
-    const { name, code } = describeActionError(error);
-    writeServerLog({
-      phase: "failed",
-      operation: "expired_request_cleanup",
-      route: "/captain",
-      requestId: randomUUID(),
-      durationMs: 0,
-      status: 500,
-      errorCode: code ?? name,
-    });
-  }
-}
-
-function mapPaymentSettings(row: { id: string; qrisImageUrl: string | null; instructions: string | null; updatedAt?: Date } | null): PaymentSettings {
-  if (!row) return { id: PAYMENT_SETTINGS_ID };
-  return {
-    id: row.id,
-    ...(row.qrisImageUrl ? { qrisImageUrl: row.qrisImageUrl } : {}),
-    ...(row.instructions ? { instructions: row.instructions } : {}),
-    ...(row.updatedAt ? { updatedAt: row.updatedAt } : {}),
-  };
-}
-
-const registrationRequestInclude = {
-  event: { include: { stream: true } },
-  captain: { select: { id: true, name: true, email: true } },
-} as const;
-
-function mapTeamRegistrationRequest(row: {
-  id: string;
-  eventId: string;
-  captainId: string;
-  teamId: string | null;
-  teamName: string;
-  teamTag: string;
-  status: string;
-  proofImageUrl: string | null;
-  rejectReason: string | null;
-  expiresAt: Date;
-  approvedAt: Date | null;
-  approvedById: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  event?: Parameters<typeof mapEvent>[0] | null;
-  captain?: { id: string; name: string; email?: string } | null;
-}): TeamRegistrationRequest {
-  return {
-    id: row.id,
-    eventId: row.eventId,
-    captainId: row.captainId,
-    ...(row.teamId ? { teamId: row.teamId } : {}),
-    teamName: row.teamName,
-    teamTag: row.teamTag,
-    status: row.status as TeamRegistrationRequestStatus,
-    ...(row.proofImageUrl ? { proofImageUrl: row.proofImageUrl } : {}),
-    ...(row.rejectReason ? { rejectReason: row.rejectReason } : {}),
-    expiresAt: row.expiresAt,
-    ...(row.approvedAt ? { approvedAt: row.approvedAt } : {}),
-    ...(row.approvedById ? { approvedById: row.approvedById } : {}),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    ...(row.event ? { event: mapEvent(row.event) } : {}),
-    ...(row.captain !== undefined ? { captain: row.captain } : {}),
-  };
-}
 
 export class RegistrationMutationConflictError extends Error {
   readonly code = "stale_mutation" as const;
@@ -333,61 +65,6 @@ export type RegistrationReviewPrecondition = {
   expectedStatus?: TeamRegistrationRequestStatus;
   expectedUpdatedAt?: Date;
 };
-
-async function assertEventExists(eventId: string) {
-  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true } });
-  if (!event) throw new Error("Event tidak ditemukan.");
-}
-
-function mapPlayer(row: {
-  id: string; teamId: string; eventId: string | null;
-  displayName: string; nickname: string; position: string; jerseyNumber: number | null;
-}): Player {
-  return {
-    id: row.id, teamId: row.teamId,
-    ...(row.eventId ? { eventId: row.eventId } : {}),
-    displayName: row.displayName, nickname: row.nickname, position: row.position,
-    ...(row.jerseyNumber != null ? { jerseyNumber: row.jerseyNumber } : {}),
-  };
-}
-
-function mapUser(row: {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-  sessionVersion?: number;
-  deactivatedAt?: Date | null;
-  mustChangePassword?: boolean;
-}): AppUser {
-  return {
-    id: row.id,
-    email: row.email,
-    name: row.name,
-    role: row.role as AppUser["role"],
-    ...(row.sessionVersion !== undefined ? { sessionVersion: row.sessionVersion } : {}),
-    ...(row.deactivatedAt ? { deactivatedAt: row.deactivatedAt } : {}),
-    ...(row.mustChangePassword ? { mustChangePassword: true } : {}),
-  };
-}
-
-function mapMatch(row: {
-  id: string; eventId: string; roundLabel: string;
-  homeTeamId: string; awayTeamId: string;
-  homeScore: number; awayScore: number; status: string;
-  slot: number | null; round: number | null; winnerTeamId: string | null; scheduledLabel: string | null;
-}): Match {
-  return {
-    id: row.id, eventId: row.eventId, roundLabel: row.roundLabel,
-    homeTeamId: row.homeTeamId, awayTeamId: row.awayTeamId,
-    homeScore: row.homeScore, awayScore: row.awayScore,
-    status: row.status as Match["status"],
-    ...(row.slot != null ? { slot: row.slot } : {}),
-    ...(row.round != null ? { round: row.round } : {}),
-    ...(row.winnerTeamId ? { winnerTeamId: row.winnerTeamId } : {}),
-    ...(row.scheduledLabel ? { scheduledLabel: row.scheduledLabel } : {}),
-  };
-}
 
 // ── Bracket sizing ─────────────────────────────────────────────────────────────
 // `event.participantCap` is only the *maximum* registration allowed. The actual
@@ -551,17 +228,6 @@ export async function updateOrganizerProfileForUser(
     });
   });
 }
-export async function assertUserCanManageEvent(user: AppUser, eventId: string): Promise<void> {
-  if (user.role === "platform_admin" || user.role === "admin") return;
-  if (user.role !== "organizer") throw new Error("Not authorized");
-
-  const row = await prisma.event.findFirst({
-    where: { id: eventId, organizerUserId: user.id },
-    select: { id: true },
-  });
-  if (!row) throw new Error("Not authorized");
-}
-
 export async function getManageableEventDraft(user: AppUser, eventId: string) {
   if (user.role !== "organizer" && user.role !== "platform_admin" && user.role !== "admin") return null;
   const row = await prisma.event.findFirst({
@@ -611,28 +277,6 @@ export async function updateEventOrganizerContact(
       },
     });
   });
-}
-
-export async function assertUserCanReviewStatSubmission(user: AppUser, submissionId: string): Promise<void> {
-  if (user.role === "platform_admin" || user.role === "admin") return;
-  if (user.role !== "organizer") throw new Error("Not authorized");
-
-  const row = await prisma.statSubmission.findFirst({
-    where: { id: submissionId, status: "pending", event: { organizerUserId: user.id } },
-    select: { id: true },
-  });
-  if (!row) throw new Error("Not authorized");
-}
-
-export async function assertUserCanManageTeam(user: AppUser, teamId: string): Promise<{ eventId: string }> {
-  const team = await prisma.team.findFirst({
-    where: { id: teamId },
-    select: { id: true, eventId: true },
-  });
-
-  if (!team?.eventId) throw new Error("Not authorized");
-  await assertUserCanManageEvent(user, team.eventId);
-  return { eventId: team.eventId };
 }
 
 export type EventPublicInfoUpdates = {
@@ -767,7 +411,7 @@ export const getPublicEventBySlug = cache(
       return row ? mapEvent(row) : null;
     },
     ["public-event-by-slug"],
-    { revalidate: 60, tags: ["events"] },
+    { revalidate: 60, tags: [CACHE_TAGS.events] },
   ),
 );
 
@@ -956,7 +600,7 @@ export const getTeamsForEvent = cache(
       return rows.map(mapTeam);
     },
     ["teams-for-event"],
-    { revalidate: 30, tags: ["teams"] },
+    { revalidate: 30, tags: [CACHE_TAGS.teams] },
   ),
 );
 
@@ -1066,37 +710,9 @@ export const getMatchesForEvent = cache(
       return rows.map(mapMatch);
     },
     ["matches-for-event"],
-    { revalidate: 30, tags: ["teams"] },
+    { revalidate: 30, tags: [CACHE_TAGS.teams] },
   ),
 );
-
-const ROSTER_LOCKED_MESSAGE = "Roster tim sudah terkunci setelah drawing dipublikasikan atau turnamen berjalan.";
-type RosterLockReader = Pick<Prisma.TransactionClient, "event" | "competitionPhase" | "match">;
-
-async function readEventRosterLocked(db: RosterLockReader, eventId: string): Promise<boolean> {
-  const [event, publishedPhases, startedMatches] = await Promise.all([
-    db.event.findUnique({ where: { id: eventId }, select: { status: true } }),
-    db.competitionPhase.count({ where: { eventId, status: { in: ["active", "completed"] } } }),
-    db.match.count({ where: { eventId, status: { in: ["Live", "Completed"] } } }),
-  ]);
-  if (!event) return false;
-  return event.status === "Ongoing" || event.status === "Finished" || publishedPhases > 0 || startedMatches > 0;
-}
-
-/**
- * Serializes every event-roster mutation against competition operations through
- * Event.competitionVersion. If a drawing is published first this transaction
- * rolls back; if the roster wins the race, a stale drawing publish fails CAS and
- * must be rebuilt from the new authoritative roster.
- */
-async function assertEventRosterMutable(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
-  const claimed = await tx.event.updateMany({
-    where: { id: eventId },
-    data: { competitionVersion: { increment: 1 } },
-  });
-  if (claimed.count !== 1) throw new UserFacingError("Event tidak ditemukan.");
-  if (await readEventRosterLocked(tx, eventId)) throw new UserFacingError(ROSTER_LOCKED_MESSAGE);
-}
 
 /** Returns true for every format once the public drawing or tournament is authoritative. */
 export async function isEventBracketLocked(eventId: string): Promise<boolean> {
@@ -1344,7 +960,7 @@ const _getLeaderboardForEvent = unstable_cache(
     return aggregatePlayerLeaderboard(statInputs, metric);
   },
   ["leaderboard-for-event"],
-  { revalidate: 60, tags: ["stats"] },
+  { revalidate: 60, tags: [CACHE_TAGS.stats] },
 );
 
 /**
@@ -3917,7 +3533,7 @@ export const getEventRoundConfigs = cache(
       }
     },
     ["event-round-configs"],
-    { revalidate: 30, tags: ["teams"] },
+    { revalidate: 30, tags: [CACHE_TAGS.teams] },
   ),
 );
 
@@ -3958,7 +3574,7 @@ const _getMatchGamesForEventCached = cache(
       return Object.entries(acc).map(([matchId, games]) => ({ matchId, games }));
     },
     ["match-games-for-event"],
-    { revalidate: 30, tags: ["teams"] },
+    { revalidate: 30, tags: [CACHE_TAGS.teams] },
   ),
 );
 
