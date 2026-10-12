@@ -15,7 +15,7 @@ import {
   type FlashpeakLeaderboardEntry,
   type FlashpeakLeaderboardSource,
 } from "@/lib/player-stats/flashpeak";
-import type { AppUser, Certificate, Event, EventRoundConfig, EventVisualAsset, Match, MatchGame, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus, VisualAssetSource, VisualAssetStatus } from "@/lib/platform/types";
+import type { AppUser, Certificate, Event, EventRoundConfig, Match, MatchGame, Player, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus } from "@/lib/platform/types";
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
 import { mapRequestStatus, normalizeRegistrationSource, type RegistrationRecord } from "@/lib/registration/records";
 import type { ResolvedEventPaymentSettings } from "@/lib/registration/event-payment-settings";
@@ -29,7 +29,7 @@ import { graphFromPhaseConfiguration, resolveRosterChangeWindow, type RosterChan
 import { matchRosterReferenceTime, rosterForMatch } from "./roster-membership";
 import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLimit } from "@/lib/platform/reader-bounds";
 import { ACTIVE_REGISTRATION_REQUEST_STATUSES, CACHE_TAGS, ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_PAYMENT_PROBE_LIMIT, ORGANIZER_READER_ROW_LIMIT, PAYMENT_REQUEST_TTL_MS, RESERVED_REGISTRATION_REQUEST_STATUSES, ROSTER_LOCKED_MESSAGE } from "./shared/constants";
-import { mapEvent, mapEventVisualAsset, mapMatch, mapPlayer, mapTeam, mapTeamRegistrationRequest, mapUser, registrationRequestInclude } from "./shared/mappers";
+import { mapEvent, mapMatch, mapPlayer, mapTeam, mapTeamRegistrationRequest, mapUser, registrationRequestInclude } from "./shared/mappers";
 import { assertUserCanManageEvent, assertUserCanManageTeam } from "./shared/authz";
 import { assertEventExists, assertEventRosterMutable, assertNewRegistrationWindowOpen, expireStaleRegistrationRequests, readEventRosterLocked, runSerializableRegistrationTransaction } from "./shared/tx";
 import type { RosterLockReader } from "./shared/tx";
@@ -41,6 +41,8 @@ export type { OrganizerProfileSummary, PlatformProfileSummary } from "@/lib/plat
 import { getBracketSlotCount } from "@/lib/events/repository";
 export { autoTransitionEventToOngoing, createEvent, createOrganizerAndEventDraft, getAllPublicEvents, getEventBySlug, getEvents, getEventsByIds, getManageableEventDraft, getManageableEventsForUser, getOpenRegistrationEventsForCaptain, getPublicDiscoveryEvents, getPublicEventBySlug, getPublicEventSlugRedirect, getPublicEvents, getPublishedEvents, setEventStatus, updateEventOrganizerContact, updateEventPublicInfo, updateEventStream, updatePublishedEventSlugAsAdmin } from "@/lib/events/repository";
 export type { CreateOrganizerAndEventDraftInput, EventPublicInfoUpdates } from "@/lib/events/repository";
+export { approveEventVisualAsset, countAiVisualAttempts, createEventVisualAsset, listEventVisualAssets, rejectEventVisualAsset, setEventVisualFocalPoint, updateEventBrandAssets, updateEventCertificateAssets } from "@/lib/events/visual-repository";
+export type { CreateEventVisualAssetInput } from "@/lib/events/visual-repository";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -99,137 +101,6 @@ function generateSyntheticRegistrationEmail(eventSlug: string, tag: string, used
 
 // ── Event visual assets ───────────────────────────────────────────────────────
 
-
-export type CreateEventVisualAssetInput = {
-  eventId: string;
-  source: VisualAssetSource;
-  status: VisualAssetStatus;
-  url?: string | null;
-  mimeType?: string | null;
-  width?: number | null;
-  height?: number | null;
-  byteSize?: number | null;
-  storageProvider?: "vercel_blob" | "local" | null;
-  storageKey?: string | null;
-  contentSha256?: string | null;
-  purpose?: "certificate_team_logo" | "certificate_character_art" | null;
-  provider?: string | null;
-  model?: string | null;
-  promptVersion?: string | null;
-  workflowRunId?: string | null;
-  sourceUrl?: string | null;
-  rightsAttestedAt?: Date | null;
-  errorCode?: string | null;
-};
-
-function clampFocalCoordinate(value: number): number {
-  if (!Number.isFinite(value)) return 0.5;
-  return Math.min(1, Math.max(0, value));
-}
-
-/** Lists every revision for an event, newest first. Organizer-scoped. */
-export async function listEventVisualAssets(user: AppUser, eventId: string): Promise<EventVisualAsset[]> {
-  await assertUserCanManageEvent(user, eventId);
-  const rows = await prisma.eventVisualAsset.findMany({
-    where: { eventId },
-    orderBy: { createdAt: "desc" },
-  });
-  return rows.map(mapEventVisualAsset);
-}
-
-export async function createEventVisualAsset(
-  user: AppUser,
-  input: CreateEventVisualAssetInput,
-): Promise<EventVisualAsset> {
-  await assertUserCanManageEvent(user, input.eventId);
-  const row = await prisma.eventVisualAsset.create({
-    data: { ...input, createdByUserId: user.id },
-  });
-  return mapEventVisualAsset(row);
-}
-
-/**
- * Approves a revision and points the event at it inside one transaction so the
- * revision status and `Event.activeVisualAssetId` can never diverge. Already
- * approved revisions stay approvable, which is how rollback works.
- *
- * `dualWriteLegacyImage` mirrors the approved url into the legacy
- * `Event.gameImageUrl` column. It is only meant for the migration window while
- * surfaces that still read the single legacy url are being retired.
- */
-export async function approveEventVisualAsset(
-  user: AppUser,
-  eventId: string,
-  assetId: string,
-  options: { dualWriteLegacyImage?: boolean } = {},
-): Promise<EventVisualAsset> {
-  await assertUserCanManageEvent(user, eventId);
-  return prisma.$transaction(async (tx) => {
-    const existing = await tx.eventVisualAsset.findFirst({
-      where: { id: assetId, eventId, status: { in: ["ready_for_review", "approved"] } },
-      select: { id: true },
-    });
-    if (!existing) throw new Error("Visual revision is not available for approval");
-
-    const approved = await tx.eventVisualAsset.update({
-      where: { id: assetId },
-      data: { status: "approved", approvedAt: new Date() },
-    });
-    await tx.event.update({
-      where: { id: eventId },
-      data: {
-        activeVisualAssetId: assetId,
-        ...(options.dualWriteLegacyImage && approved.url ? { gameImageUrl: approved.url } : {}),
-      },
-    });
-    return mapEventVisualAsset(approved);
-  });
-}
-
-export async function rejectEventVisualAsset(
-  user: AppUser,
-  eventId: string,
-  assetId: string,
-): Promise<EventVisualAsset> {
-  await assertUserCanManageEvent(user, eventId);
-  return prisma.$transaction(async (tx) => {
-    const event = await tx.event.findFirst({ where: { id: eventId }, select: { activeVisualAssetId: true } });
-    if (event?.activeVisualAssetId === assetId) throw new Error("Cannot reject the active visual revision");
-
-    const existing = await tx.eventVisualAsset.findFirst({ where: { id: assetId, eventId }, select: { id: true } });
-    if (!existing) throw new Error("Visual revision not found");
-
-    const rejected = await tx.eventVisualAsset.update({
-      where: { id: assetId },
-      data: { status: "rejected" },
-    });
-    return mapEventVisualAsset(rejected);
-  });
-}
-
-export async function setEventVisualFocalPoint(
-  user: AppUser,
-  eventId: string,
-  assetId: string,
-  focalPoint: { x: number; y: number },
-): Promise<EventVisualAsset> {
-  await assertUserCanManageEvent(user, eventId);
-  const existing = await prisma.eventVisualAsset.findFirst({ where: { id: assetId, eventId }, select: { id: true } });
-  if (!existing) throw new Error("Visual revision not found");
-
-  const row = await prisma.eventVisualAsset.update({
-    where: { id: assetId },
-    data: { focalX: clampFocalCoordinate(focalPoint.x), focalY: clampFocalCoordinate(focalPoint.y) },
-  });
-  return mapEventVisualAsset(row);
-}
-
-/** Counts AI generation attempts for an event since `since`, for rate limiting. */
-export async function countAiVisualAttempts(eventId: string, since: Date): Promise<number> {
-  return prisma.eventVisualAsset.count({
-    where: { eventId, source: "ai_generated", createdAt: { gte: since } },
-  });
-}
 
 // ── Teams ─────────────────────────────────────────────────────────────────────
 
@@ -3097,21 +2968,6 @@ async function setLegacyMatchGames(
 }
 
 // ── Certificates ──────────────────────────────────────────────────────────────
-
-/** Updates the character art URL and accent color for an event's certificate assets. */
-export async function updateEventCertificateAssets(
-  eventId: string,
-  updates: { characterArtUrl?: string; accentColor?: string },
-): Promise<void> {
-  await prisma.event.update({ where: { id: eventId }, data: updates });
-}
-
-export async function updateEventBrandAssets(
-  eventId: string,
-  updates: { logoUrl?: string; gameImageUrl?: string },
-): Promise<void> {
-  await prisma.event.update({ where: { id: eventId }, data: updates });
-}
 
 /** Longest error message we persist on a failed certificate row. */
 const MAX_CERTIFICATE_ERROR_LENGTH = 500;
