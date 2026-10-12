@@ -264,7 +264,15 @@ Dua file ini dibuat terpisah supaya `repository.test.ts` (3.037 baris) tidak mak
 2. `createTeamRegistrationRequest` sekarang menjalankan semua pengecekan dan penyimpanan dalam satu transaksi Serializable, dengan ulang otomatis saat bentrok (P2034). Penilaian awal terlalu keras: database sudah menahan duplikat lewat indeks unik parsial (lihat PR 0.4), jadi bahayanya lebih kecil dari yang ditulis.
 3. `setMatchResult` tidak lagi mencatat pemenang untuk skor seri (`winnerTeamId` kosong). Klasemen dihitung dari skor, jadi tidak terpengaruh.
 4. `createCaptainWithTeam` memakai 2 huruf pertama tag untuk `logoText`, sama seperti jalur lain. Fungsi ini lalu dihapus (lihat bawah).
-5. Email kembar saat daftar memberi pesan "Email ini sudah terdaftar. Coba login." Pesan itu dan pesan roster terkunci masuk daftar pesan aman (`SAFE_ACTION_MESSAGES`), supaya sampai ke pengguna.
+5. Email kembar saat daftar memberi pesan "Email ini sudah terdaftar. Coba login." Pesan itu dilempar sebagai `UserFacingError` (kebiasaan baru dari `main`, lihat `src/lib/security/public-error.ts`), jadi sampai ke pengguna tanpa masuk daftar pesan aman.
+
+**Fase 0 diperiksa ulang di atas `main` (2026-10-12).** Sejak rehearsal dibuat, `main` menambah 12 commit (fitur ganti roster, pin event unggulan di beranda, `UserFacingError`, job CI `New migrations`, dan lainnya). Penggabungan percobaan menghasilkan 5 konflik, semuanya sudah dibereskan:
+- `repository.ts` (4 tempat): `main` menambah filter `removedAt: null` di tiga pembaca pemain yang masih punya cadangan data demo. Hasilnya menggabungkan keduanya: tanpa cadangan, dengan filter. Fungsi `createTeamRegistrationRequest` versi transaksi kita memakai `UserFacingError` seperti konvensi `main`.
+- `ci.yml` dan `e2e-ci.test.ts`: job `build` dan `database-tests` kita hidup berdampingan dengan job `new-migrations` dari `main`.
+- `public-error.test.ts`: kedua pihak membuat file dengan nama yang sama. Dipakai versi `main`; dua tambahan kita di daftar pesan aman tidak diperlukan lagi.
+- `repository.test.ts`: blok test baru `main` dipertahankan.
+
+Hasil setelah digabung: `tsc`, eslint (kode baru dari `main` tidak melanggar aturan impor), 3.348 test unit, `pnpm build` tanpa database, 24 test smoke, dan 4 test database (5 kali berturut-turut, dengan 40 migrasi termasuk milik `main`) semuanya lolos. Satu test gagal dan memang dirancang untuk itu: tabel revalidasi kini mencatat 3 fungsi baru dari fitur ganti roster (`captainRequestRosterChangeAction`, `captainCancelRosterChangeAction`, `refreshRosters`). Ukuran setelah Fase 0 ada di `baseline.md`.
 
 **PR 0.8 selesai. Fase 0 selesai.** Dua hal:
 - `docs/architecture.md`: lapisan dan arah panggilan, susunan folder sekarang dan tujuan, aturan impor, aturan server action, penanganan error, pengaman otomatis, dan cara menambah fitur selama refactor.
@@ -292,8 +300,6 @@ Temuan dari PR 0.4:
 - **Belum tertangkap oleh test database:** pemetaan error P2002 ke pesan yang jelas. Postgres melaporkan bentrok insert di Serializable sebagai kegagalan serialisasi, jadi jalur itu jarang terpicu. Pemetaannya dijaga test dengan mock.
 
 **Dua fungsi dihapus:** `createCaptainWithTeam` dan `createCaptainWithPendingPayment` tidak dipanggil dari kode produksi sejak commit `37626cd` (30 Agustus), saat form daftar berubah jadi hanya membuat akun. Alurnya sekarang dua langkah: buat akun, lalu isi form tim di halaman daftar event. Kedua fungsi bisa dipulihkan dari git (commit `37626cd^`). Perbaikan nomor 1, 4, dan 5 di atas hanya berefek di `createTeamRegistrationRequest` dan `createCaptainAccount`.
-
-**Belum diperbaiki, hanya dicatat:** pesan "Tag atau nama tim sudah digunakan di event ini." tidak ada di daftar pesan aman. Pengguna yang kena duplikat nama tim di `captainRegisterTeamAction` melihat pesan umum "Gagal mendaftarkan tim."
 
 **Belum dites di `setMatchResult`:** jalur sukses Single Elimination yang membuat baris pertandingan dari bracket proyeksi. Tutup di PR 2.5 sebelum dipindah.
 
