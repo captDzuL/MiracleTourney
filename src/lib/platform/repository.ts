@@ -53,86 +53,13 @@ import { assertReaderResultWithinLimit, ReaderResultOverflowError, readerProbeLi
 import { ACTIVE_REGISTRATION_REQUEST_STATUSES, CACHE_TAGS, EXPIRABLE_REGISTRATION_REQUEST_STATUSES, ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_PAYMENT_PROBE_LIMIT, ORGANIZER_READER_ROW_LIMIT, PAYMENT_REQUEST_TTL_MS, PAYMENT_SETTINGS_ID, PUBLIC_EVENT_STATUSES, RESERVED_REGISTRATION_REQUEST_STATUSES, ROSTER_LOCKED_MESSAGE } from "./shared/constants";
 import { eventPublicInclude, mapEvent, mapEventVisualAsset, mapMatch, mapPaymentSettings, mapPlayer, mapTeam, mapTeamRegistrationRequest, mapUser, registrationRequestInclude } from "./shared/mappers";
 import { assertUserCanManageEvent, assertUserCanManageTeam } from "./shared/authz";
+import { assertEventExists, assertEventRosterMutable, assertNewRegistrationWindowOpen, expireStaleRegistrationRequests, isNewRegistrationWindowOpen, readEventRosterLocked, runSerializableRegistrationTransaction } from "./shared/tx";
+import type { RosterLockReader } from "./shared/tx";
+export { runSerializableRegistrationTransaction } from "./shared/tx";
 export { assertUserCanManageEvent, assertUserCanManageTeam, assertUserCanReviewStatSubmission } from "./shared/authz";
 export { eventPublicInclude, mapEvent } from "./shared/mappers";
 
-type RegistrationWindowEvent = {
-  status: string;
-  registrationOpensAt: Date | null;
-  registrationClosesAt: Date | null;
-};
-
-function isNewRegistrationWindowOpen(event: RegistrationWindowEvent, now = new Date()): boolean {
-  if (event.status !== "Published") return false;
-  if (event.registrationOpensAt && now < event.registrationOpensAt) return false;
-  if (event.registrationClosesAt && now >= event.registrationClosesAt) return false;
-  return true;
-}
-
-function assertNewRegistrationWindowOpen(event: RegistrationWindowEvent, now = new Date()): void {
-  if (!isNewRegistrationWindowOpen(event, now)) {
-    throw new UserFacingError("Event tidak valid atau sudah tidak membuka pendaftaran.");
-  }
-}
-
-export async function runSerializableRegistrationTransaction<T>(
-  operation: (tx: Prisma.TransactionClient) => Promise<T>,
-): Promise<T> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      return await prisma.$transaction(operation, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        maxWait: 10_000,
-        timeout: 60_000,
-      });
-    } catch (error) {
-      const code = typeof error === "object" && error !== null && "code" in error
-        ? (error as { code?: string }).code
-        : undefined;
-      if (code !== "P2034" || attempt === 2) throw error;
-    }
-  }
-  throw new Error("Pendaftaran berubah bersamaan. Silakan coba lagi.");
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-async function expireStaleRegistrationRequests() {
-  await prisma.teamRegistrationRequest.updateMany({
-    where: {
-      status: { in: EXPIRABLE_REGISTRATION_REQUEST_STATUSES },
-      expiresAt: { lte: new Date() },
-    },
-    data: { status: "expired" },
-  });
-  await deleteExpiredRequestTeamCopies();
-}
-
-/**
- * Each payment request keeps a "registration-intake" copy of the captain's draft (no event yet) so an approval can
- * promote it. Once the request has expired it can no longer be approved or resubmitted, so the copy is dead weight.
- * Scoped to copies still tied to an expired request: imported and approved teams have an eventId and are never touched,
- * and the captain's own draft has a different source. Its players go with it (cascade); the request keeps its history.
- */
-async function deleteExpiredRequestTeamCopies() {
-  // Housekeeping only: it runs inside page loads and registrations, so a failure must never break them.
-  try {
-    await prisma.team.deleteMany({
-      where: { eventId: null, source: "registration-intake", registrationRequest: { is: { status: "expired" } } },
-    });
-  } catch (error) {
-    const { name, code } = describeActionError(error);
-    writeServerLog({
-      phase: "failed",
-      operation: "expired_request_cleanup",
-      route: "/captain",
-      requestId: randomUUID(),
-      durationMs: 0,
-      status: 500,
-      errorCode: code ?? name,
-    });
-  }
-}
 
 export class RegistrationMutationConflictError extends Error {
   readonly code = "stale_mutation" as const;
@@ -149,11 +76,6 @@ export type RegistrationReviewPrecondition = {
   expectedStatus?: TeamRegistrationRequestStatus;
   expectedUpdatedAt?: Date;
 };
-
-async function assertEventExists(eventId: string) {
-  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true } });
-  if (!event) throw new Error("Event tidak ditemukan.");
-}
 
 // ── Bracket sizing ─────────────────────────────────────────────────────────────
 // `event.participantCap` is only the *maximum* registration allowed. The actual
@@ -802,33 +724,6 @@ export const getMatchesForEvent = cache(
     { revalidate: 30, tags: [CACHE_TAGS.teams] },
   ),
 );
-
-type RosterLockReader = Pick<Prisma.TransactionClient, "event" | "competitionPhase" | "match">;
-
-async function readEventRosterLocked(db: RosterLockReader, eventId: string): Promise<boolean> {
-  const [event, publishedPhases, startedMatches] = await Promise.all([
-    db.event.findUnique({ where: { id: eventId }, select: { status: true } }),
-    db.competitionPhase.count({ where: { eventId, status: { in: ["active", "completed"] } } }),
-    db.match.count({ where: { eventId, status: { in: ["Live", "Completed"] } } }),
-  ]);
-  if (!event) return false;
-  return event.status === "Ongoing" || event.status === "Finished" || publishedPhases > 0 || startedMatches > 0;
-}
-
-/**
- * Serializes every event-roster mutation against competition operations through
- * Event.competitionVersion. If a drawing is published first this transaction
- * rolls back; if the roster wins the race, a stale drawing publish fails CAS and
- * must be rebuilt from the new authoritative roster.
- */
-async function assertEventRosterMutable(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
-  const claimed = await tx.event.updateMany({
-    where: { id: eventId },
-    data: { competitionVersion: { increment: 1 } },
-  });
-  if (claimed.count !== 1) throw new UserFacingError("Event tidak ditemukan.");
-  if (await readEventRosterLocked(tx, eventId)) throw new UserFacingError(ROSTER_LOCKED_MESSAGE);
-}
 
 /** Returns true for every format once the public drawing or tournament is authoritative. */
 export async function isEventBracketLocked(eventId: string): Promise<boolean> {

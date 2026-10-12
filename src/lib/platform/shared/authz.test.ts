@@ -15,6 +15,7 @@ vi.mock("../db", () => ({ prisma }));
 vi.mock("next/cache", () => ({ revalidateTag: vi.fn(), unstable_cache: (fn: unknown) => fn }));
 
 import type { AppUser } from "../types";
+import * as authz from "./authz";
 import { assertUserCanManageEvent, assertUserCanManageTeam, assertUserCanReviewStatSubmission } from "../repository";
 
 const user = (role: AppUser["role"], id = `${role}-1`): AppUser => ({ id, role, email: `${id}@test.com`, name: id });
@@ -23,7 +24,24 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
+describe("the public API of repository.ts", () => {
+  it("still exports the three checks, as the very same functions that live in shared/authz", () => {
+    expect(assertUserCanManageEvent).toBe(authz.assertUserCanManageEvent);
+    expect(assertUserCanManageTeam).toBe(authz.assertUserCanManageTeam);
+    expect(assertUserCanReviewStatSubmission).toBe(authz.assertUserCanReviewStatSubmission);
+  });
+});
+
 describe("assertUserCanManageEvent", () => {
+  it("denies a role it does not know, without asking the database (it fails closed)", async () => {
+    const stranger = { ...user("captain"), role: "superuser" } as unknown as AppUser;
+
+    await expect(authz.assertUserCanManageEvent(stranger, "event-1")).rejects.toThrow("Not authorized");
+    await expect(authz.assertUserCanReviewStatSubmission(stranger, "submission-1")).rejects.toThrow("Not authorized");
+    expect(prisma.event.findFirst).not.toHaveBeenCalled();
+    expect(prisma.statSubmission.findFirst).not.toHaveBeenCalled();
+  });
+
   it.each(["platform_admin", "admin"] as const)("lets %s manage any event without asking the database", async (role) => {
     await expect(assertUserCanManageEvent(user(role), "event-1")).resolves.toBeUndefined();
     expect(prisma.event.findFirst).not.toHaveBeenCalled();
@@ -103,6 +121,20 @@ describe("assertUserCanManageTeam", () => {
 
     await expect(assertUserCanManageTeam(user("organizer"), "team-1")).rejects.toThrow("Not authorized");
     expect(prisma.event.findFirst).toHaveBeenCalledWith({ where: { id: "event-1", organizerUserId: "organizer-1" }, select: { id: true } });
+  });
+
+  it("lets an organizer manage a team of an event they organize", async () => {
+    prisma.team.findFirst.mockResolvedValue({ id: "team-1", eventId: "event-1" });
+    prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
+
+    await expect(authz.assertUserCanManageTeam(user("organizer", "org-1"), "team-1")).resolves.toEqual({ eventId: "event-1" });
+    expect(prisma.event.findFirst).toHaveBeenCalledWith({ where: { id: "event-1", organizerUserId: "org-1" }, select: { id: true } });
+  });
+
+  it("passes a database failure in the team lookup on", async () => {
+    prisma.team.findFirst.mockRejectedValue(new Error("database unavailable"));
+
+    await expect(authz.assertUserCanManageTeam(user("platform_admin"), "team-1")).rejects.toThrow("database unavailable");
   });
 
   it("denies a captain even for their own team", async () => {
