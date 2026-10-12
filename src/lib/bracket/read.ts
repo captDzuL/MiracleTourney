@@ -4,10 +4,10 @@ import { getBracketAppearance } from "./appearance";
 import { buildGraphSocialBracket, buildLegacySocialBracket } from "./model";
 import type { SocialBracketModel } from "./types";
 import { prisma } from "@/lib/platform/db";
-import {
-  getBracketPreview, getEventRoundConfigs, getMatchGamesForEvent, getMatchesForEvent,
-  getPublicEventBySlug, getPublicVisibleBracketPreview, getTeamsForEvent,
-} from "@/lib/platform/repository";
+import { getBracketPreview, getMatchesForEvent, getPublicVisibleBracketPreview } from "@/lib/bracket/repository";
+import { getEventRoundConfigs, getMatchGamesForEvent } from "@/lib/bracket/rounds-repository";
+import { getPublicEventBySlug } from "@/lib/events/repository";
+import { getTeamsForEvent } from "@/lib/teams/repository";
 import type { CompetitionGraph } from "@/lib/tournament/competition/types";
 
 type Locale = "id" | "en";

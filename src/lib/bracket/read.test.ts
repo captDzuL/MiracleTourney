@@ -4,14 +4,20 @@ const mocks = vi.hoisted(() => ({
   publicEvent: vi.fn(), phase: vi.fn(), matchRows: vi.fn(), teamRows: vi.fn(), legacy: vi.fn(), organizerBracket: vi.fn(), roundConfigs: vi.fn(),
   session: vi.fn(), organizerEvent: vi.fn(), appearance: vi.fn(),
 }));
-vi.mock("@/lib/platform/repository", () => ({
-  getPublicEventBySlug: mocks.publicEvent,
+vi.mock("@/lib/bracket/repository", () => ({
   getPublicVisibleBracketPreview: mocks.legacy,
   getBracketPreview: mocks.organizerBracket,
-  getTeamsForEvent: mocks.teamRows,
   getMatchesForEvent: mocks.matchRows,
+}));
+vi.mock("@/lib/bracket/rounds-repository", () => ({
   getEventRoundConfigs: mocks.roundConfigs,
   getMatchGamesForEvent: vi.fn().mockResolvedValue(new Map()),
+}));
+vi.mock("@/lib/events/repository", () => ({
+  getPublicEventBySlug: mocks.publicEvent,
+}));
+vi.mock("@/lib/teams/repository", () => ({
+  getTeamsForEvent: mocks.teamRows,
 }));
 vi.mock("@/lib/platform/db", () => ({ prisma: {
   competitionPhase: { findFirst: mocks.phase },

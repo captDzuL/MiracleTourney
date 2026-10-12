@@ -155,52 +155,76 @@ vi.mock("@/lib/imports/team-import", () => ({
   parseAndValidateTeamImport: vi.fn(),
 }));
 vi.mock("@vercel/blob", () => ({ put: blobPut }));
-vi.mock("@/lib/platform/repository", () => ({
-  addPlayer,
+vi.mock("@/lib/bracket/repository", () => ({
+  setMatchResult,
+}));
+vi.mock("@/lib/bracket/rounds-repository", () => ({
+  setMatchGames,
+  upsertRoundConfig,
+}));
+vi.mock("@/lib/events/repository", () => ({
+  autoTransitionEventToOngoing,
+  createEvent,
+  getEventsByIds,
+  getPublishedEvents,
+  setEventStatus,
+  updateEventPublicInfo,
+  updateEventStream,
+}));
+vi.mock("@/lib/events/visual-repository", () => ({
   approveEventVisualAsset,
-  approveStatSubmission,
-  approveTeamRegistrationRequest,
-  assertCaptainCanSubmitStats,
+  createEventVisualAsset,
+  listEventVisualAssets,
+  rejectEventVisualAsset,
+  setEventVisualFocalPoint,
+  updateEventBrandAssets,
+  updateEventCertificateAssets,
+}));
+vi.mock("@/lib/identity/repository", () => ({
+  createCaptainAccount,
+  getOrganizerUserById,
+  getUserByEmail,
+  getUserPasswordHashById,
+  updateCaptainPassword,
+}));
+vi.mock("@/lib/imports/repository", () => ({
+  getImportSnapshot,
+  importTeams,
+}));
+vi.mock("@/lib/platform/settings-repository", () => ({
+  updatePaymentSettings,
+}));
+vi.mock("@/lib/platform/shared/authz", () => ({
   assertUserCanManageEvent,
   assertUserCanManageTeam,
   assertUserCanReviewStatSubmission,
-  autoTransitionEventToOngoing,
-  createCaptainAccount,
-  createOrUpdateCaptainDraftTeam,
-  createEvent,
-  createEventVisualAsset,
-  createTeamRegistrationRequest,
-  deletePlayer,
-  getImportSnapshot,
-  getEventsByIds,
-  getOrganizerUserById,
+}));
+vi.mock("@/lib/player-stats/repository", () => ({
+  assertCaptainCanSubmitStats,
   getPlayerStatFormContext,
-  getPublishedEvents,
-  getUserByEmail,
-  getUserPasswordHashById,
-  importTeams,
-  listEventVisualAssets,
-  rejectEventVisualAsset,
+}));
+vi.mock("@/lib/player-stats/write-repository", () => ({
+  approveStatSubmission,
   rejectStatSubmission,
-  rejectTeamRegistrationRequest,
-  registerTeam,
-  setEventStatus,
-  setEventVisualFocalPoint,
-  setMatchGames,
-  setMatchResult,
-  updateCaptainPassword,
-  updateEventBrandAssets,
-  updatePaymentSettings,
-  updateTeamRegistrationProof,
-  updateCaptainTeamLogo,
-  updateTeamLogo,
-  updateEventCertificateAssets,
-  updateEventPublicInfo,
-  updateEventStream,
-  updatePlayer,
-  upsertRoundConfig,
   upsertStatSubmission,
   adminWriteMatchPlayerStats,
+}));
+vi.mock("@/lib/registration/repository", () => ({
+  createOrUpdateCaptainDraftTeam,
+  createTeamRegistrationRequest,
+  registerTeam,
+  updateTeamRegistrationProof,
+}));
+vi.mock("@/lib/registration/review-repository", () => ({
+  approveTeamRegistrationRequest,
+  rejectTeamRegistrationRequest,
+}));
+vi.mock("@/lib/teams/repository", () => ({
+  addPlayer,
+  deletePlayer,
+  updateCaptainTeamLogo,
+  updateTeamLogo,
+  updatePlayer,
   setTeamCaptainDisplay,
 }));
 vi.mock("@/lib/platform/db", () => ({ prisma }));

@@ -23,7 +23,12 @@ const rateLimitBucket = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: external.flag }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: external.session }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent: external.manage, getCertificateByEvent: vi.fn() }));
+vi.mock("@/lib/certificate/repository", () => ({
+  getCertificateByEvent: vi.fn(),
+}));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent: external.manage,
+}));
 vi.mock("@/lib/certificate/studio-repository", () => ({ createPrismaCertificateStudioDependencies: external.deps }));
 vi.mock("@/lib/platform/db", () => ({ prisma: { rateLimitBucket } }));
 vi.mock("@/lib/certificate/service", async (load) => {

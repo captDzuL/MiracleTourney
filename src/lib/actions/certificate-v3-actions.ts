@@ -8,7 +8,8 @@ import { CERTIFICATE_ASSET_LIMITS, publishCertificateSet, publishCertificateSetI
 import { createPrismaCertificateStudioDependencies } from "@/lib/certificate/studio-repository";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { assertUserCanManageEvent, createEventVisualAsset } from "@/lib/platform/repository";
+import { createEventVisualAsset } from "@/lib/events/visual-repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import type { AppUser } from "@/lib/platform/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { safeEntityIdSchema } from "@/lib/security/request-guard";

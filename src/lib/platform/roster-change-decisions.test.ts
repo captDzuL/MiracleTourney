@@ -14,7 +14,15 @@ const { prisma, readRosterChangeState, runSerializableRegistrationTransaction, a
   assertUserCanManageEvent: vi.fn(),
 }));
 vi.mock("./db", () => ({ prisma }));
-vi.mock("./repository", () => ({ readRosterChangeState, runSerializableRegistrationTransaction, assertUserCanManageEvent }));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent,
+}));
+vi.mock("@/lib/platform/shared/tx", () => ({
+  runSerializableRegistrationTransaction,
+}));
+vi.mock("@/lib/registration/repository", () => ({
+  readRosterChangeState,
+}));
 
 import { decideRosterChange, setRosterChangeLimit } from "./roster-change-decisions";
 import { RosterChangeError, type RosterChangeErrorCode } from "./roster-change-rules";

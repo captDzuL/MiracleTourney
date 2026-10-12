@@ -27,8 +27,10 @@ vi.mock("@/lib/events/event-revision", async (importOriginal) => ({
   revokeEventRevisionPreviewTokens: mocks.revokeEventRevisionPreviewTokens,
   getEventEditRevision: mocks.getEventEditRevision,
 }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/events/repository", () => ({
   updatePublishedEventSlugAsAdmin: mocks.updatePublishedEventSlugAsAdmin,
+}));
+vi.mock("@/lib/events/visual-repository", () => ({
   createEventVisualAsset: mocks.createEventVisualAsset,
 }));
 vi.mock("@/lib/actions/shared/uploads", () => ({ uploadImageAsset: mocks.uploadImageAsset }));

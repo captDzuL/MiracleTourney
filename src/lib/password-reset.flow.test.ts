@@ -39,7 +39,7 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/auth/session", () => ({ requireRole: vi.fn(), signIn: vi.fn(), signOut: vi.fn() }));
 vi.mock("@vercel/blob", () => ({ put: vi.fn() }));
 vi.mock("resend", () => ({ Resend: class { emails = { send: mocks.resendSend }; } }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/identity/repository", () => ({
   getUserByEmail: async (email: string) => {
     const row = [...db.users.values()].find((user) => user.email === email);
     if (!row) return null;

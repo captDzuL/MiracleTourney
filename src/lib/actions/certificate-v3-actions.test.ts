@@ -3,7 +3,15 @@ const external = vi.hoisted(() => ({ flag: vi.fn(), session: vi.fn(), manage: vi
 vi.mock("next/cache", () => ({ revalidatePath: external.revalidate }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: external.flag }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: external.session }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent: external.manage, createEventVisualAsset: external.createAsset, getCertificateByEvent: vi.fn() }));
+vi.mock("@/lib/certificate/repository", () => ({
+  getCertificateByEvent: vi.fn(),
+}));
+vi.mock("@/lib/events/visual-repository", () => ({
+  createEventVisualAsset: external.createAsset,
+}));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent: external.manage,
+}));
 vi.mock("@/lib/actions/shared/uploads", () => ({ uploadImageAsset: external.upload }));
 vi.mock("@/lib/certificate/studio-repository", () => ({ createPrismaCertificateStudioDependencies: external.deps }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: external.rateLimit }));

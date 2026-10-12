@@ -22,28 +22,10 @@ vi.mock("next/cache", () => ({
   unstable_cache: (fn: unknown) => fn,
 }));
 
-import {
-  getAllPublicEvents,
-  getBracketPreview,
-  getEventBySlug,
-  getEventsByIds,
-  getLeaderboardForEvent,
-  getMatchesForEvent,
-  getPlayersForEvent,
-  getPlayersForTeam,
-  getPlayersForTeams,
-  getPublicEventBySlug,
-  getPublicEvents,
-  getPublicVisibleBracketPreview,
-  getTeamCountsForEvents,
-  getTeamsForEvent,
-  getTeamsForEvents,
-  listEventVisualAssets,
-  updateCaptainTeamLogo,
-  updateEventBrandAssets,
-  updateEventPublicInfo,
-  updateTeamLogo,
-} from "./repository";
+import { getBracketPreview, getLeaderboardForEvent, getMatchesForEvent, getPublicVisibleBracketPreview } from "@/lib/bracket/repository";
+import { getAllPublicEvents, getEventBySlug, getEventsByIds, getPublicEventBySlug, getPublicEvents, updateEventPublicInfo } from "@/lib/events/repository";
+import { listEventVisualAssets, updateEventBrandAssets } from "@/lib/events/visual-repository";
+import { getPlayersForEvent, getPlayersForTeam, getPlayersForTeams, getTeamCountsForEvents, getTeamsForEvent, getTeamsForEvents, updateCaptainTeamLogo, updateTeamLogo } from "@/lib/teams/repository";
 
 // Slugs and ids that exist in the demo data. Before PR 0.6 these were answered from made-up data when the database failed.
 const DEMO_EVENT_ID = "event-kuroko-summer";

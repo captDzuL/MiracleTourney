@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireAnyRole } from "@/lib/auth/session";
-import { getUserPasswordHashById, updateOrganizerProfileForUser, updateUserPassword } from "@/lib/platform/repository";
+import { getUserPasswordHashById, updateUserPassword } from "@/lib/identity/repository";
+import { updateOrganizerProfileForUser } from "@/lib/platform/settings-repository";
 import { withServerActionLog } from "@/lib/observability/logger";
 
 const organizerProfileSchema = z.object({

@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/cache", () => ({ revalidateTag: vi.fn(), unstable_cache: (fn: unknown) => fn }));
 vi.mock("../db", () => ({ prisma: {} }));
 
-import { eventPublicInclude as repositoryInclude, mapEvent as repositoryMapEvent } from "../repository";
+import { eventPublicInclude as repositoryInclude, mapEvent as repositoryMapEvent } from "@/lib/platform/shared/mappers";
 import {
   ACTIVE_REGISTRATION_REQUEST_STATUSES,
   CACHE_TAGS,

@@ -9,7 +9,9 @@ vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NOT_FOUND
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale: (path: string) => { throw new Error(`REDIRECT:${path}`); } }));
 vi.mock("@/components/v3/competition/CompetitionWorkspace", () => ({ CompetitionWorkspace: () => null }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: async () => ({ id: "owner", role: "organizer" }) }));
-vi.mock("@/lib/platform/repository", () => ({ readEventMatchStatistics: async () => ({}) }));
+vi.mock("@/lib/player-stats/write-repository", () => ({
+  readEventMatchStatistics: async () => ({}),
+}));
 vi.mock("@/components/v3/organizer/matches/MatchResultStatisticsWorkspace", () => ({ MatchResultStatisticsWorkspace: () => null }));
 import CompetitionPage from "@/app/[locale]/organizer/events/[eventId]/competition/page";
 import SchedulePage from "@/app/[locale]/organizer/events/[eventId]/schedule/page";
