@@ -41,16 +41,6 @@ const RULES = [
     ],
   },
   {
-    id: "R2",
-    appliesTo: () => true,
-    paths: [
-      {
-        name: "@/lib/actions",
-        message: "[R2] Jangan impor modul lama '@/lib/actions'. Taruh action baru di src/lib/actions/<nama>-actions.ts.",
-      },
-    ],
-  },
-  {
     id: "R3",
     appliesTo: (file) => file.startsWith("src/components/"),
     paths: REPOSITORY_MODULES.map((name) => ({

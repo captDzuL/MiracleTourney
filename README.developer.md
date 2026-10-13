@@ -200,7 +200,7 @@ Team branding:
 - `Team.logoUrl`: logo tim.
 - fallback UI: initials dari `Team.logoText`.
 
-Upload handler ada di `src/lib/actions.ts`:
+Upload handler ada di `src/lib/actions/event-visual-actions.ts` (kode uploadnya di `src/lib/actions/shared/uploads.ts`):
 
 - `adminUploadEventLogoAction`
 - `adminUploadEventBackgroundAction`

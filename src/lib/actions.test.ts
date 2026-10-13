@@ -251,52 +251,14 @@ vi.mock("bcryptjs", () => ({
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { UserFacingError } from "@/lib/security/public-error";
 import bcrypt from "bcryptjs";
-import {
-  adminActivateEventVisualAction,
-  adminApproveEventVisualAction,
-  adminApproveStatAction,
-  adminApprovePaymentAction,
-  adminCreateEventAction,
-  adminImportTeamsCsvAction,
-  adminPreviewRegistrationImportAction,
-  adminCommitRegistrationImportAction,
-  adminDeleteTeamAction,
-  adminAssignCaptainAction,
-  adminDeactivateUserAction,
-  adminArchiveEventAction,
-  adminSetAccentColorAction,
-  adminRegenerateCertificateAction,
-  adminRejectEventVisualAction,
-  adminRejectStatAction,
-  adminSetEventVisualFocalPointAction,
-  adminRejectPaymentAction,
-  adminSetMatchGamesAction,
-  adminSetRoundConfigAction,
-  adminUploadCharacterArtAction,
-  adminUploadEventLogoAction,
-  adminUploadTeamLogoAction,
-  organizerUploadEventLogoAction,
-  organizerUploadEventVisualAction,
-  adminUploadEventVisualAction,
-  adminUpdateEventStatusAction,
-  adminUpdateEventPublicInfoAction,
-  adminUpdatePaymentSettingsAction,
-  adminUpdateMatchResultAction,
-  adminUpdateStreamAction,
-  captainAddPlayerAction,
-  captainDeletePlayerAction,
-  captainRegisterTeamAction,
-  captainUploadPaymentProofAction,
-  captainUploadTeamLogoAction,
-  captainSetDisplayCaptainAction,
-  captainSignUpAction,
-  captainSubmitStatsAction,
-  captainUpdatePlayerAction,
-  changePasswordAction,
-  loginAction,
-  requestPasswordResetAction,
-  resetPasswordAction,
-} from "./actions";
+import { adminAssignCaptainAction, adminDeactivateUserAction, captainSignUpAction, changePasswordAction, loginAction, requestPasswordResetAction, resetPasswordAction } from "@/lib/actions/identity-actions";
+import { adminCreateEventAction, adminArchiveEventAction, adminSetAccentColorAction, adminUploadCharacterArtAction, adminUpdateEventStatusAction, adminUpdateEventPublicInfoAction, adminUpdateStreamAction } from "@/lib/actions/event-actions";
+import { adminActivateEventVisualAction, adminApproveEventVisualAction, adminRejectEventVisualAction, adminSetEventVisualFocalPointAction, adminUploadEventLogoAction, organizerUploadEventLogoAction, organizerUploadEventVisualAction, adminUploadEventVisualAction } from "@/lib/actions/event-visual-actions";
+import { adminApprovePaymentAction, adminRejectPaymentAction, adminUpdatePaymentSettingsAction, captainRegisterTeamAction, captainUploadPaymentProofAction } from "@/lib/actions/registration-actions";
+import { adminImportTeamsCsvAction, adminPreviewRegistrationImportAction, adminCommitRegistrationImportAction } from "@/lib/actions/import-actions";
+import { adminDeleteTeamAction, adminUploadTeamLogoAction, captainAddPlayerAction, captainDeletePlayerAction, captainUploadTeamLogoAction, captainSetDisplayCaptainAction, captainUpdatePlayerAction } from "@/lib/actions/team-actions";
+import { adminApproveStatAction, adminRejectStatAction, adminSetMatchGamesAction, adminSetRoundConfigAction, adminUpdateMatchResultAction, captainSubmitStatsAction } from "@/lib/actions/match-actions";
+import { adminRegenerateCertificateAction } from "@/lib/actions/certificate-actions";
 import { logoutAction } from "./session-actions";
 
 // ────────────────────────────────────────────────────────────

@@ -4,16 +4,8 @@ import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
-import {
-  captainAddPlayerAction,
-  captainDeletePlayerAction,
-  captainRegisterTeamAction,
-  captainSaveDraftTeamAction,
-  captainSetDisplayCaptainAction,
-  captainUpdatePlayerAction,
-  captainUploadPaymentProofAction,
-  captainUploadTeamLogoAction,
-} from "@/lib/actions";
+import { captainRegisterTeamAction, captainSaveDraftTeamAction, captainUploadPaymentProofAction } from "@/lib/actions/registration-actions";
+import { captainAddPlayerAction, captainDeletePlayerAction, captainSetDisplayCaptainAction, captainUpdatePlayerAction, captainUploadTeamLogoAction } from "@/lib/actions/team-actions";
 import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import { RosterChangePanel } from "@/components/captain/RosterChangePanel";

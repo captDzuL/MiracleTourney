@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 //
 // This checks the code, not that a call runs for a given input; behavior is covered by the action tests.
 const EXPECTED: Record<string, string[]> = {
-  // lib/actions.ts
+  // lib/actions/{identity,event,event-visual,registration,import,team,match,certificate}-actions.ts (was lib/actions.ts before Phase 3)
   adminActivateEventVisualAction: ['path(/, layout)', 'tag(events)'],
   adminApproveEventVisualAction: ['path(/, layout)', 'tag(events)'],
   adminApprovePaymentAction: ['path(/admin)', 'path(/captain)', 'tag(events)', 'tag(teams)'],

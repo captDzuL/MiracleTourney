@@ -28,33 +28,14 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { getActiveEventEditRevisionIds } from "@/lib/events/event-revision";
 import { SubmitButton } from "@/components/submit-button";
 import { HydrationGate } from "@/components/HydrationGate";
-import {
-  adminApproveStatAction,
-  adminApprovePaymentAction,
-  adminArchiveEventAction,
-  adminAssignCaptainAction,
-  adminCreateEventAction,
-  adminDeactivateUserAction,
-  adminDeleteTeamAction,
-  adminCommitRegistrationImportAction,
-  adminImportTeamsCsvAction,
-  adminPreviewRegistrationImportAction,
-  adminRejectStatAction,
-  adminRejectPaymentAction,
-  adminRegenerateCertificateAction,
-  adminSaveMatchPlayerStatsAction,
-  adminSetAccentColorAction,
-  adminSetMatchGamesAction,
-  adminSetRoundConfigAction,
-  adminUpdateEventStatusAction,
-  adminUpdateMatchResultAction,
-  adminUpdateStreamAction,
-  adminUploadEventLogoAction,
-  adminUploadCharacterArtAction,
-  adminUploadTeamLogoAction,
-  adminUpdateEventPublicInfoAction,
-  adminUpdatePaymentSettingsAction,
-} from "@/lib/actions";
+import { adminAssignCaptainAction, adminDeactivateUserAction } from "@/lib/actions/identity-actions";
+import { adminArchiveEventAction, adminCreateEventAction, adminSetAccentColorAction, adminUpdateEventStatusAction, adminUpdateStreamAction, adminUploadCharacterArtAction, adminUpdateEventPublicInfoAction } from "@/lib/actions/event-actions";
+import { adminUploadEventLogoAction } from "@/lib/actions/event-visual-actions";
+import { adminApprovePaymentAction, adminRejectPaymentAction, adminUpdatePaymentSettingsAction } from "@/lib/actions/registration-actions";
+import { adminCommitRegistrationImportAction, adminImportTeamsCsvAction, adminPreviewRegistrationImportAction } from "@/lib/actions/import-actions";
+import { adminDeleteTeamAction, adminUploadTeamLogoAction } from "@/lib/actions/team-actions";
+import { adminApproveStatAction, adminRejectStatAction, adminSaveMatchPlayerStatsAction, adminSetMatchGamesAction, adminSetRoundConfigAction, adminUpdateMatchResultAction } from "@/lib/actions/match-actions";
+import { adminRegenerateCertificateAction } from "@/lib/actions/certificate-actions";
 import { requireAnyRole } from "@/lib/auth/session";
 import { getBracketManageableMatchesForEvent, getLeaderboardForEvent, getMatchesForEvent } from "@/lib/bracket/repository";
 import { getEventRoundConfigs, getMatchGames } from "@/lib/bracket/rounds-repository";

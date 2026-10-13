@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const getSessionUser = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/auth/session", () => ({ getSessionUser }));
-vi.mock("@/lib/actions", () => ({ captainSignUpAction: vi.fn() }));
+vi.mock("@/lib/actions/identity-actions", () => ({
+  captainSignUpAction: vi.fn(),
+}));
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/i18n/navigation", () => ({
   Link: ({ href, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) =>

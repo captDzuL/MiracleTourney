@@ -1,4 +1,4 @@
-import { requestPasswordResetAction } from "@/lib/actions";
+import { requestPasswordResetAction } from "@/lib/actions/identity-actions";
 import { SubmitButton } from "@/components/submit-button";
 import Link from "next/link";
 

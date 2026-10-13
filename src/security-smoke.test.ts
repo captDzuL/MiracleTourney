@@ -46,7 +46,7 @@ describe("security smoke checks", () => {
   it("raw SQL scan includes application library files", () => {
     const sourceFiles = collectApplicationSourceFiles();
 
-    expect(sourceFiles).toContain(path.resolve(process.cwd(), "src/lib/actions.ts"));
+    expect(sourceFiles).toContain(path.resolve(process.cwd(), "src/lib/actions/identity-actions.ts"));
     expect(sourceFiles).toContain(path.resolve(process.cwd(), "src/lib/events/repository.ts"));
     expect(sourceFiles).toContain(path.resolve(process.cwd(), "src/app/api/admin/captain-credentials/route.ts"));
   });

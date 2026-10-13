@@ -234,16 +234,16 @@ Fase 2:
 - [x] 2.14
 
 Fase 3:
-- [ ] 3.0
-- [ ] 3.1
-- [ ] 3.2
-- [ ] 3.3
-- [ ] 3.4
-- [ ] 3.5
-- [ ] 3.6
-- [ ] 3.7
-- [ ] 3.8
-- [ ] 3.9
+- [x] 3.0
+- [x] 3.1
+- [x] 3.2
+- [x] 3.3
+- [x] 3.4
+- [x] 3.5
+- [x] 3.6
+- [x] 3.7
+- [x] 3.8
+- [x] 3.9
 
 ## Catatan dari pengerjaan
 
@@ -287,6 +287,43 @@ Aturan pemindahan yang berlaku untuk PR 1.2 sampai 1.5 dan seterusnya: pindahkan
 2. Organizer selalu lolos `assertWorkspaceEventAction`. Pengecekan kepemilikan event yang sebenarnya ada di `assertUserCanManageEvent`, jadi setiap action organizer wajib memanggilnya.
 3. Parameter `folder` di `uploadImageAsset` tidak divalidasi terhadap daftar yang diizinkan.
 Masuk Fase 4.
+
+**Fase 3 selesai (3.0 sampai 3.9).** `src/lib/actions.ts` (1.759 baris, 52 action) sudah habis dan dihapus. Isinya pindah ke 8 file `"use server"` di `src/lib/actions/`, dipindah dengan skrip AST seperti di Fase 1 dan 2:
+
+| PR | File | Isi |
+|---|---|---|
+| 3.1 | `identity-actions.ts` | daftar captain, login, ganti dan reset password, nonaktifkan user, tetapkan captain |
+| 3.2 | `event-actions.ts` | buat, status, arsip, stream, info publik, warna aksen, gambar karakter |
+| 3.3 | `event-visual-actions.ts` | logo dan gambar visual event |
+| 3.4 | `registration-actions.ts` | daftar tim, draft, bukti bayar, pengaturan bayar, setuju atau tolak, 6 fungsi pembungkus V3 |
+| 3.5 | `import-actions.ts` | impor CSV, preview, commit |
+| 3.6 | `team-actions.ts` | logo tim, pemain, captain tampilan, hapus tim |
+| 3.7 | `match-actions.ts` | hasil pertandingan, pengaturan babak, game per pertandingan, statistik |
+| 3.8 | `certificate-actions.ts` | buat ulang sertifikat |
+
+Satu modul biasa baru: `actions/shared/schemas.ts` (`isHttpUrl` dan `optionalPublicUrlSchema`, dipakai event dan registration). Bukan file `"use server"`, jadi tidak jadi pintu untuk browser.
+
+Cara membuktikannya sama seperti sebelumnya: semua deklarasi yang dipindah identik dengan aslinya (selain impor), ke-52 nama action yang diekspor masih ada tepat satu kali, dan tidak ada nama yang bertambah. Fungsi bantu (`uploadEventLogo`, `uploadEventVisual`, `requestPasswordResetActionImpl`, `generateCertificateForFinalMatch`, dan sebagainya) tetap privat di file-nya. Jumlah server action di hasil build tetap 95. Ukuran bundle per rute sama dengan sebelum Fase 3 (selisih paling besar 1 byte), JS bersama 102 kB, Middleware 51,4 kB.
+
+**Pengecekan 3.0.** Tidak dibuat PR sendiri: `next build` lolos dengan 8 file baru dan 95 action terdaftar, jadi pola per file terbukti.
+
+**Sapuan pengimpor.** Semua file pengimpor `@/lib/actions` (halaman, komponen klien, test) diganti per nama lewat skrip, termasuk pemecahan `vi.mock`. Seluruh test dijalankan dengan klien Prisma yang melempar error kalau disentuh: tidak ada akses baru ke Prisma asli.
+
+**Aturan ESLint R2 dihapus.** Aturan itu melarang impor `@/lib/actions`. Modulnya sudah tidak ada, jadi TypeScript yang menolaknya. Daftar pengecualian ESLint tinggal 2 file (R4 satu, R5 satu).
+
+**Test baru dan penyesuaian.**
+- Dua action yang tidak punya test perilaku sama sekali sekarang punya: `captainSaveDraftTeamAction` (40 test) dan `adminSaveMatchPlayerStatsAction` (51 test). Dicek dengan perusakan sengaja: 5 dari 5 tertangkap.
+- `actions-server-contract.test.ts` kini memeriksa semua file `"use server"` di `src/lib/actions`, bukan hanya `actions.ts`.
+- `guards.test.ts` menjaga daftar ekspor 8 file baru: hanya fungsi `async` dan tipe, tepat 52 action, tanpa pembantu bersama.
+- Pembaca file sumber di `player-score-forms.test.ts` dan `security-smoke.test.ts` diarahkan ke file baru.
+
+**Kebiasaan aneh yang ditemukan test baru (tidak diubah, sudah ada sebelum refactor).** Masuk Fase 4:
+- `captainSaveDraftTeamAction`: kalau isian nama atau tag kosong, captain melihat pesan zod mentah berbahasa Inggris ("Invalid input: expected string, received null") di URL. Error tak terduga ditutup jadi "Gagal menyimpan draft tim." tanpa log di server, jadi operator tidak pernah melihatnya (beda dengan `captainRegisterTeamAction`).
+- `adminSaveMatchPlayerStatsAction`: error tidak dialihkan ke halaman, tapi dilempar mentah (`ZodError`, "Team is not part of this match", dan seterusnya). Cek tim jalan sebelum cek event, jadi tim yang salah menutupi event yang salah. Action tidak mengecek status pertandingan sendiri. Form tanpa kolom `stat_` tetap menulis `stats: {}`, dan nilai kosong dihitung 0. Pengalihan sukses selalu ke `/admin?...`, juga untuk organizer, dan mengabaikan `locale`.
+
+**Risiko saat deploy.** ID server action di Next dihitung dari file dan nama fungsinya. Halaman yang masih terbuka di browser pengunjung saat deploy memanggil ID lama, dan Next menjawab "Failed to find Server Action" sampai halaman dimuat ulang. Ini terjadi di setiap deploy yang memindahkan action, dan tidak bisa dihindari. Sebaiknya deploy di jam sepi.
+
+**Tidak dikerjakan.** `actions.test.ts` (2.800 baris) tetap satu file. Ke-8 file action berbagi satu blok tiruan besar (sekitar 260 baris), jadi memecahnya berarti menyalin blok itu 8 kali atau membuat pembantu test baru. Masuk Fase 4.
 
 **Fase 2 selesai (2.1 sampai 2.14).** `src/lib/platform/repository.ts` (3.945 baris) sudah habis dan dihapus. Isinya pindah ke 13 modul, dipindah dengan skrip AST seperti di Fase 1:
 

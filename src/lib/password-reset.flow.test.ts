@@ -89,7 +89,7 @@ vi.mock("@/lib/platform/db", () => {
   return { prisma };
 });
 
-import { requestPasswordResetAction, resetPasswordAction } from "./actions";
+import { requestPasswordResetAction, resetPasswordAction } from "@/lib/actions/identity-actions";
 
 function form(values: Record<string, string>): FormData {
   const data = new FormData();
