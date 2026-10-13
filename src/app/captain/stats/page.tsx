@@ -1,7 +1,7 @@
 import { getTranslations } from "next-intl/server";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
-import { captainSubmitStatsAction } from "@/lib/actions";
+import { captainSubmitStatsAction } from "@/lib/actions/match-actions";
 import { requireRole } from "@/lib/auth/session";
 import { getStatKeysForMode } from "@/lib/platform/config";
 import { getCompletedMatchesForCaptain } from "@/lib/player-stats/repository";
