@@ -22,7 +22,6 @@ const {
   equalizePasswordResetResponse,
   createTeamRegistrationRequest,
   deletePlayer,
-  getImportSnapshot,
   getEventsByIds,
   getOrganizerUserById,
   getPlayerStatFormContext,
@@ -31,7 +30,6 @@ const {
   getUserPasswordHashById,
   generateCertificate,
   generateCertificateIfFinal,
-  importTeams,
   listEventVisualAssets,
   rejectEventVisualAsset,
   rejectStatSubmission,
@@ -88,7 +86,6 @@ const {
   equalizePasswordResetResponse: vi.fn(async (operation: () => Promise<unknown>) => operation()),
   createTeamRegistrationRequest: vi.fn(),
   deletePlayer: vi.fn(),
-  getImportSnapshot: vi.fn(),
   getEventsByIds: vi.fn(),
   getOrganizerUserById: vi.fn(),
   getPlayerStatFormContext: vi.fn(),
@@ -97,7 +94,6 @@ const {
   getUserPasswordHashById: vi.fn(),
   generateCertificate: vi.fn(),
   generateCertificateIfFinal: vi.fn(),
-  importTeams: vi.fn(),
   listEventVisualAssets: vi.fn(),
   rejectEventVisualAsset: vi.fn(),
   rejectStatSubmission: vi.fn(),
@@ -153,9 +149,6 @@ vi.mock("next/headers", () => ({ headers }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
 vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut }));
 vi.mock("@/lib/actions/registration-v3-actions", () => ({ previewRegistrationImportForUser, commitRegistrationImportForUser }));
-vi.mock("@/lib/imports/team-import", () => ({
-  parseAndValidateTeamImport: vi.fn(),
-}));
 vi.mock("@vercel/blob", () => ({ put: blobPut }));
 vi.mock("@/lib/bracket/repository", () => ({
   setMatchResult,
@@ -197,8 +190,6 @@ vi.mock("@/lib/identity/repository", () => ({
   updateCaptainPassword,
 }));
 vi.mock("@/lib/imports/repository", () => ({
-  getImportSnapshot,
-  importTeams,
 }));
 vi.mock("@/lib/platform/settings-repository", () => ({
   updatePaymentSettings,
@@ -258,8 +249,7 @@ vi.mock("bcryptjs", () => ({
   },
 }));
 
-import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
-import { adminImportTeamsCsvAction, adminPreviewRegistrationImportAction, adminCommitRegistrationImportAction } from "@/lib/actions/import-actions";
+import { adminPreviewRegistrationImportAction, adminCommitRegistrationImportAction } from "@/lib/actions/import-actions";
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -298,67 +288,6 @@ beforeEach(() => {
 // Each row runs one action down its success path and checks exactly which cached pages it refreshes. These are the
 // actions that had no test of their revalidation. src/lib/revalidation-map.test.ts guards the revalidate calls in the
 // code of every action; these rows prove the calls run.
-
-// ────────────────────────────────────────────────────────────
-// adminImportTeamsCsvAction
-// ────────────────────────────────────────────────────────────
-
-describe("adminImportTeamsCsvAction", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    requireRole.mockResolvedValue(adminSession());
-    checkRateLimit.mockReturnValue(true);
-    getImportSnapshot.mockResolvedValue({ events: [], teams: [] });
-  });
-
-  it("requires an admin session", async () => {
-    requireRole.mockResolvedValue(null);
-    const f = new FormData();
-    f.set("csv", new File(["data"], "teams.csv", { type: "text/csv" }));
-    await expect(adminImportTeamsCsvAction(f)).rejects.toThrow("REDIRECT:/login");
-  });
-
-  it("redirects with error when no file is provided", async () => {
-    await expect(adminImportTeamsCsvAction(fd({}))).rejects.toThrow(
-      "REDIRECT:/admin?error=Please%20choose%20a%20CSV%20file%20before%20importing.",
-    );
-    expect(importTeams).not.toHaveBeenCalled();
-  });
-
-  it("rejects oversized CSV files before reading or parsing them", async () => {
-    const f = new FormData();
-    f.set("csv", new File(["x".repeat(262_145)], "large.csv", { type: "text/csv" }));
-
-    await expect(adminImportTeamsCsvAction(f)).rejects.toThrow("REDIRECT:/admin?error=");
-    expect(parseAndValidateTeamImport).not.toHaveBeenCalled();
-    expect(importTeams).not.toHaveBeenCalled();
-  });
-
-  it("redirects with error when parseAndValidateTeamImport fails", async () => {
-    const f = new FormData();
-    f.set("csv", new File(["bad"], "bad.csv", { type: "text/csv" }));
-    (parseAndValidateTeamImport as ReturnType<typeof vi.fn>).mockReturnValue({
-      ok: false,
-      message: "Invalid header row",
-    });
-
-    await expect(adminImportTeamsCsvAction(f)).rejects.toThrow("REDIRECT:/admin?error=");
-    expect(importTeams).not.toHaveBeenCalled();
-  });
-
-  it("imports teams and redirects with count on success", async () => {
-    const rows = [{ eventId: "e1", teamName: "A", teamTag: "AA", captainName: "C", captainContact: "c@c.com" }];
-    const f = new FormData();
-    f.set("csv", new File(["csv content"], "teams.csv", { type: "text/csv" }));
-    (parseAndValidateTeamImport as ReturnType<typeof vi.fn>).mockReturnValue({ ok: true, rows });
-
-    await expect(adminImportTeamsCsvAction(f)).rejects.toThrow(
-      "REDIRECT:/admin?success=teams-imported&count=1",
-    );
-    expect(importTeams).toHaveBeenCalledWith(rows);
-    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
-  });
-});
 
 describe("legacy registration import adapters", () => {
   beforeEach(() => {

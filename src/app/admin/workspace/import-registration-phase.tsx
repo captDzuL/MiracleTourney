@@ -6,7 +6,7 @@ import type { AdminTranslator, CaptainUser, EventItem, ImportedTeamItem, Registr
 import { SubmitButton } from "@/components/submit-button";
 import { DataTable, Pill, Section } from "@/components/ui";
 import { adminAssignCaptainAction } from "@/lib/actions/identity-actions";
-import { adminCommitRegistrationImportAction, adminImportTeamsCsvAction, adminPreviewRegistrationImportAction } from "@/lib/actions/import-actions";
+import { adminCommitRegistrationImportAction, adminPreviewRegistrationImportAction } from "@/lib/actions/import-actions";
 import { adminDeleteTeamAction } from "@/lib/actions/team-actions";
 import { getCaptainDisplayName } from "@/lib/team-display";
 import { Check, Download, Eye, KeyRound, Upload } from "lucide-react";
@@ -19,7 +19,6 @@ export function ImportRegistrationPhase({
   importedTeams,
   registrationBatch,
   registrationBatches,
-  registrationIntakeV2,
   t,
 }: {
   activeEvent: EventItem | undefined;
@@ -29,52 +28,10 @@ export function ImportRegistrationPhase({
   importedTeams: ImportedTeamItem[];
   registrationBatch: RegistrationImportBatchItem | null;
   registrationBatches: RegistrationImportBatchSummaryItem[];
-  registrationIntakeV2: boolean;
   t: AdminTranslator;
 }) {
   const activeEventHasCredentials = activeEvent ? importedEventIds.has(activeEvent.id) : false;
   const batchSummary = (registrationBatch?.summary ?? {}) as Partial<Record<"new" | "changed" | "same" | "error", number>>;
-
-  if (!registrationIntakeV2) {
-    return (
-      <PhaseSection
-        action={
-          <a className={quietButton} href="/templates/team-import-template.csv">
-            <Download className="h-4 w-4" />
-            {t("downloadTemplate")}
-          </a>
-        }
-        description={t("importDescription")}
-        title={t("importWorkspaceTitle")}
-      >
-        <Section title={t("importTitle")} description={t("importHelp")} className="min-w-0 overflow-hidden rounded-xl shadow-none">
-          <form action={adminImportTeamsCsvAction} className="grid min-w-0 gap-4 lg:grid-cols-[minmax(22rem,1fr)_minmax(12rem,16rem)] lg:items-end">
-            <div className="grid min-w-0 gap-3">
-              <label className={labelClass}>
-                {t("csvFile")}
-                <input
-                  className={`${inputClass} block w-full min-w-0 max-w-full overflow-hidden file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-200`}
-                  name="csv"
-                  type="file"
-                  accept=".csv,text/csv"
-                />
-              </label>
-              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-                {t("requiredColumns")}:{" "}
-                <span className="mono inline-block max-w-full break-all text-slate-900">
-                  event_slug,team_name,team_tag,captain_name,captain_contact
-                </span>
-              </p>
-            </div>
-            <SubmitButton className={`${primaryButton} min-h-11 w-full self-stretch px-5`}>
-              <Upload className="h-4 w-4" />
-              {t("importSubmit")}
-            </SubmitButton>
-          </form>
-        </Section>
-      </PhaseSection>
-    );
-  }
 
   return (
     <PhaseSection

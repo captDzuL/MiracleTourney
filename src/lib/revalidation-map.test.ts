@@ -28,7 +28,6 @@ const EXPECTED: Record<string, string[]> = {
   adminCreateEventAction: ['path(/, layout)', 'tag(events)'],
   adminDeactivateUserAction: ['path(/, layout)'],
   adminDeleteTeamAction: ['path(/, layout)'],
-  adminImportTeamsCsvAction: ['path(/, layout)'],
   adminPreviewRegistrationImportAction: ['path(/, layout)'],
   adminRegenerateCertificateAction: ['path(/admin)', 'path(/admin)'],
   adminRejectEventVisualAction: ['path(/, layout)', 'tag(events)'],

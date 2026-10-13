@@ -22,56 +22,6 @@ export function generateTempPassword(): string {
   return randomBytes(6).toString("base64url").slice(0, 8);
 }
 
-export function generateCaptainEmail(tag: string, usedInBatch: Set<string>, explicitEmail?: string): string {
-  if (explicitEmail) {
-    usedInBatch.add(explicitEmail);
-    return explicitEmail;
-  }
-  let candidate = `${tag.toLowerCase()}@miraclefc.gg`;
-  let n = 2;
-  while (usedInBatch.has(candidate)) {
-    candidate = `${tag.toLowerCase()}${n}@miraclefc.gg`;
-    n++;
-  }
-  usedInBatch.add(candidate);
-  return candidate;
-}
-
-/**
- * Returns a lightweight snapshot of events and registered teams used by CSV import validation.
- * Includes `bracketLocked` flag so the validator can reject imports into locked events.
- */
-export async function getImportSnapshot(user?: AppUser) {
-  const eventWhere = user?.role === "organizer" ? { organizerUserId: user.id } : undefined;
-  const events = await prisma.event.findMany({
-    where: eventWhere,
-    select: { id: true, slug: true, participantCap: true },
-  });
-  const eventIds = events.map((event) => event.id);
-  const teams = await prisma.team.findMany({
-    where: eventWhere ? { eventId: { in: eventIds } } : { eventId: { not: null } },
-    select: { eventId: true, name: true, tag: true },
-  });
-
-  const lockedSet = new Set<string>();
-  await Promise.all(
-    events.map(async (event) => {
-      const locked = await isEventBracketLocked(event.id);
-      if (locked) lockedSet.add(event.id);
-    }),
-  );
-
-  return {
-    events: events.map((event) => ({
-      id: event.id,
-      slug: event.slug,
-      participantCap: event.participantCap,
-      bracketLocked: lockedSet.has(event.id),
-    })),
-    teams: teams.flatMap((team) => team.eventId ? [{ eventId: team.eventId, name: team.name, tag: team.tag }] : []),
-  };
-}
-
 /** Returns teams created via CSV import. Organizers only see teams from their own events. */
 export async function getImportedTeams(user?: AppUser): Promise<Team[]> {
   const rows = await prisma.team.findMany({
@@ -112,74 +62,6 @@ export async function getCaptainCredentialsForEvent(eventId: string) {
       tempPassword: user?.tempPassword ?? "",
     };
   });
-}
-
-/**
- * Bulk-imports teams from a validated CSV row list. For each team, generates a captain User
- * (upserted by email) with a temp password, then creates the Team row.
- * Bcrypt hashing runs outside the DB transaction to avoid holding a connection during slow crypto.
- * Throws if any target event's bracket is already locked.
- */
-export async function importTeams(input: Array<{
-  eventId: string;
-  teamName: string;
-  teamTag: string;
-  captainName: string;
-  captainContact: string;
-  captainEmail?: string;
-}>): Promise<Team[]> {
-  const eventIds = [...new Set(input.map((row) => row.eventId))];
-
-  // Hashing remains outside the transaction; every database write is committed
-  // atomically only after each target event wins the roster-version lock.
-  const usedEmails = new Set<string>();
-  const preparedRows = await Promise.all(
-    input.map(async (row) => {
-      const email = generateCaptainEmail(row.teamTag, usedEmails, row.captainEmail?.trim().toLowerCase() || undefined);
-      const tempPassword = generateTempPassword();
-      const passwordHash = await bcrypt.hash(tempPassword, 10);
-      return { ...row, email, tempPassword, passwordHash };
-    }),
-  );
-
-  const rows = await runSerializableRegistrationTransaction(async (tx) => {
-    for (const eventId of eventIds) await assertEventRosterMutable(tx, eventId);
-    const created = [];
-    for (const prep of preparedRows) {
-      // An email that already has an account is never overwritten: the CSV may name anyone's email, and resetting
-      // that account's password here would let the importer take it over. Only a captain account can be reused.
-      const existing = await tx.user.findUnique({ where: { email: prep.email }, select: { id: true, role: true } });
-      if (existing && existing.role !== "captain") {
-        throw new UserFacingError("Email kapten sudah dipakai akun non-captain.");
-      }
-      const captainId = existing
-        ? existing.id
-        : (await tx.user.create({
-            data: {
-              email: prep.email,
-              name: prep.captainName,
-              role: "captain",
-              passwordHash: prep.passwordHash,
-              tempPassword: prep.tempPassword,
-            },
-          })).id;
-      created.push(await tx.team.create({
-        data: {
-          eventId: prep.eventId,
-          captainId,
-          name: prep.teamName,
-          logoText: prep.teamTag.slice(0, 2).toUpperCase(),
-          tag: prep.teamTag.toUpperCase(),
-          captainName: prep.captainName,
-          captainContact: prep.captainContact,
-          source: "csv-import",
-        },
-      }));
-    }
-    return created;
-  });
-
-  return rows.map(mapTeam);
 }
 
 export async function saveRegistrationImportPreviewBatch(input: {
