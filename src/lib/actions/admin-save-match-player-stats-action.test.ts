@@ -52,9 +52,11 @@ vi.mock("@/lib/player-stats/write-repository", () => ({
 }));
 
 import { adminSaveMatchPlayerStatsAction } from "@/lib/actions/match-actions";
+import { writeServerLog } from "@/lib/observability/logger";
 
 type TestUser = { id: string; role: "captain" | "organizer" | "platform_admin" | "admin"; email: string; name: string };
 
+const errorUrl = (message: string) => `/admin?phase=run&activeEventId=event-1&matchId=match-1&error=${encodeURIComponent(message)}`;
 const SUCCESS_URL = "/admin?phase=run&activeEventId=event-1&matchId=match-1&success=player-stats-saved";
 
 function fd(pairs: Record<string, string | File>): FormData {
@@ -100,6 +102,11 @@ async function rejection(action: Promise<unknown>): Promise<unknown> {
     return error;
   }
   throw new Error("Expected the action to reject, but it resolved.");
+}
+
+/** Server log entries this action wrote itself (the redirect helper may log too when there is no request scope). */
+function saveFailureLogs() {
+  return vi.mocked(writeServerLog).mock.calls.map(([entry]) => entry).filter((entry) => entry.operation === "admin_save_match_player_stats");
 }
 
 function expectNothingWritten() {
@@ -254,18 +261,16 @@ describe("adminSaveMatchPlayerStatsAction", () => {
       expect(getPlayerStatFormContext).toHaveBeenCalledWith("match-1", "event-1");
     });
 
-    it("lets a context lookup failure (for example a match that is not Completed) propagate unchanged", async () => {
+    it("sends the admin back with a generic message when the context lookup fails (for example a match that is not Completed)", async () => {
       getPlayerStatFormContext.mockRejectedValue(new Error("Completed match not found."));
 
-      await expect(adminSaveMatchPlayerStatsAction(validForm())).rejects.toThrow(new Error("Completed match not found."));
+      await expectRedirect(adminSaveMatchPlayerStatsAction(validForm()), errorUrl("Gagal menyimpan statistik pemain."));
 
       expectNothingWritten();
     });
 
-    it("throws when the team is neither the home nor the away team of the match", async () => {
-      await expect(adminSaveMatchPlayerStatsAction(validForm({ teamId: "team-9" }))).rejects.toThrow(
-        new Error("Team is not part of this match"),
-      );
+    it("sends the admin back with the team message when the team is neither the home nor the away team of the match", async () => {
+      await expectRedirect(adminSaveMatchPlayerStatsAction(validForm({ teamId: "team-9" })), errorUrl("Team is not part of this match"));
 
       expectNothingWritten();
     });
@@ -279,25 +284,24 @@ describe("adminSaveMatchPlayerStatsAction", () => {
       expect(adminWriteMatchPlayerStats).toHaveBeenCalledWith(expect.objectContaining({ teamId: "team-2" }));
     });
 
-    it("throws when the match belongs to another event than the form says", async () => {
+    it("sends the admin back with the event message when the match belongs to another event than the form says", async () => {
       getPlayerStatFormContext.mockResolvedValue(
         completedMatchContext({ match: { id: "match-1", eventId: "event-OTHER", status: "Completed", homeTeamId: "team-1", awayTeamId: "team-2" } }),
       );
 
-      await expect(adminSaveMatchPlayerStatsAction(validForm())).rejects.toThrow(
-        new Error("Match does not belong to this event"),
-      );
+      await expectRedirect(adminSaveMatchPlayerStatsAction(validForm()), errorUrl("Match does not belong to this event"));
 
       expectNothingWritten();
     });
 
-    it("reports the team problem first when both the team and the event do not match", async () => {
+    it("reports the event problem first when both the event and the team do not match", async () => {
       getPlayerStatFormContext.mockResolvedValue(
         completedMatchContext({ match: { id: "match-1", eventId: "event-OTHER", status: "Completed", homeTeamId: "team-1", awayTeamId: "team-2" } }),
       );
 
-      await expect(adminSaveMatchPlayerStatsAction(validForm({ teamId: "team-9" }))).rejects.toThrow(
-        new Error("Team is not part of this match"),
+      await expectRedirect(
+        adminSaveMatchPlayerStatsAction(validForm({ teamId: "team-9" })),
+        errorUrl("Match does not belong to this event"),
       );
     });
 
@@ -313,12 +317,11 @@ describe("adminSaveMatchPlayerStatsAction", () => {
   });
 
   describe("stat form parsing", () => {
-    it("throws and writes nothing when a stat key is not allowed for the game mode", async () => {
-      await expect(adminSaveMatchPlayerStatsAction(validForm({ stat_p1_kills: "3" }))).rejects.toThrow(
-        new Error("Invalid stat field name."),
-      );
+    it("sends the admin back with the input message and writes nothing when a stat key is not allowed for the game mode", async () => {
+      await expectRedirect(adminSaveMatchPlayerStatsAction(validForm({ stat_p1_kills: "3" })), errorUrl("Isian statistik tidak valid. Periksa nilai yang dimasukkan dan coba lagi."));
 
       expectNothingWritten();
+      expect(saveFailureLogs()).toEqual([]);
     });
 
     it.each([
@@ -326,9 +329,10 @@ describe("adminSaveMatchPlayerStatsAction", () => {
       ["a decimal", "1.5"],
       ["text", "abc"],
       ["a number above 9999", "10000"],
-    ])("throws and writes nothing when a stat value is %s", async (_label, value) => {
-      await expect(adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: value, stat_p1_assist: "1" }))).rejects.toThrow(
-        new Error("Invalid player statistic value."),
+    ])("sends the admin back with the input message and writes nothing when a stat value is %s", async (_label, value) => {
+      await expectRedirect(
+        adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: value, stat_p1_assist: "1" })),
+        errorUrl("Isian statistik tidak valid. Periksa nilai yang dimasukkan dan coba lagi."),
       );
 
       expectNothingWritten();
@@ -342,38 +346,39 @@ describe("adminSaveMatchPlayerStatsAction", () => {
       );
     });
 
-    it("throws and writes nothing when a stat value is a file instead of text", async () => {
-      await expect(
+    it("sends the admin back with the input message when a stat value is a file instead of text", async () => {
+      await expectRedirect(
         adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: new File(["1"], "goal.txt"), stat_p1_assist: "1" })),
-      ).rejects.toThrow(new Error("Invalid player statistic value."));
-
-      expectNothingWritten();
-    });
-
-    it("throws and writes nothing when a score field arrives for a match without score slots", async () => {
-      await expect(adminSaveMatchPlayerStatsAction(validForm({ score_p1_1: "7" }))).rejects.toThrow(
-        new Error("Player scores are unavailable for this match."),
+        errorUrl("Isian statistik tidak valid. Periksa nilai yang dimasukkan dan coba lagi."),
       );
 
       expectNothingWritten();
     });
 
-    it("throws and writes nothing when a score slot is missing for a player", async () => {
-      getPlayerStatFormContext.mockResolvedValue(completedMatchContext({ scoreGameNumbers: [1, 2] }));
-
-      await expect(
-        adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: "1", stat_p1_assist: "1", score_p1_1: "7" })),
-      ).rejects.toThrow(new Error("Invalid player score array length."));
+    it("sends the admin back with the input message when a score field arrives for a match without score slots", async () => {
+      await expectRedirect(adminSaveMatchPlayerStatsAction(validForm({ score_p1_1: "7" })), errorUrl("Isian statistik tidak valid. Periksa nilai yang dimasukkan dan coba lagi."));
 
       expectNothingWritten();
     });
 
-    it("throws and writes nothing when a score is above 10", async () => {
+    it("sends the admin back with the input message when a score slot is missing for a player", async () => {
+      getPlayerStatFormContext.mockResolvedValue(completedMatchContext({ scoreGameNumbers: [1, 2] }));
+
+      await expectRedirect(
+        adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: "1", stat_p1_assist: "1", score_p1_1: "7" })),
+        errorUrl("Isian statistik tidak valid. Periksa nilai yang dimasukkan dan coba lagi."),
+      );
+
+      expectNothingWritten();
+    });
+
+    it("sends the admin back with the input message when a score is above 10", async () => {
       getPlayerStatFormContext.mockResolvedValue(completedMatchContext({ scoreGameNumbers: [1] }));
 
-      await expect(
+      await expectRedirect(
         adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: "1", stat_p1_assist: "1", score_p1_1: "10.5" })),
-      ).rejects.toThrow(new Error("Invalid player score."));
+        errorUrl("Isian statistik tidak valid. Periksa nilai yang dimasukkan dan coba lagi."),
+      );
 
       expectNothingWritten();
     });
@@ -504,32 +509,41 @@ describe("adminSaveMatchPlayerStatsAction", () => {
   });
 
   describe("repository errors", () => {
-    it("lets a write failure propagate as it is, without a redirect or a masked message", async () => {
+    it("sends the admin back with a generic message when the write fails, and does not leak the database error", async () => {
       adminWriteMatchPlayerStats.mockRejectedValue(new Error("Invalid `prisma.playerStat.upsert()` invocation: connection reset"));
 
-      await expect(adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: "1", stat_p1_assist: "1" }))).rejects.toThrow(
-        new Error("Invalid `prisma.playerStat.upsert()` invocation: connection reset"),
+      await expectRedirect(
+        adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: "1", stat_p1_assist: "1" })),
+        errorUrl("Gagal menyimpan statistik pemain."),
       );
+    });
+
+    it("writes a server log for an unexpected write failure, without the database message", async () => {
+      adminWriteMatchPlayerStats.mockRejectedValue(new Error("db down"));
+
+      await expectRedirect(adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: "1", stat_p1_assist: "1" })), errorUrl("Gagal menyimpan statistik pemain."));
+
+      expect(saveFailureLogs()).toHaveLength(1);
+      const entry = saveFailureLogs()[0];
+      expect(entry).toMatchObject({ phase: "failed", operation: "admin_save_match_player_stats", route: "/admin", status: 500, errorCode: "Error", resourceId: "event-1" });
+      expect(JSON.stringify(entry)).not.toContain("db down");
     });
 
     it("does not revalidate anything when the write fails", async () => {
       adminWriteMatchPlayerStats.mockRejectedValue(new Error("db down"));
 
-      await expect(adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: "1", stat_p1_assist: "1" }))).rejects.toThrow(
-        new Error("db down"),
-      );
+      await expectRedirect(adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: "1", stat_p1_assist: "1" })), errorUrl("Gagal menyimpan statistik pemain."));
 
       expect(revalidateTag).not.toHaveBeenCalled();
       expect(revalidatePath).not.toHaveBeenCalled();
     });
 
-    it("lets a payload rejection from the write propagate unchanged too", async () => {
-      adminWriteMatchPlayerStats.mockRejectedValue(new Error("Invalid player statistic payload."));
+    it("shows a message that is safe to read as written, and does not log it", async () => {
+      adminWriteMatchPlayerStats.mockRejectedValue(new Error("Not authorized"));
 
-      await expect(adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: "1", stat_p1_assist: "1" }))).rejects.toThrow(
-        new Error("Invalid player statistic payload."),
-      );
-      expect(adminWriteMatchPlayerStats).toHaveBeenCalledTimes(1);
+      await expectRedirect(adminSaveMatchPlayerStatsAction(validForm({ stat_p1_goal: "1", stat_p1_assist: "1" })), errorUrl("Not authorized"));
+
+      expect(saveFailureLogs()).toEqual([]);
     });
   });
 });
