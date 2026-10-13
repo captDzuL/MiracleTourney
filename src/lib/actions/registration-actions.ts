@@ -196,7 +196,13 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
 }
 
 export async function adminUpdatePaymentSettingsAction(formData: FormData) {
-  await requireAdminSession();
+  const user = await requireAdminSession();
+  // These settings are one row for the whole platform. An organizer manages the QRIS of their own events instead.
+  if (user.role === "organizer") {
+    return redirectToActiveLocale(
+      `/admin?phase=payments&error=${encodeURIComponent("Hanya admin platform yang dapat mengubah pengaturan QRIS global.")}` as never,
+    );
+  }
 
   const qrisImageFile = formData.get("qrisImage");
   const uploadedQrisAsset = qrisImageFile instanceof File && qrisImageFile.size > 0
