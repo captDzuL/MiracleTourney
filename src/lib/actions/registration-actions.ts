@@ -25,12 +25,12 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 /** Expected rejections reach the captain as-is; anything else is masked to the captain, so record it for operators. */
-function logUnexpectedRegistrationFailure(stage: string | undefined, error: unknown, eventId: string) {
+function logUnexpectedRegistrationFailure(stage: string | undefined, error: unknown, eventId: string, operation = "captain_register_team") {
   if (isUserSafeActionError(error)) return;
   const { name, code } = describeActionError(error);
   writeServerLog({
     phase: "failed",
-    operation: "captain_register_team",
+    operation,
     route: "/captain",
     requestId: randomUUID(),
     durationMs: 0,
@@ -113,8 +113,9 @@ export async function captainSaveDraftTeamAction(formData: FormData) {
     name: z.string().trim().min(2, "Nama tim minimal 2 karakter."),
     tag: z.string().trim().min(2, "Tag tim harus 2-5 karakter.").max(5, "Tag tim harus 2-5 karakter."),
   }).safeParse({
-    name: formData.get("name"),
-    tag: formData.get("tag"),
+    // A missing or non-text field counts as empty, so the captain gets the readable message below, not a raw zod one.
+    name: typeof formData.get("name") === "string" ? formData.get("name") : "",
+    tag: typeof formData.get("tag") === "string" ? formData.get("tag") : "",
   });
 
   if (!parsed.success) {
@@ -131,6 +132,7 @@ export async function captainSaveDraftTeamAction(formData: FormData) {
     await createOrUpdateCaptainDraftTeam({ ...input, captainId: captain.id, captainName: captain.name });
   } catch (err) {
     const msg = toSafeActionMessage(err, "Gagal menyimpan draft tim.");
+    logUnexpectedRegistrationFailure(undefined, err, captain.id, "captain_save_draft_team");
     return await draftError(msg);
   }
 
