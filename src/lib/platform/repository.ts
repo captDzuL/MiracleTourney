@@ -161,6 +161,7 @@ export function mapEvent(row: {
   gameId: string; gameModeId: string; format: string; status: string;
   formatConfig?: Prisma.JsonValue | null;
   participantCap: number; registrationWindow: string; startsAt: string;
+  entryMode?: string | null;
   venue: string; characterArtUrl?: string | null; accentColor?: string | null;
   organizerUserId?: string | null; organizerName?: string | null; organizerVerified?: boolean | null;
   prizePoolLabel?: string | null; registrationFeeRequired?: boolean | null; registrationFeeAmount?: number | null; registrationFeeLabel?: string | null; registrationUrl?: string | null;
@@ -177,6 +178,7 @@ export function mapEvent(row: {
     registrationWindow: row.registrationWindow, startsAt: row.startsAt, venue: row.venue,
     registrationFeeRequired: row.registrationFeeRequired ?? false,
   };
+  if (row.entryMode === "solo") event.entryMode = "solo";
   const logoUrl = row.logoUrl ?? getFallbackLogoUrl(row.gameId);
   if (logoUrl) event.logoUrl = logoUrl;
   if (row.gameImageUrl) event.gameImageUrl = row.gameImageUrl;

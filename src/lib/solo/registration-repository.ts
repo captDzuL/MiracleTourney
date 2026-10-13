@@ -421,6 +421,25 @@ export async function getSoloQuotaSnapshot(eventId: string): Promise<SoloQuotaSn
   return { required, open };
 }
 
+/** Where a queued player stands in the line of their group: 1 is next. Null when the player is not queued. */
+export async function getSoloQueuePosition(
+  registration: Pick<SoloRegistrationView, "id" | "eventId" | "slotGroup" | "status" | "createdAt">,
+): Promise<number | null> {
+  if (registration.status !== "queued") return null;
+  const ahead = await prisma.soloRegistration.count({
+    where: {
+      eventId: registration.eventId,
+      slotGroup: registration.slotGroup,
+      status: "queued",
+      OR: [
+        { createdAt: { lt: registration.createdAt } },
+        { createdAt: registration.createdAt, id: { lt: registration.id } },
+      ],
+    },
+  });
+  return ahead + 1;
+}
+
 /** The registration a player has for an event, if any. */
 export async function getSoloRegistrationForUser(eventId: string, userId: string): Promise<SoloRegistrationView | null> {
   const row = await prisma.soloRegistration.findUnique({ where: { eventId_userId: { eventId, userId } } });

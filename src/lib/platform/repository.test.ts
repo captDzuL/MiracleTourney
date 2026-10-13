@@ -148,6 +148,7 @@ import {
   countAiVisualAttempts,
   createEventVisualAsset,
   createPlayerAccount,
+  mapEvent,
   deletePlayer,
   getCaptainRegistrationRequests,
   getCaptainTeams,
@@ -3343,5 +3344,20 @@ describe("solo events refuse team registration", () => {
     prisma.event.findUnique.mockResolvedValue({ ...publishedEventRow({ id: "event-open", slug: "open-cup" }), entryMode: "team" });
     prisma.team.create.mockResolvedValue({ id: "team-new", eventId: "event-open", captainId: "captain-1", name: "Team", logoText: "TE", logoUrl: null, tag: "TEA", captainName: null, captainContact: null, source: "registration" });
     await expect(registerTeam({ eventId: "event-open", captainId: "captain-1", name: "Team", tag: "tea" })).resolves.toEqual(expect.objectContaining({ id: "team-new" }));
+  });
+});
+
+
+describe("mapEvent carries the registration mode", () => {
+  const row = { ...publishedEventRow({ id: "event-1", slug: "solo-cup" }), logoUrl: null, gameImageUrl: null };
+
+  it("marks a solo event", () => {
+    expect(mapEvent({ ...row, entryMode: "solo" }).entryMode).toBe("solo");
+  });
+
+  it("leaves a team event, and an event from before the column, without a mode", () => {
+    expect(mapEvent({ ...row, entryMode: "team" }).entryMode).toBeUndefined();
+    expect(mapEvent(row).entryMode).toBeUndefined();
+    expect(mapEvent({ ...row, entryMode: null }).entryMode).toBeUndefined();
   });
 });

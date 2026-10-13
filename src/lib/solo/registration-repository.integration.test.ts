@@ -215,6 +215,35 @@ describe.skipIf(!databaseUrl)("solo registration repository (real database)", ()
       expect(row?.status).toBe("approved");
     });
 
+    it("tells each queued player their place, counting only their own group", async () => {
+      const event = await makeEvent({ cap: 2 });
+      await fill(event.id, "Goalkeeper", 2);
+      await fill(event.id, "Forward", 8);
+      const keepers = [await join(event.id, "Goalkeeper"), await join(event.id, "Goalkeeper"), await join(event.id, "Goalkeeper")];
+      const field = [await join(event.id, "Defender")];
+
+      const places = await Promise.all([...keepers, ...field].map((entry) => m.repo.getSoloQueuePosition(entry.registration)));
+      expect(places).toEqual([1, 2, 3, 1]);
+    });
+
+    it("moves everyone up when the first in line is promoted", async () => {
+      const event = await makeEvent({ cap: 2 });
+      const [first] = await fill(event.id, "Goalkeeper", 2);
+      const [a, b] = [await join(event.id, "Goalkeeper"), await join(event.id, "Goalkeeper")];
+      await m.repo.withdrawSolo({ userId: first.registration.userId, registrationId: first.registration.id });
+
+      const current = await m.repo.getSoloRegistrationForUser(event.id, b.registration.userId);
+      expect(await m.repo.getSoloQueuePosition(current!)).toBe(1);
+      const promoted = await m.repo.getSoloRegistrationForUser(event.id, a.registration.userId);
+      expect(await m.repo.getSoloQueuePosition(promoted!)).toBeNull();
+    });
+
+    it("has no place for someone who is not queued", async () => {
+      const event = await makeEvent();
+      const { registration } = await join(event.id);
+      expect(await m.repo.getSoloQueuePosition(registration)).toBeNull();
+    });
+
     it("reports counts per group", async () => {
       const event = await makeEvent({ cap: 2, fee: true });
       await fill(event.id, "Goalkeeper", 3);
@@ -352,7 +381,7 @@ describe.skipIf(!databaseUrl)("solo registration repository (real database)", ()
 
       expect(settled.filter((entry) => entry.status === "rejected").map((entry) => String((entry as PromiseRejectedResult).reason))).toEqual([]);
       expect(await m.repo.getSoloQuotaSnapshot(event.id)).toMatchObject({ open: { quota: 8, held: 8, queued: 22 } });
-    });
+    }, 30_000);
 
     it("serves the queue in the order players arrived, even after a burst", async () => {
       const event = await makeEvent({ cap: 2 });

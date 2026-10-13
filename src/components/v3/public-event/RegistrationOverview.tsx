@@ -1,6 +1,7 @@
 import React from "react";
 import type { AdaptiveRegistrationEventViewModel } from "@/lib/events/adaptive-public-event";
 import type { AdaptiveEventCopy } from "./PublicEventHero";
+import { SoloCapacitySection, SoloPrepareCard, soloSteps } from "@/components/solo/SoloOverviewSections";
 
 function date(value: string | null, locale: "id" | "en", timezone: string) {
   if (!value) return "—";
@@ -20,6 +21,9 @@ export function RegistrationOverview({ view, locale, copy }: {
     || (view.registration.feeRequired ? copy.feePaid : copy.feeFree);
 
   const sectionTargetClass = "scroll-mt-[8.5rem] transition-[border-color,box-shadow] motion-reduce:transition-none data-[section-highlighted=true]:border-[var(--color-brand-cyan)] data-[section-highlighted=true]:shadow-[0_0_0_1px_var(--color-brand-cyan)]";
+  const solo = view.registration.mode === "solo" ? view.registration.solo : undefined;
+  const steps = solo ? soloSteps(locale) : copy.steps;
+  const panelClass = `${sectionTargetClass} rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7`;
 
   return <div className="grid gap-6">
     <section id="summary" className={`${sectionTargetClass} rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7`}>
@@ -30,7 +34,7 @@ export function RegistrationOverview({ view, locale, copy }: {
       </dl>
     </section>
 
-    <section id="participants" className={`${sectionTargetClass} rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7`}>
+    {solo ? <SoloCapacitySection className={panelClass} locale={locale} requiredPosition={solo.requiredPosition} slots={solo.slots} /> : <section id="participants" className={panelClass}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div><h2 className="text-xl font-extrabold">{copy.capacity}</h2><p className="mt-1 text-sm text-[var(--color-text-muted)]">{copy.teamCount.replace("{occupied}", String(view.registration.occupiedSlots)).replace("{cap}", String(view.registration.participantCap))}</p></div>
         <p className="text-2xl font-extrabold text-[var(--color-brand-cyan)]">{view.registration.remainingSlots}</p>
@@ -43,24 +47,24 @@ export function RegistrationOverview({ view, locale, copy }: {
         {view.registration.pendingReviewCount > 0 ? <div><dt className="text-[var(--color-text-muted)]">{copy.pendingReview}</dt><dd className="mt-1 font-bold">{view.registration.pendingReviewCount}</dd></div> : null}
         <div><dt className="text-[var(--color-text-muted)]">{copy.remaining}</dt><dd className="mt-1 font-bold">{view.registration.remainingSlots}</dd></div>
       </dl>
-    </section>
+    </section>}
 
     <section id="requirements" className={`${sectionTargetClass} grid rounded-[var(--radius-panel)] gap-4 sm:grid-cols-2`}>
       <div className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">{copy.fee}</h2>
         <p className="mt-3 text-2xl font-extrabold text-[var(--color-brand-cream)]">{feeLabel}</p>
       </div>
-      <div className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7">
+      {solo ? <SoloPrepareCard locale={locale} /> : <div className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">{copy.roster}</h2>
         <p className="mt-3 text-2xl font-extrabold">{roster}</p>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">{copy.uidIgn}</p>
-      </div>
+      </div>}
     </section>
 
     <section className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-7">
       <h2 className="text-xl font-extrabold">{copy.howToTitle}</h2>
       <ol className="mt-5 grid gap-3 sm:grid-cols-2">
-        {copy.steps.map((step, index) => <li key={step} className="flex min-h-16 items-center gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
+        {steps.map((step, index) => <li key={step} className="flex min-h-16 items-center gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-brand-violet)] text-sm font-extrabold text-white">{index + 1}</span>
           <span className="font-bold">{step}</span>
         </li>)}

@@ -21,13 +21,16 @@ export async function renderEventRegistrationPage(
   locale: "id" | "en" = "id",
   searchParams?: Promise<SearchParams>,
 ) {
-  void locale;
   const [event, user, resolvedSearchParams] = await Promise.all([
     getPublicEventBySlug(slug),
     getSessionUser(),
     searchParams,
   ]);
   if (!event) notFound();
+  if (event.entryMode === "solo") {
+    const { renderSoloRegistrationPage } = await import("./solo-registration-page");
+    return renderSoloRegistrationPage({ event, user, locale, search: resolvedSearchParams });
+  }
 
   const mode = getGameModeConfig(event.gameModeId);
   const returnTo = "/events/" + event.slug + "/register";

@@ -4,6 +4,7 @@ import { CalendarDays, MapPin, ShieldCheck, Trophy, Users } from "lucide-react";
 
 import { ShareButton } from "@/components/ShareButton";
 import type { AdaptiveRegistrationEventViewModel } from "@/lib/events/adaptive-public-event";
+import { soloTotals } from "@/lib/solo/labels";
 
 export type AdaptiveEventCopy = {
   registrationOpen: string;
@@ -72,6 +73,11 @@ export function PublicEventHero({ view, locale, copy }: {
   const start = new Intl.DateTimeFormat(locale === "id" ? "id-ID" : "en-US", {
     dateStyle: "long", timeStyle: "short", timeZone: view.event.timezone,
   }).format(new Date(view.event.eventStartsAt));
+  // A solo event has no teams yet, so its slot fact counts players instead.
+  const soloCount = view.registration.mode === "solo" ? soloTotals(view.registration.solo?.slots) : null;
+  const slotsValue = view.registration.mode === "solo"
+    ? (soloCount ? `${soloCount.held}/${soloCount.quota}` : "—")
+    : `${view.registration.occupiedSlots}/${view.registration.participantCap}`;
 
   return <section className="overflow-hidden rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)]">
     <div className="grid lg:grid-cols-[minmax(0,1.08fr)_minmax(22rem,.92fr)]">
@@ -100,7 +106,7 @@ export function PublicEventHero({ view, locale, copy }: {
           {fact(view.event.timezone === "Asia/Jakarta" ? "WIB" : view.event.timezone, copy.timezone, <CalendarDays className="h-4 w-4 text-[var(--color-brand-cyan)]" aria-hidden />)}
           {fact(view.event.venue, copy.venue, <MapPin className="h-4 w-4 text-[var(--color-brand-cyan)]" aria-hidden />)}
           {fact(view.event.prize ?? "—", copy.prize, <Trophy className="h-4 w-4 text-[var(--color-brand-cyan)]" aria-hidden />)}
-          {fact(`${view.registration.occupiedSlots}/${view.registration.participantCap}`, copy.slots, <Users className="h-4 w-4 text-[var(--color-brand-cyan)]" aria-hidden />)}
+          {fact(slotsValue, copy.slots, <Users className="h-4 w-4 text-[var(--color-brand-cyan)]" aria-hidden />)}
         </dl>
       </div>
       <div data-testid="adaptive-event-poster" className="relative order-1 min-h-64 overflow-hidden border-b border-[var(--color-border)] bg-[linear-gradient(145deg,#101c2e,#39217c)] lg:order-2 lg:min-h-[36rem] lg:border-b-0 lg:border-l">

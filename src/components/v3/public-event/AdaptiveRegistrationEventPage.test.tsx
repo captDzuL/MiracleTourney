@@ -26,6 +26,7 @@ const view: AdaptiveRegistrationEventViewModel = {
     contactValue: "+62 812 3456 7890", contactHref: "https://wa.me/6281234567890",
   },
   registration: {
+    mode: "team",
     availability: "open", opensAt: "2026-09-11T02:00:00.000Z",
     closesAt: "2026-09-17T16:59:00.000Z", activeTeamCount: 10,
     pendingReviewCount: 2, occupiedSlots: 12, remainingSlots: 4, participantCap: 16,
