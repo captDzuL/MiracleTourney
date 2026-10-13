@@ -486,10 +486,11 @@ describe("getPaymentRegistrationRequestsForAdmin", () => {
     ]);
   });
 
-  it("rejects other roles after the expiry cleanup but before reading requests", async () => {
+  it("rejects other roles before the expiry cleanup writes anything and before reading requests", async () => {
     await expect(getPaymentRegistrationRequestsForAdmin(captain)).rejects.toThrow("Not authorized");
 
-    expect(prisma.teamRegistrationRequest.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.teamRegistrationRequest.updateMany).not.toHaveBeenCalled();
+    expect(prisma.team.deleteMany).not.toHaveBeenCalled();
     expect(prisma.teamRegistrationRequest.findMany).not.toHaveBeenCalled();
   });
 

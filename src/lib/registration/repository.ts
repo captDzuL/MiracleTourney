@@ -483,12 +483,13 @@ export async function getCaptainRegistrationRequests(captainId: string): Promise
 }
 
 export async function getPaymentRegistrationRequestsForAdmin(user: AppUser, filters: { eventId?: string; status?: TeamRegistrationRequestStatus } = {}): Promise<TeamRegistrationRequest[]> {
+  // Check who is asking before anything is written: the expiry cleanup below updates rows.
+  if (user.role !== "organizer" && user.role !== "platform_admin" && user.role !== "admin") throw new Error("Not authorized");
   await expireStaleRegistrationRequests();
   const where: Prisma.TeamRegistrationRequestWhereInput = {};
   if (filters.eventId) where.eventId = filters.eventId;
   if (filters.status) where.status = filters.status;
   if (user.role === "organizer") where.event = { organizerUserId: user.id };
-  else if (user.role !== "platform_admin" && user.role !== "admin") throw new Error("Not authorized");
 
   const rows = await prisma.teamRegistrationRequest.findMany({
     where,
