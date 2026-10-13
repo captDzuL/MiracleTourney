@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const verifyPasswordResetToken = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/actions", () => ({ resetPasswordAction: vi.fn() }));
+vi.mock("@/lib/actions/identity-actions", () => ({
+  resetPasswordAction: vi.fn(),
+}));
 vi.mock("@/lib/platform/password-reset", () => ({ verifyPasswordResetToken }));
 vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,

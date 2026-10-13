@@ -28,33 +28,8 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { getActiveEventEditRevisionIds } from "@/lib/events/event-revision";
 import { SubmitButton } from "@/components/submit-button";
 import { HydrationGate } from "@/components/HydrationGate";
-import {
-  adminApproveStatAction,
-  adminApprovePaymentAction,
-  adminArchiveEventAction,
-  adminAssignCaptainAction,
-  adminCreateEventAction,
-  adminDeactivateUserAction,
-  adminDeleteTeamAction,
-  adminCommitRegistrationImportAction,
-  adminImportTeamsCsvAction,
-  adminPreviewRegistrationImportAction,
-  adminRejectStatAction,
-  adminRejectPaymentAction,
-  adminRegenerateCertificateAction,
-  adminSaveMatchPlayerStatsAction,
-  adminSetAccentColorAction,
-  adminSetMatchGamesAction,
-  adminSetRoundConfigAction,
-  adminUpdateEventStatusAction,
-  adminUpdateMatchResultAction,
-  adminUpdateStreamAction,
-  adminUploadEventLogoAction,
-  adminUploadCharacterArtAction,
-  adminUploadTeamLogoAction,
-  adminUpdateEventPublicInfoAction,
-  adminUpdatePaymentSettingsAction,
-} from "@/lib/actions";
+import { adminAssignCaptainAction, adminDeactivateUserAction } from "@/lib/actions/identity-actions";
+import { adminApproveStatAction, adminApprovePaymentAction, adminArchiveEventAction, adminCreateEventAction, adminDeleteTeamAction, adminCommitRegistrationImportAction, adminImportTeamsCsvAction, adminPreviewRegistrationImportAction, adminRejectStatAction, adminRejectPaymentAction, adminRegenerateCertificateAction, adminSaveMatchPlayerStatsAction, adminSetAccentColorAction, adminSetMatchGamesAction, adminSetRoundConfigAction, adminUpdateEventStatusAction, adminUpdateMatchResultAction, adminUpdateStreamAction, adminUploadEventLogoAction, adminUploadCharacterArtAction, adminUploadTeamLogoAction, adminUpdateEventPublicInfoAction, adminUpdatePaymentSettingsAction } from "@/lib/actions";
 import { requireAnyRole } from "@/lib/auth/session";
 import { getBracketManageableMatchesForEvent, getLeaderboardForEvent, getMatchesForEvent } from "@/lib/bracket/repository";
 import { getEventRoundConfigs, getMatchGames } from "@/lib/bracket/rounds-repository";

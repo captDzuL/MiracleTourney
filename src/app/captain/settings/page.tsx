@@ -3,7 +3,7 @@ import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
-import { changePasswordAction } from "@/lib/actions";
+import { changePasswordAction } from "@/lib/actions/identity-actions";
 import { requireRole } from "@/lib/auth/session";
 import { hasTempPassword } from "@/lib/identity/repository";
 import { buttonStyles } from "@/components/ui";

@@ -2,7 +2,9 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/actions", () => ({ requestPasswordResetAction: vi.fn() }));
+vi.mock("@/lib/actions/identity-actions", () => ({
+  requestPasswordResetAction: vi.fn(),
+}));
 vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));

@@ -251,52 +251,8 @@ vi.mock("bcryptjs", () => ({
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { UserFacingError } from "@/lib/security/public-error";
 import bcrypt from "bcryptjs";
-import {
-  adminActivateEventVisualAction,
-  adminApproveEventVisualAction,
-  adminApproveStatAction,
-  adminApprovePaymentAction,
-  adminCreateEventAction,
-  adminImportTeamsCsvAction,
-  adminPreviewRegistrationImportAction,
-  adminCommitRegistrationImportAction,
-  adminDeleteTeamAction,
-  adminAssignCaptainAction,
-  adminDeactivateUserAction,
-  adminArchiveEventAction,
-  adminSetAccentColorAction,
-  adminRegenerateCertificateAction,
-  adminRejectEventVisualAction,
-  adminRejectStatAction,
-  adminSetEventVisualFocalPointAction,
-  adminRejectPaymentAction,
-  adminSetMatchGamesAction,
-  adminSetRoundConfigAction,
-  adminUploadCharacterArtAction,
-  adminUploadEventLogoAction,
-  adminUploadTeamLogoAction,
-  organizerUploadEventLogoAction,
-  organizerUploadEventVisualAction,
-  adminUploadEventVisualAction,
-  adminUpdateEventStatusAction,
-  adminUpdateEventPublicInfoAction,
-  adminUpdatePaymentSettingsAction,
-  adminUpdateMatchResultAction,
-  adminUpdateStreamAction,
-  captainAddPlayerAction,
-  captainDeletePlayerAction,
-  captainRegisterTeamAction,
-  captainUploadPaymentProofAction,
-  captainUploadTeamLogoAction,
-  captainSetDisplayCaptainAction,
-  captainSignUpAction,
-  captainSubmitStatsAction,
-  captainUpdatePlayerAction,
-  changePasswordAction,
-  loginAction,
-  requestPasswordResetAction,
-  resetPasswordAction,
-} from "./actions";
+import { adminAssignCaptainAction, adminDeactivateUserAction, captainSignUpAction, changePasswordAction, loginAction, requestPasswordResetAction, resetPasswordAction } from "@/lib/actions/identity-actions";
+import { adminActivateEventVisualAction, adminApproveEventVisualAction, adminApproveStatAction, adminApprovePaymentAction, adminCreateEventAction, adminImportTeamsCsvAction, adminPreviewRegistrationImportAction, adminCommitRegistrationImportAction, adminDeleteTeamAction, adminArchiveEventAction, adminSetAccentColorAction, adminRegenerateCertificateAction, adminRejectEventVisualAction, adminRejectStatAction, adminSetEventVisualFocalPointAction, adminRejectPaymentAction, adminSetMatchGamesAction, adminSetRoundConfigAction, adminUploadCharacterArtAction, adminUploadEventLogoAction, adminUploadTeamLogoAction, organizerUploadEventLogoAction, organizerUploadEventVisualAction, adminUploadEventVisualAction, adminUpdateEventStatusAction, adminUpdateEventPublicInfoAction, adminUpdatePaymentSettingsAction, adminUpdateMatchResultAction, adminUpdateStreamAction, captainAddPlayerAction, captainDeletePlayerAction, captainRegisterTeamAction, captainUploadPaymentProofAction, captainUploadTeamLogoAction, captainSetDisplayCaptainAction, captainSubmitStatsAction, captainUpdatePlayerAction } from "./actions";
 import { logoutAction } from "./session-actions";
 
 // ────────────────────────────────────────────────────────────
