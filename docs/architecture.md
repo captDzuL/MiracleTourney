@@ -62,7 +62,7 @@ Aturan ini aktif sebagai **error**. Definisinya di `eslint.import-rules.mjs`. Fi
 
 | Kode | Aturan | Alasan |
 |---|---|---|
-| R1 | Kode produksi tidak boleh mengimpor `demo-store`. | Aplikasi tidak lagi memakai data demo saat database gagal. File itu hanya bahan test. |
+| R1 | Kode produksi tidak boleh mengimpor `src/test-support`. | Aplikasi tidak lagi memakai data demo saat database gagal. Folder itu hanya bahan test. |
 | R3 | Komponen di `src/components` tidak boleh mengimpor nilai dari file repository mana pun (13 modul di atas). Impor tipe (`import type`) boleh. Daftar modulnya ada di `eslint.import-rules.mjs`. | Komponen menerima data lewat props. |
 | R4 | `src/app` dan `src/components` tidak boleh mengimpor `@/lib/platform/db` (Prisma). | Akses data lewat `src/lib`. |
 | R5 | `src/lib` tidak boleh mengimpor `@/app/**` atau `@/components/**`. | Logika tidak boleh bergantung pada tampilan. |

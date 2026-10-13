@@ -35,8 +35,8 @@ const RULES = [
     appliesTo: () => true,
     patterns: [
       {
-        group: ["**/demo-store"],
-        message: "[R1] Kode produksi tidak boleh memakai demo-store. File itu hanya bahan test.",
+        group: ["**/test-support/**", "@/test-support/**"],
+        message: "[R1] Kode produksi tidak boleh memakai src/test-support. Folder itu hanya bahan test.",
       },
     ],
   },

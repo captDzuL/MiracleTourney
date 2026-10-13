@@ -1,24 +1,10 @@
-// TEST FIXTURE ONLY. Production code must not import this file: since PR 0.6 the app no longer falls back to demo
-// data when the database fails (see docs/refactor/demo-fallback-decision.md). Tests use it for bracket and standings logic.
-import {
-  gameModes,
-  games,
-  getFallbackLogoUrl,
-  getGameConfig,
-  getGameIdForMode,
-  getGameModeConfig,
-  getGamePrimaryStatKey,
-} from "@/lib/platform/config";
-import type { AppUser, Event, EventVisualAsset, Match, Player, Team } from "@/lib/platform/types";
-import {
-  aggregatePlayerLeaderboard,
-  buildLeagueStandings,
-  generateRoundRobinSchedule,
-  getPublicVisibleSingleEliminationBracket,
-  getLiveStreamPresentation,
-  projectSingleEliminationBracket,
-} from "@/lib/tournament/engine";
-import type { BracketMatch, MatchResultInput, PlayerMatchStatInput } from "@/lib/tournament/types";
+// TEST FIXTURE ONLY. Production code must not import this file (ESLint rule R1): the app no longer falls back to demo
+// data when the database fails (see docs/refactor/demo-fallback-decision.md). It is the in-memory stand-in that the public
+// bracket page test (src/app/events/[slug]/bracket/page.test.ts) uses for events, teams and bracket projections.
+import { getFallbackLogoUrl, getGameIdForMode } from "@/lib/platform/config";
+import type { AppUser, Event, Match, Player, Team } from "@/lib/platform/types";
+import { generateRoundRobinSchedule, getPublicVisibleSingleEliminationBracket, projectSingleEliminationBracket } from "@/lib/tournament/engine";
+import type { PlayerMatchStatInput } from "@/lib/tournament/types";
 
 type DemoState = {
   users: AppUser[];
@@ -407,58 +393,12 @@ export function resetDemoStore() {
   globalStore.__mflStore = cloneState(initialState);
 }
 
-export function getAllGames() {
-  return games;
-}
-
-export function getGameModes() {
-  return gameModes;
-}
-
-export function getEvents() {
-  return getStore().events;
-}
-
-export function getPublicEvents() {
-  return getStore().events.filter((event) => PUBLIC_EVENT_STATUSES.has(event.status));
-}
-
-export function getEventBySlug(slug: string) {
-  return getStore().events.find((event) => event.slug === slug);
-}
-
 export function getPublicEventBySlug(slug: string) {
   return getStore().events.find((event) => event.slug === slug && PUBLIC_EVENT_STATUSES.has(event.status));
 }
 
-/**
- * Demo events carry no visual revisions, so they resolve through the legacy
- * background or the typographic poster. Returning an empty list keeps the
- * organizer panel renderable when Prisma is unreachable.
- */
-export function listEventVisualAssets(eventId: string): EventVisualAsset[] {
-  const event = getStore().events.find((item) => item.id === eventId);
-  return event?.activeVisualAsset ? [event.activeVisualAsset] : [];
-}
-
-export function getGameForEvent(event: Event) {
-  return getGameConfig(event.gameId);
-}
-
-export function getModeForEvent(event: Event) {
-  return getGameModeConfig(event.gameModeId);
-}
-
 export function getTeamsForEvent(eventId: string) {
   return getStore().teams.filter((team) => team.eventId === eventId);
-}
-
-export function getPlayersForTeam(teamId: string) {
-  return getStore().players.filter((player) => player.teamId === teamId);
-}
-
-export function getPlayersForEvent(eventId: string) {
-  return getStore().players.filter((player) => player.eventId === eventId);
 }
 
 export function getMatchesForEvent(eventId: string) {
@@ -470,142 +410,6 @@ export function isEventBracketLocked(eventId: string) {
   if (!event || event.format !== "Single Elimination") return false;
 
   return getMatchesForEvent(eventId).some((match) => match.status === "Completed");
-}
-
-function getBracketRoundLabel(round: number, totalRounds: number) {
-  const roundsRemaining = totalRounds - round + 1;
-
-  if (roundsRemaining === 1) return "Final";
-  if (roundsRemaining === 2) return "Semifinal";
-  if (roundsRemaining === 3) return "Quarterfinal";
-  if (roundsRemaining === 4) return "Round of 16";
-
-  return `Round ${round}`;
-}
-
-function matchesProjectedPairing(
-  match: Pick<Match, "homeTeamId" | "awayTeamId">,
-  projected: Pick<BracketMatch, "homeTeamId" | "awayTeamId">,
-) {
-  return match.homeTeamId === projected.homeTeamId && match.awayTeamId === projected.awayTeamId;
-}
-
-function getProjectedBracketMatches(event: Event): Match[] {
-  const teamSeeds = getTeamsForEvent(event.id).map((team) => ({ id: team.id, name: team.name }));
-  const bracket = projectSingleEliminationBracket({
-    teams: teamSeeds,
-    slotCount: getBracketSlotCount(teamSeeds.length),
-    results: getMatchesForEvent(event.id),
-    eventId: event.id,
-  }) as BracketMatch[];
-  const existingById = new Map(getMatchesForEvent(event.id).map((match) => [match.id, match]));
-  const totalRounds = Math.max(...bracket.map((match) => match.round), 1);
-
-  return bracket
-    .filter((match) => Boolean(match.homeTeamId && match.awayTeamId))
-    .map((match) => {
-      const existing = existingById.get(match.id);
-      const alignedExisting = existing && matchesProjectedPairing(existing, match) ? existing : null;
-
-      return {
-        id: match.id,
-        eventId: event.id,
-        roundLabel: getBracketRoundLabel(match.round, totalRounds),
-        homeTeamId: match.homeTeamId!,
-        awayTeamId: match.awayTeamId!,
-        homeScore: alignedExisting?.homeScore ?? 0,
-        awayScore: alignedExisting?.awayScore ?? 0,
-        status: alignedExisting?.status ?? "Scheduled",
-        round: match.round,
-        slot: match.slot,
-        winnerTeamId: alignedExisting?.winnerTeamId ?? null,
-      } satisfies Match;
-    })
-    .sort((left, right) => (left.round! - right.round!) || (left.slot! - right.slot!));
-}
-
-export function getBracketManageableMatches(eventId: string) {
-  const event = getStore().events.find((item) => item.id === eventId);
-  if (!event) return [];
-
-  if (event.format === "Single Elimination") {
-    return getProjectedBracketMatches(event);
-  }
-
-  return getMatchesForEvent(eventId)
-    .filter((match) => match.round != null && match.slot != null)
-    .sort((left, right) => (left.round! - right.round!) || (left.slot! - right.slot!));
-}
-
-export function setMatchResult(input: {
-  eventId: string;
-  matchId: string;
-  homeScore: number;
-  awayScore: number;
-}) {
-  const store = getStore();
-  const event = store.events.find((item) => item.id === input.eventId);
-  let match = store.matches.find(
-    (item) => item.id === input.matchId && item.eventId === input.eventId,
-  );
-
-  if (!event) return null;
-  if (event.format === "Single Elimination" && input.homeScore === input.awayScore) {
-    throw new Error("Single elimination matches cannot end in a draw.");
-  }
-
-  if (!match && event.format === "Single Elimination") {
-    const projectedMatch = getProjectedBracketMatches(event).find((item) => item.id === input.matchId);
-    if (!projectedMatch) return null;
-
-    match = { ...projectedMatch };
-    store.matches.push(match);
-  }
-
-  if (!match) return null;
-
-  match.homeScore = input.homeScore;
-  match.awayScore = input.awayScore;
-  match.status = "Completed";
-  match.winnerTeamId =
-    input.homeScore > input.awayScore ? match.homeTeamId : match.awayTeamId;
-
-  return match;
-}
-
-
-export function getLeaderboardForEvent(eventId: string) {
-  const event = getStore().events.find((item) => item.id === eventId);
-
-  if (!event) return [];
-
-  const game = getGameForEvent(event);
-  const metric = getGamePrimaryStatKey(game.id);
-  const playerIds = new Set(getPlayersForEvent(eventId).map((player) => player.id));
-
-  return aggregatePlayerLeaderboard(
-    getStore().playerStats.filter((stat) => stat.gameSlug === game.slug && playerIds.has(stat.playerId)),
-    metric,
-  );
-}
-
-export function getTeamStandings(eventId: string) {
-  const event = getStore().events.find((item) => item.id === eventId);
-
-  if (!event) return [];
-
-  const teams = getTeamsForEvent(eventId).map((team) => ({ id: team.id, name: team.name }));
-  const results: MatchResultInput[] = getMatchesForEvent(eventId)
-    .filter((match) => match.status === "Completed")
-    .map((match) => ({
-      id: match.id,
-      homeTeamId: match.homeTeamId,
-      awayTeamId: match.awayTeamId,
-      homeScore: match.homeScore,
-      awayScore: match.awayScore,
-    }));
-
-  return buildLeagueStandings(teams, results);
 }
 
 export function getBracketPreview(eventId: string) {
@@ -639,42 +443,6 @@ export function getPublicVisibleBracketPreview(eventId: string): ReturnType<type
     results: getMatchesForEvent(eventId),
     eventId,
   });
-}
-
-export function getCaptainById(userId: string | undefined) {
-  if (!userId) return null;
-
-  return getStore().users.find((user) => user.id === userId) ?? null;
-}
-
-export function getUserByEmail(email: string) {
-  return getStore().users.find((user) => user.email === email) ?? null;
-}
-
-export function getCaptainTeams(userId: string | undefined) {
-  if (!userId) return [];
-
-  return getStore().teams.filter((team) => team.captainId === userId);
-}
-
-export function getImportSnapshot() {
-  const store = getStore();
-
-  return {
-    events: store.events.map((event) => ({
-      id: event.id,
-      slug: event.slug,
-      participantCap: event.participantCap,
-      bracketLocked: isEventBracketLocked(event.id),
-    })),
-    teams: store.teams.flatMap((team) => team.eventId ? [{ eventId: team.eventId, name: team.name, tag: team.tag }] : []),
-  };
-}
-
-export function getImportedTeams() {
-  return getStore().teams.filter(
-    (team) => Boolean(team.eventId) && (team.source === "csv-import" || team.source === "registration-intake"),
-  );
 }
 
 export function createEvent(input: {
@@ -719,100 +487,6 @@ export function setEventStatus(eventId: string, status: Event["status"]) {
   return event;
 }
 
-export function updateEventBrandAssets(eventId: string, updates: { logoUrl?: string; gameImageUrl?: string }) {
-  const event = getStore().events.find((item) => item.id === eventId);
-  if (!event) return null;
-
-  if (updates.logoUrl !== undefined) event.logoUrl = updates.logoUrl;
-  if (updates.gameImageUrl !== undefined) event.gameImageUrl = updates.gameImageUrl;
-  return event;
-}
-
-export function updateEventPublicInfo(
-  user: AppUser,
-  eventId: string,
-  updates: {
-    description: string;
-    registrationWindow: string;
-    startsAt: string;
-    venue: string;
-    prizePoolLabel?: string | null;
-    registrationFeeLabel?: string | null;
-    registrationUrl?: string | null;
-  },
-) {
-  const event = getStore().events.find((item) => item.id === eventId);
-  if (!event) return null;
-
-  const canManage =
-    user.role === "platform_admin"
-    || user.role === "admin"
-    || (user.role === "organizer" && event.organizerUserId === user.id);
-
-  if (!canManage) return null;
-
-  event.description = updates.description;
-  event.registrationWindow = updates.registrationWindow;
-  event.startsAt = updates.startsAt;
-  event.venue = updates.venue;
-  event.prizePoolLabel = updates.prizePoolLabel ?? undefined;
-  event.registrationFeeLabel = updates.registrationFeeLabel ?? undefined;
-  event.registrationUrl = updates.registrationUrl ?? undefined;
-  return event;
-}
-
-export function updateTeamLogo(user: AppUser, teamId: string, logoUrl: string) {
-  const team = getStore().teams.find((item) => item.id === teamId);
-  if (!team) return null;
-
-  if (!team.eventId) return null;
-  const event = getStore().events.find((item) => item.id === team.eventId);
-  const canManage =
-    user.role === "platform_admin"
-    || user.role === "admin"
-    || (user.role === "organizer" && event?.organizerUserId === user.id);
-
-  if (!canManage) return null;
-  team.logoUrl = logoUrl;
-  return team;
-}
-
-export function updateCaptainTeamLogo(captainId: string, teamId: string, logoUrl: string) {
-  const team = getStore().teams.find((item) => item.id === teamId && item.captainId === captainId);
-  if (!team) return null;
-  team.logoUrl = logoUrl;
-  return team;
-}
-
-export function registerTeam(input: {
-  eventId: string;
-  captainId: string;
-  name?: string;
-  tag?: string;
-  draftTeamId?: string;
-}) {
-  const event = getStore().events.find((item) => item.id === input.eventId);
-
-  if (event && isEventBracketLocked(input.eventId)) {
-    throw new Error(
-      `Event "${event.slug}" already has recorded match results, so additional teams cannot be registered.`,
-    );
-  }
-
-  const team: Team = {
-    id: `team-${Date.now()}`,
-    eventId: input.eventId,
-    captainId: input.captainId,
-    name: input.name ?? "Draft Team",
-    logoText: (input.tag ?? "DT").slice(0, 2).toUpperCase(),
-    tag: (input.tag ?? "DT").toUpperCase(),
-    source: "demo",
-  };
-
-  getStore().teams.push(team);
-  return team;
-}
-
 export function importTeams(input: Array<{
   eventId: string;
   teamName: string;
@@ -852,40 +526,3 @@ export function importTeams(input: Array<{
   return createdTeams;
 }
 
-export function addPlayer(input: {
-  teamId: string;
-  eventId?: string;
-  captainId?: string;
-  displayName: string;
-  nickname: string;
-  position?: string;
-}) {
-  const player: Player = {
-    id: `player-${Date.now()}`,
-    teamId: input.teamId,
-    ...(input.eventId ? { eventId: input.eventId } : {}),
-    displayName: input.displayName,
-    nickname: input.nickname,
-    position: input.position ?? "",
-  };
-
-  getStore().players.push(player);
-  return player;
-}
-
-export function updateEventStream(eventId: string, url: string, label: string) {
-  const event = getStore().events.find((item) => item.id === eventId);
-
-  if (!event) return null;
-
-  const stream = getLiveStreamPresentation(url);
-  event.stream = {
-    platform: stream.platform,
-    url,
-    label,
-    enabled: true,
-    isLive: true,
-  };
-
-  return event;
-}

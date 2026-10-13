@@ -11,7 +11,7 @@ import {
   importTeams,
   resetDemoStore,
   setEventStatus,
-} from "@/lib/platform/demo-store";
+} from "@/test-support/bracket-page-store";
 import type { EventRoundConfig, Match, MatchGame } from "@/lib/platform/types";
 import BracketPage from "./page";
 import { bracketDesignFixture } from "@/app/[locale]/bracket-design-preview/fixture";
@@ -60,21 +60,21 @@ vi.mock("next-intl/server", async () => {
 });
 
 vi.mock("@/lib/events/repository", async () => {
-  const store = await import("@/lib/platform/demo-store");
+  const store = await import("@/test-support/bracket-page-store");
   return {
     getPublicEventBySlug: (slug: string) => Promise.resolve(store.getPublicEventBySlug(slug)),
   };
 });
 
 vi.mock("@/lib/teams/repository", async () => {
-  const store = await import("@/lib/platform/demo-store");
+  const store = await import("@/test-support/bracket-page-store");
   return {
     getTeamsForEvent: (eventId: string) => Promise.resolve(store.getTeamsForEvent(eventId)),
   };
 });
 
 vi.mock("@/lib/bracket/repository", async () => {
-  const store = await import("@/lib/platform/demo-store");
+  const store = await import("@/test-support/bracket-page-store");
   return {
     getPublicVisibleBracketPreview: (eventId: string) => Promise.resolve(store.getPublicVisibleBracketPreview(eventId)),
     getMatchesForEvent: (eventId: string) => getMatchesForEventMock(eventId, store),
@@ -83,7 +83,7 @@ vi.mock("@/lib/bracket/repository", async () => {
 });
 
 vi.mock("@/lib/bracket/rounds-repository", async () => {
-  const store = await import("@/lib/platform/demo-store");
+  const store = await import("@/test-support/bracket-page-store");
   return {
     getEventRoundConfigs: (eventId: string) => getEventRoundConfigsMock(eventId, store),
     getMatchGamesForEvent: (eventId: string) => getMatchGamesForEventMock(eventId, store),
@@ -145,7 +145,7 @@ describe("public bracket page", () => {
     getMatchGamesForEventMock.mockImplementation(async (eventId: string) => (
       matchGamesByEvent.get(eventId) ?? new Map()
     ));
-    getMatchesForEventMock.mockImplementation(async (eventId: string, store: typeof import("@/lib/platform/demo-store")) => (
+    getMatchesForEventMock.mockImplementation(async (eventId: string, store: typeof import("@/test-support/bracket-page-store")) => (
       matchOverridesByEvent.get(eventId) ?? store.getMatchesForEvent(eventId)
     ));
   });
