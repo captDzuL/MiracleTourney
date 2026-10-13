@@ -158,6 +158,7 @@ export const gameModes: GameMode[] = [
     maxRosterSize: 8,
     positions: ["Forward", "Midfielder", "Defender", "Goalkeeper"],
     statKeys: ["goal", "assist", "passing", "defense"],
+    soloDraw: { requiredPositions: { Goalkeeper: 1 } },
   },
   {
     id: "mode-mlbb-5v5",
@@ -239,6 +240,18 @@ export function getGameModeConfig(modeId: string) {
     throw new Error(`Unknown game mode config: ${modeId}`);
   }
   return mode;
+}
+
+export type SoloDrawRules = {
+  teamSize: number;
+  requiredPositions: Readonly<Record<string, number>>;
+};
+
+/** Solo draw rules for a game mode, or null when the mode cannot run a solo tournament. */
+export function getSoloDrawRules(modeId: string): SoloDrawRules | null {
+  const mode = findGameModeConfig(modeId);
+  if (!mode?.soloDraw) return null;
+  return { teamSize: mode.teamSize, requiredPositions: mode.soloDraw.requiredPositions };
 }
 
 export function getGameIdForMode(modeId: string) {
