@@ -24,7 +24,7 @@ Aturan dasarnya satu arah: lapisan atas boleh memanggil lapisan di bawahnya, tid
 - **Server action** adalah satu-satunya tempat yang mengubah data atas permintaan pengguna. Tiap action memeriksa sesi dan izin lebih dulu, lalu menyimpan, lalu memanggil `revalidatePath` atau `revalidateTag`.
 - **Repository** adalah satu-satunya tempat yang memakai Prisma untuk data pertandingan, tim, pendaftaran, dan sejenisnya.
 
-Catatan jujur: pembagian ini belum bersih. File test lama `src/lib/platform/repository.test.ts` dan `src/lib/actions.test.ts` masih satu file besar untuk semua modul (Fase 4). Sekitar 35 file di `src/lib` masih memakai Prisma langsung (misalnya `events/*-read.ts`, `certificate/*`, `completion/prisma-adapter.ts`). Itu masuk Fase 4 di `PLAN.md`.
+Catatan jujur: pembagian ini belum bersih. Sekitar 22 file di `src/lib` (`*-read.ts`, `completion/prisma-adapter.ts`, `rate-limit.ts`, dan sejenisnya) masih memakai Prisma langsung sebagai modul akses data per fitur. Halaman, komponen (R4), dan action (R6) tidak boleh. Sekitar 35 file di `src/lib` masih memakai Prisma langsung (misalnya `events/*-read.ts`, `certificate/*`, `completion/prisma-adapter.ts`). Itu masuk Fase 4 di `PLAN.md`.
 
 ## Susunan folder sekarang
 
@@ -34,6 +34,8 @@ Catatan jujur: pembagian ini belum bersih. File test lama `src/lib/platform/repo
 | `src/components` | Komponen: `admin`, `panel`, `public-v2`, `registration`, `v3`. |
 | `src/lib/platform` | `settings-repository.ts` (daftar game, profil, pengaturan pembayaran global), `db.ts` (klien Prisma), `config.ts` (daftar game dan mode), `types.ts`, `demo-store.ts` (hanya untuk test). `repository.ts` yang lama sudah habis dan dihapus (Fase 2). |
 | Akses data per bidang | `events/repository.ts` dan `events/visual-repository.ts`, `teams/repository.ts`, `bracket/repository.ts` dan `bracket/rounds-repository.ts`, `registration/repository.ts` dan `registration/review-repository.ts`, `imports/repository.ts`, `player-stats/repository.ts` (baca) dan `player-stats/write-repository.ts` (tulis), `certificate/repository.ts`, `identity/repository.ts`. Tiap file di bawah 650 baris. |
+| `src/app/admin/workspace`, `src/app/captain/dashboard` | Bagian halaman admin dan dashboard captain, satu file per tahap atau bagian. `admin-workspace.tsx` dan `captain/page.tsx` tinggal menyusunnya. |
+| `src/lib/events/public-v3` | Bagian dari `public-v3-read.ts` menurut lapisan (`basics`, `parts`, `identity`, `updates`, `registration`, `phases`, `authoritative`, `compat`, `normalize`). Impor hanya ke arah file sebelumnya dalam daftar itu. |
 | `src/lib/platform/shared` | Dipakai banyak fungsi, dipindah dari `repository.ts` (Fase 1): `constants.ts` (termasuk `CACHE_TAGS`), `mappers.ts` (pemetaan baris database), `authz.ts` (tiga pengecekan izin `assertUserCan*`), `tx.ts` (transaksi Serializable pendaftaran, jendela pendaftaran, kunci roster, kedaluwarsa permintaan). |
 | `src/lib/actions/shared` | Dipakai banyak server action (Fase 1): `session.ts` (pengecekan sesi), `request.ts` (id entitas, redirect locale), `limits.ts`, `ids.ts`, `uploads.ts` (upload gambar). Modul biasa, **tanpa `"use server"`**. |
 | `src/lib/actions/*-actions.ts` | Server action, satu file `"use server"` per bidang: `identity`, `event`, `event-visual`, `registration`, `import`, `team`, `match`, `certificate` (dari `actions.ts` yang lama, Fase 3), serta file `*-v3-actions` dan lainnya. `actions.ts` yang lama sudah dihapus. **Tempat action baru.** |
@@ -64,12 +66,13 @@ Aturan ini aktif sebagai **error**. Definisinya di `eslint.import-rules.mjs`. Fi
 | R3 | Komponen di `src/components` tidak boleh mengimpor nilai dari file repository mana pun (13 modul di atas). Impor tipe (`import type`) boleh. Daftar modulnya ada di `eslint.import-rules.mjs`. | Komponen menerima data lewat props. |
 | R4 | `src/app` dan `src/components` tidak boleh mengimpor `@/lib/platform/db` (Prisma). | Akses data lewat `src/lib`. |
 | R5 | `src/lib` tidak boleh mengimpor `@/app/**` atau `@/components/**`. | Logika tidak boleh bergantung pada tampilan. |
+| R6 | File di `src/lib/actions/` tidak boleh mengimpor `@/lib/platform/db` (Prisma). | Query ditaruh di file repository bidangnya. |
 
 File test dikecualikan dari semua aturan.
 
 ### Daftar pengecualian
 
-Saat aturan dibuat, 15 file sudah melanggar. Sekarang tinggal 2 file: R4 ada 1 file (route `bracket-appearance`), R5 ada 1 file (`competition/workspace-page.tsx`). R1 dan R3 bersih. Aturan R2 (larangan mengimpor `@/lib/actions`) sudah dihapus bersama modulnya di Fase 3.
+Saat aturan dibuat, 15 file sudah melanggar. Sekarang tinggal 3 file: R4 ada 1 file (route `bracket-appearance`), R5 ada 1 file (`competition/workspace-page.tsx`), R6 ada 1 file (`competition-v3-actions.ts`, sengaja). R1 dan R3 bersih. Aturan R2 (larangan mengimpor `@/lib/actions`) sudah dihapus bersama modulnya di Fase 3.
 
 Daftar itu **hanya boleh mengecil**. Memperbaiki impornya, lalu hapus file dari daftar. Jangan menambah file ke daftar supaya impor baru lolos. Kalau aturan menghalangi pekerjaan yang masuk akal, bicarakan aturannya.
 
@@ -105,7 +108,7 @@ Daftar itu **hanya boleh mengecil**. Memperbaiki impornya, lalu hapus file dari 
 | Pengaman | Menjaga apa |
 |---|---|
 | `pnpm lint` (`tsc`) dan `eslint` | Tipe dan aturan impor di atas. |
-| `pnpm test:unit` | Logika, termasuk `revalidation-map.test.ts` dan `server-action-bundle.test.ts`. |
+| `pnpm test:unit` | Logika, termasuk `revalidation-map.test.ts` dan `server-action-bundle.test.ts`. Test repository ada di samping modulnya (`*.scenarios.test.ts` untuk skenario, `repository.test.ts` dan `*.queries.test.ts` untuk fungsi satuan). Test action ada di `src/lib/actions/*-actions.test.ts`. |
 | `pnpm test:coverage` | Ukuran coverage (tanpa batas minimum). |
 | Job CI `Production build` | `next build` lolos tanpa database. |
 | Job CI `Database tests` | Transaksi pendaftaran dengan Postgres asli (`repository.db.test.ts`). |

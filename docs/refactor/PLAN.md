@@ -175,11 +175,10 @@ Risiko: impor melingkar antar modul. Aturannya: modul belakang boleh mengimpor m
 
 ## Fase 4: Perbaikan dan perapian (dikerjakan setelah Fase 3)
 
-Putuskan setelah Fase 3:
-- Pisahkan logika ke `service.ts`, mulai dari `adminPreviewRegistrationImportAction`.
-- Buat antarmuka repository.
-- Pecah `admin-workspace.tsx`, `captain/page.tsx`, dan `public-v3-read.ts`.
-- Gabungkan pemakaian Prisma langsung di sekitar 35 file `src/lib`.
+Bagian 1 (perbaikan perilaku) dan bagian 2 (pindah murni) sudah dikerjakan, lihat catatan di bawah. Yang tidak dikerjakan dan alasannya:
+- Pisahkan logika ke `service.ts`, mulai dari `adminPreviewRegistrationImportAction`: mengubah bentuk kode, bukan memindah. Tunggu ada alasan fitur.
+- Buat antarmuka repository: belum ada pemakai kedua yang membutuhkannya.
+- Rapikan sisa akses Prisma langsung di `src/lib` (sekitar 22 file): lihat "Akses Prisma" di bawah.
 
 ## Waktu dan titik evaluasi
 
@@ -288,6 +287,23 @@ Aturan pemindahan yang berlaku untuk PR 1.2 sampai 1.5 dan seterusnya: pindahkan
 3. Parameter `folder` di `uploadImageAsset` tidak divalidasi terhadap daftar yang diizinkan.
 Masuk Fase 4.
 
+**Fase 4, bagian 2: pindah murni (tanpa ubah perilaku).**
+
+*Pecah file besar.* Dipindah dengan skrip AST seperti sebelumnya. Tiap deklarasi dicek identik dengan aslinya, dan tidak ada yang hilang atau dobel.
+- `admin/admin-workspace.tsx` (2.212 baris) jadi 373 baris + 7 file di `admin/workspace/` (satu per tahap: `shared`, `header`, `prepare-event-phase`, `import-registration-phase`, `payment-workspace-phase`, `run-match-day-phase`, `review-publish-phase`). Terbesar 465 baris.
+- `captain/page.tsx` (1.162 baris) jadi 156 baris + 6 file di `captain/dashboard/`. Terbesar 561 baris.
+- `events/public-v3-read.ts` (1.319 baris) jadi 101 baris + 9 file di `events/public-v3/` (`basics`, `parts`, `identity`, `updates`, `registration`, `phases`, `authoritative`, `compat`, `normalize`), disusun menurut lapisan ketergantungan. Daftar ekspor `public-v3-read.ts` sama persis (6 nama, dicek dengan compiler).
+- `certificate/template.ts` (957 baris) jadi 568 baris + `template-types`, `template-text`, `template-theme`. `buildCertificateHtml` sendiri 560 baris dan tetap satu fungsi.
+- Test yang membaca `admin-workspace.tsx` sebagai teks (`admin/page.test.ts`, `player-score-forms.test.ts`) sekarang membaca gabungan file barunya.
+
+*Pecah file test besar.*
+- `platform/repository.test.ts` (3.232 baris, 159 test) jadi 11 file `*.scenarios.test.ts`, satu di folder tiap modul repository. `actions.test.ts` (2.830 baris, 194 test) jadi 9 file di `lib/actions/` (`identity`, `captain`, `event`, `event-visual`, `match`, `import`, `payment`, `team`, `revalidation`). Jumlah test sama persis sebelum dan sesudah (159 dan 194). Tiap file membawa salinan blok tiruan yang dipakainya, lalu bagian yang tidak terpakai dibuang otomatis.
+- Dua grup test ternyata bergantung pada sisa tiruan dari test sebelumnya di file yang sama (tiruan transaksi dan sesi login yang tertinggal). Di file terpisah itu gagal, jadi tiap grup kini mengatur sendiri tiruannya. Itu temuan kecil tentang kerapuhan file besar yang lama.
+
+*Akses Prisma.* Action tidak lagi memakai Prisma langsung. Empat belas panggilan dipindah menjadi fungsi kecil di repository bidangnya (`getEventArchiveInfo`, `deleteEvent`, `markEventFinished`, `isEventOpenForCaptainLogin`, `findCaptainTeamRef`, `getTeamForDeletion`, `deleteTeam`, `findCaptainRegistrationRequestRef`, `getUserRoleRef`, `deactivateUser`, `getFinalWinnerTeamId`, dan tiga untuk memasang captain), masing-masing dengan test. Aturan ESLint **R6** menjaganya: file di `src/lib/actions/` tidak boleh mengimpor `@/lib/platform/db`. Satu pengecualian di daftar: `competition-v3-actions.ts` menyerahkan klien Prisma ke modul kompetisi, supaya modul itu bisa dites dengan klien tiruan.
+
+Sisa sekitar 22 file di `src/lib` yang memakai Prisma langsung (`*-read.ts`, `completion/prisma-adapter.ts`, `rate-limit.ts`, `password-reset.ts`, `roster-change-*.ts`, dan sejenisnya) sengaja tidak dipindah. Itu modul akses data per fitur, bukan pelanggaran lapisan. Memindahkannya ke repository bidang berarti menulis ulang, bukan memindah. Yang dijaga: halaman dan komponen (R4) dan action (R6) tidak boleh memakai Prisma.
+
 **Fase 4, bagian 1: perbaikan perilaku.** Berbeda dari Fase 0 sampai 3, ini SENGAJA mengubah perilaku, jadi dibuat di PR sendiri (satu commit per perbaikan, tiap perbaikan dengan test dan dicek dengan perusakan sengaja).
 
 Perbaikan keamanan:
@@ -353,8 +369,6 @@ Cara membuktikannya sama seperti sebelumnya: semua deklarasi yang dipindah ident
 
 **Risiko saat deploy.** ID server action di Next dihitung dari file dan nama fungsinya. Halaman yang masih terbuka di browser pengunjung saat deploy memanggil ID lama, dan Next menjawab "Failed to find Server Action" sampai halaman dimuat ulang. Ini terjadi di setiap deploy yang memindahkan action, dan tidak bisa dihindari. Sebaiknya deploy di jam sepi.
 
-**Tidak dikerjakan.** `actions.test.ts` (2.800 baris) tetap satu file. Ke-8 file action berbagi satu blok tiruan besar (sekitar 260 baris), jadi memecahnya berarti menyalin blok itu 8 kali atau membuat pembantu test baru. Masuk Fase 4.
-
 **Fase 2 selesai (2.1 sampai 2.14).** `src/lib/platform/repository.ts` (3.945 baris) sudah habis dan dihapus. Isinya pindah ke 13 modul, dipindah dengan skrip AST seperti di Fase 1:
 
 | PR | Modul | Baris |
@@ -382,8 +396,6 @@ Pembantu yang tadinya privat (misalnya `getBracketRoundLabel`, `generateCaptainE
 **Sapuan (2.14).** 130 file pengimpor diganti lewat skrip: impor dan `vi.mock` dipecah per modul. Lima kasus dikerjakan tangan (`bracket/page.test.ts`, `organizer-workspace-read.test.ts`, `repository.db.test.ts`, `roster-change.integration.test.ts`, skrip `generate-certificate.ts`). Dicek bahwa mock tidak diam-diam jatuh ke Prisma asli: seluruh test dijalankan dengan klien Prisma yang melempar error kalau disentuh. Hasil sebelum dan sesudah sapuan sama. Satu penyesuaian: tiga test yang mock `next/cache` perlu `unstable_cache`, karena modul asli kini ikut dimuat lewat impor tidak langsung.
 
 Aturan ESLint R3 sekarang menjaga 13 modul baru (komponen tidak boleh mengimpor nilainya).
-
-**Tidak dikerjakan.** Test lama `repository.test.ts` (3.200 baris, 22 blok) tetap satu file di `src/lib/platform/`. Isinya sudah mengimpor modul asli, tapi belum dipecah per modul karena semua blok berbagi satu tiruan Prisma besar. Namanya juga menyesatkan sekarang. Masuk Fase 4.
 
 **Kebiasaan aneh yang ditemukan test baru (tidak diubah, sudah ada sebelum refactor).** Masuk Fase 4:
 - `getPaymentRegistrationRequestsForAdmin` membersihkan permintaan kedaluwarsa sebelum cek peran, jadi pemanggil yang tidak berhak tetap memicu tulis ke database sebelum ditolak.
