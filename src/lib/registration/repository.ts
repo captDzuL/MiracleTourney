@@ -389,31 +389,40 @@ export async function createTeamRegistrationRequest(input: {
   }
 }
 
-/** Creates or updates the captain's reusable draft team outside any event. */
+/**
+ * Creates or updates the captain's reusable draft team outside any event.
+ * Looking for the draft and writing it happen in one Serializable transaction, so two requests that arrive together
+ * cannot both decide there is no draft yet and create two.
+ */
 export async function createOrUpdateCaptainDraftTeam(input: {
   captainId: string;
   captainName: string;
   name: string;
   tag: string;
 }): Promise<Team> {
+  const name = input.name.trim();
   const tag = input.tag.trim().toUpperCase();
-  const existing = await prisma.team.findFirst({
-    where: { captainId: input.captainId, eventId: null, source: "draft" },
-    select: { id: true },
-  });
+  if (!name || !tag) throw new UserFacingError("Nama dan tag tim wajib diisi.");
+
   const data = {
     eventId: null,
     captainId: input.captainId,
-    captainName: input.captainName,
-    name: input.name.trim(),
+    captainName: input.captainName.trim(),
+    name,
     logoText: tag.slice(0, 2),
     tag,
     source: "draft",
   };
 
-  const row = existing
-    ? await prisma.team.update({ where: { id: existing.id }, data })
-    : await prisma.team.create({ data });
+  const row = await runSerializableRegistrationTransaction(async (tx) => {
+    const existing = await tx.team.findFirst({
+      where: { captainId: input.captainId, eventId: null, source: "draft" },
+      select: { id: true },
+    });
+    return existing
+      ? tx.team.update({ where: { id: existing.id }, data })
+      : tx.team.create({ data });
+  });
 
   return mapTeam(row);
 }
