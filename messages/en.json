@@ -870,7 +870,18 @@
     "errorFullName": "Full name must be at least 2 characters.",
     "errorEmail": "Invalid email format.",
     "errorPassword": "Password must be at least 8 characters.",
-    "errorConfirm": "Passwords do not match."
+    "errorConfirm": "Passwords do not match.",
+    "roleQuestion": "Which are you signing up as?",
+    "roleCaptain": "Captain",
+    "rolePlayer": "Player",
+    "roleCaptainHint": "Register one full team.",
+    "rolePlayerHint": "Sign up alone. Teams are made by a random draw.",
+    "playerTitle": "Create Player Account",
+    "playerDesc": "Create an account first. Then you can sign up for solo events.",
+    "whatsapp": "WhatsApp number",
+    "whatsappPlaceholder": "0812 3456 7890",
+    "whatsappHint": "Seen by your teammates once teams are locked.",
+    "errorWhatsapp": "Invalid WhatsApp number."
   },
   "captain": {
     "tempPasswordWarning": "You are still using a temporary password.",

@@ -3990,6 +3990,25 @@ export async function createCaptainAccount(input: {
   return { userId: user.id };
 }
 
+/** Creates a player account together with its contact profile, in one statement. */
+export async function createPlayerAccount(input: {
+  email: string;
+  name: string;
+  passwordHash: string;
+  whatsapp: string;
+}): Promise<{ userId: string }> {
+  const user = await prisma.user.create({
+    data: {
+      email: input.email,
+      name: input.name,
+      role: "player",
+      passwordHash: input.passwordHash,
+      playerProfile: { create: { whatsapp: input.whatsapp } },
+    },
+  });
+  return { userId: user.id };
+}
+
 export async function createCaptainWithTeam(input: {
   email: string;
   name: string;

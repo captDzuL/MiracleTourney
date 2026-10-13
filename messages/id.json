@@ -870,7 +870,18 @@
     "errorFullName": "Nama lengkap minimal 2 karakter.",
     "errorEmail": "Format email tidak valid.",
     "errorPassword": "Password minimal 8 karakter.",
-    "errorConfirm": "Konfirmasi password tidak cocok."
+    "errorConfirm": "Konfirmasi password tidak cocok.",
+    "roleQuestion": "Kamu mau daftar sebagai apa?",
+    "roleCaptain": "Kapten",
+    "rolePlayer": "Pemain",
+    "roleCaptainHint": "Daftarkan satu tim utuh.",
+    "rolePlayerHint": "Daftar sendiri. Tim dibentuk lewat acak.",
+    "playerTitle": "Buat Akun Pemain",
+    "playerDesc": "Buat akun dulu. Setelah itu kamu bisa daftar ke event solo.",
+    "whatsapp": "Nomor WhatsApp",
+    "whatsappPlaceholder": "0812 3456 7890",
+    "whatsappHint": "Dilihat teman satu tim setelah tim dikunci.",
+    "errorWhatsapp": "Nomor WhatsApp tidak valid."
   },
   "captain": {
     "tempPasswordWarning": "Kamu masih menggunakan password sementara.",

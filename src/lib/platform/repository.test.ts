@@ -147,6 +147,7 @@ import {
   assertCaptainCanSubmitStats,
   countAiVisualAttempts,
   createEventVisualAsset,
+  createPlayerAccount,
   deletePlayer,
   getCaptainRegistrationRequests,
   getCaptainTeams,
@@ -3276,5 +3277,39 @@ describe("player-stat roster follows the roster the team had at match time", () 
       guard: { eventId: "event-1", matchId: "match-1", expectedVersion: 7, expectedResultVersion: 2, operationId: "op-joined", submittedAt: "2026-10-12T12:00:00.000Z" },
     })).rejects.toThrow("Player does not belong");
     expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("createPlayerAccount", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.user.create.mockResolvedValue({ id: "player-1" });
+  });
+
+  it("creates a player user with its contact profile in a single write", async () => {
+    await expect(createPlayerAccount({
+      email: "bima@example.com",
+      name: "Bima",
+      passwordHash: "$hash",
+      whatsapp: "6281234567890",
+    })).resolves.toEqual({ userId: "player-1" });
+
+    expect(prisma.user.create).toHaveBeenCalledTimes(1);
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: {
+        email: "bima@example.com",
+        name: "Bima",
+        role: "player",
+        passwordHash: "$hash",
+        playerProfile: { create: { whatsapp: "6281234567890" } },
+      },
+    });
+  });
+
+  it("lets a database failure through so no half-made account is reported as created", async () => {
+    prisma.user.create.mockRejectedValue(new Error("unique violation"));
+    await expect(createPlayerAccount({ email: "a@b.co", name: "A B", passwordHash: "$h", whatsapp: "6281234567890" }))
+      .rejects.toThrow("unique violation");
   });
 });
