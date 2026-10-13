@@ -11,6 +11,8 @@ const actors: Record<string, WorkspaceActor | null> = {
   anonymous: null,
   "captain-a": { id: "captain-a", role: "captain" },
   "captain-b": { id: "captain-b", role: "captain" },
+  "player-a": { id: "player-a", role: "player" },
+  "player-b": { id: "player-b", role: "player" },
   "organizer-a": { id: "organizer-a", role: "organizer" },
   "organizer-b": { id: "organizer-b", role: "organizer" },
   admin: { id: "admin-1", role: "admin" },
@@ -70,7 +72,7 @@ describe("workspace authorization matrix", () => {
     expect(JSON.stringify(decision)).not.toMatch(/event|team|match|player|email|name/i);
   });
 
-  it.each(["anonymous", "captain-a", "captain-b", "organizer-b"])("denies %s from organizer A's event", label => {
+  it.each(["anonymous", "captain-a", "captain-b", "player-a", "player-b", "organizer-b"])("denies %s from organizer A's event", label => {
     const write = vi.fn();
     const decision = authorizeWorkspaceResource(actors[label], { eventId: "event-a", ownerUserId: "organizer-a" }, "organizer-a");
     if (decision.ok) write();

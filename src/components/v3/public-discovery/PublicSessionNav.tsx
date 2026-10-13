@@ -11,14 +11,15 @@ type SessionUser = { name: string; role: string; pendingCount: number };
 type SessionState = { status: "loading" } | { status: "ready"; user: SessionUser | null };
 
 const copy = {
-  id: { login: "Masuk", logout: "Keluar", captain: "Kapten", matchStats: "Statistik Match", organizer: "Organizer", admin: "Admin" },
-  en: { login: "Sign in", logout: "Sign out", captain: "Captain", matchStats: "Match stats", organizer: "Organizer", admin: "Admin" },
+  id: { login: "Masuk", logout: "Keluar", captain: "Kapten", player: "Pemain", matchStats: "Statistik Match", organizer: "Organizer", admin: "Admin" },
+  en: { login: "Sign in", logout: "Sign out", captain: "Captain", player: "Player", matchStats: "Match stats", organizer: "Organizer", admin: "Admin" },
 } as const;
 
 function roleLinks(user: SessionUser, t: (typeof copy)[PublicV3Locale]) {
   if (user.role === "captain") {
     return [{ path: "/captain", label: t.captain }, { path: "/captain/stats", label: t.matchStats }];
   }
+  if (user.role === "player") return [{ path: "/player", label: t.player }];
   if (user.role === "organizer") return [{ path: "/organizer", label: t.organizer }];
   if (user.role === "admin" || user.role === "platform_admin") {
     return [{ path: "/admin", label: user.pendingCount > 0 ? `${t.admin} (${user.pendingCount})` : t.admin }];

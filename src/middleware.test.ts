@@ -323,3 +323,76 @@ describe("middleware security controls", () => {
     expect(response.status).toBe(403);
   });
 });
+
+
+describe("middleware role areas", () => {
+  const SECRET = "middleware-test-secret-with-32-characters!!";
+
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+    vi.stubEnv("JWT_SECRET", SECRET);
+  });
+
+  async function tokenFor(role: string) {
+    const { SignJWT } = await import("jose");
+    return new SignJWT({ sub: "user-1", role, sv: 0 })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(SECRET));
+  }
+
+  async function visit(path: string, role: string | null, rawToken?: string) {
+    const { middleware } = await import("./middleware");
+    const token = rawToken ?? (role ? await tokenFor(role) : null);
+    const response = await middleware(new NextRequest(`http://localhost${path}`, {
+      headers: token ? { cookie: `mfl_token=${token}` } : {},
+    }));
+    return { allowed: response.status === 200, location: response.headers.get("location") };
+  }
+
+  const cases: Array<[role: string, path: string, allowed: boolean]> = [
+    ["player", "/id/player", true],
+    ["player", "/id/player/registrations", true],
+    ["player", "/id/captain", true],
+    ["player", "/id/admin", false],
+    ["captain", "/id/captain", true],
+    ["captain", "/id/player", false],
+    ["captain", "/id/admin", false],
+    ["organizer", "/id/admin", true],
+    ["organizer", "/id/player", false],
+    ["organizer", "/id/captain", false],
+    ["admin", "/id/admin", true],
+    ["admin", "/id/player", false],
+    ["platform_admin", "/id/admin", true],
+    ["platform_admin", "/id/player", false],
+    ["platform_admin", "/id/captain", false],
+  ];
+
+  it.each(cases)("%s opening %s is allowed: %s", async (role, path, allowed) => {
+    const result = await visit(path, role);
+    expect(result.allowed).toBe(allowed);
+    if (!allowed) expect(result.location).toBe("http://localhost/id/login");
+  });
+
+  it.each(["/id/player", "/id/captain", "/id/admin"])("sends a visitor without a session from %s to login", async (path) => {
+    const result = await visit(path, null);
+    expect(result.allowed).toBe(false);
+    expect(result.location).toBe("http://localhost/id/login");
+  });
+
+  it("treats a token signed with another secret as no session", async () => {
+    const { SignJWT } = await import("jose");
+    const forged = await new SignJWT({ sub: "user-1", role: "player", sv: 0 })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode("some-other-secret-with-32-characters!!"));
+    const result = await visit("/id/player", null, forged);
+    expect(result.allowed).toBe(false);
+  });
+
+  it("leaves public pages open to everyone", async () => {
+    expect((await visit("/id/events", null)).allowed).toBe(true);
+    expect((await visit("/id/events", "player")).allowed).toBe(true);
+  });
+});

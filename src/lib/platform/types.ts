@@ -1,4 +1,4 @@
-export type UserRole = "public" | "captain" | "organizer" | "platform_admin" | "admin";
+export type UserRole = "public" | "captain" | "player" | "organizer" | "platform_admin" | "admin";
 
 export type AppUser = {
   id: string;
