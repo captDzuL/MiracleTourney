@@ -144,9 +144,9 @@ vi.mock("next/cache", () => ({
 
 import { getOpenRegistrationEventsForCaptain } from "@/lib/events/repository";
 import { updatePaymentSettings } from "@/lib/platform/settings-repository";
-import { getCaptainRegistrationRequests, createTeamRegistrationRequest, registerTeam, updateTeamRegistrationProof, getRosterChangeWindow } from "@/lib/registration/repository";
+import { getCaptainRegistrationRequests, createTeamRegistrationRequest, registerTeam, updateTeamRegistrationProof, readRosterChangeWindow } from "@/lib/registration/repository";
 import { approveTeamRegistrationRequest } from "@/lib/registration/review-repository";
-import { getCaptainTeams, getPlayersForTeam, getPlayersForTeams, getPlayersForEvent, setTeamCaptainDisplay } from "@/lib/teams/repository";
+import { getCaptainTeams, getPlayersForTeam, getPlayersForTeams, setTeamCaptainDisplay } from "@/lib/teams/repository";
 import { generateCompetitionGraph, type GroupPlayoffsConfig } from "@/lib/tournament/competition";
 
 const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };
@@ -828,11 +828,6 @@ describe("limited roster changes: current roster reads", () => {
     expect(prisma.player.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { teamId: { in: ["team-1", "team-2"] }, removedAt: null } }));
   });
 
-  it("hides replaced players in the event lookup", async () => {
-    await getPlayersForEvent("event-1");
-    expect(prisma.player.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: "event-1", removedAt: null } }));
-  });
-
   it("does not let a captain pick a replaced player as the displayed captain", async () => {
     prisma.player.findFirst.mockResolvedValue({ displayName: "UID-1" });
     await setTeamCaptainDisplay("team-1", "captain-1", "player-1");
@@ -842,7 +837,7 @@ describe("limited roster changes: current roster reads", () => {
   });
 });
 
-describe("getRosterChangeWindow", () => {
+describe("readRosterChangeWindow", () => {
   const config: GroupPlayoffsConfig = {
     version: 1, kind: "group_playoffs", groupCount: 2, qualifiersPerGroup: 2,
     groupStage: { legs: 1, points: { win: 3, draw: 1, loss: 0 }, tiebreakers: ["score_difference"] },
@@ -861,35 +856,35 @@ describe("getRosterChangeWindow", () => {
   it("is free before the drawing is published", async () => {
     prisma.competitionPhase.count.mockResolvedValue(0);
     prisma.event.findUnique.mockResolvedValue({ status: "Published", rosterChangeLimit: 2 });
-    await expect(getRosterChangeWindow("event-1")).resolves.toBe("free");
+    await expect(readRosterChangeWindow(prisma as never, "event-1")).resolves.toBe("free");
   });
 
   it("stays locked, without reading the graph, when the organizer allowed no changes", async () => {
     prisma.event.findUnique.mockResolvedValue({ status: "Registration Closed", rosterChangeLimit: 0 });
-    await expect(getRosterChangeWindow("event-1")).resolves.toBe("locked");
+    await expect(readRosterChangeWindow(prisma as never, "event-1")).resolves.toBe("locked");
     expect(prisma.competitionPhase.findFirst).not.toHaveBeenCalled();
   });
 
   it("is limited while the group stage runs and the organizer allowed changes", async () => {
     prisma.event.findUnique.mockResolvedValue({ status: "Registration Closed", rosterChangeLimit: 2 });
-    await expect(getRosterChangeWindow("event-1")).resolves.toBe("limited");
+    await expect(readRosterChangeWindow(prisma as never, "event-1")).resolves.toBe("limited");
   });
 
   it("is locked once a playoff match is live", async () => {
     const playoff = graph.matches.find((match) => match.groupId === null)!;
     prisma.event.findUnique.mockResolvedValue({ status: "Registration Closed", rosterChangeLimit: 2 });
     prisma.match.findMany.mockResolvedValue([{ id: playoff.id, status: "Live", scheduleStatus: "live", resultVersion: 0 }]);
-    await expect(getRosterChangeWindow("event-1")).resolves.toBe("locked");
+    await expect(readRosterChangeWindow(prisma as never, "event-1")).resolves.toBe("locked");
   });
 
   it("fails closed for a legacy event without a stored graph", async () => {
     prisma.event.findUnique.mockResolvedValue({ status: "Ongoing", rosterChangeLimit: 2 });
     prisma.competitionPhase.findFirst.mockResolvedValue(null);
-    await expect(getRosterChangeWindow("event-1")).resolves.toBe("locked");
+    await expect(readRosterChangeWindow(prisma as never, "event-1")).resolves.toBe("locked");
   });
 
   it("is free for an unknown event, like the existing lock", async () => {
     prisma.event.findUnique.mockResolvedValue(null);
-    await expect(getRosterChangeWindow("missing")).resolves.toBe("free");
+    await expect(readRosterChangeWindow(prisma as never, "missing")).resolves.toBe("free");
   });
 });

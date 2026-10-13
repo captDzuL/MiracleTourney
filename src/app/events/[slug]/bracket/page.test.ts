@@ -35,7 +35,6 @@ const {
 vi.mock("@/lib/bracket/read", () => ({ readPublicSocialBracket: socialReaderMock }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: featureEnabledMock }));
 vi.mock("@/lib/events/adaptive-public-phases", () => ({
-  getPublicCompetitionPhaseVisibility: vi.fn().mockResolvedValue("none"),
   getPublicDrawingEvent: drawingEventMock,
   getPublicFinishedEvent: vi.fn().mockResolvedValue(null),
 }));

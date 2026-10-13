@@ -25,7 +25,6 @@ const {
   getEventsByIds,
   getOrganizerUserById,
   getPlayerStatFormContext,
-  getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
   generateCertificate,
@@ -89,7 +88,6 @@ const {
   getEventsByIds: vi.fn(),
   getOrganizerUserById: vi.fn(),
   getPlayerStatFormContext: vi.fn(),
-  getPublishedEvents: vi.fn(),
   getUserByEmail: vi.fn(),
   getUserPasswordHashById: vi.fn(),
   generateCertificate: vi.fn(),
@@ -161,7 +159,6 @@ vi.mock("@/lib/events/repository", () => ({
   autoTransitionEventToOngoing,
   createEvent,
   getEventsByIds,
-  getPublishedEvents,
   setEventStatus,
   updateEventPublicInfo,
   updateEventStream,
@@ -425,7 +422,6 @@ describe("captainSignUpAction", () => {
     vi.clearAllMocks();
     checkRateLimit.mockReturnValue(true);
     getUserByEmail.mockResolvedValue(null);
-    getPublishedEvents.mockResolvedValue([{ id: "event-abc", registrationFeeRequired: false }]);
     getEventsByIds.mockResolvedValue([{ id: "event-abc", status: "Published" }]);
     createCaptainAccount.mockResolvedValue({ userId: "captain-new" });
     signIn.mockResolvedValue({ ok: true, user: { role: "captain" } });
@@ -500,14 +496,6 @@ describe("captainSignUpAction", () => {
     expect(createCaptainAccount).not.toHaveBeenCalled();
   });
 
-  it("does not query published events during captain sign-up", async () => {
-    headers.mockResolvedValue(new Headers({ "x-forwarded-for": "10.0.0.98" }));
-    getPublishedEvents.mockResolvedValue([{ id: "other-event" }]);
-
-    await expect(captainSignUpAction(fd(validData))).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-abc");
-    expect(getPublishedEvents).not.toHaveBeenCalled();
-  });
-
   it("redirects with an error when account creation fails", async () => {
     createCaptainAccount.mockRejectedValue(new Error("Unique constraint failed"));
 
@@ -516,7 +504,6 @@ describe("captainSignUpAction", () => {
 
   it("does not create a pending-payment request during captain sign-up", async () => {
     headers.mockResolvedValue(new Headers({ "x-forwarded-for": "10.0.0.99" }));
-    getPublishedEvents.mockResolvedValue([{ id: "event-abc", registrationFeeRequired: true }]);
 
     await expect(captainSignUpAction(fd(validData))).rejects.toThrow(
       "REDIRECT:/captain?tab=registration&eventId=event-abc",

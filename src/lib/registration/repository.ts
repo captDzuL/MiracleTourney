@@ -79,10 +79,6 @@ export async function readRosterChangeWindow(db: RosterChangeWindowReader, event
   return (await readRosterChangeState(db, eventId)).window;
 }
 
-export async function getRosterChangeWindow(eventId: string): Promise<RosterChangeWindow> {
-  return readRosterChangeWindow(prisma, eventId);
-}
-
 export type CaptainRegistrationDraft = {
   id: string;
   name: string;

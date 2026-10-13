@@ -141,7 +141,7 @@ vi.mock("next/cache", () => ({
 }));
 
 import { getEventsByIds } from "@/lib/events/repository";
-import { approveEventVisualAsset, countAiVisualAttempts, createEventVisualAsset, listEventVisualAssets, rejectEventVisualAsset, setEventVisualFocalPoint } from "@/lib/events/visual-repository";
+import { approveEventVisualAsset, createEventVisualAsset, listEventVisualAssets, rejectEventVisualAsset, setEventVisualFocalPoint } from "@/lib/events/visual-repository";
 
 const organizer = { id: "org-1", role: "organizer" as const, email: "org@test.com", name: "Organizer" };
 
@@ -333,16 +333,6 @@ describe("event visual asset lifecycle", () => {
     expect(prisma.eventVisualAsset.update).toHaveBeenCalledWith({
       where: { id: "asset-2" },
       data: { focalX: 1, focalY: 0 },
-    });
-  });
-
-  it("counts only AI attempts inside the rate-limit window", async () => {
-    const since = new Date("2026-08-22T00:00:00.000Z");
-    prisma.eventVisualAsset.count.mockResolvedValue(3);
-
-    await expect(countAiVisualAttempts("event-1", since)).resolves.toBe(3);
-    expect(prisma.eventVisualAsset.count).toHaveBeenCalledWith({
-      where: { eventId: "event-1", source: "ai_generated", createdAt: { gte: since } },
     });
   });
 });

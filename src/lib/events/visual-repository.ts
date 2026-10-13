@@ -130,13 +130,6 @@ export async function setEventVisualFocalPoint(
   return mapEventVisualAsset(row);
 }
 
-/** Counts AI generation attempts for an event since `since`, for rate limiting. */
-export async function countAiVisualAttempts(eventId: string, since: Date): Promise<number> {
-  return prisma.eventVisualAsset.count({
-    where: { eventId, source: "ai_generated", createdAt: { gte: since } },
-  });
-}
-
 /** Updates the character art URL and accent color for an event's certificate assets. */
 export async function updateEventCertificateAssets(
   eventId: string,

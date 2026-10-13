@@ -17,7 +17,6 @@ vi.mock("next/cache", () => ({
 import type { Event } from "@/lib/platform/types";
 
 import {
-  getBracketManageableMatches,
   getBracketManageableMatchesForEvent,
   getBracketRoundLabel,
   getTeamStandings,
@@ -90,42 +89,6 @@ function eventObject(format: Event["format"]): Event {
     venue: "Hall",
     registrationFeeRequired: false,
   } as Event;
-}
-
-const EVENT_SELECT = {
-  id: true,
-  format: true,
-  participantCap: true,
-  slug: true,
-  name: true,
-  description: true,
-  gameId: true,
-  gameModeId: true,
-  status: true,
-  registrationWindow: true,
-  startsAt: true,
-  venue: true,
-  logoUrl: true,
-  gameImageUrl: true,
-};
-
-function eventRow(format: string) {
-  return {
-    id: EVENT_ID,
-    format,
-    participantCap: 8,
-    slug: "evt",
-    name: "Evt",
-    description: "",
-    gameId: "game-kuroko",
-    gameModeId: "mode-kuroko-3v3",
-    status: "Ongoing",
-    registrationWindow: "",
-    startsAt: "2026-01-01T00:00:00.000Z",
-    venue: "Hall",
-    logoUrl: null,
-    gameImageUrl: null,
-  };
 }
 
 const LEAGUE_FILTER = {
@@ -261,60 +224,6 @@ describe("getBracketManageableMatchesForEvent", () => {
     prisma.match.findMany.mockResolvedValue([]);
 
     await expect(getBracketManageableMatchesForEvent(eventObject("Single Elimination"))).rejects.toThrow("teams down");
-  });
-});
-
-describe("getBracketManageableMatches", () => {
-  it("returns an empty list when the event does not exist", async () => {
-    prisma.event.findUnique.mockResolvedValue(null);
-
-    const result = await getBracketManageableMatches("missing");
-
-    expect(result).toEqual([]);
-    expect(prisma.event.findUnique).toHaveBeenCalledWith({ where: { id: "missing" }, select: EVENT_SELECT });
-    expect(prisma.match.findMany).not.toHaveBeenCalled();
-    expect(prisma.team.findMany).not.toHaveBeenCalled();
-  });
-
-  it("reads stored round and slot matches for a league event", async () => {
-    prisma.event.findUnique.mockResolvedValue(eventRow("League"));
-    prisma.match.findMany.mockResolvedValue([matchRow({ id: "m-9", round: 2, slot: 3, winnerTeamId: "t2" })]);
-
-    const result = await getBracketManageableMatches(EVENT_ID);
-
-    expect(prisma.event.findUnique).toHaveBeenCalledWith({ where: { id: EVENT_ID }, select: EVENT_SELECT });
-    expect(prisma.match.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.match.findMany).toHaveBeenCalledWith(LEAGUE_FILTER);
-    expect(prisma.team.findMany).not.toHaveBeenCalled();
-    expect(result).toEqual([
-      {
-        id: "m-9", eventId: EVENT_ID, roundLabel: "Round 1", homeTeamId: "t1", awayTeamId: "t2",
-        homeScore: 0, awayScore: 0, status: "Scheduled", round: 2, slot: 3, winnerTeamId: "t2",
-      },
-    ]);
-  });
-
-  it("projects the bracket for a single elimination event", async () => {
-    prisma.event.findUnique.mockResolvedValue(eventRow("Single Elimination"));
-    prisma.team.findMany.mockResolvedValue([teamRow("t1", "Alpha"), teamRow("t2", "Bravo")]);
-    prisma.match.findMany.mockResolvedValue([]);
-
-    const result = await getBracketManageableMatches(EVENT_ID);
-
-    expect(prisma.match.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.match.findMany).toHaveBeenCalledWith({ where: { eventId: EVENT_ID }, orderBy: { createdAt: "asc" } });
-    expect(result).toEqual([
-      {
-        id: "evt-1-r1-m1", eventId: EVENT_ID, roundLabel: "Final", homeTeamId: "t1", awayTeamId: "t2",
-        homeScore: 0, awayScore: 0, status: "Scheduled", round: 1, slot: 1, winnerTeamId: null,
-      },
-    ]);
-  });
-
-  it("passes an event lookup failure on", async () => {
-    prisma.event.findUnique.mockRejectedValue(new Error("event db down"));
-
-    await expect(getBracketManageableMatches(EVENT_ID)).rejects.toThrow("event db down");
   });
 });
 

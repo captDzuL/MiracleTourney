@@ -156,20 +156,6 @@ export async function getPublicEvents(): Promise<Event[]> {
   return rows.map(mapEvent);
 }
 
-/**
- * Returns events with status "Published" only, ordered by start date ascending.
- * Used for the captain sign-up event picker — "Ongoing" events are excluded so
- * captains cannot register once matches have started.
- */
-export async function getPublishedEvents(): Promise<Event[]> {
-  const rows = await prisma.event.findMany({
-    where: { status: "Published" },
-    include: eventPublicInclude,
-    orderBy: { startsAt: "asc" },
-  });
-  return rows.map(mapEvent);
-}
-
 export async function getOpenRegistrationEventsForCaptain(captainId: string): Promise<Array<Event & { registeredTeams: number }>> {
   if (!captainId) return [];
 

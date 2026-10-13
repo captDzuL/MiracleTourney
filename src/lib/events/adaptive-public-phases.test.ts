@@ -27,7 +27,7 @@ vi.mock("@/lib/platform/db", () => ({
   },
 }));
 
-import { getPublicCompetitionPhaseVisibility, getPublicDrawingEvent, getPublicFinishedEvent } from "./adaptive-public-phases";
+import { getPublicDrawingEvent, getPublicFinishedEvent } from "./adaptive-public-phases";
 
 const event = {
   id: "event-1",
@@ -97,15 +97,6 @@ beforeEach(() => {
 });
 
 describe("adaptive public drawing", () => {
-  it("distinguishes legacy events from private drafts and publicly readable phases", async () => {
-    mocks.phaseFindFirst.mockResolvedValueOnce(null);
-    await expect(getPublicCompetitionPhaseVisibility("event-legacy")).resolves.toBe("none");
-    mocks.phaseFindFirst.mockResolvedValueOnce({ status: "draft" });
-    await expect(getPublicCompetitionPhaseVisibility("event-private")).resolves.toBe("private");
-    mocks.phaseFindFirst.mockResolvedValueOnce({ status: "active" });
-    await expect(getPublicCompetitionPhaseVisibility("event-public")).resolves.toBe("public");
-  });
-
   it("reads only an active published phase and keeps unresolved slots as TBD", async () => {
     const view = await getPublicDrawingEvent("miracle-cup");
     expect(view).toMatchObject({

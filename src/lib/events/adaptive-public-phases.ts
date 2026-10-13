@@ -2,7 +2,6 @@ import { prisma } from "@/lib/platform/db";
 import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
 import type { CompetitionGraph, CompetitionMatch } from "@/lib/tournament/competition";
 import { competitionProjection, type Standing } from "@/lib/tournament/operations/result-projection";
-import type { StoredSchedule } from "@/lib/tournament/operations/state";
 
 export type AdaptivePhaseNavigation = {
   overview: boolean;
@@ -93,17 +92,6 @@ export type PublicFinishedEventViewModel = AdaptivePhaseShared & {
   matches: AdaptivePhaseMatch[];
   standings: AdaptivePhaseStanding[];
 };
-
-export type PublicCompetitionPhaseVisibility = "none" | "private" | "public";
-
-export async function getPublicCompetitionPhaseVisibility(eventId: string): Promise<PublicCompetitionPhaseVisibility> {
-  const phase = await prisma.competitionPhase.findFirst({
-    where: { eventId, sequence: 1 },
-    select: { status: true },
-  });
-  if (!phase) return "none";
-  return phase.status === "active" || phase.status === "completed" ? "public" : "private";
-}
 
 type EventRow = {
   id: string;
@@ -399,8 +387,4 @@ export async function getPublicFinishedEvent(slug: string): Promise<PublicFinish
     awards,
     ...projectPublicContext(parsed.graph, matches, teams),
   };
-}
-
-export function publishedScheduleSnapshot(value: unknown): StoredSchedule | null {
-  return value && typeof value === "object" ? value as StoredSchedule : null;
 }
