@@ -258,7 +258,7 @@ import { adminApprovePaymentAction, adminRejectPaymentAction, adminUpdatePayment
 import { adminImportTeamsCsvAction, adminPreviewRegistrationImportAction, adminCommitRegistrationImportAction } from "@/lib/actions/import-actions";
 import { adminDeleteTeamAction, adminUploadTeamLogoAction, captainAddPlayerAction, captainDeletePlayerAction, captainUploadTeamLogoAction, captainSetDisplayCaptainAction, captainUpdatePlayerAction } from "@/lib/actions/team-actions";
 import { adminApproveStatAction, adminRejectStatAction, adminSetMatchGamesAction, adminSetRoundConfigAction, adminUpdateMatchResultAction, captainSubmitStatsAction } from "@/lib/actions/match-actions";
-import { adminRegenerateCertificateAction } from "./actions";
+import { adminRegenerateCertificateAction } from "@/lib/actions/certificate-actions";
 import { logoutAction } from "./session-actions";
 
 // ────────────────────────────────────────────────────────────

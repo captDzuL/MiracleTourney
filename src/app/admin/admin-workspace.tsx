@@ -35,7 +35,7 @@ import { adminApprovePaymentAction, adminRejectPaymentAction, adminUpdatePayment
 import { adminCommitRegistrationImportAction, adminImportTeamsCsvAction, adminPreviewRegistrationImportAction } from "@/lib/actions/import-actions";
 import { adminDeleteTeamAction, adminUploadTeamLogoAction } from "@/lib/actions/team-actions";
 import { adminApproveStatAction, adminRejectStatAction, adminSaveMatchPlayerStatsAction, adminSetMatchGamesAction, adminSetRoundConfigAction, adminUpdateMatchResultAction } from "@/lib/actions/match-actions";
-import { adminRegenerateCertificateAction } from "@/lib/actions";
+import { adminRegenerateCertificateAction } from "@/lib/actions/certificate-actions";
 import { requireAnyRole } from "@/lib/auth/session";
 import { getBracketManageableMatchesForEvent, getLeaderboardForEvent, getMatchesForEvent } from "@/lib/bracket/repository";
 import { getEventRoundConfigs, getMatchGames } from "@/lib/bracket/rounds-repository";
