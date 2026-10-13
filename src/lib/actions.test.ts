@@ -256,7 +256,8 @@ import { adminCreateEventAction, adminArchiveEventAction, adminSetAccentColorAct
 import { adminActivateEventVisualAction, adminApproveEventVisualAction, adminRejectEventVisualAction, adminSetEventVisualFocalPointAction, adminUploadEventLogoAction, organizerUploadEventLogoAction, organizerUploadEventVisualAction, adminUploadEventVisualAction } from "@/lib/actions/event-visual-actions";
 import { adminApprovePaymentAction, adminRejectPaymentAction, adminUpdatePaymentSettingsAction, captainRegisterTeamAction, captainUploadPaymentProofAction } from "@/lib/actions/registration-actions";
 import { adminImportTeamsCsvAction, adminPreviewRegistrationImportAction, adminCommitRegistrationImportAction } from "@/lib/actions/import-actions";
-import { adminApproveStatAction, adminDeleteTeamAction, adminRegenerateCertificateAction, adminRejectStatAction, adminSetMatchGamesAction, adminSetRoundConfigAction, adminUploadTeamLogoAction, adminUpdateMatchResultAction, captainAddPlayerAction, captainDeletePlayerAction, captainUploadTeamLogoAction, captainSetDisplayCaptainAction, captainSubmitStatsAction, captainUpdatePlayerAction } from "./actions";
+import { adminDeleteTeamAction, adminUploadTeamLogoAction, captainAddPlayerAction, captainDeletePlayerAction, captainUploadTeamLogoAction, captainSetDisplayCaptainAction, captainUpdatePlayerAction } from "@/lib/actions/team-actions";
+import { adminApproveStatAction, adminRegenerateCertificateAction, adminRejectStatAction, adminSetMatchGamesAction, adminSetRoundConfigAction, adminUpdateMatchResultAction, captainSubmitStatsAction } from "./actions";
 import { logoutAction } from "./session-actions";
 
 // ────────────────────────────────────────────────────────────
