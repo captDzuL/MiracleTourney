@@ -1232,7 +1232,7 @@ model SoloDrawAssignment {
   eventId          String
   draw             SoloDraw         @relation(fields: [eventId, drawId], references: [eventId, id], onDelete: Cascade)
   registrationId   String
-  registration     SoloRegistration @relation(fields: [eventId, registrationId], references: [eventId, id], onDelete: Restrict)
+  registration     SoloRegistration @relation(fields: [eventId, registrationId], references: [eventId, id], onDelete: Cascade)
 
   /// 1-based team number. Null for players who did not make a team.
   teamIndex        Int?

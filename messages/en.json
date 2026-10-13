@@ -475,6 +475,104 @@
     ]
   },
   "registrationWorkspace": {
+    "solo": {
+      "badge": "Solo",
+      "queueTitle": "Player registrations",
+      "search": "Search IGN or UID",
+      "player": "Player",
+      "uid": "UID",
+      "position": "Position",
+      "backupPosition": "Backup: {position}",
+      "emptyQueue": "No players match these filters.",
+      "quota": {
+        "title": "Player slots",
+        "field": "Field players",
+        "held": "{held} of {quota} filled",
+        "queued": "{count} in the queue"
+      },
+      "draw": {
+        "title": "Team draw",
+        "description": "Close registration, draw, check the result, then lock it. Once locked, the teams run like any other event's teams.",
+        "ready": {
+          "title": "Ready to draw",
+          "keepers": "{position} accepted",
+          "emergency": "Emergency {position} used",
+          "field": "Field players in a team",
+          "teams": "Teams that will form",
+          "teamsValue": "{teams} of {cap}",
+          "unplaced": "Left out"
+        },
+        "warnings": {
+          "too_few_teams": "There are not enough players to form 2 teams.",
+          "required_short": "{position} short by {missing}.",
+          "open_short": "Field players short by {missing}.",
+          "team_count_below_cap": "Only {teamCount} of {participantCap} teams can form. Check the competition format.",
+          "unplaced": "{count} players are left out.",
+          "ign_collision": "Team {team} has two players with the same IGN."
+        },
+        "close": {
+          "button": "Close registration",
+          "title": "Close registration?",
+          "intro": "Once closed, players cannot sign up or withdraw by themselves.",
+          "blockers": "Settle {count} payments first: approve, reject, or wait for their deadline.",
+          "blockersLink": "Open payment review",
+          "queue": "{count} players in the queue will be released without paying.",
+          "unplacedTitle": "These players are left out",
+          "unplacedHelp": "Refund them by hand, then tick them to continue.",
+          "unplacedHelpFree": "Tick them to continue.",
+          "confirm": "Close registration",
+          "cancel": "Cancel",
+          "working": "Closing…",
+          "done": "Registration closed."
+        },
+        "run": {
+          "button": "Draw teams",
+          "again": "Draw again",
+          "working": "Drawing…",
+          "done": "Teams drawn.",
+          "closeFirst": "Close registration first.",
+          "tooFew": "At least 2 teams are needed.",
+          "locked": "Teams are locked.",
+          "started": "The event started without locked teams."
+        },
+        "result": {
+          "title": "Draw version {version}",
+          "seed": "Seed: {seed}",
+          "team": "Team {index}",
+          "captain": "Captain",
+          "swapHint": "Pick two players from different teams to swap.",
+          "swapSelected": "{count} of 2 selected",
+          "swap": "Swap players",
+          "swapDone": "Players swapped."
+        },
+        "lock": {
+          "button": "Lock teams",
+          "title": "Lock teams?",
+          "body": "The teams and players are created for real. After this the draw cannot be changed.",
+          "confirm": "Lock teams",
+          "working": "Locking…",
+          "done": "Teams locked.",
+          "blocked": "Settle the warnings above first."
+        },
+        "redraw": {
+          "title": "Draw again?",
+          "body": "The current draw is replaced by a new one. Any swaps you made are lost.",
+          "confirm": "Draw again"
+        },
+        "refund": {
+          "title": "Refund needed",
+          "empty": "Every player is in a team.",
+          "mark": "Mark as refunded",
+          "done": "Refunded",
+          "free": "No refund needed, this event is free."
+        },
+        "locked": {
+          "title": "Teams are locked",
+          "body": "{teams} teams were created from draw version {version}.",
+          "link": "Open competition"
+        }
+      }
+    },
     "issues": {
       "formula": "Mapped cells must not contain formulas.",
       "locked": "This event’s roster is locked.",
@@ -498,6 +596,7 @@
     "acceptedCapacity": "Accepted / capacity",
     "views": "Registration views",
     "viewsLabels": {
+      "draw": "Team draw",
       "queue": "Participant list",
       "import": "XLSX / CSV import",
       "payments": "Payment verification",
@@ -527,6 +626,8 @@
     "loadErrorHelp": "Your event remains available. Reload this section to try again.",
     "reload": "Reload",
     "statuses": {
+      "queued": "Queue",
+      "withdrawn": "Withdrawn",
       "pending_payment": "Awaiting payment",
       "pending_review": "Awaiting review",
       "accepted": "Accepted",
@@ -537,6 +638,7 @@
       "expired": "Expired"
     },
     "sources": {
+      "solo_registration": "Solo player",
       "captain_registration": "Captain registration",
       "import_xlsx": "XLSX import",
       "import_csv": "CSV import",

@@ -2,7 +2,8 @@ export type RegistrationSource =
   | "captain_registration"
   | "import_xlsx"
   | "import_csv"
-  | "unknown_import";
+  | "unknown_import"
+  | "solo_registration";
 
 export type RegistrationStatus =
   | "pending_payment"
@@ -10,7 +11,10 @@ export type RegistrationStatus =
   | "accepted"
   | "rejected"
   | "draft"
-  | "needs_correction";
+  | "needs_correction"
+  | "queued"
+  | "withdrawn"
+  | "expired";
 
 export type RegistrationRequestStatus =
   | "pending_payment"
@@ -35,6 +39,11 @@ export type RegistrationRecord = {
   status: RegistrationStatus;
   createdAt: Date | string;
   origin: string;
+  /**
+   * Set for a player of a solo event. The record then reads: `teamName` is the in-game name, `teamTag` the
+   * position and `captainName` the UID, so search and sorting work like they do for teams.
+   */
+  solo?: { registrationId: string; version: number; secondaryPosition: string | null };
 };
 
 export type RegistrationRecordFilter = {
@@ -80,6 +89,23 @@ export function mapRequestStatus(status: RegistrationRequestStatus): Registratio
       return "needs_correction";
     default:
       throw new Error(`Unknown registration request status: ${status}`);
+  }
+}
+
+/** A solo registration status as a queue row shows it. Same wording as a team request, plus the queue. */
+export function mapSoloStatus(status: string): RegistrationStatus {
+  switch (status) {
+    case "queued":
+    case "withdrawn":
+    case "expired":
+    case "pending_payment":
+    case "pending_review":
+    case "rejected":
+      return status;
+    case "approved":
+      return "accepted";
+    default:
+      throw new Error(`Unknown solo registration status: ${status}`);
   }
 }
 

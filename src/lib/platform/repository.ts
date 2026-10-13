@@ -1173,7 +1173,7 @@ async function readEventRosterLocked(db: RosterLockReader, eventId: string): Pro
  * rolls back; if the roster wins the race, a stale drawing publish fails CAS and
  * must be rebuilt from the new authoritative roster.
  */
-async function assertEventRosterMutable(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
+export async function assertEventRosterMutable(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
   const claimed = await tx.event.updateMany({
     where: { id: eventId },
     data: { competitionVersion: { increment: 1 } },
@@ -1808,10 +1808,26 @@ export async function createEvent(input: {
   return mapEvent(row);
 }
 
+/**
+ * A solo event closes registration from its own draw panel, which settles open payments and refunds first,
+ * and once its teams are locked it does not go back to taking registrations.
+ */
+async function assertSoloStatusChangeAllowed(tx: Prisma.TransactionClient, eventId: string, status: Event["status"]): Promise<void> {
+  const current = await tx.event.findUnique({ where: { id: eventId }, select: { entryMode: true, status: true, activeSoloDrawId: true } });
+  if (current?.entryMode !== "solo") return;
+  if (status === "Registration Closed" && current.status !== "Registration Closed") {
+    throw new UserFacingError("Event solo ditutup dari tab Acak tim di halaman registrasi.");
+  }
+  if (current.activeSoloDrawId !== null && (status === "Draft" || status === "Published")) {
+    throw new UserFacingError("Tim sudah dikunci. Event tidak bisa dibuka lagi untuk pendaftaran.");
+  }
+}
+
 /** Updates an event's lifecycle status. Use `autoTransitionEventToOngoing` for the match-triggered transition. */
 export async function setEventStatus(eventId: string, status: Event["status"]): Promise<Event | null> {
   const now = new Date();
   const row = await prisma.$transaction(async (tx) => {
+    await assertSoloStatusChangeAllowed(tx, eventId, status);
     const updatedEvent = await tx.event.update({ where: { id: eventId }, data: { status }, include: eventPublicInclude });
     await applyEventLifecycleSideEffects(tx, eventId, status, now);
     return updatedEvent;
