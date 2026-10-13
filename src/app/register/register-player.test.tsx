@@ -52,7 +52,8 @@ afterEach(() => {
 describe("register page with solo tournaments switched off", () => {
   it("shows no role choice and ignores ?as=player", async () => {
     await render({ as: "player" });
-    expect(container.querySelector("nav")).toBeNull();
+    expect(container.querySelector("ul")).toBeNull();
+    expect(hrefs()).not.toContain("/register");
     expect(field("whatsapp")).toBeNull();
     expect(field("fullName")).not.toBeNull();
   });
@@ -66,26 +67,45 @@ describe("register page with solo tournaments switched off", () => {
 describe("register page with solo tournaments switched on", () => {
   beforeEach(() => vi.stubEnv("FEATURE_FLAG_SOLO_TOURNAMENT_V1", "true"));
 
-  it("offers the choice between captain and player, marking the current one", async () => {
+  it("opens on two cards only, with no form behind them", async () => {
     await render();
-    const nav = container.querySelector("nav");
-    expect(nav?.getAttribute("aria-label")).toBe("roleQuestion");
-    expect(hrefs()).toContain("/register");
+    expect(container.querySelector("h1")?.textContent).toBe("roleQuestion");
+    expect(container.querySelectorAll("ul li")).toHaveLength(2);
+    expect(hrefs()).toContain("/register?as=captain");
     expect(hrefs()).toContain("/register?as=player");
-    const current = container.querySelector('nav a[aria-current="page"]');
-    expect(current?.getAttribute("href")).toBe("/register");
+    expect(container.querySelector("form")).toBeNull();
+    expect(field("fullName")).toBeNull();
+    expect(container.querySelectorAll("svg[aria-hidden='true']")).toHaveLength(2);
   });
 
-  it("shows the captain form by default", async () => {
-    await render();
+  it("keeps a sign-in link and a safe return path on the two cards", async () => {
+    const returnTo = "/events/solo-cup/register";
+    await render({ returnTo });
+    expect(hrefs()).toContain(`/register?as=captain&returnTo=${encodeURIComponent(returnTo)}`);
+    expect(hrefs()).toContain(`/register?as=player&returnTo=${encodeURIComponent(returnTo)}`);
+    expect(hrefs()).toContain(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+    expect(container.querySelector("form")).toBeNull();
+  });
+
+  it("shows the captain form after the captain card, with a way back", async () => {
+    await render({ as: "captain" });
     expect(field("whatsapp")).toBeNull();
     expect(field("fullName")).not.toBeNull();
+    expect(container.querySelector("ul")).toBeNull();
+    expect(hrefs()).toContain("/register");
   });
 
-  it("shows the player form, with a WhatsApp field, for ?as=player", async () => {
+  it("goes straight to the captain form when it comes from an event page", async () => {
+    await render({ eventId: "event-1" });
+    expect(field("fullName")).not.toBeNull();
+    expect(container.querySelector("ul")).toBeNull();
+  });
+
+  it("shows the player form, with a WhatsApp field, after the player card", async () => {
     await render({ as: "player" });
     for (const name of ["fullName", "email", "password", "whatsapp"]) expect(field(name)).not.toBeNull();
-    expect(container.querySelector('nav a[aria-current="page"]')?.getAttribute("href")).toBe("/register?as=player");
+    expect(container.querySelector("ul")).toBeNull();
+    expect(hrefs()).toContain("/register");
   });
 
   it("labels every player field", async () => {
@@ -98,12 +118,11 @@ describe("register page with solo tournaments switched on", () => {
     expect(field("whatsapp")?.getAttribute("inputmode")).toBe("tel");
   });
 
-  it("keeps a safe return path through both the form and the role choice", async () => {
+  it("keeps a safe return path through the form and the way back", async () => {
     const returnTo = "/events/solo-cup/register";
     await render({ as: "player", returnTo });
     expect(field("returnTo")?.value).toBe(returnTo);
     expect(hrefs()).toContain(`/register?returnTo=${encodeURIComponent(returnTo)}`);
-    expect(hrefs()).toContain(`/register?as=player&returnTo=${encodeURIComponent(returnTo)}`);
     expect(hrefs()).toContain(`/login?returnTo=${encodeURIComponent(returnTo)}`);
   });
 

@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 import { PlayerRegisterForm } from "./PlayerRegisterForm";
-import { RegisterRoleChooser } from "./RegisterRoleChooser";
+import { ChangeRoleLink, RegisterRoleChooser } from "./RegisterRoleChooser";
 import { RegisterWizard } from "./RegisterWizard";
 
 export async function RegisterPageContent({
@@ -36,11 +36,15 @@ export async function RegisterPageContent({
     return <RegisterWizard errorMsg={errorMsg} eventId={eventId} locale={locale} returnTo={returnTo ?? undefined} />;
   }
 
-  const asPlayer = resolvedParams?.as === "player";
+  // A visit from an event page (?eventId) is already a captain; everyone else picks first.
+  const asParam = resolvedParams?.as;
+  const role = asParam === "player" ? "player" : asParam === "captain" || eventId ? "captain" : null;
+  if (!role) return <RegisterRoleChooser returnTo={returnTo ?? undefined} />;
+
   return (
     <>
-      <RegisterRoleChooser current={asPlayer ? "player" : "captain"} returnTo={returnTo ?? undefined} />
-      {asPlayer ? (
+      <ChangeRoleLink returnTo={returnTo ?? undefined} />
+      {role === "player" ? (
         <PlayerRegisterForm errorMsg={errorMsg} locale={locale} returnTo={returnTo ?? undefined} />
       ) : (
         <RegisterWizard errorMsg={errorMsg} eventId={eventId} locale={locale} returnTo={returnTo ?? undefined} />
