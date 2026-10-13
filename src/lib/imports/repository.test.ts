@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
+import { UserFacingError } from "@/lib/security/public-error";
 import { ROSTER_LOCKED_MESSAGE } from "@/lib/platform/shared/constants";
 import type { RegistrationPreviewItem } from "@/lib/imports/registration-intake";
 import type { AppUser } from "@/lib/platform/types";
@@ -17,7 +18,7 @@ const { prisma, tx, bcryptHash, randomBytesMock, isEventBracketLocked } = vi.hoi
     event: { updateMany: vi.fn(), findUnique: vi.fn() },
     competitionPhase: { count: vi.fn() },
     match: { count: vi.fn() },
-    user: { upsert: vi.fn() },
+    user: { findUnique: vi.fn(), create: vi.fn() },
     team: { create: vi.fn() },
   },
   bcryptHash: vi.fn(),
@@ -459,7 +460,8 @@ describe("importTeams", () => {
   };
 
   beforeEach(() => {
-    tx.user.upsert.mockImplementation(async ({ where }: { where: { email: string } }) => ({ id: `user-for-${where.email}` }));
+    tx.user.findUnique.mockResolvedValue(null);
+    tx.user.create.mockImplementation(async ({ data }: { data: { email: string } }) => ({ id: `user-for-${data.email}` }));
     tx.team.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
       teamRow({ id: `team-for-${data.tag}`, ...data }),
     );
@@ -470,18 +472,18 @@ describe("importTeams", () => {
 
     expect(bcryptHash).not.toHaveBeenCalled();
     expect(tx.event.updateMany).not.toHaveBeenCalled();
-    expect(tx.user.upsert).not.toHaveBeenCalled();
+    expect(tx.user.findUnique).not.toHaveBeenCalled();
+    expect(tx.user.create).not.toHaveBeenCalled();
     expect(tx.team.create).not.toHaveBeenCalled();
   });
 
-  it("upserts the captain by generated email and creates the team with normalized fields", async () => {
+  it("creates the captain by generated email and the team with normalized fields", async () => {
     const teams = await importTeams([row]);
 
     expect(bcryptHash).toHaveBeenCalledWith(passwordForCall(1), 10);
-    expect(tx.user.upsert).toHaveBeenCalledWith({
-      where: { email: "alp@miraclefc.gg" },
-      update: { name: "Budi", passwordHash: `hash(${passwordForCall(1)})`, tempPassword: passwordForCall(1) },
-      create: {
+    expect(tx.user.findUnique).toHaveBeenCalledWith({ where: { email: "alp@miraclefc.gg" }, select: { id: true, role: true } });
+    expect(tx.user.create).toHaveBeenCalledWith({
+      data: {
         email: "alp@miraclefc.gg",
         name: "Budi",
         role: "captain",
@@ -518,11 +520,31 @@ describe("importTeams", () => {
   });
 
   it("uses the explicit captain email instead of a generated one", async () => {
-    await importTeams([{ ...row, captainEmail: "Budi@Example.com" }]);
+    await importTeams([{ ...row, captainEmail: " Budi@Example.com " }]);
 
-    expect(tx.user.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { email: "Budi@Example.com" } }),
-    );
+    expect(tx.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { email: "budi@example.com" } }));
+    expect(tx.user.create).toHaveBeenCalledWith({ data: expect.objectContaining({ email: "budi@example.com" }) });
+  });
+
+  it("reuses an existing captain account and never touches its password or name", async () => {
+    tx.user.findUnique.mockResolvedValue({ id: "captain-9", role: "captain" });
+
+    const teams = await importTeams([{ ...row, captainEmail: "budi@example.com" }]);
+
+    expect(tx.user.create).not.toHaveBeenCalled();
+    expect(tx.team.create).toHaveBeenCalledWith({ data: expect.objectContaining({ captainId: "captain-9", source: "csv-import" }) });
+    expect(teams[0]).toMatchObject({ captainId: "captain-9" });
+  });
+
+  it.each(["platform_admin", "admin", "organizer"])("refuses an email that belongs to a %s account and writes no team", async (role) => {
+    tx.user.findUnique.mockResolvedValue({ id: "user-1", role });
+
+    const failure = await importTeams([{ ...row, captainEmail: "owner@example.com" }]).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(UserFacingError);
+    expect((failure as Error).message).toBe("Email kapten sudah dipakai akun non-captain.");
+    expect(tx.user.create).not.toHaveBeenCalled();
+    expect(tx.team.create).not.toHaveBeenCalled();
   });
 
   it("gives teams with the same tag distinct numbered emails in input order", async () => {
@@ -532,7 +554,7 @@ describe("importTeams", () => {
       { ...row, teamName: "Alpha Three", teamTag: "Alp" },
     ]);
 
-    expect(tx.user.upsert.mock.calls.map(([args]) => args.where.email)).toEqual([
+    expect(tx.user.findUnique.mock.calls.map(([args]) => args.where.email)).toEqual([
       "alp@miraclefc.gg",
       "alp2@miraclefc.gg",
       "alp3@miraclefc.gg",
@@ -544,7 +566,7 @@ describe("importTeams", () => {
     await importTeams([row, { ...row, teamTag: "bet", teamName: "Beta" }]);
 
     expect(bcryptHash.mock.calls).toEqual([[passwordForCall(1), 10], [passwordForCall(2), 10]]);
-    expect(tx.user.upsert.mock.calls.map(([args]) => args.create.tempPassword)).toEqual([passwordForCall(1), passwordForCall(2)]);
+    expect(tx.user.create.mock.calls.map(([args]) => args.data.tempPassword)).toEqual([passwordForCall(1), passwordForCall(2)]);
     expect(passwordForCall(1)).not.toBe(passwordForCall(2));
   });
 
@@ -573,7 +595,7 @@ describe("importTeams", () => {
       maxWait: 10_000,
       timeout: 60_000,
     });
-    expect(tx.user.upsert).toHaveBeenCalledTimes(2);
+    expect(tx.user.create).toHaveBeenCalledTimes(2);
     expect(tx.team.create).toHaveBeenCalledTimes(2);
   });
 
@@ -589,7 +611,7 @@ describe("importTeams", () => {
       [{ where: { id: "event-2" }, data: { competitionVersion: { increment: 1 } } }],
     ]);
     const lastClaim = Math.max(...tx.event.updateMany.mock.invocationCallOrder);
-    expect(lastClaim).toBeLessThan(Math.min(...tx.user.upsert.mock.invocationCallOrder));
+    expect(lastClaim).toBeLessThan(Math.min(...tx.user.findUnique.mock.invocationCallOrder));
   });
 
   it("rejects with the roster-locked message and writes nothing when an event is locked", async () => {
@@ -597,7 +619,7 @@ describe("importTeams", () => {
 
     await expect(importTeams([row])).rejects.toThrow(ROSTER_LOCKED_MESSAGE);
 
-    expect(tx.user.upsert).not.toHaveBeenCalled();
+    expect(tx.user.create).not.toHaveBeenCalled();
     expect(tx.team.create).not.toHaveBeenCalled();
   });
 
@@ -612,7 +634,7 @@ describe("importTeams", () => {
     tx.event.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(importTeams([row])).rejects.toThrow("Event tidak ditemukan.");
-    expect(tx.user.upsert).not.toHaveBeenCalled();
+    expect(tx.user.create).not.toHaveBeenCalled();
   });
 
   it("checks every event before creating the first team", async () => {
@@ -620,7 +642,7 @@ describe("importTeams", () => {
 
     await expect(importTeams([row, { ...row, eventId: "event-2", teamTag: "bet" }])).rejects.toThrow("Event tidak ditemukan.");
 
-    expect(tx.user.upsert).not.toHaveBeenCalled();
+    expect(tx.user.create).not.toHaveBeenCalled();
     expect(tx.team.create).not.toHaveBeenCalled();
   });
 

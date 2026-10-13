@@ -1,5 +1,5 @@
 // Team and registration import: snapshots, preview batches, history and commit.
-// Moved out of platform/repository.ts without changes (refactor PR 2.9).
+// Moved out of platform/repository.ts (refactor PR 2.9).
 
 import { isEventBracketLocked } from "@/lib/bracket/repository";
 import type { RegistrationNormalizedTeam, RegistrationPreviewItem, RegistrationSourceKind } from "@/lib/imports/registration-intake";
@@ -135,7 +135,7 @@ export async function importTeams(input: Array<{
   const usedEmails = new Set<string>();
   const preparedRows = await Promise.all(
     input.map(async (row) => {
-      const email = generateCaptainEmail(row.teamTag, usedEmails, row.captainEmail);
+      const email = generateCaptainEmail(row.teamTag, usedEmails, row.captainEmail?.trim().toLowerCase() || undefined);
       const tempPassword = generateTempPassword();
       const passwordHash = await bcrypt.hash(tempPassword, 10);
       return { ...row, email, tempPassword, passwordHash };
@@ -146,21 +146,27 @@ export async function importTeams(input: Array<{
     for (const eventId of eventIds) await assertEventRosterMutable(tx, eventId);
     const created = [];
     for (const prep of preparedRows) {
-      const captain = await tx.user.upsert({
-        where: { email: prep.email },
-        update: { name: prep.captainName, passwordHash: prep.passwordHash, tempPassword: prep.tempPassword },
-        create: {
-          email: prep.email,
-          name: prep.captainName,
-          role: "captain",
-          passwordHash: prep.passwordHash,
-          tempPassword: prep.tempPassword,
-        },
-      });
+      // An email that already has an account is never overwritten: the CSV may name anyone's email, and resetting
+      // that account's password here would let the importer take it over. Only a captain account can be reused.
+      const existing = await tx.user.findUnique({ where: { email: prep.email }, select: { id: true, role: true } });
+      if (existing && existing.role !== "captain") {
+        throw new UserFacingError("Email kapten sudah dipakai akun non-captain.");
+      }
+      const captainId = existing
+        ? existing.id
+        : (await tx.user.create({
+            data: {
+              email: prep.email,
+              name: prep.captainName,
+              role: "captain",
+              passwordHash: prep.passwordHash,
+              tempPassword: prep.tempPassword,
+            },
+          })).id;
       created.push(await tx.team.create({
         data: {
           eventId: prep.eventId,
-          captainId: captain.id,
+          captainId,
           name: prep.teamName,
           logoText: prep.teamTag.slice(0, 2).toUpperCase(),
           tag: prep.teamTag.toUpperCase(),
