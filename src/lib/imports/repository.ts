@@ -190,43 +190,49 @@ export async function saveRegistrationImportPreviewBatch(input: {
   await assertUserCanManageEvent(input.user, input.eventId);
 
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const profile = await prisma.registrationImportProfile.create({
-    data: {
-      eventId: input.eventId,
-      createdById: input.user.id,
-      sourceKind: input.sourceKind,
-      sourceLabel: input.sourceLabel,
-      worksheetName: input.worksheetName,
-      headerSignature: input.headerSignature,
-      mapping: input.mapping,
-    },
-  });
+  // The profile and the batch belong together: if the batch fails, the profile must not be left behind.
+  return prisma.$transaction(
+    async (tx) => {
+      const profile = await tx.registrationImportProfile.create({
+        data: {
+          eventId: input.eventId,
+          createdById: input.user.id,
+          sourceKind: input.sourceKind,
+          sourceLabel: input.sourceLabel,
+          worksheetName: input.worksheetName,
+          headerSignature: input.headerSignature,
+          mapping: input.mapping,
+        },
+      });
 
-  return prisma.registrationImportBatch.create({
-    data: {
-      eventId: input.eventId,
-      profileId: profile.id,
-      createdById: input.user.id,
-      sourceKind: input.sourceKind,
-      sourceLabel: input.sourceLabel,
-      worksheetName: input.worksheetName,
-      status: "draft",
-      summary: input.summary,
-      expiresAt,
-      items: {
-        create: input.items.map((item) => ({
-          sourceRow: item.sourceRow,
-          status: item.status,
-          selected: item.selected,
-          normalizedData: item.normalized as Prisma.InputJsonValue | undefined,
-          diff: item.diff as Prisma.InputJsonValue | undefined,
-          validationErrors: item.errors as Prisma.InputJsonValue | undefined,
-          teamId: item.existingTeamId,
-        })),
-      },
+      return tx.registrationImportBatch.create({
+        data: {
+          eventId: input.eventId,
+          profileId: profile.id,
+          createdById: input.user.id,
+          sourceKind: input.sourceKind,
+          sourceLabel: input.sourceLabel,
+          worksheetName: input.worksheetName,
+          status: "draft",
+          summary: input.summary,
+          expiresAt,
+          items: {
+            create: input.items.map((item) => ({
+              sourceRow: item.sourceRow,
+              status: item.status,
+              selected: item.selected,
+              normalizedData: item.normalized as Prisma.InputJsonValue | undefined,
+              diff: item.diff as Prisma.InputJsonValue | undefined,
+              validationErrors: item.errors as Prisma.InputJsonValue | undefined,
+              teamId: item.existingTeamId,
+            })),
+          },
+        },
+        include: { items: true },
+      });
     },
-    include: { items: true },
-  });
+    { maxWait: 10_000, timeout: 60_000 },
+  );
 }
 
 export async function getRegistrationImportBatchesForEvent(user: AppUser, eventId: string) {

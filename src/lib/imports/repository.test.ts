@@ -696,6 +696,7 @@ describe("saveRegistrationImportPreviewBatch", () => {
   };
 
   beforeEach(() => {
+    prisma.$transaction.mockImplementation(async (operation: (tx: typeof prisma) => unknown) => operation(prisma));
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(NOW);
     prisma.registrationImportProfile.create.mockResolvedValue({ id: "profile-1" });
@@ -823,13 +824,15 @@ describe("saveRegistrationImportPreviewBatch", () => {
     expect(prisma.registrationImportBatch.create).not.toHaveBeenCalled();
   });
 
-  it("propagates a batch failure without a transaction, so the profile stays behind", async () => {
+  it("writes the profile and the batch inside one transaction, so a failed batch leaves no profile behind", async () => {
     prisma.registrationImportBatch.create.mockRejectedValue(new Error("batch failed"));
 
     await expect(saveRegistrationImportPreviewBatch({ user: admin, ...baseInput })).rejects.toThrow("batch failed");
 
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { maxWait: 10_000, timeout: 60_000 });
+    // The transaction rejects with the batch error, which is what rolls the profile back in the database.
     expect(prisma.registrationImportProfile.create).toHaveBeenCalledTimes(1);
-    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 
