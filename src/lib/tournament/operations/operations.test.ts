@@ -529,6 +529,36 @@ describe("competition operation transactions", () => {
     expect(store.rows("competitionAuditLog")).toEqual([]);
   });
 
+  describe("a solo event", () => {
+    const save: OperationCommand = {
+      kind: "drawing_save",
+      config: TOURNAMENT_FORMAT_PRESETS.singleElimination,
+      teams: [{ id: "a", seed: 1 }, { id: "b", seed: 2 }],
+    };
+
+    it("refuses to draw groups before the player draw is locked", async () => {
+      const f = fixture();
+      f.updateRow("event", "event", { entryMode: "solo", activeSoloDrawId: null });
+      await expect(f.run(save)).rejects.toThrow("Kunci tim dulu sebelum mengacak grup.");
+      expect(f.rows("competitionPhase")).toEqual([]);
+      expect(f.rows("event")[0]).toMatchObject({ competitionVersion: 0 });
+    });
+
+    it("draws and publishes groups like any other event once the player draw is locked", async () => {
+      const f = fixture();
+      f.updateRow("event", "event", { entryMode: "solo", activeSoloDrawId: "draw-1" });
+      await f.run(save);
+      await f.run({ kind: "drawing_publish" });
+      expect(f.rows("competitionPhase")).toEqual([expect.objectContaining({ status: "active" })]);
+    });
+
+    it("leaves a team event alone", async () => {
+      const f = fixture();
+      f.updateRow("event", "event", { entryMode: "team", activeSoloDrawId: null });
+      await expect(f.run(save)).resolves.toBeTruthy();
+    });
+  });
+
   it("persists graph metadata and refuses foreign teams or replacing existing competition", async () => {
     const f = fixture();
     await expect(f.run({ ...initialize, teams: [{ id: "a", seed: 1 }, { id: "foreign", seed: 2 }] })).rejects.toThrow("Teams");

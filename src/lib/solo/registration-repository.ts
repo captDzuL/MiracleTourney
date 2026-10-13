@@ -10,10 +10,10 @@ import {
 import type { AppUser } from "@/lib/platform/types";
 import { UserFacingError } from "@/lib/security/public-error";
 
+import { withEventLock, type Tx } from "./event-lock";
 import { resolvePositions } from "./positions";
 import {
   EXPIRABLE_STATUSES,
-  SLOT_HOLDING_STATUSES,
   SOLO_SLOT_GROUPS,
   type PromotedRegistration,
   type SoloQuotaSnapshot,
@@ -24,13 +24,13 @@ import {
 import { computeQuota, decideRegistration, slotGroupOf } from "./slots";
 import type { SoloRules, SoloSlotGroup } from "./types";
 
-type Tx = Prisma.TransactionClient;
-
 type SoloEvent = Readonly<{
   id: string;
   slug: string;
   name: string;
   status: string;
+  /** True once a draw is locked into teams. Registrations no longer change after that. */
+  teamsLocked: boolean;
   registrationFeeRequired: boolean;
   registrationOpensAt: Date | null;
   registrationClosesAt: Date | null;
@@ -45,24 +45,7 @@ const STALE_MESSAGE = "Data sudah berubah. Muat ulang halaman.";
 
 const addMs = (date: Date, ms: number) => new Date(date.getTime() + ms);
 
-/**
- * Runs `run` while holding the event's row. Every write that changes who holds a slot goes through
- * here, so registrations for one event take turns instead of racing: each one counts the slots
- * after the previous one has committed. Serializable transactions would also stay correct, but under
- * a burst of sign-ups they fail each other and players would see random "try again" errors.
- */
-async function withEventLock<T>(eventId: string, run: (tx: Tx) => Promise<T>): Promise<T> {
-  return prisma.$transaction(
-    async (tx) => {
-      const locked = await tx.event.updateMany({ where: { id: eventId }, data: { updatedAt: new Date() } });
-      if (locked.count !== 1) throw new UserFacingError("Event tidak ditemukan.");
-      return run(tx);
-    },
-    { maxWait: 15_000, timeout: 30_000 },
-  );
-}
-
-function toView(row: SoloRegistrationRow): SoloRegistrationView {
+export function toView(row: SoloRegistrationRow): SoloRegistrationView {
   return {
     id: row.id,
     eventId: row.eventId,
@@ -92,7 +75,7 @@ async function loadSoloEvent(tx: Tx | typeof prisma, eventId: string): Promise<S
     where: { id: eventId },
     select: {
       id: true, slug: true, name: true, status: true, entryMode: true, participantCap: true, gameModeId: true,
-      registrationFeeRequired: true, registrationOpensAt: true, registrationClosesAt: true,
+      activeSoloDrawId: true, registrationFeeRequired: true, registrationOpensAt: true, registrationClosesAt: true,
     },
   });
   if (!event) throw new UserFacingError("Event tidak ditemukan.");
@@ -104,6 +87,7 @@ async function loadSoloEvent(tx: Tx | typeof prisma, eventId: string): Promise<S
     slug: event.slug,
     name: event.name,
     status: event.status,
+    teamsLocked: event.activeSoloDrawId !== null,
     registrationFeeRequired: event.registrationFeeRequired,
     registrationOpensAt: event.registrationOpensAt,
     registrationClosesAt: event.registrationClosesAt,
@@ -111,6 +95,11 @@ async function loadSoloEvent(tx: Tx | typeof prisma, eventId: string): Promise<S
     quota: computeQuota(event.participantCap, rules),
     positions: getGameModeConfig(event.gameModeId).positions,
   };
+}
+
+/** Once teams are locked the players are in real teams, so no registration may change under them. */
+function assertTeamsNotLocked(event: Pick<SoloEvent, "teamsLocked">): void {
+  if (event.teamsLocked) throw new UserFacingError("Tim sudah dikunci.");
 }
 
 /** Registrations that hold a slot right now: a rejected or unpaid one only until its deadline passes. */
@@ -226,6 +215,7 @@ export async function registerSolo(input: RegisterSoloInput): Promise<RegisterSo
   try {
     return await withEventLock(input.eventId, async (tx) => {
       const event = await loadSoloEvent(tx, input.eventId);
+      assertTeamsNotLocked(event);
       assertNewRegistrationWindowOpen({ ...event });
       const now = new Date();
       const { promoted } = await sweep(tx, event, now);
@@ -334,6 +324,7 @@ export async function withdrawSolo(input: { userId: string; registrationId: stri
   return withEventLock(eventId, async (tx) => {
     const owned = await findOwned(tx, input.userId, input.registrationId);
     const event = await loadSoloEvent(tx, eventId);
+    assertTeamsNotLocked(event);
     if (event.status !== "Published") throw new UserFacingError("Pendaftaran sudah ditutup. Hubungi organizer untuk membatalkan.");
     if (!WITHDRAWABLE.includes(owned.status as SoloRegistrationStatus)) {
       throw new UserFacingError("Pendaftaran ini sudah tidak aktif.");
@@ -362,11 +353,13 @@ async function applyReview(
   from: readonly SoloRegistrationStatus[],
   data: Prisma.SoloRegistrationUncheckedUpdateManyInput,
 ): Promise<SoloRegistrationView> {
-  return prisma.$transaction(async (tx) => {
-    const event = await tx.event.findUnique({ where: { id: row.eventId }, select: { status: true } });
-    if (!event || (event.status !== "Published" && event.status !== "Registration Closed")) {
+  // Under the event lock, so a review cannot slip in between the checks of a lock of the teams and the teams themselves.
+  return withEventLock(row.eventId, async (tx) => {
+    const event = await loadSoloEvent(tx, row.eventId);
+    if (event.status !== "Published" && event.status !== "Registration Closed") {
       throw new UserFacingError("Event sudah tidak menerima perubahan pendaftaran.");
     }
+    assertTeamsNotLocked(event);
     const changed = await tx.soloRegistration.updateMany({
       where: { id: row.id, version: expectedVersion, status: { in: [...from] } },
       data: { ...data, version: { increment: 1 } },

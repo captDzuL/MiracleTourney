@@ -65,7 +65,7 @@ function pickCaptain(members: readonly string[], lookup: Lookup, rng: () => numb
   return pool[Math.floor(rng() * pool.length)];
 }
 
-function isLockable(teamCount: number, warnings: readonly SoloWarning[]): boolean {
+export function isLockable(teamCount: number, warnings: readonly SoloWarning[]): boolean {
   return teamCount >= 2 && !warnings.some((warning) => warning.code === "ign_collision");
 }
 

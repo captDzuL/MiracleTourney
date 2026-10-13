@@ -32,7 +32,7 @@ import { validateTeamData } from "@/lib/validation/team-data";
 import { parsePlayerStatForm } from "@/lib/player-stats/form";
 import type { AppUser } from "@/lib/platform/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
-import { describeActionError, isUserSafeActionError, toSafeActionMessage } from "@/lib/security/public-error";
+import { UserFacingError, describeActionError, isUserSafeActionError, toSafeActionMessage } from "@/lib/security/public-error";
 import { isSafeHttpUrl, safeEntityIdSchema } from "@/lib/security/request-guard";
 import { withServerActionLog, writeServerLog } from "@/lib/observability/logger";
 import {
@@ -959,7 +959,14 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
     return redirectToActiveLocale(`/admin?success=event-status-updated&event=${publication.slug}`);
   }
 
-  const event = await setEventStatus(input.eventId, input.status);
+  let event;
+  try {
+    event = await setEventStatus(input.eventId, input.status);
+  } catch (error) {
+    // A refusal the admin should read, such as closing a solo event from the wrong place.
+    if (error instanceof UserFacingError) return redirectToActiveLocale(`/admin?error=${encodeURIComponent(error.message)}` as never);
+    throw error;
+  }
 
   if (!event) {
     return redirectToActiveLocale("/admin?error=Event%20not%20found.");

@@ -1,4 +1,4 @@
-export { drawTeams, swapPlayers } from "./draw";
+export { drawTeams, isLockable, swapPlayers } from "./draw";
 export { hashDrawInput } from "./hash";
 export { checkDrawInvariants } from "./invariants";
 export { planTeams } from "./plan";
