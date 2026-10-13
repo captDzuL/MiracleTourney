@@ -7,7 +7,6 @@ import { AWARD_ORDER, PUBLIC_READER_ROW_LIMIT, callOptional, publicBracketKind, 
 import type { AnyRecord } from "@/lib/events/public-v3/basics";
 import { identityEvent } from "@/lib/events/public-v3/identity";
 import { publicScore } from "@/lib/events/public-v3/parts";
-import { certificateRows } from "@/lib/events/public-v3/phases";
 import { authoritativeUpdates, isPublishedAnnouncement } from "@/lib/events/public-v3/updates";
 import { createServerMilestoneLogger } from "@/lib/observability/logger";
 import { findGameConfig } from "@/lib/platform/config";

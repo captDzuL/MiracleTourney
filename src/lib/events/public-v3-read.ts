@@ -5,7 +5,7 @@ import { readPublicFinished } from "./public-finished";
 import { readerProbeLimit } from "@/lib/platform/reader-bounds";
 import { createServerMilestoneLogger, withServerActionLog } from "@/lib/observability/logger";
 import type { CompatiblePublicEventInput, CompatiblePublicEventRecord, PublicV3Cta, PublicV3EventViewModel, PublicHomeFeaturedEvent, PublicViewer } from "./public-v3-types";
-import { PUBLIC_READER_ROW_LIMIT, PUBLIC_STATUSES, callOptional, eventRecord, navigation, publicReaderRows, record, statusExplanationKey, statusMode, text } from "@/lib/events/public-v3/basics";
+import { PUBLIC_READER_ROW_LIMIT, PUBLIC_STATUSES, callOptional, eventRecord, publicReaderRows, record, statusMode, text } from "@/lib/events/public-v3/basics";
 import type { AnyRecord } from "@/lib/events/public-v3/basics";
 import { teamsFor } from "@/lib/events/public-v3/parts";
 export { projectPublicV3Identity } from "@/lib/events/public-v3/identity";
