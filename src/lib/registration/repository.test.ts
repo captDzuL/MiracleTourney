@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { UserFacingError } from "@/lib/security/public-error";
+
 import type { AppUser } from "@/lib/platform/types";
 
 const { prisma, writeServerLog } = vi.hoisted(() => ({
@@ -232,6 +234,36 @@ describe("copyDraftPlayersForEvent", () => {
 describe("createOrUpdateCaptainDraftTeam", () => {
   const input = { captainId: "captain-1", captainName: "Budi", name: "Alpha Squad", tag: "ALP" };
 
+  beforeEach(() => {
+    prisma.$transaction.mockImplementation(async (operation: (tx: typeof prisma) => unknown) => operation(prisma));
+  });
+
+  it("looks for and writes the draft inside one Serializable transaction", async () => {
+    prisma.team.findFirst.mockResolvedValue(null);
+    prisma.team.create.mockResolvedValue(draftTeamRow());
+
+    await createOrUpdateCaptainDraftTeam(input);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable", maxWait: 10_000, timeout: 60_000 });
+  });
+
+  it("tries again after a write conflict, so two requests at once end with one draft", async () => {
+    const conflict = Object.assign(new Error("write conflict"), { code: "P2034" });
+    let attempts = 0;
+    prisma.$transaction.mockImplementation(async (operation: (tx: typeof prisma) => unknown) => {
+      attempts += 1;
+      if (attempts === 1) throw conflict;
+      return operation(prisma);
+    });
+    prisma.team.findFirst.mockResolvedValue({ id: "draft-1" });
+    prisma.team.update.mockResolvedValue(draftTeamRow({ id: "draft-1" }));
+
+    await expect(createOrUpdateCaptainDraftTeam(input)).resolves.toMatchObject({ id: "draft-1" });
+    expect(attempts).toBe(2);
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
   it("looks for the captain's existing draft outside any event", async () => {
     prisma.team.findFirst.mockResolvedValue(null);
     prisma.team.create.mockResolvedValue(draftTeamRow());
@@ -318,24 +350,28 @@ describe("createOrUpdateCaptainDraftTeam", () => {
     });
   });
 
-  it("stores the captain name as given, without trimming or validation", async () => {
+  it("trims the captain name", async () => {
     prisma.team.findFirst.mockResolvedValue(null);
     prisma.team.create.mockResolvedValue(draftTeamRow());
 
-    await createOrUpdateCaptainDraftTeam({ ...input, captainName: "  Budi  ", name: "   ", tag: "" });
+    await createOrUpdateCaptainDraftTeam({ ...input, captainName: "  Budi  " });
 
-    expect(prisma.team.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ captainName: "  Budi  ", name: "", tag: "", logoText: "" }),
-    });
+    expect(prisma.team.create).toHaveBeenCalledWith({ data: expect.objectContaining({ captainName: "Budi" }) });
   });
 
-  it("does not use a transaction", async () => {
-    prisma.team.findFirst.mockResolvedValue(null);
-    prisma.team.create.mockResolvedValue(draftTeamRow());
+  it.each([
+    ["an empty name", { name: "" }],
+    ["a name of spaces", { name: "   " }],
+    ["an empty tag", { tag: "" }],
+    ["a tag of spaces", { tag: "  " }],
+  ])("refuses %s and writes nothing", async (_label, override) => {
+    const failure = await createOrUpdateCaptainDraftTeam({ ...input, ...override }).catch((error: unknown) => error);
 
-    await createOrUpdateCaptainDraftTeam(input);
-
+    expect(failure).toBeInstanceOf(UserFacingError);
+    expect((failure as Error).message).toBe("Nama dan tag tim wajib diisi.");
     expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.team.create).not.toHaveBeenCalled();
+    expect(prisma.team.update).not.toHaveBeenCalled();
   });
 
   it("propagates a lookup failure without writing", async () => {
@@ -486,10 +522,11 @@ describe("getPaymentRegistrationRequestsForAdmin", () => {
     ]);
   });
 
-  it("rejects other roles after the expiry cleanup but before reading requests", async () => {
+  it("rejects other roles before the expiry cleanup writes anything and before reading requests", async () => {
     await expect(getPaymentRegistrationRequestsForAdmin(captain)).rejects.toThrow("Not authorized");
 
-    expect(prisma.teamRegistrationRequest.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.teamRegistrationRequest.updateMany).not.toHaveBeenCalled();
+    expect(prisma.team.deleteMany).not.toHaveBeenCalled();
     expect(prisma.teamRegistrationRequest.findMany).not.toHaveBeenCalled();
   });
 

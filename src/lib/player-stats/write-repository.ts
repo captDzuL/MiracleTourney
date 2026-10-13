@@ -420,6 +420,18 @@ export async function approveStatSubmission(submissionId: string, adminId: strin
   await managePlayerStats({ actorId: adminId, action: "approve", submissionId, guard });
 }
 
+// The editor still opens for a match that has no score context yet (it is not completed, or its games are not saved).
+// Any other failure, such as a lost database connection, must reach the caller instead of being hidden as "no context".
+const MISSING_STAT_CONTEXT_MESSAGES = new Set([
+  "Completed match not found.",
+  "Completed MatchGame rows are required before entering player scores.",
+]);
+
+function ignoreMissingStatContext(error: unknown): null {
+  if (error instanceof Error && MISSING_STAT_CONTEXT_MESSAGES.has(error.message)) return null;
+  throw error;
+}
+
 /**
  * Returns a match with its roster (players from both teams) and existing PlayerStat rows.
  * Used by Admin to pre-fill the player statistics editor.
@@ -450,7 +462,7 @@ export async function getMatchWithRosterAndStats(matchId: string): Promise<{
       orderBy: [{ teamId: "asc" }, { jerseyNumber: "asc" }],
     }),
     prisma.playerStat.findMany({ where: { matchId } }),
-    getPlayerStatFormContext(match.id, match.eventId).catch(() => null),
+    getPlayerStatFormContext(match.id, match.eventId).catch(ignoreMissingStatContext),
   ]);
   // The roster the teams had when this match started, not today's roster.
   const allPlayers = rosterForMatch(

@@ -199,7 +199,7 @@ export default async function AdminPage({
 
   const [importedTeamsRaw, captainUsers, registrationBatches, registrationBatch] = await Promise.all([
     activePhase === "registration" ? getImportedTeams(user) : Promise.resolve([]),
-    activePhase === "registration" || activePhase === "prepare" ? getCaptainUsersForAdmin() : Promise.resolve([] as CaptainUser[]),
+    activePhase === "registration" || activePhase === "prepare" ? getCaptainUsersForAdmin(user) : Promise.resolve([] as CaptainUser[]),
     activePhase === "registration" && activeEvent ? getRegistrationImportBatchesForEvent(user, activeEvent.id) : Promise.resolve([] as RegistrationImportBatchSummaryItem[]),
     activePhase === "registration" && resolvedSearchParams?.registrationBatchId
       ? getRegistrationImportBatchForAdmin(user, resolvedSearchParams.registrationBatchId)
@@ -401,6 +401,7 @@ export default async function AdminPage({
               events={events}
               paymentRequests={paymentRequests}
               paymentSettings={paymentSettings}
+              canEditPaymentSettings={user.role !== "organizer"}
               paymentStatus={paymentStatus}
               t={t}
             />
@@ -1334,6 +1335,7 @@ function PaymentWorkspacePhase({
   events,
   paymentRequests,
   paymentSettings,
+  canEditPaymentSettings,
   paymentStatus,
   t,
 }: {
@@ -1341,6 +1343,7 @@ function PaymentWorkspacePhase({
   events: EventItem[];
   paymentRequests: PaymentRequestItem[];
   paymentSettings: PaymentSettingsItem;
+  canEditPaymentSettings: boolean;
   paymentStatus?: PaymentRequestItem["status"];
   t: AdminTranslator;
 }) {
@@ -1440,29 +1443,31 @@ function PaymentWorkspacePhase({
           )}
         </Section>
 
-        <Section title={t("paymentSettingsTitle")} description={t("paymentSettingsDescription")} className="rounded-xl shadow-none">
-          <form action={adminUpdatePaymentSettingsAction} className="grid gap-4">
-            <label className={labelClass}>
-              Upload gambar QRIS (opsional, override URL di bawah)
-              <input type="file" name="qrisImage" accept="image/png,image/webp,image/jpeg" className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
-            </label>
-            <label className={labelClass}>
-              QRIS URL
-              <input className={inputClass} name="qrisImageUrl" defaultValue={paymentSettings.qrisImageUrl ?? ""} placeholder="https://... atau /payment/qris.png" />
-            </label>
-            <label className={labelClass}>
-              Instruksi pembayaran
-              <textarea className={`${inputClass} min-h-28 resize-y leading-6`} name="instructions" defaultValue={paymentSettings.instructions ?? ""} maxLength={500} />
-            </label>
-            {paymentSettings.qrisImageUrl ? (
-              <Image src={paymentSettings.qrisImageUrl} alt="QRIS aktif" width={176} height={176} loading="eager" unoptimized className="aspect-square w-44 rounded-lg border border-slate-200 bg-slate-50 object-contain" />
-            ) : null}
-            <SubmitButton className={primaryButton}>
-              <Save className="h-4 w-4" />
-              {t("savePaymentSettings")}
-            </SubmitButton>
-          </form>
-        </Section>
+        {canEditPaymentSettings ? (
+          <Section title={t("paymentSettingsTitle")} description={t("paymentSettingsDescription")} className="rounded-xl shadow-none">
+            <form action={adminUpdatePaymentSettingsAction} className="grid gap-4">
+              <label className={labelClass}>
+                Upload gambar QRIS (opsional, override URL di bawah)
+                <input type="file" name="qrisImage" accept="image/png,image/webp,image/jpeg" className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-700`} />
+              </label>
+              <label className={labelClass}>
+                QRIS URL
+                <input className={inputClass} name="qrisImageUrl" defaultValue={paymentSettings.qrisImageUrl ?? ""} placeholder="https://... atau /payment/qris.png" />
+              </label>
+              <label className={labelClass}>
+                Instruksi pembayaran
+                <textarea className={`${inputClass} min-h-28 resize-y leading-6`} name="instructions" defaultValue={paymentSettings.instructions ?? ""} maxLength={500} />
+              </label>
+              {paymentSettings.qrisImageUrl ? (
+                <Image src={paymentSettings.qrisImageUrl} alt="QRIS aktif" width={176} height={176} loading="eager" unoptimized className="aspect-square w-44 rounded-lg border border-slate-200 bg-slate-50 object-contain" />
+              ) : null}
+              <SubmitButton className={primaryButton}>
+                <Save className="h-4 w-4" />
+                {t("savePaymentSettings")}
+              </SubmitButton>
+            </form>
+          </Section>
+        ) : null}
       </div>
     </PhaseSection>
   );

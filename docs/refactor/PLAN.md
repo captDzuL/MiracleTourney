@@ -173,7 +173,7 @@ Risiko: impor melingkar antar modul. Aturannya: modul belakang boleh mengimpor m
 | 3.8 | certificate: `adminRegenerateCertificate`. Hapus `lib/actions.ts`. Ubah 24 file pengimpor dan 8 `vi.mock("@/lib/actions")`. | S |
 | 3.9 | Pecah `actions.test.ts`. Evaluasi: build penuh, e2e, bandingkan ukuran bundle dan waktu build dengan `baseline.md`. | S |
 
-## Fase 4: Nanti, di luar rencana ini
+## Fase 4: Perbaikan dan perapian (dikerjakan setelah Fase 3)
 
 Putuskan setelah Fase 3:
 - Pisahkan logika ke `service.ts`, mulai dari `adminPreviewRegistrationImportAction`.
@@ -287,6 +287,36 @@ Aturan pemindahan yang berlaku untuk PR 1.2 sampai 1.5 dan seterusnya: pindahkan
 2. Organizer selalu lolos `assertWorkspaceEventAction`. Pengecekan kepemilikan event yang sebenarnya ada di `assertUserCanManageEvent`, jadi setiap action organizer wajib memanggilnya.
 3. Parameter `folder` di `uploadImageAsset` tidak divalidasi terhadap daftar yang diizinkan.
 Masuk Fase 4.
+
+**Fase 4, bagian 1: perbaikan perilaku.** Berbeda dari Fase 0 sampai 3, ini SENGAJA mengubah perilaku, jadi dibuat di PR sendiri (satu commit per perbaikan, tiap perbaikan dengan test dan dicek dengan perusakan sengaja).
+
+Perbaikan keamanan:
+1. `requireAdminSession` (dipakai 30 action lama) tidak mengecek `mustChangePassword`. Organizer yang masih memakai password sementara kini dialihkan ke halaman ganti password, seperti di halaman organizer dan action V3.
+2. `uploadImageAsset` menerima `folder` apa saja. Sekarang hanya 11 folder yang dikenal (`UPLOAD_FOLDERS`), dicek di tipe dan saat jalan. Satu test memeriksa bahwa semua folder yang dipakai kode ada di daftar.
+3. Impor CSV lama (`importTeams`) memakai `upsert` pada email captain: kalau email di CSV milik akun lain, termasuk admin, password akun itu ditimpa dengan password sementara yang bisa dibaca organizer lewat daftar kredensial. Itu jalan pengambilalihan akun. Sekarang akun yang sudah ada tidak pernah ditimpa: captain lama dipakai ulang apa adanya, dan akun non-captain ditolak ("Email kapten sudah dipakai akun non-captain."), sama seperti jalur impor yang baru.
+4. `getPaymentRegistrationRequestsForAdmin` membersihkan permintaan kedaluwarsa (menulis ke database) sebelum mengecek peran. Cek peran sekarang di depan.
+5. Pengaturan QRIS global (satu baris untuk seluruh platform) bisa diubah organizer lewat `adminUpdatePaymentSettingsAction`. Sekarang hanya admin platform, dan formnya disembunyikan dari organizer. Organizer tetap memakai QRIS per event.
+6. `adminAssignCaptainAction` membiarkan organizer memasang akun captain mana pun ke timnya, dan daftar semua captain (nama, email) dikirim ke halaman organizer. Sekarang organizer hanya melihat dan bisa memasang captain yang sudah punya tim atau pendaftaran di event miliknya. Admin platform tetap melihat semua.
+
+Perbaikan kebenaran data:
+7. `createOrUpdateCaptainDraftTeam`: cari lalu tulis kini dalam satu transaksi Serializable (dengan ulang saat bentrok), dan nama atau tag kosong ditolak.
+8. `saveRegistrationImportPreviewBatch`: profil dan batch ditulis dalam satu transaksi, jadi batch yang gagal tidak meninggalkan profil.
+9. `updateEventStream`: baca, tulis, dan baca ulang dalam satu transaksi. Link tanpa `https://` kini memberi pesan yang bisa dibaca, bukan `TypeError`.
+10. `getMatchWithRosterAndStats` tidak lagi menelan semua error sebagai "tidak ada konteks skor". Hanya dua pesan yang memang berarti itu ("Completed match not found." dan "Completed MatchGame rows are required...") yang ditelan. Error database sampai ke pemanggil.
+11. `getEventRoundConfigs` dan `getMatchGamesForEvent` tidak lagi mengembalikan hasil kosong saat database gagal.
+12. `captainSaveDraftTeamAction`: pesan zod mentah berbahasa Inggris diganti pesan yang bisa dibaca, dan error tak terduga masuk log server.
+13. `adminSaveMatchPlayerStatsAction`: error tidak lagi dilempar mentah ke halaman error. Admin dikembalikan ke halaman pertandingan dengan pesan, error tak terduga masuk log, dan cek event dilakukan sebelum cek tim.
+
+Sengaja TIDAK diubah:
+- `getModeForEvent` tidak mengecek bahwa mode itu milik game event. Menambah cek berarti halaman publik bisa gagal total kalau ada data lama yang tidak cocok. Lebih buruk dari kebiasaan sekarang.
+- `updatePaymentSettings` mengubah `undefined` jadi `null`. Itu cara admin mengosongkan kolom lewat form, jadi memang disengaja.
+- `getBracketSlotCount` bertipe minimal 8, padahal hasilnya bisa 2 atau 4 untuk tim sedikit. Hanya salah tipe; mengubah hasilnya mengubah ukuran bracket.
+- Email yang sama di dua baris CSV: tidak lagi merusak password (poin 3), jadi dibiarkan.
+- Organizer bisa menebak apakah sebuah email sudah terdaftar lewat pesan impor ("Email kapten sudah dipakai akun non-captain"). Kebocoran kecil dan sudah ada di jalur impor baru. Dicatat.
+- Saat flag `organizer_workspace_v3` mati, `adminUpdateEventStatusAction` membiarkan organizer menerbitkan event miliknya tanpa cek kesiapan terbit. Itu aturan produk, bukan celah akses. Dicatat.
+- `public-visual-v2.smoke.spec.ts` masih bergantung data demo dan masih diabaikan. Perlu keputusan: data seed atau dihapus.
+
+Audit kepemilikan: satu agen keamanan menelusuri semua 52 action. Selain butir 5 dan 6 di atas, tidak ada jalan bagi organizer untuk membaca atau mengubah event, tim, pertandingan, statistik, atau permintaan bayar milik organizer lain.
 
 **Fase 3 selesai (3.0 sampai 3.9).** `src/lib/actions.ts` (1.759 baris, 52 action) sudah habis dan dihapus. Isinya pindah ke 8 file `"use server"` di `src/lib/actions/`, dipindah dengan skrip AST seperti di Fase 1 dan 2:
 

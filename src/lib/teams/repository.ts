@@ -209,3 +209,8 @@ export async function setTeamCaptainDisplay(teamId: string, captainUserId: strin
   }
   await prisma.team.update({ where: { id: teamId }, data: { captainName: player.displayName } });
 }
+
+/** The event a team belongs to, or null when the team does not exist. A team outside any event has `eventId: null`. */
+export async function getTeamEventRef(teamId: string): Promise<{ id: string; eventId: string | null } | null> {
+  return prisma.team.findUnique({ where: { id: teamId }, select: { id: true, eventId: true } });
+}

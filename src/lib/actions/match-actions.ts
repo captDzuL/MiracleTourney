@@ -15,9 +15,10 @@ import type { AppUser } from "@/lib/platform/types";
 import { parsePlayerStatForm } from "@/lib/player-stats/form";
 import { assertCaptainCanSubmitStats, getPlayerStatFormContext } from "@/lib/player-stats/repository";
 import { adminWriteMatchPlayerStats, approveStatSubmission, rejectStatSubmission, upsertStatSubmission } from "@/lib/player-stats/write-repository";
-import { toSafeActionMessage } from "@/lib/security/public-error";
+import { describeActionError, isUserSafeActionError, toSafeActionMessage } from "@/lib/security/public-error";
+import { writeServerLog } from "@/lib/observability/logger";
 import { revalidatePath, revalidateTag } from "next/cache";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 /**
@@ -146,6 +147,24 @@ export async function adminRejectStatAction(formData: FormData) {
   await redirectToActiveLocale("/admin?success=stat-rejected");
 }
 
+/** Message for the admin after a failed stats save. Expected rejections are shown as written; anything else is logged for operators. */
+function reportStatsSaveFailure(error: unknown, eventId: string): string {
+  if (!isUserSafeActionError(error)) {
+    const { name, code } = describeActionError(error);
+    writeServerLog({
+      phase: "failed",
+      operation: "admin_save_match_player_stats",
+      route: "/admin",
+      requestId: randomUUID(),
+      durationMs: 0,
+      status: 500,
+      errorCode: code ?? name,
+      resourceId: eventId,
+    });
+  }
+  return toSafeActionMessage(error, "Gagal menyimpan statistik pemain.");
+}
+
 /**
  * Writes player match statistics directly from the Admin page.
  * Bypasses the captain submission queue and upserts PlayerStat rows immediately.
@@ -167,17 +186,34 @@ export async function adminSaveMatchPlayerStatsAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
 
-  const context = await getPlayerStatFormContext(matchId, eventId);
+  const back = (query: string) => `/admin?phase=run&activeEventId=${eventId}&matchId=${matchId}&${query}` as never;
+  const fail = async (message: string) => redirectToActiveLocale(back(`error=${encodeURIComponent(message)}`));
+
+  let context: Awaited<ReturnType<typeof getPlayerStatFormContext>>;
+  try {
+    context = await getPlayerStatFormContext(matchId, eventId);
+  } catch (error) {
+    return await fail(reportStatsSaveFailure(error, eventId));
+  }
   const match = context.match;
-  if (match.homeTeamId !== teamId && match.awayTeamId !== teamId) throw new Error("Team is not part of this match");
-  if (match.eventId !== eventId) throw new Error("Match does not belong to this event");
+  if (match.eventId !== eventId) return await fail("Match does not belong to this event");
+  if (match.homeTeamId !== teamId && match.awayTeamId !== teamId) return await fail("Team is not part of this match");
 
-  const stats = parsePlayerStatForm(formData, {
-    allowedStatKeys: context.allowedStatKeys,
-    scoreSlotCount: context.scoreGameNumbers?.length ?? null,
-  });
+  let stats: ReturnType<typeof parsePlayerStatForm>;
+  try {
+    stats = parsePlayerStatForm(formData, {
+      allowedStatKeys: context.allowedStatKeys,
+      scoreSlotCount: context.scoreGameNumbers?.length ?? null,
+    });
+  } catch {
+    return await fail("Isian statistik tidak valid. Periksa nilai yang dimasukkan dan coba lagi.");
+  }
 
-  await adminWriteMatchPlayerStats({ matchId, teamId, eventId, adminId: user.id, stats });
+  try {
+    await adminWriteMatchPlayerStats({ matchId, teamId, eventId, adminId: user.id, stats });
+  } catch (error) {
+    return await fail(reportStatsSaveFailure(error, eventId));
+  }
   revalidateTag("stats");
   revalidatePath("/", "layout");
   await redirectToActiveLocale(`/admin?phase=run&activeEventId=${eventId}&matchId=${matchId}&success=player-stats-saved`);

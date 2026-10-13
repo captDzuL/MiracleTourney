@@ -5,6 +5,7 @@ import { applyEventLifecycleSideEffects } from "@/lib/events/event-lifecycle";
 import type { PublicDiscoveryEvent } from "@/lib/events/public-discovery";
 import { getGameIdForMode } from "@/lib/platform/config";
 import { prisma } from "@/lib/platform/db";
+import { UserFacingError } from "@/lib/security/public-error";
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { ACTIVE_REGISTRATION_REQUEST_STATUSES, CACHE_TAGS, PUBLIC_EVENT_STATUSES } from "@/lib/platform/shared/constants";
 import { eventPublicInclude, mapEvent, mapUser } from "@/lib/platform/shared/mappers";
@@ -495,16 +496,24 @@ export async function getPublicDiscoveryEvents(now: Date = new Date()): Promise<
  * (YouTube, TikTok, or external) and stores it as enabled + live immediately.
  */
 export async function updateEventStream(eventId: string, url: string, label: string): Promise<Event | null> {
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
-  if (!event) return null;
+  // One transaction: the stream row and the event read back belong together, and the event cannot vanish in between.
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.event.findUnique({ where: { id: eventId } });
+    if (!event) return null;
 
-  const stream = getLiveStreamPresentation(url);
-  await prisma.eventStream.upsert({
-    where: { eventId },
-    update: { platform: stream.platform, url, label, enabled: true, isLive: true },
-    create: { eventId, platform: stream.platform, url, label, enabled: true, isLive: true },
+    let stream: ReturnType<typeof getLiveStreamPresentation>;
+    try {
+      stream = getLiveStreamPresentation(url);
+    } catch {
+      throw new UserFacingError("Link live stream tidak valid. Pakai alamat lengkap yang diawali https://.");
+    }
+    await tx.eventStream.upsert({
+      where: { eventId },
+      update: { platform: stream.platform, url, label, enabled: true, isLive: true },
+      create: { eventId, platform: stream.platform, url, label, enabled: true, isLive: true },
+    });
+
+    const updated = await tx.event.findUnique({ where: { id: eventId }, include: { stream: true } });
+    return updated ? mapEvent(updated) : null;
   });
-
-  const updated = await prisma.event.findUnique({ where: { id: eventId }, include: { stream: true } });
-  return updated ? mapEvent(updated) : null;
 }

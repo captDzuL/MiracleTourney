@@ -77,9 +77,26 @@ export function rejectImageUpload(code: ImageUploadValidationCode, message: stri
  * magic bytes, and image dimensions through `sharp`. Callers can opt into
  * full pixel decoding before storage to reject truncated image payloads.
  */
+// The only places an upload may be stored. The folder becomes part of the storage path, so it must never come from
+// user input; the type keeps callers honest and the check below stops anything that slips through a cast.
+export const UPLOAD_FOLDERS = [
+  "bracket-backgrounds",
+  "certificate-assets",
+  "character-art",
+  "event-backgrounds",
+  "event-logos",
+  "event-payment-qris",
+  "event-revision-backgrounds",
+  "event-revision-logos",
+  "payment-proofs",
+  "payment-qris",
+  "team-logos",
+] as const;
+export type UploadFolder = (typeof UPLOAD_FOLDERS)[number];
+
 export type UploadImageAssetInput = {
   file: FormDataEntryValue | null;
-  folder: string;
+  folder: UploadFolder;
   entityId: string;
   label: string;
   maxBytes: number;
@@ -102,6 +119,9 @@ export async function uploadImageAssetImpl({
   validationMode = "redirect",
   errorPath = "/admin",
 }: UploadImageAssetInput): Promise<UploadedImageAsset> {
+  if (!(UPLOAD_FOLDERS as readonly string[]).includes(folder)) {
+    throw new Error(`Unknown upload folder: ${String(folder)}`);
+  }
   if (!isSafeEntityId(entityId)) {
     rejectImageUpload("invalid_entity_id", `Invalid ${label} ID.`, validationMode, errorPath);
   }

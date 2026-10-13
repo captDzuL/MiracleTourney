@@ -168,28 +168,28 @@ describe("captainSaveDraftTeamAction", () => {
       );
     });
 
-    it("shows the raw schema message when the name field is missing from the form", async () => {
+    it("shows the readable name message when the name field is missing from the form", async () => {
       await expectRedirect(
         captainSaveDraftTeamAction(fd({ tag: "GRD" })),
-        rosterError("Invalid input: expected string, received null"),
+        rosterError("Nama tim minimal 2 karakter."),
       );
       expect(createOrUpdateCaptainDraftTeam).not.toHaveBeenCalled();
     });
 
-    it("shows the raw schema message when the tag field is missing from the form", async () => {
+    it("shows the readable tag message when the tag field is missing from the form", async () => {
       await expectRedirect(
         captainSaveDraftTeamAction(fd({ name: "Garuda" })),
-        rosterError("Invalid input: expected string, received null"),
+        rosterError("Tag tim harus 2-5 karakter."),
       );
     });
 
-    it("shows the raw schema message when the name is a file instead of text", async () => {
+    it("treats a name sent as a file as an empty name", async () => {
       const form = fd({ tag: "GRD" });
       form.set("name", new File(["x"], "name.txt"));
 
       await expectRedirect(
         captainSaveDraftTeamAction(form),
-        rosterError("Invalid input: expected string, received File"),
+        rosterError("Nama tim minimal 2 karakter."),
       );
     });
   });
@@ -444,12 +444,27 @@ describe("captainSaveDraftTeamAction", () => {
       expect(revalidatePath).not.toHaveBeenCalled();
     });
 
-    it("does not write a server log for an unexpected error, unlike captainRegisterTeamAction", async () => {
+    it("writes a server log for an unexpected error, with no team data in it", async () => {
       createOrUpdateCaptainDraftTeam.mockRejectedValue(new Error("db down"));
 
       await expectRedirect(
         captainSaveDraftTeamAction(fd({ name: "Garuda", tag: "GRD" })),
         rosterError("Gagal menyimpan draft tim."),
+      );
+
+      expect(writeServerLog).toHaveBeenCalledTimes(1);
+      const entry = writeServerLog.mock.calls[0]?.[0];
+      expect(entry).toMatchObject({ phase: "failed", operation: "captain_save_draft_team", route: "/captain", status: 500, errorCode: "Error", resourceId: "captain-1" });
+      expect(JSON.stringify(entry)).not.toContain("Garuda");
+      expect(JSON.stringify(entry)).not.toContain("db down");
+    });
+
+    it("writes no server log for a message the captain is meant to read", async () => {
+      createOrUpdateCaptainDraftTeam.mockRejectedValue(new UserFacingError("Nama tim sudah dipakai di event ini."));
+
+      await expectRedirect(
+        captainSaveDraftTeamAction(fd({ name: "Garuda", tag: "GRD" })),
+        rosterError("Nama tim sudah dipakai di event ini."),
       );
 
       expect(writeServerLog).not.toHaveBeenCalled();

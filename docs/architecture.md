@@ -82,6 +82,9 @@ Daftar itu **hanya boleh mengecil**. Memperbaiki impornya, lalu hapus file dari 
 ## Server action
 
 - File server action diawali `"use server"`. File seperti itu **hanya boleh mengekspor fungsi `async`** (dan tipe). Konstanta, kelas, dan `export ... from` tidak boleh.
+- `assertWorkspaceEventAction` selalu meloloskan organizer. Pemeriksaan kepemilikan yang sebenarnya adalah `assertUserCanManageEvent` (event) atau `assertUserCanManageTeam` (tim). Setiap action yang bisa dipakai organizer wajib memanggilnya untuk sumber daya yang disentuh. Jangan menganggap `assertWorkspaceEventAction` sebagai pengecekan kepemilikan.
+- `requireAdminSession` melempar organizer yang masih memakai password sementara ke halaman ganti password.
+- Unggahan hanya boleh ke folder di `UPLOAD_FOLDERS` (`actions/shared/uploads.ts`). Folder baru ditambahkan di daftar itu.
 - Daftar ekspor sebuah file `"use server"` adalah daftar pintu yang bisa dipanggil browser. Jangan mengekspor pembantu (cek sesi, upload, dan sejenisnya) dari file itu; taruh di `actions/shared`. `actions/shared/guards.test.ts` menjaga ini untuk `actions.ts` dan memastikan `actions/shared` tanpa `"use server"`.
 - Pembantu yang tidak mengecek sesi sendiri, seperti `uploadImageAsset`, tidak boleh jadi action. Action pemanggilnya yang wajib mengecek sesi dan izin (`assertUserCanManageEvent` untuk event).
 - Tempat mengubah cache: `revalidatePath` dan `revalidateTag` dipanggil di action, bukan di repository. Tag yang dipakai: `events`, `teams`, `stats`.

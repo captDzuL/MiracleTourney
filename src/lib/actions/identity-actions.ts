@@ -11,7 +11,8 @@ import { resolvePostLoginPath } from "@/lib/auth/post-login-path";
 import { requireRole, signIn } from "@/lib/auth/session";
 import { sendEmail } from "@/lib/email/send";
 import { getEventsByIds } from "@/lib/events/repository";
-import { createCaptainAccount, getUserByEmail, getUserPasswordHashById, updateCaptainPassword } from "@/lib/identity/repository";
+import { createCaptainAccount, findAssignableCaptain, getUserByEmail, getUserPasswordHashById, setTeamCaptain, updateCaptainPassword } from "@/lib/identity/repository";
+import { getTeamEventRef } from "@/lib/teams/repository";
 import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 import { withServerActionLog } from "@/lib/observability/logger";
 import { prisma } from "@/lib/platform/db";
@@ -192,10 +193,7 @@ export async function adminAssignCaptainAction(formData: FormData) {
   const captainUserIdRaw = String(formData.get("captainUserId") ?? "").trim();
   const captainUserId = captainUserIdRaw ? actionEntityId.parse(captainUserIdRaw) : null;
 
-  const team = await prisma.team.findUnique({
-    where: { id: teamId },
-    select: { id: true, eventId: true },
-  });
+  const team = await getTeamEventRef(teamId);
   if (!team?.eventId) {
     return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
   }
@@ -203,22 +201,14 @@ export async function adminAssignCaptainAction(formData: FormData) {
   assertWorkspaceEventAction(user, team.eventId);
 
   if (captainUserId) {
-    const captain = await prisma.user.findUnique({
-      where: { id: captainUserId, role: "captain" },
-      select: { id: true, name: true },
-    });
+    // An organizer can only pick captains who already belong to one of their own events.
+    const captain = await findAssignableCaptain(user, captainUserId);
     if (!captain) {
       return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Kapten tidak ditemukan.")}` as never);
     }
-    await prisma.team.update({
-      where: { id: teamId },
-      data: { captainId: captain.id, captainName: captain.name },
-    });
+    await setTeamCaptain(teamId, captain);
   } else {
-    await prisma.team.update({
-      where: { id: teamId },
-      data: { captainId: null, captainName: null },
-    });
+    await setTeamCaptain(teamId, null);
   }
 
   revalidatePath("/", "layout");

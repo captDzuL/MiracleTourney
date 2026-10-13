@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { UserFacingError } from "@/lib/security/public-error";
+
 const { prisma, tx, applyEventLifecycleSideEffects, bcryptHash } = vi.hoisted(() => ({
   prisma: {
     event: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
@@ -776,6 +778,19 @@ describe("updateEventStream", () => {
       ...overrides,
     });
 
+  beforeEach(() => {
+    prisma.$transaction.mockImplementation(async (operation: (tx: typeof prisma) => unknown) => operation(prisma));
+  });
+
+  it("reads the event, writes the stream and reloads the event inside one transaction", async () => {
+    prisma.event.findUnique.mockResolvedValueOnce(eventRow()).mockResolvedValueOnce(streamedRow());
+
+    await updateEventStream("event-1", "https://www.youtube.com/watch?v=abc123", "Main stage");
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
+  });
+
   it("returns null without writing a stream when the event does not exist", async () => {
     // Arrange
     prisma.event.findUnique.mockResolvedValue(null);
@@ -856,12 +871,16 @@ describe("updateEventStream", () => {
     expect(prisma.eventStream.upsert).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects a youtube watch URL without a protocol and writes nothing", async () => {
+  it("refuses a link that is not a full URL with a message the user may read, and writes nothing", async () => {
     // Arrange
     prisma.event.findUnique.mockResolvedValueOnce(eventRow());
 
-    // Act + Assert
-    await expect(updateEventStream("event-1", "youtube.com/watch?v=abc123", "Stream")).rejects.toThrow();
+    // Act
+    const failure = await updateEventStream("event-1", "youtube.com/watch?v=abc123", "Stream").catch((error: unknown) => error);
+
+    // Assert
+    expect(failure).toBeInstanceOf(UserFacingError);
+    expect((failure as Error).message).toBe("Link live stream tidak valid. Pakai alamat lengkap yang diawali https://.");
     expect(prisma.eventStream.upsert).not.toHaveBeenCalled();
   });
 
