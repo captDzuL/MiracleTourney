@@ -475,6 +475,104 @@
     ]
   },
   "registrationWorkspace": {
+    "solo": {
+      "badge": "Solo",
+      "queueTitle": "Pendaftaran pemain",
+      "search": "Cari IGN atau UID",
+      "player": "Pemain",
+      "uid": "UID",
+      "position": "Posisi",
+      "backupPosition": "Cadangan: {position}",
+      "emptyQueue": "Tidak ada pemain yang sesuai dengan penyaring ini.",
+      "quota": {
+        "title": "Slot pemain",
+        "field": "Pemain lapangan",
+        "held": "{held} dari {quota} terisi",
+        "queued": "{count} di antrean"
+      },
+      "draw": {
+        "title": "Acak tim",
+        "description": "Tutup pendaftaran, acak, cek hasilnya, lalu kunci. Setelah dikunci, tim berjalan seperti event tim biasa.",
+        "ready": {
+          "title": "Siap diacak",
+          "keepers": "{position} diterima",
+          "emergency": "{position} darurat dipakai",
+          "field": "Pemain lapangan masuk tim",
+          "teams": "Tim yang jadi",
+          "teamsValue": "{teams} dari {cap}",
+          "unplaced": "Tidak masuk tim"
+        },
+        "warnings": {
+          "too_few_teams": "Pemain belum cukup untuk membentuk 2 tim.",
+          "required_short": "{position} kurang {missing}.",
+          "open_short": "Pemain lapangan kurang {missing}.",
+          "team_count_below_cap": "Hanya {teamCount} dari {participantCap} tim yang bisa dibentuk. Cek format kompetisi.",
+          "unplaced": "{count} pemain tidak masuk tim.",
+          "ign_collision": "Tim {team} punya dua pemain dengan IGN yang sama."
+        },
+        "close": {
+          "button": "Tutup pendaftaran",
+          "title": "Tutup pendaftaran?",
+          "intro": "Setelah ditutup, pemain tidak bisa daftar atau batal sendiri.",
+          "blockers": "Selesaikan {count} pembayaran dulu: setujui, tolak, atau tunggu batas waktunya.",
+          "blockersLink": "Buka verifikasi pembayaran",
+          "queue": "{count} pemain di antrean akan dilepas tanpa bayar.",
+          "unplacedTitle": "Pemain ini tidak masuk tim",
+          "unplacedHelp": "Refund mereka secara manual, lalu centang untuk lanjut.",
+          "unplacedHelpFree": "Centang untuk lanjut.",
+          "confirm": "Tutup pendaftaran",
+          "cancel": "Batal",
+          "working": "Menutup…",
+          "done": "Pendaftaran ditutup."
+        },
+        "run": {
+          "button": "Acak tim",
+          "again": "Acak ulang",
+          "working": "Mengacak…",
+          "done": "Tim diacak.",
+          "closeFirst": "Tutup pendaftaran dulu.",
+          "tooFew": "Perlu minimal 2 tim.",
+          "locked": "Tim sudah dikunci.",
+          "started": "Event sudah dimulai tanpa tim yang dikunci."
+        },
+        "result": {
+          "title": "Hasil acak versi {version}",
+          "seed": "Seed: {seed}",
+          "team": "Tim {index}",
+          "captain": "Kapten",
+          "swapHint": "Pilih dua pemain dari tim berbeda untuk ditukar.",
+          "swapSelected": "{count} dari 2 dipilih",
+          "swap": "Tukar pemain",
+          "swapDone": "Pemain ditukar."
+        },
+        "lock": {
+          "button": "Kunci tim",
+          "title": "Kunci tim?",
+          "body": "Tim dan pemain dibuat sungguhan. Setelah ini hasil acak tidak bisa diubah.",
+          "confirm": "Kunci tim",
+          "working": "Mengunci…",
+          "done": "Tim dikunci.",
+          "blocked": "Selesaikan peringatan di atas dulu."
+        },
+        "redraw": {
+          "title": "Acak ulang?",
+          "body": "Hasil acak sekarang diganti dengan yang baru. Pertukaran yang sudah kamu buat hilang.",
+          "confirm": "Acak ulang"
+        },
+        "refund": {
+          "title": "Perlu refund",
+          "empty": "Semua pemain masuk tim.",
+          "mark": "Tandai sudah refund",
+          "done": "Sudah refund",
+          "free": "Tidak perlu refund, event ini gratis."
+        },
+        "locked": {
+          "title": "Tim sudah dikunci",
+          "body": "{teams} tim dibuat dari hasil acak versi {version}.",
+          "link": "Buka kompetisi"
+        }
+      }
+    },
     "issues": {
       "formula": "Kolom yang dipetakan tidak boleh berisi rumus.",
       "locked": "Daftar pemain acara ini terkunci.",
@@ -498,6 +596,7 @@
     "acceptedCapacity": "Diterima / kapasitas",
     "views": "Tampilan registrasi",
     "viewsLabels": {
+      "draw": "Acak tim",
       "queue": "Daftar peserta",
       "import": "Impor XLSX / CSV",
       "payments": "Verifikasi pembayaran",
@@ -527,6 +626,8 @@
     "loadErrorHelp": "Acara tetap tersedia. Muat ulang bagian ini untuk mencoba kembali.",
     "reload": "Muat ulang",
     "statuses": {
+      "queued": "Antrean",
+      "withdrawn": "Batal",
       "pending_payment": "Menunggu pembayaran",
       "pending_review": "Menunggu pemeriksaan",
       "accepted": "Diterima",
@@ -537,6 +638,7 @@
       "expired": "Kedaluwarsa"
     },
     "sources": {
+      "solo_registration": "Pemain solo",
       "captain_registration": "Pendaftaran kapten",
       "import_xlsx": "Impor XLSX",
       "import_csv": "Impor CSV",
