@@ -140,69 +140,19 @@ vi.mock("next/cache", () => ({
   unstable_cache: (fn: unknown) => fn,
 }));
 
-import {
-  addPlayer,
-  approveEventVisualAsset,
-  assertUserCanManageEvent,
-  assertCaptainCanSubmitStats,
-  countAiVisualAttempts,
-  createEventVisualAsset,
-  deletePlayer,
-  getCaptainRegistrationRequests,
-  getCaptainTeams,
-  getEventRoundConfigs,
-  getEventsByIds,
-  getOpenRegistrationEventsForCaptain,
-  approveTeamRegistrationRequest,
-  createTeamRegistrationRequest,
-  getCertificateByEvent,
-  getCertificatesForEvents,
-  getFlashpeakLeaderboardForEvent,
-  getFlashpeakLeaderboardForEventResult,
-  getPublicDiscoveryEvents,
-  getManageableEventsForUser,
-  getManageableEventDraft,
-  getOrganizerProfileForUser,
-  getMatchGamesForEvent,
-  getOrganizerUserById,
-  getOrganizerUsers,
-  commitRegistrationImportBatch,
-  getRegistrationRecordsForEvent,
-  getRegistrationImportBatchesForEvent,
-  getRegistrationImportHistoryForEvent,
-  getPaymentReviewForEvent,
-  getRegistrationImportEventContext,
-  getRegistrationImportUsersByEmails,
-  getEventPaymentSettingsForManager,
-  RegistrationMutationConflictError,
-  getTeamCountsForEvents,
-  getTeamsForEvents,
-  listEventVisualAssets,
-  rejectEventVisualAsset,
-  setEventStatus,
-  setEventVisualFocalPoint,
-  registerTeam,
-  recordCertificateSuccess,
-  recordCertificateFailure,
-  rejectTeamRegistrationRequest,
-  updateTeamRegistrationProof,
-  updateEventPublicInfo,
-  updatePublishedEventSlugAsAdmin,
-  updateOrganizerProfileForUser,
-  updatePaymentSettings,
-  updateTeamLogo,
-  updatePlayer,
-  adminWriteMatchPlayerStats,
-  readEventMatchStatistics,
-  approveStatSubmission,
-  rejectStatSubmission,
-  upsertStatSubmission,
-  getRosterChangeWindow,
-  getPlayersForTeam,
-  getPlayersForTeams,
-  getPlayersForEvent,
-  setTeamCaptainDisplay,
-} from "./repository";
+import { getEventRoundConfigs, getMatchGamesForEvent } from "@/lib/bracket/rounds-repository";
+import { getCertificateByEvent, getCertificatesForEvents, recordCertificateSuccess, recordCertificateFailure } from "@/lib/certificate/repository";
+import { getEventsByIds, getOpenRegistrationEventsForCaptain, getPublicDiscoveryEvents, getManageableEventsForUser, getManageableEventDraft, setEventStatus, updateEventPublicInfo, updatePublishedEventSlugAsAdmin } from "@/lib/events/repository";
+import { approveEventVisualAsset, countAiVisualAttempts, createEventVisualAsset, listEventVisualAssets, rejectEventVisualAsset, setEventVisualFocalPoint } from "@/lib/events/visual-repository";
+import { getOrganizerUserById, getOrganizerUsers } from "@/lib/identity/repository";
+import { commitRegistrationImportBatch, getRegistrationRecordsForEvent, getRegistrationImportBatchesForEvent, getRegistrationImportHistoryForEvent, getRegistrationImportEventContext, getRegistrationImportUsersByEmails } from "@/lib/imports/repository";
+import { getOrganizerProfileForUser, updateOrganizerProfileForUser, updatePaymentSettings } from "@/lib/platform/settings-repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
+import { assertCaptainCanSubmitStats, getFlashpeakLeaderboardForEvent, getFlashpeakLeaderboardForEventResult } from "@/lib/player-stats/repository";
+import { adminWriteMatchPlayerStats, readEventMatchStatistics, approveStatSubmission, rejectStatSubmission, upsertStatSubmission } from "@/lib/player-stats/write-repository";
+import { getCaptainRegistrationRequests, createTeamRegistrationRequest, RegistrationMutationConflictError, registerTeam, updateTeamRegistrationProof, getRosterChangeWindow } from "@/lib/registration/repository";
+import { approveTeamRegistrationRequest, getPaymentReviewForEvent, getEventPaymentSettingsForManager, rejectTeamRegistrationRequest } from "@/lib/registration/review-repository";
+import { addPlayer, deletePlayer, getCaptainTeams, getTeamCountsForEvents, getTeamsForEvents, updateTeamLogo, updatePlayer, getPlayersForTeam, getPlayersForTeams, getPlayersForEvent, setTeamCaptainDisplay } from "@/lib/teams/repository";
 import { generateCompetitionGraph, type GroupPlayoffsConfig } from "@/lib/tournament/competition";
 
 const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@test.com", name: "Admin" };

@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const external = vi.hoisted(() => ({ flag: vi.fn(), session: vi.fn(), manage: vi.fn(), deps: vi.fn(), regenerate: vi.fn(), publish: vi.fn(), revalidate: vi.fn(), upload: vi.fn(), createAsset: vi.fn(), rateLimit: vi.fn() }));
-vi.mock("next/cache", () => ({ revalidatePath: external.revalidate }));
+vi.mock("next/cache", () => ({ revalidatePath: external.revalidate, unstable_cache: (fn: unknown) => fn }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: external.flag }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: external.session }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent: external.manage, createEventVisualAsset: external.createAsset, getCertificateByEvent: vi.fn() }));
+vi.mock("@/lib/certificate/repository", () => ({
+  getCertificateByEvent: vi.fn(),
+}));
+vi.mock("@/lib/events/visual-repository", () => ({
+  createEventVisualAsset: external.createAsset,
+}));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent: external.manage,
+}));
 vi.mock("@/lib/actions/shared/uploads", () => ({ uploadImageAsset: external.upload }));
 vi.mock("@/lib/certificate/studio-repository", () => ({ createPrismaCertificateStudioDependencies: external.deps }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: external.rateLimit }));

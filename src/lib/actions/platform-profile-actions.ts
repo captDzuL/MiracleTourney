@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireAnyRole } from "@/lib/auth/session";
-import { updatePlatformProfile } from "@/lib/platform/repository";
+import { updatePlatformProfile } from "@/lib/platform/settings-repository";
 import { withServerActionLog } from "@/lib/observability/logger";
 
 const platformProfileSchema = z.object({

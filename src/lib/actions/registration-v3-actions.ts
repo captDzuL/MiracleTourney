@@ -4,19 +4,10 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 
 import { requireAnyRole } from "@/lib/auth/session";
-import {
-  assertUserCanManageEvent,
-  approveTeamRegistrationRequest,
-  commitRegistrationImportBatch,
-  getEventPaymentSettingsForManager,
-  getRegistrationImportBatchForAdmin,
-  getRegistrationImportEventContext,
-  getRegistrationImportUsersByEmails,
-  getTeamRegistrationRequestForEvent,
-  isEventBracketLocked,
-  rejectTeamRegistrationRequest,
-  saveRegistrationImportPreviewBatch,
-} from "@/lib/platform/repository";
+import { isEventBracketLocked } from "@/lib/bracket/repository";
+import { commitRegistrationImportBatch, getRegistrationImportBatchForAdmin, getRegistrationImportEventContext, getRegistrationImportUsersByEmails, saveRegistrationImportPreviewBatch } from "@/lib/imports/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
+import { approveTeamRegistrationRequest, getEventPaymentSettingsForManager, getTeamRegistrationRequestForEvent, rejectTeamRegistrationRequest } from "@/lib/registration/review-repository";
 import { getGameModeConfig } from "@/lib/platform/config";
 import {
   buildRegistrationPreview,

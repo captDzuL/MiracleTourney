@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { useTranslations } from "next-intl";
 import type { RegistrationRecordPage } from "@/lib/registration/records";
-import type { RegistrationImportEventContext } from "@/lib/platform/repository";
+import type { RegistrationImportEventContext } from "@/lib/imports/repository";
 import { control, muted, panel, Filters, Pagination, WorkspaceDialog, registrationHref, type RegistrationQuery } from "./shared";
 export type RosterTeam = RegistrationImportEventContext["teams"][number];
 export function RegistrationQueuePanel({ locale, eventId, query, queue, teams, participants = false }: { locale: "id" | "en"; eventId: string; query: RegistrationQuery; queue: RegistrationRecordPage; teams: RosterTeam[]; participants?: boolean }) {

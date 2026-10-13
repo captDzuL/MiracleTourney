@@ -22,7 +22,8 @@ vi.mock("next/cache", () => ({
   unstable_cache: (fn: unknown) => fn,
 }));
 
-import { createTeamRegistrationRequest, setMatchResult } from "./repository";
+import { setMatchResult } from "@/lib/bracket/repository";
+import { createTeamRegistrationRequest } from "@/lib/registration/repository";
 
 const paidEvent = {
   id: "event-paid",

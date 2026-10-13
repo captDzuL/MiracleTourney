@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/platform/db";
 import { getGameIdForMode } from "@/lib/platform/config";
-import { eventPublicInclude, mapEvent } from "@/lib/platform/repository";
+import { eventPublicInclude, mapEvent } from "@/lib/platform/shared/mappers";
 import type { EventStatus } from "@/lib/platform/types";
 import { getLegacyTournamentFormat, tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 

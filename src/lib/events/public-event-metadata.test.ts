@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { getPublicEventBySlug } = vi.hoisted(() => ({ getPublicEventBySlug: vi.fn() }));
 
-vi.mock("@/lib/platform/repository", () => ({ getPublicEventBySlug }));
+vi.mock("@/lib/events/repository", () => ({
+  getPublicEventBySlug,
+}));
 
 import { readEventForMetadata } from "./public-event-metadata";
 

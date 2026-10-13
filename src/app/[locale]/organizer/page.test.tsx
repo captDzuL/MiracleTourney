@@ -20,7 +20,15 @@ const { requireAnyRole, getManageableEventsForUser, getTeamCountsForEvents, getO
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
 vi.mock("@/lib/events/event-revision", () => ({ getActiveEventEditRevisionIds }));
-vi.mock("@/lib/platform/repository", () => ({ getManageableEventsForUser, getTeamCountsForEvents, getOrganizerProfileForUser }));
+vi.mock("@/lib/events/repository", () => ({
+  getManageableEventsForUser,
+}));
+vi.mock("@/lib/platform/settings-repository", () => ({
+  getOrganizerProfileForUser,
+}));
+vi.mock("@/lib/teams/repository", () => ({
+  getTeamCountsForEvents,
+}));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale }));
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/i18n/navigation", () => ({

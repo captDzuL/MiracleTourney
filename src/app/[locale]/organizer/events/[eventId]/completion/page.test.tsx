@@ -30,7 +30,9 @@ vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft }));
+vi.mock("@/lib/events/repository", () => ({
+  getManageableEventDraft,
+}));
 vi.mock("@/lib/completion/workspace", () => ({ loadCompletionWorkspace }));
 vi.mock("@/components/v3/completion/CompletionWorkspace", () => ({
   CompletionWorkspace: ({ completionIdempotencyKey, reopenIdempotencyKey, state }: {

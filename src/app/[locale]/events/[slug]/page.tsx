@@ -7,7 +7,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { readPublicV3Event } from "@/lib/events/public-v3-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { serializeJsonLd } from "@/lib/seo/json-ld";
-import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/platform/repository";
+import { getPublicEventBySlug, getPublicEventSlugRedirect } from "@/lib/events/repository";
 import { readEventForMetadata } from "@/lib/events/public-event-metadata";
 import { renderEventDetailPage } from "../../../events/[slug]/event-detail-page";
 

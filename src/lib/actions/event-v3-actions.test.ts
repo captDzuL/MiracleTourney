@@ -16,7 +16,17 @@ vi.mock("@/lib/events/event-draft", async (importOriginal) => ({
 vi.mock("@/lib/events/publish-readiness", () => ({ publishEvent }));
 vi.mock("@/lib/events/preview-token", () => ({ createEventPreviewToken, revokeEventPreviewTokens }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent, createEvent, createOrganizerAndEventDraft, getOrganizerUserById, updateEventOrganizerContact }));
+vi.mock("@/lib/events/repository", () => ({
+  createEvent,
+  createOrganizerAndEventDraft,
+  updateEventOrganizerContact,
+}));
+vi.mock("@/lib/identity/repository", () => ({
+  getOrganizerUserById,
+}));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent,
+}));
 vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
 vi.mock("next/navigation", () => ({ redirect }));
 

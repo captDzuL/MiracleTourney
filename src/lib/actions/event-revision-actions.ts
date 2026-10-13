@@ -17,7 +17,8 @@ import {
   revokeEventRevisionPreviewTokens,
   saveEventEditRevision,
 } from "@/lib/events/event-revision";
-import { createEventVisualAsset, updatePublishedEventSlugAsAdmin } from "@/lib/platform/repository";
+import { updatePublishedEventSlugAsAdmin } from "@/lib/events/repository";
+import { createEventVisualAsset } from "@/lib/events/visual-repository";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { safeEntityIdSchema } from "@/lib/security/request-guard";
 import { checkRateLimit } from "@/lib/rate-limit";

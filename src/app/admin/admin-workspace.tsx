@@ -56,31 +56,17 @@ import {
   adminUpdatePaymentSettingsAction,
 } from "@/lib/actions";
 import { requireAnyRole } from "@/lib/auth/session";
-import {
-  getBracketManageableMatchesForEvent,
-  getCaptainUsersForAdmin,
-  getMatchWithRosterAndStats,
-  getCertificatesForEvents,
-  getEventBySlug,
-  getEventRoundConfigs,
-  getManageableEventsForUser,
-  getGameForEvent,
-  getGameModes,
-  getImportedTeams,
-  getLeaderboardForEvent,
-  listEventVisualAssets,
-  getMatchGames,
-  getMatchesForEvent,
-  getOrganizerUsers,
-  getPendingStatSubmissionCount,
-  getPendingStatSubmissions,
-  getPaymentRegistrationRequestsForAdmin,
-  getPaymentSettings,
-  getRegistrationImportBatchForAdmin,
-  getRegistrationImportBatchesForEvent,
-  getTeamCountsForEvents,
-  getTeamsForEvents,
-} from "@/lib/platform/repository";
+import { getBracketManageableMatchesForEvent, getLeaderboardForEvent, getMatchesForEvent } from "@/lib/bracket/repository";
+import { getEventRoundConfigs, getMatchGames } from "@/lib/bracket/rounds-repository";
+import { getCertificatesForEvents } from "@/lib/certificate/repository";
+import { getEventBySlug, getManageableEventsForUser } from "@/lib/events/repository";
+import { listEventVisualAssets } from "@/lib/events/visual-repository";
+import { getCaptainUsersForAdmin, getOrganizerUsers } from "@/lib/identity/repository";
+import { getImportedTeams, getRegistrationImportBatchForAdmin, getRegistrationImportBatchesForEvent } from "@/lib/imports/repository";
+import { getGameForEvent, getGameModes, getPaymentSettings } from "@/lib/platform/settings-repository";
+import { getMatchWithRosterAndStats, getPendingStatSubmissionCount, getPendingStatSubmissions } from "@/lib/player-stats/write-repository";
+import { getPaymentRegistrationRequestsForAdmin } from "@/lib/registration/repository";
+import { getTeamCountsForEvents, getTeamsForEvents } from "@/lib/teams/repository";
 import { DataTable, Pill, Section, StatCard } from "@/components/ui";
 import { EventVisualAssetsPanel } from "@/components/admin/EventVisualAssetsPanel";
 import { RegistrationControlCenterShell } from "@/components/registration/RegistrationControlCenterShell";

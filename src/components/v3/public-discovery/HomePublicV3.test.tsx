@@ -15,7 +15,13 @@ vi.mock("@/i18n/navigation", () => ({ Link: (props: React.ComponentProps<"a">) =
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => true }));
 vi.mock("@/lib/events/public-v3-read", () => ({ readPublicV3Event: dependencies.read }));
 vi.mock("@/lib/events/public-home-read", () => ({ readPublicHomeFeaturedEvent: dependencies.read }));
-vi.mock("@/lib/platform/repository", () => ({ getPublicDiscoveryEvents: dependencies.discovery, getAllGames: () => games, getPublicEvents: vi.fn() }));
+vi.mock("@/lib/events/repository", () => ({
+  getPublicDiscoveryEvents: dependencies.discovery,
+  getPublicEvents: vi.fn(),
+}));
+vi.mock("@/lib/platform/settings-repository", () => ({
+  getAllGames: () => games,
+}));
 import { HomePageContent } from "@/app/home-page-content";
 import { PublicHomepageShellBoundary } from "./PublicHomepageShellBoundary";
 

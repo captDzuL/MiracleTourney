@@ -14,7 +14,10 @@ import type { PublicHomeFeaturedEvent } from "@/lib/events/public-v3-types";
 import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getDefaultModeLabel } from "@/lib/platform/config";
-import { getAllGames, getBracketPreview, getGameForEvent, getPublicDiscoveryEvents, getPublicEvents, getTeamsForEvent } from "@/lib/platform/repository";
+import { getBracketPreview } from "@/lib/bracket/repository";
+import { getPublicDiscoveryEvents, getPublicEvents } from "@/lib/events/repository";
+import { getAllGames, getGameForEvent } from "@/lib/platform/settings-repository";
+import { getTeamsForEvent } from "@/lib/teams/repository";
 import type { Event, Game } from "@/lib/platform/types";
 
 const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });

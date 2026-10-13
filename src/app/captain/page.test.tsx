@@ -78,16 +78,26 @@ vi.mock("@/i18n/redirect", () => ({
   },
 }));
 vi.mock("@/lib/auth/session", () => ({ requireRole }));
-vi.mock("@/lib/platform/repository", () => ({
-  getCaptainTeams,
+vi.mock("@/lib/certificate/repository", () => ({
   getCertificatesForEvents,
+}));
+vi.mock("@/lib/events/repository", () => ({
   getEventsByIds,
+  getOpenRegistrationEventsForCaptain,
+}));
+vi.mock("@/lib/identity/repository", () => ({
+  hasTempPassword,
+}));
+vi.mock("@/lib/platform/settings-repository", () => ({
   getGameForEvent,
   getModeForEvent,
+}));
+vi.mock("@/lib/registration/repository", () => ({
   getCaptainRegistrationRequests,
-  getOpenRegistrationEventsForCaptain,
+}));
+vi.mock("@/lib/teams/repository", () => ({
+  getCaptainTeams,
   getPlayersForTeams,
-  hasTempPassword,
 }));
 vi.mock("@/lib/platform/roster-change-requests", () => ({ getRosterChangeOverview }));
 vi.mock("@/lib/actions/captain-roster-change-actions", () => ({

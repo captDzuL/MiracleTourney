@@ -21,7 +21,12 @@ const { requireAnyRole, getManageableEventDraft, getPlatformProfile, isFeatureEn
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft, getPlatformProfile }));
+vi.mock("@/lib/events/repository", () => ({
+  getManageableEventDraft,
+}));
+vi.mock("@/lib/platform/settings-repository", () => ({
+  getPlatformProfile,
+}));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale }));
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/lib/events/publish-readiness", () => ({

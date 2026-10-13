@@ -1,5 +1,5 @@
 import type { AppUser, PaymentSettings } from "@/lib/platform/types";
-import { assertUserCanManageEvent } from "@/lib/platform/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { prisma } from "@/lib/platform/db";
 
 export type EventPaymentSettingsSource = "event";

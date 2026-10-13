@@ -12,7 +12,10 @@ const { prisma, mapEvent } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/platform/db", () => ({ prisma }));
-vi.mock("@/lib/platform/repository", () => ({ eventPublicInclude: {}, mapEvent }));
+vi.mock("@/lib/platform/shared/mappers", () => ({
+  eventPublicInclude: {},
+  mapEvent,
+}));
 
 import { hashEventRevisionPreviewToken, resolveEventRevisionPreviewToken } from "./event-revision";
 

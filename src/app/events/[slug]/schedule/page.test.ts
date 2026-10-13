@@ -12,11 +12,17 @@ vi.mock("@/lib/events/adaptive-public-phases", () => ({
   getPublicFinishedEvent: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@/lib/events/public-ongoing", () => ({ getPublicOngoingEvent: vi.fn().mockResolvedValue(null) }));
-vi.mock("@/lib/platform/repository", () => ({
-  getPublicEventBySlug: vi.fn().mockResolvedValue({ id: "schedule-event", slug: "schedule-event", name: "Schedule Event", status: "Published" }),
+vi.mock("@/lib/bracket/repository", () => ({
   getMatchesForEvent: vi.fn().mockResolvedValue([]),
-  getTeamsForEvent: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("@/lib/bracket/rounds-repository", () => ({
   getEventRoundConfigs: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("@/lib/events/repository", () => ({
+  getPublicEventBySlug: vi.fn().mockResolvedValue({ id: "schedule-event", slug: "schedule-event", name: "Schedule Event", status: "Published" }),
+}));
+vi.mock("@/lib/teams/repository", () => ({
+  getTeamsForEvent: vi.fn().mockResolvedValue([]),
 }));
 
 import { renderSchedulePage } from "./schedule-page-content";

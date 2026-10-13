@@ -2,7 +2,8 @@ import type { Prisma } from "@prisma/client";
 import { disqualifiedTeamIds } from "../tournament/operations/result-projection";
 import { gameModes } from "./config";
 import { prisma } from "./db";
-import { readRosterChangeState, runSerializableRegistrationTransaction } from "./repository";
+import { runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
+import { readRosterChangeState } from "@/lib/registration/repository";
 import {
   assertPositionAllowed,
   assertRosterSizeAfter,

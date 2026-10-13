@@ -1,4 +1,5 @@
-import { assertUserCanManageEvent, getCaptainCredentialsForEvent } from "@/lib/platform/repository";
+import { getCaptainCredentialsForEvent } from "@/lib/imports/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { requireRole } from "@/lib/auth/session";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { getRequestId, withRouteLog } from "@/lib/observability/logger";

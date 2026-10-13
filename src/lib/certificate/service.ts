@@ -3,7 +3,7 @@ import { CertificateArtifactFinalizationError, generateCertificate } from "@/lib
 import type { MiracleV3GenerationDependencies, MiracleV3CertificateIdentity } from "@/lib/certificate/generate";
 import { MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateData, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3";
 import { prisma } from "@/lib/platform/db";
-import { getCertificateByEvent } from "@/lib/platform/repository";
+import { getCertificateByEvent } from "@/lib/certificate/repository";
 import { z } from "zod";
 import { safeEntityIdSchema } from "@/lib/security/request-guard";
 import { redactIdentifier, writeServerLog } from "@/lib/observability/logger";

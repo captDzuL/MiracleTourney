@@ -10,7 +10,7 @@ const boundary = vi.hoisted(() => ({
 
 vi.mock("next-intl/server", () => ({ setRequestLocale: () => {} }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => boundary.adaptiveEnabled }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/events/repository", () => ({
   getPublicEventBySlug: boundary.getPublicEventBySlug,
   getPublicEventSlugRedirect: async () => null,
 }));

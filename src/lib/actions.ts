@@ -33,54 +33,19 @@ import type { AppUser } from "@/lib/platform/types";
 import { describeActionError, isUserSafeActionError, toSafeActionMessage } from "@/lib/security/public-error";
 import { isSafeHttpUrl } from "@/lib/security/request-guard";
 import { withServerActionLog, writeServerLog } from "@/lib/observability/logger";
-import {
-  addPlayer,
-  approveStatSubmission,
-  approveEventVisualAsset,
-  approveTeamRegistrationRequest,
-  assertCaptainCanSubmitStats,
-  assertUserCanManageEvent,
-  assertUserCanManageTeam,
-  assertUserCanReviewStatSubmission,
-  createCaptainAccount,
-  createOrUpdateCaptainDraftTeam,
-  createEvent,
-  createEventVisualAsset,
-  createTeamRegistrationRequest,
-  deletePlayer,
-  getImportSnapshot,
-  getEventsByIds,
-  getOrganizerUserById,
-  getPlayerStatFormContext,
-  getUserByEmail,
-  getUserPasswordHashById,
-  autoTransitionEventToOngoing,
-  importTeams,
-  registerTeam,
-  rejectStatSubmission,
-  rejectEventVisualAsset,
-  rejectTeamRegistrationRequest,
-  setEventStatus,
-  setEventVisualFocalPoint,
-  setMatchGames,
-  setMatchResult,
-  updateCaptainPassword,
-  updatePaymentSettings,
-  updateTeamRegistrationProof,
-  updateEventPublicInfo,
-  updateEventStream,
-  updateEventBrandAssets,
-  updateEventCertificateAssets,
-  updateTeamLogo,
-  updateCaptainTeamLogo,
-  updatePlayer,
-  upsertRoundConfig,
-  upsertStatSubmission,
-  setTeamCaptainDisplay,
-  adminWriteMatchPlayerStats,
-} from "@/lib/platform/repository";
-import fs from "fs";
-import path from "path";
+import { setMatchResult } from "@/lib/bracket/repository";
+import { setMatchGames, upsertRoundConfig } from "@/lib/bracket/rounds-repository";
+import { createEvent, getEventsByIds, autoTransitionEventToOngoing, setEventStatus, updateEventPublicInfo, updateEventStream } from "@/lib/events/repository";
+import { approveEventVisualAsset, createEventVisualAsset, rejectEventVisualAsset, setEventVisualFocalPoint, updateEventBrandAssets, updateEventCertificateAssets } from "@/lib/events/visual-repository";
+import { createCaptainAccount, getOrganizerUserById, getUserByEmail, getUserPasswordHashById, updateCaptainPassword } from "@/lib/identity/repository";
+import { getImportSnapshot, importTeams } from "@/lib/imports/repository";
+import { updatePaymentSettings } from "@/lib/platform/settings-repository";
+import { assertUserCanManageEvent, assertUserCanManageTeam, assertUserCanReviewStatSubmission } from "@/lib/platform/shared/authz";
+import { assertCaptainCanSubmitStats, getPlayerStatFormContext } from "@/lib/player-stats/repository";
+import { approveStatSubmission, rejectStatSubmission, upsertStatSubmission, adminWriteMatchPlayerStats } from "@/lib/player-stats/write-repository";
+import { createOrUpdateCaptainDraftTeam, createTeamRegistrationRequest, registerTeam, updateTeamRegistrationProof } from "@/lib/registration/repository";
+import { approveTeamRegistrationRequest, rejectTeamRegistrationRequest } from "@/lib/registration/review-repository";
+import { addPlayer, deletePlayer, updateTeamLogo, updateCaptainTeamLogo, updatePlayer, setTeamCaptainDisplay } from "@/lib/teams/repository";
 import { assertWorkspaceEventAction, requireAdminSession, requireCaptainSession } from "@/lib/actions/shared/session";
 import { actionEntityId, redirectToRequestedLocale } from "@/lib/actions/shared/request";
 import { MAX_BACKGROUND_IMAGE_BYTES, MAX_LOGO_IMAGE_BYTES, MAX_PAYMENT_PROOF_BYTES, MAX_QRIS_IMAGE_BYTES, MAX_TEAM_IMPORT_CSV_BYTES } from "@/lib/actions/shared/limits";

@@ -16,11 +16,15 @@ const mocks = vi.hoisted(() => ({
   getCaptainPaymentSettings: vi.fn(),
 }));
 
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/events/repository", () => ({
+  getPublicEventBySlug: mocks.getPublicEventBySlug,
+}));
+vi.mock("@/lib/registration/repository", () => ({
   getCaptainRegistrationRequests: mocks.getCaptainRegistrationRequests,
+}));
+vi.mock("@/lib/teams/repository", () => ({
   getCaptainTeams: mocks.getCaptainTeams,
   getPlayersForTeam: mocks.getPlayersForTeam,
-  getPublicEventBySlug: mocks.getPublicEventBySlug,
   getTeamCountsForEvents: mocks.getTeamCountsForEvents,
 }));
 vi.mock("@/lib/platform/config", () => ({ getGameModeConfig: mocks.getGameModeConfig }));

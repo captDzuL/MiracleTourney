@@ -40,7 +40,7 @@ vi.mock("next/cache", () => ({
   unstable_cache: (fn: unknown) => fn,
 }));
 
-type Repository = typeof import("./repository");
+type Repository = typeof import("@/lib/registration/repository") & typeof import("@/lib/registration/review-repository");
 
 const suite = databaseUrl ? describe : describe.skip;
 
@@ -56,7 +56,7 @@ suite("registration transactions against a real database", () => {
     // The repository reads its client from DATABASE_URL when it is first imported.
     process.env.DATABASE_URL = databaseUrl;
     process.env.DIRECT_URL = databaseUrl;
-    repository = await import("./repository");
+    repository = { ...(await import("@/lib/registration/repository")), ...(await import("@/lib/registration/review-repository")) };
     db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
   }, 60_000);
 

@@ -13,7 +13,7 @@ vi.mock("next/cache", () => ({
   unstable_cache: (fn: unknown) => fn,
 }));
 
-import { createCaptainAccount } from "./repository";
+import { createCaptainAccount } from "@/lib/identity/repository";
 
 const input = { email: "a@test.com", name: "A", passwordHash: "hash" };
 

@@ -16,7 +16,7 @@ vi.mock("next/cache", () => ({ revalidateTag: vi.fn(), unstable_cache: (fn: unkn
 
 import type { AppUser } from "../types";
 import * as authz from "./authz";
-import { assertUserCanManageEvent, assertUserCanManageTeam, assertUserCanReviewStatSubmission } from "../repository";
+import { assertUserCanManageEvent, assertUserCanManageTeam, assertUserCanReviewStatSubmission } from "@/lib/platform/shared/authz";
 
 const user = (role: AppUser["role"], id = `${role}-1`): AppUser => ({ id, role, email: `${id}@test.com`, name: id });
 

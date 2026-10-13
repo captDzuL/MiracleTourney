@@ -12,6 +12,23 @@ import { importBaseline } from "./eslint.import-baseline.mjs";
 
 const SOURCE_DIR = "src";
 
+// The data-access modules that used to be one platform/repository.ts (refactor Phase 2).
+const REPOSITORY_MODULES = [
+  "@/lib/platform/settings-repository",
+  "@/lib/events/repository",
+  "@/lib/events/visual-repository",
+  "@/lib/teams/repository",
+  "@/lib/bracket/repository",
+  "@/lib/bracket/rounds-repository",
+  "@/lib/registration/repository",
+  "@/lib/registration/review-repository",
+  "@/lib/imports/repository",
+  "@/lib/player-stats/repository",
+  "@/lib/player-stats/write-repository",
+  "@/lib/certificate/repository",
+  "@/lib/identity/repository",
+];
+
 const RULES = [
   {
     id: "R1",
@@ -36,13 +53,11 @@ const RULES = [
   {
     id: "R3",
     appliesTo: (file) => file.startsWith("src/components/"),
-    paths: [
-      {
-        name: "@/lib/platform/repository",
-        allowTypeImports: true,
-        message: "[R3] Komponen tidak boleh membaca repository. Baca datanya di halaman, lalu kirim lewat props.",
-      },
-    ],
+    paths: REPOSITORY_MODULES.map((name) => ({
+      name,
+      allowTypeImports: true,
+      message: "[R3] Komponen tidak boleh membaca repository. Baca datanya di halaman, lalu kirim lewat props.",
+    })),
   },
   {
     id: "R4",

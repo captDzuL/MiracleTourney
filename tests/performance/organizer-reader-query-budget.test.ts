@@ -172,7 +172,7 @@ vi.mock("@/lib/events/public-drawing", () => ({ readPublicDrawing: vi.fn(async (
 vi.mock("@/lib/events/public-ongoing", () => ({ readPublicOngoing: vi.fn(async () => null), getPublicOngoingEvent: vi.fn(async () => null) }));
 vi.mock("@/lib/events/public-finished", () => ({ readPublicFinished: vi.fn(async () => null) }));
 
-import { getRegistrationRecordsForEvent } from "@/lib/platform/repository";
+import { getRegistrationRecordsForEvent } from "@/lib/imports/repository";
 import { readCompetitionWorkspace } from "@/lib/competition/workspace-read";
 import { loadPrismaCompletionWorkspaceData } from "@/lib/completion/prisma-adapter";
 import { readPublicV3Event } from "@/lib/events/public-v3-read";

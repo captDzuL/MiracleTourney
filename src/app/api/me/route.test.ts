@@ -6,7 +6,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/session", () => ({ getSessionUser: mocks.getSessionUser }));
-vi.mock("@/lib/platform/repository", () => ({ getPendingStatSubmissionCount: mocks.getPendingStatSubmissionCount }));
+vi.mock("@/lib/player-stats/write-repository", () => ({
+  getPendingStatSubmissionCount: mocks.getPendingStatSubmissionCount,
+}));
 
 import { GET } from "./route";
 

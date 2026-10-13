@@ -34,11 +34,17 @@ vi.mock("next-intl/server", () => ({
 vi.mock("@/lib/feature-flags", () => ({
   isFeatureEnabled: (flag: string) => flag === "ui_v3_foundation" && dependencies.enabled,
 }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/bracket/repository", () => ({
+  getLeaderboardForEvent: dependencies.getLeaderboardForEvent,
+}));
+vi.mock("@/lib/events/repository", () => ({
   getEventBySlug: dependencies.getEventBySlug,
+}));
+vi.mock("@/lib/player-stats/repository", () => ({
   getFlashpeakLeaderboardForEvent: dependencies.getFlashpeakLeaderboardForEvent,
   getFlashpeakLeaderboardForEventResult: dependencies.getFlashpeakLeaderboardForEventResult,
-  getLeaderboardForEvent: dependencies.getLeaderboardForEvent,
+}));
+vi.mock("@/lib/teams/repository", () => ({
   getTeamsForEvent: dependencies.getTeamsForEvent,
 }));
 vi.mock("@/components/public-v2/BackToEvent", () => ({

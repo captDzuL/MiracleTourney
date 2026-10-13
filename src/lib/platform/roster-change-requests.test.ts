@@ -12,7 +12,12 @@ const { prisma, readRosterChangeState, runSerializableRegistrationTransaction } 
   runSerializableRegistrationTransaction: vi.fn(),
 }));
 vi.mock("./db", () => ({ prisma }));
-vi.mock("./repository", () => ({ readRosterChangeState, runSerializableRegistrationTransaction }));
+vi.mock("@/lib/platform/shared/tx", () => ({
+  runSerializableRegistrationTransaction,
+}));
+vi.mock("@/lib/registration/repository", () => ({
+  readRosterChangeState,
+}));
 
 import {
   cancelRosterChangeRequest,

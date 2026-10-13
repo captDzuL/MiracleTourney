@@ -1,4 +1,4 @@
-import { getPublicEventBySlug } from "@/lib/platform/repository";
+import { getPublicEventBySlug } from "@/lib/events/repository";
 
 /**
  * Reads an event for `generateMetadata`. Metadata is a nicety, so a failed read gives no metadata instead of an error.

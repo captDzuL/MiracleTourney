@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 
 import { prisma } from "@/lib/platform/db";
-import { eventPublicInclude, mapEvent } from "@/lib/platform/repository";
+import { eventPublicInclude, mapEvent } from "@/lib/platform/shared/mappers";
 
 const PREVIEW_TOKEN_PATTERN = /^[a-f0-9]{64}$/i;
 const PREVIEW_TOKEN_LIFETIME_MS = 24 * 60 * 60 * 1000;

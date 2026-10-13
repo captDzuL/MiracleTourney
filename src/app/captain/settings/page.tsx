@@ -5,7 +5,7 @@ import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { changePasswordAction } from "@/lib/actions";
 import { requireRole } from "@/lib/auth/session";
-import { hasTempPassword } from "@/lib/platform/repository";
+import { hasTempPassword } from "@/lib/identity/repository";
 import { buttonStyles } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 
