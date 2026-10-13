@@ -41,6 +41,15 @@ export type GameMode = {
   maxRosterSize: number;
   positions: string[];
   statKeys: string[];
+  /**
+   * Present only for modes that can run a solo tournament. Each team must hold
+   * exactly the listed number of players in every required position.
+   */
+  soloDraw?: SoloDrawConfig;
+};
+
+export type SoloDrawConfig = {
+  requiredPositions: Readonly<Record<string, number>>;
 };
 
 export type EventStatus =

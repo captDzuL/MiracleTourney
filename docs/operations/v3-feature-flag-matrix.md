@@ -36,6 +36,7 @@ evidence.
 | `premium_match_scheduling` | `FEATURE_FLAG_PREMIUM_MATCH_SCHEDULING` | false | not set | not set | nowhere (no read site) | No effect |
 | `premium_notifications` | `FEATURE_FLAG_PREMIUM_NOTIFICATIONS` | false | not set | not set | nowhere (no read site) | No effect |
 | `ai_event_art` | `FEATURE_FLAG_AI_EVENT_ART` | false | not set | not set | nowhere (no read site) | No effect |
+| `solo_tournament_v1` | `FEATURE_FLAG_SOLO_TOURNAMENT_V1` | false | not set | not set | `getSoloDrawRules` consumers once the solo pages land (no read site yet) | No solo event can be created or joined; locked solo teams stay ordinary teams |
 
 ## Findings
 
@@ -73,7 +74,7 @@ stop and turn the last flag off at the first failure.
 
 ## Flags-off verification
 
-With all sixteen flags unset or `false`, the application must render the legacy UI. The
+With all seventeen flags unset or `false`, the application must render the legacy UI. The
 E2E legacy profile (`playwright.legacy.config.ts`) runs the suite in that state; run it
 locally against a reset database before the first deployment that carries the V3 code,
 because the staged-off production deployment is the first time those pages meet the
