@@ -182,6 +182,10 @@ vi.mock("@/lib/events/visual-repository", () => ({
   updateEventBrandAssets,
   updateEventCertificateAssets,
 }));
+const { deleteTeam, getTeamForDeletion } = vi.hoisted(() => ({
+  deleteTeam: vi.fn(),
+  getTeamForDeletion: vi.fn(),
+}));
 const { findAssignableCaptain, getTeamEventRef, setTeamCaptain } = vi.hoisted(() => ({
   findAssignableCaptain: vi.fn(),
   getTeamEventRef: vi.fn(),
@@ -229,6 +233,8 @@ vi.mock("@/lib/registration/review-repository", () => ({
   rejectTeamRegistrationRequest,
 }));
 vi.mock("@/lib/teams/repository", () => ({
+  deleteTeam,
+  getTeamForDeletion,
   getTeamEventRef,
   addPlayer,
   deletePlayer,
@@ -330,17 +336,14 @@ describe("admin team ownership boundaries", () => {
 
   it("denies a foreign team before reading status or deleting", async () => {
     assertUserCanManageTeam.mockRejectedValue(new Error("Not authorized"));
-    prisma.team.findFirst.mockResolvedValue({
-      eventId: "event-foreign",
-      event: { id: "event-foreign", status: "Ongoing" },
-    });
+    getTeamForDeletion.mockResolvedValue({ id: "foreign-team", eventId: "event-foreign", eventStatus: "Ongoing" });
 
     await expect(
       adminDeleteTeamAction(fd({ teamId: "foreign-team" })),
     ).rejects.toThrow("REDIRECT:/admin?error=Tim%20tidak%20ditemukan.");
     expect(assertUserCanManageTeam).toHaveBeenCalledWith(adminSession(), "foreign-team");
-    expect(prisma.team.findFirst).not.toHaveBeenCalled();
-    expect(prisma.team.delete).not.toHaveBeenCalled();
+    expect(getTeamForDeletion).not.toHaveBeenCalled();
+    expect(deleteTeam).not.toHaveBeenCalled();
   });
 
   it("rate-limits admin team logos after authoritative event lookup", async () => {
