@@ -26,6 +26,7 @@ import * as eventRegistrationActions from "@/lib/actions/registration-v3-actions
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendEmail } from "@/lib/email/send";
 import { isDisposableEmail } from "@/lib/validation/email";
+import { emailConflictMessage } from "@/lib/player/signup";
 import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 import { validateTeamData } from "@/lib/validation/team-data";
 import { parsePlayerStatForm } from "@/lib/player-stats/form";
@@ -382,7 +383,7 @@ export async function captainSignUpAction(formData: FormData) {
   }
 
   const existingUser = await getUserByEmail(email);
-  if (existingUser) await signUpError("Email ini sudah terdaftar. Coba login.");
+  if (existingUser) await signUpError(emailConflictMessage(existingUser.role, "captain"));
 
   const passwordHash = await bcrypt.hash(password, 10);
 

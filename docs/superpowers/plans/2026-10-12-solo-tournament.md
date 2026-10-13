@@ -437,3 +437,17 @@ getSoloDrawView(input: { actor: AppUser; eventId: string }): Promise<SoloDrawVie
 ## Estimasi ukuran
 
 Perkiraan kasar, untuk perencanaan saja: PR A kecil (mesin murni, banyak tes), B sedang (schema + akses), C besar (pendaftaran + antrean), D besar (acak + kunci + panel), E sedang, F sedang. Task 2, 6, 9 adalah tiga bagian yang paling menentukan benar-salahnya fitur; luangkan waktu tinjauan di situ.
+
+## Catatan pelaksanaan (diperbarui saat PR C dibangun)
+
+Hal yang berbeda dari rencana di atas, atau yang sengaja ditunda. Dokumen PRD dan desain database tetap acuan; catatan ini hanya mencatat selisih.
+
+| Topik | Rencana | Yang dibangun | Alasan |
+|---|---|---|---|
+| Penguncian slot (Task 6) | Transaksi serializable | Semua penulisan slot satu event antre pada baris event (`withEventLock`), transaksi biasa | Di bawah 5 pendaftar serentak, serializable membuat 2 pendaftar gagal "write conflict". Dengan kunci baris, 30 pendaftar serentak terisi tepat sesuai kuota tanpa galat. Tes meloloskan kunci tetapi gagal tanpanya. |
+| Pilihan "Cara daftar" (Task 7) | Di wizard buat event | Di editor draf event (status Draft) | Wizard punya empat jalur panggilan dengan baris panjang. Editor draf sudah cukup untuk "ubah event". Mengisi di wizard bisa menyusul. |
+| Label tombol di hero non-adaptif (`PublicV3EventHero`) dan kartu daftar event | "Daftar solo" | Masih "Daftarkan tim" di jalur non-adaptif | Jalur adaptif (yang dipakai produksi) sudah benar. Jalur non-adaptif butuh `entryMode` di pembaca publik. Dicatat untuk PR F. |
+| Tujuan setelah masuk (Task 4/5) | `/player` | `/player` | Halamannya baru ada di PR E. Sampai itu, pemain yang masuk tanpa `returnTo` mendarat di 404. Aman karena semua di balik flag. |
+| Pembayaran ditolak | Slot lepas | Slot tetap dipegang sampai batas waktu baru | Sama dengan alur tim yang ada (boleh unggah ulang). Dokumen PRD sudah diperbarui. |
+| Tes database | Tes mock | Tes integrasi database asli, jalan di CI setelah snapshot katalog | Slot, antrean, dan balapan hanya bermakna dengan transaksi sungguhan. |
+| Daftar "tidak masuk tim" | Acak | Urutan daftar (yang terakhir daftar tersisih) | Daftar refund harus bisa ditampilkan sebelum organizer memilih seed. |

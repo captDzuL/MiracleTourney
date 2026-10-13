@@ -1,6 +1,9 @@
 import type { AppUser, EventStatus } from "@/lib/platform/types";
-import { findGameConfig, findGameModeConfig } from "@/lib/platform/config";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { findGameConfig, findGameModeConfig, getSoloDrawRules } from "@/lib/platform/config";
 import { prisma } from "@/lib/platform/db";
+import { getSoloQuotaSnapshot } from "@/lib/solo/registration-repository";
+import type { SoloQuotaSnapshot } from "@/lib/solo/registration-types";
 import {
   tournamentFormatConfigSchema,
   upgradeLegacyTournamentFormat,
@@ -15,6 +18,7 @@ export type RegistrationViewerState =
   | "eligible_without_team"
   | "eligible_with_team"
   | "draft_incomplete"
+  | "queued"
   | "pending_payment"
   | "pending_review"
   | "rejected"
@@ -60,6 +64,10 @@ export type AdaptiveRegistrationEventViewModel = {
     contactHref: string | null;
   };
   registration: {
+    /** "solo" means players join one by one and are drawn into teams; the team counts below stay zero until then. */
+    mode: "team" | "solo";
+    /** Slot counts per group. `slots` is null when they could not be read. */
+    solo?: { requiredPosition: string; slots: SoloQuotaSnapshot | null };
     availability: RegistrationAvailability;
     opensAt: string | null;
     closesAt: string | null;
@@ -153,6 +161,37 @@ export function buildRegistrationCta(input: {
   if (state === "eligible_with_team") return { kind: "start", label: CTA_LABEL.select, href, enabled: true };
   if (state === "draft_incomplete") return { kind: "continue", label: CTA_LABEL.continue, href, enabled: true };
   return { kind: "start", label: CTA_LABEL.retry, href, enabled: true };
+}
+
+/**
+ * The registration button for a solo event. A player's own registration always wins over the
+ * window, and an event never reads as full because the queue takes everyone else.
+ */
+export function buildSoloRegistrationCta(input: {
+  state: RegistrationViewerState;
+  availability: RegistrationAvailability;
+  href: string;
+}): RegistrationCta {
+  const { state, availability, href } = input;
+
+  if (state === "pending_payment") return { kind: "continue", label: CTA_LABEL.payment, href, enabled: true };
+  if (state === "pending_review" || state === "approved") return { kind: "status", label: CTA_LABEL.status, href, enabled: true };
+  if (state === "queued") return { kind: "status", label: "view_queue_position", href, enabled: true };
+  if (state === "rejected") return { kind: "continue", label: CTA_LABEL.repair, href, enabled: true };
+  if (state === "wrong_role") {
+    return { kind: "disabled", label: "use_player_account", reason: "player_account_required", enabled: false };
+  }
+
+  if (availability !== "open" && availability !== "full") {
+    const reason = availability === "upcoming"
+      ? CTA_LABEL.upcoming
+      : availability === "closed" ? CTA_LABEL.closed : CTA_LABEL.legacy;
+    return { kind: "disabled", label: reason, reason, enabled: false };
+  }
+
+  if (state === "anonymous") return { kind: "login", label: "register_solo", enabled: true };
+  if (state === "expired") return { kind: "start", label: CTA_LABEL.retry, href, enabled: true };
+  return { kind: "start", label: "register_solo", href, enabled: true };
 }
 
 export function normalizeOrganizerContact(channel: string, value: string): string | null {
@@ -262,6 +301,33 @@ async function getViewerState(
   return draftTeams.some((team) => team._count.players >= 1) ? "eligible_with_team" : "draft_incomplete";
 }
 
+async function getSoloViewerState(eventId: string, viewer: AppUser | null, now: Date): Promise<RegistrationViewerState> {
+  if (!viewer) return "anonymous";
+  if (viewer.role !== "player") return "wrong_role";
+  const row = await prisma.soloRegistration.findUnique({
+    where: { eventId_userId: { eventId, userId: viewer.id } },
+    select: { status: true, expiresAt: true },
+  });
+  if (!row) return "eligible_without_team";
+  const lapsed = row.expiresAt !== null && row.expiresAt <= now;
+  switch (row.status) {
+    case "queued": return "queued";
+    case "pending_review": return "pending_review";
+    case "approved": return "approved";
+    case "pending_payment": return lapsed ? "expired" : "pending_payment";
+    case "rejected": return lapsed ? "expired" : "rejected";
+    default: return "eligible_without_team";
+  }
+}
+
+async function readSoloSnapshot(eventId: string): Promise<SoloQuotaSnapshot | null> {
+  try {
+    return await getSoloQuotaSnapshot(eventId);
+  } catch {
+    return null;
+  }
+}
+
 export async function getAdaptivePublicEventView(
   slug: string,
   viewer: AppUser | null,
@@ -276,9 +342,10 @@ export async function getAdaptivePublicEventView(
   });
   if (!row) return null;
 
+  const isSolo = row.entryMode === "solo";
   const [activeTeamCount, pendingReviewCount, platformProfile] = await Promise.all([
-    prisma.team.count({ where: { eventId: row.id } }),
-    prisma.teamRegistrationRequest.count({ where: { eventId: row.id, status: "pending_review" } }),
+    isSolo ? 0 : prisma.team.count({ where: { eventId: row.id } }),
+    isSolo ? 0 : prisma.teamRegistrationRequest.count({ where: { eventId: row.id, status: "pending_review" } }),
     row.organizerUserId
       ? Promise.resolve(null)
       : prisma.platformProfile.findUnique({ where: { id: "global" } }),
@@ -292,7 +359,9 @@ export async function getAdaptivePublicEventView(
     participantCap: row.participantCap,
     now,
   });
-  const availability: RegistrationAvailability = row.eventStartsAt
+  const soloRules = isSolo ? getSoloDrawRules(row.gameModeId) : null;
+  const soloOpen = isSolo && soloRules !== null && isFeatureEnabled("solo_tournament_v1");
+  const availability: RegistrationAvailability = row.eventStartsAt && (!isSolo || soloOpen)
     ? registrationAvailability
     : "legacy";
   const game = findGameConfig(row.gameId);
@@ -304,8 +373,11 @@ export async function getAdaptivePublicEventView(
     : platformProfile?.displayName ?? "Miracle";
   const contactChannel = profile?.contactChannel ?? platformProfile?.contactChannel ?? "";
   const contactValue = profile?.contactValue ?? platformProfile?.contactValue ?? "";
-  const state = await getViewerState(row.id, viewer, now);
-  const href = `/captain?tab=registration&eventId=${encodeURIComponent(row.id)}`;
+  const state = isSolo ? await getSoloViewerState(row.id, viewer, now) : await getViewerState(row.id, viewer, now);
+  const href = isSolo ? `/events/${row.slug}/register` : `/captain?tab=registration&eventId=${encodeURIComponent(row.id)}`;
+  const soloBlock = soloOpen && soloRules
+    ? { requiredPosition: Object.keys(soloRules.requiredPositions)[0], slots: await readSoloSnapshot(row.id) }
+    : undefined;
 
   return {
     mode: "registration",
@@ -335,6 +407,8 @@ export async function getAdaptivePublicEventView(
       contactHref: normalizeOrganizerContact(contactChannel, contactValue),
     },
     registration: {
+      mode: isSolo ? "solo" : "team",
+      ...(soloBlock ? { solo: soloBlock } : {}),
       availability,
       opensAt: row.registrationOpensAt?.toISOString() ?? null,
       closesAt: row.registrationClosesAt?.toISOString() ?? null,
@@ -351,7 +425,7 @@ export async function getAdaptivePublicEventView(
     },
     viewer: {
       state,
-      cta: buildRegistrationCta({ state, availability, href }),
+      cta: isSolo ? buildSoloRegistrationCta({ state, availability, href }) : buildRegistrationCta({ state, availability, href }),
     },
   };
 }

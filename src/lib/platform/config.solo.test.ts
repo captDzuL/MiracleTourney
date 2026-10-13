@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { gameModes, getSoloDrawRules } from "@/lib/platform/config";
+import { gameModes, getSoloDrawRules, listSoloModes } from "@/lib/platform/config";
+
+describe("listSoloModes", () => {
+  it("lists the games that can run solo, with the numbers the editor needs", () => {
+    expect(listSoloModes()).toEqual([{ id: "mode-flashpeak-5v5", teamSize: 5, requiredPosition: "Goalkeeper" }]);
+  });
+
+  it("agrees with getSoloDrawRules for every game", () => {
+    const listed = new Set(listSoloModes().map((mode) => mode.id));
+    for (const mode of gameModes) expect(listed.has(mode.id)).toBe(getSoloDrawRules(mode.id) !== null);
+  });
+});
 
 describe("getSoloDrawRules", () => {
   it("requires exactly one goalkeeper per Flashpeak 5v5 team", () => {

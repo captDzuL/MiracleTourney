@@ -254,6 +254,15 @@ export function getSoloDrawRules(modeId: string): SoloDrawRules | null {
   return { teamSize: mode.teamSize, requiredPositions: mode.soloDraw.requiredPositions };
 }
 
+/** Every game mode that can run a solo tournament, with its team size and required position. */
+export function listSoloModes(): Array<{ id: string; teamSize: number; requiredPosition: string }> {
+  return gameModes.flatMap((mode) => {
+    const rules = getSoloDrawRules(mode.id);
+    const requiredPosition = rules ? Object.keys(rules.requiredPositions)[0] : undefined;
+    return rules && requiredPosition ? [{ id: mode.id, teamSize: rules.teamSize, requiredPosition }] : [];
+  });
+}
+
 export function getGameIdForMode(modeId: string) {
   return getGameModeConfig(modeId).gameId;
 }

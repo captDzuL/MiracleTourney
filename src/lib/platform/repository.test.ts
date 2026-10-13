@@ -147,6 +147,8 @@ import {
   assertCaptainCanSubmitStats,
   countAiVisualAttempts,
   createEventVisualAsset,
+  createPlayerAccount,
+  mapEvent,
   deletePlayer,
   getCaptainRegistrationRequests,
   getCaptainTeams,
@@ -3276,5 +3278,86 @@ describe("player-stat roster follows the roster the team had at match time", () 
       guard: { eventId: "event-1", matchId: "match-1", expectedVersion: 7, expectedResultVersion: 2, operationId: "op-joined", submittedAt: "2026-10-12T12:00:00.000Z" },
     })).rejects.toThrow("Player does not belong");
     expect(prisma.playerStat.upsert).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("createPlayerAccount", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.user.create.mockResolvedValue({ id: "player-1" });
+  });
+
+  it("creates a player user with its contact profile in a single write", async () => {
+    await expect(createPlayerAccount({
+      email: "bima@example.com",
+      name: "Bima",
+      passwordHash: "$hash",
+      whatsapp: "6281234567890",
+    })).resolves.toEqual({ userId: "player-1" });
+
+    expect(prisma.user.create).toHaveBeenCalledTimes(1);
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: {
+        email: "bima@example.com",
+        name: "Bima",
+        role: "player",
+        passwordHash: "$hash",
+        playerProfile: { create: { whatsapp: "6281234567890" } },
+      },
+    });
+  });
+
+  it("lets a database failure through so no half-made account is reported as created", async () => {
+    prisma.user.create.mockRejectedValue(new Error("unique violation"));
+    await expect(createPlayerAccount({ email: "a@b.co", name: "A B", passwordHash: "$h", whatsapp: "6281234567890" }))
+      .rejects.toThrow("unique violation");
+  });
+});
+
+
+describe("solo events refuse team registration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.teamRegistrationRequest.count.mockResolvedValue(0);
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
+    prisma.event.findUnique.mockResolvedValue({ ...publishedEventRow({ id: "event-solo", slug: "solo-cup" }), entryMode: "solo" });
+    prisma.team.count.mockResolvedValue(0);
+    prisma.team.findFirst.mockResolvedValue(null);
+    prisma.match.count.mockResolvedValue(0);
+  });
+
+  const message = "Event ini untuk pemain solo. Pendaftaran tim tidak dibuka.";
+
+  it("registerTeam says so and creates nothing", async () => {
+    await expect(registerTeam({ eventId: "event-solo", captainId: "captain-1", name: "Solo Team", tag: "SOL" })).rejects.toThrow(message);
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
+  it("createTeamRegistrationRequest says so and creates nothing", async () => {
+    prisma.event.findUnique.mockResolvedValue({ ...publishedEventRow({ id: "event-solo", slug: "solo-cup" }), entryMode: "solo", registrationFeeRequired: true });
+    await expect(createTeamRegistrationRequest({ eventId: "event-solo", captainId: "captain-1", name: "Solo Team", tag: "SOL" })).rejects.toThrow(message);
+    expect(prisma.teamRegistrationRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("an ordinary team event still accepts a team", async () => {
+    prisma.event.findUnique.mockResolvedValue({ ...publishedEventRow({ id: "event-open", slug: "open-cup" }), entryMode: "team" });
+    prisma.team.create.mockResolvedValue({ id: "team-new", eventId: "event-open", captainId: "captain-1", name: "Team", logoText: "TE", logoUrl: null, tag: "TEA", captainName: null, captainContact: null, source: "registration" });
+    await expect(registerTeam({ eventId: "event-open", captainId: "captain-1", name: "Team", tag: "tea" })).resolves.toEqual(expect.objectContaining({ id: "team-new" }));
+  });
+});
+
+
+describe("mapEvent carries the registration mode", () => {
+  const row = { ...publishedEventRow({ id: "event-1", slug: "solo-cup" }), logoUrl: null, gameImageUrl: null };
+
+  it("marks a solo event", () => {
+    expect(mapEvent({ ...row, entryMode: "solo" }).entryMode).toBe("solo");
+  });
+
+  it("leaves a team event, and an event from before the column, without a mode", () => {
+    expect(mapEvent({ ...row, entryMode: "team" }).entryMode).toBeUndefined();
+    expect(mapEvent(row).entryMode).toBeUndefined();
+    expect(mapEvent({ ...row, entryMode: null }).entryMode).toBeUndefined();
   });
 });

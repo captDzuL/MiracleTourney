@@ -123,6 +123,8 @@ export type Event = {
   formatConfig?: TournamentFormatConfig;
   status: EventStatus;
   participantCap: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
+  /** Set to "solo" when players join one by one and are drawn into teams. Absent for team events. */
+  entryMode?: "solo";
   registrationWindow: string;
   startsAt: string;
   venue: string;

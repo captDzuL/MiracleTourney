@@ -516,6 +516,23 @@ describe("captainSignUpAction", () => {
     expect(createCaptainAccount).not.toHaveBeenCalled();
   });
 
+  it("keeps one email to one role: a player email cannot become a captain", async () => {
+    getUserByEmail.mockResolvedValue({ id: "player-1", role: "player" });
+
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/register?eventId=event-abc&error=Email+ini+sudah+dipakai+sebagai+pemain.",
+    );
+    expect(createCaptainAccount).not.toHaveBeenCalled();
+  });
+
+  it("still asks an existing captain to sign in", async () => {
+    getUserByEmail.mockResolvedValue({ id: "captain-1", role: "captain" });
+
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/register?eventId=event-abc&error=Email+ini+sudah+terdaftar.+Coba+login.",
+    );
+  });
+
   it("does not query published events during captain sign-up", async () => {
     headers.mockResolvedValue(new Headers({ "x-forwarded-for": "10.0.0.98" }));
     getPublishedEvents.mockResolvedValue([{ id: "other-event" }]);

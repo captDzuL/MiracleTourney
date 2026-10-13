@@ -25,7 +25,7 @@ vi.mock("@/lib/platform/repository", () => ({
   getPlatformProfile: mocks.getPlatformProfile,
   getGameModes: mocks.getGameModes,
 }));
-vi.mock("@/lib/platform/config", () => ({ getGameModeDisplayLabel: (id: string) => `Game · ${id}` }));
+vi.mock("@/lib/platform/config", () => ({ getGameModeDisplayLabel: (id: string) => `Game · ${id}`, listSoloModes: () => [] }));
 vi.mock("@/lib/events/event-revision", () => ({
   eventRevisionPayloadSchema: { parse: mocks.payloadParse },
   getEventRevisionFieldLocks: mocks.getEventRevisionFieldLocks,

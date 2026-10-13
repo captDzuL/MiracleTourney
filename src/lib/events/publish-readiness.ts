@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { getSoloDrawRules } from "@/lib/platform/config";
 import { prisma } from "@/lib/platform/db";
 import { getLegacyTournamentFormat, tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 
@@ -21,6 +23,8 @@ const organizerContactSchema = z.object({
   platformProfile: z.object({ contactChannel: z.string(), contactValue: z.string() }).nullable().optional(),
 }).passthrough();
 const crossFieldSchema = z.object({
+  entryMode: z.unknown().optional(),
+  gameModeId: z.unknown().optional(),
   format: z.unknown().optional(),
   formatConfig: z.unknown().optional(),
   participantCap: z.unknown().optional(),
@@ -36,7 +40,10 @@ const fieldSections: Record<string, PublishReadinessItem["section"]> = {
   registrationFeeRequired: "registration", registrationFeeAmount: "registration",
 };
 
-export function evaluatePublishReadiness(event: unknown, options: { hasScheduleOverlap?: boolean } = {}): PublishReadiness {
+export function evaluatePublishReadiness(
+  event: unknown,
+  options: { hasScheduleOverlap?: boolean; soloEnabled?: boolean } = {},
+): PublishReadiness {
   const parsed = publishEventSchema.safeParse(event);
   const incomplete: PublishReadinessItem[] = [];
   const seen = new Set<string>();
@@ -67,6 +74,12 @@ export function evaluatePublishReadiness(event: unknown, options: { hasScheduleO
         addItem("group_allocation", "formatConfig", "schedule");
       }
     }
+    if (values.entryMode === "solo") {
+      if (typeof values.gameModeId !== "string" || getSoloDrawRules(values.gameModeId) === null) {
+        addItem("solo_unsupported_game", "entryMode", "registration");
+      }
+      if (!options.soloEnabled) addItem("solo_disabled", "entryMode", "registration");
+    }
     if (
       values.registrationOpensAt instanceof Date &&
       values.registrationClosesAt instanceof Date &&
@@ -92,7 +105,7 @@ export function evaluatePublishReadiness(event: unknown, options: { hasScheduleO
 const publishCandidateSelect = {
   id: true, slug: true, status: true, organizerUserId: true, draftRevision: true,
   name: true, description: true, gameId: true, gameModeId: true, format: true, participantCap: true,
-  formatConfig: true,
+  entryMode: true, formatConfig: true,
   registrationOpensAt: true, registrationClosesAt: true, eventStartsAt: true, timezone: true, venue: true,
   venueAddress: true, registrationFeeRequired: true, registrationFeeAmount: true,
   organizer: { select: { organizerProfile: { select: { contactChannel: true, contactValue: true } } } },
@@ -126,7 +139,10 @@ export async function publishEvent(eventId: string, actor: EventPublicationActor
           where: { id: "global" },
           select: { displayName: true, contactChannel: true, contactValue: true },
         });
-    const readiness = evaluatePublishReadiness({ ...event, platformProfile }, { hasScheduleOverlap });
+    const readiness = evaluatePublishReadiness(
+      { ...event, platformProfile },
+      { hasScheduleOverlap, soloEnabled: isFeatureEnabled("solo_tournament_v1") },
+    );
     if (!readiness.ready) return { status: "blocked" as const, readiness };
 
     const publishedAt = new Date();
