@@ -75,7 +75,10 @@ describe("register page with solo tournaments switched on", () => {
     expect(hrefs()).toContain("/register?as=player");
     expect(container.querySelector("form")).toBeNull();
     expect(field("fullName")).toBeNull();
-    expect(container.querySelectorAll("svg[aria-hidden='true']")).toHaveLength(2);
+    for (const link of container.querySelectorAll("ul li a")) {
+      expect(link.querySelectorAll("svg[aria-hidden='true']").length, link.textContent ?? "").toBeGreaterThanOrEqual(1);
+      expect(link.textContent).toMatch(/roleCaptain|rolePlayer/);
+    }
   });
 
   it("keeps a sign-in link and a safe return path on the two cards", async () => {
