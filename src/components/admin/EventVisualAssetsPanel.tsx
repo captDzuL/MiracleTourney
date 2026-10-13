@@ -1,13 +1,7 @@
 import { CheckCircle2, History, ImageUp, Move, XCircle } from "lucide-react";
 import Image from "next/image";
 
-import {
-  adminActivateEventVisualAction,
-  adminApproveEventVisualAction,
-  adminRejectEventVisualAction,
-  adminSetEventVisualFocalPointAction,
-  adminUploadEventVisualAction,
-} from "@/lib/actions";
+import { adminActivateEventVisualAction, adminApproveEventVisualAction, adminRejectEventVisualAction, adminSetEventVisualFocalPointAction, adminUploadEventVisualAction } from "@/lib/actions/event-visual-actions";
 import type { EventVisualAsset } from "@/lib/platform/types";
 
 const SOURCE_LABELS: Record<string, string> = {
