@@ -16,7 +16,7 @@ describe("player score form wiring", () => {
   });
 
   it("routes captain and organizer payloads through the same parser", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "../lib/actions.ts"), "utf8");
+    const source = fs.readFileSync(path.resolve(__dirname, "../lib/actions/match-actions.ts"), "utf8");
     expect(source.match(/parsePlayerStatForm\(formData/g)).toHaveLength(2);
   });
 });

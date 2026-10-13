@@ -24,7 +24,6 @@ const APP_FILE = "src/app/sitemap.ts";
 describe("import rules", () => {
   it.each([
     ["R1", LIB_FILE, 'import { getPublicEvents } from "../platform/demo-store";'],
-    ["R2", LIB_FILE, 'import { loginAction } from "@/lib/actions";'],
     ["R3", COMPONENT_FILE, 'import { getPublicEvents } from "@/lib/events/repository";'],
     ["R4", APP_FILE, 'import { prisma } from "@/lib/platform/db";'],
     ["R5", LIB_FILE, 'import { TeamAvatar } from "@/components/TeamAvatar";'],
@@ -38,20 +37,20 @@ describe("import rules", () => {
     ["a type-only import of the repository in a component", COMPONENT_FILE, 'import type { getPublicEvents } from "@/lib/events/repository";'],
     ["a new-style action module", LIB_FILE, 'import { updateOrganizerProfileAction } from "@/lib/actions/organizer-profile-actions";'],
     ["the repository in a page", APP_FILE, 'import { getAllPublicEvents } from "@/lib/events/repository";'],
-    ["a test file importing demo-store and the old actions", "src/lib/actions.test.ts", 'import "@/lib/platform/demo-store"; import "@/lib/actions";'],
+    ["a test file importing demo-store", "src/lib/actions.test.ts", 'import "@/lib/platform/demo-store";'],
   ])("allows %s", async (_name, filePath, code) => {
     expect(await importRuleMessages(code, filePath)).toEqual([]);
   });
 
   it("excuses a file only from the rule it is listed under", async () => {
-    const excusedFromR2 = "src/app/captain/page.tsx";
-    expect(importBaseline.R2).toContain(excusedFromR2);
+    const excusedFromR4 = "src/app/api/organizer/events/[eventId]/bracket-appearance/route.ts";
+    expect(importBaseline.R4).toContain(excusedFromR4);
 
-    const oldActions = await importRuleMessages('import { loginAction } from "@/lib/actions";', excusedFromR2);
-    const prisma = await importRuleMessages('import { prisma } from "@/lib/platform/db";', excusedFromR2);
+    const prisma = await importRuleMessages('import { prisma } from "@/lib/platform/db";', excusedFromR4);
+    const demoStore = await importRuleMessages('import { getPublicEvents } from "../platform/demo-store";', excusedFromR4);
 
-    expect(oldActions).toEqual([]);
-    expect(prisma.some((message) => message.includes("[R4]"))).toBe(true);
+    expect(prisma).toEqual([]);
+    expect(demoStore.some((message) => message.includes("[R1]"))).toBe(true);
   });
 }, 60_000);
 

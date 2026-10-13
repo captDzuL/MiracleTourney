@@ -154,25 +154,43 @@ describe("the shared modules stay plain and cycle-free", () => {
 // Every export of a server action file can become an endpoint the browser may call, so the export list is the
 // attack surface. It must hold async functions and types only, and none of the shared helpers. In particular
 // uploadImageAsset takes a folder and an id from its caller and checks no session, so it must never be exported here.
-describe("what actions.ts exposes as server actions", () => {
-  const actionsFile = path.resolve(__dirname, "../../actions.ts");
-  const sourceFile = ts.createSourceFile(actionsFile, fs.readFileSync(actionsFile, "utf8"), ts.ScriptTarget.Latest, true);
-  const exported: Array<{ name: string; kind: "async function" | "type" | "other" }> = [];
-  for (const statement of sourceFile.statements) {
-    if (!ts.canHaveModifiers(statement) || !ts.getModifiers(statement)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) continue;
-    if (ts.isFunctionDeclaration(statement) && statement.name) {
-      const isAsync = Boolean(ts.getModifiers(statement)?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword));
-      exported.push({ name: statement.name.text, kind: isAsync ? "async function" : "other" });
-    } else if (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) {
-      exported.push({ name: statement.name.text, kind: "type" });
-    } else {
-      exported.push({ name: "<non-function export>", kind: "other" });
+describe("what the server action modules expose", () => {
+  const DIRECTIVE = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*["']use server["']/;
+  const actionsDir = path.resolve(__dirname, "..");
+  const actionFiles = fs
+    .readdirSync(actionsDir)
+    .filter((name) => name.endsWith("-actions.ts"))
+    .map((name) => path.join(actionsDir, name));
+  const exported: Array<{ file: string; name: string; kind: "async function" | "type" | "other" }> = [];
+  for (const file of actionFiles) {
+    const sourceFile = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+    if (!DIRECTIVE.test(sourceFile.text)) continue;
+    for (const statement of sourceFile.statements) {
+      if (!ts.canHaveModifiers(statement) || !ts.getModifiers(statement)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) continue;
+      const base = path.basename(file);
+      if (ts.isFunctionDeclaration(statement) && statement.name) {
+        const isAsync = Boolean(ts.getModifiers(statement)?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword));
+        exported.push({ file: base, name: statement.name.text, kind: isAsync ? "async function" : "other" });
+      } else if (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) {
+        exported.push({ file: base, name: statement.name.text, kind: "type" });
+      } else {
+        exported.push({ file: base, name: "<non-function export>", kind: "other" });
+      }
     }
   }
 
   it("exports only async functions and types", () => {
     expect(exported.filter((item) => item.kind === "other")).toEqual([]);
-    expect(exported.filter((item) => item.kind === "async function").length).toBeGreaterThanOrEqual(50);
+  });
+
+  it("keeps the 52 actions that used to live in actions.ts, each exactly once", () => {
+    const fromOldModule = [
+      "identity-actions.ts", "event-actions.ts", "event-visual-actions.ts", "registration-actions.ts",
+      "import-actions.ts", "team-actions.ts", "match-actions.ts", "certificate-actions.ts",
+    ];
+    const oldNames = exported.filter((item) => item.kind === "async function" && fromOldModule.includes(item.file)).map((item) => item.name);
+    expect(oldNames).toHaveLength(52);
+    expect(new Set(oldNames).size).toBe(52);
   });
 
   it.each([
@@ -185,6 +203,8 @@ describe("what actions.ts exposes as server actions", () => {
     "redirectToRequestedLocale",
     "isSafeEntityId",
     "appendActionError",
+    "isHttpUrl",
+    "optionalPublicUrlSchema",
   ])("does not export %s", (name) => {
     expect(exported.map((item) => item.name)).not.toContain(name);
   });

@@ -3,20 +3,6 @@
 export const importBaseline = {
   // R1: demo-store in production code
   R1: [],
-  // R2: the old @/lib/actions module; goes away in Phase 3
-  R2: [
-    "src/app/admin/admin-workspace.tsx",
-    "src/app/captain/page.tsx",
-    "src/app/captain/settings/page.tsx",
-    "src/app/captain/stats/page.tsx",
-    "src/app/forgot-password/forgot-password-content.tsx",
-    "src/app/forgot-password/reset/reset-page-content.tsx",
-    "src/app/login/login-page-content.tsx",
-    "src/app/register/RegisterWizard.tsx",
-    "src/components/admin/EventVisualAssetsPanel.tsx",
-    "src/components/registration/CaptainRegistrationWizard.tsx",
-    "src/components/v3/events/EventDraftForm.tsx",
-  ],
   // R3: components that read the repository
   R3: [],
   // R4: pages and components that use Prisma directly
