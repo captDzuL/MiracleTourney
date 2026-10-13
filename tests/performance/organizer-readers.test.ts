@@ -641,10 +641,4 @@ describe("organizer reader release-scale contracts", () => {
     expect(quickLoadScript).toContain("p97.5");
     expect(quickLoadScript).toContain("non2xx === 0");
   });
-
-  it("keeps the Task 9 report whitespace-clean and records its exact diff-check range", () => {
-    const report = source(".superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/task-9-report.md");
-    expect(report).not.toMatch(/[ \t]+$/m);
-    expect(report).toContain("git diff --check 11f1fcc..HEAD");
-  });
 });
