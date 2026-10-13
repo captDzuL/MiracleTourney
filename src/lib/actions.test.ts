@@ -1902,7 +1902,7 @@ describe("adminUpdateEventPublicInfoAction", () => {
 
 
   it("updates global payment settings", async () => {
-    requireRole.mockResolvedValue(adminSession());
+    requireRole.mockResolvedValueOnce(adminSession());
     updatePaymentSettings.mockResolvedValue({ id: "global", qrisImageUrl: "/payment/qris.png" });
 
     await expect(
@@ -1914,7 +1914,7 @@ describe("adminUpdateEventPublicInfoAction", () => {
   });
 
   it("uploads a QRIS image file and uses it instead of the text URL field", async () => {
-    requireRole.mockResolvedValue(adminSession());
+    requireRole.mockResolvedValueOnce(adminSession());
     updatePaymentSettings.mockResolvedValue({ id: "global", qrisImageUrl: "/payment-qris/global-123.png" });
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
     blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-qris/global.png" });
