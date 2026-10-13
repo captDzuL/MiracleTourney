@@ -376,6 +376,26 @@ describe("getMatchWithRosterAndStats", () => {
     expect(result).toMatchObject({ match: { status: "Scheduled" }, scoreGameNumbers: null });
   });
 
+  it("also returns null score game numbers when the match games are not saved yet", async () => {
+    prisma.match.findUnique.mockResolvedValue(matchClockRow({ status: "Completed" }));
+    prisma.player.findMany.mockResolvedValue([]);
+    prisma.playerStat.findMany.mockResolvedValue([]);
+    getPlayerStatFormContext.mockRejectedValue(new Error("Completed MatchGame rows are required before entering player scores."));
+
+    const result = await getMatchWithRosterAndStats("match-1");
+
+    expect(result).toMatchObject({ scoreGameNumbers: null });
+  });
+
+  it("passes on any other failure of the form context instead of hiding it as missing context", async () => {
+    prisma.match.findUnique.mockResolvedValue(matchClockRow({ status: "Completed" }));
+    prisma.player.findMany.mockResolvedValue([]);
+    prisma.playerStat.findMany.mockResolvedValue([]);
+    getPlayerStatFormContext.mockRejectedValue(new Error("connection lost"));
+
+    await expect(getMatchWithRosterAndStats("match-1")).rejects.toThrow("connection lost");
+  });
+
   it("keeps only active players when the match has no start, end or confirmation time", async () => {
     prisma.match.findUnique.mockResolvedValue(matchClockRow());
     prisma.player.findMany.mockResolvedValue([
