@@ -312,10 +312,14 @@ Cara membuktikannya sama seperti sebelumnya: semua deklarasi yang dipindah ident
 **Aturan ESLint R2 dihapus.** Aturan itu melarang impor `@/lib/actions`. Modulnya sudah tidak ada, jadi TypeScript yang menolaknya. Daftar pengecualian ESLint tinggal 2 file (R4 satu, R5 satu).
 
 **Test baru dan penyesuaian.**
-- Dua action yang tidak punya test perilaku sama sekali sekarang punya: `captainSaveDraftTeamAction` dan `adminSaveMatchPlayerStatsAction`.
+- Dua action yang tidak punya test perilaku sama sekali sekarang punya: `captainSaveDraftTeamAction` (40 test) dan `adminSaveMatchPlayerStatsAction` (51 test). Dicek dengan perusakan sengaja: 5 dari 5 tertangkap.
 - `actions-server-contract.test.ts` kini memeriksa semua file `"use server"` di `src/lib/actions`, bukan hanya `actions.ts`.
 - `guards.test.ts` menjaga daftar ekspor 8 file baru: hanya fungsi `async` dan tipe, tepat 52 action, tanpa pembantu bersama.
 - Pembaca file sumber di `player-score-forms.test.ts` dan `security-smoke.test.ts` diarahkan ke file baru.
+
+**Kebiasaan aneh yang ditemukan test baru (tidak diubah, sudah ada sebelum refactor).** Masuk Fase 4:
+- `captainSaveDraftTeamAction`: kalau isian nama atau tag kosong, captain melihat pesan zod mentah berbahasa Inggris ("Invalid input: expected string, received null") di URL. Error tak terduga ditutup jadi "Gagal menyimpan draft tim." tanpa log di server, jadi operator tidak pernah melihatnya (beda dengan `captainRegisterTeamAction`).
+- `adminSaveMatchPlayerStatsAction`: error tidak dialihkan ke halaman, tapi dilempar mentah (`ZodError`, "Team is not part of this match", dan seterusnya). Cek tim jalan sebelum cek event, jadi tim yang salah menutupi event yang salah. Action tidak mengecek status pertandingan sendiri. Form tanpa kolom `stat_` tetap menulis `stats: {}`, dan nilai kosong dihitung 0. Pengalihan sukses selalu ke `/admin?...`, juga untuk organizer, dan mengabaikan `locale`.
 
 **Risiko saat deploy.** ID server action di Next dihitung dari file dan nama fungsinya. Halaman yang masih terbuka di browser pengunjung saat deploy memanggil ID lama, dan Next menjawab "Failed to find Server Action" sampai halaman dimuat ulang. Ini terjadi di setiap deploy yang memindahkan action, dan tidak bisa dihindari. Sebaiknya deploy di jam sepi.
 
