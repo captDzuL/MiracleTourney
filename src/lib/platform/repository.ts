@@ -76,10 +76,15 @@ function isNewRegistrationWindowOpen(event: RegistrationWindowEvent, now = new D
   return true;
 }
 
-function assertNewRegistrationWindowOpen(event: RegistrationWindowEvent, now = new Date()): void {
+export function assertNewRegistrationWindowOpen(event: RegistrationWindowEvent, now = new Date()): void {
   if (!isNewRegistrationWindowOpen(event, now)) {
     throw new UserFacingError("Event tidak valid atau sudah tidak membuka pendaftaran.");
   }
+}
+
+/** A solo event forms its teams from the player draw, so teams cannot register or be imported into it. */
+function assertEventAcceptsTeams(event: { entryMode?: string | null }): void {
+  if (event.entryMode === "solo") throw new UserFacingError("Event ini untuk pemain solo. Pendaftaran tim tidak dibuka.");
 }
 
 export async function runSerializableRegistrationTransaction<T>(
@@ -224,7 +229,7 @@ function mapTeam(row: {
 const PAYMENT_SETTINGS_ID = "global";
 const ACTIVE_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "pending_review", "approved"];
 const RESERVED_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "pending_review"];
-const PAYMENT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
+export const PAYMENT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
 // pending_review is deliberately excluded: once a captain has uploaded proof, the
 // deadline no longer applies - only an admin approve/reject should resolve the request.
 const EXPIRABLE_REGISTRATION_REQUEST_STATUSES: TeamRegistrationRequestStatus[] = ["pending_payment", "rejected"];
@@ -1934,9 +1939,11 @@ export async function registerTeam(input: {
           gameModeId: true,
           registrationOpensAt: true,
           registrationClosesAt: true,
+          entryMode: true,
         },
       });
       if (!event) throw new UserFacingError("Event tidak valid atau sudah tidak membuka pendaftaran.");
+      assertEventAcceptsTeams(event);
       assertNewRegistrationWindowOpen(event);
       assertDraftRosterFitsGameMode(draftTeam, event.gameModeId);
       if (event.registrationFeeRequired) {
@@ -2028,9 +2035,11 @@ export async function createTeamRegistrationRequest(input: {
       gameModeId: true,
       registrationOpensAt: true,
       registrationClosesAt: true,
+      entryMode: true,
     },
   });
   if (!event) throw new UserFacingError("Event tidak valid atau sudah tidak membuka pendaftaran.");
+  assertEventAcceptsTeams(event);
   assertNewRegistrationWindowOpen(event);
   if (!event.registrationFeeRequired) {
     throw new UserFacingError("Event ini tidak membutuhkan verifikasi pembayaran.");
@@ -2418,6 +2427,8 @@ export async function importTeams(input: Array<{
 
   const rows = await runSerializableRegistrationTransaction(async (tx) => {
     for (const eventId of eventIds) await assertEventRosterMutable(tx, eventId);
+    const soloEvent = await tx.event.findFirst({ where: { id: { in: eventIds }, entryMode: "solo" }, select: { id: true } });
+    if (soloEvent) assertEventAcceptsTeams({ entryMode: "solo" });
     const created = [];
     for (const prep of preparedRows) {
       const captain = await tx.user.upsert({
@@ -2832,13 +2843,14 @@ export async function commitRegistrationImportBatch(
   const batch = await prisma.registrationImportBatch.findFirst({
     where: { id: batchId },
     include: {
-      event: { select: { id: true, slug: true, format: true, participantCap: true } },
+      event: { select: { id: true, slug: true, format: true, participantCap: true, entryMode: true } },
       items: true,
     },
   });
 
   if (!batch) throw new Error("Batch import registrasi tidak ditemukan.");
   await assertUserCanManageEvent(user, batch.eventId);
+  assertEventAcceptsTeams(batch.event);
   const locked = await isEventBracketLocked(batch.eventId);
   if (locked) {
     throw new UserFacingError(ROSTER_LOCKED_MESSAGE);
@@ -4031,9 +4043,11 @@ export async function createCaptainWithTeam(input: {
         registrationFeeRequired: true,
         registrationOpensAt: true,
         registrationClosesAt: true,
+        entryMode: true,
       },
     });
     if (!event) throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
+    assertEventAcceptsTeams(event);
     assertNewRegistrationWindowOpen(event);
     if (event.registrationFeeRequired) {
       throw new Error("Event ini membutuhkan verifikasi pembayaran sebelum tim aktif.");
@@ -4107,9 +4121,11 @@ export async function createCaptainWithPendingPayment(input: {
         registrationFeeRequired: true,
         registrationOpensAt: true,
         registrationClosesAt: true,
+        entryMode: true,
       },
     });
     if (!event) throw new Error("Event tidak valid atau sudah tidak membuka pendaftaran.");
+    assertEventAcceptsTeams(event);
     assertNewRegistrationWindowOpen(event);
     if (!event.registrationFeeRequired) {
       throw new Error("Event ini tidak membutuhkan verifikasi pembayaran.");

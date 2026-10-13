@@ -2,9 +2,7 @@
 
 import bcrypt from "bcryptjs";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 
-import { getLocalizedRedirectPath, redirectToActiveLocale } from "@/i18n/redirect";
 import { signIn } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
@@ -15,16 +13,11 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { toSafeActionMessage } from "@/lib/security/public-error";
 import { isDisposableEmail } from "@/lib/validation/email";
 
+import { redirectToLocale } from "./locale-redirect";
+
 const REGISTER_ATTEMPTS = 5;
 const REGISTER_WINDOW_MS = 15 * 60 * 1000;
 const PASSWORD_HASH_ROUNDS = 10;
-
-async function redirectToLocale(path: string, locale: string): Promise<never> {
-  if (locale === "id" || locale === "en") {
-    redirect(getLocalizedRedirectPath(path, locale));
-  }
-  return redirectToActiveLocale(path);
-}
 
 /** Creates a player account, signs the player in and sends them on. Always ends in a redirect. */
 export async function playerSignUpAction(formData: FormData): Promise<never> {

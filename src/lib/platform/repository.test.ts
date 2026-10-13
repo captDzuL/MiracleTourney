@@ -3313,3 +3313,35 @@ describe("createPlayerAccount", () => {
       .rejects.toThrow("unique violation");
   });
 });
+
+
+describe("solo events refuse team registration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.teamRegistrationRequest.count.mockResolvedValue(0);
+    prisma.$transaction.mockImplementation(async (callback: (transaction: typeof prisma) => unknown) => callback(prisma));
+    prisma.event.findUnique.mockResolvedValue({ ...publishedEventRow({ id: "event-solo", slug: "solo-cup" }), entryMode: "solo" });
+    prisma.team.count.mockResolvedValue(0);
+    prisma.team.findFirst.mockResolvedValue(null);
+    prisma.match.count.mockResolvedValue(0);
+  });
+
+  const message = "Event ini untuk pemain solo. Pendaftaran tim tidak dibuka.";
+
+  it("registerTeam says so and creates nothing", async () => {
+    await expect(registerTeam({ eventId: "event-solo", captainId: "captain-1", name: "Solo Team", tag: "SOL" })).rejects.toThrow(message);
+    expect(prisma.team.create).not.toHaveBeenCalled();
+  });
+
+  it("createTeamRegistrationRequest says so and creates nothing", async () => {
+    prisma.event.findUnique.mockResolvedValue({ ...publishedEventRow({ id: "event-solo", slug: "solo-cup" }), entryMode: "solo", registrationFeeRequired: true });
+    await expect(createTeamRegistrationRequest({ eventId: "event-solo", captainId: "captain-1", name: "Solo Team", tag: "SOL" })).rejects.toThrow(message);
+    expect(prisma.teamRegistrationRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("an ordinary team event still accepts a team", async () => {
+    prisma.event.findUnique.mockResolvedValue({ ...publishedEventRow({ id: "event-open", slug: "open-cup" }), entryMode: "team" });
+    prisma.team.create.mockResolvedValue({ id: "team-new", eventId: "event-open", captainId: "captain-1", name: "Team", logoText: "TE", logoUrl: null, tag: "TEA", captainName: null, captainContact: null, source: "registration" });
+    await expect(registerTeam({ eventId: "event-open", captainId: "captain-1", name: "Team", tag: "tea" })).resolves.toEqual(expect.objectContaining({ id: "team-new" }));
+  });
+});
