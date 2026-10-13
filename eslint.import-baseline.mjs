@@ -9,6 +9,9 @@ export const importBaseline = {
   R4: [
     "src/app/api/organizer/events/[eventId]/bracket-appearance/route.ts",
   ],
+  // R6: server action files that use Prisma directly. competition-v3-actions passes the client into the competition
+  // module on purpose, so that module can be tested with a fake client.
+  R6: ["src/lib/actions/competition-v3-actions.ts"],
   // R5: src/lib files that depend on pages or components
   R5: [
     "src/lib/competition/workspace-page.tsx",

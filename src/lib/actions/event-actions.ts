@@ -10,11 +10,10 @@ import { isHttpUrl, optionalPublicUrlSchema } from "@/lib/actions/shared/schemas
 import { assertWorkspaceEventAction, requireAdminSession } from "@/lib/actions/shared/session";
 import { uploadImageAsset } from "@/lib/actions/shared/uploads";
 import { publishEvent } from "@/lib/events/publish-readiness";
-import { createEvent, setEventStatus, updateEventPublicInfo, updateEventStream } from "@/lib/events/repository";
+import { createEvent, deleteEvent, getEventArchiveInfo, markEventFinished, setEventStatus, updateEventPublicInfo, updateEventStream } from "@/lib/events/repository";
 import { updateEventCertificateAssets } from "@/lib/events/visual-repository";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getOrganizerUserById } from "@/lib/identity/repository";
-import { prisma } from "@/lib/platform/db";
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import type { AppUser } from "@/lib/platform/types";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -140,10 +139,7 @@ export async function adminArchiveEventAction(formData: FormData) {
   await assertUserCanManageEvent(user, eventId);
   assertWorkspaceEventAction(user, eventId);
 
-  const event = await prisma.event.findUnique({
-    where: { id: eventId },
-    include: { _count: { select: { teams: true } } },
-  });
+  const event = await getEventArchiveInfo(eventId);
   if (!event) {
     return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Event tidak ditemukan.")}` as never);
   }
@@ -154,14 +150,14 @@ export async function adminArchiveEventAction(formData: FormData) {
         `/admin?error=${encodeURIComponent("Hanya event Draft yang dapat dihapus.")}` as never
       );
     }
-    if (event._count.teams > 0) {
+    if (event.teamCount > 0) {
       return redirectToActiveLocale(
         `/admin?error=${encodeURIComponent("Event dengan tim tidak dapat dihapus. Hapus tim terlebih dahulu.")}` as never
       );
     }
-    await prisma.event.delete({ where: { id: eventId } });
+    await deleteEvent(eventId);
   } else {
-    await prisma.event.update({ where: { id: eventId }, data: { status: "Finished" } });
+    await markEventFinished(eventId);
   }
 
   revalidatePath("/", "layout");

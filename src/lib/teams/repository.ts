@@ -214,3 +214,23 @@ export async function setTeamCaptainDisplay(teamId: string, captainUserId: strin
 export async function getTeamEventRef(teamId: string): Promise<{ id: string; eventId: string | null } | null> {
   return prisma.team.findUnique({ where: { id: teamId }, select: { id: true, eventId: true } });
 }
+
+/** The captain's own team, or null when the team does not exist or belongs to someone else. */
+export async function findCaptainTeamRef(teamId: string, captainId: string): Promise<{ id: string; eventId: string | null } | null> {
+  return prisma.team.findFirst({ where: { id: teamId, captainId }, select: { id: true, eventId: true } });
+}
+
+/** A team of the given event together with the status of that event, or null when it is not found. */
+export async function getTeamForDeletion(teamId: string, eventId: string): Promise<{ id: string; eventId: string; eventStatus: string } | null> {
+  const team = await prisma.team.findFirst({
+    where: { id: teamId, eventId },
+    include: { event: { select: { id: true, status: true } } },
+  });
+  if (!team?.event || !team.eventId) return null;
+  return { id: team.id, eventId: team.eventId, eventStatus: team.event.status };
+}
+
+/** Permanently deletes a team. The caller checks ownership and that the event is still a Draft. */
+export async function deleteTeam(teamId: string): Promise<void> {
+  await prisma.team.delete({ where: { id: teamId } });
+}

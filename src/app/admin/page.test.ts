@@ -3,9 +3,16 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
+// The admin workspace is one page file plus one file per phase (workspace/). These checks look at the code as a whole.
+function readWorkspaceSource() {
+  const dir = path.resolve(__dirname, "./workspace");
+  const parts = fs.readdirSync(dir).filter((name) => name.endsWith(".tsx")).sort().map((name) => fs.readFileSync(path.join(dir, name), "utf8"));
+  return [fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8"), ...parts].join("\n");
+}
+
 describe("admin action buttons", () => {
   test("do not use invisible light-on-light secondary button styling", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
 
     expect(source).not.toContain(
       'rounded-full border border-white/10 px-4 py-3 text-sm font-semibold text-white hover:bg-white/5',
@@ -13,7 +20,7 @@ describe("admin action buttons", () => {
   });
 
   test("offers a certificate regenerate control wired to the admin action", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
 
     expect(source).toContain("adminRegenerateCertificateAction");
     expect(source).toContain("action={adminRegenerateCertificateAction}");
@@ -21,7 +28,7 @@ describe("admin action buttons", () => {
   });
 
   test("surfaces the reason a certificate failed instead of showing it as missing", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
 
     expect(source).toContain('cert?.status === "failed"');
     expect(source).toContain('t("certificateFailed")');
@@ -30,7 +37,7 @@ describe("admin action buttons", () => {
   });
 
   test("shows a match operations section with result entry controls", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
 
     expect(source).toContain('t("matchTitle")');
     expect(source).toContain('t("saveResult")');
@@ -39,7 +46,7 @@ describe("admin action buttons", () => {
   });
 
   test("lets admin choose which manageable event should receive match results", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
 
     expect(source).toContain("manageableEvents");
     expect(source).toContain("selectedManageableEventId");
@@ -48,7 +55,7 @@ describe("admin action buttons", () => {
   });
 
   test("keeps match management navigation relative to the active locale path", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
 
     expect(source).not.toContain('action="/admin"');
     expect(source).not.toContain("href={`/admin?");
@@ -59,7 +66,7 @@ describe("admin action buttons", () => {
   });
 
   test("exposes organizer brand asset uploads for event and team logos", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
 
     expect(source).toContain("Brand Assets");
     expect(source).toContain("adminUploadEventLogoAction");
@@ -71,13 +78,13 @@ describe("admin action buttons", () => {
   });
 
   test("lets React manage form encoding for server action forms", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
 
     expect(source).not.toContain('encType="multipart/form-data"');
   });
 
   test("exposes public listing settings for event card prize and registration copy", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
 
     expect(source).toContain("Public Listing Settings");
     expect(source).toContain("adminUpdateEventPublicInfoAction");
@@ -90,7 +97,7 @@ describe("admin action buttons", () => {
 
 
   test("exposes payment verification inside the registration control center", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
 
     expect(source).toContain('activePhase === "registration"');
     expect(source).toContain("RegistrationControlCenterShell");
@@ -105,13 +112,13 @@ describe("admin action buttons", () => {
     expect(source).toContain('name="requestId"');
   });
   test("keeps long select values constrained inside responsive form columns", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
 
     expect(source).toContain('const inputClass = "w-full min-w-0');
     expect(source).toContain('const labelClass = "grid min-w-0');
   });
   test("keeps match day cards readable in the split layout", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
     expect(source).not.toContain("grid gap-2 sm:grid-cols-2 xl:grid-cols-3");
     expect(source).toContain("const matchDeskCardGridClass");
     expect(source).toContain("whitespace-nowrap");
@@ -119,7 +126,7 @@ describe("admin action buttons", () => {
   });
 
   test("keeps match day cards readable in the split layout", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
     expect(source).not.toContain("grid gap-2 sm:grid-cols-2 xl:grid-cols-3");
     expect(source).toContain("const matchDeskCardGridClass");
     expect(source).toContain("whitespace-nowrap");
@@ -127,13 +134,13 @@ describe("admin action buttons", () => {
   });
 
   test("shows organizer assignment on draft creation for platform admins", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
     expect(source).toContain("organizerOptions");
     expect(source).toContain('name="organizerUserId"');
     expect(source).toContain('t("createEventOrganizerLabel")');
   });
   test("uses registration intake wizard instead of the legacy visible CSV importer", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./admin-workspace.tsx"), "utf8");
+    const source = readWorkspaceSource();
     expect(source).toContain("adminPreviewRegistrationImportAction");
     expect(source).toContain("adminCommitRegistrationImportAction");
     expect(source).toContain('process.env.REGISTRATION_INTAKE_V2 !== "false"');

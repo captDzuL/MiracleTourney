@@ -8,11 +8,10 @@ import { MAX_LOGO_IMAGE_BYTES } from "@/lib/actions/shared/limits";
 import { actionEntityId } from "@/lib/actions/shared/request";
 import { assertWorkspaceEventAction, requireAdminSession, requireCaptainSession } from "@/lib/actions/shared/session";
 import { uploadImageAsset } from "@/lib/actions/shared/uploads";
-import { prisma } from "@/lib/platform/db";
 import { assertUserCanManageTeam } from "@/lib/platform/shared/authz";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { toSafeActionMessage } from "@/lib/security/public-error";
-import { addPlayer, deletePlayer, setTeamCaptainDisplay, updateCaptainTeamLogo, updatePlayer, updateTeamLogo } from "@/lib/teams/repository";
+import { addPlayer, deletePlayer, deleteTeam, findCaptainTeamRef, getTeamForDeletion, setTeamCaptainDisplay, updateCaptainTeamLogo, updatePlayer, updateTeamLogo } from "@/lib/teams/repository";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 
@@ -23,10 +22,7 @@ export async function captainUploadTeamLogoAction(formData: FormData) {
   let teamId = "";
   try {
     teamId = actionEntityId.parse(formData.get("teamId"));
-    team = await prisma.team.findFirst({
-      where: { id: teamId, captainId: captain.id },
-      select: { id: true, eventId: true },
-    });
+    team = await findCaptainTeamRef(teamId, captain.id);
     if (!team || !team.eventId) throw new Error("Not authorized");
   } catch (err) {
     const message = toSafeActionMessage(err, "Upload failed");
@@ -167,19 +163,16 @@ export async function adminDeleteTeamAction(formData: FormData) {
     return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
   }
 
-  const team = await prisma.team.findFirst({
-    where: { id: teamId, eventId: access.eventId },
-    include: { event: { select: { id: true, status: true } } },
-  });
-  if (!team?.event || !team.eventId) {
+  const team = await getTeamForDeletion(teamId, access.eventId);
+  if (!team) {
     return redirectToActiveLocale(`/admin?error=${encodeURIComponent("Tim tidak ditemukan.")}` as never);
   }
-  if (team.event.status !== "Draft") {
+  if (team.eventStatus !== "Draft") {
     return redirectToActiveLocale(
       `/admin?error=${encodeURIComponent("Tim hanya dapat dihapus dari event Draft.")}` as never
     );
   }
-  await prisma.team.delete({ where: { id: teamId } });
+  await deleteTeam(teamId);
   revalidatePath("/", "layout");
   return redirectToActiveLocale("/admin?success=team-deleted" as never);
 }

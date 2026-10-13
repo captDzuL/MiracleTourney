@@ -27,6 +27,7 @@ describe("import rules", () => {
     ["R3", COMPONENT_FILE, 'import { getPublicEvents } from "@/lib/events/repository";'],
     ["R4", APP_FILE, 'import { prisma } from "@/lib/platform/db";'],
     ["R5", LIB_FILE, 'import { TeamAvatar } from "@/components/TeamAvatar";'],
+    ["R6", "src/lib/actions/team-actions.ts", 'import { prisma } from "@/lib/platform/db";'],
   ])("%s flags a new violation", async (id, filePath, code) => {
     const messages = await importRuleMessages(code, filePath);
 
@@ -35,6 +36,7 @@ describe("import rules", () => {
 
   it.each([
     ["a type-only import of the repository in a component", COMPONENT_FILE, 'import type { getPublicEvents } from "@/lib/events/repository";'],
+    ["a repository using Prisma", "src/lib/teams/repository.ts", 'import { prisma } from "@/lib/platform/db";'],
     ["a new-style action module", LIB_FILE, 'import { updateOrganizerProfileAction } from "@/lib/actions/organizer-profile-actions";'],
     ["the repository in a page", APP_FILE, 'import { getAllPublicEvents } from "@/lib/events/repository";'],
     ["a test file importing demo-store", "src/lib/actions.test.ts", 'import "@/lib/platform/demo-store";'],

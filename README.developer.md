@@ -293,8 +293,8 @@ Saat mengubah organizer/admin flow, minimal jaga area berikut:
 
 Test terkait:
 
-- `src/lib/actions.test.ts`
-- `src/lib/platform/repository.test.ts`
+- `src/lib/actions/*-actions.test.ts`
+- `src/lib/*/repository*.test.ts`
 - `src/lib/auth/session.test.ts`
 - `src/app/admin/page.test.ts`
 - `src/app/events/page.test.ts`

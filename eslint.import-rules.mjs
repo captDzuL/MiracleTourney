@@ -60,6 +60,16 @@ const RULES = [
     ],
   },
   {
+    id: "R6",
+    appliesTo: (file) => file.startsWith("src/lib/actions/"),
+    paths: [
+      {
+        name: "@/lib/platform/db",
+        message: "[R6] Server action tidak boleh memakai Prisma langsung. Taruh query-nya di file repository bidangnya.",
+      },
+    ],
+  },
+  {
     id: "R5",
     appliesTo: (file) => file.startsWith("src/lib/"),
     patterns: [

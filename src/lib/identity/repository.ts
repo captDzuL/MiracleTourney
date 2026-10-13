@@ -139,3 +139,13 @@ export async function createCaptainAccount(input: {
     throw error;
   }
 }
+
+/** Id and role of a user, or null when the user does not exist. */
+export async function getUserRoleRef(userId: string): Promise<{ id: string; role: string } | null> {
+  return prisma.user.findUnique({ where: { id: userId }, select: { id: true, role: true } });
+}
+
+/** Marks an account as deactivated. A deactivated user cannot log in. */
+export async function deactivateUser(userId: string): Promise<void> {
+  await prisma.user.update({ where: { id: userId }, data: { deactivatedAt: new Date() } });
+}
