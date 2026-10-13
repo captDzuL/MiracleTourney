@@ -1,5 +1,5 @@
 // Round configs and per-match games.
-// Moved out of platform/repository.ts without changes (refactor PR 2.6).
+// Moved out of platform/repository.ts (refactor PR 2.6). The readers no longer hide database errors as empty results.
 
 import { getProjectedBracketMatches, legacyResultTransaction } from "@/lib/bracket/repository";
 import { prisma } from "@/lib/platform/db";
@@ -14,12 +14,8 @@ import { cache } from "react";
 export const getEventRoundConfigs = cache(
   unstable_cache(
     async (eventId: string): Promise<EventRoundConfig[]> => {
-      try {
-        const rows = await prisma.eventRoundConfig.findMany({ where: { eventId } });
-        return rows.map((r) => ({ id: r.id, eventId: r.eventId, roundLabel: r.roundLabel, bestOf: r.bestOf }));
-      } catch {
-        return [];
-      }
+      const rows = await prisma.eventRoundConfig.findMany({ where: { eventId } });
+      return rows.map((r) => ({ id: r.id, eventId: r.eventId, roundLabel: r.roundLabel, bestOf: r.bestOf }));
     },
     ["event-round-configs"],
     { revalidate: 30, tags: [CACHE_TAGS.teams] },
@@ -45,15 +41,10 @@ export async function getMatchGames(matchId: string): Promise<MatchGame[]> {
 export const _getMatchGamesForEventCached = cache(
   unstable_cache(
     async (eventId: string): Promise<Array<{ matchId: string; games: MatchGame[] }>> => {
-      let rows;
-      try {
-        rows = await prisma.matchGame.findMany({
-          where: { match: { eventId } },
-          orderBy: { gameNumber: "asc" },
-        });
-      } catch {
-        return [];
-      }
+      const rows = await prisma.matchGame.findMany({
+        where: { match: { eventId } },
+        orderBy: { gameNumber: "asc" },
+      });
       const acc: Record<string, MatchGame[]> = {};
       for (const row of rows) {
         (acc[row.matchId] ??= []).push({ id: row.id, matchId: row.matchId, gameNumber: row.gameNumber, homeScore: row.homeScore, awayScore: row.awayScore });
@@ -71,12 +62,8 @@ export const _getMatchGamesForEventCached = cache(
  * Cached 30s under tag "teams" so score detail panels stay fresh after match saves.
  */
 export async function getMatchGamesForEvent(eventId: string): Promise<Map<string, MatchGame[]>> {
-  try {
-    const entries = await _getMatchGamesForEventCached(eventId);
-    return new Map(entries.map((e) => [e.matchId, e.games]));
-  } catch {
-    return new Map();
-  }
+  const entries = await _getMatchGamesForEventCached(eventId);
+  return new Map(entries.map((e) => [e.matchId, e.games]));
 }
 
 /**

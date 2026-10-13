@@ -2491,9 +2491,9 @@ describe("bracket metadata reads", () => {
     prisma.matchGame.findMany.mockRejectedValue(new Error("database unavailable"));
   });
 
-  it("resolves empty bracket metadata when Prisma cannot connect", async () => {
-    await expect(getEventRoundConfigs("event-1")).resolves.toEqual([]);
-    await expect(getMatchGamesForEvent("event-1")).resolves.toEqual(new Map());
+  it("passes the database error on instead of showing a bracket without round settings or game scores", async () => {
+    await expect(getEventRoundConfigs("event-1")).rejects.toThrow("database unavailable");
+    await expect(getMatchGamesForEvent("event-1")).rejects.toThrow("database unavailable");
   });
 });
 
