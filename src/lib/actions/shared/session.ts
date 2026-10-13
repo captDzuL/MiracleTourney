@@ -1,5 +1,5 @@
 // Session and workspace guards shared by the server actions. Plain module on purpose: not a server action file.
-// Moved out of actions.ts without changes (refactor PR 1.4).
+// Moved out of actions.ts (refactor PR 1.4). requireAdminSession now also blocks organizers who must change their password.
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireRole } from "@/lib/auth/session";
@@ -15,6 +15,12 @@ export async function requireAdminSession(): Promise<AppUser> {
 
   if (!user) {
     return redirectToActiveLocale("/login");
+  }
+
+  // An organizer with a temporary password may only change it. The organizer pages and the v3 actions already
+  // enforce this; the legacy actions that start here did not.
+  if (user.role === "organizer" && user.mustChangePassword) {
+    return redirectToActiveLocale("/organizer/change-password");
   }
 
   return user;

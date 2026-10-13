@@ -51,6 +51,20 @@ describe("requireAdminSession", () => {
     expect(requireRole.mock.calls).toEqual([["platform_admin"], ["organizer"], ["admin"]]);
   });
 
+  it("sends an organizer with a temporary password to the password change page", async () => {
+    requireRole.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...user("organizer"), mustChangePassword: true });
+
+    await expect(requireAdminSession()).rejects.toThrow("ACTIVE_REDIRECT:/organizer/change-password");
+  });
+
+  it("lets an organizer through once the password was changed, and ignores the flag for admins", async () => {
+    requireRole.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...user("organizer"), mustChangePassword: false });
+    await expect(requireAdminSession()).resolves.toMatchObject({ role: "organizer" });
+
+    requireRole.mockResolvedValueOnce({ ...user("platform_admin"), mustChangePassword: true });
+    await expect(requireAdminSession()).resolves.toMatchObject({ role: "platform_admin" });
+  });
+
   it("sends a visitor without any of those roles to the login page", async () => {
     requireRole.mockResolvedValue(null);
 
