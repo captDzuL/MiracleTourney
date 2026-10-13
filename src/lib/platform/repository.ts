@@ -584,7 +584,7 @@ export async function getManageableEventDraft(user: AppUser, eventId: string) {
     select: {
       id: true, slug: true, name: true, description: true, gameId: true, gameModeId: true,
       organizerUserId: true, organizerName: true, organizerVerified: true,
-      format: true, formatConfig: true, participantCap: true,
+      format: true, formatConfig: true, participantCap: true, entryMode: true,
       registrationOpensAt: true, registrationClosesAt: true, eventStartsAt: true,
       timezone: true, venue: true, venueAddress: true,
       registrationFeeRequired: true, registrationFeeAmount: true, prizePoolLabel: true,

@@ -19,6 +19,7 @@ export type DraftPatch = {
   description?: string;
   formatConfig?: TournamentFormatConfig;
   participantCap?: number;
+  entryMode?: "team" | "solo";
   prizePoolLabel?: string | null;
   registrationOpensAt?: string | null;
   registrationClosesAt?: string | null;
@@ -75,6 +76,7 @@ function readJournal(namespace: string, targetId: string, revision: number): Dra
       const value = parsed.patch[field];
       if (typeof value === "string" || value === null) patch[field] = value;
     }
+    if (parsed.patch.entryMode === "team" || parsed.patch.entryMode === "solo") patch.entryMode = parsed.patch.entryMode;
     if (typeof parsed.patch.timezone === "string") patch.timezone = parsed.patch.timezone;
     if (typeof parsed.patch.venue === "string") patch.venue = parsed.patch.venue;
     if (typeof parsed.patch.registrationFeeRequired === "boolean") patch.registrationFeeRequired = parsed.patch.registrationFeeRequired;
@@ -108,6 +110,49 @@ function displayPatch(patch: DraftPatch | null, fallbackTimezone: string) {
 }
 
 type LivePreviewDraft = Omit<DraftPatch, "formatConfig"> & { formatConfig: TournamentFormatConfig | null };
+
+type EntryModeFieldProps = {
+  capacity: number;
+  disabled: boolean;
+  feeRequired: boolean;
+  onChange: (value: "team" | "solo") => void;
+  soloMode?: { teamSize: number; requiredPosition: string };
+  t: ReturnType<typeof getEventEditorTranslator>;
+  value: "team" | "solo";
+};
+
+/** Chooses between team registration and solo registration, and shows what solo means for this event. */
+function EntryModeField({ capacity, disabled, feeRequired, onChange, soloMode, t, value }: EntryModeFieldProps) {
+  const options = [
+    { value: "team", label: t("entryModeTeam"), hint: t("entryModeTeamHint"), unavailable: false },
+    { value: "solo", label: t("entryModeSolo"), hint: t("entryModeSoloHint"), unavailable: !soloMode },
+  ] as const;
+  return <fieldset className="grid gap-3" data-entry-mode>
+    <legend className="text-sm font-bold leading-5 text-[var(--color-text)]">{t("entryModeLabel")}</legend>
+    <div className="grid gap-3 min-[700px]:grid-cols-2">
+      {options.map((option) => <label
+        className="flex min-h-11 items-start gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] p-3 text-sm text-[var(--color-text)]"
+        key={option.value}
+      >
+        <input
+          checked={value === option.value}
+          className="mt-1"
+          disabled={disabled || option.unavailable}
+          name="entryMode"
+          onChange={() => onChange(option.value)}
+          type="radio"
+          value={option.value}
+        />
+        <span><span className="block font-bold">{option.label}</span><span className="block text-[var(--color-text-subtle)]">{option.hint}</span></span>
+      </label>)}
+    </div>
+    {!soloMode && <p className="text-sm font-semibold text-[var(--color-brand-cream)]" role="note">{t("entryModeSoloUnsupported")}</p>}
+    {value === "solo" && soloMode && <p className="text-sm text-[var(--color-text-subtle)]" data-solo-quota>
+      {t("soloQuota", { required: capacity, position: soloMode.requiredPosition, open: capacity * (soloMode.teamSize - 1) })}
+      {feeRequired ? ` ${t("soloFeeHint")}` : ""}
+    </p>}
+  </fieldset>;
+}
 
 function LiveDraftPreview({ draft, editorLabel, locale }: { draft: LivePreviewDraft; editorLabel?: string; locale: "id" | "en" }) {
   const t = getEventEditorTranslator(locale);
@@ -154,6 +199,10 @@ type EventDraftFormProps = {
   journalNamespace?: string;
   fieldLocks?: Partial<Record<keyof DraftPatch, string>>;
   gameModes?: Array<{ id: string; label: string }>;
+  /** The game this event is for. Needed to tell whether solo registration is possible. */
+  gameModeId?: string;
+  /** Games that can run a solo tournament. Leave out while solo tournaments are switched off. */
+  soloModes?: Array<{ id: string; teamSize: number; requiredPosition: string }>;
   editorLabel?: string;
   visualEditor?: ReactNode;
   registrationPanel?: ReactNode;
@@ -172,6 +221,8 @@ export function EventDraftForm({
   journalNamespace = "event-draft",
   fieldLocks = {},
   gameModes = [],
+  gameModeId,
+  soloModes,
   editorLabel,
   visualEditor,
   registrationPanel,
@@ -367,7 +418,16 @@ export function EventDraftForm({
       <FormatConfigurator locale={locale} allowAdvanced={competitionOperationsEnabled} disabled={Boolean(lockedReason("formatConfig"))} lockedReason={lockedReason("formatConfig") ?? undefined} onChange={(formatConfig) => updateDraft({ formatConfig })} value={draft.formatConfig} />
     </section>
     <section className={activeStep === 2 ? "grid content-start scroll-mt-24 gap-4" : "hidden"} id="section-registration" tabIndex={-1}>
-      <div><h3 className="text-xl font-extrabold text-[var(--color-text)]">{t("registrationTitle")}</h3><p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">{t("registrationDescription")}</p></div><div className="grid gap-4 min-[700px]:grid-cols-2">
+      <div><h3 className="text-xl font-extrabold text-[var(--color-text)]">{t("registrationTitle")}</h3><p className="mt-1 text-sm leading-6 text-[var(--color-text-subtle)]">{t("registrationDescription")}</p></div>
+      {soloModes && <EntryModeField
+        capacity={draft.participantCap ?? 16}
+        disabled={Boolean(lockedReason("entryMode"))}
+        feeRequired={draft.registrationFeeRequired ?? false}
+        onChange={(entryMode) => updateDraft({ entryMode })}
+        soloMode={soloModes.find((mode) => mode.id === gameModeId)}
+        t={t}
+        value={draft.entryMode ?? "team"}
+      />}<div className="grid gap-4 min-[700px]:grid-cols-2">
         <label className={labelClass}>{t("opens")}<input className={inputClass} disabled={Boolean(lockedReason("registrationOpensAt"))} name="registrationOpensAt" onChange={(event) => updateDateDraft("registrationOpensAt", event.target.value)} type="datetime-local" value={draft.registrationOpensAt ?? ""} /><LockNote field="registrationOpensAt" /></label>
         <label className={labelClass}>{t("closes")}<input className={inputClass} disabled={Boolean(lockedReason("registrationClosesAt"))} name="registrationClosesAt" onChange={(event) => updateDateDraft("registrationClosesAt", event.target.value)} type="datetime-local" value={draft.registrationClosesAt ?? ""} /><LockNote field="registrationClosesAt" /></label>
       </div>

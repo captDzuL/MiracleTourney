@@ -144,6 +144,7 @@ async function saveEventDraftActionImpl(input: unknown) {
   const { actor } = await requireEventManager();
   const parsed = saveDraftActionSchema.parse(input);
   assertEventWorkspaceAccess(actor, parsed.eventId);
+  if (parsed.draft.entryMode === "solo" && !isFeatureEnabled("solo_tournament_v1")) throw new Error("Solo tournaments are unavailable");
   if (parsed.draft.formatConfig?.kind !== undefined && parsed.draft.formatConfig.kind !== "single_elimination" && !isFeatureEnabled("competition_operations_v3")) {
     throw new Error("Competition operations are unavailable");
   }

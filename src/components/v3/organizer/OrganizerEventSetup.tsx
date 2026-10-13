@@ -9,6 +9,7 @@ import { eventDateToLocalInput } from "@/lib/events/event-datetime";
 import type { PublishReadiness as Readiness } from "@/lib/events/publish-readiness";
 import { getActiveEventEditRevisionIds } from "@/lib/events/event-revision";
 import { isFeatureEnabled } from "@/lib/feature-flags";
+import { listSoloModes } from "@/lib/platform/config";
 import type { getManageableEventDraft } from "@/lib/platform/repository";
 import type { AppUser } from "@/lib/platform/types";
 
@@ -57,12 +58,15 @@ export async function OrganizerEventSetup({ event, user, locale, readiness }: {
       editable={event.status === "Draft"}
       locale={locale}
       competitionOperationsEnabled={isFeatureEnabled("competition_operations_v3")}
+      gameModeId={event.gameModeId}
+      soloModes={isFeatureEnabled("solo_tournament_v1") ? listSoloModes() : undefined}
       initialDraft={{
         name: event.name,
         slug: event.slug,
         description: event.description,
         formatConfig: event.formatConfig,
         participantCap: event.participantCap,
+        entryMode: event.entryMode === "solo" ? "solo" : "team",
         prizePoolLabel: event.prizePoolLabel,
         registrationOpensAt: event.registrationOpensAt ? eventDateToLocalInput(event.registrationOpensAt, event.timezone) : null,
         registrationClosesAt: event.registrationClosesAt ? eventDateToLocalInput(event.registrationClosesAt, event.timezone) : null,
