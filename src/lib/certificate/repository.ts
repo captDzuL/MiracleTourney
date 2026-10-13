@@ -248,3 +248,11 @@ export async function countCertificatesForGame(gameId: string): Promise<number> 
     where: { status: "ready", ...LEGACY_CHAMPION_CERTIFICATE_FILTER, event: { gameId } },
   });
 }
+
+/** The winner of an event's Final, or null while no Final result has been saved. */
+export async function getFinalWinnerTeamId(eventId: string): Promise<string | null> {
+  const finalMatch = await prisma.match.findFirst({
+    where: { eventId, roundLabel: "Final", winnerTeamId: { not: null } },
+  });
+  return finalMatch?.winnerTeamId ?? null;
+}

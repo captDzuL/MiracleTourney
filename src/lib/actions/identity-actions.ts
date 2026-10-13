@@ -11,11 +11,10 @@ import { resolvePostLoginPath } from "@/lib/auth/post-login-path";
 import { requireRole, signIn } from "@/lib/auth/session";
 import { sendEmail } from "@/lib/email/send";
 import { getEventsByIds } from "@/lib/events/repository";
-import { createCaptainAccount, findAssignableCaptain, getUserByEmail, getUserPasswordHashById, setTeamCaptain, updateCaptainPassword } from "@/lib/identity/repository";
+import { createCaptainAccount, deactivateUser, findAssignableCaptain, getUserByEmail, getUserPasswordHashById, getUserRoleRef, setTeamCaptain, updateCaptainPassword } from "@/lib/identity/repository";
 import { getTeamEventRef } from "@/lib/teams/repository";
 import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 import { withServerActionLog } from "@/lib/observability/logger";
-import { prisma } from "@/lib/platform/db";
 import { consumePasswordResetToken, createPasswordResetToken, equalizePasswordResetResponse } from "@/lib/platform/password-reset";
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -227,13 +226,13 @@ export async function adminDeactivateUserAction(formData: FormData) {
       `/admin?error=${encodeURIComponent("Tidak dapat menonaktifkan akun sendiri.")}` as never
     );
   }
-  const target = await prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true, role: true } });
+  const target = await getUserRoleRef(targetUserId);
   if (!target || target.role !== "captain") {
     return redirectToActiveLocale(
       `/admin?error=${encodeURIComponent("Hanya akun kapten yang dapat dinonaktifkan.")}` as never
     );
   }
-  await prisma.user.update({ where: { id: targetUserId }, data: { deactivatedAt: new Date() } });
+  await deactivateUser(targetUserId);
   revalidatePath("/", "layout");
   return redirectToActiveLocale("/admin?success=user-deactivated" as never);
 }

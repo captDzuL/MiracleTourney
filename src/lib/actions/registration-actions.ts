@@ -13,10 +13,9 @@ import { requireAdminSession, requireCaptainSession } from "@/lib/actions/shared
 import { appendActionError, uploadImageAsset } from "@/lib/actions/shared/uploads";
 import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 import { writeServerLog } from "@/lib/observability/logger";
-import { prisma } from "@/lib/platform/db";
 import { updatePaymentSettings } from "@/lib/platform/settings-repository";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { createOrUpdateCaptainDraftTeam, createTeamRegistrationRequest, registerTeam, updateTeamRegistrationProof } from "@/lib/registration/repository";
+import { createOrUpdateCaptainDraftTeam, createTeamRegistrationRequest, findCaptainRegistrationRequestRef, registerTeam, updateTeamRegistrationProof } from "@/lib/registration/repository";
 import { approveTeamRegistrationRequest, rejectTeamRegistrationRequest } from "@/lib/registration/review-repository";
 import { describeActionError, isUserSafeActionError, toSafeActionMessage } from "@/lib/security/public-error";
 import { validateTeamData } from "@/lib/validation/team-data";
@@ -157,10 +156,7 @@ export async function captainUploadPaymentProofAction(formData: FormData) {
 
   let request: { id: string; eventId: string } | null = null;
   try {
-    request = await prisma.teamRegistrationRequest.findFirst({
-      where: { id: parsed.requestId, captainId: captain.id },
-      select: { id: true, eventId: true },
-    });
+    request = await findCaptainRegistrationRequestRef(parsed.requestId, captain.id);
     if (!request || parsed.eventId && request.eventId !== parsed.eventId) {
       throw new Error("Not authorized");
     }

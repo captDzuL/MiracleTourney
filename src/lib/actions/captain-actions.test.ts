@@ -218,7 +218,12 @@ vi.mock("@/lib/player-stats/write-repository", () => ({
   upsertStatSubmission,
   adminWriteMatchPlayerStats,
 }));
+const { findCaptainRegistrationRequestRef, findCaptainTeamRef } = vi.hoisted(() => ({
+  findCaptainRegistrationRequestRef: vi.fn(),
+  findCaptainTeamRef: vi.fn(),
+}));
 vi.mock("@/lib/registration/repository", () => ({
+  findCaptainRegistrationRequestRef,
   createOrUpdateCaptainDraftTeam,
   createTeamRegistrationRequest,
   registerTeam,
@@ -229,6 +234,7 @@ vi.mock("@/lib/registration/review-repository", () => ({
   rejectTeamRegistrationRequest,
 }));
 vi.mock("@/lib/teams/repository", () => ({
+  findCaptainTeamRef,
   getTeamEventRef,
   addPlayer,
   deletePlayer,
@@ -426,7 +432,7 @@ describe("captain actions", () => {
 
   it("uploads a payment proof for the authenticated captain", async () => {
     updateTeamRegistrationProof.mockResolvedValue({ id: "request-1", status: "pending_review" });
-    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
+    findCaptainRegistrationRequestRef.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
     blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-proofs/request-1.png" });
 
@@ -444,7 +450,7 @@ describe("captain actions", () => {
 
   it("rate-limits payment proof before reading, storing, or updating the request", async () => {
     checkRateLimit.mockReturnValue(false);
-    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
+    findCaptainRegistrationRequestRef.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
     const paymentProof = validPngFile("proof.png");
     try {
@@ -460,7 +466,7 @@ describe("captain actions", () => {
 
   it("denies a foreign payment request before external upload or repository write", async () => {
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
-    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(null);
+    findCaptainRegistrationRequestRef.mockResolvedValue(null);
     blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-proofs/foreign.png" });
 
     try {
@@ -479,7 +485,7 @@ describe("captain actions", () => {
     ["oversized", new File(["x".repeat(2 * 1024 * 1024 + 1)], "proof.png", { type: "image/png" }), "Payment%20proof%20file%20is%20too%20large."],
     ["invalid signature", new File(["not-an-image"], "proof.png", { type: "image/png" }), "Payment%20proof%20file%20content%20does%20not%20match%20its%20image%20type."],
   ] as const)("preserves the payment proof validation message for %s files", async (_kind, paymentProof, encodedMessage) => {
-    prisma.teamRegistrationRequest.findFirst.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
+    findCaptainRegistrationRequestRef.mockResolvedValue({ id: "request-1", eventId: "event-paid" });
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
 
     try {
@@ -497,7 +503,7 @@ describe("captain actions", () => {
 
   it("denies a foreign team logo before external upload or repository write", async () => {
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
-    prisma.team.findFirst.mockResolvedValue(null);
+    findCaptainTeamRef.mockResolvedValue(null);
     blobPut.mockResolvedValue({ url: "https://blob.example.com/team-logos/foreign.png" });
 
     try {
@@ -513,7 +519,7 @@ describe("captain actions", () => {
 
   it("rate-limits captain team logos after ownership and before file processing", async () => {
     checkRateLimit.mockReturnValue(false);
-    prisma.team.findFirst.mockResolvedValue({ id: "team-1", eventId: "event-safe" });
+    findCaptainTeamRef.mockResolvedValue({ id: "team-1", eventId: "event-safe" });
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
     try {
       await expect(

@@ -164,7 +164,19 @@ vi.mock("@/lib/bracket/rounds-repository", () => ({
   setMatchGames,
   upsertRoundConfig,
 }));
+const { getUserRoleRef, deactivateUser, getEventArchiveInfo, markEventFinished, deleteEvent, getTeamForDeletion, deleteTeam } = vi.hoisted(() => ({
+  getUserRoleRef: vi.fn(),
+  deactivateUser: vi.fn(),
+  getEventArchiveInfo: vi.fn(),
+  markEventFinished: vi.fn(),
+  deleteEvent: vi.fn(),
+  getTeamForDeletion: vi.fn(),
+  deleteTeam: vi.fn(),
+}));
 vi.mock("@/lib/events/repository", () => ({
+  getEventArchiveInfo,
+  markEventFinished,
+  deleteEvent,
   autoTransitionEventToOngoing,
   createEvent,
   getEventsByIds,
@@ -188,6 +200,8 @@ const { findAssignableCaptain, getTeamEventRef, setTeamCaptain } = vi.hoisted(()
   setTeamCaptain: vi.fn(),
 }));
 vi.mock("@/lib/identity/repository", () => ({
+  getUserRoleRef,
+  deactivateUser,
   createCaptainAccount,
   findAssignableCaptain,
   setTeamCaptain,
@@ -229,6 +243,8 @@ vi.mock("@/lib/registration/review-repository", () => ({
   rejectTeamRegistrationRequest,
 }));
 vi.mock("@/lib/teams/repository", () => ({
+  getTeamForDeletion,
+  deleteTeam,
   getTeamEventRef,
   addPlayer,
   deletePlayer,
@@ -334,8 +350,8 @@ const revalidationRows: RevalidationRow[] = [
     name: "adminDeactivateUserAction",
     role: "admin",
     setup: () => {
-      prisma.user.findUnique.mockResolvedValue({ id: "captain-9", role: "captain" });
-      prisma.user.update.mockResolvedValue({});
+      getUserRoleRef.mockResolvedValue({ id: "captain-9", role: "captain" });
+      deactivateUser.mockResolvedValue(undefined);
     },
     run: () => adminDeactivateUserAction(fd({ userId: "captain-9" })),
     redirectsTo: "/admin?success=user-deactivated",
@@ -346,8 +362,8 @@ const revalidationRows: RevalidationRow[] = [
     name: "adminArchiveEventAction",
     role: "admin",
     setup: () => {
-      prisma.event.findUnique.mockResolvedValue({ id: "event-1", status: "Ongoing", _count: { teams: 2 } });
-      prisma.event.update.mockResolvedValue({});
+      getEventArchiveInfo.mockResolvedValue({ status: "Ongoing", teamCount: 2 });
+      markEventFinished.mockResolvedValue(undefined);
     },
     run: () => adminArchiveEventAction(fd({ eventId: "event-1", action: "archive" })),
     redirectsTo: "/admin?success=event-archived",
@@ -359,8 +375,8 @@ const revalidationRows: RevalidationRow[] = [
     role: "admin",
     setup: () => {
       assertUserCanManageTeam.mockResolvedValue({ eventId: "event-1" });
-      prisma.team.findFirst.mockResolvedValue({ id: "team-1", eventId: "event-1", event: { id: "event-1", status: "Draft" } });
-      prisma.team.delete.mockResolvedValue({});
+      getTeamForDeletion.mockResolvedValue({ id: "team-1", eventId: "event-1", eventStatus: "Draft" });
+      deleteTeam.mockResolvedValue(undefined);
     },
     run: () => adminDeleteTeamAction(fd({ teamId: "team-1" })),
     redirectsTo: "/admin?success=team-deleted",
@@ -434,7 +450,7 @@ describe("revalidation after a successful action", () => {
 
   it("does not refresh anything when the action stops before saving", async () => {
     requireRole.mockResolvedValue(adminSession());
-    prisma.user.findUnique.mockResolvedValue({ id: "owner-1", role: "platform_admin" });
+    getUserRoleRef.mockResolvedValue({ id: "owner-1", role: "platform_admin" });
 
     await expect(adminDeactivateUserAction(fd({ userId: "owner-1" }))).rejects.toThrow(
       "REDIRECT:/admin?error=Hanya%20akun%20kapten%20yang%20dapat%20dinonaktifkan.",

@@ -507,3 +507,11 @@ export async function getPaymentRegistrationRequestsForAdmin(user: AppUser, filt
   });
   return rows.map(mapTeamRegistrationRequest);
 }
+
+/** The captain's own registration request, or null when it does not exist or belongs to another captain. */
+export async function findCaptainRegistrationRequestRef(requestId: string, captainId: string): Promise<{ id: string; eventId: string } | null> {
+  return prisma.teamRegistrationRequest.findFirst({
+    where: { id: requestId, captainId },
+    select: { id: true, eventId: true },
+  });
+}

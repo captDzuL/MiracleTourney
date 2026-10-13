@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { signIn, signOut } from "@/lib/auth/session";
-import { prisma } from "@/lib/platform/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { withServerActionLog } from "@/lib/observability/logger";
 
@@ -13,6 +12,7 @@ import {
   buildCaptainEventDestination,
   type CaptainEventLoginState,
 } from "@/lib/actions/captain-event-login-contract";
+import { isEventOpenForCaptainLogin } from "@/lib/events/repository";
 
 export type { CaptainEventLoginState } from "@/lib/actions/captain-event-login-contract";
 
@@ -22,7 +22,6 @@ const loginInputSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1).max(256),
 });
-
 
 export async function captainEventLoginAction(
   _previousState: CaptainEventLoginState,
@@ -54,14 +53,7 @@ async function captainEventLoginActionImpl(
   }
 
   try {
-    const event = await prisma.event.findFirst({
-      where: {
-        id: parsed.data.eventId,
-        status: { in: ["Published", "Registration Closed"] },
-      },
-      select: { id: true },
-    });
-    if (!event) return { status: "error", code: "invalid" };
+    if (!(await isEventOpenForCaptainLogin(parsed.data.eventId))) return { status: "error", code: "invalid" };
   } catch {
     return { status: "error", code: "database" };
   }

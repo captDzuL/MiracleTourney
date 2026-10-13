@@ -6,11 +6,11 @@
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { actionEntityId } from "@/lib/actions/shared/request";
 import { assertWorkspaceEventAction, requireAdminSession } from "@/lib/actions/shared/session";
-import { prisma } from "@/lib/platform/db";
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { toSafeActionMessage } from "@/lib/security/public-error";
 import { revalidatePath } from "next/cache";
+import { getFinalWinnerTeamId } from "@/lib/certificate/repository";
 
 /**
  * Re-renders the champion certificate for an event, replacing whatever is stored.
@@ -30,10 +30,7 @@ export async function adminRegenerateCertificateAction(formData: FormData) {
     );
   }
 
-  const finalMatch = await prisma.match.findFirst({
-    where: { eventId, roundLabel: "Final", winnerTeamId: { not: null } },
-  });
-  const winnerTeamId = finalMatch?.winnerTeamId;
+  const winnerTeamId = await getFinalWinnerTeamId(eventId);
   if (!winnerTeamId) {
     await redirectToActiveLocale(
       `/admin?error=${encodeURIComponent("Belum ada juara. Simpan hasil match Final terlebih dahulu.")}`,

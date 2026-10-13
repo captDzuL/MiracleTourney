@@ -517,3 +517,31 @@ export async function updateEventStream(eventId: string, url: string, label: str
     return updated ? mapEvent(updated) : null;
   });
 }
+
+/** What the archive/delete action needs to know about an event: its status and how many teams it has. */
+export async function getEventArchiveInfo(eventId: string): Promise<{ status: string; teamCount: number } | null> {
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    include: { _count: { select: { teams: true } } },
+  });
+  return event ? { status: event.status, teamCount: event._count.teams } : null;
+}
+
+/** Permanently deletes an event. The caller checks that it is a Draft without teams. */
+export async function deleteEvent(eventId: string): Promise<void> {
+  await prisma.event.delete({ where: { id: eventId } });
+}
+
+/** Archives an event by marking it Finished. */
+export async function markEventFinished(eventId: string): Promise<void> {
+  await prisma.event.update({ where: { id: eventId }, data: { status: "Finished" } });
+}
+
+/** True when captains may log in through this event's page: it is Published or Registration Closed. */
+export async function isEventOpenForCaptainLogin(eventId: string): Promise<boolean> {
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, status: { in: ["Published", "Registration Closed"] } },
+    select: { id: true },
+  });
+  return event !== null;
+}
