@@ -31,7 +31,6 @@ import { validateTeamData } from "@/lib/validation/team-data";
 import { parsePlayerStatForm } from "@/lib/player-stats/form";
 import type { AppUser } from "@/lib/platform/types";
 import { describeActionError, isUserSafeActionError, toSafeActionMessage } from "@/lib/security/public-error";
-import { isSafeHttpUrl } from "@/lib/security/request-guard";
 import { withServerActionLog, writeServerLog } from "@/lib/observability/logger";
 import { setMatchResult } from "@/lib/bracket/repository";
 import { setMatchGames, upsertRoundConfig } from "@/lib/bracket/rounds-repository";
@@ -51,6 +50,7 @@ import { actionEntityId, redirectToRequestedLocale } from "@/lib/actions/shared/
 import { MAX_BACKGROUND_IMAGE_BYTES, MAX_LOGO_IMAGE_BYTES, MAX_PAYMENT_PROOF_BYTES, MAX_QRIS_IMAGE_BYTES, MAX_TEAM_IMPORT_CSV_BYTES } from "@/lib/actions/shared/limits";
 import { isSafeEntityId } from "@/lib/actions/shared/ids";
 import { appendActionError, uploadImageAsset } from "@/lib/actions/shared/uploads";
+import { isHttpUrl, optionalPublicUrlSchema } from "@/lib/actions/shared/schemas";
 
 function isDatabaseConnectionError(error: unknown) {
   if (!(error instanceof Error)) return false;
@@ -61,24 +61,12 @@ function isDatabaseConnectionError(error: unknown) {
   );
 }
 
-function isHttpUrl(value: string) {
-  return isSafeHttpUrl(value);
-}
-
 const optionalPublicLabelSchema = z.preprocess(
   (value) => {
     const text = String(value ?? "").trim();
     return text === "" ? null : text;
   },
   z.string().max(80).nullable(),
-);
-
-const optionalPublicUrlSchema = z.preprocess(
-  (value) => {
-    const text = String(value ?? "").trim();
-    return text === "" ? null : text;
-  },
-  z.string().refine(isHttpUrl, "Registration URL must use http or https.").nullable(),
 );
 
 /**
