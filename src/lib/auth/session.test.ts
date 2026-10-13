@@ -138,6 +138,24 @@ describe("auth session hardening", () => {
     });
   });
 
+  it("accepts a player session and gives it the same lifetime as a captain", async () => {
+    const { requireRole, signIn } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    const player = { id: "player-1", email: "player@test.com", name: "Player", role: "player" };
+    getCaptainById.mockResolvedValue(player);
+    getUserWithPasswordByEmail.mockResolvedValue({ ...player, passwordHash: "$hash" });
+
+    await signIn("player@test.com", "secret123");
+    getUserWithPasswordByEmail.mockResolvedValueOnce({ id: "captain-1", email: "c@test.com", name: "C", role: "captain", passwordHash: "$hash" });
+    await signIn("c@test.com", "secret123");
+    expect(cookieStore.set.mock.calls[0][2].maxAge).toBe(cookieStore.set.mock.calls[1][2].maxAge);
+
+    cookieStore.get.mockReturnValue({ value: cookieStore.set.mock.calls[0][1] });
+    await expect(requireRole("player")).resolves.toMatchObject({ id: "player-1", role: "player" });
+    await expect(requireRole("captain")).resolves.toBeNull();
+  });
+
   it("rejects a session role outside the allowed role list", async () => {
     const { requireAnyRole, signIn } = await import("./session");
     const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };

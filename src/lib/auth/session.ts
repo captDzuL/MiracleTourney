@@ -11,7 +11,7 @@ const DEFAULT_JWT_SECRET = "miracle-tourney-jwt-secret-change-in-production-32ch
 const ADMIN_SESSION_MAX_AGE = 60 * 60 * 12;
 const CAPTAIN_SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 type SessionRole = Exclude<UserRole, "public">;
-const SESSION_ROLES = new Set<SessionRole>(["captain", "organizer", "admin", "platform_admin"]);
+const SESSION_ROLES = new Set<SessionRole>(["captain", "player", "organizer", "admin", "platform_admin"]);
 
 function isSessionRole(role: unknown): role is SessionRole {
   return typeof role === "string" && SESSION_ROLES.has(role as SessionRole);
