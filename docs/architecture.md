@@ -24,15 +24,15 @@ Aturan dasarnya satu arah: lapisan atas boleh memanggil lapisan di bawahnya, tid
 - **Server action** adalah satu-satunya tempat yang mengubah data atas permintaan pengguna. Tiap action memeriksa sesi dan izin lebih dulu, lalu menyimpan, lalu memanggil `revalidatePath` atau `revalidateTag`.
 - **Repository** adalah satu-satunya tempat yang memakai Prisma untuk data pertandingan, tim, pendaftaran, dan sejenisnya.
 
-Catatan jujur: pembagian ini belum bersih. Sekitar 22 file di `src/lib` (`*-read.ts`, `completion/prisma-adapter.ts`, `rate-limit.ts`, dan sejenisnya) masih memakai Prisma langsung sebagai modul akses data per fitur. Halaman, komponen (R4), dan action (R6) tidak boleh. Sekitar 35 file di `src/lib` masih memakai Prisma langsung (misalnya `events/*-read.ts`, `certificate/*`, `completion/prisma-adapter.ts`). Itu masuk Fase 4 di `PLAN.md`.
+Catatan jujur: pembagian ini belum bersih. Sekitar 22 file di `src/lib` (`*-read.ts`, `completion/prisma-adapter.ts`, `rate-limit.ts`, dan sejenisnya) masih memakai Prisma langsung sebagai modul akses data per fitur. Halaman, komponen (R4), dan action (R6) tidak boleh.
 
 ## Susunan folder sekarang
 
 | Folder | Isi |
 |---|---|
-| `src/app` | Halaman, route handler, `error.tsx`, `sitemap.ts`. Ada dua pohon: `src/app/[locale]/...` (yang dipakai pengunjung) dan `src/app/...` tanpa locale. Middleware mengalihkan jalur tanpa locale ke `/[locale]/...`. |
+| `src/app` | Halaman, route handler, `error.tsx`, `sitemap.ts`. Halaman yang dilihat pengunjung ada di `src/app/[locale]/...`. Middleware mengalihkan jalur tanpa locale ke `/[locale]/...`, jadi folder lain di `src/app` (misalnya `admin`, `captain`, `events`) menyimpan modul isi yang diimpor halaman `[locale]`, bukan halaman sendiri. Aturan lengkapnya ada di [README](../README.md). |
 | `src/components` | Komponen: `admin`, `panel`, `public-v2`, `registration`, `v3`. |
-| `src/lib/platform` | `settings-repository.ts` (daftar game, profil, pengaturan pembayaran global), `db.ts` (klien Prisma), `config.ts` (daftar game dan mode), `types.ts`, `demo-store.ts` (hanya untuk test). `repository.ts` yang lama sudah habis dan dihapus (Fase 2). |
+| `src/lib/platform` | `settings-repository.ts` (daftar game, profil, pengaturan pembayaran global), `db.ts` (klien Prisma), `config.ts` (daftar game dan mode), `types.ts`, `src/test-support/bracket-page-store.ts` (tiruan penyimpanan untuk satu test halaman bracket; kode produksi dilarang mengimpornya oleh R1). `repository.ts` yang lama sudah habis dan dihapus (Fase 2). |
 | Akses data per bidang | `events/repository.ts` dan `events/visual-repository.ts`, `teams/repository.ts`, `bracket/repository.ts` dan `bracket/rounds-repository.ts`, `registration/repository.ts` dan `registration/review-repository.ts`, `imports/repository.ts`, `player-stats/repository.ts` (baca) dan `player-stats/write-repository.ts` (tulis), `certificate/repository.ts`, `identity/repository.ts`. Tiap file di bawah 650 baris. |
 | `src/app/admin/workspace`, `src/app/captain/dashboard` | Bagian halaman admin dan dashboard captain, satu file per tahap atau bagian. `admin-workspace.tsx` dan `captain/page.tsx` tinggal menyusunnya. |
 | `src/lib/events/public-v3` | Bagian dari `public-v3-read.ts` menurut lapisan (`basics`, `parts`, `identity`, `updates`, `registration`, `phases`, `authoritative`, `compat`, `normalize`). Impor hanya ke arah file sebelumnya dalam daftar itu. |
@@ -88,7 +88,7 @@ Daftar itu **hanya boleh mengecil**. Memperbaiki impornya, lalu hapus file dari 
 - `assertWorkspaceEventAction` selalu meloloskan organizer. Pemeriksaan kepemilikan yang sebenarnya adalah `assertUserCanManageEvent` (event) atau `assertUserCanManageTeam` (tim). Setiap action yang bisa dipakai organizer wajib memanggilnya untuk sumber daya yang disentuh. Jangan menganggap `assertWorkspaceEventAction` sebagai pengecekan kepemilikan.
 - `requireAdminSession` melempar organizer yang masih memakai password sementara ke halaman ganti password.
 - Unggahan hanya boleh ke folder di `UPLOAD_FOLDERS` (`actions/shared/uploads.ts`). Folder baru ditambahkan di daftar itu.
-- Daftar ekspor sebuah file `"use server"` adalah daftar pintu yang bisa dipanggil browser. Jangan mengekspor pembantu (cek sesi, upload, dan sejenisnya) dari file itu; taruh di `actions/shared`. `actions/shared/guards.test.ts` menjaga ini untuk `actions.ts` dan memastikan `actions/shared` tanpa `"use server"`.
+- Daftar ekspor sebuah file `"use server"` adalah daftar pintu yang bisa dipanggil browser. Jangan mengekspor pembantu (cek sesi, upload, dan sejenisnya) dari file itu; taruh di `actions/shared`. `actions/shared/guards.test.ts` menjaga ini untuk semua modul action dan memastikan `actions/shared` tanpa `"use server"`.
 - Pembantu yang tidak mengecek sesi sendiri, seperti `uploadImageAsset`, tidak boleh jadi action. Action pemanggilnya yang wajib mengecek sesi dan izin (`assertUserCanManageEvent` untuk event).
 - Tempat mengubah cache: `revalidatePath` dan `revalidateTag` dipanggil di action, bukan di repository. Tag yang dipakai: `events`, `teams`, `stats`.
 - Daftar lengkap action dan halaman yang di-refresh ada di `src/lib/revalidation-map.test.ts`. Mengubah panggilan revalidate tanpa mengubah tabel itu membuat test gagal.

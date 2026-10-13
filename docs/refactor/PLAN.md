@@ -180,6 +180,32 @@ Bagian 1 (perbaikan perilaku) dan bagian 2 (pindah murni) sudah dikerjakan, liha
 - Buat antarmuka repository: belum ada pemakai kedua yang membutuhkannya.
 - Rapikan sisa akses Prisma langsung di `src/lib` (sekitar 22 file): lihat "Akses Prisma" di bawah.
 
+## Fase 5: Bersih-bersih (kode mati, test, file, dokumen)
+
+Dikerjakan setelah Fase 4 masuk ke rehearsal. Tujuan: buang yang Miracle tidak butuh lagi, tanpa mengubah perilaku yang dilihat pengguna. Satu commit per butir; setelah tiap butir `tsc`, ESLint, dan test unit dijalankan.
+
+Selesai:
+- File lama yang tidak dirujuk siapa pun: catatan serah-terima, mockup HTML dan gambar pratinjau di `public/` (file unggahan tetap), skrip sekali pakai, dan dependency yang tidak dipakai. Riwayatnya tetap ada di git.
+- Impor CSV lama: form, `adminImportTeamsCsvAction`, `importTeams`, pengurai CSV, template, dan teksnya. Impor pendaftaran V3 (Excel atau CSV lewat wizard) tidak disentuh. Jalur pengambilalihan akun lewat `importTeams` ikut hilang.
+- Test yang hanya mencocokkan teks kode e2e, konfigurasi Playwright rilis yang tidak dipakai, dan pemindaian SQL mentah yang dobel.
+- Kode mati: enam action pembungkus di `registration-actions.ts`, kluster komponen V3 yang tidak dipakai halaman mana pun (tiga halaman `Adaptive*`, kartu organizer, hero lama, navigasi bagian, `EmptyState`, `StatusBadge`, `Tooltip`, `Surface`), `public-ongoing-poll`, jalur pembuatan sertifikat lama di `certificate/service.ts`, tiga alias, `appUsers`, beberapa konstanta, dan fungsi yang hanya dipakai test-nya sendiri (`getBracketManageableMatches`, `getPublishedEvents`, `getPlayersForEvent`, `getRosterChangeWindow`, `countAiVisualAttempts`, dan sejenisnya).
+- Cabang `/_debug_locale` di middleware (duplikat `api/debug-locale`, yang tetap ada).
+- Enam flag tanpa pemakai (lima `premium_*` dan `ai_event_art`), beserta dua variabel OpenAI di `.env.example`. Matriks flag sekarang mencatat sepuluh flag.
+- Halaman dan `loading.tsx` di `src/app` tanpa locale yang tidak pernah disajikan karena middleware mengalihkan jalur tanpa locale. Modul isi yang diimpor halaman `[locale]` dipertahankan.
+- Kunci terjemahan yang tidak dipakai kode (27 kunci dan seluruh namespace `adaptiveEvent`). Kunci yang dibangun dinamis tidak disentuh.
+- Dokumen: README baru, `README.developer.md` dipecah ke `docs/development/`, catatan CSV lama dihapus, kontradiksi "22 file" dan "35 file" di `architecture.md` dibereskan, klaim "job E2E" di `docs/testing/v3-e2e-and-preview.md` dikoreksi.
+- Jumlah server action di hasil build turun dari 95 menjadi 88 (enam pembungkus dan `adminImportTeamsCsvAction`).
+
+Berbeda dari rencana awal:
+- `demo-store` tidak dihapus. Test halaman bracket yang besar membutuhkannya, jadi dipindah ke `src/test-support/bracket-page-store.ts`, dipangkas sebatas yang dipakai test itu, dan R1 sekarang melarang kode produksi mengimpor `src/test-support`.
+- `playwright.visual-v2.config.ts` dan spec `public-visual-v2` tetap ada, karena UI public-v2 sendiri dipertahankan.
+- `executeCompetitionOperationAction` tetap ada. Itu pintu yang dijelaskan di README modul operasi dan punya banyak test.
+- Test integrasi `roster-change.integration.test.ts` belum ditambahkan ke CI dan job CI belum digabung. Docker tidak jalan saat dikerjakan, jadi test itu tidak bisa dicoba dulu.
+- Dua `isSafeEntityId` (`actions/shared/ids.ts` dan `security/request-guard.ts`) tidak digabung karena aturannya berbeda. Pasangan duplikat lain (`hashEventRevisionPreviewToken` dan `hashEventPreviewToken`, `getInitials`, `compareStrings`, dan sebagainya) tidak digabung; nilainya kecil dan tiap pasang ada di modul berbeda.
+- Pembuka test action yang sama di sembilan file `src/lib/actions/*.test.ts` dibiarkan.
+
+Ditunda sampai peralihan V3 stabil (daftar PR terpisah): `src/components/public-v2/*` dan UI lama yang tampil saat flag V3 mati, delapan flag V3 itu sendiri, sertifikat `legacy-v1`, dan aksi pertandingan lama (`adminUpdateMatchResultAction` dan kawan-kawan).
+
 ## Waktu dan titik evaluasi
 
 37 PR: Fase 0 ada 8, Fase 1 ada 5, Fase 2 ada 14, Fase 3 ada 10. Satu PR per sesi pendek. PR berat (B) satu per sesi.
@@ -243,6 +269,12 @@ Fase 3:
 - [x] 3.7
 - [x] 3.8
 - [x] 3.9
+
+Fase 4:
+- [x] Bagian 1 dan 2
+
+Fase 5:
+- [x] Bersih-bersih (kode mati, test, file, dokumen)
 
 ## Catatan dari pengerjaan
 

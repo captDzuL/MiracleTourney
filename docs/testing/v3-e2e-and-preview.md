@@ -10,7 +10,7 @@ To reset and seed Delicate, run `pnpm test:e2e:prepare`. Then run `pnpm test:e2e
 
 ## GitHub Actions
 
-The E2E job writes an ignored `.env.test` from `NEON_TEST_DATABASE_URL`, `NEON_TEST_DIRECT_URL`, and `NEON_PROD_HOST`, then runs the preflight-backed reset and seed. The concurrency group keeps one Delicate reset active at a time. CI never uses `prisma db push --accept-data-loss`.
+CI tidak menjalankan test browser. CI menjalankan cek tipe, ESLint, test unit, build, test database, pengecekan migrasi baru, dan pengecekan skema (lihat `.github/workflows/ci.yml`). Test browser dijalankan manual dari komputer Anda, dengan `.env.test` yang menunjuk ke database uji (Delicate), bukan produksi. Jangan pernah memakai `prisma db push --accept-data-loss`.
 
 ## Vercel environments
 
