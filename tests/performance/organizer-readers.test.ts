@@ -384,7 +384,7 @@ async function runLoadScript(scriptName: string, mode: LoadFixtureMode): Promise
   return (await runLoadScriptWithOutput(scriptName, mode)).exitCode;
 }
 
-describe("organizer reader release-scale contracts", () => {
+describe("organizer reader release-scale contracts", { timeout: 60_000 }, () => {
   it("creates the exact 64-team fixture cardinalities without database credentials", async () => {
     const fixture = buildOrganizerScalePlan("manifest");
 

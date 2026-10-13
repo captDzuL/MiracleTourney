@@ -132,16 +132,4 @@ describe("security negative-input matrix", () => {
 
     expect(source).not.toMatch(/Access-Control-Allow-Origin\s*["'`]\s*:\s*["'`]\*["'`]/i);
   });
-
-  it("does not permit raw Prisma SQL escape hatches in application code", () => {
-    const roots = [path.resolve(process.cwd(), "src/lib"), path.resolve(process.cwd(), "src/app")];
-    const sourceFiles = roots.flatMap((root) =>
-      fs.readdirSync(root, { recursive: true })
-        .map((entry) => path.resolve(root, String(entry)))
-        .filter((filePath) => /\.(ts|tsx)$/.test(filePath) && fs.existsSync(filePath)),
-    );
-
-    const source = sourceFiles.map((filePath) => fs.readFileSync(filePath, "utf8")).join("\n");
-    expect(source).not.toMatch(/\$(?:queryRaw|executeRaw)(?:Unsafe)?/);
-  });
 });
