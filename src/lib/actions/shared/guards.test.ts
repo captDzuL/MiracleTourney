@@ -197,14 +197,14 @@ describe("what the server action modules expose", () => {
     expect(exported.filter((item) => item.kind === "other")).toEqual([]);
   });
 
-  it("keeps the 51 actions that used to live in actions.ts, each exactly once", () => {
+  it("keeps the 45 actions that used to live in actions.ts, each exactly once", () => {
     const fromOldModule = [
       "identity-actions.ts", "event-actions.ts", "event-visual-actions.ts", "registration-actions.ts",
       "import-actions.ts", "team-actions.ts", "match-actions.ts", "certificate-actions.ts",
     ];
     const oldNames = exported.filter((item) => item.kind === "async function" && fromOldModule.includes(item.file)).map((item) => item.name);
-    expect(oldNames).toHaveLength(51);
-    expect(new Set(oldNames).size).toBe(51);
+    expect(oldNames).toHaveLength(45);
+    expect(new Set(oldNames).size).toBe(45);
   });
 
   it.each([

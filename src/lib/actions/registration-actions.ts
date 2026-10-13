@@ -4,7 +4,6 @@
 // Moved out of lib/actions.ts without changes (refactor PR 3.4).
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
-import * as eventRegistrationActions from "@/lib/actions/registration-v3-actions";
 import { isSafeEntityId } from "@/lib/actions/shared/ids";
 import { MAX_PAYMENT_PROOF_BYTES, MAX_QRIS_IMAGE_BYTES } from "@/lib/actions/shared/limits";
 import { actionEntityId } from "@/lib/actions/shared/request";
@@ -267,29 +266,4 @@ export async function adminRejectPaymentAction(formData: FormData) {
   revalidatePath("/admin");
   revalidatePath("/captain");
   await redirectToActiveLocale("/admin?phase=payments&success=payment-rejected" as never);
-}
-
-// Next's server-action compiler requires explicit async function exports.
-export async function approveEventPaymentAction(formData: FormData) {
-  return eventRegistrationActions.approveEventPaymentAction(formData);
-}
-
-export async function commitEventRegistrationImportAction(formData: FormData) {
-  return eventRegistrationActions.commitEventRegistrationImportAction(formData);
-}
-
-export async function previewEventRegistrationImportAction(formData: FormData) {
-  return eventRegistrationActions.previewEventRegistrationImportAction(formData);
-}
-
-export async function publishEventQrisAction(formData: FormData) {
-  return eventRegistrationActions.publishEventQrisAction(formData);
-}
-
-export async function rejectEventPaymentAction(formData: FormData) {
-  return eventRegistrationActions.rejectEventPaymentAction(formData);
-}
-
-export async function saveEventQrisDraftAction(formData: FormData) {
-  return eventRegistrationActions.saveEventQrisDraftAction(formData);
 }
