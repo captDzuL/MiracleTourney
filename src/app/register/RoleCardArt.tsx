@@ -3,13 +3,20 @@ import React from "react";
 /*
  * Background art for the two role cards on the sign-up page.
  *
- * Both draw from the Miracle mark: flat slabs with diagonal cuts, cyan on one side and violet on the
- * other, a cream accent, and the pitch lines used on the Flashpeak background. The numbers are the
- * point of each card: a captain leads five players, a player starts as one.
- * Purely decorative, so everything is hidden from assistive technology.
+ * Both are built from the two slabs of the Miracle mark (cyan left, violet right, cut on the diagonal),
+ * so they say something about the product instead of about a number: a captain holds the whole mark
+ * together, a player is one slab that the draw still has to fit into a team. Nothing here depends on
+ * the team size. Purely decorative, so everything is hidden from assistive technology.
  */
 
 const CREAM = "#F6DFB1";
+
+/** The slabs, in the coordinates of public/logo/miracle-symbol.svg. */
+const CYAN_SLAB = "130,54 223,126 195,148 165,123 165,205 130,180";
+const VIOLET_SLAB = "315,54 315,180 280,205 280,123 223,167 195,148";
+
+/** Puts the mark in the upper right of the card, large enough to be cropped a little. */
+const PLACE = "translate(-38 -30) scale(1.2)";
 
 const svgProps = {
   "aria-hidden": true,
@@ -19,101 +26,95 @@ const svgProps = {
   className: "absolute inset-0 h-full w-full",
 } as const;
 
-/** The "5": a stem and a bowl, built from cut corners instead of curves. */
-const FIVE = "205,40 325,40 325,70 237,70 234,110 270,102 312,116 338,150 338,200 312,234 270,248 205,248 205,216 262,216 296,198 304,172 294,152 262,146 205,150";
+/** Fine diagonal lines at the angle of the mark's cuts, and a halftone for the solid slabs. */
+function Textures({ id, tint }: { id: string; tint: string }) {
+  return (
+    <defs>
+      <pattern id={`${id}-hatch`} width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(38)">
+        <line x1="0" y1="0" x2="0" y2="16" stroke={tint} strokeOpacity="0.1" strokeWidth="1" />
+      </pattern>
+      <pattern id={`${id}-dots`} width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(38)">
+        <circle cx="3.5" cy="3.5" r="1" fill={tint} fillOpacity="0.45" />
+      </pattern>
+    </defs>
+  );
+}
 
-/** The "1": a flag that falls away to the left, and a straight stem. */
-const ONE = "206,92 258,40 296,40 296,248 256,248 256,92 206,128";
-
-/** Captain: a faceted 5, cut by a cream armband. */
+/** Captain: the whole mark, with one cream point at its centre that every corner is tied to. */
 export function CaptainArt() {
+  const hub = { x: 223, y: 148 };
+  const corners = [[130, 54], [315, 54], [130, 180], [315, 180], [165, 205], [280, 205]];
   return (
     <svg {...svgProps}>
       <defs>
-        <linearGradient id="rc-cap-fill" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#00C8EE" stopOpacity="0.34" />
-          <stop offset="1" stopColor="#008BEA" stopOpacity="0.08" />
+        <linearGradient id="rc-cap-cyan" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#00C8EE" stopOpacity="0.55" />
+          <stop offset="1" stopColor="#008BEA" stopOpacity="0.16" />
         </linearGradient>
-        <linearGradient id="rc-cap-edge" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#5BE3FF" />
-          <stop offset="1" stopColor="#008BEA" />
+        <linearGradient id="rc-cap-violet" x1="1" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#B83CF0" stopOpacity="0.5" />
+          <stop offset="1" stopColor="#5927DF" stopOpacity="0.14" />
         </linearGradient>
-        <clipPath id="rc-cap-clip"><polygon points={FIVE} /></clipPath>
+        <radialGradient id="rc-cap-glow">
+          <stop offset="0" stopColor={CREAM} stopOpacity="0.55" />
+          <stop offset="1" stopColor={CREAM} stopOpacity="0" />
+        </radialGradient>
       </defs>
-      {/* Pitch lines */}
-      <g fill="none" stroke="#5BE3FF" strokeOpacity="0.14" strokeWidth="2">
-        <circle cx="262" cy="144" r="92" />
-        <line x1="262" y1="0" x2="262" y2="270" />
-        <circle cx="262" cy="144" r="5" fill="#5BE3FF" fillOpacity="0.2" />
-      </g>
-      {/* The 5 */}
-      <polygon points={FIVE} fill="url(#rc-cap-fill)" stroke="url(#rc-cap-edge)" strokeWidth="2.5" strokeLinejoin="miter" />
-      {/* The armband: a diagonal band that only shows where it crosses the number, plus its edges outside */}
-      <g>
-        <polygon points="150,270 198,270 372,96 372,48" fill={CREAM} fillOpacity="0.1" />
-        <g clipPath="url(#rc-cap-clip)">
-          <polygon points="150,270 198,270 372,96 372,48" fill={CREAM} fillOpacity="0.88" />
-          <g stroke="#0B1424" strokeWidth="5" strokeOpacity="0.55">
-            <line x1="236" y1="190" x2="250" y2="176" />
-            <line x1="254" y1="172" x2="268" y2="158" />
-            <line x1="272" y1="154" x2="286" y2="140" />
-          </g>
+      <Textures id="rc-cap" tint="#5BE3FF" />
+      <rect x="0" y="14" width="360" height="340" fill="url(#rc-cap-hatch)" />
+      <g transform={PLACE}>
+        <polygon points={CYAN_SLAB} fill="url(#rc-cap-cyan)" />
+        <polygon points={CYAN_SLAB} fill="url(#rc-cap-dots)" />
+        <polygon points={CYAN_SLAB} fill="none" stroke="#5BE3FF" strokeWidth="1.8" strokeLinejoin="miter" />
+        <polygon points={VIOLET_SLAB} fill="url(#rc-cap-violet)" />
+        <polygon points={VIOLET_SLAB} fill="url(#rc-cap-dots)" />
+        <polygon points={VIOLET_SLAB} fill="none" stroke="#D58BFF" strokeWidth="1.8" strokeLinejoin="miter" />
+        {/* Everything is tied to the centre */}
+        <g stroke={CREAM} strokeOpacity="0.5" strokeWidth="1.1">
+          {corners.map(([x, y]) => <line key={`${x}-${y}`} x1={hub.x} y1={hub.y} x2={x} y2={y} />)}
         </g>
-        <line x1="150" y1="270" x2="372" y2="48" stroke={CREAM} strokeOpacity="0.5" strokeWidth="1.5" />
-        <line x1="198" y1="270" x2="372" y2="96" stroke={CREAM} strokeOpacity="0.5" strokeWidth="1.5" />
+        <g fill={CREAM}>
+          {corners.map(([x, y]) => <rect key={`${x}-${y}`} x={x - 3.5} y={y - 3.5} width="7" height="7" transform={`rotate(45 ${x} ${y})`} />)}
+        </g>
+        <circle cx={hub.x} cy={hub.y} r="26" fill="url(#rc-cap-glow)" />
+        <rect x={hub.x - 7} y={hub.y - 7} width="14" height="14" transform={`rotate(45 ${hub.x} ${hub.y})`} fill={CREAM} />
+        <rect x={hub.x - 12} y={hub.y - 12} width="24" height="24" transform={`rotate(45 ${hub.x} ${hub.y})`} fill="none" stroke={CREAM} strokeOpacity="0.6" strokeWidth="1.2" />
       </g>
-      {/* Four teammates behind the captain */}
-      <g fill="#5BE3FF" fillOpacity="0.55">
-        <rect x="52" y="48" width="8" height="8" transform="rotate(45 56 52)" />
-        <rect x="96" y="30" width="8" height="8" transform="rotate(45 100 34)" />
-        <rect x="132" y="62" width="8" height="8" transform="rotate(45 136 66)" />
-        <rect x="84" y="84" width="8" height="8" transform="rotate(45 88 88)" />
-      </g>
-      <rect x="170" y="44" width="12" height="12" transform="rotate(45 176 50)" fill={CREAM} />
     </svg>
   );
 }
 
-/** Player: a violet 1, and one cream dot on its way into a slot while the rest still wait. */
+/** Player: one violet slab, drawn out of place, and the empty outline of the half that is still to be found. */
 export function PlayerArt() {
   return (
     <svg {...svgProps}>
       <defs>
-        <linearGradient id="rc-ply-fill" x1="1" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#B83CF0" stopOpacity="0.36" />
-          <stop offset="1" stopColor="#5927DF" stopOpacity="0.08" />
+        <linearGradient id="rc-ply-violet" x1="1" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#B83CF0" stopOpacity="0.7" />
+          <stop offset="1" stopColor="#5927DF" stopOpacity="0.22" />
         </linearGradient>
-        <linearGradient id="rc-ply-edge" x1="1" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#D58BFF" />
-          <stop offset="1" stopColor="#5927DF" />
-        </linearGradient>
-        <radialGradient id="rc-ply-glow">
-          <stop offset="0" stopColor={CREAM} stopOpacity="0.5" />
-          <stop offset="1" stopColor={CREAM} stopOpacity="0" />
+        <radialGradient id="rc-ply-glow" cx="0.7" cy="0.3" r="0.8">
+          <stop offset="0" stopColor="#D58BFF" stopOpacity="0.35" />
+          <stop offset="1" stopColor="#D58BFF" stopOpacity="0" />
         </radialGradient>
       </defs>
-      {/* Pitch lines */}
-      <g fill="none" stroke="#D58BFF" strokeOpacity="0.14" strokeWidth="2">
-        <circle cx="262" cy="144" r="92" />
-        <line x1="262" y1="0" x2="262" y2="270" />
-        <circle cx="262" cy="144" r="5" fill="#D58BFF" fillOpacity="0.2" />
+      <Textures id="rc-ply" tint="#D58BFF" />
+      <rect x="0" y="14" width="360" height="340" fill="url(#rc-ply-hatch)" />
+      <g transform={PLACE}>
+        {/* The half that is still missing */}
+        <polygon points={CYAN_SLAB} fill="none" stroke="#5BE3FF" strokeOpacity="0.55" strokeWidth="1.6" strokeDasharray="5 6" strokeLinejoin="miter" />
+        {/* The player, lifted a little out of the mark */}
+        <g transform="translate(9 -9)">
+          <ellipse cx="260" cy="130" rx="110" ry="100" fill="url(#rc-ply-glow)" />
+          <polygon points={VIOLET_SLAB} fill="url(#rc-ply-violet)" />
+          <polygon points={VIOLET_SLAB} fill="url(#rc-ply-dots)" />
+          <polygon points={VIOLET_SLAB} fill="none" stroke="#D58BFF" strokeWidth="2" strokeLinejoin="miter" />
+          <polyline points="223,167 195,148" fill="none" stroke={CREAM} strokeWidth="2.4" strokeLinecap="round" />
+        </g>
+        {/* The seam it will close: a cream mark on the joint, with a guide to the other slab */}
+        <line x1="195" y1="148" x2="211" y2="136" stroke={CREAM} strokeOpacity="0.8" strokeWidth="1.4" strokeDasharray="2 5" strokeLinecap="round" />
+        <rect x="190.5" y="143.5" width="9" height="9" transform="rotate(45 195 148)" fill="none" stroke={CREAM} strokeWidth="1.6" />
       </g>
-      {/* The 1 */}
-      <polygon points={ONE} fill="url(#rc-ply-fill)" stroke="url(#rc-ply-edge)" strokeWidth="2.5" strokeLinejoin="miter" />
-      {/* The empty slot inside the 1 */}
-      <rect x="266" y="58" width="16" height="16" transform="rotate(45 274 66)" fill="none" stroke={CREAM} strokeWidth="2" />
-      {/* Everyone else still waiting to be drawn */}
-      <g fill="none" stroke="#D58BFF" strokeOpacity="0.5" strokeWidth="2">
-        <circle cx="62" cy="96" r="7" />
-        <circle cx="134" cy="52" r="7" />
-        <circle cx="176" cy="150" r="7" />
-        <circle cx="40" cy="128" r="7" />
-      </g>
-      {/* The route of the one player that is moving */}
-      <path d="M92 156 C 130 124, 192 98, 262 70" fill="none" stroke={CREAM} strokeOpacity="0.85" strokeWidth="2.5" strokeDasharray="3 9" strokeLinecap="round" />
-      <circle cx="92" cy="156" r="34" fill="url(#rc-ply-glow)" />
-      <circle cx="92" cy="156" r="10" fill={CREAM} />
-      <circle cx="92" cy="156" r="17" fill="none" stroke={CREAM} strokeOpacity="0.55" strokeWidth="1.5" />
     </svg>
   );
 }

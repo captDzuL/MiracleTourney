@@ -59,7 +59,7 @@ export function RegisterRoleChooser({ returnTo }: { returnTo?: string }) {
             >
               <span style={{ clipPath: clip(1) }} className="relative flex min-h-[calc(15rem-2px)] flex-col justify-end overflow-hidden bg-[#0B1424] p-6 sm:min-h-[calc(18rem-2px)]">
                 <span className="absolute inset-0 transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100">{art}</span>
-                <span className="absolute inset-0 bg-gradient-to-t from-[#0B1424] via-[#0B1424]/55 to-transparent" aria-hidden="true" />
+                <span className="absolute inset-0 bg-gradient-to-t from-[#0B1424] via-[#0B1424]/70 to-transparent" aria-hidden="true" />
                 <span className="relative">
                   <span className="block font-[family-name:var(--font-display),Teko,Bahnschrift,sans-serif] text-5xl font-bold uppercase leading-[0.9] tracking-wide text-white">{label}</span>
                   <span className="mt-2 block max-w-[18rem] pr-10 text-pretty text-sm text-slate-300">{hint}</span>
