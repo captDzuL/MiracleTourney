@@ -4,17 +4,21 @@ const { prisma } = vi.hoisted(() => ({
   prisma: {
     user: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
     },
+    team: { update: vi.fn() },
   },
 }));
 
 vi.mock("@/lib/platform/db", () => ({ prisma }));
 
 import {
+  findAssignableCaptain,
   getCaptainById,
   getCaptainUsersForAdmin,
+  setTeamCaptain,
   getUserByEmail,
   getUserPasswordHashById,
   getUserWithPasswordByEmail,
@@ -24,6 +28,17 @@ import {
 } from "@/lib/identity/repository";
 
 const NEW_HASH = "hash-new-value";
+
+const platformAdmin = { id: "admin-1", role: "platform_admin" as const, email: "admin@example.test", name: "Admin" };
+const legacyAdmin = { id: "admin-2", role: "admin" as const, email: "admin2@example.test", name: "Admin Two" };
+const organizer = { id: "org-1", role: "organizer" as const, email: "org@example.test", name: "Organizer" };
+const ownEventsOnly = {
+  role: "captain",
+  OR: [
+    { captainOf: { some: { event: { organizerUserId: "org-1" } } } },
+    { teamRegistrationRequests: { some: { event: { organizerUserId: "org-1" } } } },
+  ],
+};
 
 function userRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -212,7 +227,7 @@ describe("getCaptainUsersForAdmin", () => {
     ];
     prisma.user.findMany.mockResolvedValue(rows);
 
-    const result = await getCaptainUsersForAdmin();
+    const result = await getCaptainUsersForAdmin(platformAdmin);
 
     expect(prisma.user.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.user.findMany).toHaveBeenCalledWith({
@@ -226,13 +241,76 @@ describe("getCaptainUsersForAdmin", () => {
   it("returns an empty array when there are no captains", async () => {
     prisma.user.findMany.mockResolvedValue([]);
 
-    await expect(getCaptainUsersForAdmin()).resolves.toEqual([]);
+    await expect(getCaptainUsersForAdmin(platformAdmin)).resolves.toEqual([]);
   });
 
   it("propagates database errors", async () => {
     prisma.user.findMany.mockRejectedValue(new Error("db down"));
 
-    await expect(getCaptainUsersForAdmin()).rejects.toThrow("db down");
+    await expect(getCaptainUsersForAdmin(platformAdmin)).rejects.toThrow("db down");
+  });
+});
+
+describe("which captains a user may see and attach", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it.each([
+    ["a platform admin", platformAdmin],
+    ["a legacy admin", legacyAdmin],
+  ])("lets %s list every captain", async (_label, user) => {
+    prisma.user.findMany.mockResolvedValue([]);
+
+    await getCaptainUsersForAdmin(user);
+
+    expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { role: "captain" } }));
+  });
+
+  it("limits an organizer to captains with a team or a registration request in the organizer's own events", async () => {
+    prisma.user.findMany.mockResolvedValue([]);
+
+    await getCaptainUsersForAdmin(organizer);
+
+    expect(prisma.user.findMany).toHaveBeenCalledWith({
+      where: ownEventsOnly,
+      select: { id: true, name: true, email: true },
+      orderBy: { name: "asc" },
+    });
+  });
+
+  it("finds an assignable captain for an admin by id alone", async () => {
+    prisma.user.findFirst.mockResolvedValue({ id: "captain-9", name: "Captain Nine" });
+
+    await expect(findAssignableCaptain(platformAdmin, "captain-9")).resolves.toEqual({ id: "captain-9", name: "Captain Nine" });
+
+    expect(prisma.user.findFirst).toHaveBeenCalledWith({ where: { id: "captain-9", role: "captain" }, select: { id: true, name: true } });
+  });
+
+  it("looks for an assignable captain for an organizer only among captains of the organizer's own events", async () => {
+    prisma.user.findFirst.mockResolvedValue(null);
+
+    await expect(findAssignableCaptain(organizer, "captain-of-someone-else")).resolves.toBeNull();
+
+    expect(prisma.user.findFirst).toHaveBeenCalledWith({
+      where: { id: "captain-of-someone-else", ...ownEventsOnly },
+      select: { id: true, name: true },
+    });
+  });
+
+  it("attaches a captain to a team with the captain's name", async () => {
+    await setTeamCaptain("team-1", { id: "captain-9", name: "Captain Nine" });
+
+    expect(prisma.team.update).toHaveBeenCalledWith({
+      where: { id: "team-1" },
+      data: { captainId: "captain-9", captainName: "Captain Nine" },
+    });
+  });
+
+  it("clears the captain of a team", async () => {
+    await setTeamCaptain("team-1", null);
+
+    expect(prisma.team.update).toHaveBeenCalledWith({ where: { id: "team-1" }, data: { captainId: null, captainName: null } });
   });
 });
 

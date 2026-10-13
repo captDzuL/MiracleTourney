@@ -199,7 +199,7 @@ export default async function AdminPage({
 
   const [importedTeamsRaw, captainUsers, registrationBatches, registrationBatch] = await Promise.all([
     activePhase === "registration" ? getImportedTeams(user) : Promise.resolve([]),
-    activePhase === "registration" || activePhase === "prepare" ? getCaptainUsersForAdmin() : Promise.resolve([] as CaptainUser[]),
+    activePhase === "registration" || activePhase === "prepare" ? getCaptainUsersForAdmin(user) : Promise.resolve([] as CaptainUser[]),
     activePhase === "registration" && activeEvent ? getRegistrationImportBatchesForEvent(user, activeEvent.id) : Promise.resolve([] as RegistrationImportBatchSummaryItem[]),
     activePhase === "registration" && resolvedSearchParams?.registrationBatchId
       ? getRegistrationImportBatchForAdmin(user, resolvedSearchParams.registrationBatchId)

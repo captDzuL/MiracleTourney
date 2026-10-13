@@ -180,8 +180,15 @@ vi.mock("@/lib/events/visual-repository", () => ({
   updateEventBrandAssets,
   updateEventCertificateAssets,
 }));
+const { findAssignableCaptain, getTeamEventRef, setTeamCaptain } = vi.hoisted(() => ({
+  findAssignableCaptain: vi.fn(),
+  getTeamEventRef: vi.fn(),
+  setTeamCaptain: vi.fn(),
+}));
 vi.mock("@/lib/identity/repository", () => ({
   createCaptainAccount,
+  findAssignableCaptain,
+  setTeamCaptain,
   getOrganizerUserById,
   getUserByEmail,
   getUserPasswordHashById,
@@ -220,6 +227,7 @@ vi.mock("@/lib/registration/review-repository", () => ({
   rejectTeamRegistrationRequest,
 }));
 vi.mock("@/lib/teams/repository", () => ({
+  getTeamEventRef,
   addPlayer,
   deletePlayer,
   updateCaptainTeamLogo,
@@ -1894,6 +1902,7 @@ describe("adminUpdateEventPublicInfoAction", () => {
 
 
   it("updates global payment settings", async () => {
+    requireRole.mockResolvedValue(adminSession());
     updatePaymentSettings.mockResolvedValue({ id: "global", qrisImageUrl: "/payment/qris.png" });
 
     await expect(
@@ -1905,6 +1914,7 @@ describe("adminUpdateEventPublicInfoAction", () => {
   });
 
   it("uploads a QRIS image file and uses it instead of the text URL field", async () => {
+    requireRole.mockResolvedValue(adminSession());
     updatePaymentSettings.mockResolvedValue({ id: "global", qrisImageUrl: "/payment-qris/global-123.png" });
     process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
     blobPut.mockResolvedValue({ url: "https://blob.example.com/payment-qris/global.png" });
@@ -2705,9 +2715,9 @@ const revalidationRows: RevalidationRow[] = [
     name: "adminAssignCaptainAction",
     role: "admin",
     setup: () => {
-      prisma.team.findUnique.mockResolvedValue({ id: "team-1", eventId: "event-1" });
-      prisma.user.findUnique.mockResolvedValue({ id: "captain-9", name: "Captain Nine" });
-      prisma.team.update.mockResolvedValue({});
+      getTeamEventRef.mockResolvedValue({ id: "team-1", eventId: "event-1" });
+      findAssignableCaptain.mockResolvedValue({ id: "captain-9", name: "Captain Nine" });
+      setTeamCaptain.mockResolvedValue(undefined);
     },
     run: () => adminAssignCaptainAction(fd({ teamId: "team-1", captainUserId: "captain-9" })),
     redirectsTo: "/admin?success=captain-assigned",

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/platform/db";
 import { mapUser } from "@/lib/platform/shared/mappers";
 import type { AppUser } from "@/lib/platform/types";
 import { UserFacingError } from "@/lib/security/public-error";
+import type { Prisma } from "@prisma/client";
 
 /** Looks up a user by ID. Returns null for undefined input or missing records. Used by session resolution. */
 export async function getCaptainById(userId: string | undefined): Promise<AppUser | null> {
@@ -54,11 +55,43 @@ export async function getUserPasswordHashById(userId: string): Promise<string | 
 }
 
 /** Returns all captain-role users, for admin assignment dropdown. */
-export async function getCaptainUsersForAdmin() {
+/**
+ * Which captain accounts a user may see and attach to a team. Platform admins and legacy admins see every captain.
+ * An organizer sees only captains who already have a team or a registration request in one of their own events,
+ * so one organizer can neither list nor take over the captains of another organizer's events.
+ */
+function captainsVisibleTo(user: AppUser): Prisma.UserWhereInput {
+  if (user.role !== "organizer") return { role: "captain" };
+  return {
+    role: "captain",
+    OR: [
+      { captainOf: { some: { event: { organizerUserId: user.id } } } },
+      { teamRegistrationRequests: { some: { event: { organizerUserId: user.id } } } },
+    ],
+  };
+}
+
+export async function getCaptainUsersForAdmin(user: AppUser) {
   return prisma.user.findMany({
-    where: { role: "captain" },
+    where: captainsVisibleTo(user),
     select: { id: true, name: true, email: true },
     orderBy: { name: "asc" },
+  });
+}
+
+/** A captain account the user is allowed to attach to a team, or null when it does not exist or is out of reach. */
+export async function findAssignableCaptain(user: AppUser, captainUserId: string): Promise<{ id: string; name: string } | null> {
+  return prisma.user.findFirst({
+    where: { id: captainUserId, ...captainsVisibleTo(user) },
+    select: { id: true, name: true },
+  });
+}
+
+/** Attaches a captain to a team, or clears the captain when `captain` is null. */
+export async function setTeamCaptain(teamId: string, captain: { id: string; name: string } | null): Promise<void> {
+  await prisma.team.update({
+    where: { id: teamId },
+    data: captain ? { captainId: captain.id, captainName: captain.name } : { captainId: null, captainName: null },
   });
 }
 
