@@ -56,10 +56,8 @@ describe("public schedule route", () => {
     expect(source).toContain("PublicScheduleBoard");
   });
 
-  it("keeps localized and unlocalized schedule routes dynamic", () => {
-    const publicRoute = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+  it("keeps the localized schedule route dynamic", () => {
     const localizedRoute = fs.readFileSync(path.resolve(__dirname, "../../../[locale]/events/[slug]/schedule/page.tsx"), "utf8");
-    expect(publicRoute).toContain('export const dynamic = "force-dynamic"');
     expect(localizedRoute).toContain('export const dynamic = "force-dynamic"');
   });
 

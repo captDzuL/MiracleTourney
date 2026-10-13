@@ -13,7 +13,7 @@ import {
   setEventStatus,
 } from "@/test-support/bracket-page-store";
 import type { EventRoundConfig, Match, MatchGame } from "@/lib/platform/types";
-import BracketPage from "./page";
+import { renderBracketPage } from "./bracket-page-content";
 import { bracketDesignFixture } from "@/app/[locale]/bracket-design-preview/fixture";
 
 const {
@@ -92,7 +92,7 @@ vi.mock("@/lib/bracket/rounds-repository", async () => {
 Object.assign(globalThis, { React });
 
 async function renderBracket(slug: string) {
-  const page = await BracketPage({ params: Promise.resolve({ slug }) });
+  const page = await renderBracketPage(slug);
   return renderToStaticMarkup(page);
 }
 
@@ -469,15 +469,12 @@ describe("public bracket page", () => {
     expect(markup).not.toContain("miracle-public-v3");
   });
 
-  test("bracket routes stay dynamic so production builds do not query the database", () => {
-    const publicRouteSource = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
+  test("the bracket route stays dynamic so production builds do not query the database", () => {
     const localizedRouteSource = fs.readFileSync(
       path.resolve(__dirname, "../../../[locale]/events/[slug]/bracket/page.tsx"),
       "utf8",
     );
 
-    expect(publicRouteSource).toContain('export const dynamic = "force-dynamic"');
-    expect(publicRouteSource).not.toContain("generateStaticParams");
     expect(localizedRouteSource).toContain('export const dynamic = "force-dynamic"');
     expect(localizedRouteSource).not.toContain("generateStaticParams");
   });

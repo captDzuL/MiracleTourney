@@ -112,11 +112,6 @@ describe("native event registration route", () => {
     errorSpy.mockRestore();
   });
 
-  it("renders the shared captain registration page", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "./page.tsx"), "utf8");
-    expect(source).toContain("renderEventRegistrationPage");
-  });
-
   it("has a localized wrapper", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "../../../[locale]/events/[slug]/register/page.tsx"), "utf8");
     expect(source).toContain("setRequestLocale");
