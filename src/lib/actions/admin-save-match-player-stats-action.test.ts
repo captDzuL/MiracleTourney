@@ -63,7 +63,7 @@ function fd(pairs: Record<string, string | File>): FormData {
   return form;
 }
 
-function validForm(extra: Record<string, string> = {}): FormData {
+function validForm(extra: Record<string, string | File> = {}): FormData {
   return fd({ matchId: "match-1", teamId: "team-1", eventId: "event-1", ...extra });
 }
 
