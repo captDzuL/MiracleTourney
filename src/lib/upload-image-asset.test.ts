@@ -7,7 +7,7 @@ const blobPut = vi.hoisted(() => vi.fn());
 vi.mock("@vercel/blob", () => ({ put: blobPut }));
 vi.mock("next/navigation", () => ({ redirect: (url: string): never => { throw new Error(`REDIRECT:${url}`); } }));
 
-import { uploadImageAsset } from "@/lib/actions/shared/uploads";
+import { UPLOAD_FOLDERS, uploadImageAsset, type UploadFolder } from "@/lib/actions/shared/uploads";
 
 async function imageFile(width: number, height: number) {
   const bytes = await sharp({ create: { width, height, channels: 4, background: "#aa8bff" } }).png().toBuffer();
@@ -76,6 +76,37 @@ describe("uploadImageAsset immutable storage", () => {
     await expect(uploadImageAsset({ file, folder: "certificate-assets", entityId: "event-1", label: "Certificate asset",
       maxBytes: 5 * 1024 * 1024, minDimension: 32, maxDimension: 4096, validationMode: "throw" })).rejects.toMatchObject({ name: "ImageUploadValidationError", code: "invalid_dimensions" });
     expect(blobPut).not.toHaveBeenCalled();
+  });
+
+  it.each(["../escape", "team-logos/../x", "/etc", "payment-proofs/", "TEAM-LOGOS", ""])("refuses the unknown upload folder %j before touching storage", async (folder) => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-token";
+    const { file } = await imageFile(64, 64);
+    const write = vi.spyOn(fs, "writeFileSync");
+
+    await expect(uploadImageAsset({ file, folder: folder as UploadFolder, entityId: "event-1", label: "Asset",
+      maxBytes: 5 * 1024 * 1024, validationMode: "throw" })).rejects.toThrow(`Unknown upload folder: ${folder}`);
+
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("allows every folder the application stores uploads in", () => {
+    // Every literal `folder: "..."` passed to the uploader in the source must be on the list.
+    const used = new Set<string>();
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          for (const match of fs.readFileSync(full, "utf8").matchAll(/folder:\s*"([a-z-]+)"/g)) used.add(match[1] as string);
+          for (const match of fs.readFileSync(full, "utf8").matchAll(/"(event-revision-[a-z]+)"/g)) used.add(match[1] as string);
+        }
+      }
+    };
+    walk("src");
+
+    expect([...used].filter((folder) => !(UPLOAD_FOLDERS as readonly string[]).includes(folder))).toEqual([]);
+    expect(used.size).toBeGreaterThanOrEqual(9);
   });
 
   it("uses an exclusive local write and fails safely on a pathname collision", async () => {
