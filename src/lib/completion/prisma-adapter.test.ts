@@ -88,6 +88,25 @@ function eliminationRows(kind: "single_elimination" | "double_elimination" | "gr
   };
 }
 
+/** An elimination bracket generated with thirdPlace "none": no third-place match, no rank-3 placement. */
+function noThirdPlaceRows(kind: "single_elimination" | "group_playoffs"): CompletionSourceRows {
+  const rows = eliminationRows(kind);
+  const config = structuredClone(rows.event.formatConfig);
+  if (config.kind === "group_playoffs") {
+    if (config.playoffs.kind !== "single_elimination") throw new Error("fixture must use single elimination playoffs");
+    config.playoffs.thirdPlace = "none";
+  } else if (config.kind === "single_elimination") {
+    config.thirdPlace = "none";
+  }
+  return {
+    ...rows,
+    event: { ...rows.event, formatConfig: config },
+    graph: { ...rows.graph!, config, matches: rows.graph!.matches.filter(({ id }) => id !== "third"), placements: rows.graph!.placements.filter(({ rank }) => rank !== 3) },
+    matches: rows.matches.filter(({ id }) => id !== "third"),
+    revisions: rows.revisions.filter(({ matchId }) => matchId !== "third"),
+  };
+}
+
 describe("Prisma completion source adapter", () => {
   it("forwards the repeatable-read workspace options", async () => {
     const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("unit test transaction stub"));
@@ -114,6 +133,19 @@ describe("Prisma completion source adapter", () => {
       { stage: thirdStage, official: true, winnerTeamId: kind === "double_elimination" ? "d" : "c", loserTeamId: kind === "double_elimination" ? "b" : "d", revision: 1 },
     ]);
     expect(source.facts.playoffFormatKind).toBe(kind === "group_playoffs" ? "single_elimination" : undefined);
+  });
+
+  it.each(["single_elimination", "group_playoffs"] as const)("marks %s facts as having no third place and derives a two-place podium", (kind) => {
+    const facts = buildCompletionSource(noThirdPlaceRows(kind)).facts;
+    expect(facts.thirdPlace).toBe("none");
+    expect(facts.matches.map(({ stage }) => stage)).toEqual(["final"]);
+    expect(derivePodium(facts).podium).toEqual({ championTeamId: "a", runnerUpTeamId: "b", thirdPlaceTeamId: null });
+  });
+
+  it("leaves the third-place fact unset when the bracket requires a third-place match or is not single elimination", () => {
+    expect(buildCompletionSource(eliminationRows("single_elimination")).facts.thirdPlace).toBeUndefined();
+    expect(buildCompletionSource(eliminationRows("group_playoffs")).facts.thirdPlace).toBeUndefined();
+    expect(buildCompletionSource(eliminationRows("double_elimination")).facts.thirdPlace).toBeUndefined();
   });
 
   it("uses all authoritative projected placement ranks and their graph outcomes", () => {
@@ -356,6 +388,21 @@ describe("Prisma completion transaction adapter", () => {
       status: "already_applied", eventId: "event-1", version: 1, result: first,
     });
     expect(db.data.audit).toHaveLength(1);
+  });
+
+  it("persists only champion and runner-up rows when the bracket has no third-place match", async () => {
+    const db = new MemoryCompletionPrisma();
+    Object.assign(db.rows, noThirdPlaceRows("single_elimination"), {
+      playerStats: db.rows.playerStats,
+    });
+    const result = await completeTournament("event-1", decisions, 0, key1, createPrismaCompletionDependencies(actor, db as never));
+    expect(result).toMatchObject({ status: "completed", version: 1 });
+    expect(db.data.podium).toMatchObject([
+      { rank: 1, teamId: "a", sourceMatchId: "final" },
+      { rank: 2, teamId: "b", sourceMatchId: "final" },
+    ]);
+    expect(db.data.podium).toHaveLength(2);
+    expect(db.data.decisions).toHaveLength(4);
   });
 
   it("rejects ownership changes and key reuse by another actor inside the transaction", async () => {

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { deriveAwardCandidates, type AwardCandidate, type CompletionStatistic } from "./awards";
 import { safeEntityIdSchema } from "@/lib/security/request-guard";
 import { evaluateCompletionReadiness, type CompletionAwardStatistic, type CompletionBlocker, type CompletionFacts } from "./readiness";
+import { podiumTeamIds } from "./podium";
 
 const awardNames = ["mvp", "top_scorer", "top_defender", "top_assist"] as const;
 const mutationFields = {
@@ -162,7 +163,7 @@ export async function completeTournament(
       if (top.length > 1 && !decision.reason) return { status: "blocked", code: "tie_reason_required" };
       selectedAwards.push({ award: decision.award, recipient, candidates: top, reason: decision.reason });
     }
-    const teamIds = [readiness.podium.championTeamId, readiness.podium.runnerUpTeamId, readiness.podium.thirdPlaceTeamId];
+    const teamIds = podiumTeamIds(readiness.podium);
     const podium: CompletionSnapshot["podium"][number][] = [];
     for (const [index, teamId] of teamIds.entries()) {
       const team = source.teams.find((row) => row.id === teamId);

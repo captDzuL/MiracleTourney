@@ -347,6 +347,52 @@ const generationInput = (certificateType: "champion" | "mvp", idempotencyKey: st
     expect(deps.generate).not.toHaveBeenCalled();
   });
 
+  describe("without a third-place certificate", () => {
+    const twoPlaceTypes = MIRACLE_V3_CERTIFICATE_TYPES.filter((type) => type !== "third_place");
+    const twoPlaceDependencies = async () => {
+      const { tx, deps } = studioDependencies();
+      vi.mocked(tx.loadCompletion).mockResolvedValue({ id: "completion-1", status: "completed", version: 4, certificateRevision: 2, recipients: Object.fromEntries(twoPlaceTypes.map((type) => [type, `recipient-${type}`])) });
+      const all = await tx.loadCertificates([]);
+      vi.mocked(tx.loadCertificates).mockImplementation(async (ids) => all.filter((row) => ids.includes(row.id)));
+      return { tx, deps };
+    };
+    const selectionOf = (types: readonly (typeof MIRACLE_V3_CERTIFICATE_TYPES)[number][]) => types.map((certificateType) => ({ certificateType, certificateId: `cert-${certificateType}-1` }));
+    const publish = (deps: CertificateStudioDependencies, selection: ReturnType<typeof selectionOf>) => publishCertificateSet({
+      eventId: "event-1", expectedVersion: 4, expectedCertificateRevision: 2, idempotencyKey: "77777777-7777-4777-8777-777777777777", selection,
+    }, deps);
+
+    it("publishes a six-certificate set for a champion and runner-up podium", async () => {
+      const { tx, deps } = await twoPlaceDependencies();
+      await expect(publish(deps, selectionOf(twoPlaceTypes))).resolves.toMatchObject({ status: "published", publicationVersion: 3 });
+      expect(tx.commitPublication).toHaveBeenCalledWith(expect.objectContaining({ selection: selectionOf(twoPlaceTypes) }));
+    });
+
+    it("rejects a set that still contains a third-place certificate", async () => {
+      const { tx, deps } = await twoPlaceDependencies();
+      await expect(publish(deps, selectionOf(MIRACLE_V3_CERTIFICATE_TYPES))).resolves.toEqual({ status: "blocked", code: "set_not_ready" });
+      expect(tx.commitPublication).not.toHaveBeenCalled();
+    });
+
+    it("rejects a six-certificate set when the podium has three places", async () => {
+      const { tx, deps } = studioDependencies();
+      await expect(publish(deps, selectionOf(twoPlaceTypes))).resolves.toEqual({ status: "blocked", code: "set_not_ready" });
+      expect(tx.commitPublication).not.toHaveBeenCalled();
+    });
+
+    it("still rejects fewer than six selected certificates before opening a transaction", async () => {
+      const { deps } = await twoPlaceDependencies();
+      await expect(publish(deps, selectionOf(twoPlaceTypes.slice(1)))).resolves.toEqual({ status: "blocked", code: "invalid_input" });
+      expect(deps.transaction).not.toHaveBeenCalled();
+    });
+
+    it("does not generate a third-place certificate that has no recipient", async () => {
+      const { tx, deps } = await twoPlaceDependencies();
+      await expect(regenerateCertificate({ eventId: "event-1", certificateType: "third_place", expectedVersion: 4, idempotencyKey: "88888888-8888-4888-8888-888888888888", assets: [teamLogoRequest] }, deps))
+        .resolves.toEqual({ status: "blocked", code: "invalid_input" });
+      expect(tx.appendVersion).not.toHaveBeenCalled();
+    });
+  });
+
   it("rejects malformed IDs, duplicate types, and keys before opening a transaction", async () => {
     const { deps } = studioDependencies();
     await expect(publishCertificateSet({ eventId: "", expectedVersion: -1, expectedCertificateRevision: 0, idempotencyKey: "bad", selection: [] }, deps)).resolves.toEqual({ status: "blocked", code: "invalid_input" });

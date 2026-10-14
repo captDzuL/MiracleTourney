@@ -259,3 +259,116 @@ describe("derivePodium", () => {
     expect(input.matches.map(({ id }) => id)).toEqual(["final-v1", "final-v2", "third-v1"]);
   });
 });
+
+describe("derivePodium with no third-place match", () => {
+  const awards = ["mvp", "top_scorer", "top_defender", "top_assist"] as const;
+  const final = { id: "final-1", stage: "final" as const, official: true, winnerTeamId: "team-a", loserTeamId: "team-b", revision: 1 };
+
+  it("derives a two-place podium from the final alone", () => {
+    const result = derivePodium({
+      formatKind: "single_elimination",
+      thirdPlace: "none",
+      matches: [final],
+      standings: [],
+      activeDisputes: [],
+      validatedAwardStatistics: awards,
+    });
+
+    expect(result).toEqual({
+      podium: { championTeamId: "team-a", runnerUpTeamId: "team-b", thirdPlaceTeamId: null },
+      blockers: [],
+    });
+  });
+
+  it("still blocks when the final is missing or not official", () => {
+    const base = { formatKind: "single_elimination" as const, thirdPlace: "none" as const, standings: [], activeDisputes: [], validatedAwardStatistics: awards };
+
+    expect(derivePodium({ ...base, matches: [] })).toEqual({
+      podium: null,
+      blockers: [{ code: "INSUFFICIENT_PODIUM_STRUCTURE", missingStages: ["final"] }],
+    });
+    expect(derivePodium({ ...base, matches: [{ ...final, official: false }] })).toEqual({
+      podium: null,
+      blockers: [{ code: "UNOFFICIAL_REQUIRED_RESULT", matchId: "final-1", stage: "final" }],
+    });
+  });
+
+  it("blocks a final whose two teams are the same", () => {
+    const result = derivePodium({
+      formatKind: "single_elimination",
+      thirdPlace: "none",
+      matches: [{ ...final, loserTeamId: "team-a" }],
+      standings: [],
+      activeDisputes: [],
+      validatedAwardStatistics: awards,
+    });
+
+    expect(result.podium).toBeNull();
+    expect(result.blockers).toEqual([{ code: "INSUFFICIENT_PODIUM_STRUCTURE", matchIds: ["final-1"] }]);
+  });
+
+  it("ignores a leftover third-place match when none is configured", () => {
+    const result = derivePodium({
+      formatKind: "single_elimination",
+      thirdPlace: "none",
+      matches: [final, { id: "third-1", stage: "third_place", official: false, winnerTeamId: "team-c", loserTeamId: "team-d", revision: 1 }],
+      standings: [],
+      activeDisputes: [],
+      validatedAwardStatistics: awards,
+    });
+
+    expect(result.podium).toEqual({ championTeamId: "team-a", runnerUpTeamId: "team-b", thirdPlaceTeamId: null });
+  });
+
+  it("applies to a group playoffs event whose playoffs are single elimination", () => {
+    const result = derivePodium({
+      formatKind: "group_playoffs",
+      playoffFormatKind: "single_elimination",
+      thirdPlace: "none",
+      matches: [final],
+      standings: [],
+      activeDisputes: [],
+      validatedAwardStatistics: awards,
+    });
+
+    expect(result.podium).toEqual({ championTeamId: "team-a", runnerUpTeamId: "team-b", thirdPlaceTeamId: null });
+  });
+
+  it("keeps requiring a third-place match when the fact says required", () => {
+    const result = derivePodium({
+      formatKind: "single_elimination",
+      thirdPlace: "required",
+      matches: [final],
+      standings: [],
+      activeDisputes: [],
+      validatedAwardStatistics: awards,
+    });
+
+    expect(result.blockers).toEqual([{ code: "INSUFFICIENT_PODIUM_STRUCTURE", missingStages: ["third_place"] }]);
+  });
+
+  it("does not change double elimination or round robin", () => {
+    const double = derivePodium({
+      formatKind: "double_elimination",
+      thirdPlace: "none",
+      matches: [{ ...final, stage: "grand_final" }],
+      standings: [],
+      activeDisputes: [],
+      validatedAwardStatistics: awards,
+    });
+    const robin = derivePodium({
+      formatKind: "round_robin",
+      thirdPlace: "none",
+      matches: [],
+      standings: [
+        { rank: 1, teamId: "team-a", locked: true, unresolvedTie: false },
+        { rank: 2, teamId: "team-b", locked: true, unresolvedTie: false },
+      ],
+      activeDisputes: [],
+      validatedAwardStatistics: awards,
+    });
+
+    expect(double.blockers).toEqual([{ code: "INSUFFICIENT_PODIUM_STRUCTURE", missingStages: ["lower_final"] }]);
+    expect(robin.blockers).toEqual([{ code: "INSUFFICIENT_PODIUM_STRUCTURE" }]);
+  });
+});

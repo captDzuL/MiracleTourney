@@ -86,6 +86,20 @@ describe("completion transaction", () => {
     expect(store.mutations).toMatchObject([{ idempotencyKey: key, actor: { id: "organizer-1" }, result: { status: "completed", version: 1 } }]);
   });
 
+  it("snapshots a two-place podium when the bracket has no third-place match", async () => {
+    const store = new MemoryCompletionStore();
+    store.source = { ...store.source, facts: { ...store.source.facts, thirdPlace: "none", matches: store.source.facts.matches.filter(({ stage }) => stage === "final") } };
+    const result = await completeTournament("event-1", decisions, 0, key, store);
+    expect(result).toMatchObject({ status: "completed", version: 1 });
+    expect(store.snapshots[0].podium).toEqual([{ rank: 1, teamId: "team-a", teamName: "Alpha" }, { rank: 2, teamId: "team-b", teamName: "Beta" }]);
+  });
+
+  it("blocks a two-place podium whose runner-up has no team name", async () => {
+    const store = new MemoryCompletionStore();
+    store.source = { ...store.source, teams: [{ id: "team-a", name: "Alpha" }], facts: { ...store.source.facts, thirdPlace: "none", matches: store.source.facts.matches.filter(({ stage }) => stage === "final") } };
+    expect(await completeTournament("event-1", decisions, 0, key, store)).toEqual({ status: "blocked", code: "source_incomplete" });
+  });
+
   it("re-runs readiness against facts changed on entering the transaction", async () => {
     const store = new MemoryCompletionStore();
     store.onTransaction = () => { store.source = { ...store.source, facts: { ...store.source.facts, activeDisputes: [{ id: "late-dispute" }] } }; };

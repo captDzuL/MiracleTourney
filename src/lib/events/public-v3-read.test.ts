@@ -431,6 +431,34 @@ describe("normalized public V3 event reader", () => {
     expect(view.awards[0]?.certificate).toMatchObject({ type: "mvp", publishedUrl: "https://cert/4", verificationCode: "CERT-4" });
   });
 
+  it("maps a published two-place podium with six certificates into finished items", async () => {
+    mocks.eventFindUnique.mockResolvedValue({ ...baseEvent, status: "Finished" });
+    mocks.finished.mockResolvedValue({
+      mode: "finished",
+      event: { id: "event-1", slug: "miracle-cup", name: "Miracle Cup", description: "A public event", timezone: "Asia/Jakarta", format: "single_elimination" },
+      certificates: { status: "published", publishedCount: 6, expectedCount: 6 },
+      podium: [
+        { rank: 1, teamId: "team-a", teamName: "Alpha", certificate: { publishedUrl: "https://cert/1", verificationCode: "CERT-1" } },
+        { rank: 2, teamId: "team-b", teamName: "Beta", certificate: { publishedUrl: "https://cert/2", verificationCode: "CERT-2" } },
+      ],
+      awards: [
+        { type: "mvp", recipientId: "p1", recipientName: "Nyx", teamId: "team-a", teamName: "Alpha", reason: null, certificate: { publishedUrl: "https://cert/4", verificationCode: "CERT-4" } },
+        { type: "top_scorer", recipientId: "p2", recipientName: "Lux", teamId: "team-b", teamName: "Beta", reason: null, certificate: { publishedUrl: "https://cert/5", verificationCode: "CERT-5" } },
+        { type: "top_defender", recipientId: "p3", recipientName: "Rin", teamId: "team-a", teamName: "Alpha", reason: null, certificate: { publishedUrl: "https://cert/6", verificationCode: "CERT-6" } },
+        { type: "top_assist", recipientId: "p4", recipientName: "Sol", teamId: "team-b", teamName: "Beta", reason: null, certificate: { publishedUrl: "https://cert/7", verificationCode: "CERT-7" } },
+      ],
+      matches: [], standings: [],
+    });
+
+    const view = await readPublicV3Event("miracle-cup", viewer);
+
+    if (view?.mode !== "finished") throw new Error("Expected finished projection");
+    expect(view.certificates).toMatchObject({ status: "published", isCurrent: true, isComplete: true, publishedCount: 6, expectedCount: 6 });
+    expect(view.certificates.items).toHaveLength(6);
+    expect(view.podium).toHaveLength(2);
+    expect(view.podium[1]?.certificate).toMatchObject({ type: "runner_up", verificationCode: "CERT-2" });
+  });
+
   it("keeps authoritative approved awards visible while certificate links are preparing", async () => {
     mocks.eventFindUnique.mockResolvedValue({ ...baseEvent, status: "Finished" });
     mocks.finished.mockResolvedValue({
@@ -554,6 +582,54 @@ describe("normalized public V3 event reader", () => {
     expect(view.awards[0]?.certificate).toMatchObject({ type: "mvp" });
   });
 
+
+  describe("compatible finished event with a champion and runner-up podium", () => {
+    const awardTypes = ["mvp", "top_scorer", "top_defender", "top_assist"];
+    const finishedFor = (certificateTypes: string[]) => projectCompatiblePublicV3Event({
+      event: { ...baseEvent, status: "Finished" },
+      completion: {
+        id: "completion-1",
+        status: "completed",
+        sourceSnapshot: { version: 4 },
+        podium: [{ rank: 1, teamId: "team-a", teamName: "Alpha" }, { rank: 2, teamId: "team-b", teamName: "Beta" }],
+        awards: [{ type: "mvp", status: "approved", decision: { recipientId: "p1", recipientName: "Nyx", teamId: "team-a", teamName: "Alpha", reason: null } }],
+      },
+      publication: { completionId: "completion-1", completionVersion: 4, version: 5, certificateIds: certificateTypes.map((type) => "cert-" + type) },
+      certificates: certificateTypes.map((type) => ({
+        id: "cert-" + type,
+        type,
+        recipientKind: awardTypes.includes(type) ? "player" : "team",
+        recipientId: "recipient-" + type,
+        recipientName: type,
+        publishedUrl: "https://cert/" + type,
+        verificationCode: "CODE-" + type,
+        status: "published",
+        completionId: "completion-1",
+        completionVersion: 4,
+      })),
+    });
+
+    it("is complete with champion, runner-up and the four award certificates", () => {
+      const view = finishedFor(["champion", "runner_up", ...awardTypes]);
+      if (view.mode !== "finished") throw new Error("Expected finished projection");
+      expect(view.certificates).toMatchObject({ status: "published", isCurrent: true, isComplete: true, publishedCount: 6, expectedCount: 6 });
+      expect(view.certificates.items).toHaveLength(6);
+      expect(view.podium.map((placement) => placement.certificate?.type)).toEqual(["champion", "runner_up"]);
+    });
+
+    it("stays preparing while one required certificate is missing", () => {
+      const view = finishedFor(["champion", ...awardTypes]);
+      if (view.mode !== "finished") throw new Error("Expected finished projection");
+      expect(view.certificates).toMatchObject({ status: "preparing", isComplete: false, publishedCount: 0 });
+      expect(view.certificates.items).toEqual([]);
+    });
+
+    it("stays preparing when an extra third-place certificate is present", () => {
+      const view = finishedFor(["champion", "runner_up", "third_place", ...awardTypes]);
+      if (view.mode !== "finished") throw new Error("Expected finished projection");
+      expect(view.certificates).toMatchObject({ status: "preparing", isComplete: false });
+    });
+  });
 
   it("emits locale-safe overview and detail targets for both supported locales", () => {
     const view = projectCompatiblePublicV3Event({

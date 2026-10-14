@@ -18,10 +18,10 @@ import {
 } from "./service";
 import {
   MIRACLE_V3_BRANDING,
-  MIRACLE_V3_CERTIFICATE_TYPES,
   getMiracleV3CertificateManifest,
   type MiracleV3CertificateType,
 } from "./templates/miracle-v3";
+import { requiredCertificateTypes } from "./templates/miracle-v3-contract";
 import { createOnlyCertificateStorage, createPrismaGenerationRepository } from "./generation-repository";
 import { prisma } from "@/lib/platform/db";
 
@@ -81,15 +81,19 @@ function recipient(completion: CompletionRow, type: MiracleV3CertificateType) {
   return decision ? { id: decision.recipientId, name: decision.recipientName, kind: "player" as const, teamId: decision.teamId, teamName: decision.teamName } : null;
 }
 
+/** Seven certificate types, or six when the podium has only a champion and a runner-up. */
+const requiredTypesFor = (completion: { readonly podiumPlacements: readonly { readonly rank: number }[] } | null) =>
+  requiredCertificateTypes(completion?.podiumPlacements.map(({ rank }) => rank) ?? []);
+
 function completionContract(completion: CompletionRow): CertificateStudioCompletion | null {
   if (!completion) return null;
   const version = completionVersion(completion.sourceSnapshot);
   if (version === null) return null;
-  const entries = MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, recipient(completion, type)?.id] as const);
+  const entries = requiredTypesFor(completion).map((type) => [type, recipient(completion, type)?.id] as const);
   if (entries.some(([, recipientId]) => !recipientId)) return null;
   return { id: completion.id, status: completion.status as CertificateStudioCompletion["status"], version,
     certificateRevision: completion.certificateRevision,
-    recipients: Object.fromEntries(entries) as Record<MiracleV3CertificateType, string> };
+    recipients: Object.fromEntries(entries) as Partial<Record<MiracleV3CertificateType, string>> };
 }
 
 function trustedStorage(asset: { url: string | null; storageProvider: string | null; storageKey: string | null; contentSha256: string | null }) {
@@ -162,7 +166,8 @@ export async function loadCertificateStudioState(event: EventIdentity, locale: "
     return asset ? [{ id: row.id, label: row.storageKey?.split("/").at(-1) ?? row.id, purpose: asset.purpose }] : [];
   });
   const version = completion ? completionVersion(completion.sourceSnapshot) : null;
-  const pendingRecords = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => ({ certificateType, recipient: null, selectedCertificateId: null, versions: null }));
+  const certificateTypes = requiredTypesFor(completion);
+  const pendingRecords = certificateTypes.map((certificateType) => ({ certificateType, recipient: null, selectedCertificateId: null, versions: null }));
   if (!completion || version === null) {
     return { status: "integration_required" as const, event, completionVersion: null, certificateRevision: null, records: pendingRecords, publication: null, approvedAssets };
   }
@@ -182,7 +187,7 @@ export async function loadCertificateStudioState(event: EventIdentity, locale: "
       approvedAssets,
     };
   }
-  const records = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => {
+  const records = certificateTypes.map((certificateType) => {
     const winner = recipient(completion, certificateType);
     const versions = completion.event.certificates
       .filter((row) => row.type === certificateType && row.templateVersion === "miracle-v3"
@@ -481,7 +486,8 @@ export function createCertificateStudioTransaction(
       const contract = completionContract(completion);
       if (!completion || !contract || contract.status !== "completed" || contract.certificateRevision !== expectedCertificateRevision) throw retryablePublicationConflict();
       const chosen = await tx.certificate.findMany({ where: { id: { in: selection.map((row) => row.certificateId) }, eventId } });
-      const valid = chosen.length === MIRACLE_V3_CERTIFICATE_TYPES.length && selection.every((selected) => {
+      const requiredCount = Object.keys(contract.recipients).length;
+      const valid = selection.length === requiredCount && chosen.length === requiredCount && selection.every((selected) => {
         const certificate = chosen.find((row) => row.id === selected.certificateId && row.type === selected.certificateType);
         return certificate?.completionId === contract.id && certificate.completionVersion === contract.version
           && certificate.templateVersion === "miracle-v3" && certificate.recipientId === contract.recipients[selected.certificateType]

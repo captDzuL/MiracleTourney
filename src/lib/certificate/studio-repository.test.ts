@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { prisma } from "@/lib/platform/db";
 import {
   CERTIFICATE_STUDIO_TRANSACTION_OPTIONS,
   certificateStudioAvailability,
   createCertificateStudioTransaction,
+  loadCertificateStudioState,
   materializeOwnedCertificateAssetUrl,
 } from "./studio-repository";
 import { MIRACLE_V3_CERTIFICATE_TYPES } from "./templates/miracle-v3-contract";
@@ -339,6 +341,71 @@ describe("Certificate Studio Prisma transaction boundary", () => {
     expect(supersession).not.toHaveProperty("publishedUrl");
     expect(supersession).not.toHaveProperty("verificationCode");
     expect(tx.certificatePublication.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ completionId: "completion-1", completionVersion: 4, certificateIds: selection.map((row) => row.certificateId) }) }));
+  });
+
+  describe("with a champion and runner-up podium only", () => {
+    const twoPlaceCompletion = { ...completion, podiumPlacements: completion.podiumPlacements.slice(0, 2) };
+    const twoPlaceTypes = MIRACLE_V3_CERTIFICATE_TYPES.filter((type) => type !== "third_place");
+    const twoPlaceRepository = () => repository({
+      tournamentCompletion: { findUnique: vi.fn().mockResolvedValue(twoPlaceCompletion), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      certificate: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) => certificates.filter((row) => where.id.in.includes(row.id))),
+        create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn().mockImplementation(async ({ where }: { where: { id: string } }) => certificates.find((row) => row.id === where.id)),
+      },
+    });
+    const selectionOf = (types: readonly string[]) => types.map((certificateType) => ({ certificateType: certificateType as never, certificateId: `cert-${certificateType}` }));
+    const commit = (repo: ReturnType<typeof repository>["repository"], types: readonly string[]) =>
+      repo.commitPublication({ selection: selectionOf(types), actorId: "organizer-1", idempotencyKey: "key", fingerprint: "fp", expectedCertificateRevision: 2, preserveVerificationHistory: true });
+
+    it("exposes six recipients and no third-place recipient in the completion contract", async () => {
+      const { repository: repo } = twoPlaceRepository();
+      const contract = await repo.loadCompletion();
+      expect(Object.keys(contract?.recipients ?? {})).toEqual(twoPlaceTypes);
+    });
+
+    it("still refuses a podium that has no runner-up", async () => {
+      const { repository: repo } = repository({
+        tournamentCompletion: { findUnique: vi.fn().mockResolvedValue({ ...completion, podiumPlacements: completion.podiumPlacements.slice(0, 1) }), updateMany: vi.fn() },
+      });
+      await expect(repo.loadCompletion()).resolves.toBeNull();
+    });
+
+    it("commits a publication of the six required certificates", async () => {
+      const { tx, repository: repo } = twoPlaceRepository();
+      await expect(commit(repo, twoPlaceTypes)).resolves.toMatchObject({ publicationVersion: 3 });
+      expect(tx.certificatePublication.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ certificateIds: selectionOf(twoPlaceTypes).map((row) => row.certificateId) }) }));
+    });
+
+    it("refuses a publication that includes a third-place certificate", async () => {
+      const { tx, repository: repo } = twoPlaceRepository();
+      await expect(commit(repo, MIRACLE_V3_CERTIFICATE_TYPES)).rejects.toThrow("no longer authoritative");
+      expect(tx.certificatePublication.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses a six-certificate publication when the podium has three places", async () => {
+      const { repository: repo } = repository({
+        certificate: { findFirst: vi.fn(), findMany: vi.fn().mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) => certificates.filter((row) => where.id.in.includes(row.id))), create: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
+      });
+      await expect(commit(repo, twoPlaceTypes)).rejects.toThrow("no longer authoritative");
+    });
+
+    it("lists only the required certificate types in the studio state", async () => {
+      const find = vi.spyOn(prisma.tournamentCompletion, "findUnique").mockResolvedValue({
+        ...twoPlaceCompletion,
+        event: { ...twoPlaceCompletion.event, certificates: [], certificatePublications: [] },
+      } as never);
+      const assets = vi.spyOn(prisma.eventVisualAsset, "findMany").mockResolvedValue([] as never);
+      try {
+        const state = await loadCertificateStudioState({ id: "event-1", name: "Miracle Open" });
+        expect(state.status).toBe("available");
+        expect(state.records.map((record) => record.certificateType)).toEqual(twoPlaceTypes);
+        expect(state.records.every((record) => record.recipient !== null)).toBe(true);
+      } finally {
+        find.mockRestore();
+        assets.mockRestore();
+      }
+    });
   });
 
   it("returns an existing publication as the immutable concurrent same-key result", async () => {

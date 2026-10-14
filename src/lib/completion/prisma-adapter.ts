@@ -293,6 +293,12 @@ function statistics(rows: CompletionSourceRows, officialMatchIds: ReadonlySet<st
     }] : []));
 }
 
+/** "none" only for a single-elimination bracket (alone or as playoffs) generated without a third-place match. */
+function noThirdPlaceFact(config: TournamentFormatConfig): { thirdPlace: "none" } | Record<string, never> {
+  const bracket = config.kind === "group_playoffs" ? config.playoffs : config;
+  return bracket.kind === "single_elimination" && bracket.thirdPlace === "none" ? { thirdPlace: "none" } : {};
+}
+
 export function buildCompletionSource(rows: CompletionSourceRows): CompletionSource {
   const officialMatchIds = new Set(rows.matches.filter((match) => isCurrentOfficial(match, rows.revisions)).map(({ id }) => id));
   const projectionMatches = rows.matches.map((match) => officialMatchIds.has(match.id)
@@ -315,6 +321,7 @@ export function buildCompletionSource(rows: CompletionSourceRows): CompletionSou
     facts: {
       formatKind,
       ...(formatKind === "group_playoffs" ? { playoffFormatKind: rows.event.formatConfig.playoffs.kind } : {}),
+      ...noThirdPlaceFact(rows.event.formatConfig),
       matches: eliminationFacts(rows, projection),
       standings,
       activeDisputes: rows.incidents
