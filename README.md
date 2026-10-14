@@ -159,4 +159,4 @@ Build Vercel **tidak** menjalankan migrasi. Kalau PR menambah migrasi, CI member
 
 ## Status
 
-Alur lengkap sudah berjalan: dari pendaftaran sampai sertifikat. Tampilan V3 dan tampilan lama ada berdampingan dan diatur lewat flag fitur (lihat [matriks flag](docs/operations/v3-feature-flag-matrix.md)). Tampilan lama dipertahankan sebagai jalur mundur sampai peralihan dinyatakan stabil. Belum ada: co-organizer per event, izin staf yang rinci, pembayaran otomatis, dan pembayaran hadiah otomatis.
+Rilis 1.0. Alur lengkap sudah berjalan: dari pendaftaran sampai sertifikat. Tampilan V3 dan tampilan lama ada berdampingan dan diatur lewat flag fitur (lihat [matriks flag](docs/operations/v3-feature-flag-matrix.md)). Tampilan lama dipertahankan sebagai jalur mundur sampai peralihan dinyatakan stabil. Belum ada: co-organizer per event, izin staf yang rinci, pembayaran otomatis, dan pembayaran hadiah otomatis.
