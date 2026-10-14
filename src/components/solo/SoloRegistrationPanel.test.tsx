@@ -62,7 +62,7 @@ describe("SoloRegistrationPanel", () => {
     });
 
     it("still reads well when the place is unknown", () => {
-      expect(render({ kind: "queued", position: null })).toContain("Kamu di antrean. Kamu belum perlu bayar.");
+      expect(render({ kind: "queued", position: null })).toContain("Kamu di antrean. Kamu belum perlu bayar, kami kirim email kalau slot terbuka.");
     });
   });
 

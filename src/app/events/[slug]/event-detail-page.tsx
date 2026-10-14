@@ -106,6 +106,8 @@ export async function renderEventDetailPage(
   };
 
   const isV2 = isFeatureEnabled("public_visual_v2");
+  // A solo event's join page is switched off with the solo flag, so the button to it goes too.
+  const registrationOpen = event.entryMode !== "solo" || isFeatureEnabled("solo_tournament_v1");
 
   const quickLinksSection = !options.readOnly ? (
     <Section title={t("quickLinks")} description={t("quickLinksDesc")} className="rounded-xl shadow-none">
@@ -212,6 +214,7 @@ export async function renderEventDetailPage(
           bracket={bracket}
           locale={locale}
           readOnly={options.readOnly}
+          registrationOpen={registrationOpen}
           labels={{
             liveNow: t("liveNow"),
             organizer: t("organizerLabel"),
@@ -289,7 +292,7 @@ export async function renderEventDetailPage(
                 {event.registrationFeeLabel}
               </EventFact>
             ) : null}
-            {!options.readOnly && event.status === "Published" ? (
+            {!options.readOnly && event.status === "Published" && registrationOpen ? (
               <a
                 className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-4 py-2 font-semibold text-cyan-950 shadow-sm transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
                 href={`${locale ? `/${locale}` : ""}/events/${event.slug}/register`}

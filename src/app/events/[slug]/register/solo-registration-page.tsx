@@ -113,8 +113,8 @@ export async function renderSoloRegistrationPage({ event, user, locale, search }
   return <main className="miracle-v3 min-h-screen bg-[var(--color-bg)] text-[var(--color-text)]">
     <div className="mx-auto grid w-[min(720px,calc(100%-32px))] gap-6 py-10">
       <div>
-        <Link className="text-sm font-bold text-[var(--color-brand-cyan)]" href={`/events/${event.slug}` as never}>{copy.back}</Link>
-        <h1 className="mt-3 text-3xl font-extrabold leading-tight sm:text-4xl">{event.name}</h1>
+        <Link className="inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-brand-cyan)]" href={`/events/${event.slug}` as never}>{copy.back}</Link>
+        <h1 className="text-3xl font-extrabold leading-tight sm:text-4xl">{event.name}</h1>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">{copy.title}</p>
       </div>
       {search?.error ? <Notice tone="error">{search.error}</Notice> : null}

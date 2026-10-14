@@ -537,7 +537,7 @@
         },
         "result": {
           "title": "Hasil acak versi {version}",
-          "seed": "Seed: {seed}",
+          "seed": "Kode acak: {seed}",
           "team": "Tim {index}",
           "captain": "Kapten",
           "swapHint": "Pilih dua pemain dari tim berbeda untuk ditukar.",
@@ -1157,7 +1157,7 @@
     "registration": {
       "details": "IGN {ign} · UID {uid}",
       "backup": "Cadangan: {position}",
-      "open": "Buka halaman daftar",
+      "open": "Buka halaman pendaftaran",
       "viewTeam": "Lihat tim"
     },
     "stage": {
@@ -1168,7 +1168,7 @@
       "waiting": "Menunggu tim",
       "in_team": "Masuk tim",
       "out_of_teams": "Tidak masuk tim",
-      "lost": "Selesai"
+      "lost": "Berakhir"
     },
     "stageText": {
       "queued": "Kamu di antrean ke-{position}. Kamu belum perlu bayar.",

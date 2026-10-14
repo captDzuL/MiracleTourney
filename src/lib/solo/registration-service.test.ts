@@ -60,7 +60,7 @@ describe("announcePromotions", () => {
     const [first] = mocks.sendEmail.mock.calls[0];
     expect(first).toMatchObject({ to: "one@example.com", subject: "Slot kamu terbuka: Solo Cup" });
     expect(first.html).toContain('href="https://miracle.example/id/events/solo-cup/register"');
-    expect(mocks.sendEmail.mock.calls[1][0]).toMatchObject({ to: "two@example.com", subject: "Kamu masuk: Solo Cup" });
+    expect(mocks.sendEmail.mock.calls[1][0]).toMatchObject({ to: "two@example.com", subject: "Kamu terdaftar: Solo Cup" });
   });
 
   it("does nothing, and reads nothing, when nobody was promoted", async () => {

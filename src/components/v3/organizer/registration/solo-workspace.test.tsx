@@ -347,7 +347,7 @@ describe("the draw tab", () => {
     it("lists the teams with captain and position, and the seed", async () => {
       await open();
       expect(text()).toContain("Hasil acak versi 2");
-      expect(text()).toContain("Seed: abc123");
+      expect(text()).toContain("Kode acak: abc123");
       expect(text()).toContain("Tim 1");
       expect(text()).toContain("Kipa1");
       expect(text()).toContain("Kiper");
