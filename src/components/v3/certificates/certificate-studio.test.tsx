@@ -11,9 +11,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import enMessages from "../../../../messages/en.json";
 import idMessages from "../../../../messages/id.json";
 import { MIRACLE_V3_CERTIFICATE_TYPES } from "@/lib/certificate/templates/miracle-v3";
-const certificateActions = vi.hoisted(() => ({ upload: vi.fn() }));
+const certificateActions = vi.hoisted(() => ({ upload: vi.fn(), importLogo: vi.fn() }));
 vi.mock("@/lib/actions/certificate-v3-actions", () => ({
   regenerateCertificateAction: vi.fn(), publishCertificateSetAction: vi.fn(), uploadCertificateAssetAction: certificateActions.upload,
+  importTeamLogoAsCertificateAssetAction: certificateActions.importLogo,
 }));
 
 import { CertificateStudio, type CertificateStudioState } from "./CertificateStudio";
@@ -66,7 +67,7 @@ describe("CertificateStudio", () => {
   let container: HTMLDivElement;
   let root: Root;
   beforeEach(() => {
-    navigation.refresh.mockClear(); certificateActions.upload.mockReset();
+    navigation.refresh.mockClear(); certificateActions.upload.mockReset(); certificateActions.importLogo.mockReset();
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
   });
   afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); });
@@ -337,5 +338,158 @@ describe("CertificateStudio", () => {
     for (const control of document.querySelectorAll("button, a, input:not([type=hidden]), select, summary")) {
       expect(control.classList.contains("min-h-11"), `${control.tagName} ${control.textContent?.trim() || control.getAttribute("name") || "control"}`).toBe(true);
     }
+  });
+
+  describe("using the team's existing logo", () => {
+    const teams: Record<string, { id: string; name: string }> = {
+      champion: { id: "team-champion", name: "Garuda FC" }, runner_up: { id: "team-runner", name: "Elang FC" },
+      mvp: { id: "team-awards", name: "Awards Team" }, top_scorer: { id: "team-awards", name: "Awards Team" }, top_defender: { id: "team-other", name: "Other Team" },
+    };
+    const withTeams: CertificateStudioState = { ...available, records: available.records.map((record) => {
+      const team = teams[record.certificateType];
+      return team && record.recipient ? { ...record, recipient: { ...record.recipient, team } } : record;
+    }) };
+    const keys = Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>;
+    const renderStudio = async (locale: "en" | "id", state: CertificateStudioState, extra: Partial<React.ComponentProps<typeof CertificateStudio>> = {}) =>
+      act(async () => root.render(provider(locale, <CertificateStudio generationKeys={keys} publicationKey={crypto.randomUUID()} state={state} {...extra} />)));
+    const importButtons = () => Array.from(container.querySelectorAll<HTMLButtonElement>("[data-import-team-logo]"));
+    const assetSelect = () => container.querySelector<HTMLSelectElement>("select[name=assetId]")!;
+    const openTab = (type: string) => act(async () => container.querySelector<HTMLButtonElement>(`[data-certificate-type='${type}']`)!.click());
+
+    it("shows no button when the recipient's team is unknown", async () => {
+      await renderStudio("en", available);
+      expect(importButtons()).toHaveLength(0);
+    });
+
+    it("shows a localized button naming the recipient's team", async () => {
+      await renderStudio("en", withTeams);
+      expect(importButtons().map((button) => button.textContent)).toEqual(["Use Garuda FC logo"]);
+      expect(importButtons()[0].classList.contains("min-h-11")).toBe(true);
+      await renderStudio("id", withTeams);
+      expect(importButtons().map((button) => button.textContent)).toEqual(["Pakai logo tim Garuda FC"]);
+    });
+
+    it("offers the button only for the team logo placement of an award certificate, not the character art", async () => {
+      await renderStudio("en", withTeams);
+      await openTab("mvp");
+      expect(container.querySelectorAll("select[name=assetId]")).toHaveLength(2);
+      expect(importButtons().map((button) => button.textContent)).toEqual(["Use Awards Team logo"]);
+    });
+
+    it("imports the logo for the active team, selects it as the hero logo, refreshes, and announces success", async () => {
+      certificateActions.importLogo.mockResolvedValue({ status: "imported", assetId: "asset-imported", teamId: "team-champion" });
+      const regenerate = vi.fn().mockResolvedValue({ status: "generated", certificateId: "cert-champion-3", certificateType: "champion", version: 3, imageUrl: "/c.png" });
+      await renderStudio("en", withTeams, { regenerateAction: regenerate });
+      await act(async () => importButtons()[0].click());
+      expect(certificateActions.importLogo).toHaveBeenCalledWith({ eventId: "event-1", teamId: "team-champion" });
+      expect(assetSelect().value).toBe("asset-imported");
+      expect(Array.from(assetSelect().options).map((option) => option.textContent)).toContain("Garuda FC");
+      expect(navigation.refresh).toHaveBeenCalledTimes(1);
+      expect(container.querySelector("[role=status]")?.textContent).toBe("Team logo is ready to use.");
+      await act(async () => container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!.click());
+      expect(regenerate.mock.calls[0][0].assets).toEqual([expect.objectContaining({ assetId: "asset-imported", placement: expect.objectContaining({ assetKind: "team_logo_hero" }) })]);
+    });
+
+    it("selects the imported logo as the badge logo of an award certificate", async () => {
+      certificateActions.importLogo.mockResolvedValue({ status: "imported", assetId: "asset-badge", teamId: "team-awards" });
+      const regenerate = vi.fn().mockResolvedValue({ status: "failed", code: "generation_failed", certificateId: "c", certificateType: "mvp", version: 3 });
+      await renderStudio("en", withTeams, { regenerateAction: regenerate });
+      await openTab("mvp");
+      await act(async () => importButtons()[0].click());
+      expect(certificateActions.importLogo).toHaveBeenCalledWith({ eventId: "event-1", teamId: "team-awards" });
+      await act(async () => container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!.click());
+      expect(regenerate.mock.calls[0][0].assets).toEqual([expect.objectContaining({ assetId: "asset-badge", placement: expect.objectContaining({ assetKind: "team_logo_badge" }) })]);
+    });
+
+    it.each([
+      ["logo_missing", "id", /belum punya logo/],
+      ["logo_unsupported_source", "en", /cannot be copied/],
+      ["logo_too_large", "en", /larger than 5 MB/],
+      ["rate_limited", "id", /Terlalu banyak percobaan/],
+      ["something_new", "en", /could not be used/],
+    ] as const)("shows the %s failure next to the button and in the live region, without selecting anything", async (code, locale, pattern) => {
+      certificateActions.importLogo.mockResolvedValue({ status: "blocked", code });
+      await renderStudio(locale, withTeams);
+      await act(async () => importButtons()[0].click());
+      const error = container.querySelector("[data-team-logo-error]");
+      expect(error?.textContent).toMatch(pattern);
+      expect(importButtons()[0].getAttribute("aria-describedby")).toBe(error?.id);
+      expect(container.querySelector("[role=status]")?.textContent).toMatch(pattern);
+      expect(assetSelect().value).toBe("");
+      expect(navigation.refresh).not.toHaveBeenCalled();
+    });
+
+    it("reports an unexpected exception as a generic failure and keeps the button usable", async () => {
+      certificateActions.importLogo.mockRejectedValue(new Error("server exploded"));
+      await renderStudio("en", withTeams);
+      await act(async () => importButtons()[0].click());
+      expect(container.querySelector("[data-team-logo-error]")?.textContent).toMatch(/could not be used/);
+      expect(importButtons()[0].disabled).toBe(false);
+    });
+
+    it("does not show one team's failure while looking at another team", async () => {
+      certificateActions.importLogo.mockResolvedValue({ status: "blocked", code: "logo_missing" });
+      await renderStudio("en", withTeams);
+      await act(async () => importButtons()[0].click());
+      await openTab("runner_up");
+      expect(container.querySelector("[data-team-logo-error]")).toBeNull();
+    });
+
+    it("drops an imported logo selection when another certificate belongs to a different team", async () => {
+      certificateActions.importLogo.mockResolvedValue({ status: "imported", assetId: "asset-imported", teamId: "team-champion" });
+      await renderStudio("en", withTeams);
+      await act(async () => importButtons()[0].click());
+      await openTab("runner_up");
+      expect(assetSelect().value).toBe("");
+      await openTab("champion");
+      expect(assetSelect().value).toBe("");
+    });
+
+    it("ignores an import that finishes after the user moved to another team", async () => {
+      let finish: (value: { status: "imported"; assetId: string; teamId: string }) => void = () => undefined;
+      certificateActions.importLogo.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+      await renderStudio("en", withTeams);
+      await act(async () => importButtons()[0].click());
+      await openTab("runner_up");
+      await act(async () => finish({ status: "imported", assetId: "asset-late", teamId: "team-champion" }));
+      expect(assetSelect().value).toBe("");
+      expect(Array.from(assetSelect().options).map((option) => option.value)).not.toContain("asset-late");
+      expect(container.querySelector("[role=status]")?.textContent).toBe("");
+      expect(navigation.refresh).not.toHaveBeenCalled();
+      await openTab("champion");
+      expect(assetSelect().value).toBe("");
+    });
+
+    it("clears the imported logo when a refresh changes the recipient's team", async () => {
+      certificateActions.importLogo.mockResolvedValue({ status: "imported", assetId: "asset-imported", teamId: "team-champion" });
+      await renderStudio("en", withTeams);
+      await act(async () => importButtons()[0].click());
+      expect(assetSelect().value).toBe("asset-imported");
+      const sameTeamsAgain: CertificateStudioState = { ...withTeams, records: withTeams.records.map((record) => ({ ...record })) };
+      await renderStudio("en", sameTeamsAgain);
+      expect(assetSelect().value).toBe("asset-imported");
+      const changed: CertificateStudioState = { ...withTeams, records: withTeams.records.map((record) => record.certificateType === "champion" && record.recipient ? { ...record, recipient: { ...record.recipient, team: { id: "team-new", name: "New FC" } } } : record) };
+      await renderStudio("en", changed);
+      expect(assetSelect().value).toBe("");
+      expect(importButtons().map((button) => button.textContent)).toEqual(["Use New FC logo"]);
+    });
+
+    it("keeps an imported award logo within the same team, and a manual choice everywhere", async () => {
+      certificateActions.importLogo.mockResolvedValue({ status: "imported", assetId: "asset-badge", teamId: "team-awards" });
+      await renderStudio("en", withTeams);
+      await openTab("mvp");
+      const badgeSelect = () => container.querySelectorAll<HTMLSelectElement>("select[name=assetId]")[1];
+      await act(async () => importButtons()[0].click());
+      await openTab("top_scorer");
+      expect(badgeSelect().value).toBe("asset-badge");
+      await act(async () => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(badgeSelect(), "asset-1"); badgeSelect().dispatchEvent(new Event("change", { bubbles: true })); });
+      await openTab("top_defender");
+      expect(badgeSelect().value).toBe("asset-1");
+    });
+
+    it("disables the button while the studio is locked", async () => {
+      await renderStudio("en", { ...integration, records: withTeams.records.map((record) => ({ ...record, selectedCertificateId: null, versions: null })) });
+      expect(importButtons().every((button) => button.disabled)).toBe(true);
+    });
   });
 });

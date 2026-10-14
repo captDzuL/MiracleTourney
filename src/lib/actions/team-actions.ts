@@ -4,7 +4,7 @@
 // Moved out of lib/actions.ts without changes (refactor PR 3.6).
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
-import { MAX_LOGO_IMAGE_BYTES } from "@/lib/actions/shared/limits";
+import { MAX_LOGO_IMAGE_BYTES, MAX_LOGO_IMAGE_DIMENSION } from "@/lib/actions/shared/limits";
 import { actionEntityId } from "@/lib/actions/shared/request";
 import { assertWorkspaceEventAction, requireAdminSession, requireCaptainSession } from "@/lib/actions/shared/session";
 import { uploadImageAsset } from "@/lib/actions/shared/uploads";
@@ -40,6 +40,7 @@ export async function captainUploadTeamLogoAction(formData: FormData) {
       entityId: teamId,
       label: "Team logo",
       maxBytes: MAX_LOGO_IMAGE_BYTES,
+      maxDimension: MAX_LOGO_IMAGE_DIMENSION,
       errorPath: "/captain?tab=roster",
     });
     await updateCaptainTeamLogo(captain.id, teamId, asset.url);
@@ -201,6 +202,7 @@ export async function adminUploadTeamLogoAction(formData: FormData) {
       entityId: teamId,
       label: "Team logo",
       maxBytes: MAX_LOGO_IMAGE_BYTES,
+      maxDimension: MAX_LOGO_IMAGE_DIMENSION,
     });
     await updateTeamLogo(user, teamId, asset.url);
   } catch (err) {
