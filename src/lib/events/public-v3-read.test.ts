@@ -151,6 +151,35 @@ describe("normalized public V3 event reader", () => {
     expect(view.registration.bracket.slots.every((slot) => slot.home === "TBD" && slot.away === "TBD" && slot.status === "tbd")).toBe(true);
   });
 
+  describe("registration call to action by entry mode", () => {
+    const openWindow = new Date("2026-09-10T00:00:00.000Z");
+    const project = (entryMode?: string) => projectCompatiblePublicV3Event({ now: openWindow, event: { ...baseEvent, status: "Published", participantCap: 8, ...(entryMode ? { entryMode } : {}) } });
+
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("asks a team event for a team, as before", () => {
+      expect(project().identity.cta).toMatchObject({ label: "register_team", kind: "login", enabled: true });
+      expect(project("team").identity.cta).toMatchObject({ label: "register_team", enabled: true });
+    });
+
+    it("asks a solo event for a solo registration while the flag is on", () => {
+      vi.stubEnv("FEATURE_FLAG_SOLO_TOURNAMENT_V1", "true");
+      expect(project("solo").identity.cta).toMatchObject({ label: "register_solo", kind: "login", enabled: true });
+    });
+
+    it("turns the button off for a solo event when the flag is off, so it never links to a missing page", () => {
+      vi.stubEnv("FEATURE_FLAG_SOLO_TOURNAMENT_V1", "");
+      expect(project("solo").identity.cta).toMatchObject({ label: "registration_unavailable", enabled: false });
+    });
+
+    it("leaves a solo event's later phases alone", () => {
+      vi.stubEnv("FEATURE_FLAG_SOLO_TOURNAMENT_V1", "");
+      const ongoing = projectCompatiblePublicV3Event({ event: { ...baseEvent, entryMode: "solo" } });
+      expect(ongoing.mode).toBe("ongoing");
+      expect(ongoing.identity.cta.label).not.toMatch(/^register/);
+    });
+  });
+
   it("keeps finished certificates in preparing state when the current publication is missing", () => {
     const view = projectCompatiblePublicV3Event({
       event: { ...baseEvent, status: "Finished" },

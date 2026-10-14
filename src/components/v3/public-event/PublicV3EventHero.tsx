@@ -85,10 +85,10 @@ function ctaLabel(view: PublicV3EventViewModel, locale: PublicV3Locale) {
   if (view.mode === "registration") {
     const registrationLabels = locale === "id"
       ? {
-        register_team: "Daftarkan tim", create_team_and_register: "Buat tim dan daftar", select_team_to_register: "Pilih tim untuk didaftarkan", continue_registration: "Lanjutkan pendaftaran", continue_payment: "Lanjutkan pembayaran", view_registration_status: "Lihat status pendaftaran", repair_payment_proof: "Perbaiki bukti pembayaran", view_registered_team: "Lihat tim terdaftar", register_again: "Daftar ulang", use_captain_account: "Gunakan akun Captain", registration_upcoming: "Pendaftaran belum dibuka", registration_closed: "Pendaftaran ditutup", registration_full: "Slot pendaftaran penuh", registration_unavailable: "Pendaftaran belum tersedia",
+        register_team: "Daftarkan tim", register_solo: "Daftar solo", create_team_and_register: "Buat tim dan daftar", select_team_to_register: "Pilih tim untuk didaftarkan", continue_registration: "Lanjutkan pendaftaran", continue_payment: "Lanjutkan pembayaran", view_registration_status: "Lihat status pendaftaran", repair_payment_proof: "Perbaiki bukti pembayaran", view_registered_team: "Lihat tim terdaftar", register_again: "Daftar ulang", use_captain_account: "Gunakan akun Captain", registration_upcoming: "Pendaftaran belum dibuka", registration_closed: "Pendaftaran ditutup", registration_full: "Slot pendaftaran penuh", registration_unavailable: "Pendaftaran belum tersedia",
       }
       : {
-        register_team: "Register a team", create_team_and_register: "Create a team and register", select_team_to_register: "Choose a team to register", continue_registration: "Continue registration", continue_payment: "Continue payment", view_registration_status: "View registration status", repair_payment_proof: "Fix payment proof", view_registered_team: "View registered team", register_again: "Register again", use_captain_account: "Use a Captain account", registration_upcoming: "Registration has not opened", registration_closed: "Registration is closed", registration_full: "Registration slots are full", registration_unavailable: "Registration is unavailable",
+        register_team: "Register a team", register_solo: "Join solo", create_team_and_register: "Create a team and register", select_team_to_register: "Choose a team to register", continue_registration: "Continue registration", continue_payment: "Continue payment", view_registration_status: "View registration status", repair_payment_proof: "Fix payment proof", view_registered_team: "View registered team", register_again: "Register again", use_captain_account: "Use a Captain account", registration_upcoming: "Registration has not opened", registration_closed: "Registration is closed", registration_full: "Registration slots are full", registration_unavailable: "Registration is unavailable",
       };
     return registrationLabels[view.cta.label as keyof typeof registrationLabels] ?? view.cta.label;
   }
@@ -100,7 +100,8 @@ function ctaLabel(view: PublicV3EventViewModel, locale: PublicV3Locale) {
 
 function heroAction(view: PublicV3EventViewModel, locale: PublicV3Locale) {
   const label = ctaLabel(view, locale);
-  if (view.mode === "registration" && view.cta.kind === "login") {
+  // The captain dialog signs a captain in; a player goes through the ordinary login page and comes back to the event.
+  if (view.mode === "registration" && view.cta.kind === "login" && view.cta.label !== "register_solo") {
     return <CaptainLoginDialog locale={locale} eventId={view.identity.id} eventName={view.identity.title} triggerLabel={label} />;
   }
   if (view.mode === "registration" && view.cta.kind === "disabled") {
