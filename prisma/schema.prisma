@@ -1186,6 +1186,7 @@ model SoloRegistration {
   @@unique([eventId, id])
   @@index([eventId, slotGroup, status, createdAt])
   @@index([userId])
+  @@index([approvedById])
 }
 
 /// One run of the random draw for a solo event.
@@ -1223,6 +1224,8 @@ model SoloDraw {
   @@unique([eventId, version])
   @@unique([eventId, id])
   @@index([eventId, status])
+  @@index([createdById])
+  @@index([lockedById])
 }
 
 /// Where each registration landed in one draw.

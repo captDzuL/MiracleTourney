@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requireAnyRole, updateOrganizerProfileForUser, getUserPasswordHashById, updateUserPassword, revalidatePath, revalidateTag, redirect } = vi.hoisted(() => ({
-  requireAnyRole: vi.fn(), updateOrganizerProfileForUser: vi.fn(), getUserPasswordHashById: vi.fn(), updateUserPassword: vi.fn(),
+const { reissueSession, requireAnyRole, updateOrganizerProfileForUser, getUserPasswordHashById, updateUserPassword, revalidatePath, revalidateTag, redirect } = vi.hoisted(() => ({
+  reissueSession: vi.fn(), requireAnyRole: vi.fn(), updateOrganizerProfileForUser: vi.fn(), getUserPasswordHashById: vi.fn(), updateUserPassword: vi.fn(),
   revalidatePath: vi.fn(), revalidateTag: vi.fn(), redirect: vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`); }),
 }));
 
-vi.mock("@/lib/auth/session", () => ({ requireAnyRole }));
+vi.mock("@/lib/auth/session", () => ({ requireAnyRole, reissueSession }));
 vi.mock("@/lib/platform/repository", () => ({ updateOrganizerProfileForUser, getUserPasswordHashById, updateUserPassword }));
 vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
 vi.mock("next/navigation", () => ({ redirect }));
@@ -54,5 +54,6 @@ describe("organizer first password change", () => {
     form.set("locale", "id"); form.set("currentPassword", "Temporary123!"); form.set("newPassword", "SaferPassword123!"); form.set("confirmPassword", "SaferPassword123!");
     await expect(completeOrganizerPasswordChangeAction(form)).rejects.toThrow("REDIRECT:/id/organizer?password=changed");
     expect(updateUserPassword).toHaveBeenCalledWith("organizer-1", "$new-hash");
+    expect(reissueSession).toHaveBeenCalledWith("organizer-1");
   });
 });

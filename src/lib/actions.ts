@@ -20,7 +20,7 @@ import {
 
 import { resolvePostLoginPath } from "@/lib/auth/post-login-path";
 import { getCaptainOrPlayer, getCaptainOrTeamOwner } from "@/lib/auth/captain-access";
-import { requireRole, signIn } from "@/lib/auth/session";
+import { reissueSession, requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { commitRegistrationImportForUser, previewRegistrationImportForUser } from "@/lib/actions/registration-v3-actions";
 import * as eventRegistrationActions from "@/lib/actions/registration-v3-actions";
@@ -750,6 +750,8 @@ export async function changePasswordAction(formData: FormData) {
   }
 
   await updateCaptainPassword(user.id, await bcrypt.hash(newPassword, 10));
+  // Other devices are signed out by the new password; this one gets a fresh session.
+  await reissueSession(user.id);
   await redirectToActiveLocale(`${home}?success=password-changed` as never);
 }
 

@@ -164,8 +164,29 @@ async function sweep(tx: Tx, event: SoloEvent, now: Date): Promise<{ expired: nu
   return { expired: expired.count, promoted: await promoteQueued(tx, event, now) };
 }
 
+/**
+ * Whether a sweep would change anything: a deadline has passed, or somebody is queued for a group that has a
+ * free slot. Plain reads, so a page view that finds nothing to do never takes the event's lock.
+ */
+async function sweepIsNeeded(eventId: string, now: Date): Promise<boolean> {
+  const event = await loadSoloEvent(prisma, eventId);
+  const lapsed = await prisma.soloRegistration.count({
+    where: { eventId, status: { in: [...EXPIRABLE_STATUSES] }, expiresAt: { lte: now } },
+  });
+  if (lapsed > 0) return true;
+  if (event.status !== "Published") return false;
+  for (const group of SOLO_SLOT_GROUPS) {
+    const queued = await prisma.soloRegistration.count({ where: { eventId, slotGroup: group, status: "queued" } });
+    if (queued === 0) continue;
+    const held = await prisma.soloRegistration.count({ where: heldWhere(eventId, group, now) });
+    if (held < event.quota[group]) return true;
+  }
+  return false;
+}
+
 /** Runs the expiry and queue promotion for one solo event. Safe to call as often as needed. */
 export async function sweepSoloEvent(eventId: string): Promise<{ expired: number; promoted: PromotedRegistration[] }> {
+  if (!(await sweepIsNeeded(eventId, new Date()))) return { expired: 0, promoted: [] };
   return withEventLock(eventId, async (tx) => sweep(tx, await loadSoloEvent(tx, eventId), new Date()));
 }
 

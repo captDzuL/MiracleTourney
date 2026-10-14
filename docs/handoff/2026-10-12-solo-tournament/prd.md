@@ -1,6 +1,6 @@
 # PRD — Miracle Turnamen Solo (Pemain Perorangan)
 
-Status: disetujui pemilik produk untuk fase 1 (Flashpeak 5v5), 12 Oktober 2026 (Asia/Jakarta). Implementasi dimulai bertahap, semua di balik flag `solo_tournament_v1`.
+Status: disetujui pemilik produk untuk fase 1 (Flashpeak 5v5), 12 Oktober 2026 (Asia/Jakarta). Diimplementasi fase 1 dalam enam PR (A sampai F), semua di balik flag `solo_tournament_v1`. Rollout: `docs/operations/solo-tournament-rollout.md`.
 
 ## 1. Maksud produk
 

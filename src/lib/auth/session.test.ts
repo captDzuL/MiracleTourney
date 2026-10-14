@@ -93,6 +93,31 @@ describe("auth session hardening", () => {
     expect(adminOptions.maxAge).toBeLessThan(captainOptions.maxAge);
   });
 
+  it("re-issues a session for the browser that changed its password, with the new session version", async () => {
+    const { reissueSession, verifyToken } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getCaptainById.mockResolvedValueOnce({ id: "player-1", email: "p@test.com", name: "P", role: "player", sessionVersion: 3 });
+
+    await expect(reissueSession("player-1")).resolves.toBe(true);
+
+    const [name, token, options] = cookieStore.set.mock.calls[0];
+    expect(name).toBe("mfl_token");
+    expect(options).toMatchObject({ httpOnly: true, sameSite: "lax", path: "/" });
+    await expect(verifyToken(token)).resolves.toMatchObject({ sub: "player-1", role: "player", sv: 3 });
+  });
+
+  it("does not re-issue a session for a missing or deactivated account", async () => {
+    const { reissueSession } = await import("./session");
+    const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
+    cookiesMock.mockResolvedValue(cookieStore);
+    getCaptainById.mockResolvedValueOnce(null);
+    await expect(reissueSession("gone")).resolves.toBe(false);
+    getCaptainById.mockResolvedValueOnce({ id: "p", role: "player", sessionVersion: 1, deactivatedAt: new Date() });
+    await expect(reissueSession("p")).resolves.toBe(false);
+    expect(cookieStore.set).not.toHaveBeenCalled();
+  });
+
   it("expires the auth cookie explicitly on logout", async () => {
     const { signOut } = await import("./session");
     const cookieStore = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };

@@ -1618,10 +1618,15 @@ export async function hasTempPassword(userId: string): Promise<boolean> {
 }
 
 /** Updates a password hash and clears any first-login lock without retaining the temporary secret. */
+/**
+ * Sets a new password and ends every session of the account that was opened before it: the session
+ * version goes up, and a token carries the version it was made with. The caller re-issues the cookie of
+ * the session that made the change, so that one stays signed in.
+ */
 export async function updateUserPassword(userId: string, newHash: string): Promise<void> {
   await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash: newHash, tempPassword: null, mustChangePassword: false } as never,
+    data: { passwordHash: newHash, tempPassword: null, mustChangePassword: false, sessionVersion: { increment: 1 } } as never,
   });
 }
 

@@ -146,7 +146,7 @@ export default async function CaptainPage({
       {success === "captain-display-updated" ? <Notice tone="success">Tampilan kapten berhasil diperbarui.</Notice> : null}
       {success === "roster-change-requested" ? <Notice tone="success">{t("rosterChange.requestedNotice")}</Notice> : null}
       {success === "roster-change-cancelled" ? <Notice tone="success">{t("rosterChange.cancelledNotice")}</Notice> : null}
-      {error ? <Notice tone="danger">{decodeURIComponent(error)}</Notice> : null}
+      {error ? <Notice tone="danger">{error}</Notice> : null}
 
       {requestedEvent ? (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900">
