@@ -22,16 +22,13 @@ const {
   equalizePasswordResetResponse,
   createTeamRegistrationRequest,
   deletePlayer,
-  getImportSnapshot,
   getEventsByIds,
   getOrganizerUserById,
   getPlayerStatFormContext,
-  getPublishedEvents,
   getUserByEmail,
   getUserPasswordHashById,
   generateCertificate,
   generateCertificateIfFinal,
-  importTeams,
   listEventVisualAssets,
   rejectEventVisualAsset,
   rejectStatSubmission,
@@ -88,16 +85,13 @@ const {
   equalizePasswordResetResponse: vi.fn(async (operation: () => Promise<unknown>) => operation()),
   createTeamRegistrationRequest: vi.fn(),
   deletePlayer: vi.fn(),
-  getImportSnapshot: vi.fn(),
   getEventsByIds: vi.fn(),
   getOrganizerUserById: vi.fn(),
   getPlayerStatFormContext: vi.fn(),
-  getPublishedEvents: vi.fn(),
   getUserByEmail: vi.fn(),
   getUserPasswordHashById: vi.fn(),
   generateCertificate: vi.fn(),
   generateCertificateIfFinal: vi.fn(),
-  importTeams: vi.fn(),
   listEventVisualAssets: vi.fn(),
   rejectEventVisualAsset: vi.fn(),
   rejectStatSubmission: vi.fn(),
@@ -153,9 +147,6 @@ vi.mock("next/headers", () => ({ headers }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
 vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut }));
 vi.mock("@/lib/actions/registration-v3-actions", () => ({ previewRegistrationImportForUser, commitRegistrationImportForUser }));
-vi.mock("@/lib/imports/team-import", () => ({
-  parseAndValidateTeamImport: vi.fn(),
-}));
 vi.mock("@vercel/blob", () => ({ put: blobPut }));
 vi.mock("@/lib/bracket/repository", () => ({
   setMatchResult,
@@ -168,7 +159,6 @@ vi.mock("@/lib/events/repository", () => ({
   autoTransitionEventToOngoing,
   createEvent,
   getEventsByIds,
-  getPublishedEvents,
   setEventStatus,
   updateEventPublicInfo,
   updateEventStream,
@@ -197,8 +187,6 @@ vi.mock("@/lib/identity/repository", () => ({
   updateCaptainPassword,
 }));
 vi.mock("@/lib/imports/repository", () => ({
-  getImportSnapshot,
-  importTeams,
 }));
 vi.mock("@/lib/platform/settings-repository", () => ({
   updatePaymentSettings,
@@ -258,9 +246,7 @@ vi.mock("bcryptjs", () => ({
   },
 }));
 
-import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { adminCreateEventAction, adminUploadCharacterArtAction, adminUpdateEventStatusAction, adminUpdateEventPublicInfoAction, adminUpdateStreamAction } from "@/lib/actions/event-actions";
-import { adminImportTeamsCsvAction } from "@/lib/actions/import-actions";
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -628,17 +614,6 @@ describe("adminUpdateEventPublicInfoAction", () => {
     ).rejects.toThrow();
 
     expect(updateEventPublicInfo).not.toHaveBeenCalled();
-  });
-
-  it("rate-limits CSV import before reading or parsing the file", async () => {
-    checkRateLimit.mockReturnValue(false);
-    const file = new File(["team,data"], "teams.csv", { type: "text/csv" });
-    const text = vi.fn().mockResolvedValue("team,data");
-    Object.defineProperty(file, "text", { value: text });
-    await expect(adminImportTeamsCsvAction(fd({ csv: file }))).rejects.toThrow("REDIRECT:/admin?error=rate-limited");
-    expect(text).not.toHaveBeenCalled();
-    expect(parseAndValidateTeamImport).not.toHaveBeenCalled();
-    expect(importTeams).not.toHaveBeenCalled();
   });
 
   it("rejects traversal event ids before updating public information", async () => {

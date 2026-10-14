@@ -80,15 +80,6 @@ export type AdaptiveRegistrationEventViewModel = {
   };
 };
 
-export function shouldUseAdaptiveRegistrationRenderer(input: {
-  enabled: boolean;
-  status: EventStatus;
-  availability: RegistrationAvailability;
-}) {
-  return input.enabled
-    && (input.status === "Published" || input.status === "Registration Closed")
-    && input.availability !== "legacy";
-}
 export function getRegistrationAvailability(input: {
   status: EventStatus;
   opensAt: Date | null;
@@ -354,16 +345,4 @@ export async function getAdaptivePublicEventView(
       cta: buildRegistrationCta({ state, availability, href }),
     },
   };
-}
-
-export async function getAdaptivePublicEventViewWithRetry(
-  slug: string,
-  viewer: AppUser | null,
-  now: Date = new Date(),
-): Promise<AdaptiveRegistrationEventViewModel | null> {
-  try {
-    return await getAdaptivePublicEventView(slug, viewer, now);
-  } catch {
-    return getAdaptivePublicEventView(slug, viewer, now);
-  }
 }

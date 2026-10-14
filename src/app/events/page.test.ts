@@ -73,7 +73,7 @@ describe("events page public cards", () => {
   test("homepage says events could not be loaded instead of showing demo events when loading fails", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "../home-page-content.tsx"), "utf8");
 
-    expect(source).not.toContain("demo-store");
+    expect(source).not.toContain("test-support");
     expect(source).not.toContain("getDemoPublicEvents");
     expect(source).toContain("loadHomepageEvents(getCachedPublicEvents)");
     expect(source).toContain('t("loadError")');

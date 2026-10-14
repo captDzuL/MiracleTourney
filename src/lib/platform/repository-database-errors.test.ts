@@ -25,7 +25,7 @@ vi.mock("next/cache", () => ({
 import { getBracketPreview, getLeaderboardForEvent, getMatchesForEvent, getPublicVisibleBracketPreview } from "@/lib/bracket/repository";
 import { getAllPublicEvents, getEventBySlug, getEventsByIds, getPublicEventBySlug, getPublicEvents, updateEventPublicInfo } from "@/lib/events/repository";
 import { listEventVisualAssets, updateEventBrandAssets } from "@/lib/events/visual-repository";
-import { getPlayersForEvent, getPlayersForTeam, getPlayersForTeams, getTeamCountsForEvents, getTeamsForEvent, getTeamsForEvents, updateCaptainTeamLogo, updateTeamLogo } from "@/lib/teams/repository";
+import { getPlayersForTeam, getPlayersForTeams, getTeamCountsForEvents, getTeamsForEvent, getTeamsForEvents, updateCaptainTeamLogo, updateTeamLogo } from "@/lib/teams/repository";
 
 // Slugs and ids that exist in the demo data. Before PR 0.6 these were answered from made-up data when the database failed.
 const DEMO_EVENT_ID = "event-kuroko-summer";
@@ -52,7 +52,6 @@ describe("readers pass the database error on", () => {
     ["getTeamCountsForEvents", () => getTeamCountsForEvents([DEMO_EVENT_ID])],
     ["getPlayersForTeam", () => getPlayersForTeam("team-seirin")],
     ["getPlayersForTeams", () => getPlayersForTeams(["team-seirin"])],
-    ["getPlayersForEvent", () => getPlayersForEvent(DEMO_EVENT_ID)],
     ["getMatchesForEvent", () => getMatchesForEvent(DEMO_EVENT_ID)],
     ["getBracketPreview", () => getBracketPreview(DEMO_EVENT_ID)],
     ["getPublicVisibleBracketPreview", () => getPublicVisibleBracketPreview(DEMO_EVENT_ID)],

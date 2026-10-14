@@ -23,7 +23,7 @@ const APP_FILE = "src/app/sitemap.ts";
 
 describe("import rules", () => {
   it.each([
-    ["R1", LIB_FILE, 'import { getPublicEvents } from "../platform/demo-store";'],
+    ["R1", LIB_FILE, 'import { getPublicEvents } from "@/test-support/bracket-page-store";'],
     ["R3", COMPONENT_FILE, 'import { getPublicEvents } from "@/lib/events/repository";'],
     ["R4", APP_FILE, 'import { prisma } from "@/lib/platform/db";'],
     ["R5", LIB_FILE, 'import { TeamAvatar } from "@/components/TeamAvatar";'],
@@ -39,7 +39,7 @@ describe("import rules", () => {
     ["a repository using Prisma", "src/lib/teams/repository.ts", 'import { prisma } from "@/lib/platform/db";'],
     ["a new-style action module", LIB_FILE, 'import { updateOrganizerProfileAction } from "@/lib/actions/organizer-profile-actions";'],
     ["the repository in a page", APP_FILE, 'import { getAllPublicEvents } from "@/lib/events/repository";'],
-    ["a test file importing demo-store", "src/lib/actions.test.ts", 'import "@/lib/platform/demo-store";'],
+    ["a test file importing the bracket test store", "src/lib/actions.test.ts", 'import "@/test-support/bracket-page-store";'],
   ])("allows %s", async (_name, filePath, code) => {
     expect(await importRuleMessages(code, filePath)).toEqual([]);
   });
@@ -49,7 +49,7 @@ describe("import rules", () => {
     expect(importBaseline.R4).toContain(excusedFromR4);
 
     const prisma = await importRuleMessages('import { prisma } from "@/lib/platform/db";', excusedFromR4);
-    const demoStore = await importRuleMessages('import { getPublicEvents } from "../platform/demo-store";', excusedFromR4);
+    const demoStore = await importRuleMessages('import { getPublicEvents } from "@/test-support/bracket-page-store";', excusedFromR4);
 
     expect(prisma).toEqual([]);
     expect(demoStore.some((message) => message.includes("[R1]"))).toBe(true);

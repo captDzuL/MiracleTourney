@@ -2,7 +2,6 @@
 // Moved out of actions.ts without changes (refactor PR 1.5).
 
 
-export const MAX_TEAM_IMPORT_CSV_BYTES = 256 * 1024;
 
 export const MAX_LOGO_IMAGE_BYTES = 2 * 1024 * 1024;
 

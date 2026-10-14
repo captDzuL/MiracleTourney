@@ -102,24 +102,6 @@ export async function getBracketManageableMatchesForEvent(event: Event): Promise
   return rows.map(mapMatch);
 }
 
-/** Same as `getBracketManageableMatchesForEvent` but accepts an eventId string, fetching the event internally. */
-export async function getBracketManageableMatches(eventId: string): Promise<Match[]> {
-  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true, format: true, participantCap: true, slug: true, name: true, description: true, gameId: true, gameModeId: true, status: true, registrationWindow: true, startsAt: true, venue: true, logoUrl: true, gameImageUrl: true } });
-  if (!event) return [];
-
-  const fullEvent = mapEvent({ ...event, stream: null });
-
-  if (event.format === "Single Elimination") {
-    return getProjectedBracketMatches(fullEvent);
-  }
-
-  const rows = await prisma.match.findMany({
-    where: { eventId, round: { not: null }, slot: { not: null } },
-    orderBy: [{ round: "asc" }, { slot: "asc" }],
-  });
-  return rows.map(mapMatch);
-}
-
 /**
  * Saves a BO1 match result (direct scores). Draws are rejected for single-elimination.
  * If the match row doesn't exist yet, it is created from the projected bracket.

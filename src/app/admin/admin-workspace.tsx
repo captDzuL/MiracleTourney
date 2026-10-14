@@ -60,7 +60,6 @@ export default async function AdminPage({
 
   const [t, resolvedSearchParams] = await Promise.all([getTranslations("admin"), searchParams]);
   const activePhase = resolveAdminPhase(resolvedSearchParams?.phase);
-  const registrationIntakeV2 = process.env.REGISTRATION_INTAKE_V2 !== "false";
   const [events, pendingCount, organizerOptions] = await Promise.all([
     getManageableEventsForUser(user),
     getPendingStatSubmissionCount(user),
@@ -307,7 +306,6 @@ export default async function AdminPage({
               importedTeams={importedTeams}
               registrationBatch={registrationBatch}
               registrationBatches={registrationBatches}
-              registrationIntakeV2={registrationIntakeV2}
               t={t}
             />
           ) : null}

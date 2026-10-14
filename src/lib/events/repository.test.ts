@@ -31,7 +31,6 @@ import {
   createEvent,
   createOrganizerAndEventDraft,
   getPublicEventSlugRedirect,
-  getPublishedEvents,
   updateEventOrganizerContact,
   updateEventStream,
 } from "@/lib/events/repository";
@@ -184,75 +183,6 @@ describe("updateEventOrganizerContact", () => {
 
     // Act + Assert
     await expect(updateEventOrganizerContact(organizer, input)).rejects.toThrow("db down");
-  });
-});
-
-describe("getPublishedEvents", () => {
-  it("queries only Published events with the public include, ordered by start date ascending", async () => {
-    // Arrange
-    prisma.event.findMany.mockResolvedValue([]);
-
-    // Act
-    await getPublishedEvents();
-
-    // Assert
-    expect(prisma.event.findMany).toHaveBeenCalledWith({
-      where: { status: "Published" },
-      include: { stream: true, activeVisualAsset: true },
-      orderBy: { startsAt: "asc" },
-    });
-  });
-
-  it("maps database rows to events and keeps the database order", async () => {
-    // Arrange
-    prisma.event.findMany.mockResolvedValue([
-      eventRow({ id: "event-a", slug: "a", status: "Published", gameImageUrl: "/img/a.png", prizePoolLabel: "Rp 1.000.000" }),
-      eventRow({ id: "event-b", slug: "b", status: "Published", participantCap: 32 }),
-    ]);
-
-    // Act
-    const events = await getPublishedEvents();
-
-    // Assert
-    expect(events.map((event) => event.id)).toEqual(["event-a", "event-b"]);
-    expect(events[0]).toEqual({
-      id: "event-a",
-      slug: "a",
-      name: "Flashpeak Cup",
-      description: "Cup description",
-      gameId: "game-flashpeak",
-      gameModeId: "mode-flashpeak-5v5",
-      format: "Single Elimination",
-      status: "Published",
-      participantCap: 16,
-      registrationWindow: "TBD",
-      startsAt: "TBD",
-      venue: "Online",
-      registrationFeeRequired: false,
-      logoUrl: "/logos/cup.png",
-      gameImageUrl: "/img/a.png",
-      prizePoolLabel: "Rp 1.000.000",
-    });
-    expect(events[1]?.participantCap).toBe(32);
-  });
-
-  it("returns an empty list when no event is published", async () => {
-    // Arrange
-    prisma.event.findMany.mockResolvedValue([]);
-
-    // Act
-    const events = await getPublishedEvents();
-
-    // Assert
-    expect(events).toEqual([]);
-  });
-
-  it("propagates a database error instead of returning an empty list", async () => {
-    // Arrange
-    prisma.event.findMany.mockRejectedValue(new Error("connection lost"));
-
-    // Act + Assert
-    await expect(getPublishedEvents()).rejects.toThrow("connection lost");
   });
 });
 

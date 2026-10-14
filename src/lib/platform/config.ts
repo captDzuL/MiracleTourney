@@ -1,31 +1,4 @@
-import type { AppUser, Game, GameMode } from "@/lib/platform/types";
-
-export const appUsers: AppUser[] = [
-  {
-    id: "captain-seirin",
-    email: "captain@miraclefc.gg",
-    name: "Riko Aida",
-    role: "captain",
-  },
-  {
-    id: "admin-commish",
-    email: "admin@miraclefc.gg",
-    name: "League Commissioner",
-    role: "platform_admin",
-  },
-  {
-    id: "organizer-flashpeak",
-    email: "organizer-a@miraclefc.gg",
-    name: "Flashpeak Organizer",
-    role: "organizer",
-  },
-  {
-    id: "organizer-mlbb",
-    email: "organizer-b@miraclefc.gg",
-    name: "Mobile Legends Organizer",
-    role: "organizer",
-  },
-];
+import type { Game, GameMode } from "@/lib/platform/types";
 
 export const games: Game[] = [
   {

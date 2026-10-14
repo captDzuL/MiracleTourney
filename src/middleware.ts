@@ -179,11 +179,6 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Temporary debug endpoint
-  if (process.env.NODE_ENV === "development" && normalizedPath === "/_debug_locale") {
-    return NextResponse.json({ locale: activeLocale });
-  }
-
   // Locale detection + cookie management (sets NEXT_LOCALE cookie)
   return intlMiddleware(request);
 }

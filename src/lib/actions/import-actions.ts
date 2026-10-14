@@ -5,49 +5,10 @@
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { commitRegistrationImportForUser, previewRegistrationImportForUser } from "@/lib/actions/registration-v3-actions";
-import { MAX_TEAM_IMPORT_CSV_BYTES } from "@/lib/actions/shared/limits";
 import { actionEntityId } from "@/lib/actions/shared/request";
 import { assertWorkspaceEventAction, requireAdminSession } from "@/lib/actions/shared/session";
-import { getImportSnapshot, importTeams } from "@/lib/imports/repository";
-import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
-import { checkRateLimit } from "@/lib/rate-limit";
 import { revalidatePath, revalidateTag } from "next/cache";
-
-/**
- * Parses and imports teams from an uploaded CSV file.
- * Validates file presence, then delegates to `parseAndValidateTeamImport` for structural
- * and business-rule checks before persisting. Redirects with error on any failure.
- */
-export async function adminImportTeamsCsvAction(formData: FormData) {
-  const user = await requireAdminSession();
-
-  if (!(await checkRateLimit(`team-import:${user.id}`, 5, 15 * 60 * 1000))) {
-    return redirectToActiveLocale("/admin?error=rate-limited");
-  }
-
-  const file = formData.get("csv");
-
-  if (!(file instanceof File) || file.size === 0) {
-    return redirectToActiveLocale("/admin?error=Please%20choose%20a%20CSV%20file%20before%20importing.");
-  }
-  if (file.size > MAX_TEAM_IMPORT_CSV_BYTES) {
-    return redirectToActiveLocale("/admin?error=CSV%20file%20is%20too%20large.%20Maximum%20size%20is%20256%20KiB.");
-  }
-
-  const result = parseAndValidateTeamImport(
-    await file.text(),
-    await getImportSnapshot(user.role === "organizer" ? user : undefined),
-  );
-
-  if (!result.ok) {
-    return redirectToActiveLocale(`/admin?error=${encodeURIComponent(result.message)}`);
-  }
-
-  await importTeams(result.rows);
-  revalidatePath("/", "layout");
-  await redirectToActiveLocale(`/admin?success=teams-imported&count=${result.rows.length}`);
-}
 
 export async function adminPreviewRegistrationImportAction(formData: FormData) {
   const user = await requireAdminSession();

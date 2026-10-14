@@ -111,12 +111,6 @@ export async function getPlayersForTeams(teamIds: string[]): Promise<Player[]> {
   return rows.map(mapPlayer);
 }
 
-/** Returns all players across all teams registered in a given event. */
-export async function getPlayersForEvent(eventId: string): Promise<Player[]> {
-  const rows = await prisma.player.findMany({ where: { eventId, removedAt: null }, orderBy: { createdAt: "asc" } });
-  return rows.map(mapPlayer);
-}
-
 /** Adds a new player to a team. UID and IGN are required; position and jersey number remain optional. */
 export async function addPlayer(input: {
   teamId: string;
