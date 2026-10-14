@@ -743,6 +743,7 @@
     "tagline": "Community tournament platform",
     "events": "Events",
     "captain": "Captain",
+    "player": "Player",
     "matchStats": "Match Stats",
     "admin": "Admin",
     "login": "Sign In",
@@ -1011,6 +1012,8 @@
     "teamTagPlaceholder": "MFC",
     "rosterManagementTitle": "Roster Management",
     "rosterManagementDescription": "Prepare a team draft and UID/IGN roster, then use it when an event opens.",
+    "rosterManagementOwnerDescription": "Manage the players of the team the draw made.",
+    "soloRosterNote": "This team's players come from the draw. Contact the organizer if somebody has to be replaced.",
     "noRegisteredTeams": "No draft or registered team for this account yet.",
     "accountSettings": "Account settings",
     "submitStats": "Submit match stats →",
@@ -1109,6 +1112,105 @@
         "rate_limited": "Too many tries. Wait a few minutes and try again.",
         "unknown": "The request could not be sent. Try again."
       }
+    }
+  },
+  "player": {
+    "navLabel": "Player menu",
+    "nav": {
+      "summary": "Overview",
+      "registrations": "Registrations",
+      "profile": "Profile",
+      "settings": "Settings"
+    },
+    "greeting": "Hi, {name}",
+    "greetingHint": "Your solo registrations, team and schedule are here.",
+    "notices": {
+      "passwordChanged": "Password changed.",
+      "saved": "Profile saved.",
+      "invalidWhatsapp": "That WhatsApp number is not valid. Example: 0812 3456 7890.",
+      "tooMany": "Too many attempts. Try again in 15 minutes.",
+      "saveFailed": "The profile could not be saved. Try again."
+    },
+    "active": {
+      "title": "Active registrations",
+      "empty": "You have not signed up for a solo event.",
+      "browse": "Browse events"
+    },
+    "history": {
+      "title": "History",
+      "empty": "No history yet."
+    },
+    "teams": {
+      "title": "Your teams",
+      "members": "{count} players",
+      "view": "View team",
+      "manage": "Manage team"
+    },
+    "nextMatch": {
+      "title": "Next match",
+      "empty": "No match is scheduled yet.",
+      "versus": "{team} vs {opponent}",
+      "noOpponent": "Opponent not decided yet",
+      "noTime": "Time not decided yet",
+      "live": "Live now"
+    },
+    "registration": {
+      "details": "IGN {ign} · UID {uid}",
+      "backup": "Backup: {position}",
+      "open": "Open sign-up page",
+      "viewTeam": "View team"
+    },
+    "stage": {
+      "queued": "Queue",
+      "pay": "Pay",
+      "review": "In review",
+      "rejected": "Rejected",
+      "waiting": "Waiting for teams",
+      "in_team": "In a team",
+      "out_of_teams": "Not in a team",
+      "lost": "Closed"
+    },
+    "stageText": {
+      "queued": "You are number {position} in the queue. You do not need to pay yet.",
+      "queuedUnknown": "You are in the queue. You do not need to pay yet.",
+      "pay": "Pay before {deadline} to keep your slot.",
+      "payNoDeadline": "Pay to keep your slot.",
+      "review": "The organizer is checking your payment proof.",
+      "rejected": "Your payment proof was rejected: {reason}. Upload a new one before {deadline}.",
+      "rejectedNoReason": "Your payment proof was rejected. Upload a new one before {deadline}.",
+      "waiting": "Your slot is safe. Teams are drawn after registration closes.",
+      "in_team": "You are in {team}.",
+      "out_of_teams": "You are not in a team this time.",
+      "expired": "The payment time ran out, so the slot went to another player.",
+      "withdrawn": "You withdrew your registration.",
+      "refund": {
+        "owed": "The organizer will pay your fee back.",
+        "done": "Your fee has been paid back."
+      }
+    },
+    "team": {
+      "event": "Event {name}",
+      "members": "Team members",
+      "ign": "IGN",
+      "uid": "UID",
+      "position": "Position",
+      "contact": "WhatsApp",
+      "captain": "Captain",
+      "you": "You",
+      "chat": "Chat",
+      "noContact": "None",
+      "privacy": "WhatsApp numbers are only visible to your teammates.",
+      "matches": "Matches",
+      "noMatches": "No match is scheduled yet.",
+      "manage": "Manage the team on the captain page",
+      "back": "Back"
+    },
+    "profile": {
+      "title": "Profile",
+      "description": "Your WhatsApp number.",
+      "whatsapp": "WhatsApp number",
+      "hint": "Used for your next sign-ups. Registrations you already made keep the old number.",
+      "submit": "Save"
     }
   },
   "captainSettings": {

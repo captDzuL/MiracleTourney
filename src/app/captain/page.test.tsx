@@ -15,6 +15,7 @@ const {
   hasTempPassword,
   requireRole,
   getRosterChangeOverview,
+  teamCount,
 } = vi.hoisted(() => ({
   getCaptainTeams: vi.fn(),
   getCertificatesForEvents: vi.fn(),
@@ -28,6 +29,7 @@ const {
   hasTempPassword: vi.fn(),
   requireRole: vi.fn(),
   getRosterChangeOverview: vi.fn(),
+  teamCount: vi.fn(),
 }));
 
 vi.mock("next-intl/server", () => ({
@@ -47,6 +49,7 @@ vi.mock("next-intl/server", () => ({
         eventCapacity: `${values?.registered ?? 0}/${values?.cap ?? 0} tim terdaftar`,
         rosterManagementTitle: "Management Roster",
         rosterManagementDescription: "Kelola pemain untuk tim yang sudah terdaftar.",
+        rosterManagementOwnerDescription: "Kelola pemain tim yang terbentuk dari acak.",
         paymentPending: "Pendaftaran pembayaran dibuat. Upload bukti bayar agar admin bisa verifikasi.",
         paymentProofUploaded: "Bukti pembayaran berhasil diupload dan menunggu verifikasi admin.",
         paymentRequestsTitle: "Status Pembayaran",
@@ -78,6 +81,7 @@ vi.mock("@/i18n/redirect", () => ({
   },
 }));
 vi.mock("@/lib/auth/session", () => ({ requireRole }));
+vi.mock("@/lib/platform/db", () => ({ prisma: { team: { count: teamCount } } }));
 vi.mock("@/lib/platform/repository", () => ({
   getCaptainTeams,
   getCertificatesForEvents,
@@ -252,6 +256,110 @@ describe("captain dashboard event registration", () => {
 
     expect(html).toContain("QRIS belum tersedia. Hubungi organizer.");
     expect(html).not.toContain("alt=\"QRIS\"");
+  });
+});
+
+describe("a player who captains a solo team", () => {
+  const player = { id: "player-1", email: "p@test.com", name: "Bima", role: "player" };
+  const soloTeam = { id: "team-1", eventId: "event-1", captainId: "player-1", name: "Tim 1", tag: "T1", source: "solo-draw", logoText: "T1" };
+
+  /** The session answers for one role only, as the real one does. */
+  const signedInAs = (user: { id: string; role: string } | null) =>
+    requireRole.mockImplementation(async (role: string) => (user && user.role === role ? user : null));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    teamCount.mockResolvedValue(1);
+    getCaptainTeams.mockResolvedValue([soloTeam]);
+    hasTempPassword.mockResolvedValue(false);
+    getEventsByIds.mockResolvedValue([{ ...openEvent, id: "event-1", status: "Registration Closed" }]);
+    getPlayersForTeams.mockResolvedValue([{ id: "p-a", teamId: "team-1", displayName: "UID-a", nickname: "Ace", position: "Goalkeeper" }]);
+    getCertificatesForEvents.mockResolvedValue(new Map());
+    getRosterChangeOverview.mockResolvedValue(null);
+    getGameForEvent.mockReturnValue({ id: "game-flashpeak", name: "Flashpeak" });
+    getModeForEvent.mockReturnValue({ id: "mode-flashpeak-5v5", name: "5v5", positions: ["Goalkeeper"] });
+    getCaptainRegistrationRequests.mockResolvedValue([]);
+    getOpenRegistrationEventsForCaptain.mockResolvedValue([openEvent]);
+  });
+
+  it("sees only the roster of that team, with no way to register teams or keep a draft", async () => {
+    signedInAs(player);
+
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({}) }));
+
+    expect(html).toContain("Tim 1");
+    expect(html).toContain("Ace");
+    expect(html).toContain("Kelola pemain tim yang terbentuk dari acak.");
+    expect(html).not.toContain("tim yang sudah terdaftar");
+    expect(html).not.toContain("Daftar Event Baru");
+    expect(html).not.toContain("Open Cup");
+    expect(html).not.toContain("Daftarkan Tim");
+    expect(html).not.toContain('name="tag"');
+    expect(html).not.toContain("Pendaftaran Event Baru");
+    expect(getOpenRegistrationEventsForCaptain).not.toHaveBeenCalled();
+    expect(getCaptainRegistrationRequests).not.toHaveBeenCalled();
+    expect(getCaptainTeams).toHaveBeenCalledWith("player-1");
+  });
+
+  it("offers no direct add, edit or delete for the drawn team, and says why", async () => {
+    signedInAs(player);
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({}) }));
+    expect(html).not.toContain('id="add-player-form"');
+    expect(html).not.toContain("edit=p-a");
+    expect(html).not.toContain("confirm=p-a");
+    expect(html).toContain("soloRosterNote");
+  });
+
+  it("does not open the edit or delete form from the address either", async () => {
+    signedInAs(player);
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({ edit: "p-a", confirm: "p-a" }) }));
+    expect(html).not.toContain("editPlayerTitle");
+    expect(html).not.toContain("deleteConfirm");
+  });
+
+  it("stays on the roster even when the address asks for the registration tab", async () => {
+    signedInAs(player);
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({ tab: "registration", eventId: "event-1" }) }));
+    expect(html).toContain("Tim 1");
+    expect(html).not.toContain("Daftar Event Baru");
+  });
+
+  it("sends a temporary-password notice to the player's settings page", async () => {
+    signedInAs(player);
+    hasTempPassword.mockResolvedValue(true);
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain('href="/player/settings"');
+    expect(html).not.toContain('href="/captain/settings"');
+  });
+
+  it("points the account settings button of a solo team at the player's settings page", async () => {
+    signedInAs(player);
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain('href="/player/settings"');
+    expect(html).not.toContain('href="/captain/settings"');
+  });
+
+  it("sends a player who captains nothing to the player area", async () => {
+    signedInAs(player);
+    teamCount.mockResolvedValue(0);
+    await expect(CaptainPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("REDIRECT:/player");
+    expect(getCaptainTeams).not.toHaveBeenCalled();
+  });
+
+  it("sends somebody who is not signed in, or is an organizer, to sign in", async () => {
+    signedInAs(null);
+    await expect(CaptainPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("REDIRECT:/login");
+    signedInAs({ id: "o1", role: "organizer" });
+    await expect(CaptainPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("REDIRECT:/login");
+  });
+
+  it("leaves the captain's own page as it was, draft form included", async () => {
+    signedInAs({ id: "captain-1", role: "captain" });
+    getCaptainTeams.mockResolvedValue([]);
+    const html = renderToStaticMarkup(await CaptainPage({ searchParams: Promise.resolve({ tab: "roster" }) }));
+    expect(html).toContain('name="tag"');
+    expect(html).toContain("Pendaftaran Event Baru");
+    expect(teamCount).not.toHaveBeenCalled();
   });
 });
 
