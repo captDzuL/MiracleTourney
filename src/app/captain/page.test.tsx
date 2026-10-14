@@ -152,6 +152,16 @@ describe("captain dashboard event registration", () => {
     expect(html).not.toContain("lg:grid-cols-2");
   });
 
+  it("shows an error message as the framework hands it over, without decoding it a second time", async () => {
+    getCaptainRegistrationRequests.mockResolvedValue([]);
+    getOpenRegistrationEventsForCaptain.mockResolvedValue([]);
+
+    // "%" is legal text but would throw if decoded again, which used to turn a message into a crash.
+    const page = await CaptainPage({ searchParams: Promise.resolve({ error: "Diskon 100% tidak berlaku" }) });
+
+    expect(renderToStaticMarkup(page)).toContain("Diskon 100% tidak berlaku");
+  });
+
   it("shows an empty state when no published event is available to this captain", async () => {
     getCaptainRegistrationRequests.mockResolvedValue([]);
     getOpenRegistrationEventsForCaptain.mockResolvedValue([]);

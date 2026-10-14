@@ -80,6 +80,30 @@ export const getSessionUser = cache(async (): Promise<AppUser | null> => {
   return user;
 });
 
+async function writeSessionCookie(user: { id: string; role: string; sessionVersion?: number | null }) {
+  const maxAge = getSessionMaxAge(user.role);
+  const token = await signToken({ sub: user.id, role: user.role, sv: user.sessionVersion ?? 0 }, maxAge);
+  const store = await cookies();
+  store.set(JWT_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge,
+  });
+}
+
+/**
+ * Gives the browser that just changed its password a session for the new session version. Every other
+ * session of the account stops working. Returns false when the account is gone or deactivated.
+ */
+export async function reissueSession(userId: string): Promise<boolean> {
+  const user = await getCaptainById(userId);
+  if (!user || user.deactivatedAt) return false;
+  await writeSessionCookie({ id: user.id, role: user.role, sessionVersion: user.sessionVersion });
+  return true;
+}
+
 /**
  * Validates credentials and sets a 7-day HttpOnly JWT cookie on success.
  * Returns `{ ok: true, user }` or `{ ok: false, error }` — never throws.
@@ -99,16 +123,7 @@ export async function signIn(email: string, password: string) {
     return { ok: false as const, error: "Invalid email or password." };
   }
 
-  const maxAge = getSessionMaxAge(user.role);
-  const token = await signToken({ sub: user.id, role: user.role, sv: user.sessionVersion ?? 0 }, maxAge);
-  const store = await cookies();
-  store.set(JWT_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge,
-  });
+  await writeSessionCookie({ id: user.id, role: user.role, sessionVersion: user.sessionVersion });
 
   const { passwordHash, ...publicUser } = user;
   void passwordHash;

@@ -36,7 +36,7 @@ evidence.
 | `premium_match_scheduling` | `FEATURE_FLAG_PREMIUM_MATCH_SCHEDULING` | false | not set | not set | nowhere (no read site) | No effect |
 | `premium_notifications` | `FEATURE_FLAG_PREMIUM_NOTIFICATIONS` | false | not set | not set | nowhere (no read site) | No effect |
 | `ai_event_art` | `FEATURE_FLAG_AI_EVENT_ART` | false | not set | not set | nowhere (no read site) | No effect |
-| `solo_tournament_v1` | `FEATURE_FLAG_SOLO_TOURNAMENT_V1` | false | not set | not set | `getSoloDrawRules` consumers once the solo pages land (no read site yet) | No solo event can be created or joined; locked solo teams stay ordinary teams |
+| `solo_tournament_v1` | `FEATURE_FLAG_SOLO_TOURNAMENT_V1` | false | not set | not set | player sign-up and `/player` pages, solo registration page and actions, organizer draw actions and registration workspace, event setup and publish readiness, public event CTA (adaptive, ordinary and legacy detail pages) | No player role at sign-up, no solo option in the event wizard, solo pages and `/player` answer 404, a solo event shows a switched-off join button; locked solo teams stay ordinary teams. See `solo-tournament-rollout.md` |
 
 ## Findings
 

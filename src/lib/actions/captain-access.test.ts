@@ -18,13 +18,14 @@ const mocks = vi.hoisted(() => ({
   upsertStatSubmission: vi.fn(),
   getUserPasswordHashById: vi.fn(),
   updateCaptainPassword: vi.fn(),
+  reissueSession: vi.fn().mockResolvedValue(true),
   registerTeam: vi.fn(),
   createCaptainWithTeam: vi.fn(),
   saveDraftTeam: vi.fn(),
   checkRateLimit: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/session", () => ({ requireRole: mocks.requireRole, signIn: vi.fn(), signOut: vi.fn() }));
+vi.mock("@/lib/auth/session", () => ({ requireRole: mocks.requireRole, signIn: vi.fn(), signOut: vi.fn(), reissueSession: mocks.reissueSession }));
 vi.mock("@/lib/platform/db", () => ({ prisma: { team: { count: mocks.teamCount, findFirst: mocks.teamFindFirst, findMany: vi.fn().mockResolvedValue([]) } } }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/i18n/redirect", () => ({
@@ -185,7 +186,18 @@ describe("changing the password", () => {
     signIn(captain);
     await expect(outcome(() => change())).resolves.toBe("REDIRECT:/captain?success=password-changed");
     expect(mocks.updateCaptainPassword).toHaveBeenCalledWith("captain-1", "$new$");
+    // The device that changed it keeps a session; the others are ended by the new session version.
+    expect(mocks.reissueSession).toHaveBeenCalledWith("captain-1");
     await expect(outcome(() => change("a-new-password", "different"))).resolves.toContain("REDIRECT:/captain/settings?error=");
+  });
+
+  it("sends the device to sign in again when the new session cannot be made, instead of an error page", async () => {
+    signIn(captain);
+    mocks.reissueSession.mockResolvedValueOnce(false);
+    await expect(outcome(() => change())).resolves.toBe("REDIRECT:/login");
+    mocks.reissueSession.mockRejectedValueOnce(new Error("db down"));
+    await expect(outcome(() => change())).resolves.toBe("REDIRECT:/login");
+    expect(mocks.updateCaptainPassword).toHaveBeenCalledTimes(2);
   });
 
   it("takes any player to the player pages, whether or not they captain a team", async () => {

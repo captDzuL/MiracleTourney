@@ -95,6 +95,7 @@ Seed membuat user demo berikut:
 | `captain` | `captain@miraclefc.gg` | Captain demo |
 | `organizer` | `organizer-a@miraclefc.gg` | Flashpeak Organizer |
 | `organizer` | `organizer-b@miraclefc.gg` | Mobile Legends Organizer |
+| `player` | `solo-player-01@miraclefc.gg` sampai `solo-player-14@miraclefc.gg` | 14 pemain untuk event `flashpeak-solo-cup` (2 tim, tanpa pendaftaran awal). Password dari `SEED_PLAYER_PASSWORD` |
 
 Organizer demo punya masing-masing dua event:
 
@@ -112,6 +113,7 @@ Role aktif:
 - `platform_admin`: bisa melihat dan mengubah semua event.
 - `organizer`: hanya bisa melihat dan mengubah event dengan `Event.organizerUserId` miliknya.
 - `captain`: mengelola tim/roster dan submit statistik untuk timnya.
+- `player`: pemain solo (flag `solo_tournament_v1`). Daftar sendiri ke event solo, bayar, lalu masuk tim lewat acak organizer. Halamannya di `/player`. Pemain yang jadi kapten hasil acak juga boleh membuka `/captain`, hanya untuk timnya, dan tidak bisa menambah atau menghapus pemain langsung. Satu email, satu role. Rancangan: `docs/handoff/2026-10-12-solo-tournament/`, rollout: `docs/operations/solo-tournament-rollout.md`.
 - `admin`: legacy compatibility, diperlakukan seperti platform admin di beberapa guard.
 
 Ownership utama ada di `Event.organizerUserId`, dengan metadata publik:

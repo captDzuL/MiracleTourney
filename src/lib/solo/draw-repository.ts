@@ -154,7 +154,7 @@ async function buildView(db: Tx | typeof prisma, draw: DrawWithAssignments, even
 export async function createSoloDraw(input: { actor: AppUser; eventId: string; seed?: string }): Promise<SoloDrawView> {
   await assertUserCanManageEvent(input.actor, input.eventId);
   const seed = (input.seed ?? newSeed()).trim();
-  if (seed.length === 0 || seed.length > MAX_SEED_LENGTH) throw new UserFacingError("Seed harus 1-200 karakter.");
+  if (seed.length === 0 || seed.length > MAX_SEED_LENGTH) throw new UserFacingError("Kode acak harus 1-200 karakter.");
 
   return withEventLock(input.eventId, async (tx) => {
     const event = await loadDrawEvent(tx, input.eventId);

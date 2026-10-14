@@ -151,7 +151,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("next/headers", () => ({ headers }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
-vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut }));
+vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut, reissueSession: vi.fn().mockResolvedValue(true) }));
 vi.mock("@/lib/actions/registration-v3-actions", () => ({ previewRegistrationImportForUser, commitRegistrationImportForUser }));
 vi.mock("@/lib/imports/team-import", () => ({
   parseAndValidateTeamImport: vi.fn(),

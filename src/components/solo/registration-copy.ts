@@ -54,7 +54,7 @@ export type SoloCopy = {
 
 const id: SoloCopy = {
   title: "Daftar solo",
-  formIntro: "Isi data game kamu. Kalau slot masih ada, kamu bisa langsung bayar. Kalau penuh, kamu masuk antrean.",
+  formIntro: "Isi data game kamu. Kalau slot penuh, kamu masuk antrean dan belum perlu bayar.",
   ign: "IGN",
   uid: "UID",
   primaryPosition: "Posisi utama",
@@ -71,8 +71,8 @@ const id: SoloCopy = {
   freeNote: "Gratis.",
   yourDetails: (ign, uid, position) => `IGN ${ign} · UID ${uid} · ${position}`,
   queuedTitle: "Kamu di antrean",
-  queuedBody: (position, group) => `Antrean ke-${position} untuk ${group}. Kamu belum perlu bayar. Kami kirim email kalau slot terbuka.`,
-  queuedBodyUnknown: "Kamu di antrean. Kamu belum perlu bayar. Kami kirim email kalau slot terbuka.",
+  queuedBody: (position, group) => `Antrean ke-${position} untuk ${group}. Kamu belum perlu bayar, kami kirim email kalau slot terbuka.`,
+  queuedBodyUnknown: "Kamu di antrean. Kamu belum perlu bayar, kami kirim email kalau slot terbuka.",
   payTitle: "Bayar untuk mengamankan slot",
   payBody: (deadline) => `Bayar sebelum ${deadline}. Lewat dari itu, slot diberikan ke pemain berikutnya.`,
   fee: (fee) => `Biaya: ${fee}`,
@@ -104,7 +104,7 @@ const id: SoloCopy = {
 
 const en: SoloCopy = {
   title: "Join solo",
-  formIntro: "Enter your game details. If a slot is free you can pay right away. If it is full, you join the queue.",
+  formIntro: "Enter your game details. If the slots are full, you join the queue and do not pay yet.",
   ign: "IGN",
   uid: "UID",
   primaryPosition: "Main position",
@@ -121,8 +121,8 @@ const en: SoloCopy = {
   freeNote: "Free.",
   yourDetails: (ign, uid, position) => `IGN ${ign} · UID ${uid} · ${position}`,
   queuedTitle: "You are in the queue",
-  queuedBody: (position, group) => `Place ${position} for ${group}. You do not pay yet. We email you when a slot opens.`,
-  queuedBodyUnknown: "You are in the queue. You do not pay yet. We email you when a slot opens.",
+  queuedBody: (position, group) => `Place ${position} for ${group}. You do not pay yet, and we email you when a slot opens.`,
+  queuedBodyUnknown: "You are in the queue. You do not pay yet, and we email you when a slot opens.",
   payTitle: "Pay to keep your slot",
   payBody: (deadline) => `Pay before ${deadline}. After that, the slot goes to the next player.`,
   fee: (fee) => `Fee: ${fee}`,

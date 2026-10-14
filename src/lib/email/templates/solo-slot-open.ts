@@ -28,11 +28,11 @@ export function soloSlotOpenEmail(input: SoloSlotOpenEmailInput): { subject: str
   const name = escapeHtml(input.playerName);
   const event = escapeHtml(input.eventName);
   const link = escapeHtml(input.eventUrl);
-  const button = `<p><a href="${link}">Buka halaman daftar</a></p>`;
+  const button = `<p><a href="${link}">Buka halaman pendaftaran</a></p>`;
 
   if (input.status === "approved") {
     return {
-      subject: `Kamu masuk: ${stripMarkup(input.eventName)}`,
+      subject: `Kamu terdaftar: ${stripMarkup(input.eventName)}`,
       html: `<p>Halo ${name},</p><p>Ada slot kosong di ${event} dan sekarang jadi milikmu. Kamu sudah terdaftar.</p>${button}`,
     };
   }

@@ -26,7 +26,7 @@ describe("soloSlotOpenEmail", () => {
 
   it("confirms a free registration without asking for payment", () => {
     const email = soloSlotOpenEmail({ ...base, status: "approved", deadline: null });
-    expect(email.subject).toBe("Kamu masuk: Flashpeak Solo Cup");
+    expect(email.subject).toBe("Kamu terdaftar: Flashpeak Solo Cup");
     expect(email.html).not.toMatch(/bayar/i);
     expect(email.html).toContain(`href="${base.eventUrl}"`);
   });

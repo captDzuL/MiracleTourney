@@ -32,6 +32,8 @@ export type PublicEventDetailV2Props = {
   labels: PublicEventDetailV2Labels;
   children?: React.ReactNode;
   readOnly?: boolean;
+  /** False hides the join button, for an event whose registration page is switched off. Default: open. */
+  registrationOpen?: boolean;
 };
 
 const SECTIONS = ["participants", "bracket", "standings", "leaderboards"] as const;
@@ -60,6 +62,7 @@ export function PublicEventDetailV2({
   labels,
   children,
   readOnly = false,
+  registrationOpen = true,
 }: PublicEventDetailV2Props) {
   const isLive = Boolean(event.stream?.enabled && event.stream.isLive);
   const sectionLabels: Record<(typeof SECTIONS)[number], string> = {
@@ -96,7 +99,7 @@ export function PublicEventDetailV2({
           {!readOnly ? (
             <div className="flex flex-wrap items-center gap-3 pt-1">
               <ShareButton />
-              {event.status === "Published" ? (
+              {event.status === "Published" && registrationOpen ? (
               <a
                 data-testid="pv-detail-register"
                 className="pv-button"

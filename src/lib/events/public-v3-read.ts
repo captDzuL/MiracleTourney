@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { findGameConfig, findGameModeConfig } from "@/lib/platform/config";
-import { getRegistrationAvailability, buildRegistrationCta } from "./adaptive-public-event";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { findGameConfig, findGameModeConfig, getSoloDrawRules } from "@/lib/platform/config";
+import { getRegistrationAvailability, buildRegistrationCta, buildSoloRegistrationCta } from "./adaptive-public-event";
 import type { RegistrationAvailability, RegistrationCta, RegistrationViewerState } from "./adaptive-public-event";
 import { readPublicOngoing } from "./public-ongoing";
 import { prisma } from "@/lib/platform/db";
@@ -408,7 +409,10 @@ function registrationInput(event: CompatiblePublicEventRecord, input: Compatible
   const participantCap = Math.floor(nonNegative(rawRegistration.participantCap, nonNegative(event.participantCap)));
   const opensAt = dateText(rawRegistration.opensAt, dateText(event.registrationOpensAt));
   const closesAt = dateText(rawRegistration.closesAt, dateText(event.registrationClosesAt));
-  const availability = getRegistrationAvailability({
+  const isSolo = event.entryMode === "solo";
+  // A solo event is only joinable while the solo flag is on; with it off the page behind the button is a 404.
+  const soloOpen = isSolo && getSoloDrawRules(text(event.gameModeId)) !== null && isFeatureEnabled("solo_tournament_v1");
+  const windowAvailability = getRegistrationAvailability({
     status: event.status === "Registration Closed" ? "Registration Closed" : event.status === "Ongoing" ? "Ongoing" : "Published",
     opensAt: opensAt ? new Date(opensAt) : null,
     closesAt: closesAt ? new Date(closesAt) : null,
@@ -416,8 +420,9 @@ function registrationInput(event: CompatiblePublicEventRecord, input: Compatible
     participantCap,
     now,
   });
+  const availability: RegistrationAvailability = isSolo && !soloOpen ? "legacy" : windowAvailability;
   const sharedView = shared(event, mode, source, teams, compatibleUpdates(input), activeTeamCount);
-  const fallbackCta = buildRegistrationCta({
+  const fallbackCta = (isSolo ? buildSoloRegistrationCta : buildRegistrationCta)({
     state: "anonymous",
     availability,
     href: sharedView.identity.cta.href ?? "/events/" + encodeURIComponent(sharedView.identity.slug) + "/register",
@@ -660,6 +665,7 @@ export function projectPreviewPublicV3Event(event: CompatiblePublicEventRecord, 
 function identityEvent(event: AnyRecord): CompatiblePublicEventRecord {
   return {
     id: text(event.id),
+    entryMode: typeof event.entryMode === "string" ? event.entryMode : null,
     slug: text(event.slug),
     name: text(event.name),
     title: text(event.title),

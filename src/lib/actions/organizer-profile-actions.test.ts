@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requireAnyRole, updateOrganizerProfileForUser, getUserPasswordHashById, updateUserPassword, revalidatePath, revalidateTag, redirect } = vi.hoisted(() => ({
-  requireAnyRole: vi.fn(), updateOrganizerProfileForUser: vi.fn(), getUserPasswordHashById: vi.fn(), updateUserPassword: vi.fn(),
+const { reissueSession, requireAnyRole, updateOrganizerProfileForUser, getUserPasswordHashById, updateUserPassword, revalidatePath, revalidateTag, redirect } = vi.hoisted(() => ({
+  reissueSession: vi.fn(), requireAnyRole: vi.fn(), updateOrganizerProfileForUser: vi.fn(), getUserPasswordHashById: vi.fn(), updateUserPassword: vi.fn(),
   revalidatePath: vi.fn(), revalidateTag: vi.fn(), redirect: vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`); }),
 }));
 
-vi.mock("@/lib/auth/session", () => ({ requireAnyRole }));
+vi.mock("@/lib/auth/session", () => ({ requireAnyRole, reissueSession }));
 vi.mock("@/lib/platform/repository", () => ({ updateOrganizerProfileForUser, getUserPasswordHashById, updateUserPassword }));
 vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
 vi.mock("next/navigation", () => ({ redirect }));
@@ -47,6 +47,7 @@ describe("organizer first password change", () => {
     vi.clearAllMocks();
     requireAnyRole.mockResolvedValue({ ...organizer, mustChangePassword: true });
     getUserPasswordHashById.mockResolvedValue("$current-hash");
+    reissueSession.mockResolvedValue(true);
   });
 
   it("clears the first-login lock only after the current temporary password is verified", async () => {
@@ -54,5 +55,14 @@ describe("organizer first password change", () => {
     form.set("locale", "id"); form.set("currentPassword", "Temporary123!"); form.set("newPassword", "SaferPassword123!"); form.set("confirmPassword", "SaferPassword123!");
     await expect(completeOrganizerPasswordChangeAction(form)).rejects.toThrow("REDIRECT:/id/organizer?password=changed");
     expect(updateUserPassword).toHaveBeenCalledWith("organizer-1", "$new-hash");
+    expect(reissueSession).toHaveBeenCalledWith("organizer-1");
+  });
+
+  it("sends the organizer to sign in again when the new session cannot be made", async () => {
+    reissueSession.mockResolvedValueOnce(false);
+    const form = new FormData();
+    form.set("locale", "id"); form.set("currentPassword", "Temporary123!"); form.set("newPassword", "SaferPassword123!"); form.set("confirmPassword", "SaferPassword123!");
+    await expect(completeOrganizerPasswordChangeAction(form)).rejects.toThrow("REDIRECT:/id/login");
+    expect(updateUserPassword).toHaveBeenCalled();
   });
 });

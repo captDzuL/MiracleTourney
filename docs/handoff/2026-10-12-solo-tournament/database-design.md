@@ -1,6 +1,6 @@
 # Desain Database — Turnamen Solo
 
-Status: disetujui pemilik produk untuk fase 1, 12 Oktober 2026. Belum dimigrasikan. Stack: Prisma 6 + PostgreSQL (Neon). Aturan migrasi mengikuti `prisma/migrations/` yang ada.
+Status: disetujui pemilik produk untuk fase 1, 12 Oktober 2026. Diimplementasi fase 1 (migrasi `20261013000000_add_solo_tournament`, `20261014000000_solo_assignment_fk_cascade`, `20261015000000_solo_fk_indexes`). Belum diterapkan ke produksi. Stack: Prisma 6 + PostgreSQL (Neon). Aturan migrasi mengikuti `prisma/migrations/` yang ada.
 
 ## 1. Prinsip
 
