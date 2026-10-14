@@ -480,3 +480,43 @@ describe("Certificate Studio Prisma transaction boundary", () => {
     expect(mutation).toMatchObject({ status: "succeeded", result: generated });
   });
 });
+
+describe("Certificate Studio state for team logo import", () => {
+  const SOURCE_URL = "https://store1.public.blob.vercel-storage.com/team-logos/garuda.png";
+  const logoRow = (id: string, extra: Record<string, unknown> = {}) => ({
+    id, url: `https://store1.public.blob.vercel-storage.com/certificate-assets/${id}.png`, mimeType: "image/png", width: 512, height: 512, byteSize: 1024,
+    storageProvider: "vercel_blob", storageKey: `certificate-assets/${id}.png`, contentSha256: "b".repeat(64), purpose: "certificate_team_logo",
+    source: "organizer_upload", sourceUrl: null, ...extra,
+  });
+  const loadState = async (assetRows: unknown[], teamRows: unknown[] = []) => {
+    const find = vi.spyOn(prisma.tournamentCompletion, "findUnique").mockResolvedValue({ ...completion, event: { ...completion.event, certificates: [], certificatePublications: [] } } as never);
+    const assets = vi.spyOn(prisma.eventVisualAsset, "findMany").mockResolvedValue(assetRows as never);
+    const teams = vi.spyOn(prisma.team, "findMany").mockResolvedValue(teamRows as never);
+    try { return { state: await loadCertificateStudioState({ id: "event-1", name: "Miracle Open" }), teams }; }
+    finally { find.mockRestore(); assets.mockRestore(); }
+  };
+
+  it("attaches the team known from the locked completion to every recipient", async () => {
+    const { state, teams } = await loadState([]);
+    expect(state.records[0].recipient).toMatchObject({ id: "recipient-champion", team: { id: "recipient-champion", name: "Team 1" } });
+    expect(state.records[3].recipient).toMatchObject({ kind: "player", team: { id: "team-awards", name: "Awards Team" } });
+    teams.mockRestore();
+  });
+
+  it("does not query teams when no approved asset came from a team logo import", async () => {
+    const { state, teams } = await loadState([logoRow("plain")]);
+    expect(state.approvedAssets).toEqual([{ id: "plain", label: "plain.png", purpose: "certificate_team_logo" }]);
+    expect(teams).not.toHaveBeenCalled();
+    teams.mockRestore();
+  });
+
+  it("labels an imported logo by the name of the team whose logo it came from", async () => {
+    const { state, teams } = await loadState(
+      [logoRow("imported", { source: "team_logo_import", sourceUrl: SOURCE_URL }), logoRow("orphan", { source: "team_logo_import", sourceUrl: "https://store1.public.blob.vercel-storage.com/team-logos/gone.png" }), logoRow("plain")],
+      [{ name: "Garuda FC", logoUrl: SOURCE_URL }],
+    );
+    expect(teams).toHaveBeenCalledWith({ where: { eventId: "event-1", logoUrl: { in: [SOURCE_URL, "https://store1.public.blob.vercel-storage.com/team-logos/gone.png"] } }, select: { name: true, logoUrl: true } });
+    expect(state.approvedAssets.map(({ id, label }) => [id, label])).toEqual([["imported", "Garuda FC"], ["orphan", "orphan.png"], ["plain", "plain.png"]]);
+    teams.mockRestore();
+  });
+});

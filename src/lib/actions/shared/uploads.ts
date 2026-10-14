@@ -144,7 +144,7 @@ export async function uploadImageAssetImpl({
   }
 
   const mimeType = file.type || "image/png";
-  const dimensions = await readImageDimensions(buffer, validatePixels);
+  const dimensions = await readImageDimensions(buffer, validatePixels, maxDimension);
   if (!dimensions) {
     rejectImageUpload("decode_failed", `${label} file could not be decoded as an image.`, validationMode, errorPath);
   }
@@ -176,14 +176,23 @@ export async function uploadImageAsset(input: UploadImageAssetInput): Promise<Up
   return withServerActionLog("image_upload", "/server-actions/image-upload", () => uploadImageAssetImpl(input));
 }
 
-/** Returns image dimensions, optionally requiring all pixels to decode, or null on failure. */
-export async function readImageDimensions(buffer: Buffer, validatePixels = false): Promise<{ width: number; height: number } | null> {
+/**
+ * Returns image dimensions, optionally requiring all pixels to decode, or null on failure.
+ * With `maxDimension`, the pixel decode may read at most maxDimension² pixels, and an image whose header already
+ * exceeds the maximum is returned without decoding any pixel so the caller can reject it as out of range.
+ */
+export async function readImageDimensions(buffer: Buffer, validatePixels = false, maxDimension?: number): Promise<{ width: number; height: number } | null> {
   try {
     const sharp = (await import("sharp")).default;
+    const limit = maxDimension === undefined ? undefined : { limitInputPixels: maxDimension * maxDimension };
+    // The header read decodes no pixels but sharp applies the pixel limit to it too, so it runs unlimited and the
+    // limit guards the pixel decode below; an oversized header is rejected before that decode is ever attempted.
     const metadata = await sharp(buffer).metadata();
     if (!metadata.width || !metadata.height) return null;
-    if (validatePixels) await sharp(buffer, { failOn: "error" }).stats();
-    return { width: metadata.width, height: metadata.height };
+    const dimensions = { width: metadata.width, height: metadata.height };
+    if (maxDimension !== undefined && (dimensions.width > maxDimension || dimensions.height > maxDimension)) return dimensions;
+    if (validatePixels) await sharp(buffer, { failOn: "error", ...limit }).stats();
+    return dimensions;
   } catch {
     return null;
   }

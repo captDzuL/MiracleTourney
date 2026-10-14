@@ -334,6 +334,17 @@ describe("admin team ownership boundaries", () => {
     expect(deleteTeam).not.toHaveBeenCalled();
   });
 
+  it("refuses a logo larger than 4096 pixels from its header, before storing or decoding it", async () => {
+    assertUserCanManageTeam.mockResolvedValue({ eventId: "event-safe" });
+    const sharp = (await import("sharp")).default;
+    const huge = await sharp({ create: { width: 5000, height: 5000, channels: 3, background: "#336699" } }).png({ compressionLevel: 9 }).toBuffer();
+    const logo = new File([new Uint8Array(huge)], "huge.png", { type: "image/png" });
+
+    await expect(adminUploadTeamLogoAction(fd({ teamId: "team-safe", teamLogo: logo }))).rejects.toThrow("REDIRECT:/admin?error=Upload%20failed");
+    expect(blobPut).not.toHaveBeenCalled();
+    expect(updateTeamLogo).not.toHaveBeenCalled();
+  });
+
   it("rate-limits admin team logos after authoritative event lookup", async () => {
     checkRateLimit.mockReturnValue(false);
     assertUserCanManageTeam.mockResolvedValue({ eventId: "event-safe" });

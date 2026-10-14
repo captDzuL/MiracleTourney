@@ -1,9 +1,9 @@
 import { getGameArtTheme } from "./config";
-import type { Event } from "./types";
+import type { Event, VisualAssetSource } from "./types";
 
 
 export type ResolvedEventVisual = {
-  source: "organizer_upload" | "ai_generated" | "typographic";
+  source: VisualAssetSource | "typographic";
   url?: string;
   accentColor: string;
   focalPoint: { x: number; y: number };

@@ -114,7 +114,7 @@ function trustedStorage(asset: { url: string | null; storageProvider: string | n
   } catch { return false; }
 }
 
-function trustedAsset(row: {
+export function trustedAsset(row: {
   url: string | null; mimeType: string | null; width: number | null; height: number | null; byteSize: number | null;
   storageProvider: string | null; storageKey: string | null; contentSha256: string | null; purpose: string | null;
 }): TrustedCertificateAsset | null {
@@ -125,6 +125,22 @@ function trustedAsset(row: {
   return { url: row.url, detectedMimeType: row.mimeType, bytes: row.byteSize, width: row.width, height: row.height,
     storageOwnershipVerified: true, storageProvider: row.storageProvider, storageKey: row.storageKey,
     contentSha256: row.contentSha256, purpose: row.purpose as CertificateAssetPurpose };
+}
+
+type VisualAssetOptionRow = Parameters<typeof trustedAsset>[0] & { id: string; source: string; sourceUrl: string | null };
+
+/** Trusted approved assets as dropdown options; a team logo import is named after the team it was copied from. */
+async function approvedAssetOptions(eventId: string, rows: readonly VisualAssetOptionRow[]) {
+  const trusted = rows.flatMap((row) => { const asset = trustedAsset(row); return asset ? [{ row, asset }] : []; });
+  const importedUrls = [...new Set(trusted.flatMap(({ row }) => row.source === "team_logo_import" && row.sourceUrl ? [row.sourceUrl] : []))];
+  const teams = importedUrls.length
+    ? await prisma.team.findMany({ where: { eventId, logoUrl: { in: importedUrls } }, select: { name: true, logoUrl: true } })
+    : [];
+  const teamNames = new Map(teams.flatMap((team) => team.logoUrl ? [[team.logoUrl, team.name] as const] : []));
+  return trusted.map(({ row, asset }) => {
+    const teamName = row.source === "team_logo_import" && row.sourceUrl ? teamNames.get(row.sourceUrl) : undefined;
+    return { id: row.id, label: teamName ?? row.storageKey?.split("/").at(-1) ?? row.id, purpose: asset.purpose };
+  });
 }
 
 export async function materializeOwnedCertificateAssetUrl(
@@ -161,10 +177,7 @@ export async function loadCertificateStudioState(event: EventIdentity, locale: "
     }),
     prisma.eventVisualAsset.findMany({ where: { eventId: event.id, status: "approved" }, orderBy: { createdAt: "desc" } }),
   ]);
-  const approvedAssets = visualAssets.flatMap((row) => {
-    const asset = trustedAsset(row);
-    return asset ? [{ id: row.id, label: row.storageKey?.split("/").at(-1) ?? row.id, purpose: asset.purpose }] : [];
-  });
+  const approvedAssets = await approvedAssetOptions(event.id, visualAssets);
   const version = completion ? completionVersion(completion.sourceSnapshot) : null;
   const certificateTypes = requiredTypesFor(completion);
   const pendingRecords = certificateTypes.map((certificateType) => ({ certificateType, recipient: null, selectedCertificateId: null, versions: null }));
@@ -194,7 +207,7 @@ export async function loadCertificateStudioState(event: EventIdentity, locale: "
         && row.completionId === completion.id && row.completionVersion === version && row.recipientId === winner?.id)
       .map((row) => ({ ...mapRecord(row), lastError: row.lastError }));
     const selected = versions.at(-1) ?? null;
-    return { certificateType, recipient: winner ? { id: winner.id, name: winner.name, kind: winner.kind } : null,
+    return { certificateType, recipient: winner ? { id: winner.id, name: winner.name, kind: winner.kind, team: { id: winner.teamId, name: winner.teamName } } : null,
       selectedCertificateId: selected?.id ?? null, versions };
   });
   if (records.some((record) => !record.recipient)) {
