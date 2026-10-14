@@ -3,7 +3,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 
-import { getUserWithPasswordByEmail, getCaptainById, getUserByEmail } from "@/lib/platform/repository";
+import { getUserWithPasswordByEmail, getCaptainById, getUserByEmail } from "@/lib/identity/repository";
 import type { AppUser, UserRole } from "@/lib/platform/types";
 
 const JWT_COOKIE = "mfl_token";

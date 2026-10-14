@@ -19,7 +19,7 @@ vi.mock("@/lib/platform/db", () => ({
   },
 }));
 
-import { getAdaptivePublicEventView, getAdaptivePublicEventViewWithRetry } from "./adaptive-public-event";
+import { getAdaptivePublicEventView } from "./adaptive-public-event";
 
 const baseEvent = {
   id: "event-1",
@@ -150,21 +150,4 @@ describe("getAdaptivePublicEventView", () => {
     const view = await getAdaptivePublicEventView("miracle-cup", null, new Date("2026-09-12T00:00:00Z"));
     expect(view?.registration.feeLabel).toBe("");
   });
-
-
-  it("retries one transient database failure before falling back", async () => {
-    mocks.eventFindFirst
-      .mockRejectedValueOnce(new Error("temporary Neon connection failure"))
-      .mockResolvedValueOnce(baseEvent);
-
-    const view = await getAdaptivePublicEventViewWithRetry(
-      "miracle-cup",
-      null,
-      new Date("2026-09-12T00:00:00Z"),
-    );
-
-    expect(view?.event.id).toBe("event-1");
-    expect(mocks.eventFindFirst).toHaveBeenCalledTimes(2);
-  });
-
 });

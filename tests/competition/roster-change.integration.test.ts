@@ -38,7 +38,7 @@ describe("limited roster changes on a real database", () => {
     const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     const { requestRosterChange, getRosterChangeOverview, RosterChangeError } = await import("../../src/lib/platform/roster-change-requests");
     const { decideRosterChange } = await import("../../src/lib/platform/roster-change-decisions");
-    const { addPlayer } = await import("../../src/lib/platform/repository");
+    const { addPlayer } = await import("../../src/lib/teams/repository");
 
     const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const userIds: string[] = [];

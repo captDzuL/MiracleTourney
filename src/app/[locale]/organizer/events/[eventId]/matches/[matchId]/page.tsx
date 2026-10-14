@@ -5,7 +5,7 @@ import {isFeatureEnabled} from "@/lib/feature-flags";
 import {requireAnyRole} from "@/lib/auth/session";
 import {redirectToActiveLocale} from "@/i18n/redirect";
 import {readCompetitionWorkspace} from "@/lib/competition/workspace-read";
-import {readEventMatchStatistics} from "@/lib/platform/repository";
+import { readEventMatchStatistics } from "@/lib/player-stats/write-repository";
 import {MatchResultStatisticsWorkspace} from "@/components/v3/organizer/matches/MatchResultStatisticsWorkspace";
 
 export default async function MatchPage(props:WorkspacePageProps){

@@ -2,7 +2,7 @@
 import React,{useState} from "react";
 import {useTranslations} from "next-intl";
 import {Button} from "@/components/v3/Button";
-import type {EventMatchStatistics} from "@/lib/platform/repository";
+import type { EventMatchStatistics } from "@/lib/player-stats/write-repository";
 import {getPlayerStatNumericValue} from "@/lib/player-stats/form";
 import {control,surface} from "../match-control/presentation";
 export function StatSubmissionReview({submission,data,locale,timeZone,disabled,onReview}:{submission:EventMatchStatistics["submissions"][number];data:EventMatchStatistics;locale:"id"|"en";timeZone:string;disabled:boolean;onReview:(form:FormData,decision:"approve"|"reject")=>Promise<void>}) {

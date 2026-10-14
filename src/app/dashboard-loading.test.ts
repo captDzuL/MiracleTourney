@@ -8,13 +8,9 @@ const root = process.cwd();
 describe("dashboard loading states", () => {
   it("ships skeleton loading files for admin and captain dashboard routes", () => {
     const routes = [
-      ["src", "app", "admin", "loading.tsx"],
       ["src", "app", "[locale]", "admin", "loading.tsx"],
-      ["src", "app", "captain", "loading.tsx"],
       ["src", "app", "[locale]", "captain", "loading.tsx"],
-      ["src", "app", "captain", "settings", "loading.tsx"],
       ["src", "app", "[locale]", "captain", "settings", "loading.tsx"],
-      ["src", "app", "captain", "stats", "loading.tsx"],
       ["src", "app", "[locale]", "captain", "stats", "loading.tsx"],
     ];
 

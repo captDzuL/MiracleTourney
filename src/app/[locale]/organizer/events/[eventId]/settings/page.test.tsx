@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
   getTranslations: vi.fn(),
 }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
-vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft: mocks.getManageableEventDraft }));
+vi.mock("@/lib/events/repository", () => ({
+  getManageableEventDraft: mocks.getManageableEventDraft,
+}));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("next-intl/server", () => ({ setRequestLocale: mocks.setRequestLocale, getTranslations: mocks.getTranslations }));
 vi.mock("@/lib/platform/roster-change-settings", () => ({ getRosterChangeSettings: mocks.getRosterChangeSettings }));

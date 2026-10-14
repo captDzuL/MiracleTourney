@@ -15,7 +15,9 @@ const { requireAnyRole, getManageableEventDraft, isFeatureEnabled, notFound, red
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft }));
+vi.mock("@/lib/events/repository", () => ({
+  getManageableEventDraft,
+}));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale }));
 vi.mock("@/i18n/navigation", () => ({ Link: ({ children, href, locale }: { children: React.ReactNode; href: string; locale?: string }) => <a href={locale ? `/${locale}${href}` : href}>{children}</a> }));
 vi.mock("next/navigation", () => ({ notFound }));

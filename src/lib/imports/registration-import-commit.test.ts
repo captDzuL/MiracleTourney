@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("registration import commit contract", () => {
-  const repository = readFileSync(join(process.cwd(), "src/lib/platform/repository.ts"), "utf8");
+  const repository = readFileSync(join(process.cwd(), "src/lib/imports/repository.ts"), "utf8");
 
   it("blocks a batch containing validation errors and commits every candidate row", () => {
     expect(repository).toContain('item.status === "error"');

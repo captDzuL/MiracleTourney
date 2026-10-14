@@ -8,7 +8,12 @@ vi.mock("@/lib/auth/session", () => ({ requireAnyRole: m.auth }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => true }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale: (url: string) => { throw Error(url); } }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw Error("NOT_FOUND"); }, useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent: m.access, getRegistrationImportEventContext: m.context }));
+vi.mock("@/lib/imports/repository", () => ({
+  getRegistrationImportEventContext: m.context,
+}));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent: m.access,
+}));
 vi.mock("@/lib/registration/organizer-workspace-read", () => ({ getEventRegistrationQueue: m.queue, getEventImportHistory: m.history, getEventPaymentReview: m.payments, getEventQris: m.qris }));
 vi.mock("../../../../../admin/admin-workspace", () => ({ default: () => React.createElement("div", null, "Legacy global workspace") }));
 vi.mock("@/components/v3/organizer/registration/RegistrationWorkspace", () => ({ RegistrationWorkspace: (props: object) => React.createElement("pre", null, JSON.stringify(props)) }));

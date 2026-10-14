@@ -20,8 +20,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/events/repository", () => ({
   getManageableEventDraft: mocks.getManageableEventDraft,
+}));
+vi.mock("@/lib/platform/settings-repository", () => ({
   getPlatformProfile: mocks.getPlatformProfile,
   getGameModes: mocks.getGameModes,
 }));

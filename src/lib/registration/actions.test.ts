@@ -13,8 +13,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireRole: mocks.requireRole }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/events/repository", () => ({
   getEventBySlug: mocks.getEventBySlug,
+}));
+vi.mock("@/lib/registration/repository", () => ({
   registerTeam: mocks.registerTeam,
   createTeamRegistrationRequest: mocks.createTeamRegistrationRequest,
 }));

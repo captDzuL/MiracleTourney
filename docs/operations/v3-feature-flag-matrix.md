@@ -30,12 +30,6 @@ evidence.
 | `organizer_workspace_v3` | `FEATURE_FLAG_ORGANIZER_WORKSPACE_V3` | false | true | true | organizer profile/password/new-event/overview/edit/match pages, admin workspace, `lib/actions.ts`, player-stats actions | Legacy organizer workspace |
 | `public_visual_v2` | `FEATURE_FLAG_PUBLIC_VISUAL_V2` | false | false | false | shell, home page, `/events`, legacy event detail | The V2 public visual is off; legacy visuals |
 | `email_password_reset` | `FEATURE_FLAG_EMAIL_PASSWORD_RESET` | false | false | false | `lib/email/send.ts` only | **Reset emails are suppressed** (a stub log line is the only effect), also when `RESEND_API_KEY` is set |
-| `premium_event_promotion` | `FEATURE_FLAG_PREMIUM_EVENT_PROMOTION` | false | not set | not set | nowhere (no read site) | No effect |
-| `premium_auto_checkin` | `FEATURE_FLAG_PREMIUM_AUTO_CHECKIN` | false | not set | not set | nowhere (no read site) | No effect |
-| `premium_analytics_dashboard` | `FEATURE_FLAG_PREMIUM_ANALYTICS_DASHBOARD` | false | not set | not set | nowhere (no read site) | No effect |
-| `premium_match_scheduling` | `FEATURE_FLAG_PREMIUM_MATCH_SCHEDULING` | false | not set | not set | nowhere (no read site) | No effect |
-| `premium_notifications` | `FEATURE_FLAG_PREMIUM_NOTIFICATIONS` | false | not set | not set | nowhere (no read site) | No effect |
-| `ai_event_art` | `FEATURE_FLAG_AI_EVENT_ART` | false | not set | not set | nowhere (no read site) | No effect |
 
 ## Findings
 
@@ -51,8 +45,7 @@ evidence.
    default stays `false` (see `src/feature-flag-matrix.test.ts`). The Prod value in the table
    above is still the read-back and must be changed in Vercel by the owner, together with
    `RESEND_API_KEY` and a verified `RESEND_FROM_EMAIL`; Preview stays `false` (finding 5).
-3. **Six flags have no read site** (the five `premium_*` flags and `ai_event_art`).
-   Setting them changes nothing; they must not be presented as gating anything.
+3. The five `premium_*` flags and `ai_event_art` had no read site and were removed.
 4. **The legacy `legacy_raw` password-reset token window is bounded in code**
    (`src/lib/platform/password-reset.ts`); it does not depend on a flag.
 5. Previews share the production Blob and Resend variable names in Vercel; a preview
@@ -73,7 +66,7 @@ stop and turn the last flag off at the first failure.
 
 ## Flags-off verification
 
-With all sixteen flags unset or `false`, the application must render the legacy UI. The
+With all ten flags unset or `false`, the application must render the legacy UI. The
 E2E legacy profile (`playwright.legacy.config.ts`) runs the suite in that state; run it
 locally against a reset database before the first deployment that carries the V3 code,
 because the staged-off production deployment is the first time those pages meet the

@@ -4,7 +4,7 @@ import {useTranslations} from "next-intl";
 import {useRouter} from "next/navigation";
 import {Button} from "@/components/v3/Button";
 import type {CompetitionWorkspaceState} from "@/lib/competition/workspace-types";
-import type {EventMatchStatistics} from "@/lib/platform/repository";
+import type { EventMatchStatistics } from "@/lib/player-stats/write-repository";
 import {saveEventPlayerStatsAction,approveEventPlayerStatsAction,rejectEventPlayerStatsAction,type PlayerStatsActionResult} from "@/lib/actions/player-stats-v3-actions";
 import {useWorkspace} from "../../competition/useWorkspace";
 import {MatchGameScoreForm,MatchOperations} from "./MatchGameScoreForm";

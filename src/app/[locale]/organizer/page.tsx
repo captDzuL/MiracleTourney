@@ -8,7 +8,9 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getActiveEventEditRevisionIds } from "@/lib/events/event-revision";
-import { getManageableEventsForUser, getOrganizerProfileForUser, getTeamCountsForEvents } from "@/lib/platform/repository";
+import { getManageableEventsForUser } from "@/lib/events/repository";
+import { getOrganizerProfileForUser } from "@/lib/platform/settings-repository";
+import { getTeamCountsForEvents } from "@/lib/teams/repository";
 import type { Event } from "@/lib/platform/types";
 
 const statusTone: Record<Event["status"], string> = {

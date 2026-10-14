@@ -14,15 +14,10 @@ import { getPublicOngoingEvent } from "@/lib/events/public-ongoing";
 import { publicMatchLabel } from "@/lib/events/public-match-label";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { readPublicSocialBracket } from "@/lib/bracket/read";
-import {
-  getBracketPreview,
-  getEventRoundConfigs,
-  getMatchesForEvent,
-  getMatchGamesForEvent,
-  getPublicEventBySlug,
-  getPublicVisibleBracketPreview,
-  getTeamsForEvent,
-} from "@/lib/platform/repository";
+import { getBracketPreview, getMatchesForEvent, getPublicVisibleBracketPreview } from "@/lib/bracket/repository";
+import { getEventRoundConfigs, getMatchGamesForEvent } from "@/lib/bracket/rounds-repository";
+import { getPublicEventBySlug } from "@/lib/events/repository";
+import { getTeamsForEvent } from "@/lib/teams/repository";
 import type { Match, MatchGame, Team } from "@/lib/platform/types";
 import type { BracketMatch } from "@/lib/tournament/types";
 

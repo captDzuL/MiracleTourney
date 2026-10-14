@@ -318,15 +318,9 @@ vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn, revalidateTa
 
 import { parseRegistrationSource, suggestRegistrationMapping, buildRegistrationPreview } from "../imports/registration-intake";
 import { filterRegistrationRecords } from "./records";
-import {
-  approveTeamRegistrationRequest,
-  getEventPaymentSettingsForManager,
-  getPaymentReviewForEvent,
-  getRegistrationImportHistoryForEvent,
-  getRegistrationRecordsForEvent,
-  getTeamRegistrationRequestForEvent,
-  RegistrationMutationConflictError,
-} from "../platform/repository";
+import { getRegistrationImportHistoryForEvent, getRegistrationRecordsForEvent } from "@/lib/imports/repository";
+import { RegistrationMutationConflictError } from "@/lib/registration/repository";
+import { approveTeamRegistrationRequest, getEventPaymentSettingsForManager, getPaymentReviewForEvent, getTeamRegistrationRequestForEvent } from "@/lib/registration/review-repository";
 import { previewRegistrationImportForUser } from "../actions/registration-v3-actions";
 
 const owner = { id: "organizer-1", role: "organizer" as const, email: "organizer-1@example.test", name: "Organizer One" };

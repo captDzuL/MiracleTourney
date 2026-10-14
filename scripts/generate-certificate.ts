@@ -4,7 +4,7 @@
  *   npx tsx scripts/generate-certificate.ts <eventId> <winnerTeamId>
  */
 import { generateCertificate } from "@/lib/certificate/generate";
-import { getCertificateByEvent } from "@/lib/platform/repository";
+import { getCertificateByEvent } from "@/lib/certificate/repository";
 
 async function main() {
   const [eventId, winnerTeamId] = process.argv.slice(2);

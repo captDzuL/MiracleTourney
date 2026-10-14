@@ -20,7 +20,8 @@ vi.mock("./db", () => ({ prisma: new Proxy({}, { get: (_, key) => key === "$tran
     throw error;
   } finally { boundary.locked = false; }
 } : delegates()[key as keyof ReturnType<typeof delegates>] }) }));
-import { setMatchResult, setMatchGames, upsertRoundConfig } from "./repository";
+import { setMatchResult } from "@/lib/bracket/repository";
+import { setMatchGames, upsertRoundConfig } from "@/lib/bracket/rounds-repository";
 
 describe("legacy result isolation", () => {
   beforeEach(() => { boundary.phaseId = "phase-v3"; boundary.writes = 0; boundary.version = 0; boundary.initialized = false; boundary.completionStatus = null; boundary.requireLock = false; boundary.locked = false; boundary.roundBestOf = 3; boundary.matchWhere = null; boundary.matchUpdate = null; boundary.games = []; });

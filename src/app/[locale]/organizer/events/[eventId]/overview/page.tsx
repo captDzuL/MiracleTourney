@@ -10,7 +10,8 @@ import { requireAnyRole } from "@/lib/auth/session";
 import { getActiveEventEditRevisionIds } from "@/lib/events/event-revision";
 import { evaluatePublishReadiness } from "@/lib/events/publish-readiness";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getManageableEventDraft, getPlatformProfile } from "@/lib/platform/repository";
+import { getManageableEventDraft } from "@/lib/events/repository";
+import { getPlatformProfile } from "@/lib/platform/settings-repository";
 
 type OverviewPageProps = {
   params: Promise<{ locale: string; eventId: string }>;

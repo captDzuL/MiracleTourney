@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
-import type { RegistrationImportHistoryEntry } from "@/lib/platform/repository";
+import type { RegistrationImportHistoryEntry } from "@/lib/imports/repository";
 import type { RegistrationMapping } from "@/lib/imports/registration-intake";
 import { previewEventRegistrationImportAction, commitEventRegistrationImportAction, type RegistrationActionResult } from "@/lib/actions/registration-v3-actions";
 import { actionForm, control, field, muted, panel, primary, Feedback } from "./shared";

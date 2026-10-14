@@ -8,7 +8,8 @@ import { DataTable, Section } from "@/components/ui";
 import { TeamIdentity } from "@/components/TeamAvatar";
 import { PublicParticipantsDirectory } from "@/components/v3/public-event/PublicParticipantsDirectory";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getPlayersForTeams, getPublicEventBySlug, getTeamsForEvent } from "@/lib/platform/repository";
+import { getPublicEventBySlug } from "@/lib/events/repository";
+import { getPlayersForTeams, getTeamsForEvent } from "@/lib/teams/repository";
 import { getCaptainDisplayName } from "@/lib/team-display";
 
 function V3ParticipantsTable({ columns, rows }: { columns: string[]; rows: Array<Array<React.ReactNode>> }) {

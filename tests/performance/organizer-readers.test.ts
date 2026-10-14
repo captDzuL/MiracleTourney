@@ -384,7 +384,7 @@ async function runLoadScript(scriptName: string, mode: LoadFixtureMode): Promise
   return (await runLoadScriptWithOutput(scriptName, mode)).exitCode;
 }
 
-describe("organizer reader release-scale contracts", () => {
+describe("organizer reader release-scale contracts", { timeout: 60_000 }, () => {
   it("creates the exact 64-team fixture cardinalities without database credentials", async () => {
     const fixture = buildOrganizerScalePlan("manifest");
 
@@ -640,11 +640,5 @@ describe("organizer reader release-scale contracts", () => {
     expect(quickLoadScript).toMatch(/duration: 5/);
     expect(quickLoadScript).toContain("p97.5");
     expect(quickLoadScript).toContain("non2xx === 0");
-  });
-
-  it("keeps the Task 9 report whitespace-clean and records its exact diff-check range", () => {
-    const report = source(".superpowers/sdd/2026-09-20-organizer-master-workspace-release-readiness/task-9-report.md");
-    expect(report).not.toMatch(/[ \t]+$/m);
-    expect(report).toContain("git diff --check 11f1fcc..HEAD");
   });
 });

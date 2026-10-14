@@ -25,9 +25,13 @@ vi.mock("next-intl/server", () => ({
     return (copy[key] ?? key).replace("{name}", String(values?.name ?? ""));
   }),
 }));
-vi.mock("@/lib/platform/repository", () => ({
-  getPublicEventBySlug: vi.fn().mockResolvedValue({ id: "standings-event", slug: "standings-event", name: "Standings Event" }),
+vi.mock("@/lib/bracket/repository", () => ({
   getTeamStandings: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("@/lib/events/repository", () => ({
+  getPublicEventBySlug: vi.fn().mockResolvedValue({ id: "standings-event", slug: "standings-event", name: "Standings Event" }),
+}));
+vi.mock("@/lib/teams/repository", () => ({
   getTeamsForEvent: vi.fn().mockResolvedValue([]),
 }));
 

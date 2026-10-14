@@ -7,7 +7,7 @@ import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
 import { loadCompletionWorkspace } from "@/lib/completion/workspace";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getManageableEventDraft } from "@/lib/platform/repository";
+import { getManageableEventDraft } from "@/lib/events/repository";
 
 type CompletionPageProps = {
   params: Promise<{ locale: string; eventId: string }>;

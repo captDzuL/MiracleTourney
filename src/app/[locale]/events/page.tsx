@@ -3,7 +3,8 @@ import { setRequestLocale } from "next-intl/server";
 import { EventDirectory } from "@/components/v3/public-discovery/EventDirectory";
 import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
 import { normalizePublicDiscoveryFilters, type PublicDiscoveryQuery } from "@/lib/events/public-discovery";
-import { getAllGames, getPublicDiscoveryEvents } from "@/lib/platform/repository";
+import { getPublicDiscoveryEvents } from "@/lib/events/repository";
+import { getAllGames } from "@/lib/platform/settings-repository";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 
 import EventsPage from "../../events/page";

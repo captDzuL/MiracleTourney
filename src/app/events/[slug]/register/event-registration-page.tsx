@@ -5,13 +5,9 @@ import { CaptainRegistrationWizard } from "@/components/registration/CaptainRegi
 import { Link } from "@/i18n/navigation";
 import { getSessionUser } from "@/lib/auth/session";
 import { getGameModeConfig } from "@/lib/platform/config";
-import {
-  getCaptainRegistrationRequests,
-  getCaptainTeams,
-  getPlayersForTeam,
-  getPublicEventBySlug,
-  getTeamCountsForEvents,
-} from "@/lib/platform/repository";
+import { getPublicEventBySlug } from "@/lib/events/repository";
+import { getCaptainRegistrationRequests } from "@/lib/registration/repository";
+import { getCaptainTeams, getPlayersForTeam, getTeamCountsForEvents } from "@/lib/teams/repository";
 import { getCaptainPaymentSettings } from "@/lib/registration/captain-repository";
 
 type SearchParams = { error?: string; success?: string };

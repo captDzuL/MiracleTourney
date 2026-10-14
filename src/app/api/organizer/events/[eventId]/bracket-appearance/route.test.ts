@@ -3,7 +3,7 @@ const m = vi.hoisted(() => ({ user: vi.fn(), owner: vi.fn(), appearance: vi.fn()
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: m.user }));
 vi.mock("@/lib/platform/db", () => ({ prisma: { event: { findUnique: m.owner }, eventVisualAsset: { create: m.asset } } }));
 vi.mock("@/lib/bracket/appearance", () => ({ getBracketAppearance: m.appearance, saveBracketAppearance: m.save }));
-vi.mock("@/lib/actions", () => ({ uploadImageAsset: m.upload }));
+vi.mock("@/lib/actions/shared/uploads", () => ({ uploadImageAsset: m.upload }));
 vi.mock("next/cache", () => ({ revalidatePath: m.revalidatePath, revalidateTag: m.revalidateTag }));
 import { GET, POST } from "./route";
 const params = { params: Promise.resolve({ eventId: "event-1" }) };
