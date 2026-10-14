@@ -16,6 +16,9 @@ const E2E_V3_FEATURE_FLAGS = [
   "FEATURE_FLAG_PUBLIC_DISCOVERY_V3",
 ];
 
+/** Features outside the V3 workspace that the E2E server runs with on, unless the flags-off profile turns them off. */
+const E2E_OTHER_FEATURE_FLAGS = ["FEATURE_FLAG_SOLO_TOURNAMENT_V1"];
+
 const MIB_BYTES = 1_048_576;
 const MAX_HEAP_MIB = 10_240;
 const HEAP_HEADROOM_RATIO = 0.625;
@@ -86,7 +89,7 @@ export function startE2eDevServer(options = {}) {
     throw new Error(`[e2e-db-preflight] ${validation.message} Host: ${validation.host}`);
   }
 
-  for (const flag of E2E_V3_FEATURE_FLAGS) {
+  for (const flag of [...E2E_V3_FEATURE_FLAGS, ...E2E_OTHER_FEATURE_FLAGS]) {
     serverEnvironment[flag] = "true";
   }
   if (serverEnvironment.E2E_COMPETITION_FLAGS_OFF === "true") {
@@ -94,6 +97,7 @@ export function startE2eDevServer(options = {}) {
     serverEnvironment.FEATURE_FLAG_COMPLETION_WORKSPACE_V3 = "false";
     serverEnvironment.FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3 = "false";
     serverEnvironment.FEATURE_FLAG_PUBLIC_DISCOVERY_V3 = "false";
+    for (const flag of E2E_OTHER_FEATURE_FLAGS) serverEnvironment[flag] = "false";
   }
 
   const systemMemoryBytes = hasSystemMemoryOverride ? injectedSystemMemoryBytes : os.totalmem();
