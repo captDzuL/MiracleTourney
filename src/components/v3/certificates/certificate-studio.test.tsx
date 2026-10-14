@@ -93,6 +93,34 @@ describe("CertificateStudio", () => {
     expect(tabs[1].getAttribute("aria-selected")).toBe("true");
   });
 
+  describe("with a champion and runner-up podium only", () => {
+    const twoPlaceTypes = MIRACLE_V3_CERTIFICATE_TYPES.filter((type) => type !== "third_place");
+    const twoPlaceState: CertificateStudioState = { ...available, records: records.filter((record) => record.certificateType !== "third_place") };
+    const keys = Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>;
+
+    it("renders six tabs with no third-place tab and wraps keyboard focus over six", async () => {
+      await act(async () => root.render(provider("en", <CertificateStudio generationKeys={keys} publicationKey={crypto.randomUUID()} state={twoPlaceState} />)));
+      const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>("[role=tab]"));
+      expect(tabs.map((tab) => tab.dataset.certificateType)).toEqual(twoPlaceTypes);
+      tabs[0].focus();
+      await act(async () => tabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
+      expect(document.activeElement).toBe(tabs[5]);
+      await act(async () => tabs[5].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+      expect(document.activeElement).toBe(tabs[0]);
+      await act(async () => tabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
+      expect(document.activeElement).toBe(tabs[5]);
+    });
+
+    it("counts the set out of six and publishes exactly the six selected certificates", async () => {
+      const publish = vi.fn().mockResolvedValue({ status: "published", revision: 2, publishedAt: "2026-09-12T04:00:00.000Z" });
+      await act(async () => root.render(provider("en", <CertificateStudio publishAction={publish} generationKeys={keys} publicationKey="22222222-2222-4222-8222-222222222222" state={twoPlaceState} />)));
+      expect(container.querySelector("[data-certificate-set-status]")?.textContent).toContain("6 / 6");
+      await act(async () => container.querySelector<HTMLButtonElement>("[data-publish-certificate-set]")!.click());
+      const selection = publish.mock.calls[0][0].selection as { certificateType: string }[];
+      expect(selection.map((row) => row.certificateType)).toEqual(twoPlaceTypes);
+    });
+  });
+
   it.each([
     { width: 600, height: 1200, ratio: "600 / 1200", boundedWidth: "min(100%, 21rem)" },
     { width: 1200, height: 600, ratio: "1200 / 600", boundedWidth: "min(100%, 84rem)" },

@@ -2,7 +2,8 @@
 // Moved out of public-v3-read.ts without changes (refactor Phase 4, 4c-v3read).
 
 import type { CompatiblePublicEventInput, CompatiblePublicEventRecord, PublicV3Certificate, PublicV3DataSource, PublicV3EventViewModel, PublicV3Team } from "@/lib/events/public-v3-types";
-import { AWARD_ORDER, CERTIFICATE_TYPES, EXPECTED_CERTIFICATE_COUNT, record, text } from "@/lib/events/public-v3/basics";
+import { podiumCertificateType, requiredCertificateTypes } from "@/lib/certificate/templates/miracle-v3-contract";
+import { AWARD_ORDER, CERTIFICATE_TYPES, record, text } from "@/lib/events/public-v3/basics";
 import { shared } from "@/lib/events/public-v3/identity";
 import { leaderboardFor, publicMatch, tbdSlots, teamNames } from "@/lib/events/public-v3/parts";
 import { compatibleUpdates } from "@/lib/events/public-v3/updates";
@@ -58,19 +59,27 @@ export function certificatePublicationIsComplete(input: {
   published: boolean;
   completionCompleted: boolean;
   expectedCount: number;
+  /** Types the set must contain: seven, or six when the podium has no third place. */
+  requiredTypes: readonly string[];
   publicationIds: string[];
   certificates: PublicV3Certificate[];
 }): boolean {
+  const required = input.requiredTypes.length;
   const types = new Set(input.certificates.map((certificate) => certificate.type));
   const ids = new Set(input.publicationIds);
   return input.published
     && input.completionCompleted
-    && input.expectedCount === EXPECTED_CERTIFICATE_COUNT
-    && input.publicationIds.length === EXPECTED_CERTIFICATE_COUNT
-    && ids.size === EXPECTED_CERTIFICATE_COUNT
-    && input.certificates.length === EXPECTED_CERTIFICATE_COUNT
-    && types.size === EXPECTED_CERTIFICATE_COUNT
-    && input.certificates.every((certificate) => CERTIFICATE_TYPES.has(certificate.type));
+    && input.expectedCount === required
+    && input.publicationIds.length === required
+    && ids.size === required
+    && input.certificates.length === required
+    && types.size === required
+    && input.certificates.every((certificate) => CERTIFICATE_TYPES.has(certificate.type))
+    && input.requiredTypes.every((type) => types.has(type));
+}
+
+function completionPodiumRanks(completion: CompatiblePublicEventInput["completion"]): number[] {
+  return (completion?.podiumPlacements ?? completion?.podium ?? []).map(({ rank }) => rank);
 }
 
 export function certificateRows(input: CompatiblePublicEventInput, completion: CompatiblePublicEventInput["completion"]): {
@@ -120,10 +129,12 @@ export function certificateRows(input: CompatiblePublicEventInput, completion: C
       publishedUrl: text(certificate.publishedUrl),
       verificationCode: text(certificate.verificationCode),
     }));
+  const requiredTypes = requiredCertificateTypes(completionPodiumRanks(completion));
   const complete = certificatePublicationIsComplete({
     published: current,
     completionCompleted: completion?.status === "completed",
-    expectedCount: EXPECTED_CERTIFICATE_COUNT,
+    expectedCount: requiredTypes.length,
+    requiredTypes,
     publicationIds: ids,
     certificates,
   });
@@ -131,7 +142,7 @@ export function certificateRows(input: CompatiblePublicEventInput, completion: C
     state: {
       status: complete ? "published" : "preparing",
       publishedCount: complete ? certificates.length : 0,
-      expectedCount: EXPECTED_CERTIFICATE_COUNT,
+      expectedCount: requiredTypes.length,
       isCurrent: current,
       isComplete: complete,
       publicationVersion: typeof publication?.version === "number" ? publication.version : null,
@@ -154,7 +165,7 @@ export function finishedInput(event: CompatiblePublicEventRecord, input: Compati
     rank: placement.rank,
     teamId: placement.teamId,
     teamName: placement.teamName,
-    certificate: byType.get(placement.rank === 1 ? "champion" : placement.rank === 2 ? "runner_up" : "third_place") ?? null,
+    certificate: byType.get(podiumCertificateType(placement.rank)) ?? null,
   }));
   const awards = completionCompleted
     ? (completion?.awards ?? []).flatMap((award) => {

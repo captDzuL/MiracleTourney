@@ -3,7 +3,8 @@
 
 import type { CompatiblePublicEventInput, CompatiblePublicTeam, PublicV3Certificate, PublicV3EventViewModel, PublicV3Shared } from "@/lib/events/public-v3-types";
 import { authoritativeBracketSlots, authoritativeCertificate, authoritativeDrawingSchedule, authoritativeDrawingStandings, authoritativeLeaderboard, authoritativeMatches, authoritativeOngoingSchedule, authoritativeOngoingStandings, authoritativeRegistrationCta, authoritativeSeeds, authoritativeStream, normalizedUpdates, teamsFromRaw } from "@/lib/events/public-v3/authoritative";
-import { AWARD_ORDER, EXPECTED_CERTIFICATE_COUNT, dateText, isoDate, nonNegative, record, text } from "@/lib/events/public-v3/basics";
+import { podiumCertificateType, requiredCertificateTypes } from "@/lib/certificate/templates/miracle-v3-contract";
+import { AWARD_ORDER, dateText, isoDate, nonNegative, record, text } from "@/lib/events/public-v3/basics";
 import type { AnyRecord } from "@/lib/events/public-v3/basics";
 import { identityEvent } from "@/lib/events/public-v3/identity";
 import { publicScore, teamsFor } from "@/lib/events/public-v3/parts";
@@ -126,7 +127,7 @@ export function normalizeAuthoritative(
   const podiumWithCertificates = rawPodium.map((entry) => {
     const row = record(entry);
     const rank = Math.floor(nonNegative(row.rank));
-    const certificate = authoritativeCertificate(row.certificate, rank === 1 ? "champion" : rank === 2 ? "runner_up" : "third_place", "team", text(row.teamId), text(row.teamName, text(row.teamId)));
+    const certificate = authoritativeCertificate(row.certificate, podiumCertificateType(rank), "team", text(row.teamId), text(row.teamName, text(row.teamId)));
     return { rank, teamId: text(row.teamId), teamName: text(row.teamName, text(row.teamId)), certificate };
   });
   const awardsWithCertificates = rawAwards.flatMap((entry) => {
@@ -147,12 +148,14 @@ export function normalizeAuthoritative(
   const certificateItems = [...podiumWithCertificates, ...awardsWithCertificates]
     .map((entry) => entry.certificate)
     .filter((certificate): certificate is PublicV3Certificate => Boolean(certificate));
-  const expectedCount = Math.floor(nonNegative(rawCertificates.expectedCount, EXPECTED_CERTIFICATE_COUNT));
+  const requiredTypes = requiredCertificateTypes(podiumWithCertificates.map(({ rank }) => rank));
+  const expectedCount = Math.floor(nonNegative(rawCertificates.expectedCount, requiredTypes.length));
   const publishedCount = Math.floor(nonNegative(rawCertificates.publishedCount));
   const complete = certificatePublicationIsComplete({
     published: rawCertificates.status === "published" && publishedCount === expectedCount,
     completionCompleted: true,
     expectedCount,
+    requiredTypes,
     publicationIds: certificateItems.map((certificate) => certificate.id),
     certificates: certificateItems,
   });

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useFormatter, useTranslations } from "next-intl";
 import { publishCertificateSetAction, regenerateCertificateAction } from "@/lib/actions/certificate-v3-actions";
 import type { CertificateAssetKind, CertificateAssetPlacement, CertificatePublicationActionResult, CertificateStudioRecord, RegenerateCertificateResult } from "@/lib/certificate/service";
-import { MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3-contract";
+import { MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3-contract";
 import { AssetPlacement, type ApprovedCertificateAsset } from "./AssetPlacement";
 import { IntrinsicImage } from "@/components/IntrinsicImage";
 import { CertificateSetStatus } from "./CertificateSetStatus";
@@ -81,13 +81,14 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   const activeKinds: readonly CertificateAssetKind[] = isTeamType(activeType) ? ["team_logo_hero"] : ["character_art", "team_logo_badge"];
   const chooseType = (type: MiracleV3CertificateType) => { setActiveType(type); setPlacementError(null); };
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const count = state.records.length;
     let next: number | null = null;
-    if (event.key === "ArrowRight") next = (index + 1) % 7;
-    if (event.key === "ArrowLeft") next = (index + 6) % 7;
+    if (event.key === "ArrowRight") next = (index + 1) % count;
+    if (event.key === "ArrowLeft") next = (index + count - 1) % count;
     if (event.key === "Home") next = 0;
-    if (event.key === "End") next = 6;
+    if (event.key === "End") next = count - 1;
     if (next === null) return;
-    event.preventDefault(); chooseType(MIRACLE_V3_CERTIFICATE_TYPES[next]); refs.current[next]?.focus();
+    event.preventDefault(); chooseType(state.records[next].certificateType); refs.current[next]?.focus();
   };
   const feedback = (result: RegenerateCertificateResult | CertificatePublicationActionResult) => {
     if (result.status === "generated") return t("feedback.generated");
@@ -123,7 +124,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   };
   const selection = unavailable ? [] : state.records.flatMap((record) => selected[record.certificateType] ? [{ certificateType: record.certificateType, certificateId: selected[record.certificateType]! }] : []);
   const chosen = unavailable ? [] : state.records.flatMap((record) => record.versions?.find((version) => version.id === selected[record.certificateType]) ?? []);
-  const canPublish = hydrated && !unavailable && !locked && selection.length === 7 && chosen.length === 7 && chosen.every((row) => row.status === "ready" || row.status === "published");
+  const canPublish = hydrated && !unavailable && !locked && selection.length === state.records.length && chosen.length === state.records.length && chosen.every((row) => row.status === "ready" || row.status === "published");
   const publish = () => {
     if (!canPublish || pending || unavailable) return;
     startTransition(async () => {
@@ -146,7 +147,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
 
   return <main className="min-w-0 max-w-full overflow-x-clip text-[var(--color-text)]" data-certificate-studio>
     <header className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 min-[700px]:p-7"><p className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--color-accent-cream-foreground)]">{state.event.name}</p><h1 className="mt-2 text-2xl font-extrabold min-[700px]:text-3xl">{t("title")}</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-text-muted)]">{state.status === "integration_required" ? t("integration.body") : state.status === "completion_required" ? t("completion.body") : t("description")}</p>{state.status === "integration_required" ? <p className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-4 text-sm font-bold">{t("integration.title")}</p> : state.status === "completion_required" ? <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-4 text-sm"><p className="font-bold">{t("completion.title")}</p><Link className="mt-3 inline-flex min-h-11 items-center rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-4 font-extrabold miracle-focus-ring" href={state.completionHref}>{t("completion.action")}</Link></div> : null}</header>
-    <nav aria-label={t("types.label")} className="mt-4 overflow-x-auto rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-1"><div className="flex min-w-max gap-1" role="tablist">{MIRACLE_V3_CERTIFICATE_TYPES.map((type, index) => <button aria-controls="certificate-studio-panel" aria-selected={activeType === type} className="min-h-11 rounded-[var(--radius-control)] px-4 text-sm font-bold miracle-focus-ring aria-[selected=true]:bg-[var(--color-surface-selected)] aria-[selected=true]:text-[var(--color-accent-cyan-foreground)]" data-certificate-type={type} id={`certificate-type-${type}`} key={type} onClick={() => chooseType(type)} onKeyDown={(event) => moveTab(event, index)} ref={(node) => { refs.current[index] = node; }} role="tab" tabIndex={activeType === type ? 0 : -1} type="button">{t(`types.${type}`)}</button>)}</div></nav>
+    <nav aria-label={t("types.label")} className="mt-4 overflow-x-auto rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-1"><div className="flex min-w-max gap-1" role="tablist">{state.records.map(({ certificateType: type }, index) => <button aria-controls="certificate-studio-panel" aria-selected={activeType === type} className="min-h-11 rounded-[var(--radius-control)] px-4 text-sm font-bold miracle-focus-ring aria-[selected=true]:bg-[var(--color-surface-selected)] aria-[selected=true]:text-[var(--color-accent-cyan-foreground)]" data-certificate-type={type} id={`certificate-type-${type}`} key={type} onClick={() => chooseType(type)} onKeyDown={(event) => moveTab(event, index)} ref={(node) => { refs.current[index] = node; }} role="tab" tabIndex={activeType === type ? 0 : -1} type="button">{t(`types.${type}`)}</button>)}</div></nav>
     <div className="mt-4 grid min-w-0 gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_20rem]">
       <section aria-labelledby={`certificate-type-${activeType}`} className="min-w-0 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" data-certificate-recipient-selection id="certificate-studio-panel" role="tabpanel">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--color-accent-violet-foreground)]">{t(`types.${activeType}`)}</p><h2 className="mt-2 break-words text-xl font-extrabold">{active.recipient?.name ?? t("recipientPending")}</h2></div><span className="rounded-full border border-[var(--color-border-strong)] px-3 py-2 text-xs font-bold">{activeVersion ? t(`status.${activeVersion.status}`) : t("status.missing")}</span></div>

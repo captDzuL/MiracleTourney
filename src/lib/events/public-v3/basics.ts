@@ -13,8 +13,6 @@ export const AWARD_ORDER = ["mvp", "top_scorer", "top_defender", "top_assist"] a
 
 export const CERTIFICATE_TYPES = new Set(["champion", "runner_up", "third_place", ...AWARD_ORDER]);
 
-export const EXPECTED_CERTIFICATE_COUNT = 7;
-
 export const PUBLIC_READER_ROW_LIMIT = 500;
 
 export const MAX_REGISTRATION_TEMPLATE_SLOTS = 256;

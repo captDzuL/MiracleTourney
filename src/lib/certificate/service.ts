@@ -133,15 +133,16 @@ export const publishCertificateSetInputSchema = z.object({
   expectedVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER - 1),
   expectedCertificateRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER - 1),
   idempotencyKey: idempotencySchema,
-  selection: z.array(z.object({ certificateType: z.enum(MIRACLE_V3_CERTIFICATE_TYPES), certificateId: idSchema }).strict()).length(7),
-}).strict().refine((input) => new Set(input.selection.map((row) => row.certificateType)).size === 7
-  && MIRACLE_V3_CERTIFICATE_TYPES.every((type) => input.selection.some((row) => row.certificateType === type)), { message: "Exactly one certificate of every type is required" });
+  // Six certificates when the podium has no third place, seven otherwise. The exact set is checked against the completion.
+  selection: z.array(z.object({ certificateType: z.enum(MIRACLE_V3_CERTIFICATE_TYPES), certificateId: idSchema }).strict()).min(MIRACLE_V3_CERTIFICATE_TYPES.length - 1).max(MIRACLE_V3_CERTIFICATE_TYPES.length),
+}).strict().refine((input) => new Set(input.selection.map((row) => row.certificateType)).size === input.selection.length, { message: "At most one certificate of every type is allowed" });
 
 export interface CertificateStudioActor { readonly id: string; readonly role: "organizer" | "platform_admin" | "admin" }
 export interface CertificateStudioCompletion {
   readonly id: string; readonly status: "completed" | "reopened" | "editable";
   readonly version: number; readonly certificateRevision: number;
-  readonly recipients: Readonly<Record<MiracleV3CertificateType, string>>;
+  /** One recipient per required certificate type. A podium with no third place has no `third_place` entry. */
+  readonly recipients: Readonly<Partial<Record<MiracleV3CertificateType, string>>>;
 }
 export interface CertificateStudioRecord {
   readonly id: string; readonly eventId: string; readonly certificateType: MiracleV3CertificateType; readonly recipientId: string;
@@ -228,6 +229,7 @@ export async function regenerateCertificate(input: unknown, dependencies: Certif
     }
     if (completion.version !== value.expectedVersion) return { terminal: { status: "conflict", code: "stale_version", version: completion.version } as RegenerateCertificateResult };
     if (completion.status !== "completed") return { terminal: { status: "blocked", code: "completion_required" } as RegenerateCertificateResult };
+    if (!completion.recipients[value.certificateType]) return { terminal: { status: "blocked", code: "invalid_input" } as RegenerateCertificateResult };
     const teamCertificate = ["champion", "runner_up", "third_place"].includes(value.certificateType);
     const allowedKinds: readonly CertificateAssetKind[] = teamCertificate ? ["team_logo_hero"] : ["character_art", "team_logo_badge"];
     const requiredLogoKind: CertificateAssetKind = teamCertificate ? "team_logo_hero" : "team_logo_badge";
@@ -290,7 +292,7 @@ export async function publishCertificateSet(input: unknown, dependencies: Certif
   const parsed = publishCertificateSetInputSchema.safeParse(input);
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const value = parsed.data;
-  const selection = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => value.selection.find((row) => row.certificateType === certificateType)!);
+  const selection = MIRACLE_V3_CERTIFICATE_TYPES.flatMap((certificateType) => value.selection.find((row) => row.certificateType === certificateType) ?? []);
   const fingerprint = mutationFingerprint({ action: "publish", expectedVersion: value.expectedVersion, expectedCertificateRevision: value.expectedCertificateRevision, selection });
   return dependencies.transaction(value.eventId, async (tx) => {
     const actor = await tx.authorize();
@@ -306,8 +308,11 @@ export async function publishCertificateSet(input: unknown, dependencies: Certif
     if (completion.version !== value.expectedVersion) return { status: "conflict", code: "stale_version", version: completion.version };
     if (completion.certificateRevision !== value.expectedCertificateRevision) return { status: "conflict", code: "stale_certificate_revision", version: completion.certificateRevision };
     if (completion.status !== "completed") return { status: "blocked", code: "completion_required" };
+    const requiredTypes = MIRACLE_V3_CERTIFICATE_TYPES.filter((type) => completion.recipients[type]);
+    const exactSet = selection.length === requiredTypes.length && selection.every(({ certificateType }) => requiredTypes.includes(certificateType));
+    if (!exactSet) return { status: "blocked", code: "set_not_ready" };
     const records = await tx.loadCertificates(selection.map((row) => row.certificateId));
-    const ready = records.length === 7 && selection.every((selected) => {
+    const ready = records.length === requiredTypes.length && selection.every((selected) => {
       const record = records.find((candidate) => candidate.id === selected.certificateId && candidate.certificateType === selected.certificateType);
       return record?.eventId === value.eventId && record.completionId === completion.id
         && record.completionVersion === completion.version
