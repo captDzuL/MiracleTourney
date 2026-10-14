@@ -230,7 +230,8 @@ function statistics(rows: CompletionSourceRows, officialMatchIds: ReadonlySet<st
   for (const row of rows.playerStats) {
     const match = matches.get(row.matchId);
     const values = row.stats;
-    const playerName = row.player.displayName.trim() || row.player.nickname.trim();
+    // nickname is the IGN players are known by; displayName holds the UID and is only a fallback.
+    const playerName = row.player.nickname.trim() || row.player.displayName.trim();
     const trusted = row.source === "admin"
       || row.source === "captain" && approved.has(`${row.matchId}:${row.teamId}`);
     if (!trusted || !match || !officialMatchIds.has(row.matchId)
