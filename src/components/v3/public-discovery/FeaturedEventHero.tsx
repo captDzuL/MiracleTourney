@@ -39,7 +39,7 @@ export function FeaturedEventHero({ view, locale, gameSlug }: { view: PublicHome
     : view.cta.hrefByLocale?.[locale];
   const secondaryTarget = view.mode === "registration" ? registrationTarget : view.navigation.bracket ? resolvePublicV3Route(identity.routes.bracket, locale) : view.navigation.leaderboard ? resolvePublicV3Route(identity.routes.leaderboard, locale) : null;
   const registrationLabels: Record<string, string> = {
-    register_team: t.register, register_solo: t.registerSolo, registration_unavailable: t.registrationUnavailable,
+    register_team: t.register, register_solo: t.registerSolo, view_queue_position: t.viewQueuePosition, use_player_account: t.usePlayerAccount, registration_unavailable: t.registrationUnavailable,
     registration_closed: locale === "id" ? "Pendaftaran ditutup" : "Registration closed",
     registration_full: locale === "id" ? "Slot pendaftaran penuh" : "Registration full",
     registration_upcoming: locale === "id" ? "Pendaftaran belum dibuka" : "Registration not open yet",

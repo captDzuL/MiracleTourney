@@ -49,7 +49,8 @@ async function completeOrganizerPasswordChangeActionImpl(formData: FormData) {
   const currentHash = await getUserPasswordHashById(user.id);
   if (!currentHash || !(await bcrypt.compare(input.currentPassword, currentHash))) throw new Error("Current password is incorrect");
   await updateUserPassword(user.id, await bcrypt.hash(input.newPassword, 10));
-  await reissueSession(user.id);
+  // If the new session cannot be made, the organizer signs in again with the password they just chose.
+  if (!(await reissueSession(user.id).catch(() => false))) redirect(`/${input.locale}/login`);
   revalidatePath("/organizer");
   redirect(`/${input.locale}/organizer?password=changed`);
 }

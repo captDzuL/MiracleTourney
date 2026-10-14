@@ -191,6 +191,15 @@ describe("changing the password", () => {
     await expect(outcome(() => change("a-new-password", "different"))).resolves.toContain("REDIRECT:/captain/settings?error=");
   });
 
+  it("sends the device to sign in again when the new session cannot be made, instead of an error page", async () => {
+    signIn(captain);
+    mocks.reissueSession.mockResolvedValueOnce(false);
+    await expect(outcome(() => change())).resolves.toBe("REDIRECT:/login");
+    mocks.reissueSession.mockRejectedValueOnce(new Error("db down"));
+    await expect(outcome(() => change())).resolves.toBe("REDIRECT:/login");
+    expect(mocks.updateCaptainPassword).toHaveBeenCalledTimes(2);
+  });
+
   it("takes any player to the player pages, whether or not they captain a team", async () => {
     for (const ownsTeam of [true, false]) {
       signIn(owner, ownsTeam);

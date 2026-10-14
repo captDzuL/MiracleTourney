@@ -26,6 +26,8 @@ test("sign-up offers no player role", async ({ page }) => {
   await expect(page.getByText("Kamu mau daftar sebagai apa?")).toHaveCount(0);
 
   await page.goto("/id/register?as=player");
+  // Still the captain form: the request for the player form is ignored while the flag is off.
+  await expect(page.getByRole("heading", { name: "Buat Akun Captain" })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "Buat Akun Pemain" })).toHaveCount(0);
 });
 

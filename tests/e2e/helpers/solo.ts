@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import type { Page } from "@playwright/test";
 
+import { validateE2eDatabaseConfiguration } from "../../../scripts/e2e-db-configuration.mjs";
 import { seedSoloTournament } from "../../../prisma/seed-solo";
 import { loginWithCredentials } from "./auth";
 
@@ -26,6 +27,10 @@ export async function soloEvent() {
  * id, because the server caches event pages by address and a new id would leave them pointing at nothing.
  */
 export async function resetSoloEvent() {
+  // This deletes an event and resets 14 passwords, so it only ever runs against the guarded test database.
+  const safe = validateE2eDatabaseConfiguration(process.env);
+  if (!safe.ok) throw new Error(safe.message);
+  if (process.env.E2E_DATABASE_RESET_ALLOWED !== "true") throw new Error("Blocked: set E2E_DATABASE_RESET_ALLOWED=true in .env.test before resetting the solo event.");
   const previous = await prisma.event.findUnique({ where: { slug: SOLO_EVENT_SLUG }, select: { id: true } });
   await prisma.event.deleteMany({ where: { slug: SOLO_EVENT_SLUG } });
   const organizer = await prisma.user.findUniqueOrThrow({ where: { email: "organizer-a@miraclefc.gg" }, select: { id: true } });

@@ -229,6 +229,8 @@ test.describe("solo tournament, main path", () => {
 
     // Registering a team is for captains who made an account as one. This one is a player account.
     await page.goto("/id/events/flashpeak-revision-published/register");
+    // The page must have rendered before "nothing there" means anything.
+    await expect(page.getByRole("heading", { name: "Flashpeak Revision Published" })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('input[name="teamName"], input[name="teamTag"]')).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Daftarkan timmu" })).toHaveCount(0);
   });
@@ -290,5 +292,3 @@ test.describe("solo tournament, main path", () => {
   });
 });
 
-void loginAsOrganizer;
-void loginAsSoloPlayer;

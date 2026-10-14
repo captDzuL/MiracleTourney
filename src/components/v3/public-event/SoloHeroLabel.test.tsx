@@ -65,6 +65,26 @@ describe("the event page hero", () => {
   });
 });
 
+describe("a signed-in player's button", () => {
+  const withLabel = (label: string) => {
+    const view = project("solo");
+    return { ...view, cta: { kind: "status", label, href: "/events/solo-cup/register", enabled: true } } as unknown as Parameters<typeof PublicV3EventHero>[0]["view"];
+  };
+
+  it.each([
+    ["view_queue_position", "Lihat posisi antrean", "See your place in the queue"],
+    ["use_player_account", "Gunakan akun Pemain", "Use a Player account"],
+  ])("shows words, not the key %s, on both heroes", (label, indonesian, english) => {
+    vi.stubEnv("FEATURE_FLAG_SOLO_TOURNAMENT_V1", "true");
+    expect(renderToStaticMarkup(<PublicV3EventHero view={withLabel(label)} locale="id" />)).toContain(indonesian);
+    expect(renderToStaticMarkup(<PublicV3EventHero view={withLabel(label)} locale="en" />)).toContain(english);
+    expect(renderToStaticMarkup(<PublicV3EventHero view={withLabel(label)} locale="id" />)).not.toContain(label);
+    const featured = projectPublicHomeFeaturedEvent(withLabel(label));
+    expect(renderToStaticMarkup(<FeaturedEventHero view={featured} locale="id" />)).toContain(indonesian);
+    expect(renderToStaticMarkup(<FeaturedEventHero view={featured} locale="en" />)).toContain(english);
+  });
+});
+
 describe("the home page hero", () => {
   it("says Daftarkan tim for a team event and Daftar solo for a solo event", () => {
     expect(featured("team")).toContain("Daftarkan tim");

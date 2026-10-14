@@ -172,6 +172,16 @@ describe("normalized public V3 event reader", () => {
       expect(project("solo").identity.cta).toMatchObject({ label: "registration_unavailable", enabled: false });
     });
 
+    it("carries the entry mode through a full read of the stored event, not only through the projection", async () => {
+      vi.stubEnv("FEATURE_FLAG_SOLO_TOURNAMENT_V1", "true");
+      mocks.eventFindUnique.mockResolvedValue({ ...baseEvent, status: "Published", entryMode: "solo" });
+
+      const view = await readPublicV3Event("miracle-cup", null, openWindow);
+
+      expect(view?.mode).toBe("registration");
+      expect(view?.identity.cta).toMatchObject({ label: "register_solo", enabled: true });
+    });
+
     it("leaves a solo event's later phases alone", () => {
       vi.stubEnv("FEATURE_FLAG_SOLO_TOURNAMENT_V1", "");
       const ongoing = projectCompatiblePublicV3Event({ event: { ...baseEvent, entryMode: "solo" } });

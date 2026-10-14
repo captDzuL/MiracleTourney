@@ -751,7 +751,10 @@ export async function changePasswordAction(formData: FormData) {
 
   await updateCaptainPassword(user.id, await bcrypt.hash(newPassword, 10));
   // Other devices are signed out by the new password; this one gets a fresh session.
-  await reissueSession(user.id);
+  if (!(await reissueSession(user.id).catch(() => false))) {
+    // The password did change. Ask for the new one rather than leave this device half signed in.
+    return redirectToActiveLocale("/login");
+  }
   await redirectToActiveLocale(`${home}?success=password-changed` as never);
 }
 

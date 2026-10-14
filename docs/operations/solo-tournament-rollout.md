@@ -31,7 +31,7 @@ Build produksi di Vercel tidak menjalankan migrasi, dan menolak build kalau ada 
    | 2 | `20261014000000_solo_assignment_fk_cascade` | Kunci asing penempatan jadi `ON DELETE CASCADE` | Ya |
    | 3 | `20261015000000_solo_fk_indexes` | Tiga indeks untuk `approvedById`, `createdById`, `lockedById` | Ya |
 
-   Semuanya tambahan saja: kode lama tetap jalan di database baru, tanpa backfill. Tiap berkas memakai `lock_timeout` 5 detik, jadi kalau ada transaksi panjang yang menahan tabel, migrasi gagal cepat dan bisa diulang.
+   Semuanya tambahan saja: kode lama tetap jalan di database baru, tanpa backfill. Migrasi 2 dan 3 memakai `lock_timeout` 5 detik, jadi kalau ada transaksi panjang yang menahan tabel, mereka gagal cepat dan bisa diulang. Migrasi 1 tidak punya batas itu dan menambah kolom di `Event` (kunci singkat tapi eksklusif): jalankan di saat sepi. `SET LOCAL` hanya bekerja di dalam transaksi, jadi di Neon SQL Editor bungkus isi berkas dengan `BEGIN;` dan `COMMIT;`.
 2. Gabungkan PR C, D, E, F ke `rehearsal/solo-tournament`, lalu `rehearsal/solo-tournament` ke `main`, dengan flag **mati**. Cek build produksi lolos (gerbang ledger).
 3. **Pratinjau atau staging**: nyalakan `FEATURE_FLAG_SOLO_TOURNAMENT_V1=true` (butuh deploy ulang). Jalankan satu event uji sungguhan dari daftar sampai tim terkunci. Pakai email uji, bukan email pemain asli.
 4. **Produksi**: nyalakan flag, buat satu event kecil dengan satu organizer tepercaya. Awasi log, jumlah antrean, dan refund. Email "slot terbuka" memakai Resend: `RESEND_API_KEY` dan `RESEND_FROM_EMAIL` harus terisi di produksi, kalau tidak pemain naik dari antrean tanpa kabar.

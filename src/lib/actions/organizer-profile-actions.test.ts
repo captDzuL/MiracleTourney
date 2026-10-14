@@ -47,6 +47,7 @@ describe("organizer first password change", () => {
     vi.clearAllMocks();
     requireAnyRole.mockResolvedValue({ ...organizer, mustChangePassword: true });
     getUserPasswordHashById.mockResolvedValue("$current-hash");
+    reissueSession.mockResolvedValue(true);
   });
 
   it("clears the first-login lock only after the current temporary password is verified", async () => {
@@ -55,5 +56,13 @@ describe("organizer first password change", () => {
     await expect(completeOrganizerPasswordChangeAction(form)).rejects.toThrow("REDIRECT:/id/organizer?password=changed");
     expect(updateUserPassword).toHaveBeenCalledWith("organizer-1", "$new-hash");
     expect(reissueSession).toHaveBeenCalledWith("organizer-1");
+  });
+
+  it("sends the organizer to sign in again when the new session cannot be made", async () => {
+    reissueSession.mockResolvedValueOnce(false);
+    const form = new FormData();
+    form.set("locale", "id"); form.set("currentPassword", "Temporary123!"); form.set("newPassword", "SaferPassword123!"); form.set("confirmPassword", "SaferPassword123!");
+    await expect(completeOrganizerPasswordChangeAction(form)).rejects.toThrow("REDIRECT:/id/login");
+    expect(updateUserPassword).toHaveBeenCalled();
   });
 });
