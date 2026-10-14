@@ -14,6 +14,7 @@ import {
   captainUploadPaymentProofAction,
   captainUploadTeamLogoAction,
 } from "@/lib/actions";
+import { getCaptainOrTeamOwner } from "@/lib/auth/captain-access";
 import { requireRole } from "@/lib/auth/session";
 import { GameArt, StatusBadge } from "@/components/GameArt";
 import { RosterChangePanel } from "@/components/captain/RosterChangePanel";
@@ -52,10 +53,13 @@ export default async function CaptainPage({
 }: {
   searchParams?: Promise<{ edit?: string; confirm?: string; success?: string; error?: string; tab?: string; eventId?: string }>;
 }) {
-  const user = await requireRole("captain");
+  const user = await getCaptainOrTeamOwner();
   if (!user) {
-    return redirectToActiveLocale("/login");
+    // A player who captains no team has nothing to run here.
+    return redirectToActiveLocale((await requireRole("player")) ? "/player" : "/login");
   }
+  // A player who captains a solo team only manages that team: no registering teams, no reusable draft.
+  const ownerOnly = user.role === "player";
 
   const t = await getTranslations("captain");
   const params = await searchParams;
@@ -65,13 +69,13 @@ export default async function CaptainPage({
   const error = params?.error;
   const requestedEventId = params?.eventId && /^[A-Za-z0-9_-]+$/.test(params.eventId) ? params.eventId : undefined;
   const rosterSignals = new Set(["player-added", "player-updated", "player-deleted", "captain-display-updated", "draft-team-saved", "team-logo-updated", "roster-change-requested", "roster-change-cancelled"]);
-  const activeTab = params?.tab === "roster" || editPlayerId || confirmDeleteId || (success && rosterSignals.has(success)) ? "roster" : "registration";
+  const activeTab = ownerOnly || params?.tab === "roster" || editPlayerId || confirmDeleteId || (success && rosterSignals.has(success)) ? "roster" : "registration";
 
   const [teams, usingTempPassword, openRegistrationEvents, paymentRequests] = await Promise.all([
     getCaptainTeams(user.id),
     hasTempPassword(user.id),
-    getOpenRegistrationEventsForCaptain(user.id),
-    getCaptainRegistrationRequests(user.id),
+    ownerOnly ? Promise.resolve([]) : getOpenRegistrationEventsForCaptain(user.id),
+    ownerOnly ? Promise.resolve([]) : getCaptainRegistrationRequests(user.id),
   ]);
   const paymentEventIds = [...new Set(paymentRequests.map((request) => request.eventId))];
   const paymentSettingsByEvent = new Map<string, PaymentSettings>(
@@ -99,7 +103,7 @@ export default async function CaptainPage({
     players: allPlayers.filter((player) => player.teamId === team.id),
   }));
   // Only the reusable draft qualifies: "registration-intake" copies also have no event but the server rejects them as a draft.
-  const draftTeamWithPlayers = teamsWithPlayers.find(({ team }) => !team.eventId && team.source === "draft") ?? null;
+  const draftTeamWithPlayers = ownerOnly ? null : teamsWithPlayers.find(({ team }) => !team.eventId && team.source === "draft") ?? null;
 
   const requestedEvent = requestedEventId
     ? openRegistrationEvents.find((event) => event.id === requestedEventId)
@@ -124,7 +128,7 @@ export default async function CaptainPage({
       {usingTempPassword ? (
         <Notice tone="warning">
           {t("tempPasswordWarning")}{" "}
-          <Link href="/captain/settings" className="font-semibold underline hover:text-amber-900">
+          <Link href={(ownerOnly ? "/player/settings" : "/captain/settings") as never} className="font-semibold underline hover:text-amber-900">
             {t("changeNow")}
           </Link>
         </Notice>
@@ -153,7 +157,7 @@ export default async function CaptainPage({
           <span data-testid="registration-flow-event-name" className="font-medium">{requestedEvent.name}</span>
         </div>
       ) : null}
-      <CaptainDashboardTabs activeTab={activeTab} t={t as TFn} />
+      {ownerOnly ? null : <CaptainDashboardTabs activeTab={activeTab} t={t as TFn} />}
 
       {activeTab === "registration" ? (
         <div className="grid gap-6">
@@ -174,6 +178,7 @@ export default async function CaptainPage({
           rosterOverviews={rosterOverviews}
           editPlayerId={editPlayerId}
           confirmDeleteId={confirmDeleteId}
+          canDraft={!ownerOnly}
           t={t as TFn}
         />
       )}
@@ -216,6 +221,8 @@ function RosterManagementSection({
 
   confirmDeleteId,
 
+  canDraft,
+
   t,
 
 }: {
@@ -231,6 +238,9 @@ function RosterManagementSection({
   editPlayerId?: string;
 
   confirmDeleteId?: string;
+
+  /** False for a player who captains a solo team: only captain accounts keep a reusable draft team. */
+  canDraft: boolean;
 
   t: TFn;
 
@@ -248,13 +258,13 @@ function RosterManagementSection({
 
         <h2 className="text-lg font-semibold text-slate-950">{t("rosterManagementTitle")}</h2>
 
-        <p className="mt-1 text-sm text-slate-500">{t("rosterManagementDescription")}</p>
+        <p className="mt-1 text-sm text-slate-500">{t(canDraft ? "rosterManagementDescription" : "rosterManagementOwnerDescription")}</p>
 
       </div>
 
 
 
-      <DraftTeamForm team={draftTeamWithPlayers?.team ?? null} t={t} />
+      {canDraft ? <DraftTeamForm team={draftTeamWithPlayers?.team ?? null} t={t} /> : null}
 
 
 
@@ -302,7 +312,8 @@ function RosterManagementSection({
 
             const cert = certificates.get(team.id) ?? null;
             const rosterOverview = rosterOverviews.get(team.id) ?? null;
-            const rosterEditable = !rosterOverview || rosterOverview.window === "free";
+            const drawn = team.source === "solo-draw";
+            const rosterEditable = !drawn && (!rosterOverview || rosterOverview.window === "free");
 
 
 
@@ -331,6 +342,9 @@ function RosterManagementSection({
 
                   t={t}
                 />
+                {drawn && (!rosterOverview || rosterOverview.window === "free") ? (
+                  <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{t("soloRosterNote")}</p>
+                ) : null}
                 {rosterOverview ? (
                   <RosterChangePanel team={team} players={players} positionOptions={mode?.positions ?? []} overview={rosterOverview} t={t} />
                 ) : null}
@@ -805,7 +819,7 @@ function TeamSection({
 
             <Link
 
-              href="/captain/settings"
+              href={(team.source === "solo-draw" ? "/player/settings" : "/captain/settings") as never}
 
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
 

@@ -19,6 +19,7 @@ import {
 } from "@/lib/platform/password-reset";
 
 import { resolvePostLoginPath } from "@/lib/auth/post-login-path";
+import { getCaptainOrPlayer, getCaptainOrTeamOwner } from "@/lib/auth/captain-access";
 import { requireRole, signIn } from "@/lib/auth/session";
 import { parseAndValidateTeamImport } from "@/lib/imports/team-import";
 import { commitRegistrationImportForUser, previewRegistrationImportForUser } from "@/lib/actions/registration-v3-actions";
@@ -104,8 +105,23 @@ async function requireAdminSession(): Promise<AppUser> {
   return user;
 }
 
-async function requireCaptainSession(): Promise<AppUser> {
+/** Captain accounts only. Registering a team and keeping a reusable draft stay with them, never with a player. */
+async function requireCaptainOnlySession(): Promise<AppUser> {
   const user = await requireRole("captain");
+
+  if (!user) {
+    return redirectToActiveLocale("/login");
+  }
+
+  return user;
+}
+
+/**
+ * A captain, or a player whom a solo draw made captain of a team. For the roster, the logo and the stats of
+ * a team: each action still checks that the team belongs to this account.
+ */
+async function requireCaptainOrOwnerSession(): Promise<AppUser> {
+  const user = await getCaptainOrTeamOwner();
 
   if (!user) {
     return redirectToActiveLocale("/login");
@@ -470,7 +486,7 @@ function logUnexpectedRegistrationFailure(stage: string | undefined, error: unkn
 
 /** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
 export async function captainRegisterTeamAction(formData: FormData) {
-  const captain = await requireCaptainSession();
+  const captain = await requireCaptainOnlySession();
   const rawEventId = String(formData.get("eventId") ?? "").trim();
   const registrationBase = isSafeEntityId(rawEventId)
     ? `/captain?tab=registration&eventId=${encodeURIComponent(rawEventId)}`
@@ -532,7 +548,7 @@ export async function captainRegisterTeamAction(formData: FormData) {
 }
 
 export async function captainSaveDraftTeamAction(formData: FormData) {
-  const captain = await requireCaptainSession();
+  const captain = await requireCaptainOnlySession();
   const draftError = async (msg: string) =>
     redirectToActiveLocale(`/captain?tab=roster&error=${encodeURIComponent(msg)}` as never);
 
@@ -568,7 +584,7 @@ export async function captainSaveDraftTeamAction(formData: FormData) {
 
 
 export async function captainUploadPaymentProofAction(formData: FormData) {
-  const captain = await requireCaptainSession();
+  const captain = await requireCaptainOnlySession();
   const returnTo = getSafeReturnTo(formData.get("returnTo"));
   const parsed = z.object({
     requestId: actionEntityId,
@@ -697,14 +713,17 @@ export async function adminRejectPaymentAction(formData: FormData) {
  * Validates that new and confirm passwords match and meet the 8-character minimum.
  */
 export async function changePasswordAction(formData: FormData) {
-  const user = await requireCaptainSession();
+  const user = await getCaptainOrPlayer();
+  if (!user) return redirectToActiveLocale("/login");
+  // A player (including the captain of a solo team) changes the password on the player pages.
+  const home = user.role === "player" ? "/player" : "/captain";
 
   const currentPassword = String(formData.get("currentPassword") ?? "");
   const newPassword = String(formData.get("newPassword") ?? "");
   const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
   const settingsError = async (msg: string) =>
-    redirectToActiveLocale(`/captain/settings?error=${encodeURIComponent(msg)}` as never);
+    redirectToActiveLocale(`${home}/settings?error=${encodeURIComponent(msg)}` as never);
 
   if (!currentPassword || !newPassword || !confirmPassword) {
     await settingsError("Semua field harus diisi.");
@@ -721,17 +740,21 @@ export async function changePasswordAction(formData: FormData) {
     return settingsError("Terjadi kesalahan. Coba lagi.");
   }
 
+  // Somebody holding a session cookie must not be able to guess the current password without limit.
+  if (!(await checkRateLimit(`change-password:${user.id}`, 5, 15 * 60 * 1000))) {
+    return settingsError("Terlalu banyak percobaan. Coba lagi dalam 15 menit.");
+  }
   const valid = await bcrypt.compare(currentPassword, currentHash);
   if (!valid) {
     return settingsError("Password saat ini tidak tepat.");
   }
 
   await updateCaptainPassword(user.id, await bcrypt.hash(newPassword, 10));
-  await redirectToActiveLocale("/captain?success=password-changed");
+  await redirectToActiveLocale(`${home}?success=password-changed` as never);
 }
 
 export async function captainUploadTeamLogoAction(formData: FormData) {
-  const captain = await requireCaptainSession();
+  const captain = await requireCaptainOrOwnerSession();
 
   let team: { id: string; eventId: string | null } | null = null;
   let teamId = "";
@@ -773,7 +796,7 @@ export async function captainUploadTeamLogoAction(formData: FormData) {
 
 /** Adds a player to the captain's team. UID and IGN are required; position is optional. */
 export async function captainAddPlayerAction(formData: FormData) {
-  const captain = await requireCaptainSession();
+  const captain = await requireCaptainOrOwnerSession();
 
   const input = z.object({
     teamId: actionEntityId,
@@ -809,7 +832,7 @@ export async function captainAddPlayerAction(formData: FormData) {
  * the action redirects with an error if the player does not belong to the authenticated captain.
  */
 export async function captainUpdatePlayerAction(formData: FormData) {
-  const user = await requireCaptainSession();
+  const user = await requireCaptainOrOwnerSession();
 
   const id = actionEntityId.parse(formData.get("playerId"));
   const jerseyRaw = formData.get("jerseyNumber");
@@ -840,7 +863,7 @@ export async function captainUpdatePlayerAction(formData: FormData) {
  * any exception redirects to /captain with an error message.
  */
 export async function captainDeletePlayerAction(formData: FormData) {
-  const user = await requireCaptainSession();
+  const user = await requireCaptainOrOwnerSession();
   const id = actionEntityId.parse(formData.get("playerId"));
 
   try {
@@ -854,7 +877,7 @@ export async function captainDeletePlayerAction(formData: FormData) {
 }
 
 export async function captainSetDisplayCaptainAction(formData: FormData) {
-  const user = await requireCaptainSession();
+  const user = await requireCaptainOrOwnerSession();
   const teamId = actionEntityId.parse(formData.get("teamId"));
   const playerId = actionEntityId.parse(formData.get("playerId"));
 
@@ -1348,7 +1371,7 @@ export async function adminUpdateEventPublicInfoAction(formData: FormData) {
  * Non-numeric values default to 0.
  */
 export async function captainSubmitStatsAction(formData: FormData) {
-  const user = await requireRole("captain");
+  const user = await getCaptainOrTeamOwner();
   if (!user) {
     return redirectToActiveLocale("/login");
   }

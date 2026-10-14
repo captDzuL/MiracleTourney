@@ -171,7 +171,7 @@ export type Team = {
   captainUid?: string;
   captainIsPlayer?: boolean;
   captain?: { id: string; name: string } | null;
-  source?: "demo" | "csv-import" | "registration" | "registration-intake" | "draft";
+  source?: "demo" | "csv-import" | "registration" | "registration-intake" | "draft" | "solo-draw";
 };
 
 export type TeamRegistrationRequestStatus = "pending_payment" | "pending_review" | "approved" | "rejected" | "expired";

@@ -5,7 +5,7 @@ import { getTranslations } from "next-intl/server";
 import { z } from "zod";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
-import { requireRole } from "@/lib/auth/session";
+import { getCaptainOrTeamOwner } from "@/lib/auth/captain-access";
 import {
   cancelRosterChangeRequest,
   requestRosterChange,
@@ -44,8 +44,9 @@ function toChange(parsed: z.infer<typeof requestSchema>): RosterChange {
     : { kind: "add", incoming };
 }
 
+/** A captain, or a player who captains a solo team. The service still checks that the team is theirs. */
 async function captainOrLogin() {
-  const captain = await requireRole("captain");
+  const captain = await getCaptainOrTeamOwner();
   if (!captain) return redirectToActiveLocale("/login");
   return captain;
 }

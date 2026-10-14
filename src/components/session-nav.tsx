@@ -50,6 +50,14 @@ export function SessionNav() {
           {t("matchStats")}
         </Link>
       )}
+      {user?.role === "player" && (
+        <Link
+          className="pv-session-link hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 md:block"
+          href="/player"
+        >
+          {t("player")}
+        </Link>
+      )}
       {(user?.role === "platform_admin" || user?.role === "organizer" || user?.role === "admin") && (
         <Link
           className="pv-session-link relative hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 md:block"

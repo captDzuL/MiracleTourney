@@ -743,6 +743,7 @@
     "tagline": "Platform turnamen komunitas",
     "events": "Event",
     "captain": "Kapten",
+    "player": "Pemain",
     "matchStats": "Statistik Match",
     "admin": "Admin",
     "login": "Masuk",
@@ -1011,6 +1012,8 @@
     "teamTagPlaceholder": "MFC",
     "rosterManagementTitle": "Management Roster",
     "rosterManagementDescription": "Siapkan draft tim dan roster UID/IGN, lalu pakai saat event dibuka.",
+    "rosterManagementOwnerDescription": "Kelola pemain tim yang terbentuk dari acak.",
+    "soloRosterNote": "Pemain tim ini dari hasil acak. Hubungi organizer kalau ada yang perlu diganti.",
     "noRegisteredTeams": "Belum ada draft atau tim terdaftar di akun ini.",
     "accountSettings": "Pengaturan akun",
     "submitStats": "Submit statistik match →",
@@ -1109,6 +1112,105 @@
         "rate_limited": "Terlalu sering. Coba lagi beberapa menit lagi.",
         "unknown": "Permintaan gagal dikirim. Coba lagi."
       }
+    }
+  },
+  "player": {
+    "navLabel": "Menu pemain",
+    "nav": {
+      "summary": "Ringkasan",
+      "registrations": "Pendaftaran",
+      "profile": "Profil",
+      "settings": "Pengaturan"
+    },
+    "greeting": "Halo, {name}",
+    "greetingHint": "Pendaftaran solo, tim, dan jadwal kamu ada di sini.",
+    "notices": {
+      "passwordChanged": "Password sudah diganti.",
+      "saved": "Profil disimpan.",
+      "invalidWhatsapp": "Nomor WhatsApp tidak valid. Contoh: 0812 3456 7890.",
+      "tooMany": "Terlalu banyak percobaan. Coba lagi dalam 15 menit.",
+      "saveFailed": "Profil belum bisa disimpan. Coba lagi."
+    },
+    "active": {
+      "title": "Pendaftaran aktif",
+      "empty": "Kamu belum daftar event solo.",
+      "browse": "Lihat event"
+    },
+    "history": {
+      "title": "Riwayat",
+      "empty": "Belum ada riwayat."
+    },
+    "teams": {
+      "title": "Tim kamu",
+      "members": "{count} pemain",
+      "view": "Lihat tim",
+      "manage": "Kelola tim"
+    },
+    "nextMatch": {
+      "title": "Pertandingan berikutnya",
+      "empty": "Belum ada pertandingan terjadwal.",
+      "versus": "{team} lawan {opponent}",
+      "noOpponent": "Lawan belum ditentukan",
+      "noTime": "Jadwal belum ditentukan",
+      "live": "Sedang berlangsung"
+    },
+    "registration": {
+      "details": "IGN {ign} · UID {uid}",
+      "backup": "Cadangan: {position}",
+      "open": "Buka halaman daftar",
+      "viewTeam": "Lihat tim"
+    },
+    "stage": {
+      "queued": "Antrean",
+      "pay": "Bayar",
+      "review": "Diperiksa",
+      "rejected": "Ditolak",
+      "waiting": "Menunggu tim",
+      "in_team": "Masuk tim",
+      "out_of_teams": "Tidak masuk tim",
+      "lost": "Selesai"
+    },
+    "stageText": {
+      "queued": "Kamu di antrean ke-{position}. Kamu belum perlu bayar.",
+      "queuedUnknown": "Kamu di antrean. Kamu belum perlu bayar.",
+      "pay": "Bayar sebelum {deadline} supaya slot tetap milikmu.",
+      "payNoDeadline": "Bayar supaya slot tetap milikmu.",
+      "review": "Bukti bayar sedang diperiksa organizer.",
+      "rejected": "Bukti bayar ditolak: {reason}. Unggah bukti baru sebelum {deadline}.",
+      "rejectedNoReason": "Bukti bayar ditolak. Unggah bukti baru sebelum {deadline}.",
+      "waiting": "Slot kamu aman. Tim dibentuk lewat acak setelah pendaftaran ditutup.",
+      "in_team": "Kamu masuk {team}.",
+      "out_of_teams": "Kamu tidak masuk tim kali ini.",
+      "expired": "Waktu bayar habis, jadi slot diberikan ke pemain lain.",
+      "withdrawn": "Kamu membatalkan pendaftaran.",
+      "refund": {
+        "owed": "Organizer akan mengembalikan biaya kamu.",
+        "done": "Biaya sudah dikembalikan."
+      }
+    },
+    "team": {
+      "event": "Event {name}",
+      "members": "Anggota tim",
+      "ign": "IGN",
+      "uid": "UID",
+      "position": "Posisi",
+      "contact": "WhatsApp",
+      "captain": "Kapten",
+      "you": "Kamu",
+      "chat": "Chat",
+      "noContact": "Tidak ada",
+      "privacy": "Nomor WhatsApp hanya terlihat oleh teman satu tim.",
+      "matches": "Pertandingan",
+      "noMatches": "Belum ada pertandingan terjadwal.",
+      "manage": "Kelola tim di halaman kapten",
+      "back": "Kembali"
+    },
+    "profile": {
+      "title": "Profil",
+      "description": "Nomor WhatsApp kamu.",
+      "whatsapp": "Nomor WhatsApp",
+      "hint": "Dipakai untuk pendaftaran berikutnya. Pendaftaran yang sudah ada tetap memakai nomor lama.",
+      "submit": "Simpan"
     }
   },
   "captainSettings": {

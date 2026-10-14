@@ -82,6 +82,16 @@ export function assertNewRegistrationWindowOpen(event: RegistrationWindowEvent, 
   }
 }
 
+/**
+ * The roster of a team made by a solo draw is the organizer's draw of players who each paid for a slot, so its
+ * captain cannot add, rename or remove players directly. Changes go through a request the organizer approves.
+ */
+function assertRosterMayBeEditedDirectly(team: { source?: string | null }): void {
+  if (team.source === "solo-draw") {
+    throw new UserFacingError("Pemain tim ini dari hasil acak. Minta organizer menggantinya.");
+  }
+}
+
 /** A solo event forms its teams from the player draw, so teams cannot register or be imported into it. */
 function assertEventAcceptsTeams(event: { entryMode?: string | null }): void {
   if (event.entryMode === "solo") throw new UserFacingError("Event ini untuk pemain solo. Pendaftaran tim tidak dibuka.");
@@ -3044,9 +3054,10 @@ export async function addPlayer(input: {
     return await runSerializableRegistrationTransaction(async (tx) => {
       const team = await tx.team.findFirst({
         where: { id: input.teamId, ...(input.captainId ? { captainId: input.captainId } : {}) },
-        select: { eventId: true },
+        select: { eventId: true, source: true },
       });
       if (!team) throw new Error("Tim tidak ditemukan untuk akun ini.");
+      assertRosterMayBeEditedDirectly(team);
       if (input.eventId && team.eventId && input.eventId !== team.eventId) {
         throw new Error("Data event pemain tidak cocok dengan tim.");
       }
@@ -3083,11 +3094,12 @@ export async function updatePlayer(
   return runSerializableRegistrationTransaction(async (tx) => {
     const player = await tx.player.findUnique({
       where: { id },
-      include: { team: { select: { captainId: true, eventId: true } } },
+      include: { team: { select: { captainId: true, eventId: true, source: true } } },
     });
     if (!player || player.team.captainId !== captainUserId) {
       throw new Error("Not authorized to edit this player.");
     }
+    assertRosterMayBeEditedDirectly(player.team);
     if (player.team.eventId) await assertEventRosterMutable(tx, player.team.eventId);
     return mapPlayer(await tx.player.update({ where: { id }, data }));
   });
@@ -3102,11 +3114,12 @@ export async function deletePlayer(id: string, captainUserId: string): Promise<v
   await runSerializableRegistrationTransaction(async (tx) => {
     const player = await tx.player.findUnique({
       where: { id },
-      include: { team: { select: { captainId: true, eventId: true } } },
+      include: { team: { select: { captainId: true, eventId: true, source: true } } },
     });
     if (!player || player.team.captainId !== captainUserId) {
       throw new Error("Not authorized to delete this player.");
     }
+    assertRosterMayBeEditedDirectly(player.team);
     if (player.team.eventId) await assertEventRosterMutable(tx, player.team.eventId);
     await tx.player.delete({ where: { id } });
   });
