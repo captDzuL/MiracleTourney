@@ -72,14 +72,16 @@ test.describe("solo tournament, main path", () => {
     const run = Date.now();
     await page.setExtraHTTPHeaders({ "x-forwarded-for": `198.19.${(run >> 8) % 250}.${(run % 250) + 1}` });
     await page.goto(`/id/register?as=player&returnTo=${encodeURIComponent(`/events/${SOLO_EVENT_SLUG}/register`)}`);
-    await page.getByLabel("Nama lengkap").fill("Solo Newbie");
-    await page.getByLabel("Email").fill(NEWBIE_EMAIL);
-    await page.getByLabel("Nomor WhatsApp").fill("0812 5500 9001");
-    await page.getByLabel("Password", { exact: true }).fill(NEW_PLAYER_PASSWORD);
-    await page.getByLabel("Konfirmasi password").fill(NEW_PLAYER_PASSWORD);
-    await page.getByRole("button", { name: "Buat Akun" }).click();
-
-    await expect(page).toHaveURL(new RegExp(`/id/events/${SOLO_EVENT_SLUG}/register`), { timeout: 30_000 });
+    // The form is a client component. Typing before it has hydrated is wiped when it does, so try again until it takes.
+    await expect(async () => {
+      await page.getByLabel("Nama lengkap").fill("Solo Newbie");
+      await page.getByLabel("Email").fill(NEWBIE_EMAIL);
+      await page.getByLabel("Nomor WhatsApp").fill("0812 5500 9001");
+      await page.getByLabel("Password", { exact: true }).fill(NEW_PLAYER_PASSWORD);
+      await page.getByLabel("Konfirmasi password").fill(NEW_PLAYER_PASSWORD);
+      await page.getByRole("button", { name: "Buat Akun" }).click();
+      await expect(page).toHaveURL(new RegExp(`/id/events/${SOLO_EVENT_SLUG}/register`), { timeout: 15_000 });
+    }).toPass({ timeout: 75_000 });
     await expect(page.getByRole("heading", { name: "Flashpeak Solo Cup" })).toBeVisible();
     await fillRegistration(page, { ign: "NewKeeper", uid: "SK-100", position: "Goalkeeper" });
 

@@ -281,6 +281,28 @@ describe.skipIf(!databaseUrl)("solo registration repository (real database)", ()
       expect((await m.repo.getSoloRegistrationForUser(event.id, queued.registration.userId))?.status).toBe("queued");
     });
 
+    it("leaves the event row alone when nothing is due, so a page view never takes the lock", async () => {
+      const event = await makeEvent({ cap: 2, fee: true });
+      await join(event.id, "Goalkeeper");
+      const before = (await m.prisma.event.findUniqueOrThrow({ where: { id: event.id }, select: { updatedAt: true } })).updatedAt;
+
+      expect(await m.repo.sweepSoloEvent(event.id)).toEqual({ expired: 0, promoted: [] });
+
+      expect((await m.prisma.event.findUniqueOrThrow({ where: { id: event.id }, select: { updatedAt: true } })).updatedAt).toEqual(before);
+    });
+
+    it("still sweeps when somebody is queued for a group that has a free slot", async () => {
+      const event = await makeEvent({ cap: 2, fee: true });
+      const [first] = await fill(event.id, "Goalkeeper", 2);
+      const queued = await join(event.id, "Goalkeeper");
+      // The slot frees without the sweep running, as if a withdrawal had been written by another path.
+      await m.prisma.soloRegistration.update({ where: { id: first.registration.id }, data: { status: "withdrawn" } });
+
+      const result = await m.repo.sweepSoloEvent(event.id);
+
+      expect(result.promoted.map((p) => p.registrationId)).toEqual([queued.registration.id]);
+    });
+
     it("never expires a registration that is waiting for review", async () => {
       const event = await makeEvent({ cap: 2, fee: true });
       const { registration } = await join(event.id, "Goalkeeper");

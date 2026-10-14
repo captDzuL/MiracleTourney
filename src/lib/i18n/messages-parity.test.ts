@@ -4,9 +4,9 @@ import en from "../../../messages/en.json";
 import id from "../../../messages/id.json";
 import { soloCopy } from "@/components/solo/registration-copy";
 
-type Tree = { [key: string]: string | Tree };
+type Tree = string | Tree[] | { [key: string]: Tree };
 
-function flatten(tree: Tree, prefix = ""): Record<string, string> {
+function flatten(tree: Exclude<Tree, string>, prefix = ""): Record<string, string> {
   return Object.entries(tree).reduce<Record<string, string>>((out, [key, value]) => {
     const path = prefix ? `${prefix}.${key}` : key;
     return typeof value === "string" ? { ...out, [path]: value } : { ...out, ...flatten(value, path) };
@@ -31,7 +31,7 @@ function argumentNames(message: string): string[] {
     const inside = message.slice(index + 1, end);
     const name = inside.split(/[,}]/)[0].trim();
     if (/^\w+$/.test(name)) names.add(name);
-    const branches = /^\w+\s*,\s*(?:plural|select|selectordinal)\s*,(.*)$/s.exec(inside);
+    const branches = /^\w+\s*,\s*(?:plural|select|selectordinal)\s*,([\s\S]*)$/.exec(inside);
     if (branches) for (const branch of branches[1].matchAll(/\w+\s*\{/g)) {
       const open = index + 1 + inside.indexOf(branches[1]) + (branch.index ?? 0) + branch[0].length - 1;
       argumentNames(message.slice(open + 1, closingBrace(message, open))).forEach((inner) => names.add(inner));
@@ -41,8 +41,8 @@ function argumentNames(message: string): string[] {
   return [...names].sort();
 }
 
-const ids = flatten(id as Tree);
-const ens = flatten(en as Tree);
+const ids = flatten(id as unknown as Exclude<Tree, string>);
+const ens = flatten(en as unknown as Exclude<Tree, string>);
 
 /** Namespaces the solo tournament added. Indonesian wording here follows the Bahasa Lazim rules. */
 const SOLO_KEYS = Object.keys(ids).filter((key) => /^(player|registrationWorkspace\.solo)\./.test(key)

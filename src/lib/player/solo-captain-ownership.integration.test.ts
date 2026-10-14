@@ -167,4 +167,15 @@ describe.skipIf(!databaseUrl)("the captain of a solo team, in the database", () 
 
     expect(await ownsATeam(owner.id)).toBe(true);
   });
+
+  it("raises the session version when the password changes, so older sessions stop matching", async () => {
+    const user = await makeUser("player");
+    const before = (await m.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { sessionVersion: true } })).sessionVersion;
+
+    await m.repo.updateUserPassword(user.id, "new-hash");
+
+    const after = await m.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { sessionVersion: true, passwordHash: true } });
+    expect(after.sessionVersion).toBe(before + 1);
+    expect(after.passwordHash).toBe("new-hash");
+  });
 });
