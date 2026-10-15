@@ -87,7 +87,12 @@ test("an admin turns a team's existing logo into a certificate for an event with
   await expect(page.getByText("A new certificate version was generated.")).toBeVisible();
 
   await expect.poll(async () => (await completionDb.certificate.findMany({ where: { eventId: event.id, type: "champion" } })).map((row) => row.status)).toContain("ready");
-  await expect(page.locator("[data-generated-artifact] img")).toBeVisible();
+  const preview = page.locator("[data-generated-artifact] img");
+  await expect(preview).toBeVisible();
+  // The rendered certificate must be a real, decoded image, not a broken placeholder.
+  await expect.poll(() => preview.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("studio-after-generate.png") });
+  await preview.screenshot({ path: test.info().outputPath("certificate-preview.png") });
 });
 
 test("importing the same team logo twice reuses the approved asset", async ({ page }) => {
