@@ -6,6 +6,7 @@ import {
   MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES,
   type MiracleV3CertificateData,
 } from "./miracle-v3";
+import { getMiracleV3EditorialCopy } from "./miracle-v3-editorial-copy";
 
 export const fixture: MiracleV3CertificateData = {
   eventId: "event-1", eventName: "Miracle Cup", gameId: "game-flashpeak", gameName: "Flashpeak",
@@ -37,7 +38,15 @@ describe("Miracle V3 certificate contract", () => {
     ["top_defender", "Top Defender", "player"], ["top_assist", "Top Assist", "player"],
   ] as const)("renders %s with the correct recipient and hero", async (certificateType, label, recipientKind) => {
     const doc = await documentFor({ ...fixture, certificateType, recipientKind });
-    expect(doc.querySelector('[data-zone="award"]')?.textContent).toContain(label);
+    const copy = getMiracleV3EditorialCopy(certificateType);
+    const award = doc.querySelector('[data-zone="award"]')!;
+    expect(award.textContent).toContain(copy.eyebrow);
+    expect(award.textContent).toContain(copy.motto);
+    expect([...award.querySelectorAll("h1, h1 span")].map((line) => line.firstChild?.textContent)).toEqual([copy.megaLines[0], copy.megaLines[1]]);
+    expect(award.querySelector("h1")?.getAttribute("aria-label")).toBe(label);
+    expect(doc.querySelector("main")?.getAttribute("data-certificate-type")).toBe(certificateType);
+    expect(doc.querySelector('[data-zone="recipient"]')?.textContent).toContain(copy.recipientLabel);
+    expect(doc.querySelector('[data-zone="recipient"]')?.textContent).toContain(copy.rank);
     expect(doc.querySelector('[data-zone="recipient"]')?.textContent).toContain("Garuda Nova");
     expect(doc.querySelector('[data-zone="hero"] img')?.getAttribute("src")).toBe(recipientKind === "team" ? "https://assets.example/team.png" : "https://assets.example/hero.png");
     expect(doc.querySelectorAll('[data-role="character-art"]').length).toBe(recipientKind === "team" ? 0 : 1);
@@ -126,6 +135,57 @@ describe("Miracle V3 certificate contract", () => {
       expect(element.style.overflow).toBe("hidden");
     }
     expect(doc.querySelector("style")?.textContent).toContain("overflow-wrap:anywhere");
+  });
+  it("shows the Miracle logo, issuer, certificate id, issue date and QR link on every type", async () => {
+    for (const certificateType of MIRACLE_V3_CERTIFICATE_TYPES) {
+      const recipientKind = ["champion", "runner_up", "third_place"].includes(certificateType) ? "team" : "player";
+      const doc = await documentFor({ ...fixture, certificateType, recipientKind });
+      expect(doc.querySelector('[data-zone="identity"] img[alt="Miracle"]')?.getAttribute("src")).toMatch(/^data:image\/svg\+xml;base64,/);
+      expect(doc.querySelector('[data-zone="issueDate"]')?.textContent).toContain("Issued by Miracle");
+      expect(doc.querySelector('[data-zone="issueDate"]')?.textContent).toContain("2026-09-05");
+      expect(doc.querySelector('[data-zone="certificateId"]')?.textContent).toContain("cert-1");
+      expect(doc.querySelector('[data-role="verification-qr"]')).not.toBeNull();
+    }
+  });
+  it("draws the event monogram from the event name inside the identity zone, escaped", async () => {
+    const doc = await documentFor({ ...fixture, eventName: "Flash Peak Championship" });
+    expect(doc.querySelector('[data-zone="identity"] .monogram')?.textContent).toBe("FP");
+    const hostile = await documentFor({ ...fixture, eventName: '<img src=x onerror=alert(1)> Cup' });
+    expect(hostile.querySelector('[data-zone="identity"] .monogram')?.textContent).toMatch(/^[\p{L}\p{N}]{1,2}$/u);
+    expect(hostile.querySelectorAll("img[onerror]")).toHaveLength(0);
+  });
+  it("frames the team logo in a diamond centred on its placement and keeps the logo box as supplied", async () => {
+    const doc = await documentFor({ ...fixture, assetPlacement: { assetKind: "team_logo_hero", x: 360, y: 748, width: 560, height: 540 } });
+    const frame = doc.querySelector<HTMLElement>('[data-zone="hero"] [data-role="hero-frame"]')!;
+    expect(frame.style.transform).toBe("rotate(45deg)");
+    const side = parseInt(frame.style.width, 10);
+    expect(parseInt(frame.style.left, 10) + side / 2).toBeCloseTo(56 + 280, 0);
+    expect(parseInt(frame.style.top, 10) + side / 2).toBeCloseTo(60 + 270, 0);
+    expect(frame.querySelector("img")).toBeNull();
+    expect(doc.querySelectorAll('[data-zone="hero"] img')).toHaveLength(1);
+    expect(doc.querySelector<HTMLElement>('[data-role="team-logo"]')?.style.left).toBe("56px");
+    expect((await documentFor({ ...fixture, certificateType: "mvp", recipientKind: "player" })).querySelector('[data-role="hero-frame"]')).toBeNull();
+  });
+  it("uses the default logo box and a team-initials emblem when the studio sets no placement or the logo is missing", async () => {
+    const doc = await documentFor({ ...fixture, teamLogoUrl: null, teamName: "Garuda Nova" });
+    const emblem = doc.querySelector<SVGElement>('[data-zone="hero"] [data-role="hero-fallback"]')!;
+    expect(emblem.textContent).toContain("GN");
+    expect(emblem.getAttribute("style")).toContain("left:56px;top:60px;width:560px;height:540px");
+    const withLogo = await documentFor(fixture);
+    expect(withLogo.querySelector("template[data-hero-fallback]")?.innerHTML ?? "").toContain("GN");
+  });
+  it("keeps 60-character and unicode names escaped, clamped and sized down inside their zones", async () => {
+    const long = "A".repeat(60);
+    const emoji = "🔥🔥 Naga Api 🐉 日本語チーム";
+    for (const name of [long, emoji]) {
+      const doc = await documentFor({ ...fixture, recipientName: name, teamName: name, eventName: name });
+      const recipient = doc.querySelector<HTMLElement>('[data-zone="recipient"] .recipient')!;
+      expect(recipient.textContent).toBe(name);
+      expect(recipient.className).toContain("clamp");
+      expect(parseInt(recipient.style.fontSize, 10)).toBeLessThan(58);
+      expect(doc.querySelector<HTMLElement>('[data-zone="recipient"]')!.style.overflow).toBe("hidden");
+      expect(doc.querySelector<HTMLElement>('[data-zone="identity"]')!.style.overflow).toBe("hidden");
+    }
   });
   it("renders guides only for explicit editor previews", async () => {
     expect((await documentFor()).querySelector('[data-editor-guide]')).toBeNull();
