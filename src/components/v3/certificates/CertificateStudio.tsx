@@ -7,6 +7,7 @@ import { useFormatter, useTranslations } from "next-intl";
 import { publishCertificateSetAction, regenerateCertificateAction } from "@/lib/actions/certificate-v3-actions";
 import type { CertificateAssetKind, CertificateAssetPlacement, CertificatePublicationActionResult, CertificateStudioRecord, RegenerateCertificateResult } from "@/lib/certificate/service";
 import { MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3-contract";
+import { CHARACTER_ROLES, type CharacterRole } from "@/lib/certificate/character-library";
 import { AssetPlacement, type ApprovedCertificateAsset } from "./AssetPlacement";
 import { IntrinsicImage } from "@/components/IntrinsicImage";
 import { CertificateSetStatus } from "./CertificateSetStatus";
@@ -26,6 +27,7 @@ const DEFAULT_PLACEMENTS: Record<CertificateAssetKind, CertificateAssetPlacement
   team_logo_badge: { assetKind: "team_logo_badge", x: 80, y: 1052, width: 160, height: 160 },
 };
 const TEAM_LOGO_ERROR_CODES = ["invalid_input", "team_not_found", "logo_missing", "logo_unsupported_source", "logo_fetch_failed", "logo_too_large", "unsupported_type", "signature_mismatch", "decode_failed", "invalid_dimensions", "invalid_entity_id", "missing_file", "upload_failed", "rate_limited", "unauthorized", "password_change_required", "forbidden", "feature_disabled", "failed"] as const;
+const CHARACTER_ERROR_CODES = ["invalid_input", "character_not_found", "character_file_missing", "file_too_large", "unsupported_type", "signature_mismatch", "decode_failed", "invalid_dimensions", "invalid_entity_id", "missing_file", "upload_failed", "rate_limited", "unauthorized", "password_change_required", "forbidden", "feature_disabled", "failed"] as const;
 const LOGO_KINDS: readonly CertificateAssetKind[] = ["team_logo_hero", "team_logo_badge"];
 const isTeamType = (type: MiracleV3CertificateType) => ["champion", "runner_up", "third_place"].includes(type);
 const placementInsideZone = (placement: CertificateAssetPlacement) => {
@@ -165,6 +167,11 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
     x: t("assets.x"), y: t("assets.y"), width: t("assets.width"), height: t("assets.height"), safeZone: t("assets.safeZone"),
     teamLogoImported: t("assets.teamLogoImported"),
     teamLogoErrors: Object.fromEntries(TEAM_LOGO_ERROR_CODES.map((code) => [code, t(`assets.teamLogoErrors.${code}`)])),
+    characters: {
+      title: t("assets.characters.title"), hint: t("assets.characters.hint"), imported: t("assets.characters.imported"),
+      roles: Object.fromEntries(CHARACTER_ROLES.map((role) => [role, t(`assets.characters.roles.${role}`)])) as Record<CharacterRole, string>,
+      errors: Object.fromEntries(CHARACTER_ERROR_CODES.map((code) => [code, t(`assets.characters.errors.${code}`)])),
+    },
     none: t("assets.none"), upload: t("assets.upload"), uploadLabel: t("assets.uploadLabel"), uploaded: t("assets.uploaded"),
     uploadErrors: Object.fromEntries(["invalid_entity_id", "missing_file", "file_too_large", "unsupported_type", "signature_mismatch", "decode_failed", "invalid_dimensions", "upload_failed"]
       .map((code) => [code, t(`assets.uploadErrors.${code}`)])),

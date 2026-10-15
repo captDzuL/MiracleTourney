@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const external = vi.hoisted(() => ({ flag: vi.fn(), session: vi.fn(), manage: vi.fn(), deps: vi.fn(), regenerate: vi.fn(), publish: vi.fn(), revalidate: vi.fn(), upload: vi.fn(), createAsset: vi.fn(), rateLimit: vi.fn(), findTeam: vi.fn(), findAsset: vi.fn(), fetch: vi.fn() }));
+const external = vi.hoisted(() => ({ flag: vi.fn(), session: vi.fn(), manage: vi.fn(), deps: vi.fn(), regenerate: vi.fn(), publish: vi.fn(), revalidate: vi.fn(), upload: vi.fn(), createAsset: vi.fn(), rateLimit: vi.fn(), findTeam: vi.fn(), findAsset: vi.fn(), fetch: vi.fn(), findCharacterAsset: vi.fn(), loadCharacter: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: external.revalidate, unstable_cache: (fn: unknown) => fn }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: external.flag }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: external.session }));
@@ -15,19 +15,24 @@ vi.mock("@/lib/platform/shared/authz", () => ({
 }));
 vi.mock("@/lib/actions/shared/uploads", () => ({ uploadImageAsset: external.upload }));
 vi.mock("@/lib/certificate/team-logo-repository", () => ({ findEventTeamLogo: external.findTeam, findApprovedTeamLogoAssetId: external.findAsset }));
+vi.mock("@/lib/certificate/approved-asset-repository", () => ({ findApprovedCharacterArtAssetId: external.findCharacterAsset }));
+vi.mock("@/lib/certificate/character-library-loader", () => ({ loadLibraryCharacter: external.loadCharacter }));
 vi.mock("@/lib/certificate/studio-repository", () => ({ createPrismaCertificateStudioDependencies: external.deps }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: external.rateLimit }));
 vi.mock("@/lib/certificate/service", async (load) => {
   const actual = await load<typeof import("@/lib/certificate/service")>();
   return { ...actual, regenerateCertificate: external.regenerate, publishCertificateSet: external.publish };
 });
-import { importTeamLogoAsCertificateAssetAction, publishCertificateSetAction, regenerateCertificateAction, uploadCertificateAssetAction } from "./certificate-v3-actions";
+import { importCharacterArtAsCertificateAssetAction, importTeamLogoAsCertificateAssetAction, publishCertificateSetAction, regenerateCertificateAction, uploadCertificateAssetAction } from "./certificate-v3-actions";
 import { MIRACLE_V3_CERTIFICATE_TYPES } from "@/lib/certificate/templates/miracle-v3";
 
 const BLOB_LOGO = "https://store1.public.blob.vercel-storage.com/team-logos/team-1-abc-uuid.png";
 const PNG_BYTES = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("logo")]);
 const PNG_SHA = createHash("sha256").update(PNG_BYTES).digest("hex");
 const importInput = { eventId: "event-1", teamId: "team-1" };
+const characterInput = { eventId: "event-1", characterId: "shirou" };
+const WEBP_BYTES = Buffer.concat([Buffer.from("RIFF"), Buffer.from([1, 2, 3, 4]), Buffer.from("WEBPcharacter")]);
+const WEBP_SHA = createHash("sha256").update(WEBP_BYTES).digest("hex");
 const regen = { eventId: "event-1", certificateType: "champion", expectedVersion: 4, idempotencyKey: "11111111-1111-4111-8111-111111111111" };
 const publication = { eventId: "event-1", expectedVersion: 4, expectedCertificateRevision: 2, idempotencyKey: "22222222-2222-4222-8222-222222222222", selection: MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => ({ certificateType, certificateId: `cert-${certificateType}` })) };
 
@@ -43,6 +48,8 @@ describe("certificate v3 actions", () => {
     external.createAsset.mockResolvedValue({ id: "asset-1" });
     external.findTeam.mockResolvedValue({ id: "team-1", name: "Garuda FC", logoUrl: BLOB_LOGO });
     external.findAsset.mockResolvedValue(null);
+    external.findCharacterAsset.mockResolvedValue(null);
+    external.loadCharacter.mockResolvedValue({ ok: true, bytes: WEBP_BYTES, mimeType: "image/webp" });
     external.fetch.mockImplementation(async () => new Response(PNG_BYTES, { status: 200, headers: { "content-type": "image/png" } }));
     vi.stubGlobal("fetch", external.fetch);
     vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
@@ -250,6 +257,94 @@ describe("certificate v3 actions", () => {
       await expect(importTeamLogoAsCertificateAssetAction(importInput)).resolves.toEqual({ status: "blocked", code: "invalid_dimensions" });
       external.upload.mockRejectedValue(new Error("blob store exploded"));
       await expect(importTeamLogoAsCertificateAssetAction(importInput)).resolves.toEqual({ status: "blocked", code: "upload_failed" });
+      expect(external.createAsset).not.toHaveBeenCalled();
+      expect(external.revalidate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("importCharacterArtAsCertificateAssetAction", () => {
+    it.each([null, {}, { eventId: "event-1" }, { eventId: "event-1", characterId: "" }, { eventId: "../x", characterId: "shirou" }, { eventId: "event-1", characterId: "../../.env" }, { eventId: "event-1", characterId: "a/b" }, { eventId: "event-1", characterId: "shirou.webp" }, { eventId: "event-1", characterId: 7 }, { eventId: "event-1", characterId: "x".repeat(65) }, { ...characterInput, path: "/etc/passwd" }])(
+      "rejects malformed input %j before any session or file access", async (bad) => {
+        await expect(importCharacterArtAsCertificateAssetAction(bad)).resolves.toEqual({ status: "blocked", code: "invalid_input" });
+        expect(external.session).not.toHaveBeenCalled();
+        expect(external.loadCharacter).not.toHaveBeenCalled();
+      });
+
+    it("reuses the certificate gate for flag, session, password change, and event ownership", async () => {
+      external.flag.mockReturnValue(false);
+      await expect(importCharacterArtAsCertificateAssetAction(characterInput)).resolves.toEqual({ status: "blocked", code: "feature_disabled" });
+      external.flag.mockReturnValue(true); external.session.mockResolvedValue(null);
+      await expect(importCharacterArtAsCertificateAssetAction(characterInput)).resolves.toEqual({ status: "blocked", code: "unauthorized" });
+      external.session.mockResolvedValue({ id: "org-1", role: "organizer", mustChangePassword: true });
+      await expect(importCharacterArtAsCertificateAssetAction(characterInput)).resolves.toEqual({ status: "blocked", code: "password_change_required" });
+      external.session.mockResolvedValue({ id: "org-1", role: "organizer", mustChangePassword: false });
+      external.manage.mockRejectedValue(new Error("Not authorized"));
+      await expect(importCharacterArtAsCertificateAssetAction(characterInput)).resolves.toEqual({ status: "blocked", code: "forbidden" });
+      expect(external.loadCharacter).not.toHaveBeenCalled();
+      expect(external.upload).not.toHaveBeenCalled();
+    });
+
+    it("rate-limits before reading any file", async () => {
+      external.rateLimit.mockReturnValue(false);
+      await expect(importCharacterArtAsCertificateAssetAction(characterInput)).resolves.toEqual({ status: "blocked", code: "rate_limited" });
+      expect(external.rateLimit).toHaveBeenCalledWith("certificate-character:org-1:event-1", 20, 15 * 60 * 1000);
+      expect(external.loadCharacter).not.toHaveBeenCalled();
+    });
+
+    it("answers character_not_found for an id outside the library without reading a file", async () => {
+      await expect(importCharacterArtAsCertificateAssetAction({ eventId: "event-1", characterId: "nobody" })).resolves.toEqual({ status: "blocked", code: "character_not_found" });
+      await expect(importCharacterArtAsCertificateAssetAction({ eventId: "event-1", characterId: "constructor" })).resolves.toEqual({ status: "blocked", code: "character_not_found" });
+      expect(external.loadCharacter).not.toHaveBeenCalled();
+      expect(external.upload).not.toHaveBeenCalled();
+    });
+
+    it("answers character_file_missing when the library file cannot be read", async () => {
+      external.loadCharacter.mockResolvedValue({ ok: false, code: "character_file_missing" });
+      await expect(importCharacterArtAsCertificateAssetAction(characterInput)).resolves.toEqual({ status: "blocked", code: "character_file_missing" });
+      expect(external.upload).not.toHaveBeenCalled();
+      expect(external.createAsset).not.toHaveBeenCalled();
+    });
+
+    it("loads the library entry, not anything the client sent", async () => {
+      await importCharacterArtAsCertificateAssetAction(characterInput);
+      expect(external.loadCharacter).toHaveBeenCalledWith(expect.objectContaining({ id: "shirou", file: "character-art/flashpeak/shirou.webp" }));
+    });
+
+    it("returns the existing approved asset for identical bytes and stores nothing", async () => {
+      external.findCharacterAsset.mockResolvedValue("asset-existing");
+      await expect(importCharacterArtAsCertificateAssetAction(characterInput)).resolves.toEqual({ status: "imported", assetId: "asset-existing", characterId: "shirou" });
+      expect(external.findCharacterAsset).toHaveBeenCalledWith("event-1", WEBP_SHA);
+      expect(external.upload).not.toHaveBeenCalled();
+      expect(external.createAsset).not.toHaveBeenCalled();
+    });
+
+    it("stores the bytes through the shared upload pipeline and records an approved character import", async () => {
+      await expect(importCharacterArtAsCertificateAssetAction(characterInput)).resolves.toEqual({ status: "imported", assetId: "asset-1", characterId: "shirou" });
+      const uploadInput = external.upload.mock.calls[0][0];
+      expect(uploadInput).toMatchObject({ folder: "certificate-assets", entityId: "event-1", maxBytes: 5 * 1024 * 1024, minDimension: 32, maxDimension: 4096, validationMode: "throw", validatePixels: true });
+      expect(uploadInput.file).toBeInstanceOf(File);
+      expect(uploadInput.file.type).toBe("image/webp");
+      expect(uploadInput.file.name).toBe("character-shirou.webp");
+      expect(Buffer.from(await uploadInput.file.arrayBuffer())).toEqual(WEBP_BYTES);
+      expect(external.createAsset).toHaveBeenCalledWith(expect.objectContaining({ id: "org-1" }), expect.objectContaining({
+        eventId: "event-1", source: "character_library", status: "approved", purpose: "certificate_character_art", sourceUrl: "/character-art/flashpeak/shirou.webp",
+        storageProvider: "local", storageKey: "certificate-assets/a.png", contentSha256: "a".repeat(64), url: "/certificate-assets/a.png",
+      }));
+      expect(external.revalidate).toHaveBeenCalledWith("/organizer/events/event-1/certificates");
+    });
+
+    it("names the upload file with the jpg extension for the goalkeeper", async () => {
+      external.loadCharacter.mockResolvedValue({ ok: true, bytes: WEBP_BYTES, mimeType: "image/jpeg" });
+      await importCharacterArtAsCertificateAssetAction({ eventId: "event-1", characterId: "maxim" });
+      expect(external.upload.mock.calls[0][0].file.name).toBe("character-maxim.jpg");
+      expect(external.upload.mock.calls[0][0].file.type).toBe("image/jpeg");
+    });
+
+    it("passes upload validation failures through as typed codes and creates no asset", async () => {
+      external.upload.mockRejectedValue(Object.assign(new Error("small"), { name: "ImageUploadValidationError", code: "invalid_dimensions" }));
+      await expect(importCharacterArtAsCertificateAssetAction(characterInput)).resolves.toEqual({ status: "blocked", code: "invalid_dimensions" });
+      external.upload.mockRejectedValue(new Error("blob store exploded"));
+      await expect(importCharacterArtAsCertificateAssetAction(characterInput)).resolves.toEqual({ status: "blocked", code: "upload_failed" });
       expect(external.createAsset).not.toHaveBeenCalled();
       expect(external.revalidate).not.toHaveBeenCalled();
     });

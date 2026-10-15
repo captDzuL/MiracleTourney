@@ -519,4 +519,23 @@ describe("Certificate Studio state for team logo import", () => {
     expect(state.approvedAssets.map(({ id, label }) => [id, label])).toEqual([["imported", "Garuda FC"], ["orphan", "orphan.png"], ["plain", "plain.png"]]);
     teams.mockRestore();
   });
+
+  it("labels an imported library character by its name without querying teams", async () => {
+    const characterRow = (id: string, extra: Record<string, unknown> = {}) => logoRow(id, { purpose: "certificate_character_art", source: "character_library", sourceUrl: "/character-art/flashpeak/kelly.webp", ...extra });
+    const { state, teams } = await loadState([
+      characterRow("kelly-asset"),
+      characterRow("unknown-asset", { sourceUrl: "/character-art/flashpeak/ghost.webp" }),
+      characterRow("spoofed-asset", { source: "organizer_upload" }),
+      characterRow("upload-asset", { source: "organizer_upload", sourceUrl: null }),
+    ]);
+    expect(teams).not.toHaveBeenCalled();
+    expect(state.approvedAssets).toEqual([
+      { id: "kelly-asset", label: "Kelly", purpose: "certificate_character_art", characterId: "kelly" },
+      { id: "unknown-asset", label: "unknown-asset.png", purpose: "certificate_character_art" },
+      { id: "spoofed-asset", label: "spoofed-asset.png", purpose: "certificate_character_art" },
+      { id: "upload-asset", label: "upload-asset.png", purpose: "certificate_character_art" },
+    ]);
+    expect(Object.keys(state.approvedAssets[1])).not.toContain("characterId");
+    teams.mockRestore();
+  });
 });
