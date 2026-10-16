@@ -21,8 +21,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
 vi.mock("@/lib/platform/shared/authz", () => ({ assertUserCanManageEvent: mocks.assertUserCanManageEvent }));
-vi.mock("@/lib/platform/db", () => ({
-  prisma: { soloDraw: { findUnique: mocks.drawFindUnique }, soloRegistration: { findUnique: mocks.registrationFindUnique } },
+vi.mock("@/lib/solo/lookups", () => ({
+  findSoloDrawEvent: mocks.drawFindUnique,
+  findSoloRegistrationEvent: mocks.registrationFindUnique,
 }));
 vi.mock("next/cache", () => ({ revalidateTag: mocks.revalidateTag }));
 vi.mock("@/lib/observability/logger", () => ({ withServerActionLog: (_name: string, _route: string, run: () => unknown) => run(), writeServerLog: mocks.writeServerLog }));

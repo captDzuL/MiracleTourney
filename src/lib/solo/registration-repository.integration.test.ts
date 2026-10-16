@@ -395,6 +395,33 @@ describe.skipIf(!databaseUrl)("solo registration repository (real database)", ()
     });
   });
 
+  describe("the small reads the server actions use", () => {
+    it("finds an event's slug and nothing for a missing event", async () => {
+      const lookups = await import("./lookups");
+      const event = await makeEvent();
+      expect(await lookups.findEventSlug(event.id)).toEqual({ slug: event.slug });
+      expect(await lookups.findEventSlug("does-not-exist")).toBeNull();
+    });
+
+    it("finds the event of a registration, and a registration only for its own player", async () => {
+      const lookups = await import("./lookups");
+      const event = await makeEvent();
+      const { registration } = await join(event.id);
+      expect(await lookups.findSoloRegistrationEvent(registration.id)).toEqual({ eventId: event.id });
+      expect(await lookups.findOwnSoloRegistration(registration.id, registration.userId)).toEqual({ eventId: event.id, event: { slug: event.slug } });
+      expect(await lookups.findOwnSoloRegistration(registration.id, "somebody-else")).toBeNull();
+      expect(await lookups.findSoloRegistrationEvent("does-not-exist")).toBeNull();
+    });
+
+    it("finds the event of a draw", async () => {
+      const lookups = await import("./lookups");
+      const event = await makeEvent();
+      const draw = await m.prisma.soloDraw.create({ data: { eventId: event.id, version: 1, status: "draft", seed: "s", algorithmVersion: "1", inputHash: "h", config: {}, teamCount: 0 } });
+      expect(await lookups.findSoloDrawEvent(draw.id)).toEqual({ eventId: event.id });
+      expect(await lookups.findSoloDrawEvent("does-not-exist")).toBeNull();
+    });
+  });
+
   describe("many players at the same moment", () => {
     function registerAll(eventId: string, users: Array<{ id: string }>, position: string) {
       return Promise.allSettled(users.map((user, index) =>
