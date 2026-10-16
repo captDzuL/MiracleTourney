@@ -128,4 +128,88 @@ describe("public V3 event overview route", () => {
     expect(leagueHtml).toContain('data-public-competition-context="round_robin"');
     expect(leagueHtml).not.toContain("Grand Final");
   });
+
+  describe("finished event", () => {
+    const match = { id: "final-1", roundLabel: "Grand Final", home: "Alpha", away: "Beta", status: "completed" as const, homeScore: 2, awayScore: 1, start: null, end: null, room: null, bestOf: 3, official: true };
+    const standings = [{ phaseId: "phase-1", groupId: null, rows: [{ teamId: "team-a", name: "Alpha", rank: 1, played: 3, points: 9 }] }];
+
+    function finishedWith(format: string, withStandings: boolean) {
+      const finished = view("finished");
+      return { ...finished, identity: { ...finished.identity, format }, event: { ...finished.event, format }, matches: [match], standings: withStandings ? standings : [] } as PublicV3EventViewModel;
+    }
+
+    it("shows no final journey or embedded bracket, and links to the bracket page for knockout formats", () => {
+      const html = renderToStaticMarkup(<PublicV3EventPage view={finishedWith("Single Elimination", false)} locale="en" />);
+      expect(html).not.toContain("Final journey");
+      expect(html).not.toContain("Grand Final");
+      expect(html).not.toContain("adaptive-bracket-heading");
+      expect(html).not.toContain("The official bracket or standings are not available yet.");
+      expect(html).toContain('href="/en/events/mlbb-rank-war-32/bracket" data-bracket-link="true">View bracket</a>');
+    });
+
+    it("keeps the final standings without the bracket board for league events", () => {
+      const html = renderToStaticMarkup(<PublicV3EventPage view={finishedWith("round_robin", true)} locale="id" />);
+      expect(html).toContain("Klasemen");
+      expect(html).toContain("Alpha");
+      expect(html).not.toContain("Perjalanan final");
+      expect(html).not.toContain("Grand Final");
+      expect(html).not.toContain("data-bracket-link");
+    });
+
+    it("renders the podium in rank order with labels, and no separate champion card", () => {
+      const finished = finishedWith("Single Elimination", false) as Extract<PublicV3EventViewModel, { mode: "finished" }>;
+      const podium = [3, 1, 2].map((rank) => ({ rank, teamId: `t${rank}`, teamName: ["", "Alpha", "Beta", "Gamma"][rank], certificate: null }));
+      const html = renderToStaticMarkup(<PublicV3EventPage view={{ ...finished, podium }} locale="id" />);
+      expect(html).toContain('data-podium="published"');
+      expect(html).toContain('data-podium-count="3"');
+      expect(html.indexOf('data-rank="1"')).toBeLessThan(html.indexOf('data-rank="2"'));
+      expect(html.indexOf('data-rank="2"')).toBeLessThan(html.indexOf('data-rank="3"'));
+      expect(html).toContain(">Juara<");
+      expect(html).toContain(">Runner-up<");
+      expect(html).toContain(">Peringkat Ketiga<");
+      expect(html).not.toContain("data-champion");
+      expect(html).not.toContain("Lihat certificate");
+    });
+
+    it("keeps a two-team podium without inventing a third place", () => {
+      const finished = finishedWith("Single Elimination", false) as Extract<PublicV3EventViewModel, { mode: "finished" }>;
+      const podium = [1, 2].map((rank) => ({ rank, teamId: `t${rank}`, teamName: ["", "Alpha", "Beta"][rank], certificate: null }));
+      const html = renderToStaticMarkup(<PublicV3EventPage view={{ ...finished, podium }} locale="en" />);
+      expect(html).toContain('data-podium-count="2"');
+      expect(html).not.toContain('data-rank="3"');
+      expect(html).toContain(">Champion<");
+    });
+
+    it("shows an empty state when the podium is not published", () => {
+      const html = renderToStaticMarkup(<PublicV3EventPage view={finishedWith("Single Elimination", false)} locale="id" />);
+      expect(html).toContain('data-podium="empty"');
+      expect(html).toContain("Podium belum diterbitkan.");
+    });
+
+    it("shows published certificates as inline images with type and verification link", () => {
+      const finished = finishedWith("Single Elimination", false) as Extract<PublicV3EventViewModel, { mode: "finished" }>;
+      const items = [
+        { id: "c1", type: "champion", recipientKind: "team", recipientId: "t1", recipientName: "Alpha", publishedUrl: "https://example.public.blob.vercel-storage.com/champion.png", verificationCode: "CODE-1" },
+        { id: "c2", type: "mvp", recipientKind: "player", recipientId: "p1", recipientName: "Rafael", publishedUrl: "https://example.public.blob.vercel-storage.com/mvp.png", verificationCode: "CODE-2" },
+      ];
+      const complete = { ...finished, certificates: { ...finished.certificates, status: "published" as const, publishedCount: 2, expectedCount: 2, isComplete: true, items } };
+      const html = renderToStaticMarkup(<PublicV3EventPage view={complete} locale="id" />);
+      expect(html).toContain("data-certificate-gallery");
+      expect((html.match(/<img[^>]+src="https:\/\/example\.public\.blob\.vercel-storage\.com\/(champion|mvp)\.png"/g) ?? []).length).toBe(2);
+      expect(html).toContain("Certificate Juara untuk Alpha");
+      expect(html).toContain("MVP Turnamen");
+      expect(html).toContain('href="/id/certificates/verify/CODE-1"');
+      expect(html).toContain("Lihat ukuran penuh");
+    });
+
+    it("does not render certificate images before the complete set is published", () => {
+      const html = renderToStaticMarkup(<PublicV3EventPage view={finishedWith("Single Elimination", false)} locale="id" />);
+      expect(html).not.toContain("data-certificate-gallery");
+    });
+
+    it("localizes the bracket link", () => {
+      const html = renderToStaticMarkup(<PublicV3EventPage view={finishedWith("Single Elimination", false)} locale="id" />);
+      expect(html).toContain('href="/id/events/mlbb-rank-war-32/bracket" data-bracket-link="true">Lihat bracket</a>');
+    });
+  });
 });
