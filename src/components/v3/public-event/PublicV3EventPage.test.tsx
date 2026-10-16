@@ -128,4 +128,37 @@ describe("public V3 event overview route", () => {
     expect(leagueHtml).toContain('data-public-competition-context="round_robin"');
     expect(leagueHtml).not.toContain("Grand Final");
   });
+
+  describe("finished event", () => {
+    const match = { id: "final-1", roundLabel: "Grand Final", home: "Alpha", away: "Beta", status: "completed" as const, homeScore: 2, awayScore: 1, start: null, end: null, room: null, bestOf: 3, official: true };
+    const standings = [{ phaseId: "phase-1", groupId: null, rows: [{ teamId: "team-a", name: "Alpha", rank: 1, played: 3, points: 9 }] }];
+
+    function finishedWith(format: string, withStandings: boolean) {
+      const finished = view("finished");
+      return { ...finished, identity: { ...finished.identity, format }, event: { ...finished.event, format }, matches: [match], standings: withStandings ? standings : [] } as PublicV3EventViewModel;
+    }
+
+    it("shows no final journey or embedded bracket, and links to the bracket page for knockout formats", () => {
+      const html = renderToStaticMarkup(<PublicV3EventPage view={finishedWith("Single Elimination", false)} locale="en" />);
+      expect(html).not.toContain("Final journey");
+      expect(html).not.toContain("Grand Final");
+      expect(html).not.toContain("adaptive-bracket-heading");
+      expect(html).not.toContain("The official bracket or standings are not available yet.");
+      expect(html).toContain('href="/en/events/mlbb-rank-war-32/bracket" data-bracket-link="true">View bracket</a>');
+    });
+
+    it("keeps the final standings without the bracket board for league events", () => {
+      const html = renderToStaticMarkup(<PublicV3EventPage view={finishedWith("round_robin", true)} locale="id" />);
+      expect(html).toContain("Klasemen");
+      expect(html).toContain("Alpha");
+      expect(html).not.toContain("Perjalanan final");
+      expect(html).not.toContain("Grand Final");
+      expect(html).not.toContain("data-bracket-link");
+    });
+
+    it("localizes the bracket link", () => {
+      const html = renderToStaticMarkup(<PublicV3EventPage view={finishedWith("Single Elimination", false)} locale="id" />);
+      expect(html).toContain('href="/id/events/mlbb-rank-war-32/bracket" data-bracket-link="true">Lihat bracket</a>');
+    });
+  });
 });

@@ -63,13 +63,13 @@ function boardStandings(view: CompetitionView): AdaptivePhaseStanding[] {
   }));
 }
 
-export function PublicV3CompetitionContext({ view, locale }: { view: CompetitionView; locale: PublicV3Locale }) {
+export function PublicV3CompetitionContext({ view, locale, standingsOnly = false }: { view: CompetitionView; locale: PublicV3Locale; standingsOnly?: boolean }) {
   const format = formatKind(view.identity.format);
   return <section data-public-competition-context={format} data-standings={view.standings.length ? "published" : undefined}>
     <AdaptiveBracketBoard
       locale={locale}
       format={format}
-      matches={boardMatches(view, format)}
+      matches={standingsOnly ? [] : boardMatches(view, format)}
       standings={boardStandings(view)}
       presentation="v3"
     />
