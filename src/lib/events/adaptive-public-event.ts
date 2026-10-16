@@ -1,5 +1,6 @@
 import type { AppUser, EventStatus } from "@/lib/platform/types";
 import { findGameConfig, findGameModeConfig } from "@/lib/platform/config";
+import { getRosterLimits } from "@/lib/events/roster-limits";
 import { prisma } from "@/lib/platform/db";
 import {
   tournamentFormatConfigSchema,
@@ -337,8 +338,7 @@ export async function getAdaptivePublicEventView(
       feeRequired: row.registrationFeeRequired,
       feeAmount: row.registrationFeeAmount,
       feeLabel: row.registrationFeeLabel ?? "",
-      minimumRoster: 1,
-      maximumRoster: mode?.maxRosterSize ?? 1,
+      ...getRosterLimits(row.gameModeId),
     },
     viewer: {
       state,
