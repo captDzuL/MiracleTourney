@@ -372,6 +372,29 @@ describe.skipIf(!databaseUrl)("solo registration repository (real database)", ()
     });
   });
 
+  describe("an event that is already running", () => {
+    const STATUSES = ["Published", "Registration Closed", "Ongoing", "Finished"] as const;
+
+    it.each(STATUSES)("takes no solo player into a team event that is %s", async (status) => {
+      const teamEvent = await makeEvent({ entryMode: "team", status });
+      await expect(join(teamEvent.id)).rejects.toThrow("Event ini bukan event solo.");
+      expect(await m.prisma.soloRegistration.count({ where: { eventId: teamEvent.id } })).toBe(0);
+    });
+
+    it.each(["Registration Closed", "Ongoing", "Finished"] as const)("takes no new solo player once a solo event is %s", async (status) => {
+      const soloEvent = await makeEvent({ entryMode: "solo", status });
+      await expect(join(soloEvent.id)).rejects.toThrow("sudah tidak membuka pendaftaran");
+      expect(await m.prisma.soloRegistration.count({ where: { eventId: soloEvent.id } })).toBe(0);
+    });
+
+    it("takes no new solo player after the teams are locked, even if the status still says Published", async () => {
+      const soloEvent = await makeEvent({ entryMode: "solo", status: "Published" });
+      const draw = await m.prisma.soloDraw.create({ data: { eventId: soloEvent.id, version: 1, status: "locked", seed: "s", algorithmVersion: "1", inputHash: "h", config: {}, teamCount: 0 } });
+      await m.prisma.event.update({ where: { id: soloEvent.id }, data: { activeSoloDrawId: draw.id } });
+      await expect(join(soloEvent.id)).rejects.toThrow("Tim sudah dikunci.");
+    });
+  });
+
   describe("many players at the same moment", () => {
     function registerAll(eventId: string, users: Array<{ id: string }>, position: string) {
       return Promise.allSettled(users.map((user, index) =>

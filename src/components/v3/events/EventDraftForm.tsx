@@ -368,6 +368,7 @@ export function EventDraftForm({
   const lockCopy: Record<string, string> = {
     event_started: t("lock_event_started"), event_finished: t("lock_event_finished"),
     registration_closed: t("lock_registration_closed"), matches_exist: t("lock_matches_exist"), slug_published: t("lock_slug_published"),
+    entry_mode_fixed: t("lock_entry_mode_fixed"), solo_game_fixed: t("lock_solo_game_fixed"), solo_registrations_exist: t("lock_solo_registrations_exist"),
   };
   const lockedReason = (field: keyof DraftPatch) => fieldLocks[field] ? (lockCopy[fieldLocks[field]!] ?? t("lockedField")) : null;
   const LockNote = ({ field }: { field: keyof DraftPatch }) => lockedReason(field) ? <span className="text-xs font-semibold text-[var(--color-brand-cream)]" data-field-lock={field}>{lockedReason(field)}</span> : null;
@@ -427,7 +428,8 @@ export function EventDraftForm({
         soloMode={soloModes.find((mode) => mode.id === gameModeId)}
         t={t}
         value={draft.entryMode ?? "team"}
-      />}<div className="grid gap-4 min-[700px]:grid-cols-2">
+      />}
+      {soloModes && <LockNote field="entryMode" />}<div className="grid gap-4 min-[700px]:grid-cols-2">
         <label className={labelClass}>{t("opens")}<input className={inputClass} disabled={Boolean(lockedReason("registrationOpensAt"))} name="registrationOpensAt" onChange={(event) => updateDateDraft("registrationOpensAt", event.target.value)} type="datetime-local" value={draft.registrationOpensAt ?? ""} /><LockNote field="registrationOpensAt" /></label>
         <label className={labelClass}>{t("closes")}<input className={inputClass} disabled={Boolean(lockedReason("registrationClosesAt"))} name="registrationClosesAt" onChange={(event) => updateDateDraft("registrationClosesAt", event.target.value)} type="datetime-local" value={draft.registrationClosesAt ?? ""} /><LockNote field="registrationClosesAt" /></label>
       </div>

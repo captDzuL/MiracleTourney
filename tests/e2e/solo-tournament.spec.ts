@@ -256,6 +256,33 @@ test.describe("solo tournament, main path", () => {
     await expect(page.getByRole("heading", { name: "Kompetisi" })).toBeVisible({ timeout: 30_000 });
   });
 
+  test("a solo player cannot join a team event, running or not, and the organizer sees how each event takes players", async ({ page }) => {
+    test.setTimeout(180_000);
+    await loginAsSoloPlayer(page, playerEmail(12));
+
+    // A team event that is open for registration, and one that is already being played.
+    for (const [slug, name] of [["flashpeak-revision-published", "Flashpeak Revision Published"], ["flashpeak-rising-64", "Flashpeak Rising 64"]] as const) {
+      await page.goto(`/id/events/${slug}`);
+      await expect(page.getByRole("heading", { name }).first()).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole("link", { name: "Daftar solo" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Daftar solo" })).toHaveCount(0);
+
+      await page.goto(`/id/events/${slug}/register`);
+      await expect(page.getByRole("heading", { name }).first()).toBeVisible({ timeout: 30_000 });
+      await expect(page.locator('input[name="ign"], input[name="uid"], select[name="primaryPosition"]')).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Daftar solo" })).toHaveCount(0);
+    }
+    expect(await soloDb.soloRegistration.count({ where: { user: { email: playerEmail(12) } } })).toBe(0);
+
+    // The organizer's locked event page says how that event takes players.
+    const running = await soloDb.event.findUniqueOrThrow({ where: { slug: "flashpeak-rising-64" }, select: { id: true } });
+    const organizerPage = await page.context().browser()!.newPage();
+    await loginAsOrganizer(organizerPage);
+    await organizerPage.goto(`/id/organizer/events/${running.id}/edit`);
+    await expect(organizerPage.locator("[data-entry-mode-fact]")).toHaveText("Cara daftar: Hanya tim", { timeout: 30_000 });
+    await organizerPage.close();
+  });
+
   const VIEWPORTS = [
     { name: "360", width: 360, height: 800 },
     { name: "390", width: 390, height: 844 },

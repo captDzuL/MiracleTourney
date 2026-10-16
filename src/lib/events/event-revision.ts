@@ -73,7 +73,7 @@ export type EventRevisionPayload = z.infer<typeof eventRevisionPayloadSchema>;
 export type EventRevisionPatch = z.infer<typeof eventRevisionPatchSchema>;
 export type EventRevisionField = keyof EventRevisionPayload;
 export type EventRevisionActor = { id: string; role: "organizer" | "admin" | "platform_admin" };
-export type EventRevisionFieldLockReason = "event_started" | "event_finished" | "status_not_editable" | "registration_closed" | "matches_exist";
+export type EventRevisionFieldLockReason = "event_started" | "event_finished" | "status_not_editable" | "registration_closed" | "matches_exist" | "solo_game_fixed" | "solo_registrations_exist";
 export type EventRevisionFieldState = { state: "saved" | "conflict" } | { state: "locked"; reason: EventRevisionFieldLockReason };
 export type SaveEventEditRevisionResult =
   | { status: "saved"; revision: number; retry?: true; fields: Partial<Record<EventRevisionField, EventRevisionFieldState>> }
@@ -89,10 +89,17 @@ const structureFields = [
 ] as const satisfies readonly EventRevisionField[];
 const allRevisionFields = Object.keys(revisionPayloadShape) as EventRevisionField[];
 
+/** Registrations of a solo event that still hold a place or wait for one. Withdrawn and expired ones do not. */
+export const SOLO_INACTIVE_STATUSES = ["withdrawn", "expired"] as const;
+
 export function getEventRevisionFieldLocks(input: {
   status: EventStatus;
   registrationClosesAt: Date | string | null;
   matchCount: number;
+  /** "solo" when players join one by one. Anything else is a team event. */
+  entryMode?: string | null;
+  /** Solo registrations that are not withdrawn or expired. */
+  activeSoloRegistrations?: number;
   now?: Date;
 }): Partial<Record<EventRevisionField, EventRevisionFieldLockReason>> {
   const locks: Partial<Record<EventRevisionField, EventRevisionFieldLockReason>> = {};
@@ -113,6 +120,12 @@ export function getEventRevisionFieldLocks(input: {
   }
   if (input.matchCount > 0) {
     for (const field of structureFields) locks[field] = "matches_exist";
+  }
+  if (input.entryMode === "solo") {
+    // Only a game with a required position can run a solo draw, and the slots are counted from the number of
+    // teams, so neither may move once players hold or wait for a place.
+    locks.gameModeId ??= "solo_game_fixed";
+    if ((input.activeSoloRegistrations ?? 0) > 0) locks.participantCap ??= "solo_registrations_exist";
   }
   return locks;
 }
@@ -173,7 +186,8 @@ type EventSnapshot = {
   accentColor: string | null;
   activeVisualAssetId: string | null;
   stream: unknown;
-  _count: { matches: number };
+  entryMode: string;
+  _count: { matches: number; soloRegistrations: number };
 };
 
 type RevisionRow = {
@@ -197,7 +211,8 @@ const eventSnapshotSelect = {
   venue: true, venueAddress: true, prizePoolLabel: true,
   registrationFeeRequired: true, registrationFeeAmount: true, registrationFeeLabel: true,
   registrationUrl: true, characterArtUrl: true, accentColor: true, activeVisualAssetId: true,
-  stream: true, _count: { select: { matches: true } },
+  stream: true, entryMode: true,
+  _count: { select: { matches: true, soloRegistrations: { where: { status: { notIn: [...SOLO_INACTIVE_STATUSES] } } } } },
 };
 
 function actorEventScope(actor: EventRevisionActor) {
@@ -361,6 +376,8 @@ export async function saveEventEditRevision(input: {
       status: current.event.status,
       registrationClosesAt: current.event.registrationClosesAt,
       matchCount: current.event._count.matches,
+      entryMode: current.event.entryMode,
+      activeSoloRegistrations: current.event._count.soloRegistrations,
       now,
     });
     if (Object.keys(patch).some((field) => locks[field as EventRevisionField])) {
@@ -477,6 +494,8 @@ export async function applyEventEditRevision(input: {
       status: revision.event.status,
       registrationClosesAt: revision.event.registrationClosesAt,
       matchCount: revision.event._count.matches,
+      entryMode: revision.event.entryMode,
+      activeSoloRegistrations: revision.event._count.soloRegistrations,
       now,
     });
     const lockedChanges = changedFields(payload, revision.event).filter((field) => locks[field]);
