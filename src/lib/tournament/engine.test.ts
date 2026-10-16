@@ -9,14 +9,8 @@ import {
   getLiveStreamPresentation,
   projectSingleEliminationBracket,
 } from "./engine";
-import { getBracketPreview, setMatchResult } from "../platform/demo-store";
 import type { Match } from "../platform/types";
-import type {
-  BracketMatch,
-  MatchResultInput,
-  PlayerMatchStatInput,
-  TeamSeed,
-} from "./types";
+import type { MatchResultInput, PlayerMatchStatInput, TeamSeed } from "./types";
 
 const TEST_EVENT_ID = "test-event";
 
@@ -310,32 +304,6 @@ describe("getPublicVisibleSingleEliminationBracket", () => {
   });
 });
 
-describe("getBracketPreview", () => {
-  it("returns propagated semifinal teams through the event-facing bracket preview", () => {
-    const bracket = getBracketPreview("event-kuroko-summer") as BracketMatch[];
-    const semifinal = bracket.find((match) => match.round === 2 && match.slot === 1);
-
-    expect(semifinal?.homeTeamId).toBeTruthy();
-    expect(semifinal?.awayTeamId).toBeTruthy();
-  });
-
-  it("does not project a completed store result when its teams mismatch the bracket slot", () => {
-    setMatchResult({
-      eventId: "event-kuroko-summer",
-      matchId: "match-kuroko-1",
-      homeScore: 21,
-      awayScore: 18,
-    });
-
-    const preview = getBracketPreview("event-kuroko-summer");
-    const final = preview.find(
-      (match) => match.round === 3 && "slot" in match && match.slot === 1,
-    );
-
-    expect(final?.homeTeamId).toBeNull();
-  });
-});
-
 describe("generateRoundRobinSchedule", () => {
   it("creates a full round robin schedule for all teams", () => {
     const schedule = generateRoundRobinSchedule(teams.slice(0, 4));
@@ -489,32 +457,3 @@ describe("getLiveStreamPresentation", () => {
   });
 });
 
-describe("setMatchResult", () => {
-  it("stores completed match results with a derived winner", () => {
-    const match = setMatchResult({
-      eventId: "event-kuroko-summer",
-      matchId: "match-kuroko-1",
-      homeScore: 21,
-      awayScore: 18,
-    });
-
-    expect(match).toMatchObject({
-      id: "match-kuroko-1",
-      status: "Completed",
-      homeScore: 21,
-      awayScore: 18,
-      winnerTeamId: "team-seirin",
-    });
-  });
-
-  it("rejects ties for single-elimination result entry", () => {
-    expect(() =>
-      setMatchResult({
-        eventId: "event-kuroko-summer",
-        matchId: "match-kuroko-1",
-        homeScore: 20,
-        awayScore: 20,
-      }),
-    ).toThrow("Single elimination matches cannot end in a draw.");
-  });
-});

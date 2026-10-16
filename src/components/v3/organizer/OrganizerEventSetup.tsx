@@ -10,7 +10,7 @@ import type { PublishReadiness as Readiness } from "@/lib/events/publish-readine
 import { getActiveEventEditRevisionIds } from "@/lib/events/event-revision";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { listSoloModes } from "@/lib/platform/config";
-import type { getManageableEventDraft } from "@/lib/platform/repository";
+import type { getManageableEventDraft } from "@/lib/events/repository";
 import type { AppUser } from "@/lib/platform/types";
 
 /** Shared existing setup composition for legacy overview and canonical draft editing. */

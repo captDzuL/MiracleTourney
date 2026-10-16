@@ -512,6 +512,23 @@ describe("EventDraftForm", () => {
       expect(container.querySelector("fieldset legend")?.textContent).toBe("How players register");
     });
 
+    it("names both choices by who may join, so an organizer knows what the event accepts", () => {
+      renderForm({ soloModes, gameModeId: "mode-flashpeak-5v5" });
+      const text = container.querySelector("fieldset[data-entry-mode]")?.textContent ?? "";
+      expect(text).toContain("Teams only");
+      expect(text).toContain("Solo players cannot join.");
+      expect(text).toContain("Solo players");
+      expect(text).toContain("Captains cannot register a team.");
+    });
+
+    it("shows the choice locked, with the reason, once the event is published", () => {
+      renderForm({ soloModes, gameModeId: "mode-flashpeak-5v5", fieldLocks: { entryMode: "entry_mode_fixed" }, initialDraft: { name: "Miracle Cup", participantCap: 8, formatConfig: null, entryMode: "solo" } });
+      expect(radio("solo")?.checked).toBe(true);
+      expect(radio("solo")?.disabled).toBe(true);
+      expect(radio("team")?.disabled).toBe(true);
+      expect(container.querySelector('[data-field-lock="entryMode"]')?.textContent).toBe("How players register cannot change after the event is published.");
+    });
+
     it("saves solo when it is chosen and shows the slots the event will have", async () => {
       const saveDraft = renderForm({ soloModes, gameModeId: "mode-flashpeak-5v5" });
       act(() => radio("solo")!.click());

@@ -26,7 +26,8 @@ const run = `soloown${Date.now().toString(36)}`;
 
 type Modules = {
   prisma: typeof import("@/lib/platform/db").prisma;
-  repo: typeof import("@/lib/platform/repository");
+  /** The repositories the captain pages write through, side by side. */
+  repo: typeof import("@/lib/teams/repository") & typeof import("@/lib/player-stats/repository") & typeof import("@/lib/identity/repository");
   rosterChange: typeof import("@/lib/platform/roster-change-requests");
 };
 let m: Modules;
@@ -66,7 +67,7 @@ describe.skipIf(!databaseUrl)("the captain of a solo team, in the database", () 
     process.env.DIRECT_URL = databaseUrl;
     m = {
       prisma: (await import("@/lib/platform/db")).prisma,
-      repo: await import("@/lib/platform/repository"),
+      repo: { ...(await import("@/lib/teams/repository")), ...(await import("@/lib/player-stats/repository")), ...(await import("@/lib/identity/repository")) },
       rosterChange: await import("@/lib/platform/roster-change-requests"),
     };
   });

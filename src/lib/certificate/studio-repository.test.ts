@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { prisma } from "@/lib/platform/db";
 import {
   CERTIFICATE_STUDIO_TRANSACTION_OPTIONS,
   certificateStudioAvailability,
   createCertificateStudioTransaction,
+  loadCertificateStudioState,
   materializeOwnedCertificateAssetUrl,
 } from "./studio-repository";
 import { MIRACLE_V3_CERTIFICATE_TYPES } from "./templates/miracle-v3-contract";
@@ -341,6 +343,71 @@ describe("Certificate Studio Prisma transaction boundary", () => {
     expect(tx.certificatePublication.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ completionId: "completion-1", completionVersion: 4, certificateIds: selection.map((row) => row.certificateId) }) }));
   });
 
+  describe("with a champion and runner-up podium only", () => {
+    const twoPlaceCompletion = { ...completion, podiumPlacements: completion.podiumPlacements.slice(0, 2) };
+    const twoPlaceTypes = MIRACLE_V3_CERTIFICATE_TYPES.filter((type) => type !== "third_place");
+    const twoPlaceRepository = () => repository({
+      tournamentCompletion: { findUnique: vi.fn().mockResolvedValue(twoPlaceCompletion), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      certificate: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) => certificates.filter((row) => where.id.in.includes(row.id))),
+        create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn().mockImplementation(async ({ where }: { where: { id: string } }) => certificates.find((row) => row.id === where.id)),
+      },
+    });
+    const selectionOf = (types: readonly string[]) => types.map((certificateType) => ({ certificateType: certificateType as never, certificateId: `cert-${certificateType}` }));
+    const commit = (repo: ReturnType<typeof repository>["repository"], types: readonly string[]) =>
+      repo.commitPublication({ selection: selectionOf(types), actorId: "organizer-1", idempotencyKey: "key", fingerprint: "fp", expectedCertificateRevision: 2, preserveVerificationHistory: true });
+
+    it("exposes six recipients and no third-place recipient in the completion contract", async () => {
+      const { repository: repo } = twoPlaceRepository();
+      const contract = await repo.loadCompletion();
+      expect(Object.keys(contract?.recipients ?? {})).toEqual(twoPlaceTypes);
+    });
+
+    it("still refuses a podium that has no runner-up", async () => {
+      const { repository: repo } = repository({
+        tournamentCompletion: { findUnique: vi.fn().mockResolvedValue({ ...completion, podiumPlacements: completion.podiumPlacements.slice(0, 1) }), updateMany: vi.fn() },
+      });
+      await expect(repo.loadCompletion()).resolves.toBeNull();
+    });
+
+    it("commits a publication of the six required certificates", async () => {
+      const { tx, repository: repo } = twoPlaceRepository();
+      await expect(commit(repo, twoPlaceTypes)).resolves.toMatchObject({ publicationVersion: 3 });
+      expect(tx.certificatePublication.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ certificateIds: selectionOf(twoPlaceTypes).map((row) => row.certificateId) }) }));
+    });
+
+    it("refuses a publication that includes a third-place certificate", async () => {
+      const { tx, repository: repo } = twoPlaceRepository();
+      await expect(commit(repo, MIRACLE_V3_CERTIFICATE_TYPES)).rejects.toThrow("no longer authoritative");
+      expect(tx.certificatePublication.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses a six-certificate publication when the podium has three places", async () => {
+      const { repository: repo } = repository({
+        certificate: { findFirst: vi.fn(), findMany: vi.fn().mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) => certificates.filter((row) => where.id.in.includes(row.id))), create: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
+      });
+      await expect(commit(repo, twoPlaceTypes)).rejects.toThrow("no longer authoritative");
+    });
+
+    it("lists only the required certificate types in the studio state", async () => {
+      const find = vi.spyOn(prisma.tournamentCompletion, "findUnique").mockResolvedValue({
+        ...twoPlaceCompletion,
+        event: { ...twoPlaceCompletion.event, certificates: [], certificatePublications: [] },
+      } as never);
+      const assets = vi.spyOn(prisma.eventVisualAsset, "findMany").mockResolvedValue([] as never);
+      try {
+        const state = await loadCertificateStudioState({ id: "event-1", name: "Miracle Open" });
+        expect(state.status).toBe("available");
+        expect(state.records.map((record) => record.certificateType)).toEqual(twoPlaceTypes);
+        expect(state.records.every((record) => record.recipient !== null)).toBe(true);
+      } finally {
+        find.mockRestore();
+        assets.mockRestore();
+      }
+    });
+  });
+
   it("returns an existing publication as the immutable concurrent same-key result", async () => {
     const publishedAt = new Date("2026-09-12T02:00:00Z");
     const { repository: repo } = repository({ certificatePublication: { findUnique: vi.fn().mockResolvedValue({ fingerprint: "fp", actorUserId: "organizer-1", version: 3, publishedAt }), create: vi.fn() } });
@@ -411,5 +478,64 @@ describe("Certificate Studio Prisma transaction boundary", () => {
     await expect(first.finalizeMutation("same-key", leases[0].leaseToken, generated)).resolves.toEqual({ status: "finalized" });
     await expect(second.finalizeMutation("same-key", "expired-token", failed)).resolves.toEqual({ status: "lease_lost", result: generated });
     expect(mutation).toMatchObject({ status: "succeeded", result: generated });
+  });
+});
+
+describe("Certificate Studio state for team logo import", () => {
+  const SOURCE_URL = "https://store1.public.blob.vercel-storage.com/team-logos/garuda.png";
+  const logoRow = (id: string, extra: Record<string, unknown> = {}) => ({
+    id, url: `https://store1.public.blob.vercel-storage.com/certificate-assets/${id}.png`, mimeType: "image/png", width: 512, height: 512, byteSize: 1024,
+    storageProvider: "vercel_blob", storageKey: `certificate-assets/${id}.png`, contentSha256: "b".repeat(64), purpose: "certificate_team_logo",
+    source: "organizer_upload", sourceUrl: null, ...extra,
+  });
+  const loadState = async (assetRows: unknown[], teamRows: unknown[] = []) => {
+    const find = vi.spyOn(prisma.tournamentCompletion, "findUnique").mockResolvedValue({ ...completion, event: { ...completion.event, certificates: [], certificatePublications: [] } } as never);
+    const assets = vi.spyOn(prisma.eventVisualAsset, "findMany").mockResolvedValue(assetRows as never);
+    const teams = vi.spyOn(prisma.team, "findMany").mockResolvedValue(teamRows as never);
+    try { return { state: await loadCertificateStudioState({ id: "event-1", name: "Miracle Open" }), teams }; }
+    finally { find.mockRestore(); assets.mockRestore(); }
+  };
+
+  it("attaches the team known from the locked completion to every recipient", async () => {
+    const { state, teams } = await loadState([]);
+    expect(state.records[0].recipient).toMatchObject({ id: "recipient-champion", team: { id: "recipient-champion", name: "Team 1" } });
+    expect(state.records[3].recipient).toMatchObject({ kind: "player", team: { id: "team-awards", name: "Awards Team" } });
+    teams.mockRestore();
+  });
+
+  it("does not query teams when no approved asset came from a team logo import", async () => {
+    const { state, teams } = await loadState([logoRow("plain")]);
+    expect(state.approvedAssets).toEqual([{ id: "plain", label: "plain.png", purpose: "certificate_team_logo" }]);
+    expect(teams).not.toHaveBeenCalled();
+    teams.mockRestore();
+  });
+
+  it("labels an imported logo by the name of the team whose logo it came from", async () => {
+    const { state, teams } = await loadState(
+      [logoRow("imported", { source: "team_logo_import", sourceUrl: SOURCE_URL }), logoRow("orphan", { source: "team_logo_import", sourceUrl: "https://store1.public.blob.vercel-storage.com/team-logos/gone.png" }), logoRow("plain")],
+      [{ name: "Garuda FC", logoUrl: SOURCE_URL }],
+    );
+    expect(teams).toHaveBeenCalledWith({ where: { eventId: "event-1", logoUrl: { in: [SOURCE_URL, "https://store1.public.blob.vercel-storage.com/team-logos/gone.png"] } }, select: { name: true, logoUrl: true } });
+    expect(state.approvedAssets.map(({ id, label }) => [id, label])).toEqual([["imported", "Garuda FC"], ["orphan", "orphan.png"], ["plain", "plain.png"]]);
+    teams.mockRestore();
+  });
+
+  it("labels an imported library character by its name without querying teams", async () => {
+    const characterRow = (id: string, extra: Record<string, unknown> = {}) => logoRow(id, { purpose: "certificate_character_art", source: "character_library", sourceUrl: "/character-art/flashpeak/kelly.webp", ...extra });
+    const { state, teams } = await loadState([
+      characterRow("kelly-asset"),
+      characterRow("unknown-asset", { sourceUrl: "/character-art/flashpeak/ghost.webp" }),
+      characterRow("spoofed-asset", { source: "organizer_upload" }),
+      characterRow("upload-asset", { source: "organizer_upload", sourceUrl: null }),
+    ]);
+    expect(teams).not.toHaveBeenCalled();
+    expect(state.approvedAssets).toEqual([
+      { id: "kelly-asset", label: "Kelly", purpose: "certificate_character_art", characterId: "kelly" },
+      { id: "unknown-asset", label: "unknown-asset.png", purpose: "certificate_character_art" },
+      { id: "spoofed-asset", label: "spoofed-asset.png", purpose: "certificate_character_art" },
+      { id: "upload-asset", label: "upload-asset.png", purpose: "certificate_character_art" },
+    ]);
+    expect(Object.keys(state.approvedAssets[1])).not.toContain("characterId");
+    teams.mockRestore();
   });
 });

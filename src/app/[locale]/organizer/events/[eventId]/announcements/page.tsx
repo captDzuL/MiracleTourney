@@ -6,7 +6,7 @@ import { mutateCompetitionWorkspaceAction } from "@/lib/actions/competition-v3-a
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
 import { readCompetitionWorkspace } from "@/lib/competition/workspace-read";
-import { getManageableEventDraft } from "@/lib/platform/repository";
+import { getManageableEventDraft } from "@/lib/events/repository";
 
 export default async function AnnouncementsPage({ params }: { params: Promise<{ locale: string; eventId: string }> }) {
   const { locale, eventId } = await params;

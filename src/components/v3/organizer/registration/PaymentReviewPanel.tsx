@@ -3,7 +3,7 @@ import Image from "next/image";
 import React, { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
-import type { PaymentReviewEntry } from "@/lib/platform/repository";
+import type { PaymentReviewEntry } from "@/lib/registration/review-repository";
 import { approveEventPaymentAction, rejectEventPaymentAction } from "@/lib/actions/registration-v3-actions";
 import { approveSoloRegistrationAction, rejectSoloRegistrationAction } from "@/lib/actions/solo-organizer-actions";
 import type { SoloPaymentEntry } from "@/lib/solo/organizer-read";

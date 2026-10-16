@@ -7,7 +7,12 @@ const { assertUserCanManageEvent, getCaptainCredentialsForEvent, requireRole } =
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireRole }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent, getCaptainCredentialsForEvent }));
+vi.mock("@/lib/imports/repository", () => ({
+  getCaptainCredentialsForEvent,
+}));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent,
+}));
 
 import { GET } from "./route";
 

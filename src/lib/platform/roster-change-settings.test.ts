@@ -10,7 +10,12 @@ const { prisma, readRosterChangeState, assertUserCanManageEvent } = vi.hoisted((
   assertUserCanManageEvent: vi.fn(),
 }));
 vi.mock("./db", () => ({ prisma }));
-vi.mock("./repository", () => ({ readRosterChangeState, assertUserCanManageEvent }));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent,
+}));
+vi.mock("@/lib/registration/repository", () => ({
+  readRosterChangeState,
+}));
 
 import { getRosterChangeSettings } from "./roster-change-settings";
 

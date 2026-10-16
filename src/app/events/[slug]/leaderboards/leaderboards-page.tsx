@@ -9,13 +9,10 @@ import { TeamIdentity } from "@/components/TeamAvatar";
 import { DataTable, Section } from "@/components/ui";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getOrderedStatEntries } from "@/lib/platform/config";
-import {
-  getEventBySlug,
-  getFlashpeakLeaderboardForEvent,
-  getFlashpeakLeaderboardForEventResult,
-  getLeaderboardForEvent,
-  getTeamsForEvent,
-} from "@/lib/platform/repository";
+import { getLeaderboardForEvent } from "@/lib/bracket/repository";
+import { getEventBySlug } from "@/lib/events/repository";
+import { getFlashpeakLeaderboardForEvent, getFlashpeakLeaderboardForEventResult } from "@/lib/player-stats/repository";
+import { getTeamsForEvent } from "@/lib/teams/repository";
 
 function V3LeaderboardPage({
   backLabel,

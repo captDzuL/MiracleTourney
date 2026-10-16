@@ -1,0 +1,51 @@
+# SELESAI di Fase 2: semua fungsi bernama di daftar ini sekarang dijalankan test (file repository.test.ts di tiap modul). Daftar dibiarkan sebagai catatan.
+# Fungsi bernama di src/lib/platform/repository.ts yang belum dijalankan test mana pun (diukur ulang setelah Fase 0, di atas main 2026-10-12).
+# Fungsi kecil di dalam pembaca ber-cache tidak ikut dihitung.
+# Tiap PR Fase 2 menutup bagiannya sendiri sebelum memindahkan fungsi, atau mencatat alasannya.
+# Buat ulang daftar ini dengan reporter coverage JSON yang hanya mengukur repository.ts.
+# Format: <nomor baris saat commit> <nama fungsi>
+409 generateCaptainEmail
+424 generateSyntheticRegistrationEmail
+439 getAllGames
+444 getGameModes
+449 getGameForEvent
+454 getModeForEvent
+507 getPlatformProfile
+514 updatePlatformProfile
+596 updateEventOrganizerContact
+616 assertUserCanReviewStatSubmission
+679 getPublishedEvents
+804 getPublicEventSlugRedirect
+1149 getBracketRoundLabel
+1204 getBracketManageableMatchesForEvent
+1216 getBracketManageableMatches
+1361 getTeamStandings
+1441 getCaptainById
+1468 getUserByEmail
+1475 getUserWithPasswordByEmail
+1482 getUserPasswordHashById
+1488 getCaptainUsersForAdmin
+1497 hasTempPassword
+1503 updateUserPassword
+1511 updateCaptainPassword
+1520 getImportSnapshot
+1552 getImportedTeams
+1568 getCaptainCredentialsForEvent
+1617 createOrganizerAndEventDraft
+1678 createEvent
+1718 autoTransitionEventToOngoing
+1791 copyDraftPlayersForEvent
+2043 createOrUpdateCaptainDraftTeam
+2130 getPaymentRegistrationRequestsForAdmin
+2282 getPaymentSettings
+2312 importTeams
+2371 saveRegistrationImportPreviewBatch
+2713 getRegistrationImportBatchForAdmin
+3040 getPlayerStatFormContext
+3238 getCompletedMatchesForCaptain
+3603 getPendingStatSubmissions
+3791 getMatchWithRosterAndStats
+3863 updateEventStream
+3937 getMatchGames
+4076 updateEventCertificateAssets
+4325 countCertificatesForGame

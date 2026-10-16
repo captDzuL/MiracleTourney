@@ -4,8 +4,8 @@ import { getTranslations } from "next-intl/server";
 
 import { card, field, muted, primaryButton } from "@/components/player/styles";
 import { SubmitButton } from "@/components/submit-button";
-import { changePasswordAction } from "@/lib/actions";
-import { hasTempPassword } from "@/lib/platform/repository";
+import { changePasswordAction } from "@/lib/actions/identity-actions";
+import { hasTempPassword } from "@/lib/identity/repository";
 
 import { openPlayerPage } from "../guard";
 

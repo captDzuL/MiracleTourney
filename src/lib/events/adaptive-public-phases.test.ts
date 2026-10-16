@@ -27,7 +27,7 @@ vi.mock("@/lib/platform/db", () => ({
   },
 }));
 
-import { getPublicCompetitionPhaseVisibility, getPublicDrawingEvent, getPublicFinishedEvent } from "./adaptive-public-phases";
+import { getPublicDrawingEvent, getPublicFinishedEvent } from "./adaptive-public-phases";
 
 const event = {
   id: "event-1",
@@ -97,15 +97,6 @@ beforeEach(() => {
 });
 
 describe("adaptive public drawing", () => {
-  it("distinguishes legacy events from private drafts and publicly readable phases", async () => {
-    mocks.phaseFindFirst.mockResolvedValueOnce(null);
-    await expect(getPublicCompetitionPhaseVisibility("event-legacy")).resolves.toBe("none");
-    mocks.phaseFindFirst.mockResolvedValueOnce({ status: "draft" });
-    await expect(getPublicCompetitionPhaseVisibility("event-private")).resolves.toBe("private");
-    mocks.phaseFindFirst.mockResolvedValueOnce({ status: "active" });
-    await expect(getPublicCompetitionPhaseVisibility("event-public")).resolves.toBe("public");
-  });
-
   it("reads only an active published phase and keeps unresolved slots as TBD", async () => {
     const view = await getPublicDrawingEvent("miracle-cup");
     expect(view).toMatchObject({
@@ -167,6 +158,7 @@ describe("adaptive public finished event", () => {
       podiumPlacements: [
         { rank: 1, teamId: "team-b", teamName: "Beta" },
         { rank: 2, teamId: "team-a", teamName: "Alpha" },
+        { rank: 3, teamId: "team-c", teamName: "Gamma" },
       ],
       awards: [
         { type: "mvp", status: "approved", decision: { recipientId: "p1", recipientName: "Nyx", teamId: "team-b", teamName: "Beta", reason: "Organizer decision" } },
@@ -212,6 +204,43 @@ describe("adaptive public finished event", () => {
     expect(mocks.certificateFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: { in: certificates.map(({ id }) => id) }, status: { in: ["ready", "published"] }, publishedUrl: { not: null } },
     }));
+  });
+
+  describe("with a champion and runner-up podium", () => {
+    const completion = {
+      id: "completion-1",
+      status: "completed",
+      sourceSnapshot: { version: 3 },
+      podiumPlacements: [
+        { rank: 1, teamId: "team-b", teamName: "Beta" },
+        { rank: 2, teamId: "team-a", teamName: "Alpha" },
+      ],
+      awards: [],
+    };
+    const rowsFor = (types: string[]) => types.map((type) => ({
+      id: `cert-${type}`, type, completionId: "completion-1", completionVersion: 3,
+      publishedUrl: `/certificates/${type}.png`, verificationCode: `VERIFY-${type}`, status: "ready",
+    }));
+    const publish = (types: string[]) => {
+      const certificates = rowsFor(types);
+      mocks.eventFindFirst.mockResolvedValue(joinedFinishedRow(completion, {
+        completionId: "completion-1", completionVersion: 3, certificateIds: certificates.map(({ id }) => id),
+      }));
+      mocks.certificateFindMany.mockResolvedValue(certificates);
+      return getPublicFinishedEvent("miracle-cup");
+    };
+
+    it("publishes six certificates and links no third place", async () => {
+      const view = await publish(["champion", "runner_up", "mvp", "top_scorer", "top_defender", "top_assist"]);
+      expect(view?.certificates).toEqual({ status: "published", publishedCount: 6, expectedCount: 6 });
+      expect(view?.podium.map((placement) => placement.certificate?.verificationCode)).toEqual(["VERIFY-champion", "VERIFY-runner_up"]);
+    });
+
+    it("stays in preparing while a required certificate is missing", async () => {
+      const view = await publish(["champion", "mvp", "top_scorer", "top_defender", "top_assist"]);
+      expect(view?.certificates).toEqual({ status: "preparing", publishedCount: 0, expectedCount: 6 });
+      expect(view?.podium.every((placement) => placement.certificate === null)).toBe(true);
+    });
   });
 
   it("withholds certificate links from stale or incomplete publications", async () => {

@@ -32,7 +32,7 @@ type Modules = {
   close: typeof import("./close-registration");
   draw: typeof import("./draw-repository");
   read: typeof import("./organizer-read");
-  platform: typeof import("@/lib/platform/repository");
+  platform: typeof import("@/lib/events/repository");
   operations: typeof import("@/lib/tournament/operations");
 };
 let m: Modules;
@@ -138,7 +138,7 @@ describe.skipIf(!databaseUrl)("solo draw repository (real database)", () => {
       close: await import("./close-registration"),
       draw: await import("./draw-repository"),
       read: await import("./organizer-read"),
-      platform: await import("@/lib/platform/repository"),
+      platform: await import("@/lib/events/repository"),
       operations: await import("@/lib/tournament/operations"),
     };
   });

@@ -88,6 +88,25 @@ function eliminationRows(kind: "single_elimination" | "double_elimination" | "gr
   };
 }
 
+/** An elimination bracket generated with thirdPlace "none": no third-place match, no rank-3 placement. */
+function noThirdPlaceRows(kind: "single_elimination" | "group_playoffs"): CompletionSourceRows {
+  const rows = eliminationRows(kind);
+  const config = structuredClone(rows.event.formatConfig);
+  if (config.kind === "group_playoffs") {
+    if (config.playoffs.kind !== "single_elimination") throw new Error("fixture must use single elimination playoffs");
+    config.playoffs.thirdPlace = "none";
+  } else if (config.kind === "single_elimination") {
+    config.thirdPlace = "none";
+  }
+  return {
+    ...rows,
+    event: { ...rows.event, formatConfig: config },
+    graph: { ...rows.graph!, config, matches: rows.graph!.matches.filter(({ id }) => id !== "third"), placements: rows.graph!.placements.filter(({ rank }) => rank !== 3) },
+    matches: rows.matches.filter(({ id }) => id !== "third"),
+    revisions: rows.revisions.filter(({ matchId }) => matchId !== "third"),
+  };
+}
+
 describe("Prisma completion source adapter", () => {
   it("forwards the repeatable-read workspace options", async () => {
     const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("unit test transaction stub"));
@@ -114,6 +133,19 @@ describe("Prisma completion source adapter", () => {
       { stage: thirdStage, official: true, winnerTeamId: kind === "double_elimination" ? "d" : "c", loserTeamId: kind === "double_elimination" ? "b" : "d", revision: 1 },
     ]);
     expect(source.facts.playoffFormatKind).toBe(kind === "group_playoffs" ? "single_elimination" : undefined);
+  });
+
+  it.each(["single_elimination", "group_playoffs"] as const)("marks %s facts as having no third place and derives a two-place podium", (kind) => {
+    const facts = buildCompletionSource(noThirdPlaceRows(kind)).facts;
+    expect(facts.thirdPlace).toBe("none");
+    expect(facts.matches.map(({ stage }) => stage)).toEqual(["final"]);
+    expect(derivePodium(facts).podium).toEqual({ championTeamId: "a", runnerUpTeamId: "b", thirdPlaceTeamId: null });
+  });
+
+  it("leaves the third-place fact unset when the bracket requires a third-place match or is not single elimination", () => {
+    expect(buildCompletionSource(eliminationRows("single_elimination")).facts.thirdPlace).toBeUndefined();
+    expect(buildCompletionSource(eliminationRows("group_playoffs")).facts.thirdPlace).toBeUndefined();
+    expect(buildCompletionSource(eliminationRows("double_elimination")).facts.thirdPlace).toBeUndefined();
   });
 
   it("uses all authoritative projected placement ranks and their graph outcomes", () => {
@@ -164,11 +196,22 @@ describe("Prisma completion source adapter", () => {
     expect(buildCompletionSource(rows).facts.standings.every(({ locked }) => !locked)).toBe(true);
   });
 
+  it("names award candidates by IGN and falls back to the UID only when the IGN is empty", () => {
+    const rows = eliminationRows("single_elimination");
+    const stat = (playerId: string, displayName: string, nickname: string) => ({
+      matchId: "final", playerId, playerName: "ignored", teamId: "a", source: "admin" as const, stats: { goal: 2, assist: 1, defense: 1 },
+      player: { id: playerId, teamId: "a", eventId: "event-1", displayName, nickname },
+    });
+    const names = buildCompletionSource({ ...rows, playerStats: [stat("p1", "14990159", "Raja Gol"), stat("p2", "14438883", "  ")] })
+      .statistics.filter(({ award }) => award === "top_scorer").map(({ playerName }) => playerName).sort();
+    expect(names).toEqual(["14438883", "Raja Gol"]);
+  });
+
   it("blocks unresolved incidents and aggregates only approved captain or direct-admin finite statistics", () => {
     const rows = eliminationRows("single_elimination");
     rows.incidents.push({ id: "incident-2", matchId: null, resolvedAt: null }, { id: "incident-1", matchId: "final", resolvedAt: null });
     rows.playerStats.push(
-      { matchId: "final", playerId: "p1", playerName: "Forged Ari", teamId: "a", source: "admin", stats: { goal: 3, assist: 3, defense: 7 }, player: { id: "p1", teamId: "a", eventId: "event-1", displayName: "Ari Canonical", nickname: "Ari" } },
+      { matchId: "final", playerId: "p1", playerName: "Forged Ari", teamId: "a", source: "admin", stats: { goal: 3, assist: 3, defense: 7 }, player: { id: "p1", teamId: "a", eventId: "event-1", displayName: "10001001", nickname: "Ari" } },
       { matchId: "final", playerId: "p2", playerName: "Bima", teamId: "b", source: "captain", stats: { goal: 4, assist: 0, defense: 1 }, player: { id: "p2", teamId: "b", eventId: "event-1", displayName: "Bima", nickname: "Bima" } },
       { matchId: "third", playerId: "p3", playerName: "Cici", teamId: "c", source: "captain", stats: { goal: 99, assist: 99, defense: 99 }, player: { id: "p3", teamId: "c", eventId: "event-1", displayName: "Cici", nickname: "Cici" } },
       { matchId: "third", playerId: "p4", playerName: "Deni", teamId: "d", source: "admin", stats: { goal: -1, assist: Number.POSITIVE_INFINITY, defense: 1 }, player: { id: "p4", teamId: "d", eventId: "event-1", displayName: "Deni", nickname: "Deni" } },
@@ -178,10 +221,10 @@ describe("Prisma completion source adapter", () => {
     const source = buildCompletionSource(rows);
     expect(source.facts.activeDisputes).toEqual([{ id: "incident-1", matchId: "final" }, { id: "incident-2" }]);
     expect(source.statistics).toEqual([
-      { award: "mvp", playerId: "p1", playerName: "Ari Canonical", teamId: "a", teamName: "Team A", value: 13, validated: true, status: "published" },
-      { award: "top_scorer", playerId: "p1", playerName: "Ari Canonical", teamId: "a", teamName: "Team A", value: 3, validated: true, status: "published" },
-      { award: "top_defender", playerId: "p1", playerName: "Ari Canonical", teamId: "a", teamName: "Team A", value: 7, validated: true, status: "published" },
-      { award: "top_assist", playerId: "p1", playerName: "Ari Canonical", teamId: "a", teamName: "Team A", value: 3, validated: true, status: "published" },
+      { award: "mvp", playerId: "p1", playerName: "Ari", teamId: "a", teamName: "Team A", value: 13, validated: true, status: "published" },
+      { award: "top_scorer", playerId: "p1", playerName: "Ari", teamId: "a", teamName: "Team A", value: 3, validated: true, status: "published" },
+      { award: "top_defender", playerId: "p1", playerName: "Ari", teamId: "a", teamName: "Team A", value: 7, validated: true, status: "published" },
+      { award: "top_assist", playerId: "p1", playerName: "Ari", teamId: "a", teamName: "Team A", value: 3, validated: true, status: "published" },
       { award: "mvp", playerId: "p2", playerName: "Bima", teamId: "b", teamName: "Team B", value: 5, validated: true, status: "published" },
       { award: "top_scorer", playerId: "p2", playerName: "Bima", teamId: "b", teamName: "Team B", value: 4, validated: true, status: "published" },
       { award: "top_defender", playerId: "p2", playerName: "Bima", teamId: "b", teamName: "Team B", value: 1, validated: true, status: "published" },
@@ -356,6 +399,21 @@ describe("Prisma completion transaction adapter", () => {
       status: "already_applied", eventId: "event-1", version: 1, result: first,
     });
     expect(db.data.audit).toHaveLength(1);
+  });
+
+  it("persists only champion and runner-up rows when the bracket has no third-place match", async () => {
+    const db = new MemoryCompletionPrisma();
+    Object.assign(db.rows, noThirdPlaceRows("single_elimination"), {
+      playerStats: db.rows.playerStats,
+    });
+    const result = await completeTournament("event-1", decisions, 0, key1, createPrismaCompletionDependencies(actor, db as never));
+    expect(result).toMatchObject({ status: "completed", version: 1 });
+    expect(db.data.podium).toMatchObject([
+      { rank: 1, teamId: "a", sourceMatchId: "final" },
+      { rank: 2, teamId: "b", sourceMatchId: "final" },
+    ]);
+    expect(db.data.podium).toHaveLength(2);
+    expect(db.data.decisions).toHaveLength(4);
   });
 
   it("rejects ownership changes and key reuse by another actor inside the transaction", async () => {

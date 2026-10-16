@@ -8,7 +8,7 @@ import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";
 import { withServerActionLog } from "@/lib/observability/logger";
 import { emailConflictMessage, parsePlayerSignUp } from "@/lib/player/signup";
-import { createPlayerAccount, getUserByEmail } from "@/lib/platform/repository";
+import { createPlayerAccount, getUserByEmail } from "@/lib/identity/repository";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { toSafeActionMessage } from "@/lib/security/public-error";
 import { isDisposableEmail } from "@/lib/validation/email";

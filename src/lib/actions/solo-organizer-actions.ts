@@ -7,14 +7,14 @@ import { revalidateTag } from "next/cache";
 import { requireAnyRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { withServerActionLog, writeServerLog } from "@/lib/observability/logger";
-import { prisma } from "@/lib/platform/db";
-import { assertUserCanManageEvent } from "@/lib/platform/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import type { AppUser } from "@/lib/platform/types";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { UserFacingError, describeActionError, toSafeActionMessage } from "@/lib/security/public-error";
 import { isSafeEntityId } from "@/lib/security/request-guard";
 import { closeSoloRegistration } from "@/lib/solo/close-registration";
 import { createSoloDraw, lockSoloDraw, markSoloRefunded, swapSoloPlayers } from "@/lib/solo/draw-repository";
+import { findSoloDrawEvent, findSoloRegistrationEvent } from "@/lib/solo/lookups";
 import { approveSolo, rejectSolo } from "@/lib/solo/registration-repository";
 
 /** What an organizer's button gets back. A message is always safe to show. */
@@ -105,9 +105,7 @@ async function perform(
 /** Looks up the event a draw or registration belongs to, so the access check runs against the right event. */
 async function eventOf(kind: "draw" | "registration", id: string): Promise<string | null> {
   if (!isSafeEntityId(id)) return null;
-  const row = kind === "draw"
-    ? await prisma.soloDraw.findUnique({ where: { id }, select: { eventId: true } })
-    : await prisma.soloRegistration.findUnique({ where: { id }, select: { eventId: true } });
+  const row = kind === "draw" ? await findSoloDrawEvent(id) : await findSoloRegistrationEvent(id);
   return row?.eventId ?? null;
 }
 

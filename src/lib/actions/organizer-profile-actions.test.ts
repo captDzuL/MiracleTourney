@@ -6,7 +6,13 @@ const { reissueSession, requireAnyRole, updateOrganizerProfileForUser, getUserPa
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole, reissueSession }));
-vi.mock("@/lib/platform/repository", () => ({ updateOrganizerProfileForUser, getUserPasswordHashById, updateUserPassword }));
+vi.mock("@/lib/identity/repository", () => ({
+  getUserPasswordHashById,
+  updateUserPassword,
+}));
+vi.mock("@/lib/platform/settings-repository", () => ({
+  updateOrganizerProfileForUser,
+}));
 vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }));
 vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("bcryptjs", () => ({ default: { compare: vi.fn().mockResolvedValue(true), hash: vi.fn().mockResolvedValue("$new-hash") } }));

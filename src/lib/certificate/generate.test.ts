@@ -17,11 +17,13 @@ vi.mock("./template", () => ({ buildCertificateHtml }));
 vi.mock("@/lib/platform/config", () => ({
   getGameConfig: () => ({ name: "Flashpeak", slug: "flashpeak" }),
 }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/bracket/repository", () => ({
+  getLeaderboardForEvent,
+}));
+vi.mock("@/lib/certificate/repository", () => ({
   recordCertificateSuccess,
   recordCertificateFailure,
   getCertificateByEvent,
-  getLeaderboardForEvent,
   countCertificatesForGame,
 }));
 vi.mock("@/lib/platform/db", () => ({

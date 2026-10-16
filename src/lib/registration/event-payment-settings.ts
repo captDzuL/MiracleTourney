@@ -1,5 +1,5 @@
 import type { AppUser, PaymentSettings } from "@/lib/platform/types";
-import { assertUserCanManageEvent } from "@/lib/platform/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { prisma } from "@/lib/platform/db";
 
 export type EventPaymentSettingsSource = "event";
@@ -171,8 +171,3 @@ export async function publishEventPaymentSettings(input: {
   if (!published) throw new Error("Event payment settings disappeared after publishing.");
   return { status: "published", settings: mapEventPaymentSettings(published) };
 }
-
-// Stable aliases for callers that use the shorter registration terminology.
-export const savePaymentSettingsDraft = saveEventPaymentSettingsDraft;
-export const publishPaymentSettings = publishEventPaymentSettings;
-export const getPaymentSettingsForEvent = getPublishedPaymentSettingsForEvent;

@@ -11,7 +11,7 @@ vi.mock("next/headers", () => ({
   cookies: cookiesMock,
 }));
 
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/identity/repository", () => ({
   getUserWithPasswordByEmail,
   getCaptainById,
   getUserByEmail,

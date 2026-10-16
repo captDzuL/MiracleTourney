@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { EventSettingsWorkspace } from "@/components/v3/organizer/EventSettingsWorkspace";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
-import { getManageableEventDraft } from "@/lib/platform/repository";
+import { getManageableEventDraft } from "@/lib/events/repository";
 import { getRosterChangeSettings } from "@/lib/platform/roster-change-settings";
 import { RosterChangeSettingsError, RosterChangeSettingsPanel } from "@/components/v3/organizer/RosterChangeSettingsPanel";
 

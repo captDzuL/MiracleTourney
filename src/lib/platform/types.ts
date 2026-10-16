@@ -72,7 +72,7 @@ export type EventStream = {
   isLive: boolean;
 };
 
-export type VisualAssetSource = "organizer_upload" | "ai_generated";
+export type VisualAssetSource = "organizer_upload" | "ai_generated" | "team_logo_import" | "character_library";
 
 export type VisualAssetStatus =
   | "generating"

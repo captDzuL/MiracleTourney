@@ -1,11 +1,11 @@
 import { getTranslations } from "next-intl/server";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
-import { captainSubmitStatsAction } from "@/lib/actions";
+import { captainSubmitStatsAction } from "@/lib/actions/match-actions";
 import { getCaptainOrTeamOwner } from "@/lib/auth/captain-access";
 import { requireRole } from "@/lib/auth/session";
 import { getStatKeysForMode } from "@/lib/platform/config";
-import { getCompletedMatchesForCaptain } from "@/lib/platform/repository";
+import { getCompletedMatchesForCaptain } from "@/lib/player-stats/repository";
 import { getMatchTeamRosters } from "@/lib/platform/stat-recording-repository";
 import { getPlayerStatNumericValue } from "@/lib/player-stats/form";
 import { Section } from "@/components/ui";

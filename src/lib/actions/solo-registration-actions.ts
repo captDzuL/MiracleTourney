@@ -2,14 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 
-import { uploadImageAsset } from "@/lib/actions";
+import { uploadImageAsset } from "@/lib/actions/shared/uploads";
 import { requireRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { withServerActionLog } from "@/lib/observability/logger";
-import { prisma } from "@/lib/platform/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { UserFacingError, toSafeActionMessage } from "@/lib/security/public-error";
 import { isSafeEntityId } from "@/lib/security/request-guard";
+import { findEventSlug, findOwnSoloRegistration } from "@/lib/solo/lookups";
 import { parseSoloRegistrationForm } from "@/lib/solo/registration-form";
 import {
   registerSoloAndAnnounce,
@@ -51,7 +51,7 @@ async function register(formData: FormData): Promise<never> {
 
   const eventId = text(formData, "eventId");
   const event = isSafeEntityId(eventId)
-    ? await prisma.event.findUnique({ where: { id: eventId }, select: { slug: true } })
+    ? await findEventSlug(eventId)
     : null;
   if (!event) return backTo(null, locale, "error", "Event tidak ditemukan.");
 
@@ -89,10 +89,7 @@ async function register(formData: FormData): Promise<never> {
 async function findOwnRegistration(formData: FormData, userId: string) {
   const registrationId = text(formData, "registrationId");
   if (!isSafeEntityId(registrationId)) return { registrationId, slug: null, valid: false as const };
-  const row = await prisma.soloRegistration.findFirst({
-    where: { id: registrationId, userId },
-    select: { eventId: true, event: { select: { slug: true } } },
-  });
+  const row = await findOwnSoloRegistration(registrationId, userId);
   return { registrationId, slug: row?.event.slug ?? null, valid: true as const, found: Boolean(row) };
 }
 

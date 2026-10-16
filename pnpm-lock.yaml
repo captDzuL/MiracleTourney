@@ -19,13 +19,7 @@ importers:
 
   .:
     dependencies:
-      '@fontsource/chakra-petch':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@fontsource/montserrat':
-        specifier: ^5.3.0
-        version: 5.3.0
-      '@fontsource/teko':
         specifier: ^5.3.0
         version: 5.3.0
       '@prisma/client':
@@ -101,9 +95,6 @@ importers:
       '@tailwindcss/postcss':
         specifier: ^4.1.12
         version: 4.3.3
-      '@types/bcryptjs':
-        specifier: ^3.0.0
-        version: 3.0.0
       '@types/node':
         specifier: ^24.2.0
         version: 24.13.3
@@ -427,14 +418,8 @@ packages:
   '@fast-csv/parse@4.3.6':
     resolution: {integrity: sha512-uRsLYksqpbDmWaSmzvJcuApSEe38+6NQZBUsuAyMZKqHxH0g1wcJgsKUvN3WC8tewaqFjBMMGrkHmC+T7k8LvA==}
 
-  '@fontsource/chakra-petch@5.3.0':
-    resolution: {integrity: sha512-QZvbM/q2R6n1pg2x+TJPftZmBNS+ADU37L4Z4L/6UJIz+JZ/SRaEf8usPFRiP7Ht28sIideMu/Bm1SnGlSrwNw==}
-
   '@fontsource/montserrat@5.3.0':
     resolution: {integrity: sha512-iQPDtZOnmM5ih4JBGaMSXisRap0ixb9bAUw2hDtY7EjVfaqiiNlKtVuJl9XclxUwtwMMHNcWXfQR6zI9x05+Tg==}
-
-  '@fontsource/teko@5.3.0':
-    resolution: {integrity: sha512-Kkc63jui7yWWSX0mYEhakA6vi5sK0UlTPn+ucNacqBYQ5flFpj2I/TJ8Vo3JlR9RG9kzUxfjAo6V/do7O+Vn5Q==}
 
   '@formatjs/fast-memoize@3.1.7':
     resolution: {integrity: sha512-zXfhLpvA6T7+efdt9JLbBwZ00tT7NsBMDVnDu8rpHeNNv8KfRZAMo2gkG0k9lK/Nzc//3kJ9pImsfuJxk3KhUA==}
@@ -1194,10 +1179,6 @@ packages:
 
   '@tybys/wasm-util@0.10.3':
     resolution: {integrity: sha512-F3fo1MYrRJYL3zER0OUOmkutjr1Vp23m7OsSgp7nq4SP6OqX6C/56XFIPAl5bt3zaBRjmW7SGz3u/6LwFpYcOg==}
-
-  '@types/bcryptjs@3.0.0':
-    resolution: {integrity: sha512-WRZOuCuaz8UcZZE4R5HXTco2goQSI2XxjGY3hbM/xDvwmqFWd4ivooImsMx65OKM6CtNKbnZ5YL+YwAwK7c1dg==}
-    deprecated: This is a stub types definition. bcryptjs provides its own type definitions, so you do not need this installed.
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -3952,11 +3933,7 @@ snapshots:
       lodash.isundefined: 3.0.1
       lodash.uniq: 4.5.0
 
-  '@fontsource/chakra-petch@5.3.0': {}
-
   '@fontsource/montserrat@5.3.0': {}
-
-  '@fontsource/teko@5.3.0': {}
 
   '@formatjs/fast-memoize@3.1.7': {}
 
@@ -4491,10 +4468,6 @@ snapshots:
     dependencies:
       tslib: 2.8.1
     optional: true
-
-  '@types/bcryptjs@3.0.0':
-    dependencies:
-      bcryptjs: 3.0.3
 
   '@types/chai@5.2.3':
     dependencies:

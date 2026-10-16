@@ -6,13 +6,14 @@ import { useRouter } from "next/navigation";
 import { useFormatter, useTranslations } from "next-intl";
 import { publishCertificateSetAction, regenerateCertificateAction } from "@/lib/actions/certificate-v3-actions";
 import type { CertificateAssetKind, CertificateAssetPlacement, CertificatePublicationActionResult, CertificateStudioRecord, RegenerateCertificateResult } from "@/lib/certificate/service";
-import { MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3-contract";
+import { MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3-contract";
+import { CHARACTER_ROLES, type CharacterRole } from "@/lib/certificate/character-library";
 import { AssetPlacement, type ApprovedCertificateAsset } from "./AssetPlacement";
 import { IntrinsicImage } from "@/components/IntrinsicImage";
 import { CertificateSetStatus } from "./CertificateSetStatus";
 
 export type CertificateStudioVersion = CertificateStudioRecord & { readonly lastError: string | null };
-export type CertificateStudioTypeState = { readonly certificateType: MiracleV3CertificateType; readonly recipient: { readonly id: string; readonly name: string; readonly kind: "team" | "player" } | null; readonly selectedCertificateId: string | null; readonly versions: readonly CertificateStudioVersion[] | null };
+export type CertificateStudioTypeState = { readonly certificateType: MiracleV3CertificateType; readonly recipient: { readonly id: string; readonly name: string; readonly kind: "team" | "player"; readonly team?: { readonly id: string; readonly name: string } | null } | null; readonly selectedCertificateId: string | null; readonly versions: readonly CertificateStudioVersion[] | null };
 type StudioBase = { readonly event: { readonly id: string; readonly name: string }; readonly records: readonly CertificateStudioTypeState[]; readonly approvedAssets: readonly ApprovedCertificateAsset[] };
 export type CertificateStudioState =
   | StudioBase & { readonly status: "integration_required"; readonly completionVersion: null; readonly certificateRevision: null; readonly publication: null }
@@ -25,6 +26,9 @@ const DEFAULT_PLACEMENTS: Record<CertificateAssetKind, CertificateAssetPlacement
   character_art: { assetKind: "character_art", x: 360, y: 708, width: 560, height: 620 },
   team_logo_badge: { assetKind: "team_logo_badge", x: 80, y: 1052, width: 160, height: 160 },
 };
+const TEAM_LOGO_ERROR_CODES = ["invalid_input", "team_not_found", "logo_missing", "logo_unsupported_source", "logo_fetch_failed", "logo_too_large", "unsupported_type", "signature_mismatch", "decode_failed", "invalid_dimensions", "invalid_entity_id", "missing_file", "upload_failed", "rate_limited", "unauthorized", "password_change_required", "forbidden", "feature_disabled", "failed"] as const;
+const CHARACTER_ERROR_CODES = ["invalid_input", "character_not_found", "character_file_missing", "file_too_large", "unsupported_type", "signature_mismatch", "decode_failed", "invalid_dimensions", "invalid_entity_id", "missing_file", "upload_failed", "rate_limited", "unauthorized", "password_change_required", "forbidden", "feature_disabled", "failed"] as const;
+const LOGO_KINDS: readonly CertificateAssetKind[] = ["team_logo_hero", "team_logo_badge"];
 const isTeamType = (type: MiracleV3CertificateType) => ["champion", "runner_up", "third_place"].includes(type);
 const placementInsideZone = (placement: CertificateAssetPlacement) => {
   const zone = placement.assetKind === "team_logo_badge" ? MIRACLE_V3_SAFE_ZONES.secondaryBadge : MIRACLE_V3_SAFE_ZONES.hero;
@@ -46,6 +50,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   const [activeType, setActiveType] = useState<MiracleV3CertificateType>("champion");
   const [selected, setSelected] = useState<Record<string, string | null>>(() => Object.fromEntries(state.records.map((record) => [record.certificateType, record.selectedCertificateId])));
   const [assetIds, setAssetIds] = useState<Record<CertificateAssetKind, string>>({ team_logo_hero: "", character_art: "", team_logo_badge: "" });
+  const [importedLogoTeams, setImportedLogoTeams] = useState<Partial<Record<CertificateAssetKind, string>>>({});
   const [placements, setPlacements] = useState<Record<CertificateAssetKind, CertificateAssetPlacement>>(DEFAULT_PLACEMENTS);
   const [currentGenerationKeys, setCurrentGenerationKeys] = useState(generationKeys);
   const previousAuthoritativeSelections = useRef<Record<string, string | null>>(Object.fromEntries(state.records.map((record) => [record.certificateType, record.selectedCertificateId])));
@@ -79,15 +84,37 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   const active = state.records.find((record) => record.certificateType === activeType)!;
   const activeVersion = active.versions?.find((version) => version.id === selected[activeType]) ?? active.versions?.at(-1) ?? null;
   const activeKinds: readonly CertificateAssetKind[] = isTeamType(activeType) ? ["team_logo_hero"] : ["character_art", "team_logo_badge"];
+  const activeTeam = active.recipient?.team ?? null;
+  const withoutKinds = <T,>(record: Partial<Record<CertificateAssetKind, T>>, kinds: readonly CertificateAssetKind[]) =>
+    Object.fromEntries(Object.entries(record).filter(([kind]) => !kinds.includes(kind as CertificateAssetKind))) as Partial<Record<CertificateAssetKind, T>>;
+  const activeTeamId = activeTeam?.id ?? null;
+  const activeTeamIdRef = useRef(activeTeamId);
+  useEffect(() => {
+    activeTeamIdRef.current = activeTeamId;
+    // An imported logo belongs to one team: drop it whenever the certificate in view belongs to another team,
+    // whether the organizer switched tabs or a refresh changed the recipient.
+    const staleKinds = LOGO_KINDS.filter((kind) => importedLogoTeams[kind] && importedLogoTeams[kind] !== activeTeamId);
+    if (!staleKinds.length) return;
+    setAssetIds((current) => ({ ...current, ...Object.fromEntries(staleKinds.map((kind) => [kind, ""])) }));
+    setImportedLogoTeams((current) => withoutKinds(current, staleKinds));
+  }, [activeTeamId, importedLogoTeams]);
   const chooseType = (type: MiracleV3CertificateType) => { setActiveType(type); setPlacementError(null); };
+  const changeAsset = (kind: CertificateAssetKind, value: string) => {
+    setAssetIds((current) => ({ ...current, [kind]: value }));
+    setImportedLogoTeams((current) => withoutKinds(current, [kind]));
+  };
+  const markImportedLogo = (kind: CertificateAssetKind, teamId: string) => {
+    setImportedLogoTeams((current) => ({ ...current, [kind]: teamId }));
+  };
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const count = state.records.length;
     let next: number | null = null;
-    if (event.key === "ArrowRight") next = (index + 1) % 7;
-    if (event.key === "ArrowLeft") next = (index + 6) % 7;
+    if (event.key === "ArrowRight") next = (index + 1) % count;
+    if (event.key === "ArrowLeft") next = (index + count - 1) % count;
     if (event.key === "Home") next = 0;
-    if (event.key === "End") next = 6;
+    if (event.key === "End") next = count - 1;
     if (next === null) return;
-    event.preventDefault(); chooseType(MIRACLE_V3_CERTIFICATE_TYPES[next]); refs.current[next]?.focus();
+    event.preventDefault(); chooseType(state.records[next].certificateType); refs.current[next]?.focus();
   };
   const feedback = (result: RegenerateCertificateResult | CertificatePublicationActionResult) => {
     if (result.status === "generated") return t("feedback.generated");
@@ -123,7 +150,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   };
   const selection = unavailable ? [] : state.records.flatMap((record) => selected[record.certificateType] ? [{ certificateType: record.certificateType, certificateId: selected[record.certificateType]! }] : []);
   const chosen = unavailable ? [] : state.records.flatMap((record) => record.versions?.find((version) => version.id === selected[record.certificateType]) ?? []);
-  const canPublish = hydrated && !unavailable && !locked && selection.length === 7 && chosen.length === 7 && chosen.every((row) => row.status === "ready" || row.status === "published");
+  const canPublish = hydrated && !unavailable && !locked && selection.length === state.records.length && chosen.length === state.records.length && chosen.every((row) => row.status === "ready" || row.status === "published");
   const publish = () => {
     if (!canPublish || pending || unavailable) return;
     startTransition(async () => {
@@ -138,6 +165,13 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
   const assetLabels = {
     title: t("assets.title"), assetId: t("assets.assetId"), assetHelp: t("assets.help"), kind: t("assets.kind"),
     x: t("assets.x"), y: t("assets.y"), width: t("assets.width"), height: t("assets.height"), safeZone: t("assets.safeZone"),
+    teamLogoImported: t("assets.teamLogoImported"),
+    teamLogoErrors: Object.fromEntries(TEAM_LOGO_ERROR_CODES.map((code) => [code, t(`assets.teamLogoErrors.${code}`)])),
+    characters: {
+      title: t("assets.characters.title"), hint: t("assets.characters.hint"), imported: t("assets.characters.imported"),
+      roles: Object.fromEntries(CHARACTER_ROLES.map((role) => [role, t(`assets.characters.roles.${role}`)])) as Record<CharacterRole, string>,
+      errors: Object.fromEntries(CHARACTER_ERROR_CODES.map((code) => [code, t(`assets.characters.errors.${code}`)])),
+    },
     none: t("assets.none"), upload: t("assets.upload"), uploadLabel: t("assets.uploadLabel"), uploaded: t("assets.uploaded"),
     uploadErrors: Object.fromEntries(["invalid_entity_id", "missing_file", "file_too_large", "unsupported_type", "signature_mismatch", "decode_failed", "invalid_dimensions", "upload_failed"]
       .map((code) => [code, t(`assets.uploadErrors.${code}`)])),
@@ -146,7 +180,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
 
   return <main className="min-w-0 max-w-full overflow-x-clip text-[var(--color-text)]" data-certificate-studio>
     <header className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 min-[700px]:p-7"><p className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--color-accent-cream-foreground)]">{state.event.name}</p><h1 className="mt-2 text-2xl font-extrabold min-[700px]:text-3xl">{t("title")}</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-text-muted)]">{state.status === "integration_required" ? t("integration.body") : state.status === "completion_required" ? t("completion.body") : t("description")}</p>{state.status === "integration_required" ? <p className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-4 text-sm font-bold">{t("integration.title")}</p> : state.status === "completion_required" ? <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-4 text-sm"><p className="font-bold">{t("completion.title")}</p><Link className="mt-3 inline-flex min-h-11 items-center rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-4 font-extrabold miracle-focus-ring" href={state.completionHref}>{t("completion.action")}</Link></div> : null}</header>
-    <nav aria-label={t("types.label")} className="mt-4 overflow-x-auto rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-1"><div className="flex min-w-max gap-1" role="tablist">{MIRACLE_V3_CERTIFICATE_TYPES.map((type, index) => <button aria-controls="certificate-studio-panel" aria-selected={activeType === type} className="min-h-11 rounded-[var(--radius-control)] px-4 text-sm font-bold miracle-focus-ring aria-[selected=true]:bg-[var(--color-surface-selected)] aria-[selected=true]:text-[var(--color-accent-cyan-foreground)]" data-certificate-type={type} id={`certificate-type-${type}`} key={type} onClick={() => chooseType(type)} onKeyDown={(event) => moveTab(event, index)} ref={(node) => { refs.current[index] = node; }} role="tab" tabIndex={activeType === type ? 0 : -1} type="button">{t(`types.${type}`)}</button>)}</div></nav>
+    <nav aria-label={t("types.label")} className="mt-4 overflow-x-auto rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] p-1"><div className="flex min-w-max gap-1" role="tablist">{state.records.map(({ certificateType: type }, index) => <button aria-controls="certificate-studio-panel" aria-selected={activeType === type} className="min-h-11 rounded-[var(--radius-control)] px-4 text-sm font-bold miracle-focus-ring aria-[selected=true]:bg-[var(--color-surface-selected)] aria-[selected=true]:text-[var(--color-accent-cyan-foreground)]" data-certificate-type={type} id={`certificate-type-${type}`} key={type} onClick={() => chooseType(type)} onKeyDown={(event) => moveTab(event, index)} ref={(node) => { refs.current[index] = node; }} role="tab" tabIndex={activeType === type ? 0 : -1} type="button">{t(`types.${type}`)}</button>)}</div></nav>
     <div className="mt-4 grid min-w-0 gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_20rem]">
       <section aria-labelledby={`certificate-type-${activeType}`} className="min-w-0 rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" data-certificate-recipient-selection id="certificate-studio-panel" role="tabpanel">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--color-accent-violet-foreground)]">{t(`types.${activeType}`)}</p><h2 className="mt-2 break-words text-xl font-extrabold">{active.recipient?.name ?? t("recipientPending")}</h2></div><span className="rounded-full border border-[var(--color-border-strong)] px-3 py-2 text-xs font-bold">{activeVersion ? t(`status.${activeVersion.status}`) : t("status.missing")}</span></div>
@@ -157,7 +191,7 @@ export function CertificateStudio({ state, generationKeys, publicationKey, regen
       </section>
       <aside className="grid min-w-0 content-start gap-4">
         <div data-certificate-set-status><CertificateSetStatus labels={{ title: t("set.title"), ready: t("set.ready"), incomplete: t("set.incomplete"), published: t("set.published"), notPublished: t("set.notPublished") }} records={state.records.map((record) => ({ ...record, selectedCertificateId: selected[record.certificateType] ?? null }))} /></div>
-          <details className="grid min-w-0 gap-4" data-certificate-assets open><summary className="miracle-focus-ring flex min-h-11 cursor-pointer items-center rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm font-bold">{t("assets.title")}</summary>{activeKinds.map((kind, index) => <AssetPlacement approvedAssets={state.approvedAssets} allowedKinds={[kind]} assetId={assetIds[kind]} disabled={unavailable || locked || pending} error={placementError} errorId={index === 0 ? "certificate-placement-error" : `certificate-placement-error-${kind}`} eventId={state.event.id} key={kind} labels={assetLabels} onAssetIdChange={(value) => setAssetIds((current) => ({ ...current, [kind]: value }))} onPlacementChange={(value) => setPlacements((current) => ({ ...current, [kind]: value }))} onUploadMessage={setMessage} placement={placements[kind]} />)}</details>
+          <details className="grid min-w-0 gap-4" data-certificate-assets open><summary className="miracle-focus-ring flex min-h-11 cursor-pointer items-center rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm font-bold">{t("assets.title")}</summary>{activeKinds.map((kind, index) => <AssetPlacement approvedAssets={state.approvedAssets} allowedKinds={[kind]} assetId={assetIds[kind]} disabled={unavailable || locked || pending} error={placementError} errorId={index === 0 ? "certificate-placement-error" : `certificate-placement-error-${kind}`} eventId={state.event.id} key={kind} labels={assetLabels} onAssetIdChange={(value) => changeAsset(kind, value)} onPlacementChange={(value) => setPlacements((current) => ({ ...current, [kind]: value }))} getActiveTeamId={() => activeTeamIdRef.current} onTeamLogoImported={(_assetId, teamId) => markImportedLogo(kind, teamId)} onUploadMessage={setMessage} placement={placements[kind]} teamLogo={activeTeam ? { teamId: activeTeam.id, teamName: activeTeam.name, buttonLabel: t("assets.useTeamLogo", { teamName: activeTeam.name }) } : null} />)}</details>
         <section className="rounded-[var(--radius-panel)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" data-certificate-primary-actions><FileBadge2 aria-hidden="true" className="size-5 text-[var(--color-accent-cyan-foreground)]" /><h2 className="mt-3 text-base font-extrabold">{t("actions.title")}</h2>{publishedRevision !== null ? <p className="mt-3 text-xs font-bold text-[var(--color-text-muted)]" data-certificate-publication-revision>{publishedRevision}</p> : null}<button className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-4 text-sm font-extrabold miracle-focus-ring disabled:cursor-not-allowed disabled:bg-[var(--color-surface-selected)]" data-regenerate-certificate disabled={unavailable || locked || pending} onClick={regenerate} type="button"><RefreshCw aria-hidden="true" className="size-4" />{t("actions.regenerate")}</button><button className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand-violet)] px-4 text-sm font-extrabold text-[var(--color-on-accent)] miracle-focus-ring disabled:cursor-not-allowed disabled:bg-[var(--color-surface-selected)] disabled:text-[var(--color-text-muted)]" data-publish-certificate-set disabled={!canPublish || pending} onClick={publish} type="button"><ShieldCheck aria-hidden="true" className="size-4" />{t("actions.publish")}</button></section>
       </aside>
     </div>

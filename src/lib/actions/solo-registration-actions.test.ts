@@ -15,15 +15,16 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth/session", () => ({ requireRole: mocks.requireRole }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
-vi.mock("@/lib/platform/db", () => ({
-  prisma: { event: { findUnique: mocks.eventFindUnique }, soloRegistration: { findFirst: mocks.registrationFindFirst } },
+vi.mock("@/lib/solo/lookups", () => ({
+  findEventSlug: mocks.eventFindUnique,
+  findOwnSoloRegistration: mocks.registrationFindFirst,
 }));
 vi.mock("@/lib/solo/registration-service", () => ({
   registerSoloAndAnnounce: mocks.registerSoloAndAnnounce,
   uploadSoloProofAndAnnounce: mocks.uploadSoloProofAndAnnounce,
   withdrawSoloAndAnnounce: mocks.withdrawSoloAndAnnounce,
 }));
-vi.mock("@/lib/actions", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
+vi.mock("@/lib/actions/shared/uploads", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("./locale-redirect", () => ({
   redirectToLocale: (path: string, locale: string) => {
@@ -164,7 +165,7 @@ describe("uploadSoloProofAction", () => {
   it("looks the registration up by owner, so another player's id finds nothing", async () => {
     mocks.registrationFindFirst.mockResolvedValue(null);
     expect(await destination(() => uploadSoloProofAction(proofForm()))).toBe("/id/events?error=Pendaftaran tidak ditemukan.");
-    expect(mocks.registrationFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "reg-1", userId: "player-1" } }));
+    expect(mocks.registrationFindFirst).toHaveBeenCalledWith("reg-1", "player-1");
     expect(mocks.uploadImageAsset).not.toHaveBeenCalled();
   });
 

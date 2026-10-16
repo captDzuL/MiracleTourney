@@ -1,15 +1,22 @@
 "use server";
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAnyRole } from "@/lib/auth/session";
-import { uploadImageAsset } from "@/lib/actions";
+import { uploadImageAsset } from "@/lib/actions/shared/uploads";
 import { CERTIFICATE_REGENERATION_RATE_LIMIT, CERTIFICATE_REGENERATION_RATE_LIMIT_WINDOW_MS } from "@/lib/actions/certificate-v3-rate-limit";
 import { CERTIFICATE_ASSET_LIMITS, publishCertificateSet, publishCertificateSetInputSchema, regenerateCertificate, regenerateCertificateInputSchema, type CertificatePublicationActionResult, type CertificateStudioActor, type PublishCertificateSetResult, type RegenerateCertificateResult } from "@/lib/certificate/service";
 import { createPrismaCertificateStudioDependencies } from "@/lib/certificate/studio-repository";
+import { findApprovedCharacterArtAssetId } from "@/lib/certificate/approved-asset-repository";
+import { findCharacter } from "@/lib/certificate/character-library";
+import { loadLibraryCharacter } from "@/lib/certificate/character-library-loader";
+import { loadTeamLogo, type TeamLogoImportCode } from "@/lib/certificate/team-logo-import";
+import { findApprovedTeamLogoAssetId, findEventTeamLogo } from "@/lib/certificate/team-logo-repository";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { assertUserCanManageEvent, createEventVisualAsset } from "@/lib/platform/repository";
-import type { AppUser } from "@/lib/platform/types";
+import { createEventVisualAsset } from "@/lib/events/visual-repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
+import type { AppUser, VisualAssetSource } from "@/lib/platform/types";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { safeEntityIdSchema } from "@/lib/security/request-guard";
 import { withServerActionLog } from "@/lib/observability/logger";
@@ -78,6 +85,18 @@ async function publishCertificateSetActionImpl(input: unknown): Promise<Certific
   return normalizePublicationResult(result);
 }
 
+const UPLOAD_VALIDATION_CODES = ["invalid_entity_id", "missing_file", "file_too_large", "unsupported_type", "signature_mismatch", "decode_failed", "invalid_dimensions"] as const;
+type UploadFailureCode = (typeof UPLOAD_VALIDATION_CODES)[number] | "upload_failed";
+
+/** Maps an upload pipeline error to a typed code; anything unexpected is logged without detail as upload_failed. */
+function uploadFailureCode(error: unknown): UploadFailureCode {
+  const known = error instanceof Error && error.name === "ImageUploadValidationError" && "code" in error
+    ? UPLOAD_VALIDATION_CODES.find((code) => code === error.code) : undefined;
+  if (known) return known;
+  console.error("Certificate asset upload failed", { code: "upload_failed" });
+  return "upload_failed";
+}
+
 const uploadCertificateAssetSchema = z.object({
   eventId: safeEntityIdSchema,
   purpose: z.enum(["certificate_team_logo", "certificate_character_art"]),
@@ -110,11 +129,7 @@ async function uploadCertificateAssetActionImpl(formData: FormData) {
     validationMode: "throw",
   }); }
   catch (error) {
-    const validationCodes = new Set(["invalid_entity_id", "missing_file", "file_too_large", "unsupported_type", "signature_mismatch", "decode_failed", "invalid_dimensions"]);
-    const code = error instanceof Error && error.name === "ImageUploadValidationError" && "code" in error
-      && typeof error.code === "string" && validationCodes.has(error.code) ? error.code : "upload_failed";
-    if (code === "upload_failed") console.error("Certificate asset upload failed", { code });
-    return { status: "blocked" as const, code };
+    return { status: "blocked" as const, code: uploadFailureCode(error) };
   }
   const created = await createEventVisualAsset(access.user, {
     eventId: parsed.data.eventId, source: "organizer_upload", status: "approved", purpose: parsed.data.purpose,
@@ -124,4 +139,116 @@ async function uploadCertificateAssetActionImpl(formData: FormData) {
   });
   revalidatePath("/organizer/events/" + parsed.data.eventId + "/certificates");
   return { status: "uploaded" as const, assetId: created.id };
+}
+
+const importTeamLogoSchema = z.object({ eventId: safeEntityIdSchema, teamId: safeEntityIdSchema });
+const TEAM_LOGO_IMPORT_RATE_LIMIT = 20;
+const TEAM_LOGO_IMPORT_RATE_WINDOW_MS = 15 * 60 * 1000;
+const IMAGE_EXTENSIONS = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" } as const;
+
+type StoredAssetSpec = {
+  file: File;
+  source: Extract<VisualAssetSource, "team_logo_import" | "character_library">;
+  purpose: "certificate_team_logo" | "certificate_character_art";
+  sourceUrl: string | null;
+};
+
+/** Stores an imported image through the shared upload pipeline and records it as an approved event asset. The caller revalidates the page. */
+async function storeApprovedCertificateAsset(user: AppUser, eventId: string, spec: StoredAssetSpec): Promise<{ assetId: string } | { code: UploadFailureCode }> {
+  let asset: Awaited<ReturnType<typeof uploadImageAsset>>;
+  try {
+    asset = await uploadImageAsset({
+      file: spec.file,
+      folder: "certificate-assets",
+      entityId: eventId,
+      label: "Certificate asset",
+      maxBytes: CERTIFICATE_ASSET_LIMITS.maxBytes,
+      minDimension: CERTIFICATE_ASSET_LIMITS.minDimension,
+      maxDimension: CERTIFICATE_ASSET_LIMITS.maxDimension,
+      validationMode: "throw",
+      validatePixels: true,
+    });
+  } catch (error) {
+    return { code: uploadFailureCode(error) };
+  }
+  const created = await createEventVisualAsset(user, {
+    eventId, source: spec.source, status: "approved", purpose: spec.purpose, sourceUrl: spec.sourceUrl,
+    url: asset.url, mimeType: asset.mimeType, width: asset.width, height: asset.height, byteSize: asset.byteSize,
+    storageProvider: asset.storageProvider, storageKey: asset.storageKey, contentSha256: asset.contentSha256,
+    // The organizer who imports the image attests that they may use it on this event's certificates.
+    rightsAttestedAt: new Date(),
+  });
+  return { assetId: created.id };
+}
+
+export type ImportTeamLogoBlockedCode = GateResult["code"] | "invalid_input" | "team_not_found" | TeamLogoImportCode | UploadFailureCode;
+export type ImportTeamLogoResult =
+  | { status: "imported"; assetId: string; teamId: string }
+  | { status: "blocked"; code: ImportTeamLogoBlockedCode };
+
+const blockedImport = (code: ImportTeamLogoBlockedCode): ImportTeamLogoResult => ({ status: "blocked", code });
+
+/** Copies a team's existing logo into the event's approved certificate assets. Idempotent for identical bytes. */
+export async function importTeamLogoAsCertificateAssetAction(input: unknown): Promise<ImportTeamLogoResult> {
+  return withServerActionLog("certificate_team_logo_import", "/server-actions/certificate/team-logo-import", () => importTeamLogoActionImpl(input));
+}
+
+async function importTeamLogoActionImpl(input: unknown): Promise<ImportTeamLogoResult> {
+  const parsed = importTeamLogoSchema.safeParse(input);
+  if (!parsed.success) return blockedImport("invalid_input");
+  const { eventId, teamId } = parsed.data;
+  const access = await gate(eventId);
+  if ("status" in access) return access;
+  if (!(await checkRateLimit(`certificate-team-logo:${access.actor.id}:${eventId}`, TEAM_LOGO_IMPORT_RATE_LIMIT, TEAM_LOGO_IMPORT_RATE_WINDOW_MS))) {
+    return blockedImport("rate_limited");
+  }
+  const team = await findEventTeamLogo(eventId, teamId);
+  if (!team) return blockedImport("team_not_found");
+  const loaded = await loadTeamLogo(team.logoUrl);
+  if (!loaded.ok) return blockedImport(loaded.code);
+  const existingAssetId = await findApprovedTeamLogoAssetId(eventId, loaded.logo.contentSha256);
+  if (existingAssetId) return { status: "imported", assetId: existingAssetId, teamId: team.id };
+  const file = new File([new Uint8Array(loaded.logo.bytes)], `team-${team.id}.${IMAGE_EXTENSIONS[loaded.logo.mimeType]}`, { type: loaded.logo.mimeType });
+  const stored = await storeApprovedCertificateAsset(access.user, eventId, { file, source: "team_logo_import", purpose: "certificate_team_logo", sourceUrl: team.logoUrl });
+  if ("code" in stored) return blockedImport(stored.code);
+  revalidatePath("/organizer/events/" + eventId + "/certificates");
+  return { status: "imported", assetId: stored.assetId, teamId: team.id };
+}
+
+const importCharacterSchema = z.object({ eventId: safeEntityIdSchema, characterId: z.string().regex(/^[a-z]{1,32}$/) }).strict();
+
+export type ImportCharacterBlockedCode = GateResult["code"] | "invalid_input" | "character_not_found" | "character_file_missing" | UploadFailureCode;
+export type ImportCharacterResult =
+  | { status: "imported"; assetId: string; characterId: string }
+  | { status: "blocked"; code: ImportCharacterBlockedCode };
+
+const blockedCharacter = (code: ImportCharacterBlockedCode): ImportCharacterResult => ({ status: "blocked", code });
+
+/** Copies one character from the built-in library into the event's approved certificate assets. Idempotent for identical bytes. */
+export async function importCharacterArtAsCertificateAssetAction(input: unknown): Promise<ImportCharacterResult> {
+  return withServerActionLog("certificate_character_import", "/server-actions/certificate/character-import", () => importCharacterArtActionImpl(input));
+}
+
+async function importCharacterArtActionImpl(input: unknown): Promise<ImportCharacterResult> {
+  const parsed = importCharacterSchema.safeParse(input);
+  if (!parsed.success) return blockedCharacter("invalid_input");
+  const { eventId, characterId } = parsed.data;
+  const access = await gate(eventId);
+  if ("status" in access) return access;
+  if (!(await checkRateLimit(`certificate-character:${access.actor.id}:${eventId}`, TEAM_LOGO_IMPORT_RATE_LIMIT, TEAM_LOGO_IMPORT_RATE_WINDOW_MS))) {
+    return blockedCharacter("rate_limited");
+  }
+  // The id only selects an entry of the static library; the file path always comes from that entry.
+  const character = findCharacter(characterId);
+  if (!character) return blockedCharacter("character_not_found");
+  const loaded = await loadLibraryCharacter(character);
+  if (!loaded.ok) return blockedCharacter(loaded.code);
+  const contentSha256 = createHash("sha256").update(loaded.bytes).digest("hex");
+  const existingAssetId = await findApprovedCharacterArtAssetId(eventId, contentSha256);
+  if (existingAssetId) return { status: "imported", assetId: existingAssetId, characterId: character.id };
+  const file = new File([new Uint8Array(loaded.bytes)], `character-${character.id}.${IMAGE_EXTENSIONS[loaded.mimeType]}`, { type: loaded.mimeType });
+  const stored = await storeApprovedCertificateAsset(access.user, eventId, { file, source: "character_library", purpose: "certificate_character_art", sourceUrl: `/${character.file}` });
+  if ("code" in stored) return blockedCharacter(stored.code);
+  revalidatePath("/organizer/events/" + eventId + "/certificates");
+  return { status: "imported", assetId: stored.assetId, characterId: character.id };
 }

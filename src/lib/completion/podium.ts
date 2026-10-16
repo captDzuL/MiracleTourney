@@ -28,6 +28,8 @@ export interface CompletionDisputeFact {
 
 export interface CompletionFacts {
   readonly formatKind: TournamentFormatConfig["kind"];
+  /** "none" means a single-elimination bracket with no third-place match, so the podium has two places. */
+  readonly thirdPlace?: "required" | "none";
   readonly playoffFormatKind?: Extract<
     TournamentFormatConfig,
     { kind: "group_playoffs" }
@@ -41,7 +43,13 @@ export interface CompletionFacts {
 export interface CompletionPodium {
   readonly championTeamId: string;
   readonly runnerUpTeamId: string;
-  readonly thirdPlaceTeamId: string;
+  /** null when the bracket has no third-place match. */
+  readonly thirdPlaceTeamId: string | null;
+}
+
+/** Team ids in rank order: champion, runner-up, then third place only when the podium has one. */
+export function podiumTeamIds(podium: CompletionPodium): string[] {
+  return [podium.championTeamId, podium.runnerUpTeamId, ...(podium.thirdPlaceTeamId ? [podium.thirdPlaceTeamId] : [])];
 }
 
 export type CompletionBlocker =
@@ -118,11 +126,15 @@ function incompleteStructure(
   };
 }
 
+function requiredStages(input: CompletionFacts, kind: EliminationKind): readonly CompletionMatchStage[] {
+  return kind === "single_elimination" && input.thirdPlace === "none" ? ["final"] : REQUIRED_STAGES[kind];
+}
+
 function deriveEliminationPodium(
   input: CompletionFacts,
   kind: EliminationKind,
 ): PodiumDerivationResult {
-  const stages = REQUIRED_STAGES[kind];
+  const stages = requiredStages(input, kind);
   const latestMatches = stages.map((stage) => latestMatchForStage(input.matches, stage));
   const missingStages = stages.filter((_, index) => !latestMatches[index]);
   const blockers: CompletionBlocker[] = [];
@@ -136,13 +148,23 @@ function deriveEliminationPodium(
   if (missingStages.length > 0) blockers.push(incompleteStructure({ missingStages }));
   if (latestMatches.some((match) => !match)) return { podium: null, blockers };
 
-  const [titleMatch, thirdPlaceSource] = latestMatches as [CompletionMatchFact, CompletionMatchFact];
-  const incompleteMatches = [titleMatch, thirdPlaceSource].filter(
+  const [titleMatch, thirdPlaceSource] = latestMatches as [CompletionMatchFact, CompletionMatchFact | undefined];
+  const requiredMatches = latestMatches as CompletionMatchFact[];
+  const incompleteMatches = requiredMatches.filter(
     (match) => !match.winnerTeamId || !match.loserTeamId || match.winnerTeamId === match.loserTeamId,
   );
   if (incompleteMatches.length > 0) {
     blockers.push(incompleteStructure({ matchIds: incompleteMatches.map(({ id }) => id) }));
     return { podium: null, blockers };
+  }
+
+  if (!thirdPlaceSource) {
+    const podium: CompletionPodium = {
+      championTeamId: titleMatch.winnerTeamId!,
+      runnerUpTeamId: titleMatch.loserTeamId!,
+      thirdPlaceTeamId: null,
+    };
+    return { podium: blockers.length === 0 ? podium : null, blockers };
   }
 
   if (
@@ -164,7 +186,7 @@ function deriveEliminationPodium(
       ? thirdPlaceSource.winnerTeamId!
       : thirdPlaceSource.loserTeamId!,
   };
-  const podiumTeamIds = [podium.championTeamId, podium.runnerUpTeamId, podium.thirdPlaceTeamId];
+  const podiumTeamIds = [podium.championTeamId, podium.runnerUpTeamId, podium.thirdPlaceTeamId!];
   if (new Set(podiumTeamIds).size !== 3) {
     blockers.push(incompleteStructure({
       matchIds: [titleMatch.id, thirdPlaceSource.id],

@@ -8,7 +8,7 @@ import { readOrganizerWorkspaceSummary } from "@/lib/organizer/workspace-read";
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireAnyRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getManageableEventDraft } from "@/lib/platform/repository";
+import { getManageableEventDraft } from "@/lib/events/repository";
 
 type EventLayoutProps = { children: ReactNode; params: Promise<{ locale: string; eventId: string }> };
 

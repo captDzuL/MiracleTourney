@@ -8,7 +8,15 @@ const mocks = vi.hoisted(() => ({
   getEventPaymentSettingsForManager: vi.fn(),
 }));
 
-vi.mock("@/lib/platform/repository", () => mocks);
+vi.mock("@/lib/platform/shared/authz", () => ({ assertUserCanManageEvent: mocks.assertUserCanManageEvent }));
+vi.mock("@/lib/imports/repository", () => ({
+  getRegistrationImportHistoryForEvent: mocks.getRegistrationImportHistoryForEvent,
+  getRegistrationRecordsForEvent: mocks.getRegistrationRecordsForEvent,
+}));
+vi.mock("@/lib/registration/review-repository", () => ({
+  getEventPaymentSettingsForManager: mocks.getEventPaymentSettingsForManager,
+  getPaymentReviewForEvent: mocks.getPaymentReviewForEvent,
+}));
 
 import {
   getEventImportHistory,

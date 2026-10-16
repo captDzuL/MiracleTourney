@@ -12,7 +12,9 @@ const { requireAnyRole, getGameModes, isFeatureEnabled, notFound, redirectToActi
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({ getGameModes }));
+vi.mock("@/lib/platform/settings-repository", () => ({
+  getGameModes,
+}));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale }));
 vi.mock("next/navigation", () => ({ notFound }));
 

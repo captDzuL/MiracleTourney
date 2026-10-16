@@ -20,8 +20,10 @@ vi.mock("next-intl/server", () => ({
     return (copy[key] ?? key).replace("{name}", String(values?.name ?? ""));
   }),
 }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/events/repository", () => ({
   getPublicEventBySlug: vi.fn().mockResolvedValue({ id: "participants-event", slug: "participants-event", name: "Participants Event" }),
+}));
+vi.mock("@/lib/teams/repository", () => ({
   getTeamsForEvent: vi.fn().mockResolvedValue([]),
   getPlayersForTeams: vi.fn().mockResolvedValue([]),
 }));

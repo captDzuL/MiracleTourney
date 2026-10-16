@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
+import { findCharacterBySourceUrl } from "./character-library";
 import { generateMiracleV3Certificate } from "./generate";
 import {
   createMiracleV3GenerationAdapter,
@@ -18,10 +19,10 @@ import {
 } from "./service";
 import {
   MIRACLE_V3_BRANDING,
-  MIRACLE_V3_CERTIFICATE_TYPES,
   getMiracleV3CertificateManifest,
   type MiracleV3CertificateType,
 } from "./templates/miracle-v3";
+import { requiredCertificateTypes } from "./templates/miracle-v3-contract";
 import { createOnlyCertificateStorage, createPrismaGenerationRepository } from "./generation-repository";
 import { prisma } from "@/lib/platform/db";
 
@@ -81,15 +82,19 @@ function recipient(completion: CompletionRow, type: MiracleV3CertificateType) {
   return decision ? { id: decision.recipientId, name: decision.recipientName, kind: "player" as const, teamId: decision.teamId, teamName: decision.teamName } : null;
 }
 
+/** Seven certificate types, or six when the podium has only a champion and a runner-up. */
+const requiredTypesFor = (completion: { readonly podiumPlacements: readonly { readonly rank: number }[] } | null) =>
+  requiredCertificateTypes(completion?.podiumPlacements.map(({ rank }) => rank) ?? []);
+
 function completionContract(completion: CompletionRow): CertificateStudioCompletion | null {
   if (!completion) return null;
   const version = completionVersion(completion.sourceSnapshot);
   if (version === null) return null;
-  const entries = MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, recipient(completion, type)?.id] as const);
+  const entries = requiredTypesFor(completion).map((type) => [type, recipient(completion, type)?.id] as const);
   if (entries.some(([, recipientId]) => !recipientId)) return null;
   return { id: completion.id, status: completion.status as CertificateStudioCompletion["status"], version,
     certificateRevision: completion.certificateRevision,
-    recipients: Object.fromEntries(entries) as Record<MiracleV3CertificateType, string> };
+    recipients: Object.fromEntries(entries) as Partial<Record<MiracleV3CertificateType, string>> };
 }
 
 function trustedStorage(asset: { url: string | null; storageProvider: string | null; storageKey: string | null; contentSha256: string | null }) {
@@ -110,7 +115,7 @@ function trustedStorage(asset: { url: string | null; storageProvider: string | n
   } catch { return false; }
 }
 
-function trustedAsset(row: {
+export function trustedAsset(row: {
   url: string | null; mimeType: string | null; width: number | null; height: number | null; byteSize: number | null;
   storageProvider: string | null; storageKey: string | null; contentSha256: string | null; purpose: string | null;
 }): TrustedCertificateAsset | null {
@@ -121,6 +126,23 @@ function trustedAsset(row: {
   return { url: row.url, detectedMimeType: row.mimeType, bytes: row.byteSize, width: row.width, height: row.height,
     storageOwnershipVerified: true, storageProvider: row.storageProvider, storageKey: row.storageKey,
     contentSha256: row.contentSha256, purpose: row.purpose as CertificateAssetPurpose };
+}
+
+type VisualAssetOptionRow = Parameters<typeof trustedAsset>[0] & { id: string; source: string; sourceUrl: string | null };
+
+/** Trusted approved assets as dropdown options; a team logo import is named after the team it was copied from. */
+async function approvedAssetOptions(eventId: string, rows: readonly VisualAssetOptionRow[]) {
+  const trusted = rows.flatMap((row) => { const asset = trustedAsset(row); return asset ? [{ row, asset }] : []; });
+  const importedUrls = [...new Set(trusted.flatMap(({ row }) => row.source === "team_logo_import" && row.sourceUrl ? [row.sourceUrl] : []))];
+  const teams = importedUrls.length
+    ? await prisma.team.findMany({ where: { eventId, logoUrl: { in: importedUrls } }, select: { name: true, logoUrl: true } })
+    : [];
+  const teamNames = new Map(teams.flatMap((team) => team.logoUrl ? [[team.logoUrl, team.name] as const] : []));
+  return trusted.map(({ row, asset }) => {
+    const teamName = row.source === "team_logo_import" && row.sourceUrl ? teamNames.get(row.sourceUrl) : undefined;
+    const character = row.source === "character_library" ? findCharacterBySourceUrl(row.sourceUrl) : null;
+    return { id: row.id, label: teamName ?? character?.name ?? row.storageKey?.split("/").at(-1) ?? row.id, purpose: asset.purpose, ...(character ? { characterId: character.id } : {}) };
+  });
 }
 
 export async function materializeOwnedCertificateAssetUrl(
@@ -157,12 +179,10 @@ export async function loadCertificateStudioState(event: EventIdentity, locale: "
     }),
     prisma.eventVisualAsset.findMany({ where: { eventId: event.id, status: "approved" }, orderBy: { createdAt: "desc" } }),
   ]);
-  const approvedAssets = visualAssets.flatMap((row) => {
-    const asset = trustedAsset(row);
-    return asset ? [{ id: row.id, label: row.storageKey?.split("/").at(-1) ?? row.id, purpose: asset.purpose }] : [];
-  });
+  const approvedAssets = await approvedAssetOptions(event.id, visualAssets);
   const version = completion ? completionVersion(completion.sourceSnapshot) : null;
-  const pendingRecords = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => ({ certificateType, recipient: null, selectedCertificateId: null, versions: null }));
+  const certificateTypes = requiredTypesFor(completion);
+  const pendingRecords = certificateTypes.map((certificateType) => ({ certificateType, recipient: null, selectedCertificateId: null, versions: null }));
   if (!completion || version === null) {
     return { status: "integration_required" as const, event, completionVersion: null, certificateRevision: null, records: pendingRecords, publication: null, approvedAssets };
   }
@@ -182,14 +202,14 @@ export async function loadCertificateStudioState(event: EventIdentity, locale: "
       approvedAssets,
     };
   }
-  const records = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => {
+  const records = certificateTypes.map((certificateType) => {
     const winner = recipient(completion, certificateType);
     const versions = completion.event.certificates
       .filter((row) => row.type === certificateType && row.templateVersion === "miracle-v3"
         && row.completionId === completion.id && row.completionVersion === version && row.recipientId === winner?.id)
       .map((row) => ({ ...mapRecord(row), lastError: row.lastError }));
     const selected = versions.at(-1) ?? null;
-    return { certificateType, recipient: winner ? { id: winner.id, name: winner.name, kind: winner.kind } : null,
+    return { certificateType, recipient: winner ? { id: winner.id, name: winner.name, kind: winner.kind, team: { id: winner.teamId, name: winner.teamName } } : null,
       selectedCertificateId: selected?.id ?? null, versions };
   });
   if (records.some((record) => !record.recipient)) {
@@ -481,7 +501,8 @@ export function createCertificateStudioTransaction(
       const contract = completionContract(completion);
       if (!completion || !contract || contract.status !== "completed" || contract.certificateRevision !== expectedCertificateRevision) throw retryablePublicationConflict();
       const chosen = await tx.certificate.findMany({ where: { id: { in: selection.map((row) => row.certificateId) }, eventId } });
-      const valid = chosen.length === MIRACLE_V3_CERTIFICATE_TYPES.length && selection.every((selected) => {
+      const requiredCount = Object.keys(contract.recipients).length;
+      const valid = selection.length === requiredCount && chosen.length === requiredCount && selection.every((selected) => {
         const certificate = chosen.find((row) => row.id === selected.certificateId && row.type === selected.certificateType);
         return certificate?.completionId === contract.id && certificate.completionVersion === contract.version
           && certificate.templateVersion === "miracle-v3" && certificate.recipientId === contract.recipients[selected.certificateType]

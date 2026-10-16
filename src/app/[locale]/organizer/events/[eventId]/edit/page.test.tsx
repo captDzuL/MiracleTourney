@@ -20,8 +20,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/events/repository", () => ({
   getManageableEventDraft: mocks.getManageableEventDraft,
+}));
+vi.mock("@/lib/platform/settings-repository", () => ({
   getPlatformProfile: mocks.getPlatformProfile,
   getGameModes: mocks.getGameModes,
 }));
@@ -105,6 +107,27 @@ describe("published event edit route", () => {
     expect(markup).toContain('data-editor="Revisi privat"');
     expect(markup).toContain("Perbarui event publik");
     expect(markup).toContain("Revision visuals");
+  });
+
+  it("shows how players register in the published editor, and never lets it change", async () => {
+    mocks.getManageableEventDraft.mockResolvedValue({ ...event, entryMode: "solo", _count: { matches: 0, soloRegistrations: 4 } });
+    const markup = renderToStaticMarkup(await EditEventPage({ params: Promise.resolve({ locale: "id", eventId: "event-1" }) }));
+    expect(mocks.getEventRevisionFieldLocks).toHaveBeenCalledWith(expect.objectContaining({ entryMode: "solo", activeSoloRegistrations: 4 }));
+    expect(JSON.parse(/data-locks="([^"]*)"/.exec(markup)![1].replaceAll("&quot;", '"'))).toMatchObject({ entryMode: "entry_mode_fixed" });
+  });
+
+  it.each([["solo", "Cara daftar: Pemain solo"], ["team", "Cara daftar: Hanya tim"]])("says how players register on a locked %s event", async (entryMode, text) => {
+    mocks.getManageableEventDraft.mockResolvedValue({ ...event, status: "Ongoing", entryMode });
+    mocks.isFeatureEnabled.mockReturnValue(true);
+    const markup = renderToStaticMarkup(await EditEventPage({ params: Promise.resolve({ locale: "id", eventId: "event-1" }) }));
+    expect(markup).toContain(text);
+  });
+
+  it("says nothing about solo on a locked team event while the solo flag is off", async () => {
+    mocks.getManageableEventDraft.mockResolvedValue({ ...event, status: "Ongoing", entryMode: undefined });
+    mocks.isFeatureEnabled.mockImplementation((flag) => flag !== "solo_tournament_v1");
+    const markup = renderToStaticMarkup(await EditEventPage({ params: Promise.resolve({ locale: "id", eventId: "event-1" }) }));
+    expect(markup).not.toContain("Cara daftar");
   });
 
   it.each(["Ongoing", "Finished"])("locks the editor when status is %s", async (status) => {

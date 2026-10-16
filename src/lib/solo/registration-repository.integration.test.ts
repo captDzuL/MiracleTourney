@@ -28,7 +28,7 @@ const run = `soloit${Date.now().toString(36)}`;
 type Modules = {
   prisma: typeof import("@/lib/platform/db").prisma;
   repo: typeof import("./registration-repository");
-  platform: typeof import("@/lib/platform/repository");
+  platform: typeof import("@/lib/registration/repository");
 };
 let m: Modules;
 
@@ -106,7 +106,7 @@ describe.skipIf(!databaseUrl)("solo registration repository (real database)", ()
     m = {
       prisma: (await import("@/lib/platform/db")).prisma,
       repo: await import("./registration-repository"),
-      platform: await import("@/lib/platform/repository"),
+      platform: await import("@/lib/registration/repository"),
     };
   });
 
@@ -372,6 +372,56 @@ describe.skipIf(!databaseUrl)("solo registration repository (real database)", ()
     });
   });
 
+  describe("an event that is already running", () => {
+    const STATUSES = ["Published", "Registration Closed", "Ongoing", "Finished"] as const;
+
+    it.each(STATUSES)("takes no solo player into a team event that is %s", async (status) => {
+      const teamEvent = await makeEvent({ entryMode: "team", status });
+      await expect(join(teamEvent.id)).rejects.toThrow("Event ini bukan event solo.");
+      expect(await m.prisma.soloRegistration.count({ where: { eventId: teamEvent.id } })).toBe(0);
+    });
+
+    it.each(["Registration Closed", "Ongoing", "Finished"] as const)("takes no new solo player once a solo event is %s", async (status) => {
+      const soloEvent = await makeEvent({ entryMode: "solo", status });
+      await expect(join(soloEvent.id)).rejects.toThrow("sudah tidak membuka pendaftaran");
+      expect(await m.prisma.soloRegistration.count({ where: { eventId: soloEvent.id } })).toBe(0);
+    });
+
+    it("takes no new solo player after the teams are locked, even if the status still says Published", async () => {
+      const soloEvent = await makeEvent({ entryMode: "solo", status: "Published" });
+      const draw = await m.prisma.soloDraw.create({ data: { eventId: soloEvent.id, version: 1, status: "locked", seed: "s", algorithmVersion: "1", inputHash: "h", config: {}, teamCount: 0 } });
+      await m.prisma.event.update({ where: { id: soloEvent.id }, data: { activeSoloDrawId: draw.id } });
+      await expect(join(soloEvent.id)).rejects.toThrow("Tim sudah dikunci.");
+    });
+  });
+
+  describe("the small reads the server actions use", () => {
+    it("finds an event's slug and nothing for a missing event", async () => {
+      const lookups = await import("./lookups");
+      const event = await makeEvent();
+      expect(await lookups.findEventSlug(event.id)).toEqual({ slug: event.slug });
+      expect(await lookups.findEventSlug("does-not-exist")).toBeNull();
+    });
+
+    it("finds the event of a registration, and a registration only for its own player", async () => {
+      const lookups = await import("./lookups");
+      const event = await makeEvent();
+      const { registration } = await join(event.id);
+      expect(await lookups.findSoloRegistrationEvent(registration.id)).toEqual({ eventId: event.id });
+      expect(await lookups.findOwnSoloRegistration(registration.id, registration.userId)).toEqual({ eventId: event.id, event: { slug: event.slug } });
+      expect(await lookups.findOwnSoloRegistration(registration.id, "somebody-else")).toBeNull();
+      expect(await lookups.findSoloRegistrationEvent("does-not-exist")).toBeNull();
+    });
+
+    it("finds the event of a draw", async () => {
+      const lookups = await import("./lookups");
+      const event = await makeEvent();
+      const draw = await m.prisma.soloDraw.create({ data: { eventId: event.id, version: 1, status: "draft", seed: "s", algorithmVersion: "1", inputHash: "h", config: {}, teamCount: 0 } });
+      expect(await lookups.findSoloDrawEvent(draw.id)).toEqual({ eventId: event.id });
+      expect(await lookups.findSoloDrawEvent("does-not-exist")).toBeNull();
+    });
+  });
+
   describe("many players at the same moment", () => {
     function registerAll(eventId: string, users: Array<{ id: string }>, position: string) {
       return Promise.allSettled(users.map((user, index) =>
@@ -578,8 +628,6 @@ describe.skipIf(!databaseUrl)("solo registration repository (real database)", ()
       const captain = await makeUser("captain");
       await expect(m.platform.registerTeam({ eventId: event.id, captainId: captain.id, name: "Tim Solo", tag: "TS" })).rejects.toThrow(message);
       await expect(m.platform.createTeamRegistrationRequest({ eventId: paidEvent.id, captainId: captain.id, name: "Tim Solo", tag: "TS" })).rejects.toThrow(message);
-      await expect(m.platform.createCaptainWithTeam({ email: `${run}-c1@test.local`, name: "Cap", passwordHash: "x", eventId: event.id, teamName: "Tim Solo", teamTag: "TS" })).rejects.toThrow(message);
-      await expect(m.platform.createCaptainWithPendingPayment({ email: `${run}-c2@test.local`, name: "Cap", passwordHash: "x", eventId: paidEvent.id, teamName: "Tim Solo", teamTag: "TS" })).rejects.toThrow(message);
       expect(await m.prisma.team.count({ where: { eventId: { in: [event.id, paidEvent.id] } } })).toBe(0);
       await m.prisma.user.deleteMany({ where: { email: { startsWith: `${run}-c` } } });
     });

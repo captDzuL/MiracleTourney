@@ -3,7 +3,8 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { Prisma, SoloDraw as SoloDrawRow, SoloDrawAssignment as AssignmentRow, SoloRegistration as RegistrationRow } from "@prisma/client";
 
 import { prisma } from "@/lib/platform/db";
-import { assertEventRosterMutable, assertUserCanManageEvent } from "@/lib/platform/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
+import { assertEventRosterMutable } from "@/lib/platform/shared/tx";
 import type { AppUser } from "@/lib/platform/types";
 import { UserFacingError } from "@/lib/security/public-error";
 import { validateTeamData } from "@/lib/validation/team-data";

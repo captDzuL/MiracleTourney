@@ -9,6 +9,14 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Some tests read the whole source tree or start a child process; give them room when the machine is busy.
+    testTimeout: 20_000,
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "tests/competition/**/*.test.ts", "tests/performance/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["**/*.test.{ts,tsx}"],
+      reporter: ["text-summary", "json-summary"],
+    },
   },
 });

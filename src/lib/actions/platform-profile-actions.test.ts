@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
-vi.mock("@/lib/platform/repository", () => ({ updatePlatformProfile: mocks.updatePlatformProfile }));
+vi.mock("@/lib/platform/settings-repository", () => ({
+  updatePlatformProfile: mocks.updatePlatformProfile,
+}));
 vi.mock("next/cache", () => ({ revalidateTag: mocks.revalidateTag, revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 

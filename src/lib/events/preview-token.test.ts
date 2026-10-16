@@ -9,7 +9,7 @@ const { prisma } = vi.hoisted(() => ({
   },
 }));
 vi.mock("@/lib/platform/db", () => ({ prisma }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/platform/shared/mappers", () => ({
   eventPublicInclude: { stream: true, activeVisualAsset: true },
   mapEvent: (event: unknown) => event,
 }));

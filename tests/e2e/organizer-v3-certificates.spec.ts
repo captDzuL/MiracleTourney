@@ -63,7 +63,7 @@ test("publishes all seven certificates and preserves superseded verification his
       page.locator("[data-publish-certificate-set]").click(),
     ]);
     expect(publicationResponse.status()).toBe(200);
-    await expect(page.locator('[role="status"]')).toContainText("The seven-certificate set was published safely.");
+    await expect(page.locator('[role="status"]')).toContainText("The certificate set was published safely.");
     await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
     await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({ where: { eventId: scenario.id }, select: { certificateRevision: true } })).certificateRevision).toBe(2);
     await expect(page.locator("[data-certificate-publication-revision], [data-publication-revision]").first()).toHaveText(/\d+/);
@@ -106,7 +106,7 @@ test("publishes once in Indonesian and announces the localized revision", async 
   const publicationResponsePromise = waitForCertificatePublicationResponse(page, "id", scenario.id);
   const [publicationResponse] = await Promise.all([publicationResponsePromise, publish.click()]);
   expect(publicationResponse.status()).toBe(200);
-  await expect(page.locator('[role="status"]')).toContainText("Set tujuh sertifikat diterbitkan dengan aman.");
+  await expect(page.locator('[role="status"]')).toContainText("Set sertifikat diterbitkan dengan aman.");
   await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
   await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({ where: { eventId: scenario.id }, select: { certificateRevision: true } })).certificateRevision).toBe(2);
 });
@@ -232,7 +232,7 @@ test("certificate studio preserves ID/EN publication and verification parity", a
       const publicationResponsePromise = waitForCertificatePublicationResponse(page, locale, scenario.id);
       const [publicationResponse] = await Promise.all([publicationResponsePromise, publish.click()]);
       expect(publicationResponse.status()).toBe(200);
-      await expect(page.locator('[role="status"]')).toContainText("Set tujuh sertifikat diterbitkan dengan aman.");
+      await expect(page.locator('[role="status"]')).toContainText("Set sertifikat diterbitkan dengan aman.");
       await expect.poll(() => completionDb.certificatePublication.count({ where: { eventId: scenario.id } })).toBe(2);
       await expect.poll(async () => (await completionDb.tournamentCompletion.findUniqueOrThrow({
         where: { eventId: scenario.id },

@@ -20,7 +20,6 @@ const mocks = vi.hoisted(() => ({
   updateCaptainPassword: vi.fn(),
   reissueSession: vi.fn().mockResolvedValue(true),
   registerTeam: vi.fn(),
-  createCaptainWithTeam: vi.fn(),
   saveDraftTeam: vi.fn(),
   checkRateLimit: vi.fn(),
 }));
@@ -39,34 +38,43 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("next/navigation", () => ({ redirect: (path: string): never => { throw new Error(`REDIRECT:${path}`); } }));
 vi.mock("next/server", () => ({ after: (run: () => unknown) => run() }));
 vi.mock("bcryptjs", () => ({ default: { hash: vi.fn().mockResolvedValue("$new$"), compare: vi.fn().mockResolvedValue(true) } }));
-vi.mock("@/lib/platform/repository", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/platform/repository")>()),
+vi.mock("@/lib/teams/repository", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/teams/repository")>()),
   addPlayer: mocks.addPlayer,
   updatePlayer: mocks.updatePlayer,
   deletePlayer: mocks.deletePlayer,
   setTeamCaptainDisplay: mocks.setTeamCaptainDisplay,
+}));
+vi.mock("@/lib/player-stats/repository", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/player-stats/repository")>()),
   assertCaptainCanSubmitStats: mocks.assertCaptainCanSubmitStats,
   getPlayerStatFormContext: mocks.getPlayerStatFormContext,
+}));
+vi.mock("@/lib/player-stats/write-repository", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/player-stats/write-repository")>()),
   upsertStatSubmission: mocks.upsertStatSubmission,
+}));
+vi.mock("@/lib/identity/repository", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/identity/repository")>()),
   getUserPasswordHashById: mocks.getUserPasswordHashById,
   updateCaptainPassword: mocks.updateCaptainPassword,
+}));
+vi.mock("@/lib/registration/repository", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/registration/repository")>()),
   registerTeam: mocks.registerTeam,
-  createCaptainWithTeam: mocks.createCaptainWithTeam,
-  saveCaptainDraftTeam: mocks.saveDraftTeam,
+  createOrUpdateCaptainDraftTeam: mocks.saveDraftTeam,
 }));
 
+import { captainSubmitStatsAction } from "@/lib/actions/match-actions";
+import { captainRegisterTeamAction, captainSaveDraftTeamAction, captainUploadPaymentProofAction } from "@/lib/actions/registration-actions";
+import { changePasswordAction } from "@/lib/actions/identity-actions";
 import {
   captainAddPlayerAction,
   captainDeletePlayerAction,
-  captainRegisterTeamAction,
-  captainSaveDraftTeamAction,
   captainSetDisplayCaptainAction,
-  captainSubmitStatsAction,
   captainUpdatePlayerAction,
-  captainUploadPaymentProofAction,
   captainUploadTeamLogoAction,
-  changePasswordAction,
-} from "@/lib/actions";
+} from "@/lib/actions/team-actions";
 
 const captain = { id: "captain-1", email: "c@test.local", name: "Captain", role: "captain" };
 const owner = { id: "player-1", email: "p@test.local", name: "Bima", role: "player" };
@@ -167,7 +175,6 @@ describe.each(CAPTAIN_ONLY_ACTIONS)("%s", (_name, run) => {
     signIn(account, ownsTeam);
     await expect(outcome(run)).resolves.toBe("REDIRECT:/login");
     expect(mocks.registerTeam).not.toHaveBeenCalled();
-    expect(mocks.createCaptainWithTeam).not.toHaveBeenCalled();
     expect(mocks.saveDraftTeam).not.toHaveBeenCalled();
     expect(mocks.teamCount).not.toHaveBeenCalled();
   });

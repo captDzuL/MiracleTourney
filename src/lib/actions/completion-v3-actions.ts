@@ -8,7 +8,7 @@ import {
 } from "@/lib/completion/complete";
 import { createPrismaCompletionDependencies } from "@/lib/completion/prisma-adapter";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { assertUserCanManageEvent } from "@/lib/platform/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { withServerActionLog } from "@/lib/observability/logger";
 

@@ -1,10 +1,9 @@
 import { getGameArtTheme } from "./config";
-import type { Event } from "./types";
+import type { Event, VisualAssetSource } from "./types";
 
-export const DEFAULT_EVENT_ACCENT_COLOR = "#caff38";
 
 export type ResolvedEventVisual = {
-  source: "organizer_upload" | "ai_generated" | "typographic";
+  source: VisualAssetSource | "typographic";
   url?: string;
   accentColor: string;
   focalPoint: { x: number; y: number };

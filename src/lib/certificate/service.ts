@@ -1,267 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { CertificateArtifactFinalizationError, generateCertificate } from "@/lib/certificate/generate";
+import { CertificateArtifactFinalizationError } from "@/lib/certificate/generate";
 import type { MiracleV3GenerationDependencies, MiracleV3CertificateIdentity } from "@/lib/certificate/generate";
 import { MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateData, type MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3";
-import { prisma } from "@/lib/platform/db";
-import { getCertificateByEvent } from "@/lib/platform/repository";
 import { z } from "zod";
 import { safeEntityIdSchema } from "@/lib/security/request-guard";
 import { redactIdentifier, writeServerLog } from "@/lib/observability/logger";
-
-export type CertificateNotReadyReason =
-  | "final-not-completed"
-  | "winner-missing"
-  | "winner-not-in-event";
-
-export interface CertificateFinalMatch {
-  id: string;
-  winnerTeamId: string | null;
-}
-
-export interface CertificateWinnerTeam {
-  id: string;
-  name: string;
-  tag: string | null;
-}
-
-export interface CertificateRecord {
-  imageUrl: string;
-}
-
-export interface CertificateGenerationDependencies {
-  findV3Completion: (eventId: string) => Promise<boolean>;
-  findCompletedFinal: (
-    eventId: string,
-  ) => Promise<CertificateFinalMatch | null>;
-  findWinnerTeamForEvent: (
-    eventId: string,
-    winnerTeamId: string,
-  ) => Promise<CertificateWinnerTeam | null>;
-  findCertificateForEvent: (
-    eventId: string,
-  ) => Promise<CertificateRecord | null>;
-  generateCertificate: (
-    eventId: string,
-    winnerTeamId: string,
-  ) => Promise<string>;
-}
-
-export type CertificateGenerationResult =
-  | {
-      status: "studio-required";
-      studioHref: string;
-    }
-  | {
-      status: "generated";
-      imageUrl: string;
-      matchId: string;
-      winnerTeamId: string;
-    }
-  | {
-      status: "already-exists";
-      imageUrl: string;
-      matchId: string;
-      winnerTeamId: string;
-    }
-  | {
-      status: "not-ready";
-      reason: "final-not-completed";
-    }
-  | {
-      status: "not-ready";
-      reason: "winner-missing";
-      matchId: string;
-    }
-  | {
-      status: "not-ready";
-      reason: "winner-not-in-event";
-      matchId: string;
-      winnerTeamId: string;
-    };
-
-const defaultDependencies: CertificateGenerationDependencies = {
-  findV3Completion: async (eventId) => Boolean(await prisma.tournamentCompletion.findFirst({
-    where: { eventId },
-    select: { id: true },
-  })),
-  findCompletedFinal: async (eventId) =>
-    prisma.match.findFirst({
-      where: {
-        eventId,
-        roundLabel: "Final",
-        status: "Completed",
-      },
-      orderBy: { round: "desc" },
-      select: {
-        id: true,
-        winnerTeamId: true,
-      },
-    }),
-  findWinnerTeamForEvent: async (eventId, winnerTeamId) =>
-    prisma.team.findFirst({
-      where: {
-        id: winnerTeamId,
-        eventId,
-      },
-    }),
-  findCertificateForEvent: getCertificateByEvent,
-  generateCertificate: async (eventId, winnerTeamId) =>
-    generateCertificate(eventId, winnerTeamId),
-};
-
-/**
- * Resolve the completed Final winner on the server and generate its certificate.
- * This is the single entry point used by automatic generation and manual retries.
- */
-export function generateCertificateForEvent(
-  eventId: string,
-  locale: "id" | "en",
-  dependencies?: CertificateGenerationDependencies,
-): Promise<CertificateGenerationResult>;
-export function generateCertificateForEvent(
-  eventId: string,
-  dependencies: CertificateGenerationDependencies,
-): Promise<CertificateGenerationResult>;
-export function generateCertificateForEvent(
-  eventId: string,
-  dependencies: CertificateGenerationDependencies,
-  locale: "id" | "en",
-): Promise<CertificateGenerationResult>;
-export async function generateCertificateForEvent(
-  eventId: string,
-  localeOrDependencies: "id" | "en" | CertificateGenerationDependencies,
-  dependenciesOrLocale?: CertificateGenerationDependencies | "id" | "en",
-): Promise<CertificateGenerationResult> {
-  let locale: "id" | "en" | undefined;
-  let dependencies: CertificateGenerationDependencies;
-  if (typeof localeOrDependencies === "string") {
-    locale = localeOrDependencies;
-    dependencies = typeof dependenciesOrLocale === "object"
-      ? dependenciesOrLocale
-      : defaultDependencies;
-  } else {
-    dependencies = localeOrDependencies;
-    locale = typeof dependenciesOrLocale === "string"
-      ? dependenciesOrLocale
-      : undefined;
-  }
-
-  if (await dependencies.findV3Completion(eventId)) {
-    if (typeof locale !== "string") {
-      throw new Error("Route locale is required to build the Certificate Studio URL");
-    }
-    return {
-      status: "studio-required",
-      studioHref: `/${locale}/organizer/events/${eventId}/certificates`,
-    };
-  }
-  const finalMatch = await dependencies.findCompletedFinal(eventId);
-
-  if (!finalMatch) {
-    return {
-      status: "not-ready",
-      reason: "final-not-completed",
-    };
-  }
-
-  const winnerTeamId = finalMatch.winnerTeamId;
-  if (!winnerTeamId) {
-    return {
-      status: "not-ready",
-      reason: "winner-missing",
-      matchId: finalMatch.id,
-    };
-  }
-
-  const winnerTeam = await dependencies.findWinnerTeamForEvent(
-    eventId,
-    winnerTeamId,
-  );
-  if (!winnerTeam) {
-    return {
-      status: "not-ready",
-      reason: "winner-not-in-event",
-      matchId: finalMatch.id,
-      winnerTeamId,
-    };
-  }
-
-  const existingCertificate =
-    await dependencies.findCertificateForEvent(eventId);
-  if (existingCertificate) {
-    return {
-      status: "already-exists",
-      imageUrl: existingCertificate.imageUrl,
-      matchId: finalMatch.id,
-      winnerTeamId,
-    };
-  }
-
-  const imageUrl = await dependencies.generateCertificate(
-    eventId,
-    winnerTeam.id,
-  );
-  return {
-    status: "generated",
-    imageUrl,
-    matchId: finalMatch.id,
-    winnerTeamId,
-  };
-}
-
-/**
- * Automatic trigger guard: only a completed Final with a winner may start the
- * event-level service. Manual retries call generateCertificateForEvent directly.
- */
-export function generateCertificateIfFinal(
-  matchId: string,
-  eventId: string,
-): Promise<CertificateGenerationResult>;
-export function generateCertificateIfFinal(
-  matchId: string,
-  eventId: string,
-  dependencies: CertificateGenerationDependencies,
-): Promise<CertificateGenerationResult>;
-export function generateCertificateIfFinal(
-  matchId: string,
-  eventId: string,
-  locale: "id" | "en" | undefined,
-  dependencies?: CertificateGenerationDependencies,
-): Promise<CertificateGenerationResult>;
-export async function generateCertificateIfFinal(
-  matchId: string,
-  eventId: string,
-  localeOrDependencies?: "id" | "en" | CertificateGenerationDependencies,
-  dependencies?: CertificateGenerationDependencies,
-): Promise<CertificateGenerationResult> {
-  const locale = typeof localeOrDependencies === "string"
-    ? localeOrDependencies
-    : undefined;
-  const generationDependencies = typeof localeOrDependencies === "object"
-    ? localeOrDependencies
-    : dependencies ?? defaultDependencies;
-  const triggerMatch = await prisma.match.findFirst({
-    where: {
-      id: matchId,
-      eventId,
-      roundLabel: "Final",
-      status: "Completed",
-      winnerTeamId: { not: null },
-    },
-    select: { id: true },
-  });
-
-  if (!triggerMatch) {
-    return {
-      status: "not-ready",
-      reason: "final-not-completed",
-    };
-  }
-
-  return locale
-    ? generateCertificateForEvent(eventId, locale, generationDependencies)
-    : generateCertificateForEvent(eventId, generationDependencies);
-}
 
 export const CERTIFICATE_ASSET_LIMITS = Object.freeze({
   maxBytes: 5 * 1024 * 1024,
@@ -390,15 +133,16 @@ export const publishCertificateSetInputSchema = z.object({
   expectedVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER - 1),
   expectedCertificateRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER - 1),
   idempotencyKey: idempotencySchema,
-  selection: z.array(z.object({ certificateType: z.enum(MIRACLE_V3_CERTIFICATE_TYPES), certificateId: idSchema }).strict()).length(7),
-}).strict().refine((input) => new Set(input.selection.map((row) => row.certificateType)).size === 7
-  && MIRACLE_V3_CERTIFICATE_TYPES.every((type) => input.selection.some((row) => row.certificateType === type)), { message: "Exactly one certificate of every type is required" });
+  // Six certificates when the podium has no third place, seven otherwise. The exact set is checked against the completion.
+  selection: z.array(z.object({ certificateType: z.enum(MIRACLE_V3_CERTIFICATE_TYPES), certificateId: idSchema }).strict()).min(MIRACLE_V3_CERTIFICATE_TYPES.length - 1).max(MIRACLE_V3_CERTIFICATE_TYPES.length),
+}).strict().refine((input) => new Set(input.selection.map((row) => row.certificateType)).size === input.selection.length, { message: "At most one certificate of every type is allowed" });
 
 export interface CertificateStudioActor { readonly id: string; readonly role: "organizer" | "platform_admin" | "admin" }
 export interface CertificateStudioCompletion {
   readonly id: string; readonly status: "completed" | "reopened" | "editable";
   readonly version: number; readonly certificateRevision: number;
-  readonly recipients: Readonly<Record<MiracleV3CertificateType, string>>;
+  /** One recipient per required certificate type. A podium with no third place has no `third_place` entry. */
+  readonly recipients: Readonly<Partial<Record<MiracleV3CertificateType, string>>>;
 }
 export interface CertificateStudioRecord {
   readonly id: string; readonly eventId: string; readonly certificateType: MiracleV3CertificateType; readonly recipientId: string;
@@ -485,6 +229,7 @@ export async function regenerateCertificate(input: unknown, dependencies: Certif
     }
     if (completion.version !== value.expectedVersion) return { terminal: { status: "conflict", code: "stale_version", version: completion.version } as RegenerateCertificateResult };
     if (completion.status !== "completed") return { terminal: { status: "blocked", code: "completion_required" } as RegenerateCertificateResult };
+    if (!completion.recipients[value.certificateType]) return { terminal: { status: "blocked", code: "invalid_input" } as RegenerateCertificateResult };
     const teamCertificate = ["champion", "runner_up", "third_place"].includes(value.certificateType);
     const allowedKinds: readonly CertificateAssetKind[] = teamCertificate ? ["team_logo_hero"] : ["character_art", "team_logo_badge"];
     const requiredLogoKind: CertificateAssetKind = teamCertificate ? "team_logo_hero" : "team_logo_badge";
@@ -547,7 +292,7 @@ export async function publishCertificateSet(input: unknown, dependencies: Certif
   const parsed = publishCertificateSetInputSchema.safeParse(input);
   if (!parsed.success) return { status: "blocked", code: "invalid_input" };
   const value = parsed.data;
-  const selection = MIRACLE_V3_CERTIFICATE_TYPES.map((certificateType) => value.selection.find((row) => row.certificateType === certificateType)!);
+  const selection = MIRACLE_V3_CERTIFICATE_TYPES.flatMap((certificateType) => value.selection.find((row) => row.certificateType === certificateType) ?? []);
   const fingerprint = mutationFingerprint({ action: "publish", expectedVersion: value.expectedVersion, expectedCertificateRevision: value.expectedCertificateRevision, selection });
   return dependencies.transaction(value.eventId, async (tx) => {
     const actor = await tx.authorize();
@@ -563,8 +308,11 @@ export async function publishCertificateSet(input: unknown, dependencies: Certif
     if (completion.version !== value.expectedVersion) return { status: "conflict", code: "stale_version", version: completion.version };
     if (completion.certificateRevision !== value.expectedCertificateRevision) return { status: "conflict", code: "stale_certificate_revision", version: completion.certificateRevision };
     if (completion.status !== "completed") return { status: "blocked", code: "completion_required" };
+    const requiredTypes = MIRACLE_V3_CERTIFICATE_TYPES.filter((type) => completion.recipients[type]);
+    const exactSet = selection.length === requiredTypes.length && selection.every(({ certificateType }) => requiredTypes.includes(certificateType));
+    if (!exactSet) return { status: "blocked", code: "set_not_ready" };
     const records = await tx.loadCertificates(selection.map((row) => row.certificateId));
-    const ready = records.length === 7 && selection.every((selected) => {
+    const ready = records.length === requiredTypes.length && selection.every((selected) => {
       const record = records.find((candidate) => candidate.id === selected.certificateId && candidate.certificateType === selected.certificateType);
       return record?.eventId === value.eventId && record.completionId === completion.id
         && record.completionVersion === completion.version

@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
 import { MIRACLE_V3_BRANDING, MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateData, type MiracleV3CertificateType } from "./miracle-v3-contract";
+import { getMiracleV3EditorialCopy } from "./miracle-v3-editorial-copy";
+import { EDITORIAL_DECORATION, editorialStyles } from "./miracle-v3-editorial-styles";
+import { monogramInitials, recipientNameFontSize } from "./miracle-v3-editorial-text";
 export { MIRACLE_V3_BRANDING, MIRACLE_V3_CERTIFICATE_TYPES, MIRACLE_V3_SAFE_ZONES, type MiracleV3CertificateData, type MiracleV3CertificateType } from "./miracle-v3-contract";
 const labels: Record<MiracleV3CertificateType, string> = {
   champion: "Champion", runner_up: "Runner-up", third_place: "Third Place", mvp: "MVP of Tournament",
@@ -92,56 +95,82 @@ export function getMiracleV3CertificateFingerprint(data: MiracleV3CertificateDat
   return createHash("sha256").update(JSON.stringify(getMiracleV3CertificateManifest(data)), "utf8").digest("hex");
 }
 
+const LOGO_WORDMARK_ON_DARK = /#F6DFB1/gi;
+const LOGO_WORDMARK_ON_CREAM = "#09111e";
+/** Team logo default box, used when the studio supplies no hero placement. */
+const DEFAULT_TEAM_LOGO_BOX = Object.freeze({ x: 360, y: 748, width: 560, height: 540 });
+/** The diamond frame is a bit larger than the smaller side of the logo box; the logo sits inside its inscribed square. */
+const FRAME_DIAGONAL_RATIO = 1.1;
+const LOGO_INSET_PERCENT = 11;
+
 function embeddedAssets() {
-  const logo = readFileSync(path.join(process.cwd(), "public/logo/miracle-horizontal.svg"));
+  // The horizontal logo has a cream wordmark made for dark backgrounds; the editorial header is cream, so draw it dark.
+  const logo = readFileSync(path.join(process.cwd(), "public/logo/miracle-horizontal.svg"), "utf8").replace(LOGO_WORDMARK_ON_DARK, LOGO_WORDMARK_ON_CREAM);
   // Resolve through the installed package link at runtime so Next.js does not
   // try to parse the binary font as a JavaScript module during server bundling.
   const font = readFileSync(path.join(process.cwd(), "node_modules", "@fontsource", "montserrat", "files", "montserrat-latin-800-normal.woff2"));
-  return { logo: `data:image/svg+xml;base64,${logo.toString("base64")}`, font: font.toString("base64") };
+  return { logo: `data:image/svg+xml;base64,${Buffer.from(logo, "utf8").toString("base64")}`, font: font.toString("base64") };
 }
+
+type Box = { x: number; y: number; width: number; height: number };
+type Zone = typeof MIRACLE_V3_SAFE_ZONES[keyof typeof MIRACLE_V3_SAFE_ZONES];
+
+/** Absolute box inside a zone, in zone-relative pixels. */
+const boxStyle = (box: Box, zone: Zone, extra = "") =>
+  ` style="position:absolute;left:${box.x - zone.x}px;top:${box.y - zone.y}px;width:${box.width}px;height:${box.height}px;object-fit:contain${extra}"`;
+
+/** Diamond frame centred on the team logo box; its inscribed square is where the logo is drawn. */
+function diamondFrame(box: Box, zone: Zone): string {
+  const side = Math.round(Math.min(box.width, box.height) * FRAME_DIAGONAL_RATIO / Math.SQRT2);
+  const left = Math.round(box.x - zone.x + box.width / 2 - side / 2);
+  const top = Math.round(box.y - zone.y + box.height / 2 - side / 2);
+  return `<div data-role="hero-frame" aria-hidden="true" style="left:${left}px;top:${top}px;width:${side}px;height:${side}px;transform:rotate(45deg)"></div>`;
+}
+
+/** Team emblem drawn from the team initials, used when there is no usable team logo. */
+const initialsEmblem = (initials: string, label: string, style: string) =>
+  `<svg data-role="hero-fallback" aria-label="${escape(label)}" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg"${style}><g font-family="Montserrat,sans-serif" font-weight="800" font-size="280" text-anchor="middle" letter-spacing="-8"><text x="326" y="420" fill="#aa8bff" fill-opacity=".28">${escape(initials)}</text><text x="300" y="398" fill="#49d1ec">${escape(initials)}</text></g></svg>`;
 
 export async function buildMiracleV3CertificateHtml(data: MiracleV3CertificateData, options: { editorPreview?: boolean } = {}): Promise<string> {
   const m = getMiracleV3CertificateManifest(data);
   const fingerprint = getMiracleV3CertificateFingerprint(data);
   const assets = embeddedAssets();
+  const copy = getMiracleV3EditorialCopy(m.certificateType);
+  const isTeam = teamType(m.certificateType);
   const verificationUrl = `${m.verificationBaseUrl}/certificates/verify/${encodeURIComponent(m.verificationCode)}`;
   const qr = await QRCode.toDataURL(verificationUrl, { width: 200, margin: 4, errorCorrectionLevel: "M" });
-  const zoneStyle = (zone: typeof MIRACLE_V3_SAFE_ZONES[keyof typeof MIRACLE_V3_SAFE_ZONES]) => `position:absolute;left:${zone.x}px;top:${zone.y}px;width:${zone.width}px;height:${zone.height}px;overflow:hidden`;
+  const zoneStyle = (zone: Zone) => `position:absolute;left:${zone.x}px;top:${zone.y}px;width:${zone.width}px;height:${zone.height}px;overflow:hidden`;
   const zone = (name: keyof typeof MIRACLE_V3_SAFE_ZONES, body: string) => `<section data-zone="${name}" style="${zoneStyle(MIRACLE_V3_SAFE_ZONES[name])}">${body}</section>`;
-  const fallback = `<svg data-role="hero-fallback" aria-label="Miracle award emblem" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg"><path d="M300 30 560 180 560 420 300 570 40 420 40 180Z" fill="#151a24" stroke="#aa8bff" stroke-width="3"/><path d="M150 420V180L300 310 450 180V420" fill="none" stroke="#49d1ec" stroke-width="48"/><circle cx="300" cy="300" r="270" fill="none" stroke="#f6dfb1" stroke-dasharray="${12 + parseInt(fingerprint.slice(0, 2), 16) % 24} 28"/></svg>`;
-  const hero = teamType(m.certificateType) ? m.teamLogoUrl : m.characterArtUrl;
-  const placementStyle = (kind: "team_logo_hero" | "team_logo_badge" | "character_art", zoneName: "hero" | "secondaryBadge") => {
-    const placement = m.assetPlacements.find((candidate) => candidate.assetKind === kind);
-    if (!placement || placement.assetKind !== kind) return "";
-    const base = MIRACLE_V3_SAFE_ZONES[zoneName];
-    return ` style="position:absolute;left:${placement.x - base.x}px;top:${placement.y - base.y}px;width:${placement.width}px;height:${placement.height}px;object-fit:contain"`;
-  };
-  const heroKind = teamType(m.certificateType) ? "team_logo_hero" : "character_art";
-  const heroImage = hero ? `<img data-role="${teamType(m.certificateType) ? "team-logo" : "character-art"}" src="${escape(hero)}" alt="${escape(teamType(m.certificateType) ? m.teamName : m.recipientName)}"${placementStyle(heroKind, "hero")}/>` : fallback;
+  const heroZone = MIRACLE_V3_SAFE_ZONES.hero;
+  const heroKind = isTeam ? "team_logo_hero" : "character_art";
+  const heroPlacement = m.assetPlacements.find((candidate) => candidate.assetKind === heroKind);
+  const teamLogoBox: Box = heroPlacement ?? DEFAULT_TEAM_LOGO_BOX;
+  // Team logos are inset so the whole logo stays inside the diamond frame; character art keeps its box as is.
+  const heroStyle = isTeam ? boxStyle(teamLogoBox, heroZone, `;padding:${LOGO_INSET_PERCENT}%`) : heroPlacement ? boxStyle(heroPlacement, heroZone) : "";
+  const hexEmblem = `<svg data-role="hero-fallback" aria-label="Miracle award emblem" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg"><path d="M300 30 560 180 560 420 300 570 40 420 40 180Z" fill="#151a24" stroke="#aa8bff" stroke-width="3"/><path d="M150 420V180L300 310 450 180V420" fill="none" stroke="#49d1ec" stroke-width="48"/><circle cx="300" cy="300" r="270" fill="none" stroke="#f6dfb1" stroke-dasharray="${12 + parseInt(fingerprint.slice(0, 2), 16) % 24} 28"/></svg>`;
+  const teamInitials = monogramInitials(m.teamName);
+  const fallback = isTeam ? initialsEmblem(teamInitials, `${m.teamName} emblem`, heroStyle) : hexEmblem;
+  const hero = isTeam ? m.teamLogoUrl : m.characterArtUrl;
+  const heroImage = hero ? `<img data-role="${isTeam ? "team-logo" : "character-art"}" src="${escape(hero)}" alt="${escape(isTeam ? m.teamName : m.recipientName)}"${heroStyle}/>` : fallback;
+  const badgePlacement = m.assetPlacements.find((candidate) => candidate.assetKind === "team_logo_badge");
+  const badgeStyle = badgePlacement ? boxStyle(badgePlacement, MIRACLE_V3_SAFE_ZONES.secondaryBadge) : "";
+  const badge = m.teamLogoUrl
+    ? `<img src="${escape(m.teamLogoUrl)}" alt="${escape(m.teamName)} team logo"${badgeStyle}/>`
+    : `<span class="initials-tile" aria-hidden="true">${escape(teamInitials)}</span>`;
+  const nameSize = recipientNameFontSize(m.recipientName);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escape(labels[m.certificateType])} · ${escape(m.recipientName)}</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'">
 <style>
-@font-face{font-family:Montserrat;src:url(data:font/woff2;base64,${assets.font}) format('woff2');font-weight:800;font-style:normal;font-display:block}
-*{box-sizing:border-box}html,body{margin:0;width:1080px;height:1920px}body{font-family:Montserrat,sans-serif;color:#f6dfb1;background:#11151d;font-weight:800}
-main{position:relative;overflow:hidden;background:linear-gradient(155deg,transparent 40%,#aa8bff18 65%,transparent 85%),#11151d}
-main:before{content:"";position:absolute;inset:0 0 auto;height:336px;background:#f3efe7;border-bottom:8px solid #49d1ec}
-main:after{content:"";position:absolute;left:64px;right:64px;top:1376px;height:2px;background:linear-gradient(90deg,#49d1ec,#aa8bff)}
-section{z-index:1;overflow-wrap:anywhere}h1,h2,p{margin:0}h1{font-size:82px;line-height:1.04;letter-spacing:-3px;color:#f3efe7;margin-top:24px;max-width:900px}
-.eyebrow{font-size:20px;letter-spacing:5px;text-transform:uppercase;color:#49d1ec}.clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
-[data-zone=identity]{color:#11151d;display:grid;grid-template-columns:340px 1fr;align-items:center;gap:48px}[data-zone=identity] img{width:320px;padding:20px;background:#11151d;border-radius:8px}
-.event{font-size:32px;line-height:1.2}.game{font-size:20px;margin-top:16px;color:#374151}
-[data-zone=hero]{display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse,#aa8bff15,transparent 70%)}[data-zone=hero] img,[data-zone=hero] svg{width:90%;height:90%;object-fit:contain}
-[data-zone=secondaryBadge] img{display:block;width:152px;height:152px;object-fit:contain;background:#f3efe7;padding:12px;border-radius:12px}.team{font-size:20px;line-height:1.2;margin-top:16px;-webkit-line-clamp:3}
-[data-zone=recipient]{color:#f3efe7}.recipient{font-size:52px;line-height:1.15;margin-top:18px;-webkit-line-clamp:2}.label{font-size:18px;text-transform:uppercase;letter-spacing:3px;color:#aa8bff}
-.meta{font-size:22px;line-height:1.3;margin-top:8px;-webkit-line-clamp:2}[data-zone=qrVerification]{text-align:center}[data-zone=qrVerification] img{display:block;width:200px;height:200px;margin:auto}[data-zone=qrVerification] a{color:#f6dfb1;font-size:14px;text-decoration:none}
-</style></head><body><main data-certificate-canvas="1080x1920" data-template-version="miracle-v3" data-fingerprint="${fingerprint}" style="width:1080px;height:1920px">
-${zone("identity", `<img src="${assets.logo}" alt="Miracle"/><div><p class="event clamp">${escape(m.eventName)}</p><p class="game clamp">${escape(m.gameName)}</p></div>`)}
-${zone("award", `<p class="eyebrow">Miracle Championship Series</p><h1 class="clamp">${escape(labels[m.certificateType])}</h1>`)}
-${zone("hero", heroImage + (hero ? `<template data-hero-fallback>${fallback}</template>` : ""))}
-${zone("secondaryBadge", teamType(m.certificateType) ? "" : `${m.teamLogoUrl ? `<img src="${escape(m.teamLogoUrl)}" alt="${escape(m.teamName)} team logo"${placementStyle("team_logo_badge", "secondaryBadge")}/>` : `<span class="label">Miracle Team</span>`}<p class="team clamp">${escape(m.teamName)}</p>`)}
-${zone("recipient", `<p class="label">Presented to · ${m.recipientKind === "team" ? "Team" : "Individual award"}</p><h2 class="recipient clamp">${escape(m.recipientName)}</h2>`)}
-${zone("issueDate", `<p class="label">Issued by Miracle</p><p class="meta clamp">${escape(m.issueDate)}</p>`)}
-${zone("certificateId", `<p class="label">Certificate ID · Version ${m.version}</p><p class="meta clamp">${escape(m.certificateId)}</p>`)}
+${editorialStyles(assets.font)}
+</style></head><body><main data-certificate-canvas="1080x1920" data-template-version="miracle-v3" data-certificate-type="${m.certificateType}" data-fingerprint="${fingerprint}" style="width:1080px;height:1920px">
+${EDITORIAL_DECORATION}
+${zone("identity", `<div class="brand"><img src="${assets.logo}" alt="Miracle"/></div><div class="lockup"><div class="monogram" aria-hidden="true">${escape(monogramInitials(m.eventName))}</div><p class="event clamp">${escape(m.eventName)}</p><p class="game clamp">${escape(m.gameName)}</p></div>`)}
+${zone("award", `<p class="eyebrow clamp">${escape(copy.eyebrow)}</p><h1 class="mega" aria-label="${escape(labels[m.certificateType])}">${escape(copy.megaLines[0])}<span>${escape(copy.megaLines[1])}</span></h1><p class="motto clamp">${escape(copy.motto)}</p>`)}
+${zone("hero", (isTeam ? diamondFrame(teamLogoBox, heroZone) : "") + heroImage + (hero ? `<template data-hero-fallback>${fallback}</template>` : ""))}
+${zone("secondaryBadge", isTeam ? "" : `${badge}<div class="team-line"><small>Team</small><p class="team clamp">${escape(m.teamName)}</p></div>`)}
+${zone("recipient", `<div><p class="label">${escape(copy.recipientLabel)}</p><h2 class="recipient clamp" style="font-size:${nameSize}px">${escape(m.recipientName)}</h2></div><div class="rank"><b>${escape(copy.rank)}</b><span>${escape(copy.rankLabel)}</span></div>`)}
+${zone("issueDate", `<p class="foot-label">Issued by Miracle</p><p class="meta issued clamp">${escape(m.issueDate)}</p>`)}
+${zone("certificateId", `<p class="foot-label">Certificate ID · Version ${m.version}</p><p class="meta clamp">${escape(m.certificateId)}</p>`)}
 ${zone("qrVerification", `<a href="${escape(verificationUrl)}"><img data-role="verification-qr" src="${qr}" alt="Verify certificate"/>Verify authenticity</a>`)}
 ${options.editorPreview === true ? Object.entries(MIRACLE_V3_SAFE_ZONES).map(([name, rectangle]) => `<aside data-editor-guide="${name}" style="${zoneStyle(rectangle)};z-index:10;border:2px dashed #49d1ec;color:#11151d;background:#49d1ec18;pointer-events:none"><span style="background:#49d1ec;font-size:18px">${name}</span></aside>`).join("") : ""}
 </main></body></html>`;

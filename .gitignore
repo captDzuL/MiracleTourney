@@ -32,17 +32,18 @@ Desktop.ini
 .idea/
 .vscode/
 
-stitch_universal_gaming_hub.zip
 
 test-results/
-public/mockup-public-v3/previews/
 
 .worktrees/
 .superpowers/
 
 .vercel
-.env*
-!.env.example
 
 # Certificates written by the end-to-end release journey
 public/certificates/e2e-*/
+
+# Playwright output
+playwright-report/
+playwright-release-report/
+blob-report/

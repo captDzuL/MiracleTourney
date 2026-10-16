@@ -37,6 +37,17 @@ Build produksi di Vercel tidak menjalankan migrasi, dan menolak build kalau ada 
 4. **Produksi**: nyalakan flag, buat satu event kecil dengan satu organizer tepercaya. Awasi log, jumlah antrean, dan refund. Email "slot terbuka" memakai Resend: `RESEND_API_KEY` dan `RESEND_FROM_EMAIL` harus terisi di produksi, kalau tidak pemain naik dari antrean tanpa kabar.
 5. Setelah satu event selesai bersih, flag dinyalakan umum.
 
+## Siapa boleh daftar ke event mana
+
+Tiap event punya satu pilihan "Cara daftar", dipilih organizer di langkah Pendaftaran saat event masih draf:
+
+| Pilihan | Pemain solo | Kapten dengan tim utuh |
+| --- | --- | --- |
+| Hanya tim (bawaan, semua event lama) | Tidak bisa daftar | Bisa |
+| Pemain solo | Bisa, lewat antrean dan acak | Tidak bisa |
+
+Setelah event terbit pilihan ini terkunci dan hanya tampil sebagai keterangan (di editor event terbit dan di halaman terkunci untuk event yang sedang berjalan atau selesai). Event solo yang sudah terbit juga tidak bisa pindah game, dan tidak bisa mengubah jumlah tim begitu ada pemain yang daftar. Server menolak pendaftaran solo ke event tim di semua status, dan ke event solo yang sudah tutup, berjalan, selesai, atau timnya sudah dikunci.
+
 ## Yang perlu diawasi di event pertama
 
 - Pemain `approved` yang tidak masuk tim: daftarnya muncul sebelum pendaftaran ditutup. Refund manual lalu tandai "sudah refund".

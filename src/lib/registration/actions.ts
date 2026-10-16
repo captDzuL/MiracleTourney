@@ -5,11 +5,8 @@ import { z } from "zod";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { requireRole } from "@/lib/auth/session";
-import {
-  createTeamRegistrationRequest,
-  getEventBySlug,
-  registerTeam,
-} from "@/lib/platform/repository";
+import { getEventBySlug } from "@/lib/events/repository";
+import { createTeamRegistrationRequest, registerTeam } from "@/lib/registration/repository";
 import { saveCaptainRegistrationDraft } from "@/lib/registration/captain-repository";
 import { authorizeWorkspaceResource, type WorkspaceActor } from "@/lib/security/authorization";
 import { toSafeActionMessage } from "@/lib/security/public-error";

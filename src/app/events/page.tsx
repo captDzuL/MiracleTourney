@@ -10,7 +10,9 @@ import { Pill, Section } from "@/components/ui";
 import { loadPublicDiscovery } from "@/lib/events/public-discovery-read";
 import { normalizePublicDiscoveryFilters, type PublicDiscoveryQuery } from "@/lib/events/public-discovery";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getAllGames, getGameForEvent, getModeForEvent, getPublicDiscoveryEvents, getPublicEvents, getTeamCountsForEvents, getTeamsForEvents } from "@/lib/platform/repository";
+import { getPublicDiscoveryEvents, getPublicEvents } from "@/lib/events/repository";
+import { getAllGames, getGameForEvent, getModeForEvent } from "@/lib/platform/settings-repository";
+import { getTeamCountsForEvents, getTeamsForEvents } from "@/lib/teams/repository";
 import { getEventBackgroundUrl } from "@/lib/platform/visuals";
 
 const getCachedPublicEvents = unstable_cache(getPublicEvents, ["public-events"], { revalidate: 30 });
@@ -51,7 +53,7 @@ export default async function EventsPage({
     );
   }
 
-  const eventsRaw = await getCachedPublicEvents().catch(() => []);
+  const eventsRaw = await getCachedPublicEvents();
   const events = eventsRaw.filter((event) => {
     const gameMatches = gameFilter === "all" || event.gameId === gameFilter;
     const statusMatches = statusFilter === "all" || event.status.toLowerCase().replaceAll(" ", "-") === statusFilter;
