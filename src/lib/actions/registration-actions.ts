@@ -39,6 +39,8 @@ function logUnexpectedRegistrationFailure(stage: string | undefined, error: unkn
   });
 }
 
+const CAPTAIN_CONTACT_REQUIRED_MESSAGE = "Isi nomor WhatsApp kapten, minimal 6 karakter.";
+
 /** Registers a team for a published event. Captain ID comes from the authenticated session, not the form. */
 export async function captainRegisterTeamAction(formData: FormData) {
   const captain = await requireCaptainSession();
@@ -54,10 +56,12 @@ export async function captainRegisterTeamAction(formData: FormData) {
     eventId: actionEntityId,
     name: z.string().trim().optional(),
     tag: z.string().trim().optional(),
+    captainContact: z.string().trim().min(6, CAPTAIN_CONTACT_REQUIRED_MESSAGE).regex(/^[^<>]*$/, CAPTAIN_CONTACT_REQUIRED_MESSAGE),
   }).safeParse({
     eventId: formData.get("eventId"),
     name: String(formData.get("name") ?? "") || undefined,
     tag: String(formData.get("tag") ?? "") || undefined,
+    captainContact: String(formData.get("captainContact") ?? ""),
   });
 
   if (!parsed.success) {

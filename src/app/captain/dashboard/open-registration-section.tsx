@@ -115,6 +115,14 @@ export function OpenRegistrationSection({
 
               )}
 
+              <label className={`${labelClass} lg:col-span-3`}>
+
+                {t("captainContact")}
+
+                <input className={inputClass} name="captainContact" defaultValue={draftTeam?.captainContact ?? ""} placeholder={t("captainContactPlaceholder")} inputMode="tel" minLength={6} required />
+
+              </label>
+
               <div className="lg:justify-self-end">
 
                 {draftTeam && draftPlayerCount === 0 ? (

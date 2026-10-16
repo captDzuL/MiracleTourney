@@ -169,6 +169,7 @@ export async function registerTeam(input: {
   name?: string;
   tag?: string;
   draftTeamId?: string;
+  captainContact?: string;
 }): Promise<Team> {
   const { name, tag, draftTeam } = await resolveCaptainRegistrationTeam(input);
 
@@ -231,7 +232,7 @@ export async function registerTeam(input: {
             captainUid: draftTeam.captainUid,
             captainIsPlayer: draftTeam.captainIsPlayer,
             captainName: draftTeam.captainName,
-            captainContact: draftTeam.captainContact,
+            captainContact: input.captainContact?.trim() || draftTeam.captainContact,
             source: "registration",
           },
         });
@@ -246,6 +247,7 @@ export async function registerTeam(input: {
           name,
           logoText: tag.slice(0, 2),
           tag,
+          ...(input.captainContact?.trim() ? { captainContact: input.captainContact.trim() } : {}),
           source: "registration",
         },
       });
@@ -267,6 +269,7 @@ export async function createTeamRegistrationRequest(input: {
   name?: string;
   tag?: string;
   draftTeamId?: string;
+  captainContact?: string;
 }): Promise<TeamRegistrationRequest> {
   await expireStaleRegistrationRequests();
 
@@ -345,7 +348,7 @@ export async function createTeamRegistrationRequest(input: {
             captainUid: draftTeam.captainUid,
             captainIsPlayer: draftTeam.captainIsPlayer,
             captainName: draftTeam.captainName,
-            captainContact: draftTeam.captainContact,
+            captainContact: input.captainContact?.trim() || draftTeam.captainContact,
             source: "registration-intake",
           },
         });
@@ -359,6 +362,20 @@ export async function createTeamRegistrationRequest(input: {
             jerseyNumber: player.jerseyNumber,
           })),
         });
+      } else if (input.captainContact?.trim()) {
+        // No draft to carry the contact, and the request row has no contact column, so keep it on a pending team.
+        const pendingTeam = await tx.team.create({
+          data: {
+            eventId: null,
+            captainId: input.captainId,
+            name,
+            logoText: tag.slice(0, 2),
+            tag,
+            captainContact: input.captainContact.trim(),
+            source: "registration-intake",
+          },
+        });
+        pendingTeamId = pendingTeam.id;
       }
 
       const row = await tx.teamRegistrationRequest.create({
