@@ -1,8 +1,8 @@
 import React from "react";
 import type { PublicV3FinishedEventViewModel, PublicV3Locale } from "@/lib/events/public-v3-types";
 import { PublicV3EmptyState, PublicV3SectionHeading, PublicV3StatusBadge } from "@/components/v3/public-discovery/PublicV3Primitives";
-import { publicV3LocalizedHref } from "@/lib/events/public-v3-types";
 import { PublicV3CompetitionContext } from "../PublicV3CompetitionContext";
+import { CertificateGallery } from "./CertificateGallery";
 
 const copy = {
   id: {
@@ -19,7 +19,6 @@ const copy = {
     certificatesReady: "Certificate lengkap telah diterbitkan.",
     certificatesPreparing: "Certificate sedang disiapkan organizer. Tautan muncul setelah publikasi lengkap diverifikasi.",
     viewCertificate: "Lihat certificate",
-    verify: "Verifikasi",
     noChampion: "Champion belum diterbitkan.",
     noPodium: "Podium belum diterbitkan.",
     noStandings: "Klasemen akhir belum diterbitkan.",
@@ -40,7 +39,6 @@ const copy = {
     certificatesReady: "The complete certificate set is published.",
     certificatesPreparing: "Certificates are being prepared. Links appear after the complete publication is verified.",
     viewCertificate: "View certificate",
-    verify: "Verify",
     noChampion: "The champion has not been published.",
     noPodium: "The podium has not been published.",
     noStandings: "Final standings have not been published.",
@@ -66,6 +64,6 @@ export function FinishedOverview({ view, locale }: { view: PublicV3FinishedEvent
     {view.standings.length ? <div className="mpv3-panel mpv3-panel-pad"><PublicV3CompetitionContext view={view} locale={locale} standingsOnly /></div> : null}
     {showBracketLink ? <section className="mpv3-panel mpv3-panel-pad"><PublicV3SectionHeading title={t.bracket} /><a className="mpv3-action mpv3-action--cyan" href={view.navigation.targets.bracket.hrefByLocale[locale]} data-bracket-link>{t.viewBracket}</a></section> : null}
     {view.awards.length ? <section className="mpv3-panel mpv3-panel-pad" data-awards="published"><PublicV3SectionHeading title={t.awards} /><div className="grid gap-3 md:grid-cols-2">{view.awards.map((award) => <article key={award.type} className="border border-[var(--mpv3-border)] p-4"><PublicV3StatusBadge status="finished" label={awardLabels[award.type as keyof typeof awardLabels]?.[locale] ?? award.type} /><h3 className="mt-3 break-words font-semibold">{award.recipientName}</h3><p className="mt-1 text-sm text-[var(--mpv3-muted)]">{award.teamName}</p>{award.reason ? <p className="mt-3 text-sm leading-6">{award.reason}</p> : null}{award.certificate ? <a className="mpv3-action mpv3-action--text mt-3" href={award.certificate.publishedUrl} target="_blank" rel="noopener noreferrer">{t.viewCertificate}</a> : null}</article>)}</div></section> : <section className="mpv3-panel mpv3-panel-pad"><PublicV3SectionHeading title={t.awards} /><p className="text-sm">{t.noAwards}</p></section>}
-    <section className="mpv3-panel mpv3-panel-pad" data-certificates={view.certificates.status}><PublicV3SectionHeading title={t.certificates} /><p className="text-sm">{view.certificates.isComplete ? t.certificatesReady : t.certificatesPreparing}</p>{view.certificates.isComplete && view.certificates.items.length ? <ul className="mt-4 grid gap-2 sm:grid-cols-2">{view.certificates.items.map((certificate) => <li key={certificate.id} className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-[var(--mpv3-border)] pt-3"><span className="break-words">{certificate.recipientName}</span><span className="flex flex-wrap gap-3"><a className="mpv3-action mpv3-action--text" href={certificate.publishedUrl} target="_blank" rel="noopener noreferrer">{t.viewCertificate}</a><a className="mpv3-action mpv3-action--text" href={publicV3LocalizedHref(`/certificates/verify/${encodeURIComponent(certificate.verificationCode)}`)[locale]}>{t.verify}</a></span></li>)}</ul> : null}</section>
+    <section className="mpv3-panel mpv3-panel-pad" data-certificates={view.certificates.status}><PublicV3SectionHeading title={t.certificates} /><p className="text-sm">{view.certificates.isComplete ? t.certificatesReady : t.certificatesPreparing}</p>{view.certificates.isComplete && view.certificates.items.length ? <CertificateGallery items={view.certificates.items} locale={locale} /> : null}</section>
   </div>;
 }

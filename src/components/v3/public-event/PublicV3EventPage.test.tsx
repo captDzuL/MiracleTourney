@@ -156,6 +156,27 @@ describe("public V3 event overview route", () => {
       expect(html).not.toContain("data-bracket-link");
     });
 
+    it("shows published certificates as inline images with type and verification link", () => {
+      const finished = finishedWith("Single Elimination", false) as Extract<PublicV3EventViewModel, { mode: "finished" }>;
+      const items = [
+        { id: "c1", type: "champion", recipientKind: "team", recipientId: "t1", recipientName: "Alpha", publishedUrl: "https://example.public.blob.vercel-storage.com/champion.png", verificationCode: "CODE-1" },
+        { id: "c2", type: "mvp", recipientKind: "player", recipientId: "p1", recipientName: "Rafael", publishedUrl: "https://example.public.blob.vercel-storage.com/mvp.png", verificationCode: "CODE-2" },
+      ];
+      const complete = { ...finished, certificates: { ...finished.certificates, status: "published" as const, publishedCount: 2, expectedCount: 2, isComplete: true, items } };
+      const html = renderToStaticMarkup(<PublicV3EventPage view={complete} locale="id" />);
+      expect(html).toContain("data-certificate-gallery");
+      expect((html.match(/<img[^>]+src="https:\/\/example\.public\.blob\.vercel-storage\.com\/(champion|mvp)\.png"/g) ?? []).length).toBe(2);
+      expect(html).toContain("Certificate Juara untuk Alpha");
+      expect(html).toContain("MVP Turnamen");
+      expect(html).toContain('href="/id/certificates/verify/CODE-1"');
+      expect(html).toContain("Lihat ukuran penuh");
+    });
+
+    it("does not render certificate images before the complete set is published", () => {
+      const html = renderToStaticMarkup(<PublicV3EventPage view={finishedWith("Single Elimination", false)} locale="id" />);
+      expect(html).not.toContain("data-certificate-gallery");
+    });
+
     it("localizes the bracket link", () => {
       const html = renderToStaticMarkup(<PublicV3EventPage view={finishedWith("Single Elimination", false)} locale="id" />);
       expect(html).toContain('href="/id/events/mlbb-rank-war-32/bracket" data-bracket-link="true">Lihat bracket</a>');
