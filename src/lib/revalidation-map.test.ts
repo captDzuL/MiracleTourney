@@ -94,6 +94,9 @@ const EXPECTED: Record<string, string[]> = {
   updatePlatformProfileActionImpl: ['path(/admin)', 'tag(events)'],
   // lib/actions/player-stats-v3-actions.ts
   mutateImpl: ['path(/${locale}/captain/stats)', 'path(/${locale}/organizer/events/${encodeURIComponent(guard.eventId)}/match-control)', 'path(path)', 'path(path)', 'tag(events)', 'tag(stats)'],
+  // lib/actions/registration-completion-actions.ts
+  captainUpdateContactAction: ['tag(teams)', 'path(/captain)'],
+  runTeamCompletionAction: ['tag(teams)', 'tag(events)'],
   // lib/actions/registration-v3-actions.ts
   approveEventPaymentAction: ['tag(events)', 'tag(teams)'],
   commitEventRegistrationImportAction: ['path(registrationPath(parsed.locale, parsed.input.eventId))', 'tag(teams)'],

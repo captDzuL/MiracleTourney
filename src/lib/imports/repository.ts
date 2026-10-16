@@ -8,8 +8,9 @@ import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_ROW_LIMIT, ROSTER_LOCKED_MESSAGE } from "@/lib/platform/shared/constants";
 import { mapTeam } from "@/lib/platform/shared/mappers";
-import { assertEventAcceptsTeams, assertEventExists, assertEventRosterMutable, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
+import { assertEventAcceptsTeams, assertEventExists, assertEventRosterMutable, isNewRegistrationWindowOpen, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
 import type { AppUser, Team, TeamRegistrationRequestStatus } from "@/lib/platform/types";
+import { getCompletionGaps, getCompletionState, getRequiredPlayers } from "@/lib/registration/completion";
 import { mapRequestStatus, normalizeRegistrationSource } from "@/lib/registration/records";
 import type { RegistrationRecord } from "@/lib/registration/records";
 import { generateSyntheticRegistrationEmail } from "@/lib/registration/repository";
@@ -171,11 +172,20 @@ export type RegistrationImportEventContext = {
 
 export async function getRegistrationRecordsForEvent(user: AppUser, eventId: string): Promise<RegistrationRecord[]> {
   await assertUserCanManageEvent(user, eventId);
-  await assertEventExists(eventId);
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { status: true, gameModeId: true, registrationOpensAt: true, registrationClosesAt: true },
+  });
+  if (!event) throw new Error("Event tidak ditemukan.");
+  // Teams that left the event because of missing data stay in the list, so the organizer can bring them back.
+  const requiredPlayers = getRequiredPlayers(event.gameModeId);
+  const now = new Date();
+  // Flags and suspending belong to the registration phase only (status Published, inside the opening and closing times).
+  const trackCompletion = requiredPlayers !== null && isNewRegistrationWindowOpen(event, now);
 
   const [teams, requests] = await Promise.all([
     prisma.team.findMany({
-      where: { eventId },
+      where: { OR: [{ eventId }, { suspendedFromEventId: eventId }] },
       include: {
         players: { where: { removedAt: null }, select: { id: true }, take: readerProbeLimit(ORGANIZER_READER_ROW_LIMIT) },
         captain: { select: { id: true, name: true, email: true } },
@@ -212,7 +222,13 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
     if (item.teamId && !importKindByTeam.has(item.teamId)) importKindByTeam.set(item.teamId, item.batch.sourceKind);
   }
 
-  const teamRecords: RegistrationRecord[] = teams.map((team) => ({
+  const teamRecords: RegistrationRecord[] = teams.map((team) => {
+    const gaps = getCompletionGaps({ captainContact: team.captainContact, playerCount: team.players.length, requiredPlayers: requiredPlayers ?? 0 });
+    const state = getCompletionState(gaps, team.completionDeadlineAt, now);
+    const completion = trackCompletion && state !== "complete"
+      ? { ...gaps, state, ...(team.completionDeadlineAt ? { deadlineAt: team.completionDeadlineAt.toISOString() } : {}) }
+      : undefined;
+    return {
     id: team.id,
     eventId,
     teamId: team.id,
@@ -220,15 +236,18 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
     teamTag: team.tag,
     captainName: team.captainName ?? team.captain?.name ?? "",
     ...(team.captainContact ? { captainContact: team.captainContact } : {}),
+    ...(team.captain?.email ? { captainEmail: team.captain.email } : {}),
     ...(team.captainIgn ? { captainIgn: team.captainIgn } : {}),
     ...(team.captainUid ? { captainUid: team.captainUid } : {}),
     captainIsPlayer: team.captainIsPlayer,
     rosterCount: team.players.length,
     source: normalizeRegistrationSource(team.source, importKindByTeam.get(team.id)),
-    status: "accepted",
+    ...(completion ? { completion } : {}),
+    status: team.suspendedAt ? "suspended" : "accepted",
     createdAt: team.createdAt,
     origin: "Team",
-  }));
+    };
+  });
 
   const requestRecords: RegistrationRecord[] = requests.map((request) => ({
     id: request.id,
@@ -237,7 +256,7 @@ export async function getRegistrationRecordsForEvent(user: AppUser, eventId: str
     teamName: request.teamName,
     teamTag: request.teamTag,
     captainName: request.captain?.name ?? "",
-    ...(request.captain?.email ? { captainContact: request.captain.email } : {}),
+    ...(request.captain?.email ? { captainEmail: request.captain.email } : {}),
     captainIsPlayer: true,
     rosterCount: 0,
     source: "captain_registration",
@@ -471,7 +490,7 @@ export async function commitRegistrationImportBatch(
       if (row.item.status === "changed" && row.item.teamId) {
         const updated = await tx.team.update({
           where: { id: row.item.teamId },
-          data: teamData,
+          data: { ...teamData, suspendedAt: null, suspendedFromEventId: null },
         });
         teamId = updated.id;
         await tx.player.deleteMany({ where: { teamId } });

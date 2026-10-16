@@ -109,6 +109,8 @@ vi.mock("@/lib/actions/captain-roster-change-actions", () => ({
   captainCancelRosterChangeAction: vi.fn(),
 }));
 vi.mock("@/lib/registration/captain-repository", () => ({ getCaptainPaymentSettings }));
+vi.mock("@/lib/registration/completion-repository", () => ({ getCaptainCompletionNotices: vi.fn().mockResolvedValue([]) }));
+vi.mock("@/lib/actions/registration-completion-actions", () => ({ captainUpdateContactAction: vi.fn() }));
 vi.mock("@/components/GameArt", () => ({
   GameArt: () => <div />,
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,

@@ -1,3 +1,5 @@
+import type { CompletionState } from "@/lib/registration/completion";
+
 export type RegistrationSource =
   | "captain_registration"
   | "import_xlsx"
@@ -6,6 +8,7 @@ export type RegistrationSource =
   | "solo_registration";
 
 export type RegistrationStatus =
+  | "suspended"
   | "pending_payment"
   | "pending_review"
   | "accepted"
@@ -23,6 +26,14 @@ export type RegistrationRequestStatus =
   | "rejected"
   | "expired";
 
+/** What an accepted team still lacks. Only set while the event's roster can still change. */
+export type RegistrationCompletion = {
+  missingContact: boolean;
+  missingPlayers: number;
+  state: CompletionState;
+  deadlineAt?: string;
+};
+
 export type RegistrationRecord = {
   id: string;
   eventId: string;
@@ -31,6 +42,8 @@ export type RegistrationRecord = {
   teamTag: string;
   captainName: string;
   captainContact?: string;
+  captainEmail?: string;
+  completion?: RegistrationCompletion;
   captainIgn?: string;
   captainUid?: string;
   captainIsPlayer: boolean;

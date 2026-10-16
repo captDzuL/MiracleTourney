@@ -7,8 +7,13 @@ export interface EmailPayload {
   html: string;
 }
 
+/** False while emails are only logged as suppressed, so callers can tell "sent" from "skipped". */
+export function isEmailDeliveryConfigured(): boolean {
+  return isFeatureEnabled("email_password_reset") && Boolean(process.env.RESEND_API_KEY);
+}
+
 export async function sendEmail({ to, subject, html }: EmailPayload): Promise<void> {
-  if (isFeatureEnabled("email_password_reset") && process.env.RESEND_API_KEY) {
+  if (isEmailDeliveryConfigured()) {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const from = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
     const { error } = await resend.emails.send({ from, to, subject, html });

@@ -22,7 +22,7 @@ const registrationSchema = z.object({
   tag: z.string().trim().min(2).max(5),
   captainIgn: z.string().trim().min(2),
   captainUid: z.string().trim().min(2),
-  captainContact: z.string().trim().min(6),
+  captainContact: z.string().trim().min(6).max(32),
 });
 
 const paidEventError =

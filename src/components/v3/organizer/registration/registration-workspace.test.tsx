@@ -6,8 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import en from "../../../../../messages/en.json";
 import id from "../../../../../messages/id.json";
 import { RegistrationWorkspace } from "./RegistrationWorkspace";
-const actions = vi.hoisted(() => ({ refresh: vi.fn(), approve: vi.fn(), reject: vi.fn(), preview: vi.fn(), commit: vi.fn(), save: vi.fn(), publish: vi.fn() }));
+const actions = vi.hoisted(() => ({ suspendTeam: vi.fn(), extendTeam: vi.fn(), restoreTeam: vi.fn(), refresh: vi.fn(), approve: vi.fn(), reject: vi.fn(), preview: vi.fn(), commit: vi.fn(), save: vi.fn(), publish: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: actions.refresh }) }));
+vi.mock("@/lib/actions/registration-completion-actions", () => ({ suspendTeamAction: actions.suspendTeam, extendTeamDeadlineAction: actions.extendTeam, restoreTeamAction: actions.restoreTeam }));
 vi.mock("@/lib/actions/registration-v3-actions", () => ({ approveEventPaymentAction: actions.approve, rejectEventPaymentAction: actions.reject, previewEventRegistrationImportAction: actions.preview, commitEventRegistrationImportAction: actions.commit, saveEventQrisDraftAction: actions.save, publishEventQrisAction: actions.publish }));
 Object.assign(globalThis, { React, IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
@@ -35,6 +36,97 @@ describe("registration workspace behavior", () => {
     expect(host.querySelector('form[method="get"] input[name="q"]')?.getAttribute("value")).toBe("Alpha");
     expect(host.querySelector('a[data-page="next"]')?.getAttribute("href")).toContain("page=2");
     expect(host.textContent).toContain("1 / 16");
+  });
+  it("shows the captain contact in its own column, the account email when it is missing, and a dash when neither exists", async () => {
+    const { captainContact, ...withoutContact } = record; void captainContact;
+    await render({ queue: { ...base.queue, items: [record, { ...withoutContact, id: "team-b", teamId: "team-b" }] } });
+    expect(host.querySelector('[data-contact="team-a"]')?.textContent).toBe("08123");
+    expect(host.querySelector('[data-contact="team-b"]')?.textContent).toBe("-");
+    await render({ queue: { ...base.queue, items: [{ ...withoutContact, id: "team-c", teamId: "team-c", captainEmail: "kapten@example.test" }] } });
+    expect(host.querySelector('[data-contact="team-c"]')?.textContent).toBe("kapten@example.test");
+    expect(host.querySelector("thead")?.textContent).toContain("WhatsApp");
+  });
+  describe("team completion", () => {
+    const deadlineAt = "2026-10-18T05:00:00.000Z";
+    const gappy = (overrides: Record<string, unknown> = {}) => ({ ...record, id: "team-gap", teamId: "team-gap", captainContact: undefined, ...overrides });
+    const pending = { missingContact: true, missingPlayers: 2, state: "pending" as const, deadlineAt };
+    const overdue = { ...pending, state: "overdue" as const };
+    const renderItems = (items: unknown[]) => render({ queue: { ...base.queue, items: items as never } });
+
+    it("shows what is missing and the deadline in Jakarta time", async () => {
+      await renderItems([gappy({ completion: pending })]);
+      const cell = host.querySelector('[data-completion="team-gap"]')!;
+      expect(cell.textContent).toContain("WhatsApp not filled in");
+      expect(cell.textContent).toContain("2 players missing");
+      expect(cell.textContent).toContain("18 Oct, 12:00");
+      expect(cell.querySelector("[data-suspend]")).toBeNull();
+      expect(cell.querySelector("[data-extend]")).not.toBeNull();
+    });
+
+    it("says the deadline has not started yet when only the daily check is missing", async () => {
+      await renderItems([gappy({ completion: { missingContact: true, missingPlayers: 0, state: "incomplete" } })]);
+      const cell = host.querySelector('[data-completion="team-gap"]')!;
+      expect(cell.textContent).toContain("Deadline starts at the next daily check");
+      expect(cell.querySelector("[data-suspend]")).toBeNull();
+      expect(cell.querySelector("[data-extend]")).toBeNull();
+    });
+
+    it("leaves complete teams without controls", async () => {
+      await renderItems([record]);
+      expect(host.querySelector("[data-completion]")).toBeNull();
+    });
+
+    it("asks for confirmation before suspending an overdue team", async () => {
+      actions.suspendTeam.mockResolvedValue({ status: "done" });
+      await renderItems([gappy({ completion: overdue })]);
+      expect(host.querySelector('[data-completion="team-gap"]')!.textContent).toContain("Past deadline");
+
+      await click('[data-suspend="team-gap"]');
+      expect(actions.suspendTeam).not.toHaveBeenCalled();
+      expect(host.textContent).toContain("Suspend this team? Its slot opens again.");
+
+      await click('[data-confirm-suspend="team-gap"]');
+      const data = actions.suspendTeam.mock.calls[0]![0] as FormData;
+      expect([data.get("eventId"), data.get("teamId")]).toEqual(["cup", "team-gap"]);
+      expect(actions.refresh).toHaveBeenCalled();
+    });
+
+    it("can cancel the suspension", async () => {
+      await renderItems([gappy({ completion: overdue })]);
+      await click('[data-suspend="team-gap"]');
+      const cancel = [...host.querySelectorAll("button")].find((button) => button.textContent === "Cancel")!;
+      await act(async () => cancel.click());
+      expect(host.querySelector('[data-suspend="team-gap"]')).not.toBeNull();
+      expect(actions.suspendTeam).not.toHaveBeenCalled();
+    });
+
+    it("extends the deadline", async () => {
+      actions.extendTeam.mockResolvedValue({ status: "done" });
+      await renderItems([gappy({ completion: pending })]);
+      await click('[data-extend="team-gap"]');
+      expect((actions.extendTeam.mock.calls[0]![0] as FormData).get("teamId")).toBe("team-gap");
+      expect(actions.refresh).toHaveBeenCalled();
+    });
+
+    it("shows the refusal message and does not refresh", async () => {
+      actions.extendTeam.mockResolvedValue({ status: "failed", message: "Data tim ini sudah lengkap." });
+      await renderItems([gappy({ completion: pending })]);
+      await click('[data-extend="team-gap"]');
+      expect(host.querySelector('[role="alert"]')?.textContent).toBe("Data tim ini sudah lengkap.");
+      expect(actions.refresh).not.toHaveBeenCalled();
+    });
+
+    it("offers to restore a suspended team", async () => {
+      actions.restoreTeam.mockResolvedValue({ status: "done" });
+      await renderItems([gappy({ status: "suspended", completion: overdue })]);
+      expect(host.textContent).toContain("Suspended");
+      expect(host.textContent).toContain("Slot is open");
+      expect(host.querySelector("td:last-child a")).toBeNull();
+      const restore = [...host.querySelectorAll("button")].find((button) => button.textContent === "Restore")!;
+      await act(async () => restore.click());
+      expect((actions.restoreTeam.mock.calls[0]![0] as FormData).get("teamId")).toBe("team-gap");
+      expect(actions.refresh).toHaveBeenCalled();
+    });
   });
   it("opens roster details, contains keyboard focus, closes with Escape and restores focus", async () => {
     await render(); const trigger = host.querySelector<HTMLButtonElement>('[data-roster="team-a"]')!; trigger.focus(); await click('[data-roster="team-a"]');

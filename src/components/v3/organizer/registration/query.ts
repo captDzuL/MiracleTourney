@@ -1,5 +1,5 @@
 import type { RegistrationSource, RegistrationStatus } from "@/lib/registration/records";
-export const statuses = ["pending_payment", "pending_review", "accepted", "rejected", "draft", "needs_correction", "queued", "withdrawn", "expired"] as const;
+export const statuses = ["pending_payment", "pending_review", "accepted", "rejected", "draft", "needs_correction", "queued", "withdrawn", "expired", "suspended"] as const;
 export const sources = ["captain_registration", "import_xlsx", "import_csv", "unknown_import", "solo_registration"] as const;
 export const views = ["queue", "import", "payments", "qris", "draw"] as const;
 export type RegistrationQuery = { view: (typeof views)[number]; status: string; source: string; q: string; page: number };

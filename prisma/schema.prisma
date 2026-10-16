@@ -283,11 +283,19 @@ model Team {
   winningResultRevisions      MatchResultRevision[]    @relation("MatchResultRevisionWinner")
   rosterChangeRequests        RosterChangeRequest[]
   createdAt                   DateTime                 @default(now())
+  /// Set when the team was found without a captain contact or a full roster. The organizer may suspend it after this time.
+  completionDeadlineAt        DateTime?
+  /// When the captain was emailed about the missing data (stays empty if the email failed, so the next run retries).
+  completionNotifiedAt        DateTime?
+  /// A suspended team leaves its event (eventId is null) so the slot is free again; these two remember where it came from.
+  suspendedAt                 DateTime?
+  suspendedFromEventId        String?
 
   @@unique([eventId, tag])
   @@unique([eventId, name])
   @@unique([eventId, id])
   @@index([eventId, captainUid])
+  @@index([suspendedFromEventId])
 }
 
 model TeamRegistrationRequest {

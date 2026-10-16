@@ -235,6 +235,23 @@ describe("existing captain event registration", () => {
     });
   });
 
+  it("stores the captain WhatsApp on the team when registering without a draft", async () => {
+    prisma.event.findUnique.mockResolvedValue(publishedEventRow({ id: "event-open", slug: "open-cup" }));
+    prisma.team.count.mockResolvedValue(3);
+    prisma.team.findFirst.mockResolvedValue(null);
+    prisma.match.count.mockResolvedValue(0);
+    prisma.team.create.mockResolvedValue({
+      id: "team-new", eventId: "event-open", captainId: "captain-1", name: "Session United", logoText: "SE", logoUrl: null,
+      tag: "SES", captainName: null, captainContact: "081234567890", source: "registration",
+    });
+
+    await registerTeam({ eventId: "event-open", captainId: "captain-1", name: "Session United", tag: "ses", captainContact: "  081234567890 " });
+
+    expect(prisma.team.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ source: "registration", captainContact: "081234567890" }),
+    });
+  });
+
   it("rejects a new registration before its structured opening time", async () => {
     prisma.event.findUnique.mockResolvedValue({
       ...publishedEventRow({ id: "event-upcoming" }),
@@ -751,6 +768,32 @@ describe("existing captain event registration", () => {
       expect.objectContaining({
         where: expect.objectContaining({ status: expect.objectContaining({ in: expect.not.arrayContaining(["pending_review"]) }) }),
       }),
+    );
+  });
+
+  it("keeps the captain WhatsApp on a pending team when a paid registration has no draft", async () => {
+    prisma.event.findUnique.mockResolvedValue({
+      ...publishedEventRow({ id: "event-paid", slug: "paid-cup" }),
+      registrationFeeRequired: true,
+      registrationFeeAmount: 25000,
+    });
+    prisma.team.count.mockResolvedValue(3);
+    prisma.team.findFirst.mockResolvedValue(null);
+    prisma.match.count.mockResolvedValue(0);
+    prisma.teamRegistrationRequest.findFirst.mockResolvedValue(null);
+    prisma.team.create.mockResolvedValue({ id: "pending-team" });
+    prisma.teamRegistrationRequest.create.mockResolvedValue({
+      id: "request-3", eventId: "event-paid", captainId: "captain-3", teamId: "pending-team", teamName: "Session United 3", teamTag: "SE3",
+      status: "pending_payment", expiresAt: new Date(), event: publishedEventRow({ id: "event-paid" }), captain: { id: "captain-3", name: "Captain 3" },
+    });
+
+    await createTeamRegistrationRequest({ eventId: "event-paid", captainId: "captain-3", name: "Session United 3", tag: "se3", captainContact: "081234567890" });
+
+    expect(prisma.team.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ eventId: null, captainId: "captain-3", captainContact: "081234567890", source: "registration-intake" }),
+    });
+    expect(prisma.teamRegistrationRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ teamId: "pending-team" }) }),
     );
   });
 
