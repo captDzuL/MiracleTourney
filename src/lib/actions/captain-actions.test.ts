@@ -322,7 +322,7 @@ describe("captain actions", () => {
   ])("rejects a registration when the captain WhatsApp %s", async (_label, captainContact) => {
     await expect(
       captainRegisterTeamAction(fd({ eventId: "event-b", name: "No Phone United", tag: "NPU", ...(captainContact === undefined ? {} : { captainContact }) })),
-    ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-b&error=Isi%20nomor%20WhatsApp%20kapten%2C%20minimal%206%20karakter.");
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-b&error=Isi%20nomor%20WhatsApp%20kapten%2C%206%20sampai%2032%20karakter.");
     expect(registerTeam).not.toHaveBeenCalled();
     expect(createTeamRegistrationRequest).not.toHaveBeenCalled();
   });
