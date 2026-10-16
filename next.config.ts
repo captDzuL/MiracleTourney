@@ -45,6 +45,12 @@ const nextConfig: NextConfig = {
       "./node_modules/@fontsource/montserrat/files/montserrat-latin-800-normal.woff2",
       "./public/logo/miracle-horizontal.svg",
     ],
+    // The certificate studio reads the character library images at runtime (importCharacterArtAsCertificateAssetAction).
+    // Only the page that runs that action ships them; the thumbnails are served statically and stay out.
+    "/**/organizer/events/*/certificates": [
+      "./public/character-art/flashpeak/*.webp",
+      "./public/character-art/flashpeak/*.jpg",
+    ],
   },
   experimental: {
     serverActions: {

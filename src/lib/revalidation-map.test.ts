@@ -62,6 +62,7 @@ const EXPECTED: Record<string, string[]> = {
   publishCertificateSetActionImpl: ['path(/organizer/events/${parsed.data.eventId}/certificates)'],
   regenerateCertificateActionImpl: ['path(/organizer/events/${parsed.data.eventId}/certificates)'],
   uploadCertificateAssetActionImpl: ['path(/organizer/events/ + parsed.data.eventId + /certificates)'],
+  importCharacterArtActionImpl: ['path(/organizer/events/ + eventId + /certificates)'],
   importTeamLogoActionImpl: ['path(/organizer/events/ + eventId + /certificates)'],
   // lib/actions/competition-v3-actions.ts
   executeCompetitionOperationActionImpl: ['path(/, layout)', 'tag(events)'],

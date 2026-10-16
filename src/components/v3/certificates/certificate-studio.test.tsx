@@ -11,10 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import enMessages from "../../../../messages/en.json";
 import idMessages from "../../../../messages/id.json";
 import { MIRACLE_V3_CERTIFICATE_TYPES } from "@/lib/certificate/templates/miracle-v3";
-const certificateActions = vi.hoisted(() => ({ upload: vi.fn(), importLogo: vi.fn() }));
+const certificateActions = vi.hoisted(() => ({ upload: vi.fn(), importLogo: vi.fn(), importCharacter: vi.fn() }));
 vi.mock("@/lib/actions/certificate-v3-actions", () => ({
   regenerateCertificateAction: vi.fn(), publishCertificateSetAction: vi.fn(), uploadCertificateAssetAction: certificateActions.upload,
   importTeamLogoAsCertificateAssetAction: certificateActions.importLogo,
+  importCharacterArtAsCertificateAssetAction: certificateActions.importCharacter,
 }));
 
 import { CertificateStudio, type CertificateStudioState } from "./CertificateStudio";
@@ -67,7 +68,7 @@ describe("CertificateStudio", () => {
   let container: HTMLDivElement;
   let root: Root;
   beforeEach(() => {
-    navigation.refresh.mockClear(); certificateActions.upload.mockReset(); certificateActions.importLogo.mockReset();
+    navigation.refresh.mockClear(); certificateActions.upload.mockReset(); certificateActions.importLogo.mockReset(); certificateActions.importCharacter.mockReset();
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
   });
   afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); });
@@ -490,6 +491,189 @@ describe("CertificateStudio", () => {
     it("disables the button while the studio is locked", async () => {
       await renderStudio("en", { ...integration, records: withTeams.records.map((record) => ({ ...record, selectedCertificateId: null, versions: null })) });
       expect(importButtons().every((button) => button.disabled)).toBe(true);
+    });
+  });
+
+  describe("using a character from the library", () => {
+    const keys = Object.fromEntries(MIRACLE_V3_CERTIFICATE_TYPES.map((type) => [type, crypto.randomUUID()])) as Record<(typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], string>;
+    const withKelly: CertificateStudioState = { ...available, approvedAssets: [...available.approvedAssets, { id: "asset-kelly", label: "Kelly", purpose: "certificate_character_art", characterId: "kelly" }] };
+    const renderStudio = async (locale: "en" | "id", state: CertificateStudioState = available, extra: Partial<React.ComponentProps<typeof CertificateStudio>> = {}) =>
+      act(async () => root.render(provider(locale, <CertificateStudio generationKeys={keys} publicationKey={crypto.randomUUID()} state={state} {...extra} />)));
+    const openTab = (type: string) => act(async () => container.querySelector<HTMLButtonElement>(`[data-certificate-type='${type}']`)!.click());
+    const characterButtons = () => Array.from(container.querySelectorAll<HTMLButtonElement>("[data-character-id]"));
+    const characterButton = (id: string) => container.querySelector<HTMLButtonElement>(`[data-character-id='${id}']`)!;
+    const characterSelect = () => container.querySelectorAll<HTMLSelectElement>("select[name=assetId]")[0];
+    const choose = (select: HTMLSelectElement, value: string) => act(async () => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(select, value); select.dispatchEvent(new Event("change", { bubbles: true })); });
+
+    it("shows no gallery on a team certificate, which has no character art", async () => {
+      await renderStudio("en");
+      expect(characterButtons()).toHaveLength(0);
+    });
+
+    it("shows the nine characters once on an award certificate, not next to the badge logo", async () => {
+      await renderStudio("en");
+      await openTab("mvp");
+      expect(container.querySelectorAll("select[name=assetId]")).toHaveLength(2);
+      expect(container.querySelectorAll("[data-character-gallery]")).toHaveLength(1);
+      expect(characterButtons().map((button) => button.dataset.characterId)).toEqual(["andrew", "ford", "hayato", "homer", "kelly", "orion", "rafael", "shirou", "maxim"]);
+      expect(characterSelect().closest("section")?.contains(characterButtons()[0])).toBe(true);
+    });
+
+    it.each(["mvp", "top_scorer", "top_defender", "top_assist"])("offers the gallery on the %s certificate", async (type) => {
+      await renderStudio("en");
+      await openTab(type);
+      expect(characterButtons()).toHaveLength(9);
+    });
+
+    it("shows a thumbnail with a size, the name and the localized role for each character", async () => {
+      await renderStudio("en");
+      await openTab("mvp");
+      const shirou = characterButton("shirou");
+      expect(shirou.textContent).toContain("Shirou");
+      expect(shirou.textContent).toContain("Striker");
+      const image = shirou.querySelector("img")!;
+      expect(image.getAttribute("src")).toBe("/character-art/flashpeak/thumbs/shirou.webp");
+      expect(image.getAttribute("alt")).toBe("Shirou");
+      expect(Number(image.getAttribute("width"))).toBeGreaterThan(0);
+      expect(Number(image.getAttribute("height"))).toBeGreaterThan(0);
+      expect(characterButton("maxim").textContent).toContain("Goalkeeper");
+      await renderStudio("id");
+      expect(characterButton("andrew").textContent).toContain("Bek");
+      expect(characterButton("hayato").textContent).toContain("Gelandang");
+      expect(characterButton("shirou").textContent).toContain("Penyerang");
+      expect(characterButton("maxim").textContent).toContain("Kiper");
+      const gallery = container.querySelector("[data-character-gallery]")!;
+      expect(container.querySelector(`#${gallery.getAttribute("aria-labelledby")}`)?.textContent).toBe("Pilih karakter");
+    });
+
+    it("keeps every character button at the 44px touch target and not pressed at first", async () => {
+      await renderStudio("en");
+      await openTab("mvp");
+      for (const button of characterButtons()) {
+        expect(button.classList.contains("min-h-11")).toBe(true);
+        expect(button.type).toBe("button");
+        expect(button.getAttribute("aria-pressed")).toBe("false");
+      }
+    });
+
+    it("imports the clicked character, selects it as the character art, refreshes, and announces success", async () => {
+      certificateActions.importCharacter.mockResolvedValue({ status: "imported", assetId: "asset-shirou", characterId: "shirou" });
+      const regenerate = vi.fn().mockResolvedValue({ status: "generated", certificateId: "cert-mvp-3", certificateType: "mvp", version: 3, imageUrl: "/c.png" });
+      await renderStudio("en", available, { regenerateAction: regenerate });
+      await openTab("mvp");
+      await act(async () => characterButton("shirou").click());
+      expect(certificateActions.importCharacter).toHaveBeenCalledWith({ eventId: "event-1", characterId: "shirou" });
+      expect(characterSelect().value).toBe("asset-shirou");
+      expect(Array.from(characterSelect().options).map((option) => option.textContent)).toContain("Shirou");
+      expect(characterButton("shirou").getAttribute("aria-pressed")).toBe("true");
+      expect(characterButton("kelly").getAttribute("aria-pressed")).toBe("false");
+      expect(navigation.refresh).toHaveBeenCalledTimes(1);
+      expect(container.querySelector("[role=status]")?.textContent).toBe("Character is ready to use.");
+      await act(async () => container.querySelector<HTMLButtonElement>("[data-regenerate-certificate]")!.click());
+      expect(regenerate.mock.calls[0][0].assets).toEqual([expect.objectContaining({ assetId: "asset-shirou", placement: expect.objectContaining({ assetKind: "character_art" }) })]);
+    });
+
+    it("moves the highlight when another character is picked", async () => {
+      certificateActions.importCharacter
+        .mockResolvedValueOnce({ status: "imported", assetId: "asset-shirou", characterId: "shirou" })
+        .mockResolvedValueOnce({ status: "imported", assetId: "asset-orion", characterId: "orion" });
+      await renderStudio("en");
+      await openTab("mvp");
+      await act(async () => characterButton("shirou").click());
+      await act(async () => characterButton("orion").click());
+      expect(characterSelect().value).toBe("asset-orion");
+      expect(characterButtons().filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.dataset.characterId)).toEqual(["orion"]);
+    });
+
+    it("highlights the character of an already imported asset chosen in the dropdown", async () => {
+      await renderStudio("en", withKelly);
+      await openTab("mvp");
+      expect(Array.from(characterSelect().options).map((option) => option.textContent)).toContain("Kelly");
+      await choose(characterSelect(), "asset-kelly");
+      expect(characterButton("kelly").getAttribute("aria-pressed")).toBe("true");
+      await choose(characterSelect(), "");
+      expect(characterButtons().every((button) => button.getAttribute("aria-pressed") === "false")).toBe(true);
+    });
+
+    it.each([
+      ["character_file_missing", "en", /image was not found/],
+      ["invalid_dimensions", "en", /between 32 and 4096/],
+      ["rate_limited", "id", /Terlalu banyak percobaan/],
+      ["character_not_found", "id", /Karakter ini tidak ada/],
+      ["something_new", "en", /could not be used/],
+    ] as const)("shows the %s failure next to the gallery and in the live region, without selecting anything", async (code, locale, pattern) => {
+      certificateActions.importCharacter.mockResolvedValue({ status: "blocked", code });
+      await renderStudio(locale);
+      await openTab("mvp");
+      await act(async () => characterButton("shirou").click());
+      const error = container.querySelector("[data-character-error]");
+      expect(error?.textContent).toMatch(pattern);
+      expect(characterButton("shirou").getAttribute("aria-describedby")).toBe(error?.id);
+      expect(container.querySelector("[role=status]")?.textContent).toMatch(pattern);
+      expect(characterSelect().value).toBe("");
+      expect(characterButton("shirou").getAttribute("aria-pressed")).toBe("false");
+      expect(navigation.refresh).not.toHaveBeenCalled();
+    });
+
+    it("reports an unexpected exception as a generic failure and keeps the gallery usable", async () => {
+      certificateActions.importCharacter.mockRejectedValue(new Error("server exploded"));
+      await renderStudio("en");
+      await openTab("mvp");
+      await act(async () => characterButton("shirou").click());
+      expect(container.querySelector("[data-character-error]")?.textContent).toMatch(/could not be used/);
+      expect(characterButtons().every((button) => !button.disabled)).toBe(true);
+    });
+
+    it("clears an earlier error after a later import succeeds", async () => {
+      certificateActions.importCharacter
+        .mockResolvedValueOnce({ status: "blocked", code: "character_file_missing" })
+        .mockResolvedValueOnce({ status: "imported", assetId: "asset-kelly", characterId: "kelly" });
+      await renderStudio("en");
+      await openTab("mvp");
+      await act(async () => characterButton("shirou").click());
+      expect(container.querySelector("[data-character-error]")).not.toBeNull();
+      await act(async () => characterButton("kelly").click());
+      expect(container.querySelector("[data-character-error]")).toBeNull();
+      expect(characterButton("shirou").hasAttribute("aria-describedby")).toBe(false);
+    });
+
+    it("disables every character while an import is running", async () => {
+      let finish: (value: { status: "imported"; assetId: string; characterId: string }) => void = () => undefined;
+      certificateActions.importCharacter.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+      await renderStudio("en");
+      await openTab("mvp");
+      await act(async () => characterButton("shirou").click());
+      expect(characterButtons().every((button) => button.disabled)).toBe(true);
+      await act(async () => finish({ status: "imported", assetId: "asset-shirou", characterId: "shirou" }));
+      expect(characterButtons().every((button) => !button.disabled)).toBe(true);
+    });
+
+    it("keeps the chosen character when the organizer moves to a certificate of another team", async () => {
+      const teams: Record<string, { id: string; name: string }> = { mvp: { id: "team-awards", name: "Awards Team" }, top_defender: { id: "team-other", name: "Other Team" } };
+      const withTeams: CertificateStudioState = { ...available, records: available.records.map((record) => {
+        const team = teams[record.certificateType];
+        return team && record.recipient ? { ...record, recipient: { ...record.recipient, team } } : record;
+      }) };
+      certificateActions.importCharacter.mockResolvedValue({ status: "imported", assetId: "asset-shirou", characterId: "shirou" });
+      await renderStudio("en", withTeams);
+      await openTab("mvp");
+      await act(async () => characterButton("shirou").click());
+      await openTab("top_defender");
+      expect(characterSelect().value).toBe("asset-shirou");
+      expect(characterButton("shirou").getAttribute("aria-pressed")).toBe("true");
+      // The refresh after the import brings the new asset into the server state, which is what keeps it listed after a visit to a team tab.
+      await renderStudio("en", { ...withTeams, approvedAssets: [...withTeams.approvedAssets, { id: "asset-shirou", label: "Shirou", purpose: "certificate_character_art", characterId: "shirou" }] });
+      await openTab("champion");
+      await openTab("top_scorer");
+      expect(characterSelect().value).toBe("asset-shirou");
+      expect(characterButton("shirou").getAttribute("aria-pressed")).toBe("true");
+    });
+
+    it("disables the gallery while the studio is locked", async () => {
+      await renderStudio("en", { ...integration, records: available.records.map((record) => ({ ...record, selectedCertificateId: null, versions: null })) });
+      await openTab("mvp");
+      expect(characterButtons()).toHaveLength(9);
+      expect(characterButtons().every((button) => button.disabled)).toBe(true);
     });
   });
 });

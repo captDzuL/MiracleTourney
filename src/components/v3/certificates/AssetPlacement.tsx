@@ -3,12 +3,16 @@ import type { CertificateAssetKind, CertificateAssetPlacement } from "@/lib/cert
 import { useRouter } from "next/navigation";
 import { uploadCertificateAssetAction } from "@/lib/actions/certificate-v3-actions";
 import { MIRACLE_V3_SAFE_ZONES } from "@/lib/certificate/templates/miracle-v3-contract";
+import type { LibraryCharacter } from "@/lib/certificate/character-library";
+import { CharacterGallery, type CharacterGalleryLabels } from "./CharacterGallery";
 import { TeamLogoImportButton, type TeamLogoChoice } from "./TeamLogoImportButton";
 
 export type ApprovedCertificateAsset = {
   readonly id: string;
   readonly label: string;
   readonly purpose: "certificate_team_logo" | "certificate_character_art";
+  /** Set when the asset was imported from the built-in character library. */
+  readonly characterId?: string;
 };
 
 type Props = {
@@ -31,6 +35,7 @@ type Props = {
     safeZone: string; none: string; upload: string; uploadLabel: string; uploaded: string;
     uploadErrors: Record<string, string>;
     teamLogoImported: string; teamLogoErrors: Record<string, string>;
+    characters: CharacterGalleryLabels;
     roles: Record<CertificateAssetKind, string>;
   };
 };
@@ -51,6 +56,11 @@ export function AssetPlacement({
     setImportedAssets((current) => [...current.filter((asset) => asset.id !== assetId), { id: assetId, label: team.teamName, purpose: "certificate_team_logo" }]);
     onAssetIdChange(assetId); onTeamLogoImported?.(assetId, team.teamId);
   };
+  const importedFromLibrary = (character: LibraryCharacter, assetId: string) => {
+    setImportedAssets((current) => [...current.filter((asset) => asset.id !== assetId), { id: assetId, label: character.name, purpose: "certificate_character_art", characterId: character.id }]);
+    onAssetIdChange(assetId);
+  };
+  const selectedCharacterId = choices.find((asset) => asset.id === assetId)?.characterId ?? null;
   const numberField = (key: "x" | "y" | "width" | "height", label: string) => <label className="grid gap-1 text-xs font-bold text-[var(--color-text-muted)]">{label}<input aria-describedby={error ? errorId : undefined} aria-invalid={error ? "true" : undefined} className="min-h-11 min-w-0 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] px-3 text-sm miracle-focus-ring" disabled={disabled} inputMode="decimal" min={0} name={key} onChange={(event) => onPlacementChange({ ...placement, [key]: Number(event.target.value) })} step={1} type="number" value={placement[key]} /></label>;
   const submitUpload = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -73,6 +83,7 @@ export function AssetPlacement({
     </select>
     <p className="mt-2 text-xs leading-5 text-[var(--color-text-muted)]" id={`${errorId}-help`}>{labels.assetHelp}</p>
     {teamLogo && purpose === "certificate_team_logo" ? <TeamLogoImportButton disabled={disabled} errorId={`${errorId}-team-logo-error`} errorMessages={labels.teamLogoErrors} eventId={eventId} getActiveTeamId={getActiveTeamId} importedMessage={labels.teamLogoImported} key={teamLogo.teamId} onImported={(assetId) => importedFromTeam(teamLogo, assetId)} onMessage={onUploadMessage} team={teamLogo} /> : null}
+    {purpose === "certificate_character_art" ? <CharacterGallery disabled={disabled} errorId={`${errorId}-character`} eventId={eventId} labels={labels.characters} onImported={(assetId, character) => importedFromLibrary(character, assetId)} onMessage={onUploadMessage} selectedCharacterId={selectedCharacterId} /> : null}
     <label className="mt-4 grid gap-1 text-xs font-bold text-[var(--color-text-muted)]">{labels.kind}<select className="min-h-11 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-subtle)] px-3 text-sm miracle-focus-ring" disabled={disabled || allowedKinds.length === 1} onChange={(event) => onPlacementChange({ ...placement, assetKind: event.target.value as CertificateAssetKind })} value={placement.assetKind}>{allowedKinds.map((kind) => <option key={kind} value={kind}>{labels.roles[kind]}</option>)}</select></label>
     <div className="mt-4 grid min-w-0 grid-cols-2 gap-3">{numberField("x", labels.x)}{numberField("y", labels.y)}{numberField("width", labels.width)}{numberField("height", labels.height)}</div>
     {error ? <p className="mt-3 text-xs font-bold text-red-300" id={errorId}>{error}</p> : null}

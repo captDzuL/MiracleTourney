@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
+import { findCharacterBySourceUrl } from "./character-library";
 import { generateMiracleV3Certificate } from "./generate";
 import {
   createMiracleV3GenerationAdapter,
@@ -139,7 +140,8 @@ async function approvedAssetOptions(eventId: string, rows: readonly VisualAssetO
   const teamNames = new Map(teams.flatMap((team) => team.logoUrl ? [[team.logoUrl, team.name] as const] : []));
   return trusted.map(({ row, asset }) => {
     const teamName = row.source === "team_logo_import" && row.sourceUrl ? teamNames.get(row.sourceUrl) : undefined;
-    return { id: row.id, label: teamName ?? row.storageKey?.split("/").at(-1) ?? row.id, purpose: asset.purpose };
+    const character = row.source === "character_library" ? findCharacterBySourceUrl(row.sourceUrl) : null;
+    return { id: row.id, label: teamName ?? character?.name ?? row.storageKey?.split("/").at(-1) ?? row.id, purpose: asset.purpose, ...(character ? { characterId: character.id } : {}) };
   });
 }
 
