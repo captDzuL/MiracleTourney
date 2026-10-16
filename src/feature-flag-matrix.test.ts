@@ -15,7 +15,7 @@ const rows = new Map(
 
 describe("V3 feature-flag matrix document", () => {
   it("covers every flag in code and no flag that does not exist", () => {
-    expect(defaults.size).toBe(17);
+    expect(defaults.size).toBe(11);
     expect([...rows.keys()].sort()).toEqual([...defaults.keys()].sort());
   });
 

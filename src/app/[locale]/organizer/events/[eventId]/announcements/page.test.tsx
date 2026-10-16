@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
 vi.mock("@/lib/competition/workspace-read", () => ({ readCompetitionWorkspace: mocks.readCompetitionWorkspace }));
-vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft: mocks.getManageableEventDraft }));
+vi.mock("@/lib/events/repository", () => ({
+  getManageableEventDraft: mocks.getManageableEventDraft,
+}));
 vi.mock("@/lib/actions/competition-v3-actions", () => ({ mutateCompetitionWorkspaceAction: mocks.mutateCompetitionWorkspaceAction }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("next-intl/server", () => ({ setRequestLocale: mocks.setRequestLocale, getTranslations: vi.fn() }));

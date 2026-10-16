@@ -16,7 +16,9 @@ const { prisma, assertUserCanManageEvent } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/platform/db", () => ({ prisma }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent }));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent,
+}));
 
 import {
   getPublishedPaymentSettingsForEvent,

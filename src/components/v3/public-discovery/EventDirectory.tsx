@@ -1,4 +1,3 @@
-import { ArrowRight } from "lucide-react";
 import { chooseFeaturedDiscoveryEvent, filterDiscoveryEvents, getPublicDiscoveryStage, groupDiscoveryEvents, type PublicDiscoveryEvent } from "@/lib/events/public-discovery";
 import { publicV3LocalizedHref, publicV3RouteTarget, resolvePublicV3Route, type PublicV3Locale } from "@/lib/events/public-v3-types";
 import type { Game } from "@/lib/platform/types";

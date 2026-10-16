@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth/session";
 import { getRequestId, withRouteLog } from "@/lib/observability/logger";
-import { getPendingStatSubmissionCount } from "@/lib/platform/repository";
+import { getPendingStatSubmissionCount } from "@/lib/player-stats/write-repository";
 import { requireSameOrigin } from "@/lib/security/request-guard";
 import { toPublicError } from "@/lib/security/public-error";
 

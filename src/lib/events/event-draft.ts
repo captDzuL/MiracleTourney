@@ -6,7 +6,6 @@ import { prisma } from "@/lib/platform/db";
 import { UserFacingError } from "@/lib/security/public-error";
 import { getLegacyTournamentFormat, tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 
-export const DEFAULT_EVENT_TIMEZONE = "Asia/Jakarta";
 const trimmedString = z.string().transform((value) => value.trim()).optional();
 const nonemptyTrimmedString = z.string().trim().min(1).optional();
 const nullableTrimmedString = z.string().transform((value) => value.trim() || null).nullable().optional();

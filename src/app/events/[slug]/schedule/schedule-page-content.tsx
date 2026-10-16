@@ -8,7 +8,10 @@ import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getPublicDrawingEvent, getPublicFinishedEvent } from "@/lib/events/adaptive-public-phases";
 import { getPublicOngoingEvent } from "@/lib/events/public-ongoing";
 import { publicMatchLabel } from "@/lib/events/public-match-label";
-import { getEventRoundConfigs, getMatchesForEvent, getPublicEventBySlug, getTeamsForEvent } from "@/lib/platform/repository";
+import { getMatchesForEvent } from "@/lib/bracket/repository";
+import { getEventRoundConfigs } from "@/lib/bracket/rounds-repository";
+import { getPublicEventBySlug } from "@/lib/events/repository";
+import { getTeamsForEvent } from "@/lib/teams/repository";
 
 export async function renderSchedulePage(slug: string, locale: "id" | "en" = "id") {
   const event = await getPublicEventBySlug(slug);

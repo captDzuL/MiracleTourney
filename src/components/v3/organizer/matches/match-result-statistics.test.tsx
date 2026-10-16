@@ -7,7 +7,7 @@ import en from "../../../../../messages/en.json";
 import id from "../../../../../messages/id.json";
 import {MatchResultStatisticsWorkspace} from "./MatchResultStatisticsWorkspace";
 import type {CompetitionWorkspaceState} from "@/lib/competition/workspace-types";
-import type {EventMatchStatistics} from "@/lib/platform/repository";
+import type { EventMatchStatistics } from "@/lib/player-stats/write-repository";
 Object.assign(globalThis,{React,IS_REACT_ACT_ENVIRONMENT:true});
 const boundary=vi.hoisted(()=>({save:vi.fn(),approve:vi.fn(),reject:vi.fn(),operation:vi.fn(),preview:vi.fn(),refresh:vi.fn()}));
 vi.mock("@/lib/actions/player-stats-v3-actions",()=>({saveEventPlayerStatsAction:boundary.save,approveEventPlayerStatsAction:boundary.approve,rejectEventPlayerStatsAction:boundary.reject}));

@@ -4,7 +4,9 @@ import {describe,it,expect,vi,beforeEach} from "vitest";
 const boundary=vi.hoisted(()=>({flag:vi.fn(),read:vi.fn(),stats:vi.fn(),user:vi.fn(),legacy:vi.fn()}));
 vi.mock("@/lib/feature-flags",()=>({isFeatureEnabled:boundary.flag}));
 vi.mock("@/lib/competition/workspace-read",()=>({readCompetitionWorkspace:boundary.read}));
-vi.mock("@/lib/platform/repository",()=>({readEventMatchStatistics:boundary.stats}));
+vi.mock("@/lib/player-stats/write-repository", () => ({
+  readEventMatchStatistics:boundary.stats,
+}));
 vi.mock("@/lib/auth/session",()=>({requireAnyRole:boundary.user}));
 vi.mock("@/lib/competition/workspace-page",()=>({workspacePage:boundary.legacy}));
 vi.mock("@/i18n/redirect",()=>({redirectToActiveLocale:(path:string)=>{throw new Error("redirect:"+path);}}));

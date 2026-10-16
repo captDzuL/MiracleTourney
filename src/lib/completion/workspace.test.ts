@@ -256,4 +256,62 @@ describe("completion workspace read model", () => {
       blockers: null,
     });
   });
+
+  describe("without a third-place match", () => {
+    const twoPlaceSource: CompletionSource = {
+      ...source,
+      facts: { ...source.facts, thirdPlace: "none", matches: source.facts.matches.filter(({ stage }) => stage === "final") },
+    };
+    const twoPlaceEvent = { ...event, formatConfig: { ...event.formatConfig, thirdPlace: "none" as const } };
+    const twoPlaceCompletion = {
+      id: "completion-1",
+      status: "completed",
+      sourceSnapshot: { eventId: "event-1", version: 3 },
+      podiumPlacements: [
+        { rank: 1, teamId: "a", teamName: "Alpha" },
+        { rank: 2, teamId: "b", teamName: "Beta" },
+      ],
+      awards: [],
+    };
+    const certificateRows = (types: readonly string[]) => types.map((type, index) => ({
+      id: `certificate-${index}`, type, version: 1, completionId: "completion-1", completionVersion: 3, status: "published", publishedAt: new Date("2026-09-13T01:00:00Z"),
+    }));
+
+    it("is ready with two podium places and six certificates", async () => {
+      const state = await loadCompletionWorkspace(twoPlaceEvent, "id", dependencies(available({ source: twoPlaceSource })));
+      expect(state).toMatchObject({
+        status: "ready",
+        blockers: [],
+        podium: { placements: [{ rank: 1, teamId: "a", teamName: "Alpha" }, { rank: 2, teamId: "b", teamName: "Beta" }] },
+        certificates: { generated: 0, total: 6 },
+      });
+    });
+
+    it("reads a locked two-place podium and counts a full six-certificate set as published", async () => {
+      const certificates = certificateRows(["champion", "runner_up", ...awards]);
+      const state = await loadCompletionWorkspace(twoPlaceEvent, "en", dependencies(available({
+        source: twoPlaceSource,
+        completion: twoPlaceCompletion,
+        certificates,
+        publication: { version: 1, completionVersion: 3, certificateIds: certificates.map(({ id }) => id), publishedAt: new Date("2026-09-13T01:00:00Z") },
+      })));
+      expect(state).toMatchObject({
+        status: "completed",
+        podium: { locked: true, placements: [{ rank: 1, teamName: "Alpha" }, { rank: 2, teamName: "Beta" }] },
+        certificates: { generated: 6, total: 6, status: "ready" },
+        publication: { status: "published" },
+      });
+    });
+
+    it("keeps publication short of published while one required certificate is missing", async () => {
+      const certificates = certificateRows(["champion", ...awards]);
+      const state = await loadCompletionWorkspace(twoPlaceEvent, "en", dependencies(available({
+        source: twoPlaceSource,
+        completion: twoPlaceCompletion,
+        certificates,
+        publication: { version: 1, completionVersion: 3, certificateIds: certificates.map(({ id }) => id), publishedAt: new Date("2026-09-13T01:00:00Z") },
+      })));
+      expect(state).toMatchObject({ certificates: { generated: 5, total: 6 }, publication: { status: "needs_review" } });
+    });
+  });
 });

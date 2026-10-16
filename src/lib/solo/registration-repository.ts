@@ -2,11 +2,9 @@ import { Prisma, type SoloRegistration as SoloRegistrationRow } from "@prisma/cl
 
 import { getGameModeConfig, getSoloDrawRules } from "@/lib/platform/config";
 import { prisma } from "@/lib/platform/db";
-import {
-  PAYMENT_REQUEST_TTL_MS,
-  assertNewRegistrationWindowOpen,
-  assertUserCanManageEvent,
-} from "@/lib/platform/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
+import { PAYMENT_REQUEST_TTL_MS } from "@/lib/platform/shared/constants";
+import { assertNewRegistrationWindowOpen } from "@/lib/platform/shared/tx";
 import type { AppUser } from "@/lib/platform/types";
 import { UserFacingError } from "@/lib/security/public-error";
 

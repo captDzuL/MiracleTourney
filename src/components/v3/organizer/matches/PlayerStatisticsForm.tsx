@@ -2,7 +2,7 @@
 import React,{useState} from "react";
 import {useTranslations} from "next-intl";
 import {Button} from "@/components/v3/Button";
-import type {EventMatchStatistics} from "@/lib/platform/repository";
+import type { EventMatchStatistics } from "@/lib/player-stats/write-repository";
 import {getPlayerStatNumericValue,parsePlayerStatForm,validatePlayerStatPayload} from "@/lib/player-stats/form";
 import {control,surface} from "../match-control/presentation";
 

@@ -8,7 +8,12 @@ vi.mock("next/navigation", () => ({ notFound: () => { throw Error("NOT_FOUND"); 
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale: (url: string) => { throw Error(url); } }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => true }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: m.auth }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent: m.access, getRegistrationImportEventContext: m.context }));
+vi.mock("@/lib/imports/repository", () => ({
+  getRegistrationImportEventContext: m.context,
+}));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent: m.access,
+}));
 vi.mock("@/lib/registration/organizer-workspace-read", () => ({ getEventRegistrationQueue: m.queue }));
 vi.mock("@/components/v3/organizer/registration/RegistrationWorkspace", () => ({ RegistrationWorkspace: (props: object) => <pre>{JSON.stringify(props)}</pre> }));
 import Page from "./page";

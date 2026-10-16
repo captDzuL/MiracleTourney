@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { LoginSubmitButton } from "@/components/v3/LoginSubmitButton";
 import { Link } from "@/i18n/navigation";
 import { getLocalizedRedirectPath, redirectToActiveLocale } from "@/i18n/redirect";
-import { loginAction } from "@/lib/actions";
+import { loginAction } from "@/lib/actions/identity-actions";
 import { resolvePostLoginPath } from "@/lib/auth/post-login-path";
 import { getSessionUser } from "@/lib/auth/session";
 import { getSafeReturnTo } from "@/lib/navigation/safe-return-to";

@@ -5,7 +5,7 @@ import { setRequestLocale } from "next-intl/server";
 import React from "react";
 
 import { loadPublishedCertificateVerification } from "@/lib/certificate/verification-repository";
-import type { MiracleV3CertificateType } from "@/lib/certificate/templates/miracle-v3-contract";
+import { certificateTypeLabels } from "@/lib/certificate/type-labels";
 
 type Locale = "id" | "en";
 type Props = { params: Promise<{ locale: string; verificationCode: string }> };
@@ -57,27 +57,6 @@ const copy = {
   },
 } as const;
 
-const typeLabels: Record<Locale, Record<MiracleV3CertificateType, string>> = {
-  en: {
-    champion: "Champion",
-    runner_up: "Runner-up",
-    third_place: "Third Place",
-    mvp: "MVP of Tournament",
-    top_scorer: "Top Scorer",
-    top_defender: "Top Defender",
-    top_assist: "Top Assist",
-  },
-  id: {
-    champion: "Juara",
-    runner_up: "Runner-up",
-    third_place: "Peringkat Ketiga",
-    mvp: "MVP Turnamen",
-    top_scorer: "Top Scorer",
-    top_defender: "Top Defender",
-    top_assist: "Top Assist",
-  },
-};
-
 function formatPublishedAt(value: string, locale: Locale): string {
   return `${new Intl.DateTimeFormat(locale === "id" ? "id-ID" : "en-US", {
     dateStyle: "long",
@@ -116,7 +95,7 @@ export default async function CertificateVerificationPage({ params }: Props) {
 
   const facts = [
     [t.event, result.eventName],
-    [t.type, typeLabels[locale][result.certificateType]],
+    [t.type, certificateTypeLabels[locale][result.certificateType]],
     [t.version, t.versionValue(result.certificateVersion)],
     [t.recipient, result.recipientName],
   ] as const;

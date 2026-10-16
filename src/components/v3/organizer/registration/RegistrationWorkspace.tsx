@@ -2,7 +2,8 @@
 import React from "react";
 import { useTranslations } from "next-intl";
 import { ClipboardList, CreditCard, FileSpreadsheet, QrCode, Shuffle } from "lucide-react";
-import type { EventPaymentManagerSettings, PaymentReviewEntry, RegistrationImportHistoryEntry } from "@/lib/platform/repository";
+import type { RegistrationImportHistoryEntry } from "@/lib/imports/repository";
+import type { EventPaymentManagerSettings, PaymentReviewEntry } from "@/lib/registration/review-repository";
 import type { RegistrationRecordPage } from "@/lib/registration/records";
 import type { SoloDrawPanelData, SoloEventSummary } from "@/lib/solo/organizer-read";
 import { RegistrationQueuePanel, type RosterTeam } from "./RegistrationQueuePanel";

@@ -112,12 +112,7 @@ vi.mock("./db", () => ({
   }),
 }));
 
-import {
-  adminWriteMatchPlayerStats,
-  approveStatSubmission,
-  rejectStatSubmission,
-  upsertStatSubmission,
-} from "./repository";
+import { adminWriteMatchPlayerStats, approveStatSubmission, rejectStatSubmission, upsertStatSubmission } from "@/lib/player-stats/write-repository";
 
 const mutations = {
   submit: () => upsertStatSubmission({

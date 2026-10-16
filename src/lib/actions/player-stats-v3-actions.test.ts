@@ -3,7 +3,17 @@ const boundary = vi.hoisted(() => ({ user: vi.fn(), owner: vi.fn(), context: vi.
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: boundary.user }));
 vi.mock("next/cache", () => ({ revalidatePath: boundary.path, revalidateTag: boundary.tag }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => true }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent: boundary.owner, getPlayerStatFormContext: boundary.context, adminWriteMatchPlayerStats: boundary.save, approveStatSubmission: boundary.approve, rejectStatSubmission: boundary.reject }));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent: boundary.owner,
+}));
+vi.mock("@/lib/player-stats/repository", () => ({
+  getPlayerStatFormContext: boundary.context,
+}));
+vi.mock("@/lib/player-stats/write-repository", () => ({
+  adminWriteMatchPlayerStats: boundary.save,
+  approveStatSubmission: boundary.approve,
+  rejectStatSubmission: boundary.reject,
+}));
 import * as actions from "./player-stats-v3-actions";
 function form() {
   const data = new FormData();

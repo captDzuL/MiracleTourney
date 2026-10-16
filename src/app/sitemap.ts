@@ -1,8 +1,12 @@
 import type { MetadataRoute } from "next";
 
-import { getAllPublicEvents } from "@/lib/platform/repository";
+import { getAllPublicEvents } from "@/lib/events/repository";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://miracle-league.fun";
+
+// Built on every request. As a static file it was generated once at build time, so a build that could not reach the
+// database kept a sitemap without events until the next deploy, and the build had to reach the database at all.
+export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const events = await getAllPublicEvents();

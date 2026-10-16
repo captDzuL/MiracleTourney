@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRef, useState } from "react";
 
 import { SubmitButton } from "@/components/submit-button";
-import { captainUploadPaymentProofAction } from "@/lib/actions";
+import { captainUploadPaymentProofAction } from "@/lib/actions/registration-actions";
 import { captainRegisterEventTeamAction } from "@/lib/registration/actions";
 
 type RegistrationEvent = {

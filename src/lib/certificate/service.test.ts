@@ -1,225 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
-const { matchFindFirst } = vi.hoisted(() => ({ matchFindFirst: vi.fn() }));
-
-vi.mock("@/lib/platform/db", () => ({ prisma: { match: { findFirst: matchFindFirst } } }));
-
 import {
   CERTIFICATE_ASSET_LIMITS,
   createMiracleV3GenerationAdapter,
-  generateCertificateForEvent,
-  generateCertificateIfFinal,
   publishCertificateSet,
   regenerateCertificate,
   validateCertificateAssetPlacement,
-  type CertificateGenerationDependencies,
   type CertificateStudioDependencies,
   type CertificateStudioTransaction,
 } from "@/lib/certificate/service";
 import { MIRACLE_V3_CERTIFICATE_TYPES, type MiracleV3CertificateData } from "@/lib/certificate/templates/miracle-v3";
 import { generateMiracleV3Certificate } from "@/lib/certificate/generate";
-
-function createDependencies(
-  overrides: Partial<CertificateGenerationDependencies> = {},
-): CertificateGenerationDependencies {
-  return {
-    findV3Completion: vi.fn().mockResolvedValue(false),
-    findCompletedFinal: vi.fn().mockResolvedValue({
-      id: "match-final",
-      winnerTeamId: "team-winner",
-    }),
-    findWinnerTeamForEvent: vi.fn().mockResolvedValue({
-      id: "team-winner",
-      name: "The Brothers Invictus",
-      tag: "TBI",
-    }),
-    findCertificateForEvent: vi.fn().mockResolvedValue(null),
-    generateCertificate: vi.fn().mockResolvedValue("/uploads/certificates/mfl-s2.png"),
-    ...overrides,
-  };
-}
-
-describe("generateCertificateForEvent", () => {
-  it("preserves dependency-only legacy generation for non-V3 events", async () => {
-    const dependencies = createDependencies();
-
-    await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
-    ).resolves.toEqual({
-      status: "generated",
-      imageUrl: "/uploads/certificates/mfl-s2.png",
-      matchId: "match-final",
-      winnerTeamId: "team-winner",
-    });
-  });
-
-  it("rejects dependency-only V3 handoff when the route locale is missing", async () => {
-    const dependencies = createDependencies({
-      findV3Completion: vi.fn().mockResolvedValue(true),
-    });
-
-    await expect(
-      generateCertificateForEvent("event-mfl-s2", dependencies),
-    ).rejects.toThrow("Route locale is required to build the Certificate Studio URL");
-  });
-
-  it("returns not-ready when there is no completed Final", async () => {
-    const dependencies = createDependencies({
-      findCompletedFinal: vi.fn().mockResolvedValue(null),
-    });
-
-    await expect(
-      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
-    ).resolves.toEqual({
-      status: "not-ready",
-      reason: "final-not-completed",
-    });
-    expect(dependencies.generateCertificate).not.toHaveBeenCalled();
-  });
-
-  it("returns not-ready when the completed Final has no winner", async () => {
-    const dependencies = createDependencies({
-      findCompletedFinal: vi.fn().mockResolvedValue({
-        id: "match-final",
-        winnerTeamId: null,
-      }),
-    });
-
-    await expect(
-      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
-    ).resolves.toEqual({
-      status: "not-ready",
-      reason: "winner-missing",
-      matchId: "match-final",
-    });
-    expect(dependencies.generateCertificate).not.toHaveBeenCalled();
-  });
-
-  it("rejects a winner that is not a participant of the event", async () => {
-    const findWinnerTeamForEvent = vi.fn().mockResolvedValue(null);
-    const dependencies = createDependencies({ findWinnerTeamForEvent });
-
-    await expect(
-      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
-    ).resolves.toEqual({
-      status: "not-ready",
-      reason: "winner-not-in-event",
-      matchId: "match-final",
-      winnerTeamId: "team-winner",
-    });
-    expect(findWinnerTeamForEvent).toHaveBeenCalledWith(
-      "event-mfl-s2",
-      "team-winner",
-    );
-    expect(dependencies.generateCertificate).not.toHaveBeenCalled();
-  });
-
-  it("does not overwrite a certificate that already exists", async () => {
-    const dependencies = createDependencies({
-      findCertificateForEvent: vi.fn().mockResolvedValue({
-        imageUrl: "/uploads/certificates/existing.png",
-      }),
-    });
-
-    await expect(
-      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
-    ).resolves.toEqual({
-      status: "already-exists",
-      imageUrl: "/uploads/certificates/existing.png",
-      matchId: "match-final",
-      winnerTeamId: "team-winner",
-    });
-    expect(dependencies.generateCertificate).not.toHaveBeenCalled();
-  });
-
-  it("generates a certificate for the server-derived Final winner", async () => {
-    const generateCertificate = vi.fn().mockResolvedValue("/uploads/certificates/generated.png");
-    const dependencies = createDependencies({ generateCertificate });
-
-    await expect(
-      generateCertificateForEvent("event-mfl-s2", "en", dependencies),
-    ).resolves.toEqual({
-      status: "generated",
-      imageUrl: "/uploads/certificates/generated.png",
-      matchId: "match-final",
-      winnerTeamId: "team-winner",
-    });
-    expect(generateCertificate).toHaveBeenCalledWith("event-mfl-s2", "team-winner");
-  });
-
-  it("routes a completed Completion V3 event to Certificate Studio without invoking the legacy generator", async () => {
-    const dependencies = Object.assign(createDependencies(), {
-      findV3Completion: vi.fn().mockResolvedValue(true),
-    });
-
-    await expect(generateCertificateForEvent("event-mfl-s2", "en", dependencies)).resolves.toEqual({
-      status: "studio-required",
-      studioHref: "/en/organizer/events/event-mfl-s2/certificates",
-    });
-    expect(dependencies.generateCertificate).not.toHaveBeenCalled();
-  });
-
-  it("keeps the legacy adapter link locale-aware when it hands off to Certificate Studio", async () => {
-    const dependencies = Object.assign(createDependencies(), {
-      findV3Completion: vi.fn().mockResolvedValue(true),
-    });
-
-    await expect(generateCertificateForEvent("event-mfl-s2", dependencies, "id")).resolves.toEqual({
-      status: "studio-required",
-      studioHref: "/id/organizer/events/event-mfl-s2/certificates",
-    });
-  });
-
-  it("uses the explicitly supplied route locale for the preferred API", async () => {
-    const dependencies = Object.assign(createDependencies(), {
-      findV3Completion: vi.fn().mockResolvedValue(true),
-    });
-
-    await expect(generateCertificateForEvent("event-mfl-s2", "id", dependencies)).resolves.toEqual({
-      status: "studio-required",
-      studioHref: "/id/organizer/events/event-mfl-s2/certificates",
-    });
-  });
-
-  it("passes the explicit Indonesian locale from the final trigger to Certificate Studio", async () => {
-    matchFindFirst.mockResolvedValue({ id: "match-final" });
-    const dependencies = Object.assign(createDependencies(), {
-      findV3Completion: vi.fn().mockResolvedValue(true),
-    });
-
-    await expect(
-      generateCertificateIfFinal("match-final", "event-mfl-s2", "id", dependencies),
-    ).resolves.toEqual({
-      status: "studio-required",
-      studioHref: "/id/organizer/events/event-mfl-s2/certificates",
-    });
-  });
-
-  it("preserves dependency-injected two-arg legacy final triggers for non-V3 events", async () => {
-    matchFindFirst.mockResolvedValue({ id: "match-final" });
-    const dependencies = createDependencies();
-
-    await expect(
-      generateCertificateIfFinal("match-final", "event-mfl-s2", dependencies),
-    ).resolves.toEqual({
-      status: "generated",
-      imageUrl: "/uploads/certificates/mfl-s2.png",
-      matchId: "match-final",
-      winnerTeamId: "team-winner",
-    });
-  });
-
-  it("rejects a V3 final trigger when the route locale is omitted", async () => {
-    matchFindFirst.mockResolvedValue({ id: "match-final" });
-    const dependencies = createDependencies({
-      findV3Completion: vi.fn().mockResolvedValue(true),
-    });
-
-    await expect(
-      generateCertificateIfFinal("match-final", "event-mfl-s2", undefined, dependencies),
-    ).rejects.toThrow("Route locale is required to build the Certificate Studio URL");
-  });
-});
 
 const data = (type: (typeof MIRACLE_V3_CERTIFICATE_TYPES)[number], version = 1): MiracleV3CertificateData => ({
   eventId: "event-1", eventName: "Miracle Open", gameId: "game-1", gameName: "FC Mobile",
@@ -554,6 +345,52 @@ const generationInput = (certificateType: "champion" | "mvp", idempotencyKey: st
     vi.mocked(tx.findMutation).mockResolvedValue({ status: "in_progress", fingerprint: JSON.stringify({ action: "regenerate", certificateType: "champion", expectedVersion: 4, assets: [] }), actorId: "organizer-1", stale: false, updatedAt: "2026-09-12T00:00:00.000Z", certificateId: "cert-champion-2", certificateType: "champion", version: 2 });
     await expect(regenerateCertificate({ eventId: "event-1", certificateType: "champion", expectedVersion: 4, idempotencyKey: "11111111-1111-4111-8111-111111111111" }, deps)).resolves.toEqual({ status: "generation_in_progress", certificateId: "cert-champion-2", certificateType: "champion", version: 2 });
     expect(deps.generate).not.toHaveBeenCalled();
+  });
+
+  describe("without a third-place certificate", () => {
+    const twoPlaceTypes = MIRACLE_V3_CERTIFICATE_TYPES.filter((type) => type !== "third_place");
+    const twoPlaceDependencies = async () => {
+      const { tx, deps } = studioDependencies();
+      vi.mocked(tx.loadCompletion).mockResolvedValue({ id: "completion-1", status: "completed", version: 4, certificateRevision: 2, recipients: Object.fromEntries(twoPlaceTypes.map((type) => [type, `recipient-${type}`])) });
+      const all = await tx.loadCertificates([]);
+      vi.mocked(tx.loadCertificates).mockImplementation(async (ids) => all.filter((row) => ids.includes(row.id)));
+      return { tx, deps };
+    };
+    const selectionOf = (types: readonly (typeof MIRACLE_V3_CERTIFICATE_TYPES)[number][]) => types.map((certificateType) => ({ certificateType, certificateId: `cert-${certificateType}-1` }));
+    const publish = (deps: CertificateStudioDependencies, selection: ReturnType<typeof selectionOf>) => publishCertificateSet({
+      eventId: "event-1", expectedVersion: 4, expectedCertificateRevision: 2, idempotencyKey: "77777777-7777-4777-8777-777777777777", selection,
+    }, deps);
+
+    it("publishes a six-certificate set for a champion and runner-up podium", async () => {
+      const { tx, deps } = await twoPlaceDependencies();
+      await expect(publish(deps, selectionOf(twoPlaceTypes))).resolves.toMatchObject({ status: "published", publicationVersion: 3 });
+      expect(tx.commitPublication).toHaveBeenCalledWith(expect.objectContaining({ selection: selectionOf(twoPlaceTypes) }));
+    });
+
+    it("rejects a set that still contains a third-place certificate", async () => {
+      const { tx, deps } = await twoPlaceDependencies();
+      await expect(publish(deps, selectionOf(MIRACLE_V3_CERTIFICATE_TYPES))).resolves.toEqual({ status: "blocked", code: "set_not_ready" });
+      expect(tx.commitPublication).not.toHaveBeenCalled();
+    });
+
+    it("rejects a six-certificate set when the podium has three places", async () => {
+      const { tx, deps } = studioDependencies();
+      await expect(publish(deps, selectionOf(twoPlaceTypes))).resolves.toEqual({ status: "blocked", code: "set_not_ready" });
+      expect(tx.commitPublication).not.toHaveBeenCalled();
+    });
+
+    it("still rejects fewer than six selected certificates before opening a transaction", async () => {
+      const { deps } = await twoPlaceDependencies();
+      await expect(publish(deps, selectionOf(twoPlaceTypes.slice(1)))).resolves.toEqual({ status: "blocked", code: "invalid_input" });
+      expect(deps.transaction).not.toHaveBeenCalled();
+    });
+
+    it("does not generate a third-place certificate that has no recipient", async () => {
+      const { tx, deps } = await twoPlaceDependencies();
+      await expect(regenerateCertificate({ eventId: "event-1", certificateType: "third_place", expectedVersion: 4, idempotencyKey: "88888888-8888-4888-8888-888888888888", assets: [teamLogoRequest] }, deps))
+        .resolves.toEqual({ status: "blocked", code: "invalid_input" });
+      expect(tx.appendVersion).not.toHaveBeenCalled();
+    });
   });
 
   it("rejects malformed IDs, duplicate types, and keys before opening a transaction", async () => {

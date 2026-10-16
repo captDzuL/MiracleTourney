@@ -5,7 +5,7 @@ import { getEventEditorTranslator } from "./event-editor-translations";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
-import { organizerUploadEventLogoAction, organizerUploadEventVisualAction } from "@/lib/actions";
+import { organizerUploadEventLogoAction, organizerUploadEventVisualAction } from "@/lib/actions/event-visual-actions";
 import { saveEventDraftAction } from "@/lib/actions/event-v3-actions";
 import { eventDateToLocalInput, eventLocalInputToIso } from "@/lib/events/event-datetime";
 import { tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";

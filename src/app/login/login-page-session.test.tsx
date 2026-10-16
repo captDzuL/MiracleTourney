@@ -8,7 +8,9 @@ vi.mock("next-intl/server", () => ({ getTranslations: vi.fn(async () => (key: st
 vi.mock("@/i18n/navigation", () => ({
   Link: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => <a href={href} {...props}>{children}</a>,
 }));
-vi.mock("@/lib/actions", () => ({ loginAction: vi.fn() }));
+vi.mock("@/lib/actions/identity-actions", () => ({
+  loginAction: vi.fn(),
+}));
 vi.mock("@/lib/auth/session", () => ({ getSessionUser: mocks.getSessionUser }));
 vi.mock("@/i18n/redirect", () => ({
   getLocalizedRedirectPath: (path: string, locale: string) => `/${locale}${path}`,

@@ -1,5 +1,6 @@
 import { prisma } from "./db";
-import { assertUserCanManageEvent, readRosterChangeState } from "./repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
+import { readRosterChangeState } from "@/lib/registration/repository";
 import {
   isGroupPlayoffsFormat,
   MAX_ROSTER_CHANGE_LIMIT,

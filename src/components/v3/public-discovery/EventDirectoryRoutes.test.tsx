@@ -13,7 +13,13 @@ const dependencies = await vi.hoisted(async () => {
 });
 vi.mock("next-intl/server", () => ({ getTranslations: async () => (key: string) => key, getLocale: async () => "en", setRequestLocale: () => undefined }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => true }));
-vi.mock("@/lib/platform/repository", () => ({ getPublicDiscoveryEvents: dependencies.read, getAllGames: () => [{ id: "game-flashpeak", name: "Flashpeak", slug: "flashpeak" }, { id: "game-other", name: "Other", slug: "other" }], getPublicEvents: vi.fn() }));
+vi.mock("@/lib/events/repository", () => ({
+  getPublicDiscoveryEvents: dependencies.read,
+  getPublicEvents: vi.fn(),
+}));
+vi.mock("@/lib/platform/settings-repository", () => ({
+  getAllGames: () => [{ id: "game-flashpeak", name: "Flashpeak", slug: "flashpeak" }, { id: "game-other", name: "Other", slug: "other" }],
+}));
 import { workAsyncStorage, type WorkStore } from "next/dist/server/app-render/work-async-storage.external";
 import LocalizedEventsPage from "@/app/[locale]/events/page";
 import EventsPage from "@/app/events/page";

@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.requireAnyRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent: mocks.assertUserCanManageEvent }));
+vi.mock("@/lib/platform/shared/authz", () => ({ assertUserCanManageEvent: mocks.assertUserCanManageEvent }));
 vi.mock("@/lib/platform/db", () => ({
   prisma: { soloDraw: { findUnique: mocks.drawFindUnique }, soloRegistration: { findUnique: mocks.registrationFindUnique } },
 }));

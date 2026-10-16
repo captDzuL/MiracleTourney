@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { uploadImageAsset } from "@/lib/actions";
+import { uploadImageAsset } from "@/lib/actions/shared/uploads";
 import { requireRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { withServerActionLog } from "@/lib/observability/logger";

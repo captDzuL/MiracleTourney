@@ -1,6 +1,6 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
-import { uploadImageAsset } from "@/lib/actions";
+import { uploadImageAsset } from "@/lib/actions/shared/uploads";
 import { requireAnyRole } from "@/lib/auth/session";
 import { getBracketAppearance, saveBracketAppearance } from "@/lib/bracket/appearance";
 import { prisma } from "@/lib/platform/db";

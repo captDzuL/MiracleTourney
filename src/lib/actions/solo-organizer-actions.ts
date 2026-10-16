@@ -8,7 +8,7 @@ import { requireAnyRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { withServerActionLog, writeServerLog } from "@/lib/observability/logger";
 import { prisma } from "@/lib/platform/db";
-import { assertUserCanManageEvent } from "@/lib/platform/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import type { AppUser } from "@/lib/platform/types";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { UserFacingError, describeActionError, toSafeActionMessage } from "@/lib/security/public-error";

@@ -3,6 +3,8 @@ import { getSessionUser } from "@/lib/auth/session";
 import { tournamentFormatConfigSchema, type TournamentFormatConfig } from "@/lib/tournament/formats/types";
 import { deriveAwardCandidates } from "./awards";
 import { evaluateCompletionReadiness, type CompletionBlocker } from "./readiness";
+import { podiumTeamIds } from "./podium";
+import { requiredCertificateTypes } from "@/lib/certificate/templates/miracle-v3-contract";
 import {
   loadPrismaCompletionWorkspaceData,
   type PrismaCompletionWorkspaceData,
@@ -301,13 +303,13 @@ async function loadCompletionWorkspaceImpl(
   const persistedPlacements = record.completion?.podiumPlacements
     .filter((row): row is typeof row & { rank: 1 | 2 | 3 } => row.rank === 1 || row.rank === 2 || row.rank === 3)
     .map(({ rank, teamId, teamName }) => ({ rank, teamId, teamName })) ?? [];
-  const currentTeamIds = readiness.podium
-    ? [readiness.podium.championTeamId, readiness.podium.runnerUpTeamId, readiness.podium.thirdPlaceTeamId]
-    : [];
+  const currentTeamIds = readiness.podium ? podiumTeamIds(readiness.podium) : [];
   const currentPlacements = currentTeamIds.flatMap((teamId, index) => {
     const teamName = teamNames.get(teamId);
     return teamName ? [{ rank: (index + 1) as 1 | 2 | 3, teamId, teamName }] : [];
   });
+  const placements = status === "completed" && persistedPlacements.length >= 2 ? persistedPlacements : currentPlacements;
+  const requiredTypes = requiredCertificateTypes(placements.map(({ rank }) => rank));
   const persistedAwards = new Map(record.completion?.awards.map((award) => [award.type, award]) ?? []);
   const currentCertificates = completionVersion === null || !record.completion || !completionActive
     ? []
@@ -318,7 +320,8 @@ async function loadCompletionWorkspaceImpl(
   const latestCertificates = [...currentCertificates]
     .sort((left, right) => left.version - right.version || left.id.localeCompare(right.id))
     .reduce((latest, certificate) => latest.set(certificate.type, certificate), new Map<string, typeof currentCertificates[number]>());
-  const generatedTypes = latestCertificates.size;
+  const generatedTypes = requiredTypes.filter((type) => latestCertificates.has(type)).length;
+  const totalTypes = requiredTypes.length;
   const anyGenerating = record.certificates.some((certificate) =>
     completionActive
     &&
@@ -328,7 +331,7 @@ async function loadCompletionWorkspaceImpl(
   const hasOldCertificates = record.certificates.some((certificate) =>
     certificate.completionId === record.completion?.id
     && (!completionActive || certificate.completionVersion !== completionVersion));
-  const certificateStatus = generatedTypes === 7
+  const certificateStatus = generatedTypes === totalTypes
     ? "ready"
     : anyGenerating
       ? "generating"
@@ -342,14 +345,14 @@ async function loadCompletionWorkspaceImpl(
   const latestCertificateIds = new Set([...latestCertificates.values()].map(({ id }) => id));
   const published = Boolean(completionActive && record.publication && completionVersion !== null
     && record.publication.completionVersion === completionVersion
-    && generatedTypes === 7
-    && publicationCertificateIds?.size === 7
+    && generatedTypes === totalTypes
+    && publicationCertificateIds?.size === totalTypes
     && [...latestCertificateIds].every((id) => publicationCertificateIds.has(id)));
   const publicationStatus = published
     ? "published"
     : record.publication
       ? "needs_review"
-      : generatedTypes === 7
+      : generatedTypes === totalTypes
         ? "ready"
         : generatedTypes > 0 || hasOldCertificates
           ? "needs_review"
@@ -384,7 +387,7 @@ async function loadCompletionWorkspaceImpl(
         ? locale === "id" ? "Klasemen terkunci" : "Locked standings"
         : locale === "id" ? "Hasil playoff resmi" : "Official playoff results",
       locked: status === "completed",
-      placements: status === "completed" && persistedPlacements.length === 3 ? persistedPlacements : currentPlacements,
+      placements,
     },
     awards: AWARDS.map((award) => {
       const persisted = persistedAwards.get(award);
@@ -413,7 +416,7 @@ async function loadCompletionWorkspaceImpl(
     }),
     certificates: {
       generated: generatedTypes,
-      total: 7,
+      total: totalTypes,
       status: certificateStatus,
       studioHref: `/${locale}/organizer/events/${event.id}/certificates`,
     },

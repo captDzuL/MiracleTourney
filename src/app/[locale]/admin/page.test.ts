@@ -18,15 +18,30 @@ vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: () => state.enabled })
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: async () => ({ id: "admin-1", name: "Admin", role: state.role }) }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale: (path: string) => { throw new Error(`REDIRECT:${path}`); } }));
 vi.mock("@/lib/events/event-revision", () => ({ getActiveEventEditRevisionIds: async () => ({}) }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/events/repository", () => ({
   getManageableEventsForUser: async () => [
     { id: "draft-1", name: "Draft Cup", status: "Draft", gameId: "game-flashpeak", format: "League" },
     { id: "published-1", name: "Published Cup", status: "Published", slug: "published-cup", gameId: "game-flashpeak", format: "League" },
   ],
-  getPendingStatSubmissionCount: async () => 0, getOrganizerUsers: async () => [], getGameModes: () => [],
-  getTeamCountsForEvents: async () => new Map(), getEventBySlug: async () => null, getTeamsForEvents: async () => new Map(),
-  getCaptainUsersForAdmin: async () => [], listEventVisualAssets: async () => [],
+  getEventBySlug: async () => null,
+}));
+vi.mock("@/lib/events/visual-repository", () => ({
+  listEventVisualAssets: async () => [],
+}));
+vi.mock("@/lib/identity/repository", () => ({
+  getOrganizerUsers: async () => [],
+  getCaptainUsersForAdmin: async () => [],
+}));
+vi.mock("@/lib/platform/settings-repository", () => ({
+  getGameModes: () => [],
   getGameForEvent: () => ({ name: "Flashpeak" }),
+}));
+vi.mock("@/lib/player-stats/write-repository", () => ({
+  getPendingStatSubmissionCount: async () => 0,
+}));
+vi.mock("@/lib/teams/repository", () => ({
+  getTeamCountsForEvents: async () => new Map(),
+  getTeamsForEvents: async () => new Map(),
 }));
 import LocalizedAdminPage from "./page";
 

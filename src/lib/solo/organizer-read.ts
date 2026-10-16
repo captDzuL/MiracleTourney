@@ -1,7 +1,8 @@
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { prisma } from "@/lib/platform/db";
 import { getSoloDrawRules } from "@/lib/platform/config";
-import { assertUserCanManageEvent, type PaymentReviewEntry } from "@/lib/platform/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
+import type { PaymentReviewEntry } from "@/lib/registration/review-repository";
 import type { AppUser, TeamRegistrationRequestStatus } from "@/lib/platform/types";
 import { mapSoloStatus, type RegistrationRecord } from "@/lib/registration/records";
 

@@ -3,7 +3,9 @@ import { HydrationGate } from "@/components/HydrationGate";
 const mocks = vi.hoisted(() => ({ flag: vi.fn(), session: vi.fn(), event: vi.fn(), load: vi.fn(), redirect: vi.fn(), notFound: vi.fn(() => { throw new Error("not-found"); }) }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: mocks.flag }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: mocks.session }));
-vi.mock("@/lib/platform/repository", () => ({ getManageableEventDraft: mocks.event }));
+vi.mock("@/lib/events/repository", () => ({
+  getManageableEventDraft: mocks.event,
+}));
 vi.mock("@/lib/certificate/studio-repository", () => ({ loadCertificateStudioState: mocks.load }));
 vi.mock("@/i18n/redirect", () => ({ redirectToActiveLocale: mocks.redirect }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));

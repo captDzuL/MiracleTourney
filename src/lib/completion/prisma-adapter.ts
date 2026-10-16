@@ -230,7 +230,8 @@ function statistics(rows: CompletionSourceRows, officialMatchIds: ReadonlySet<st
   for (const row of rows.playerStats) {
     const match = matches.get(row.matchId);
     const values = row.stats;
-    const playerName = row.player.displayName.trim() || row.player.nickname.trim();
+    // nickname is the IGN players are known by; displayName holds the UID and is only a fallback.
+    const playerName = row.player.nickname.trim() || row.player.displayName.trim();
     const trusted = row.source === "admin"
       || row.source === "captain" && approved.has(`${row.matchId}:${row.teamId}`);
     if (!trusted || !match || !officialMatchIds.has(row.matchId)
@@ -293,6 +294,12 @@ function statistics(rows: CompletionSourceRows, officialMatchIds: ReadonlySet<st
     }] : []));
 }
 
+/** "none" only for a single-elimination bracket (alone or as playoffs) generated without a third-place match. */
+function noThirdPlaceFact(config: TournamentFormatConfig): { thirdPlace: "none" } | Record<string, never> {
+  const bracket = config.kind === "group_playoffs" ? config.playoffs : config;
+  return bracket.kind === "single_elimination" && bracket.thirdPlace === "none" ? { thirdPlace: "none" } : {};
+}
+
 export function buildCompletionSource(rows: CompletionSourceRows): CompletionSource {
   const officialMatchIds = new Set(rows.matches.filter((match) => isCurrentOfficial(match, rows.revisions)).map(({ id }) => id));
   const projectionMatches = rows.matches.map((match) => officialMatchIds.has(match.id)
@@ -315,6 +322,7 @@ export function buildCompletionSource(rows: CompletionSourceRows): CompletionSou
     facts: {
       formatKind,
       ...(formatKind === "group_playoffs" ? { playoffFormatKind: rows.event.formatConfig.playoffs.kind } : {}),
+      ...noThirdPlaceFact(rows.event.formatConfig),
       matches: eliminationFacts(rows, projection),
       standings,
       activeDisputes: rows.incidents

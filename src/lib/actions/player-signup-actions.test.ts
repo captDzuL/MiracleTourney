@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ headers: mocks.headers }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/auth/session", () => ({ signIn: mocks.signIn }));
-vi.mock("@/lib/platform/repository", () => ({
+vi.mock("@/lib/identity/repository", () => ({
   getUserByEmail: mocks.getUserByEmail,
   createPlayerAccount: mocks.createPlayerAccount,
 }));

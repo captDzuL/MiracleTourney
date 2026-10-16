@@ -28,7 +28,7 @@ const run = `soloit${Date.now().toString(36)}`;
 type Modules = {
   prisma: typeof import("@/lib/platform/db").prisma;
   repo: typeof import("./registration-repository");
-  platform: typeof import("@/lib/platform/repository");
+  platform: typeof import("@/lib/registration/repository");
 };
 let m: Modules;
 
@@ -106,7 +106,7 @@ describe.skipIf(!databaseUrl)("solo registration repository (real database)", ()
     m = {
       prisma: (await import("@/lib/platform/db")).prisma,
       repo: await import("./registration-repository"),
-      platform: await import("@/lib/platform/repository"),
+      platform: await import("@/lib/registration/repository"),
     };
   });
 
@@ -578,8 +578,6 @@ describe.skipIf(!databaseUrl)("solo registration repository (real database)", ()
       const captain = await makeUser("captain");
       await expect(m.platform.registerTeam({ eventId: event.id, captainId: captain.id, name: "Tim Solo", tag: "TS" })).rejects.toThrow(message);
       await expect(m.platform.createTeamRegistrationRequest({ eventId: paidEvent.id, captainId: captain.id, name: "Tim Solo", tag: "TS" })).rejects.toThrow(message);
-      await expect(m.platform.createCaptainWithTeam({ email: `${run}-c1@test.local`, name: "Cap", passwordHash: "x", eventId: event.id, teamName: "Tim Solo", teamTag: "TS" })).rejects.toThrow(message);
-      await expect(m.platform.createCaptainWithPendingPayment({ email: `${run}-c2@test.local`, name: "Cap", passwordHash: "x", eventId: paidEvent.id, teamName: "Tim Solo", teamTag: "TS" })).rejects.toThrow(message);
       expect(await m.prisma.team.count({ where: { eventId: { in: [event.id, paidEvent.id] } } })).toBe(0);
       await m.prisma.user.deleteMany({ where: { email: { startsWith: `${run}-c` } } });
     });

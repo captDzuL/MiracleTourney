@@ -1,6 +1,6 @@
 import { applyEventLifecycleSideEffects } from "@/lib/events/event-lifecycle";
 import { prisma } from "@/lib/platform/db";
-import { assertUserCanManageEvent } from "@/lib/platform/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import type { AppUser } from "@/lib/platform/types";
 import { UserFacingError } from "@/lib/security/public-error";
 

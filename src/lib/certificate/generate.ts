@@ -2,13 +2,8 @@ import fs from "fs";
 import path from "path";
 
 import { getGameConfig } from "@/lib/platform/config";
-import {
-  countCertificatesForGame,
-  getCertificateByEvent,
-  getLeaderboardForEvent,
-  recordCertificateFailure,
-  recordCertificateSuccess,
-} from "@/lib/platform/repository";
+import { getLeaderboardForEvent } from "@/lib/bracket/repository";
+import { countCertificatesForGame, getCertificateByEvent, recordCertificateFailure, recordCertificateSuccess } from "@/lib/certificate/repository";
 import { prisma } from "@/lib/platform/db";
 import { launchCertificateBrowser } from "./browser";
 import { resolveMvpForCertificate } from "./mvp";

@@ -4,7 +4,9 @@ import type { CompletionSnapshot } from "@/lib/completion/complete";
 
 const external = vi.hoisted(() => ({ requireAnyRole: vi.fn(), assertUserCanManageEvent: vi.fn(), revalidatePath: vi.fn(), dependencies: vi.fn() }));
 vi.mock("@/lib/auth/session", () => ({ requireAnyRole: external.requireAnyRole }));
-vi.mock("@/lib/platform/repository", () => ({ assertUserCanManageEvent: external.assertUserCanManageEvent }));
+vi.mock("@/lib/platform/shared/authz", () => ({
+  assertUserCanManageEvent: external.assertUserCanManageEvent,
+}));
 vi.mock("next/cache", () => ({ revalidatePath: external.revalidatePath }));
 vi.mock("@/lib/completion/prisma-adapter", () => ({ createPrismaCompletionDependencies: external.dependencies }));
 vi.mock("@/lib/completion/complete", async (importOriginal) => {

@@ -33,9 +33,9 @@ vi.mock("@/lib/auth/session", () => ({ requireRole: mocks.requireRole }));
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
 vi.mock("@/lib/player/dashboard-read", () => ({ getPlayerDashboard: mocks.getPlayerDashboard, getPlayerTeamView: mocks.getPlayerTeamView }));
 vi.mock("@/lib/player/profile-repository", () => ({ getPlayerWhatsapp: mocks.getPlayerWhatsapp }));
-vi.mock("@/lib/platform/repository", () => ({ hasTempPassword: mocks.hasTempPassword }));
+vi.mock("@/lib/identity/repository", () => ({ hasTempPassword: mocks.hasTempPassword }));
 vi.mock("@/lib/actions/player-profile-actions", () => ({ updatePlayerProfileAction: vi.fn() }));
-vi.mock("@/lib/actions", () => ({ changePasswordAction: vi.fn() }));
+vi.mock("@/lib/actions/identity-actions", () => ({ changePasswordAction: vi.fn() }));
 
 import PlayerHomePage from "./page";
 import PlayerProfilePage from "./profile/page";

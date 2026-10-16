@@ -338,7 +338,8 @@ test.describe.serial("Adaptive public event lifecycle", () => {
       await page.goto(url);
       const certificates = page.locator('[data-certificates="published"]');
       await expect(certificates).toContainText("Certificate lengkap telah diterbitkan.");
-      await expect(certificates.getByRole("link", { name: "Lihat certificate" })).toHaveCount(7);
+      await expect(certificates.locator("[data-certificate-gallery] img")).toHaveCount(7);
+      await expect(certificates.getByRole("link", { name: "Lihat ukuran penuh" })).toHaveCount(7);
       await expect(certificates.getByRole("link", { name: "Verifikasi" })).toHaveCount(7);
     });
   });

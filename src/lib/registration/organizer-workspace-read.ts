@@ -1,11 +1,7 @@
 import type { AppUser, TeamRegistrationRequestStatus } from "@/lib/platform/types";
-import {
-  assertUserCanManageEvent,
-  getEventPaymentSettingsForManager,
-  getPaymentReviewForEvent,
-  getRegistrationImportHistoryForEvent,
-  getRegistrationRecordsForEvent,
-} from "@/lib/platform/repository";
+import { getRegistrationImportHistoryForEvent, getRegistrationRecordsForEvent } from "@/lib/imports/repository";
+import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
+import { getEventPaymentSettingsForManager, getPaymentReviewForEvent } from "@/lib/registration/review-repository";
 import {
   filterRegistrationRecords,
   type RegistrationRecordFilter,
@@ -13,7 +9,8 @@ import {
   type RegistrationSource,
   type RegistrationStatus,
 } from "@/lib/registration/records";
-import type { EventPaymentManagerSettings, PaymentReviewEntry, RegistrationImportHistoryEntry } from "@/lib/platform/repository";
+import type { RegistrationImportHistoryEntry } from "@/lib/imports/repository";
+import type { EventPaymentManagerSettings, PaymentReviewEntry } from "@/lib/registration/review-repository";
 
 export type OrganizerRegistrationQueueInput = {
   user: AppUser;

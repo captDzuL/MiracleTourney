@@ -1,8 +1,8 @@
+import { podiumCertificateType, requiredCertificateTypes } from "@/lib/certificate/templates/miracle-v3-contract";
 import { prisma } from "@/lib/platform/db";
 import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/reader-bounds";
 import type { CompetitionGraph, CompetitionMatch } from "@/lib/tournament/competition";
 import { competitionProjection, type Standing } from "@/lib/tournament/operations/result-projection";
-import type { StoredSchedule } from "@/lib/tournament/operations/state";
 
 export type AdaptivePhaseNavigation = {
   overview: boolean;
@@ -79,7 +79,7 @@ export type AdaptivePublishedCertificate = { publishedUrl: string; verificationC
 
 export type PublicFinishedEventViewModel = AdaptivePhaseShared & {
   mode: "finished";
-  certificates: { status: "preparing" | "published"; publishedCount: number; expectedCount: 7 };
+  certificates: { status: "preparing" | "published"; publishedCount: number; expectedCount: number };
   podium: { rank: number; teamId: string; teamName: string; certificate: AdaptivePublishedCertificate | null }[];
   awards: {
     type: IndividualAwardType;
@@ -93,17 +93,6 @@ export type PublicFinishedEventViewModel = AdaptivePhaseShared & {
   matches: AdaptivePhaseMatch[];
   standings: AdaptivePhaseStanding[];
 };
-
-export type PublicCompetitionPhaseVisibility = "none" | "private" | "public";
-
-export async function getPublicCompetitionPhaseVisibility(eventId: string): Promise<PublicCompetitionPhaseVisibility> {
-  const phase = await prisma.competitionPhase.findFirst({
-    where: { eventId, sequence: 1 },
-    select: { status: true },
-  });
-  if (!phase) return "none";
-  return phase.status === "active" || phase.status === "completed" ? "public" : "private";
-}
 
 type EventRow = {
   id: string;
@@ -280,8 +269,6 @@ export async function getPublicDrawingEvent(slug: string): Promise<PublicDrawing
 }
 
 const AWARD_ORDER: IndividualAwardType[] = ["mvp", "top_scorer", "top_defender", "top_assist"];
-const COMPLETE_CERTIFICATE_COUNT = 7;
-const COMPLETE_CERTIFICATE_TYPES = new Set(["champion", "runner_up", "third_place", ...AWARD_ORDER]);
 // Competition validation admits at most 256 teams. Two-leg round robin is the
 // largest v1 graph: 256 * 255 persisted matches.
 const FINISHED_TEAM_ROW_LIMIT = 256;
@@ -325,6 +312,8 @@ export async function getPublicFinishedEvent(slug: string): Promise<PublicFinish
   const publication = event.certificatePublications[0];
   const parsed = phaseGraph(phase?.configuration, event.id);
   if (!completion || completion.status !== "completed" || !parsed) return null;
+  const requiredTypes: readonly string[] = requiredCertificateTypes(completion.podiumPlacements.map(({ rank }) => rank));
+  const requiredCount = requiredTypes.length;
   const certificateIds = Array.isArray(publication?.certificateIds)
     ? publication.certificateIds.filter((id): id is string => typeof id === "string")
     : [];
@@ -332,8 +321,8 @@ export async function getPublicFinishedEvent(slug: string): Promise<PublicFinish
   const publicationIsCurrent = completionVersion !== null
     && publication?.completionId === completion.id
     && publication.completionVersion === completionVersion
-    && certificateIds.length === COMPLETE_CERTIFICATE_COUNT
-    && new Set(certificateIds).size === COMPLETE_CERTIFICATE_COUNT;
+    && certificateIds.length === requiredCount
+    && new Set(certificateIds).size === requiredCount;
   const certificates = publicationIsCurrent
     ? await prisma.certificate.findMany({
         where: { id: { in: certificateIds }, status: { in: ["ready", "published"] }, publishedUrl: { not: null } },
@@ -349,9 +338,9 @@ export async function getPublicFinishedEvent(slug: string): Promise<PublicFinish
       })
     : [];
   const completePublication = publicationIsCurrent
-    && certificates.length === COMPLETE_CERTIFICATE_COUNT
-    && new Set(certificates.map((certificate) => certificate.type)).size === COMPLETE_CERTIFICATE_COUNT
-    && certificates.every((certificate) => COMPLETE_CERTIFICATE_TYPES.has(certificate.type as IndividualAwardType | "champion" | "runner_up" | "third_place"))
+    && certificates.length === requiredCount
+    && new Set(certificates.map((certificate) => certificate.type)).size === requiredCount
+    && certificates.every((certificate) => requiredTypes.includes(certificate.type))
     && certificates.every((certificate) =>
       certificate.completionId === completion.id
       && certificate.completionVersion === completionVersion);
@@ -387,20 +376,16 @@ export async function getPublicFinishedEvent(slug: string): Promise<PublicFinish
     ...shared(event, parsed.graph, teams.length, "finished"),
     certificates: {
       status: completePublication ? "published" : "preparing",
-      publishedCount: completePublication ? COMPLETE_CERTIFICATE_COUNT : 0,
-      expectedCount: COMPLETE_CERTIFICATE_COUNT,
+      publishedCount: completePublication ? requiredCount : 0,
+      expectedCount: requiredCount,
     },
     podium: completion.podiumPlacements.map((placement) => ({
       rank: placement.rank,
       teamId: placement.teamId,
       teamName: placement.teamName,
-      certificate: publicCertificate(placement.rank === 1 ? "champion" : placement.rank === 2 ? "runner_up" : "third_place"),
+      certificate: publicCertificate(podiumCertificateType(placement.rank)),
     })),
     awards,
     ...projectPublicContext(parsed.graph, matches, teams),
   };
-}
-
-export function publishedScheduleSnapshot(value: unknown): StoredSchedule | null {
-  return value && typeof value === "object" ? value as StoredSchedule : null;
 }

@@ -23,7 +23,7 @@ vi.mock("@/lib/solo/registration-service", () => ({
   uploadSoloProofAndAnnounce: mocks.uploadSoloProofAndAnnounce,
   withdrawSoloAndAnnounce: mocks.withdrawSoloAndAnnounce,
 }));
-vi.mock("@/lib/actions", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
+vi.mock("@/lib/actions/shared/uploads", () => ({ uploadImageAsset: mocks.uploadImageAsset }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("./locale-redirect", () => ({
   redirectToLocale: (path: string, locale: string) => {
