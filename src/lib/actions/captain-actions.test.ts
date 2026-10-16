@@ -304,6 +304,8 @@ function validPngFile(name = "background.png") {
 // captain actions (existing + additions)
 // ────────────────────────────────────────────────────────────
 
+const CAPTAIN_CONTACT = "081234567890";
+
 describe("captain actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -312,10 +314,23 @@ describe("captain actions", () => {
     assertCaptainCanSubmitStats.mockResolvedValue(undefined);
   });
 
+  it.each([
+    ["is missing", undefined],
+    ["is blank", "   "],
+    ["is too short", "08123"],
+    ["contains markup", "<b>0812345678</b>"],
+  ])("rejects a registration when the captain WhatsApp %s", async (_label, captainContact) => {
+    await expect(
+      captainRegisterTeamAction(fd({ eventId: "event-b", name: "No Phone United", tag: "NPU", ...(captainContact === undefined ? {} : { captainContact }) })),
+    ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-b&error=Isi%20nomor%20WhatsApp%20kapten%2C%20minimal%206%20karakter.");
+    expect(registerTeam).not.toHaveBeenCalled();
+    expect(createTeamRegistrationRequest).not.toHaveBeenCalled();
+  });
+
   it("requires a captain session before registering a team", async () => {
     requireRole.mockResolvedValue(null);
 
-    await expect(captainRegisterTeamAction(fd({ eventId: "e1", name: "Team A", tag: "TA" }))).rejects.toThrow(
+    await expect(captainRegisterTeamAction(fd({ eventId: "e1", name: "Team A", tag: "TA", captainContact: CAPTAIN_CONTACT }))).rejects.toThrow(
       "REDIRECT:/login",
     );
     expect(registerTeam).not.toHaveBeenCalled();
@@ -323,13 +338,14 @@ describe("captain actions", () => {
 
   it("derives the registering captain from the authenticated session", async () => {
     await expect(
-      captainRegisterTeamAction(fd({ eventId: "event-flashpeak-open", name: "Session United", tag: "SES" })),
+      captainRegisterTeamAction(fd({ eventId: "event-flashpeak-open", name: "Session United", tag: "SES", captainContact: CAPTAIN_CONTACT })),
     ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-flashpeak-open&success=team-created");
     expect(registerTeam).toHaveBeenCalledWith({
       eventId: "event-flashpeak-open",
       captainId: "captain-1",
       name: "Session United",
       tag: "SES",
+      captainContact: CAPTAIN_CONTACT,
     });
   });
 
@@ -337,7 +353,7 @@ describe("captain actions", () => {
     registerTeam.mockRejectedValueOnce(new Error("Not authorized"));
 
     await expect(
-      captainRegisterTeamAction(fd({ eventId: "event-b", name: "Foreign United", tag: "FUT" })),
+      captainRegisterTeamAction(fd({ eventId: "event-b", name: "Foreign United", tag: "FUT", captainContact: CAPTAIN_CONTACT })),
     ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-b&error=Not%20authorized");
     expect(createTeamRegistrationRequest).not.toHaveBeenCalled();
   });
@@ -347,7 +363,7 @@ describe("captain actions", () => {
     registerTeam.mockRejectedValueOnce(new UserFacingError("Draft tim tidak ditemukan untuk akun ini."));
 
     await expect(
-      captainRegisterTeamAction(fd({ eventId: "event-b", name: "Draft United", tag: "DRF" })),
+      captainRegisterTeamAction(fd({ eventId: "event-b", name: "Draft United", tag: "DRF", captainContact: CAPTAIN_CONTACT })),
     ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-b&error=Draft%20tim%20tidak%20ditemukan%20untuk%20akun%20ini.");
 
     const operations = info.mock.calls.map(([line]) => JSON.parse(String(line)).operation);
@@ -365,7 +381,7 @@ describe("captain actions", () => {
     );
 
     await expect(
-      captainRegisterTeamAction(fd({ eventId: "event-b", name: "Draft United", tag: "DRF" })),
+      captainRegisterTeamAction(fd({ eventId: "event-b", name: "Draft United", tag: "DRF", captainContact: CAPTAIN_CONTACT })),
     ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-b&error=Gagal%20mendaftarkan%20tim.");
 
     const lines = info.mock.calls.map(([line]) => String(line));
@@ -382,7 +398,7 @@ describe("captain actions", () => {
     createTeamRegistrationRequest.mockRejectedValueOnce(new Error("deadlock detected"));
 
     await expect(
-      captainRegisterTeamAction(fd({ eventId: "event-paid", name: "Paid United", tag: "PDU" })),
+      captainRegisterTeamAction(fd({ eventId: "event-paid", name: "Paid United", tag: "PDU", captainContact: CAPTAIN_CONTACT })),
     ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&error=Gagal%20membuat%20pendaftaran%20pembayaran.");
 
     const failure = info.mock.calls.map(([line]) => JSON.parse(String(line))).find((event) => event.operation === "captain_register_team");
@@ -395,7 +411,7 @@ describe("captain actions", () => {
     createTeamRegistrationRequest.mockResolvedValueOnce({ id: "request-2", status: "pending_payment" });
 
     await expect(
-      captainRegisterTeamAction(fd({ eventId: "event-paid", name: "Paid United", tag: "PDU" })),
+      captainRegisterTeamAction(fd({ eventId: "event-paid", name: "Paid United", tag: "PDU", captainContact: CAPTAIN_CONTACT })),
     ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&success=payment-pending");
     expect(createTeamRegistrationRequest).toHaveBeenCalled();
   });
@@ -405,7 +421,7 @@ describe("captain actions", () => {
     createTeamRegistrationRequest.mockResolvedValue({ id: "request-1", status: "pending_payment" });
 
     await expect(
-      captainRegisterTeamAction(fd({ eventId: "event-paid", name: "Paid United", tag: "PDU" })),
+      captainRegisterTeamAction(fd({ eventId: "event-paid", name: "Paid United", tag: "PDU", captainContact: CAPTAIN_CONTACT })),
     ).rejects.toThrow("REDIRECT:/captain?tab=registration&eventId=event-paid&success=payment-pending");
 
     expect(createTeamRegistrationRequest).toHaveBeenCalledWith({
@@ -413,6 +429,7 @@ describe("captain actions", () => {
       captainId: "captain-1",
       name: "Paid United",
       tag: "PDU",
+      captainContact: CAPTAIN_CONTACT,
     });
     expect(revalidateTag).toHaveBeenCalledWith("teams");
     expect(revalidatePath).toHaveBeenCalledWith("/captain");

@@ -36,6 +36,15 @@ describe("registration workspace behavior", () => {
     expect(host.querySelector('a[data-page="next"]')?.getAttribute("href")).toContain("page=2");
     expect(host.textContent).toContain("1 / 16");
   });
+  it("shows the captain contact in its own column, the account email when it is missing, and a dash when neither exists", async () => {
+    const { captainContact: _omit, ...withoutContact } = record;
+    await render({ queue: { ...base.queue, items: [record, { ...withoutContact, id: "team-b", teamId: "team-b" }] } });
+    expect(host.querySelector('[data-contact="team-a"]')?.textContent).toBe("08123");
+    expect(host.querySelector('[data-contact="team-b"]')?.textContent).toBe("-");
+    await render({ queue: { ...base.queue, items: [{ ...withoutContact, id: "team-c", teamId: "team-c", captainEmail: "kapten@example.test" }] } });
+    expect(host.querySelector('[data-contact="team-c"]')?.textContent).toBe("kapten@example.test");
+    expect(host.querySelector("thead")?.textContent).toContain("WhatsApp");
+  });
   it("opens roster details, contains keyboard focus, closes with Escape and restores focus", async () => {
     await render(); const trigger = host.querySelector<HTMLButtonElement>('[data-roster="team-a"]')!; trigger.focus(); await click('[data-roster="team-a"]');
     const dialog = host.querySelector<HTMLElement>('[role="dialog"]')!; expect(dialog.textContent).toContain("123"); expect(dialog.textContent).toContain("Captain");

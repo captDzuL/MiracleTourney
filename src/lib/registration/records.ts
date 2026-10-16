@@ -27,6 +27,7 @@ export type RegistrationRecord = {
   teamTag: string;
   captainName: string;
   captainContact?: string;
+  captainEmail?: string;
   captainIgn?: string;
   captainUid?: string;
   captainIsPlayer: boolean;
