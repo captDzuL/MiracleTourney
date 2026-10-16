@@ -17,7 +17,7 @@ import {
 } from "@/lib/events/event-revision";
 import { eventDateToLocalInput } from "@/lib/events/event-datetime";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getGameModeDisplayLabel } from "@/lib/platform/config";
+import { getGameModeDisplayLabel, listSoloModes } from "@/lib/platform/config";
 import { getManageableEventDraft } from "@/lib/events/repository";
 import { getGameModes, getPlatformProfile } from "@/lib/platform/settings-repository";
 
@@ -34,6 +34,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
   const event = await getManageableEventDraft(user, eventId);
   if (!event) notFound();
   const t = getEventEditorTranslator(locale);
+  // With the solo flag off nobody sees solo, except on an event that already is one.
+  const showEntryMode = isFeatureEnabled("solo_tournament_v1") || event.entryMode === "solo";
   const basePath = isFeatureEnabled("organizer_master_shell_v3") || user.role === "organizer" ? "organizer" : "admin";
   const workspaceHref = `/${locale}/${basePath}/events/${event.id}/overview`;
 
@@ -49,6 +51,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--color-brand-cream)]">{t("eventLocked")}</p>
         <h2 className="mt-2 text-2xl font-extrabold text-[var(--color-text)]">{t("eventCannotEdit")}</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-subtle)]">{event.status === "Ongoing" ? t("eventOngoingLocked") : t("eventFinishedLocked")}</p>
+        {showEntryMode && <p className="mt-2 text-sm font-bold text-[var(--color-text)]" data-entry-mode-fact>{t("entryModeLabel")}: {event.entryMode === "solo" ? t("entryModeSolo") : t("entryModeTeam")}</p>}
       </div>
       <div className="flex flex-wrap gap-3">
         <Link className="inline-flex min-h-11 items-center justify-center rounded-[var(--radius-control)] bg-[var(--color-brand-violet)] px-4 text-sm font-extrabold text-white" href={`/${basePath}/events/${event.id}/overview`}>{t("workspaceBack")}</Link>
@@ -70,8 +73,11 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
     status: event.status,
     registrationClosesAt: event.registrationClosesAt,
     matchCount: event._count.matches,
+    entryMode: event.entryMode,
+    activeSoloRegistrations: event._count.soloRegistrations,
   });
-  const fieldLocks = { ...locks, slug: "slug_published" };
+  // How players register is chosen while the event is a draft and never changes afterwards.
+  const fieldLocks = { ...locks, slug: "slug_published", entryMode: "entry_mode_fixed" };
   const timezone = payload.timezone;
   const platformProfile = event.organizerUserId ? null : await getPlatformProfile();
   const contact = event.organizerUserId
@@ -108,6 +114,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
       editorLabel={t("privateRevision")}
       eventId={event.id}
       fieldLocks={fieldLocks}
+      gameModeId={event.gameModeId}
+      soloModes={showEntryMode ? listSoloModes() : undefined}
       gameModes={getGameModes().map((mode) => ({ id: mode.id, label: getGameModeDisplayLabel(mode.id) }))}
       initialDraft={{
         name: payload.name,
@@ -116,6 +124,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         gameModeId: payload.gameModeId,
         formatConfig: payload.formatConfig,
         participantCap: payload.participantCap,
+        entryMode: event.entryMode === "solo" ? "solo" : "team",
         prizePoolLabel: payload.prizePoolLabel,
         registrationOpensAt: payload.registrationOpensAt ? eventDateToLocalInput(new Date(payload.registrationOpensAt), timezone) : null,
         registrationClosesAt: payload.registrationClosesAt ? eventDateToLocalInput(new Date(payload.registrationClosesAt), timezone) : null,

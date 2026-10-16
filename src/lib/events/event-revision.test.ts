@@ -111,6 +111,41 @@ describe("event revision payload and policy", () => {
     expect(locks.description).toBeUndefined();
     expect(locks.venue).toBeUndefined();
   });
+
+  describe("a solo event", () => {
+    const published = { status: "Published" as const, registrationClosesAt: "2026-12-01T00:00:00.000Z", matchCount: 0, now };
+
+    it("keeps its game once published, so a solo draw is always possible", () => {
+      expect(getEventRevisionFieldLocks({ ...published, entryMode: "solo" }).gameModeId).toBe("solo_game_fixed");
+      expect(getEventRevisionFieldLocks({ ...published, entryMode: "solo" }).participantCap).toBeUndefined();
+    });
+
+    it("also keeps its number of teams once players have signed up", () => {
+      const locks = getEventRevisionFieldLocks({ ...published, entryMode: "solo", activeSoloRegistrations: 3 });
+      expect(locks.participantCap).toBe("solo_registrations_exist");
+      expect(locks.description).toBeUndefined();
+      expect(locks.venue).toBeUndefined();
+    });
+
+    it("leaves a team event free to change its game and size, as before", () => {
+      for (const entryMode of ["team", null, undefined]) {
+        const locks = getEventRevisionFieldLocks({ ...published, entryMode, activeSoloRegistrations: 5 });
+        expect(locks.gameModeId).toBeUndefined();
+        expect(locks.participantCap).toBeUndefined();
+      }
+    });
+
+    it("keeps the stronger reason when matches already lock the structure", () => {
+      const locks = getEventRevisionFieldLocks({ ...published, entryMode: "solo", activeSoloRegistrations: 3, matchCount: 2 });
+      expect(locks.gameModeId).toBe("matches_exist");
+      expect(locks.participantCap).toBe("matches_exist");
+    });
+
+    it("cannot be switched to team or solo by a revision, because how players register is not part of one", () => {
+      expect(() => eventRevisionPatchSchema.parse({ entryMode: "solo" })).toThrow();
+      expect(() => eventRevisionPatchSchema.parse({ entryMode: "team" })).toThrow();
+    });
+  });
 });
 
 describe("published event revision persistence", () => {

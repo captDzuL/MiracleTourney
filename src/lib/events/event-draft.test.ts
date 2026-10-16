@@ -72,6 +72,22 @@ describe("saveEventDraft", () => {
       }));
     });
 
+    it("changes the mode only while the event is a draft: the update is scoped to Draft status", async () => {
+      prisma.event.findFirst.mockResolvedValue({ entryMode: "team", gameModeId: "mode-flashpeak-5v5" });
+      await save({ entryMode: "solo" });
+      expect(prisma.event.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ id: "event-1", status: "Draft" }),
+      }));
+    });
+
+    it("reports a published event as not editable and does not claim the mode changed", async () => {
+      prisma.event.updateMany.mockResolvedValue({ count: 0 });
+      prisma.event.findFirst.mockResolvedValue({ entryMode: "team", gameModeId: "mode-flashpeak-5v5", draftRevision: 4, lastDraftMutationId: null, status: "Published" });
+      await expect(save({ entryMode: "solo" })).resolves.toEqual({
+        status: "not_editable", revision: 4, fields: { entryMode: { state: "conflict" } },
+      });
+    });
+
     it("refuses solo for a game without solo rules and writes nothing", async () => {
       prisma.event.findFirst.mockResolvedValue({ entryMode: "team", gameModeId: "mode-mlbb-5v5" });
       await expect(save({ entryMode: "solo" })).rejects.toThrow("Game ini belum mendukung event solo.");

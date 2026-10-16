@@ -85,7 +85,7 @@ export async function getManageableEventDraft(user: AppUser, eventId: string) {
       timezone: true, venue: true, venueAddress: true,
       registrationFeeRequired: true, registrationFeeAmount: true, prizePoolLabel: true,
       logoUrl: true, gameImageUrl: true, draftRevision: true, publishedRevision: true, status: true,
-      _count: { select: { matches: true } },
+      _count: { select: { matches: true, soloRegistrations: { where: { status: { notIn: ["withdrawn", "expired"] } } } } },
       organizer: { select: { organizerProfile: { select: { contactChannel: true, contactValue: true } } } },
     },
   });
