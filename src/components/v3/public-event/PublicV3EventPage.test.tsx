@@ -156,6 +156,36 @@ describe("public V3 event overview route", () => {
       expect(html).not.toContain("data-bracket-link");
     });
 
+    it("renders the podium in rank order with labels, and no separate champion card", () => {
+      const finished = finishedWith("Single Elimination", false) as Extract<PublicV3EventViewModel, { mode: "finished" }>;
+      const podium = [3, 1, 2].map((rank) => ({ rank, teamId: `t${rank}`, teamName: ["", "Alpha", "Beta", "Gamma"][rank], certificate: null }));
+      const html = renderToStaticMarkup(<PublicV3EventPage view={{ ...finished, podium }} locale="id" />);
+      expect(html).toContain('data-podium="published"');
+      expect(html).toContain('data-podium-count="3"');
+      expect(html.indexOf('data-rank="1"')).toBeLessThan(html.indexOf('data-rank="2"'));
+      expect(html.indexOf('data-rank="2"')).toBeLessThan(html.indexOf('data-rank="3"'));
+      expect(html).toContain(">Juara<");
+      expect(html).toContain(">Runner-up<");
+      expect(html).toContain(">Peringkat Ketiga<");
+      expect(html).not.toContain("data-champion");
+      expect(html).not.toContain("Lihat certificate");
+    });
+
+    it("keeps a two-team podium without inventing a third place", () => {
+      const finished = finishedWith("Single Elimination", false) as Extract<PublicV3EventViewModel, { mode: "finished" }>;
+      const podium = [1, 2].map((rank) => ({ rank, teamId: `t${rank}`, teamName: ["", "Alpha", "Beta"][rank], certificate: null }));
+      const html = renderToStaticMarkup(<PublicV3EventPage view={{ ...finished, podium }} locale="en" />);
+      expect(html).toContain('data-podium-count="2"');
+      expect(html).not.toContain('data-rank="3"');
+      expect(html).toContain(">Champion<");
+    });
+
+    it("shows an empty state when the podium is not published", () => {
+      const html = renderToStaticMarkup(<PublicV3EventPage view={finishedWith("Single Elimination", false)} locale="id" />);
+      expect(html).toContain('data-podium="empty"');
+      expect(html).toContain("Podium belum diterbitkan.");
+    });
+
     it("shows published certificates as inline images with type and verification link", () => {
       const finished = finishedWith("Single Elimination", false) as Extract<PublicV3EventViewModel, { mode: "finished" }>;
       const items = [
