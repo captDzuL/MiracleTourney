@@ -1,5 +1,5 @@
 import type { RegistrationSource, RegistrationStatus } from "@/lib/registration/records";
-export const statuses = ["pending_payment", "pending_review", "accepted", "rejected", "draft", "needs_correction"] as const;
+export const statuses = ["pending_payment", "pending_review", "accepted", "rejected", "draft", "needs_correction", "suspended"] as const;
 export const sources = ["captain_registration", "import_xlsx", "import_csv", "unknown_import"] as const;
 export type RegistrationQuery = { view: "queue" | "import" | "payments" | "qris"; status: string; source: string; q: string; page: number };
 export type QueryInput = Record<string, string | string[] | undefined>;

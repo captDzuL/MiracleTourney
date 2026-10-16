@@ -354,7 +354,7 @@ describe("event-local registration workspace repository", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
-    prisma.event.findUnique.mockResolvedValue({ id: "event-1" });
+    prisma.event.findUnique.mockResolvedValue({ id: "event-1", status: "Published", gameModeId: "mode-flashpeak-5v5" });
   });
 
   it("maps queue records to the requested event and preserves import source provenance", async () => {
@@ -386,8 +386,79 @@ describe("event-local registration workspace repository", () => {
         rosterCount: 1,
       }),
     ]);
-    expect(prisma.team.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: "event-1" } }));
+    expect(prisma.team.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { OR: [{ eventId: "event-1" }, { suspendedFromEventId: "event-1" }] },
+    }));
     expect(prisma.teamRegistrationRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ eventId: "event-1" }) }));
+  });
+
+  describe("team completion in the registration records", () => {
+    const now = Date.now();
+    const baseTeam = {
+      eventId: "event-1",
+      source: "registration",
+      captainId: "captain-1",
+      captainName: "Captain",
+      captainContact: "081",
+      captainIgn: null,
+      captainUid: null,
+      captainIsPlayer: true,
+      createdAt: new Date("2026-09-10T00:00:00.000Z"),
+      completionDeadlineAt: null,
+      suspendedAt: null,
+      players: Array.from({ length: 5 }, (_, index) => ({ id: `player-${index}` })),
+      captain: { id: "captain-1", name: "Captain", email: "captain@example.com" },
+    };
+
+    beforeEach(() => {
+      prisma.teamRegistrationRequest.findMany.mockResolvedValue([]);
+      prisma.registrationImportItem.findMany.mockResolvedValue([]);
+    });
+
+    it("leaves a complete team without a completion flag", async () => {
+      prisma.team.findMany.mockResolvedValue([{ ...baseTeam, id: "team-ok", name: "Complete", tag: "CMP" }]);
+      const [record] = await getRegistrationRecordsForEvent(organizer, "event-1");
+      expect(record).not.toHaveProperty("completion");
+    });
+
+    it("flags a team without a contact and with too few players, with its deadline", async () => {
+      const deadline = new Date(now + 3_600_000);
+      prisma.team.findMany.mockResolvedValue([{
+        ...baseTeam, id: "team-gap", name: "Gap", tag: "GAP", captainContact: null, completionDeadlineAt: deadline, players: [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
+      }]);
+      const [record] = await getRegistrationRecordsForEvent(organizer, "event-1");
+      expect(record?.completion).toEqual({ missingContact: true, missingPlayers: 2, state: "pending", deadlineAt: deadline.toISOString() });
+    });
+
+    it("marks a team past its deadline as overdue", async () => {
+      prisma.team.findMany.mockResolvedValue([{
+        ...baseTeam, id: "team-late", name: "Late", tag: "LTE", captainContact: "", completionDeadlineAt: new Date(now - 1000),
+      }]);
+      const [record] = await getRegistrationRecordsForEvent(organizer, "event-1");
+      expect(record?.completion?.state).toBe("overdue");
+    });
+
+    it("reports a suspended team with the suspended status", async () => {
+      prisma.team.findMany.mockResolvedValue([{
+        ...baseTeam, id: "team-out", name: "Out", tag: "OUT", eventId: null, captainContact: null, suspendedAt: new Date(now - 1000), completionDeadlineAt: new Date(now - 5000),
+      }]);
+      const [record] = await getRegistrationRecordsForEvent(organizer, "event-1");
+      expect(record).toMatchObject({ id: "team-out", eventId: "event-1", status: "suspended" });
+    });
+
+    it("does not flag teams, and does not fail, for an event with a game mode the app does not know", async () => {
+      prisma.event.findUnique.mockResolvedValue({ id: "event-1", status: "Published", gameModeId: "gone" });
+      prisma.team.findMany.mockResolvedValue([{ ...baseTeam, id: "team-gap", name: "Gap", tag: "GAP", captainContact: null }]);
+      const [record] = await getRegistrationRecordsForEvent(organizer, "event-1");
+      expect(record).not.toHaveProperty("completion");
+    });
+
+    it("does not flag teams once the event is running", async () => {
+      prisma.event.findUnique.mockResolvedValue({ id: "event-1", status: "Ongoing", gameModeId: "mode-flashpeak-5v5" });
+      prisma.team.findMany.mockResolvedValue([{ ...baseTeam, id: "team-gap", name: "Gap", tag: "GAP", captainContact: null }]);
+      const [record] = await getRegistrationRecordsForEvent(organizer, "event-1");
+      expect(record).not.toHaveProperty("completion");
+    });
   });
 
   it("returns import history without exposing unrelated batches", async () => {
@@ -632,7 +703,7 @@ describe("event-local registration workspace repository", () => {
 
   it("rejects registration-reader overflow even when the delegate ignores take", async () => {
     prisma.event.findFirst.mockResolvedValue({ id: "event-1" });
-    prisma.event.findUnique.mockResolvedValue({ id: "event-1" });
+    prisma.event.findUnique.mockResolvedValue({ id: "event-1", status: "Published", gameModeId: "mode-flashpeak-5v5" });
     const teams = Array.from({ length: 501 }, (_, index) => ({
       id: `team-${index + 1}`,
       eventId: "event-1",

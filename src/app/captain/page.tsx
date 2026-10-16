@@ -10,11 +10,13 @@ import { getCaptainRegistrationRequests } from "@/lib/registration/repository";
 import { getCaptainTeams, getPlayersForTeams } from "@/lib/teams/repository";
 import { getRosterChangeOverview } from "@/lib/platform/roster-change-requests";
 import { getCaptainPaymentSettings } from "@/lib/registration/captain-repository";
+import { getCaptainCompletionNotices } from "@/lib/registration/completion-repository";
 import type { Certificate } from "@/lib/platform/types";
 import type { PaymentSettings } from "@/lib/platform/types";
 import { Notice } from "@/app/captain/dashboard/shared";
 import type { TFn } from "@/app/captain/dashboard/shared";
 import { CaptainDashboardTabs } from "@/app/captain/dashboard/dashboard-tabs";
+import { CompletionNotices } from "@/app/captain/dashboard/completion-notices";
 import { RosterManagementSection } from "@/app/captain/dashboard/roster-management-section";
 import { OpenRegistrationSection } from "@/app/captain/dashboard/open-registration-section";
 import { PaymentRequestsSection } from "@/app/captain/dashboard/payment-requests-section";
@@ -39,11 +41,12 @@ export default async function CaptainPage({
   const rosterSignals = new Set(["player-added", "player-updated", "player-deleted", "captain-display-updated", "draft-team-saved", "team-logo-updated", "roster-change-requested", "roster-change-cancelled"]);
   const activeTab = params?.tab === "roster" || editPlayerId || confirmDeleteId || (success && rosterSignals.has(success)) ? "roster" : "registration";
 
-  const [teams, usingTempPassword, openRegistrationEvents, paymentRequests] = await Promise.all([
+  const [teams, usingTempPassword, openRegistrationEvents, paymentRequests, completionNotices] = await Promise.all([
     getCaptainTeams(user.id),
     hasTempPassword(user.id),
     getOpenRegistrationEventsForCaptain(user.id),
     getCaptainRegistrationRequests(user.id),
+    getCaptainCompletionNotices(user.id),
   ]);
   const paymentEventIds = [...new Set(paymentRequests.map((request) => request.eventId))];
   const paymentSettingsByEvent = new Map<string, PaymentSettings>(
@@ -101,6 +104,7 @@ export default async function CaptainPage({
           </Link>
         </Notice>
       ) : null}
+      {success === "contact-saved" ? <Notice tone="success">{t("contactSaved")}</Notice> : null}
       {success === "password-changed" ? <Notice tone="success">{t("passwordChanged")}</Notice> : null}
       {success === "player-added" ? <Notice tone="success">{t("playerAdded")}</Notice> : null}
       {success === "player-updated" ? <Notice tone="success">{t("playerUpdated")}</Notice> : null}
@@ -115,6 +119,7 @@ export default async function CaptainPage({
       {success === "roster-change-requested" ? <Notice tone="success">{t("rosterChange.requestedNotice")}</Notice> : null}
       {success === "roster-change-cancelled" ? <Notice tone="success">{t("rosterChange.cancelledNotice")}</Notice> : null}
       {error ? <Notice tone="danger">{decodeURIComponent(error)}</Notice> : null}
+      <CompletionNotices notices={completionNotices} t={t as TFn} />
 
       {requestedEvent ? (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900">
