@@ -453,6 +453,16 @@ describe("event-local registration workspace repository", () => {
       expect(record).not.toHaveProperty("completion");
     });
 
+    it.each([
+      ["registration has closed", { status: "Registration Closed" }],
+      ["the closing time has passed", { registrationClosesAt: new Date(Date.now() - 3_600_000) }],
+    ])("does not flag teams once %s", async (_label, eventOverride) => {
+      prisma.event.findUnique.mockResolvedValue({ id: "event-1", status: "Published", gameModeId: "mode-flashpeak-5v5", ...eventOverride });
+      prisma.team.findMany.mockResolvedValue([{ ...baseTeam, id: "team-gap", name: "Gap", tag: "GAP", captainContact: null }]);
+      const [record] = await getRegistrationRecordsForEvent(organizer, "event-1");
+      expect(record).not.toHaveProperty("completion");
+    });
+
     it("does not flag teams once the event is running", async () => {
       prisma.event.findUnique.mockResolvedValue({ id: "event-1", status: "Ongoing", gameModeId: "mode-flashpeak-5v5" });
       prisma.team.findMany.mockResolvedValue([{ ...baseTeam, id: "team-gap", name: "Gap", tag: "GAP", captainContact: null }]);

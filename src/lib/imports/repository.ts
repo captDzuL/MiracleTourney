@@ -8,7 +8,7 @@ import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_ROW_LIMIT, ROSTER_LOCKED_MESSAGE } from "@/lib/platform/shared/constants";
 import { mapTeam } from "@/lib/platform/shared/mappers";
-import { assertEventExists, assertEventRosterMutable, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
+import { assertEventExists, assertEventRosterMutable, isNewRegistrationWindowOpen, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
 import type { AppUser, Team, TeamRegistrationRequestStatus } from "@/lib/platform/types";
 import { getCompletionGaps, getCompletionState, getRequiredPlayers } from "@/lib/registration/completion";
 import { mapRequestStatus, normalizeRegistrationSource } from "@/lib/registration/records";
@@ -172,12 +172,16 @@ export type RegistrationImportEventContext = {
 
 export async function getRegistrationRecordsForEvent(user: AppUser, eventId: string): Promise<RegistrationRecord[]> {
   await assertUserCanManageEvent(user, eventId);
-  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { status: true, gameModeId: true } });
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { status: true, gameModeId: true, registrationOpensAt: true, registrationClosesAt: true },
+  });
   if (!event) throw new Error("Event tidak ditemukan.");
   // Teams that left the event because of missing data stay in the list, so the organizer can bring them back.
   const requiredPlayers = getRequiredPlayers(event.gameModeId);
-  const trackCompletion = requiredPlayers !== null && ["Published", "Registration Closed"].includes(event.status);
   const now = new Date();
+  // Flags and suspending belong to the registration phase only (status Published, inside the opening and closing times).
+  const trackCompletion = requiredPlayers !== null && isNewRegistrationWindowOpen(event, now);
 
   const [teams, requests] = await Promise.all([
     prisma.team.findMany({

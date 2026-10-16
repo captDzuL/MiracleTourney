@@ -21,7 +21,8 @@ vi.mock("@/lib/platform/db", () => ({ prisma: mocks.prisma }));
 vi.mock("@/lib/email/send", () => ({ sendEmail: mocks.sendEmail, isEmailDeliveryConfigured: mocks.isEmailDeliveryConfigured }));
 vi.mock("@/lib/observability/logger", () => ({ writeServerLog: vi.fn() }));
 vi.mock("@/lib/platform/shared/authz", () => ({ assertUserCanManageEvent: mocks.assertUserCanManageEvent }));
-vi.mock("@/lib/platform/shared/tx", () => ({
+vi.mock("@/lib/platform/shared/tx", async () => ({
+  isNewRegistrationWindowOpen: (await vi.importActual<typeof import("@/lib/platform/shared/tx")>("@/lib/platform/shared/tx")).isNewRegistrationWindowOpen,
   readEventRosterLocked: mocks.readEventRosterLocked,
   assertEventRosterMutable: mocks.assertEventRosterMutable,
   runSerializableRegistrationTransaction: (operation: (tx: typeof mocks.prisma) => unknown) => operation(mocks.prisma),
@@ -51,23 +52,37 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.isEmailDeliveryConfigured.mockReturnValue(true);
   mocks.readEventRosterLocked.mockResolvedValue(false);
-  prisma.event.findMany.mockResolvedValue([{ id: "event-1", name: "Miracle Open", gameModeId: "mode-flashpeak-5v5" }]);
-  prisma.event.findUnique.mockResolvedValue({ gameModeId: "mode-flashpeak-5v5", participantCap: 16 });
+  prisma.event.findMany.mockResolvedValue([{ id: "event-1", name: "Miracle Open", gameModeId: "mode-flashpeak-5v5", status: "Published", registrationOpensAt: null, registrationClosesAt: null }]);
+  prisma.event.findUnique.mockResolvedValue({ gameModeId: "mode-flashpeak-5v5", participantCap: 16, status: "Published", registrationOpensAt: null, registrationClosesAt: null });
   prisma.team.findMany.mockResolvedValue([]);
 });
 
 describe("syncTeamCompletion", () => {
-  it("looks only at events whose roster is still open", async () => {
+  it("looks only at events that are in their registration phase", async () => {
     await syncTeamCompletion(now);
-    expect(prisma.event.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { status: { in: ["Published", "Registration Closed"] } },
-    }));
+    expect(prisma.event.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: "Published" } }));
+  });
+
+  it("skips an event whose registration window has already closed", async () => {
+    prisma.event.findMany.mockResolvedValue([
+      { id: "event-1", name: "Miracle Open", gameModeId: "mode-flashpeak-5v5", status: "Published", registrationOpensAt: null, registrationClosesAt: new Date(now.getTime() - hour) },
+    ]);
+    await syncTeamCompletion(now);
+    expect(prisma.team.findMany).not.toHaveBeenCalled();
+  });
+
+  it("skips an event whose registration window has not opened yet", async () => {
+    prisma.event.findMany.mockResolvedValue([
+      { id: "event-1", name: "Miracle Open", gameModeId: "mode-flashpeak-5v5", status: "Published", registrationOpensAt: new Date(now.getTime() + hour), registrationClosesAt: null },
+    ]);
+    await syncTeamCompletion(now);
+    expect(prisma.team.findMany).not.toHaveBeenCalled();
   });
 
   it("keeps going with the next event when one event cannot be checked", async () => {
     prisma.event.findMany.mockResolvedValue([
-      { id: "event-bad", name: "Old Event", gameModeId: "mode-that-no-longer-exists" },
-      { id: "event-1", name: "Miracle Open", gameModeId: "mode-flashpeak-5v5" },
+      { id: "event-bad", name: "Old Event", gameModeId: "mode-that-no-longer-exists", status: "Published", registrationOpensAt: null, registrationClosesAt: null },
+      { id: "event-1", name: "Miracle Open", gameModeId: "mode-flashpeak-5v5", status: "Published", registrationOpensAt: null, registrationClosesAt: null },
     ]);
     prisma.team.findMany.mockResolvedValue([team()]);
 
@@ -80,8 +95,8 @@ describe("syncTeamCompletion", () => {
 
   it("keeps going when the database fails for one event", async () => {
     prisma.event.findMany.mockResolvedValue([
-      { id: "event-a", name: "A", gameModeId: "mode-flashpeak-5v5" },
-      { id: "event-b", name: "B", gameModeId: "mode-flashpeak-5v5" },
+      { id: "event-a", name: "A", gameModeId: "mode-flashpeak-5v5", status: "Published", registrationOpensAt: null, registrationClosesAt: null },
+      { id: "event-b", name: "B", gameModeId: "mode-flashpeak-5v5", status: "Published", registrationOpensAt: null, registrationClosesAt: null },
     ]);
     prisma.team.findMany.mockRejectedValueOnce(new Error("timeout")).mockResolvedValueOnce([team()]);
     const result = await syncTeamCompletion(now);
@@ -201,9 +216,21 @@ describe("suspendIncompleteTeam", () => {
     expect(prisma.team.update).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["registration has closed", { status: "Registration Closed" }],
+    ["the event is running", { status: "Ongoing" }],
+    ["the closing time has passed", { registrationClosesAt: new Date(now.getTime() - hour) }],
+    ["registration has not opened yet", { registrationOpensAt: new Date(now.getTime() + hour) }],
+  ])("refuses to suspend once %s, because suspending belongs to the registration phase", async (_label, eventOverride) => {
+    prisma.team.findFirst.mockResolvedValue(overdueTeam);
+    prisma.event.findUnique.mockResolvedValue({ gameModeId: "mode-flashpeak-5v5", participantCap: 16, status: "Published", registrationOpensAt: null, registrationClosesAt: null, ...eventOverride });
+    await expect(suspendIncompleteTeam(organizer, "event-1", "team-1", now)).rejects.toThrow("selama pendaftaran event masih dibuka");
+    expect(prisma.team.update).not.toHaveBeenCalled();
+  });
+
   it("refuses an event with a game mode the app does not know", async () => {
     prisma.team.findFirst.mockResolvedValue(overdueTeam);
-    prisma.event.findUnique.mockResolvedValue({ gameModeId: "gone", participantCap: 16 });
+    prisma.event.findUnique.mockResolvedValue({ gameModeId: "gone", participantCap: 16, status: "Published", registrationOpensAt: null, registrationClosesAt: null });
     await expect(suspendIncompleteTeam(organizer, "event-1", "team-1", now)).rejects.toThrow("Mode game event ini tidak dikenal");
   });
 
@@ -303,6 +330,13 @@ describe("extendCompletionDeadline", () => {
     });
   });
 
+  it("refuses to extend once registration has closed", async () => {
+    prisma.team.findFirst.mockResolvedValue({ captainContact: null, completionDeadlineAt: null, _count: { players: 5 } });
+    prisma.event.findUnique.mockResolvedValue({ gameModeId: "mode-flashpeak-5v5", participantCap: 16, status: "Registration Closed", registrationOpensAt: null, registrationClosesAt: null });
+    await expect(extendCompletionDeadline(organizer, "event-1", "team-1", now)).rejects.toThrow("selama pendaftaran event masih dibuka");
+    expect(prisma.team.update).not.toHaveBeenCalled();
+  });
+
   it("refuses a team whose data is complete", async () => {
     prisma.team.findFirst.mockResolvedValue({ captainContact: "081234567890", completionDeadlineAt: null, _count: { players: 5 } });
     await expect(extendCompletionDeadline(organizer, "event-1", "team-1", now)).rejects.toThrow("sudah lengkap");
@@ -322,7 +356,7 @@ describe("getCaptainCompletionNotices", () => {
     _count: { players: 5 },
     ...overrides,
   });
-  const openEvent = { id: "event-1", name: "Miracle Open", status: "Published", gameModeId: "mode-flashpeak-5v5" };
+  const openEvent = { id: "event-1", name: "Miracle Open", status: "Published", gameModeId: "mode-flashpeak-5v5", registrationOpensAt: null, registrationClosesAt: null };
 
   beforeEach(() => {
     prisma.event.findMany.mockResolvedValue([openEvent]);
@@ -372,6 +406,15 @@ describe("getCaptainCompletionNotices", () => {
     prisma.team.findMany.mockResolvedValue([row({ eventId: null, suspendedFromEventId: "event-1", suspendedAt: new Date(now.getTime() - hour) })]);
     const [notice] = await getCaptainCompletionNotices("captain-1", now);
     expect(notice).toMatchObject({ teamId: "team-1", eventName: "Miracle Open", suspended: true });
+  });
+
+  it("skips the teams of an event once its registration has closed", async () => {
+    prisma.event.findMany.mockResolvedValue([{ ...openEvent, status: "Registration Closed" }]);
+    prisma.team.findMany.mockResolvedValue([row()]);
+    await expect(getCaptainCompletionNotices("captain-1", now)).resolves.toEqual([]);
+
+    prisma.event.findMany.mockResolvedValue([{ ...openEvent, registrationClosesAt: new Date(now.getTime() - hour) }]);
+    await expect(getCaptainCompletionNotices("captain-1", now)).resolves.toEqual([]);
   });
 
   it("skips a team whose event has a game mode the app does not know", async () => {

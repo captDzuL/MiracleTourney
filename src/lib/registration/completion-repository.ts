@@ -2,7 +2,7 @@ import { isEmailDeliveryConfigured, sendEmail } from "@/lib/email/send";
 import { writeServerLog } from "@/lib/observability/logger";
 import { prisma } from "@/lib/platform/db";
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
-import { assertEventRosterMutable, readEventRosterLocked, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
+import { assertEventRosterMutable, isNewRegistrationWindowOpen, readEventRosterLocked, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
 import type { AppUser } from "@/lib/platform/types";
 import { buildCompletionEmail } from "@/lib/registration/completion-email";
 import {
@@ -16,8 +16,11 @@ import {
 import { UserFacingError } from "@/lib/security/public-error";
 import { randomUUID } from "node:crypto";
 
-/** Events whose roster can still change. Once a drawing is published or play starts, nobody is suspended any more. */
-const OPEN_EVENT_STATUSES = ["Published", "Registration Closed"];
+/**
+ * Flagging, suspending and extending only happen while registration is open (status Published, inside the opening and
+ * closing times). The captain can still fill in the contact until the roster locks, so that has a wider list.
+ */
+const CONTACT_EDITABLE_EVENT_STATUSES = ["Published", "Registration Closed"];
 /** Imported captains get a made-up address on this domain, so mail to it would only bounce. */
 const SYNTHETIC_EMAIL_DOMAIN = "@miraclefc.gg";
 
@@ -55,11 +58,12 @@ export async function syncTeamCompletion(now: Date = new Date()): Promise<TeamCo
   const canEmail = isEmailDeliveryConfigured();
 
   const events = await prisma.event.findMany({
-    where: { status: { in: OPEN_EVENT_STATUSES } },
-    select: { id: true, name: true, gameModeId: true },
+    where: { status: "Published" },
+    select: { id: true, name: true, gameModeId: true, status: true, registrationOpensAt: true, registrationClosesAt: true },
   });
 
   for (const event of events) {
+    if (!isNewRegistrationWindowOpen(event, now)) continue;
     try {
       await syncEventTeams(event, now, canEmail, result);
     } catch (error) {
@@ -138,9 +142,13 @@ async function readTeamForDecision(
   tx: Pick<typeof prisma, "team" | "event">,
   eventId: string,
   teamId: string,
+  now: Date,
 ): Promise<{ team: TeamForDecision; requiredPlayers: number }> {
   const [event, team] = await Promise.all([
-    tx.event.findUnique({ where: { id: eventId }, select: { gameModeId: true } }),
+    tx.event.findUnique({
+      where: { id: eventId },
+      select: { gameModeId: true, status: true, registrationOpensAt: true, registrationClosesAt: true },
+    }),
     tx.team.findFirst({
       where: { id: teamId, eventId, suspendedAt: null },
       select: {
@@ -151,6 +159,9 @@ async function readTeamForDecision(
     }),
   ]);
   if (!event || !team) throw new UserFacingError("Tim tidak ditemukan di event ini.");
+  if (!isNewRegistrationWindowOpen(event, now)) {
+    throw new UserFacingError("Penangguhan dan perpanjangan hanya bisa dilakukan selama pendaftaran event masih dibuka.");
+  }
   const requiredPlayers = getRequiredPlayers(event.gameModeId);
   if (requiredPlayers === null) throw new UserFacingError("Mode game event ini tidak dikenal.");
   return { team, requiredPlayers };
@@ -166,7 +177,7 @@ export async function suspendIncompleteTeam(user: AppUser, eventId: string, team
   await assertUserCanManageEvent(user, eventId);
   await runSerializableRegistrationTransaction(async (tx) => {
     await assertEventRosterMutable(tx, eventId);
-    const { team, requiredPlayers } = await readTeamForDecision(tx, eventId, teamId);
+    const { team, requiredPlayers } = await readTeamForDecision(tx, eventId, teamId, now);
     if (decisionState(team, requiredPlayers, now) !== "overdue") {
       throw new UserFacingError("Tim ini belum melewati tenggat, atau datanya sudah lengkap.");
     }
@@ -246,7 +257,7 @@ export async function getCaptainCompletionNotices(captainId: string, now: Date =
   const eventIds = [...new Set(teams.map((team) => team.eventId ?? team.suspendedFromEventId).filter((id): id is string => Boolean(id)))];
   if (!eventIds.length) return [];
   const events = new Map(
-    (await prisma.event.findMany({ where: { id: { in: eventIds } }, select: { id: true, name: true, status: true, gameModeId: true } }))
+    (await prisma.event.findMany({ where: { id: { in: eventIds } }, select: { id: true, name: true, status: true, gameModeId: true, registrationOpensAt: true, registrationClosesAt: true } }))
       .map((event) => [event.id, event] as const),
   );
 
@@ -256,7 +267,7 @@ export async function getCaptainCompletionNotices(captainId: string, now: Date =
     if (!event) continue;
     const suspended = Boolean(team.suspendedAt);
     const requiredPlayers = getRequiredPlayers(event.gameModeId);
-    if (requiredPlayers === null || !OPEN_EVENT_STATUSES.includes(event.status)) continue;
+    if (requiredPlayers === null || !isNewRegistrationWindowOpen(event, now)) continue;
     const gaps = getCompletionGaps({ captainContact: team.captainContact, playerCount: team._count.players, requiredPlayers });
     const state = getCompletionState(gaps, team.completionDeadlineAt, now);
     if (state === "complete" && !suspended) continue;
@@ -276,7 +287,7 @@ export async function getCaptainCompletionNotices(captainId: string, now: Date =
 /** Saves the captain contact of one of the captain's own teams. */
 export async function updateCaptainTeamContact(captainId: string, teamId: string, captainContact: string): Promise<void> {
   const updated = await prisma.team.updateMany({
-    where: { id: teamId, captainId, OR: [{ eventId: null }, { event: { status: { in: OPEN_EVENT_STATUSES } } }] },
+    where: { id: teamId, captainId, OR: [{ eventId: null }, { event: { status: { in: CONTACT_EDITABLE_EVENT_STATUSES } } }] },
     data: { captainContact },
   });
   if (updated.count !== 1) throw new UserFacingError("Tim tidak ditemukan.");
@@ -285,7 +296,7 @@ export async function updateCaptainTeamContact(captainId: string, teamId: string
 /** Gives a team that still has gaps two more days. */
 export async function extendCompletionDeadline(user: AppUser, eventId: string, teamId: string, now: Date = new Date()): Promise<void> {
   await assertUserCanManageEvent(user, eventId);
-  const { team, requiredPlayers } = await readTeamForDecision(prisma, eventId, teamId);
+  const { team, requiredPlayers } = await readTeamForDecision(prisma, eventId, teamId, now);
   if (decisionState(team, requiredPlayers, now) === "complete") {
     throw new UserFacingError("Data tim ini sudah lengkap.");
   }
