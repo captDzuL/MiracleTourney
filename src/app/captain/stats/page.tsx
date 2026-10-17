@@ -2,6 +2,7 @@ import { getTranslations } from "next-intl/server";
 
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { captainSubmitStatsAction } from "@/lib/actions/match-actions";
+import { getCaptainOrTeamOwner } from "@/lib/auth/captain-access";
 import { requireRole } from "@/lib/auth/session";
 import { getStatKeysForMode } from "@/lib/platform/config";
 import { getCompletedMatchesForCaptain } from "@/lib/player-stats/repository";
@@ -13,9 +14,9 @@ import { SubmitButton } from "@/components/submit-button";
 export const dynamic = "force-dynamic";
 
 export default async function CaptainStatsPage() {
-  const user = await requireRole("captain");
+  const user = await getCaptainOrTeamOwner();
   if (!user) {
-    return redirectToActiveLocale("/login");
+    return redirectToActiveLocale((await requireRole("player")) ? "/player" : "/login");
   }
 
   const t = await getTranslations("captainStats");

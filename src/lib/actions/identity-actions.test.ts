@@ -145,7 +145,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("next/headers", () => ({ headers }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
-vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut }));
+vi.mock("@/lib/auth/session", () => ({ requireRole, signIn, signOut, reissueSession: vi.fn().mockResolvedValue(true) }));
 vi.mock("@/lib/actions/registration-v3-actions", () => ({ previewRegistrationImportForUser, commitRegistrationImportForUser }));
 vi.mock("@vercel/blob", () => ({ put: blobPut }));
 vi.mock("@/lib/bracket/repository", () => ({
@@ -436,6 +436,23 @@ describe("captainSignUpAction", () => {
     );
     expect(registerTeam).not.toHaveBeenCalled();
     expect(createTeamRegistrationRequest).not.toHaveBeenCalled();
+  });
+
+  it("keeps one email to one role: a player email cannot become a captain", async () => {
+    getUserByEmail.mockResolvedValue({ id: "player-1", role: "player" });
+
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/register?eventId=event-abc&error=Email+ini+sudah+dipakai+sebagai+pemain.",
+    );
+    expect(createCaptainAccount).not.toHaveBeenCalled();
+  });
+
+  it("still asks an existing captain to sign in", async () => {
+    getUserByEmail.mockResolvedValue({ id: "captain-1", role: "captain" });
+
+    await expect(captainSignUpAction(fd(validData))).rejects.toThrow(
+      "REDIRECT:/register?eventId=event-abc&error=Email+ini+sudah+terdaftar.+Coba+login.",
+    );
   });
 
   it("hashes password before creating account", async () => {

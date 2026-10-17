@@ -8,7 +8,7 @@ import { assertReaderResultWithinLimit, readerProbeLimit } from "@/lib/platform/
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { ORGANIZER_READER_HISTORY_LIMIT, ORGANIZER_READER_IMPORT_BATCH_LIMIT, ORGANIZER_READER_IMPORT_ITEM_LIMIT, ORGANIZER_READER_ROW_LIMIT, ROSTER_LOCKED_MESSAGE } from "@/lib/platform/shared/constants";
 import { mapTeam } from "@/lib/platform/shared/mappers";
-import { assertEventExists, assertEventRosterMutable, isNewRegistrationWindowOpen, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
+import { assertEventAcceptsTeams, assertEventExists, assertEventRosterMutable, isNewRegistrationWindowOpen, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
 import type { AppUser, Team, TeamRegistrationRequestStatus } from "@/lib/platform/types";
 import { getCompletionGaps, getCompletionState, getRequiredPlayers } from "@/lib/registration/completion";
 import { mapRequestStatus, normalizeRegistrationSource } from "@/lib/registration/records";
@@ -367,13 +367,14 @@ export async function commitRegistrationImportBatch(
   const batch = await prisma.registrationImportBatch.findFirst({
     where: { id: batchId },
     include: {
-      event: { select: { id: true, slug: true, format: true, participantCap: true } },
+      event: { select: { id: true, slug: true, format: true, participantCap: true, entryMode: true } },
       items: true,
     },
   });
 
   if (!batch) throw new Error("Batch import registrasi tidak ditemukan.");
   await assertUserCanManageEvent(user, batch.eventId);
+  assertEventAcceptsTeams(batch.event);
   const locked = await isEventBracketLocked(batch.eventId);
   if (locked) {
     throw new UserFacingError(ROSTER_LOCKED_MESSAGE);

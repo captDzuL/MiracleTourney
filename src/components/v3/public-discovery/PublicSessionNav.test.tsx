@@ -114,6 +114,29 @@ describe("PublicSessionNav", () => {
     });
   });
 
+  describe("player", () => {
+    beforeEach(() => respondWith({ name: "Bima", role: "player", pendingCount: 0 }));
+
+    it("links to the player area and not to the captain, organizer or admin areas", async () => {
+      await render();
+      expect(link("Pemain")?.getAttribute("href")).toBe("/id/player");
+      expect(link("Kapten")).toBeNull();
+      expect(link("Organizer")).toBeNull();
+      expect(link("Admin")).toBeNull();
+      expect(link("Masuk")).toBeNull();
+    });
+
+    it("localizes the player link for the en locale", async () => {
+      await render("en");
+      expect(link("Player")?.getAttribute("href")).toBe("/en/player");
+    });
+
+    it("offers a logout button labelled with the account name", async () => {
+      await render();
+      expect(container.querySelector("form button")?.textContent).toContain("Bima");
+    });
+  });
+
   describe("organizer", () => {
     beforeEach(() => respondWith({ name: "Sinta", role: "organizer", pendingCount: 0 }));
 

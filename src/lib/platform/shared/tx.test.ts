@@ -21,9 +21,11 @@ vi.mock("@/lib/observability/logger", () => ({ writeServerLog }));
 import { UserFacingError } from "@/lib/security/public-error";
 import { ROSTER_LOCKED_MESSAGE } from "./constants";
 import {
+  assertEventAcceptsTeams,
   assertEventExists,
   assertEventRosterMutable,
   assertNewRegistrationWindowOpen,
+  assertRosterMayBeEditedDirectly,
   expireStaleRegistrationRequests,
   isNewRegistrationWindowOpen,
   readEventRosterLocked,
@@ -251,3 +253,26 @@ describe("expireStaleRegistrationRequests", () => {
     expect(prisma.team.deleteMany).not.toHaveBeenCalled();
   });
 });
+
+describe("guards for solo events and drawn teams", () => {
+  it("lets a team event, and an event from before the column, take teams", () => {
+    expect(() => assertEventAcceptsTeams({ entryMode: "team" })).not.toThrow();
+    expect(() => assertEventAcceptsTeams({ entryMode: null })).not.toThrow();
+    expect(() => assertEventAcceptsTeams({})).not.toThrow();
+  });
+
+  it("refuses a team for a solo event, in words a captain can read", () => {
+    expect(() => assertEventAcceptsTeams({ entryMode: "solo" })).toThrow("Event ini untuk pemain solo. Pendaftaran tim tidak dibuka.");
+  });
+
+  it("leaves the roster of an ordinary team to its captain", () => {
+    for (const source of ["registration", "draft", "e2e", null, undefined]) {
+      expect(() => assertRosterMayBeEditedDirectly({ source })).not.toThrow();
+    }
+  });
+
+  it("keeps the roster of a team made by a draw out of its captain's hands", () => {
+    expect(() => assertRosterMayBeEditedDirectly({ source: "solo-draw" })).toThrow("Pemain tim ini dari hasil acak. Minta organizer menggantinya.");
+  });
+});
+

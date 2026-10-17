@@ -331,6 +331,8 @@ export type PublicHomeFeaturedEvent = PublicHomeFeaturedBase & (
 
 export type CompatiblePublicEventRecord = {
   id?: string;
+  /** "solo" when players join one by one; absent or "team" when captains register a team. */
+  entryMode?: string | null;
   slug?: string;
   name?: string;
   title?: string;

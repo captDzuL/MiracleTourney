@@ -39,6 +39,23 @@ describe("resolvePostLoginPath", () => {
     expect(resolvePostLoginPath({ role })).toBe("/admin");
   });
 
+  it("sends a player to the player area", () => {
+    expect(resolvePostLoginPath({ role: "player" })).toBe("/player");
+  });
+
+  it("sends a player back to the safe return path they came from", () => {
+    expect(resolvePostLoginPath({ role: "player", returnTo: "/events/solo-cup/register" })).toBe("/events/solo-cup/register");
+  });
+
+  it("ignores an event id for a player, who comes back through the return path instead", () => {
+    expect(resolvePostLoginPath({ role: "player", eventId: "event-abc" })).toBe("/player");
+    expect(resolvePostLoginPath({ role: "player", eventId: "abc/../admin" })).toBe("/player");
+  });
+
+  it("never sends a player to the captain area by default", () => {
+    expect(resolvePostLoginPath({ role: "player" })).not.toContain("/captain");
+  });
+
   it("does not let a return path or event id redirect anyone but a captain", () => {
     expect(resolvePostLoginPath({ role: "organizer", returnTo: "/events/a/register", eventId: "event-abc" })).toBe("/organizer");
     expect(resolvePostLoginPath({ role: "platform_admin", returnTo: "/events/a/register" })).toBe("/admin");

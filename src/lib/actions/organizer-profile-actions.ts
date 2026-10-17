@@ -5,7 +5,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { requireAnyRole } from "@/lib/auth/session";
+import { reissueSession, requireAnyRole } from "@/lib/auth/session";
 import { getUserPasswordHashById, updateUserPassword } from "@/lib/identity/repository";
 import { updateOrganizerProfileForUser } from "@/lib/platform/settings-repository";
 import { withServerActionLog } from "@/lib/observability/logger";
@@ -50,6 +50,8 @@ async function completeOrganizerPasswordChangeActionImpl(formData: FormData) {
   const currentHash = await getUserPasswordHashById(user.id);
   if (!currentHash || !(await bcrypt.compare(input.currentPassword, currentHash))) throw new Error("Current password is incorrect");
   await updateUserPassword(user.id, await bcrypt.hash(input.newPassword, 10));
+  // If the new session cannot be made, the organizer signs in again with the password they just chose.
+  if (!(await reissueSession(user.id).catch(() => false))) redirect(`/${input.locale}/login`);
   revalidatePath("/organizer");
   redirect(`/${input.locale}/organizer?password=changed`);
 }

@@ -17,7 +17,7 @@ import { getOrganizerUserById } from "@/lib/identity/repository";
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import type { AppUser } from "@/lib/platform/types";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { toSafeActionMessage } from "@/lib/security/public-error";
+import { UserFacingError, toSafeActionMessage } from "@/lib/security/public-error";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 
@@ -120,7 +120,14 @@ export async function adminUpdateEventStatusAction(formData: FormData) {
     return redirectToActiveLocale(`/admin?success=event-status-updated&event=${publication.slug}`);
   }
 
-  const event = await setEventStatus(input.eventId, input.status);
+  let event;
+  try {
+    event = await setEventStatus(input.eventId, input.status);
+  } catch (error) {
+    // A refusal the admin should read, such as closing a solo event from the wrong place.
+    if (error instanceof UserFacingError) return redirectToActiveLocale(`/admin?error=${encodeURIComponent(error.message)}` as never);
+    throw error;
+  }
 
   if (!event) {
     return redirectToActiveLocale("/admin?error=Event%20not%20found.");

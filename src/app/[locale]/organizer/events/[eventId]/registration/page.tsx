@@ -6,7 +6,8 @@ import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getRegistrationImportEventContext } from "@/lib/imports/repository";
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { getEventRegistrationQueue, getEventImportHistory, getEventPaymentReview, getEventQris } from "@/lib/registration/organizer-workspace-read";
-import type { RegistrationStatus, RegistrationSource } from "@/lib/registration/records";
+import { filterRegistrationRecords, type RegistrationStatus, type RegistrationSource } from "@/lib/registration/records";
+import { getSoloDrawPanelData, getSoloEventSummary, listSoloPaymentEntries, listSoloRegistrationRecords } from "@/lib/solo/organizer-read";
 import type { TeamRegistrationRequestStatus } from "@/lib/platform/types";
 import { RegistrationWorkspace } from "@/components/v3/organizer/registration/RegistrationWorkspace";
 import { normalizeRegistrationQuery, type QueryInput } from "@/components/v3/organizer/registration/query";
@@ -14,6 +15,13 @@ import { createServerMilestoneLogger, withServerActionLog } from "@/lib/observab
 
 const REGISTRATION_ROUTE_OPERATION = "registration_workspace_render";
 const REGISTRATION_ROUTE_PATH = "/organizer/events/:eventId/registration";
+
+/** The tabs a team event and a solo event do not have fall back to the list. */
+function availableView(view: ReturnType<typeof normalizeRegistrationQuery>["view"], solo: boolean) {
+ if (solo && view === "import") return "queue";
+ if (!solo && view === "draw") return "queue";
+ return view;
+}
 
 export default async function OrganizerRegistrationPage({ params, searchParams }: { params: Promise<{ locale: string; eventId: string }>; searchParams?: Promise<QueryInput> }) {
  const { locale, eventId } = await params;
@@ -62,11 +70,29 @@ async function renderOrganizerRegistrationPage({ locale, eventId, searchParams, 
    trace("route_return", { locale, resourceId: eventId });
    return result;
   }
-  const common = { ...base, capacity: context.participantCap, acceptedCount: context.teams.length };
+  const solo = await getSoloEventSummary(eventId);
+  query = { ...query, view: availableView(query.view, solo !== null) };
+  const common = { ...base, query, capacity: context.participantCap, acceptedCount: context.teams.length };
+  const soloOnly = solo ? { solo: { summary: solo } } : {};
   if (query.view === "queue") {
-   const queue = await getEventRegistrationQueue({ user, eventId, status: (query.status === "approved" ? "accepted" : query.status === "expired" ? "needs_correction" : query.status || undefined) as RegistrationStatus | undefined, source: query.source as RegistrationSource || undefined, query: query.q, page: query.page });
+   const filter = { status: (query.status === "approved" ? "accepted" : query.status === "expired" ? "needs_correction" : query.status || undefined) as RegistrationStatus | undefined, source: query.source as RegistrationSource || undefined, query: query.q, page: query.page };
+   if (solo) {
+    // A solo player whose time ran out is "expired", not a team's "needs correction".
+    const soloStatus = (query.status === "approved" ? "accepted" : query.status || undefined) as RegistrationStatus | undefined;
+    const queue = filterRegistrationRecords(await listSoloRegistrationRecords(user, eventId), { ...filter, status: soloStatus });
+    const result = <RegistrationWorkspace {...common} {...soloOnly} queue={queue} teams={[]} />;
+    trace("route_return", { locale, resourceId: eventId });
+    return result;
+   }
+   const queue = await getEventRegistrationQueue({ user, eventId, ...filter });
    const visible = new Set(queue.items.map(item => item.teamId));
    const result = <RegistrationWorkspace {...common} queue={queue} teams={context.teams.filter(team => visible.has(team.id))} />;
+   trace("route_return", { locale, resourceId: eventId });
+   return result;
+  }
+  if (query.view === "draw" && solo) {
+   const draw = await getSoloDrawPanelData({ user, eventId, status: solo.status });
+   const result = <RegistrationWorkspace {...common} solo={{ summary: solo, draw }} />;
    trace("route_return", { locale, resourceId: eventId });
    return result;
   }
@@ -78,13 +104,14 @@ async function renderOrganizerRegistrationPage({ locale, eventId, searchParams, 
    return result;
   }
   if (query.view === "payments") {
-   const payments = await getEventPaymentReview({ user, eventId, status: query.status as TeamRegistrationRequestStatus || undefined });
-   const result = <RegistrationWorkspace {...common} payments={payments} />;
+   const status = query.status as TeamRegistrationRequestStatus || undefined;
+   const payments = solo ? await listSoloPaymentEntries(user, eventId, status) : await getEventPaymentReview({ user, eventId, status });
+   const result = <RegistrationWorkspace {...common} {...soloOnly} payments={payments} />;
    trace("route_return", { locale, resourceId: eventId });
    return result;
   }
   const qris = await getEventQris({ user, eventId });
-  const result = <RegistrationWorkspace {...common} qris={qris} />;
+  const result = <RegistrationWorkspace {...common} {...soloOnly} qris={qris} />;
   trace("route_return", { locale, resourceId: eventId });
   return result;
  } catch {

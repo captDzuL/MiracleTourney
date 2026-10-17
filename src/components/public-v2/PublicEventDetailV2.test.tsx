@@ -45,4 +45,22 @@ describe("PublicEventDetailV2", () => {
     expect(markup).not.toContain("Quick links");
     expect(markup).not.toContain("/events/miracle-open/");
   });
+
+  describe("join button", () => {
+    const published = { ...event, status: "Published" } as Event;
+    const render = (registrationOpen?: boolean) => renderToStaticMarkup(
+      <PublicEventDetailV2 event={published} game={game} mode={mode} teams={[]} bracket={[]} labels={labels} registrationOpen={registrationOpen} />,
+    );
+
+    it("shows for a published event by default", () => {
+      expect(render()).toContain('data-testid="pv-detail-register"');
+    });
+
+    it("goes away when the registration page is switched off", () => {
+      const markup = render(false);
+      expect(markup).not.toContain("pv-detail-register");
+      expect(markup).not.toContain("/miracle-open/register");
+      expect(markup).toContain("Share event");
+    });
+  });
 });

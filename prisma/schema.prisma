@@ -41,6 +41,12 @@ model User {
   publishedScheduleRevisions       ScheduleRevision[]          @relation("ScheduleRevisionPublisher")
   createdAnnouncements             EventAnnouncement[]         @relation("EventAnnouncementCreator")
   publishedAnnouncements           EventAnnouncement[]         @relation("EventAnnouncementPublisher")
+  playerProfile                    PlayerProfile?
+  players                          Player[]                    @relation("PlayerUser")
+  soloRegistrations                SoloRegistration[]          @relation("SoloRegistrationPlayer")
+  approvedSoloRegistrations        SoloRegistration[]          @relation("SoloRegistrationApprover")
+  createdSoloDraws                 SoloDraw[]                  @relation("SoloDrawCreator")
+  lockedSoloDraws                  SoloDraw[]                  @relation("SoloDrawLocker")
   createdAt                        DateTime                    @default(now())
   updatedAt                        DateTime                    @updatedAt
 }
@@ -142,6 +148,13 @@ model Event {
   rosterChangeRequests           RosterChangeRequest[]
   scheduleRevisions              ScheduleRevision[]
   announcements                  EventAnnouncement[]
+  /// "team" (default, every existing event) | "solo"
+  entryMode                      String                          @default("team")
+  /// The locked solo draw. Unique, so an event has at most one locked draw.
+  activeSoloDrawId               String?                         @unique
+  activeSoloDraw                 SoloDraw?                       @relation("ActiveSoloDraw", fields: [activeSoloDrawId], references: [id], onDelete: SetNull)
+  soloRegistrations              SoloRegistration[]
+  soloDraws                      SoloDraw[]                      @relation("EventSoloDraws")
   createdAt                      DateTime                        @default(now())
   updatedAt                      DateTime                        @updatedAt
 
@@ -364,10 +377,14 @@ model Player {
   removedAt    DateTime?
   /// Closed absences [{ from, to }] (ISO strings) of a player who left and later came back.
   rosterGaps   Json         @default("[]")
+  /// The player account behind this roster row. Null for rows entered by a captain or imported.
+  userId       String?
+  user         User?        @relation("PlayerUser", fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([teamId, nickname])
   @@index([teamId])
   @@index([eventId])
+  @@index([userId])
 }
 
 model Match {
@@ -1117,4 +1134,131 @@ model EventAnnouncement {
   updatedAt     DateTime            @updatedAt
 
   @@index([eventId, status, publishedAt])
+}
+
+/// A player account's contact details, kept apart from User like OrganizerProfile.
+model PlayerProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  whatsapp  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// One player signing up for one solo event. Mirrors TeamRegistrationRequest, plus a queue.
+model SoloRegistration {
+  id                String    @id @default(cuid())
+  eventId           String
+  event             Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User      @relation("SoloRegistrationPlayer", fields: [userId], references: [id], onDelete: Cascade)
+
+  ign               String
+  uid               String
+  /// uid trimmed and lower-cased, so the same game account cannot register twice.
+  uidKey            String
+  primaryPosition   String
+  /// Equal to the game required position means the player can fill in when it is short.
+  secondaryPosition String?
+  /// "required" | "open". Derived from primaryPosition when registering; stored so slot counts stay cheap.
+  slotGroup         String
+  willingCaptain    Boolean   @default(false)
+  /// Copy taken at registration. Teammates only see it once the teams are locked.
+  whatsapp          String
+
+  /// queued | pending_payment | pending_review | approved | rejected | expired | withdrawn
+  status            String
+  proofImageUrl     String?
+  rejectReason      String?
+  /// When the player started holding a slot. Null while queued.
+  slotHeldAt        DateTime?
+  /// Payment deadline. Null for free events and while queued.
+  expiresAt         DateTime?
+  approvedAt        DateTime?
+  approvedById      String?
+  approvedBy        User?     @relation("SoloRegistrationApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  withdrawnAt       DateTime?
+  /// Set by the organizer for players who paid and then withdrew or did not make a team.
+  refundedAt        DateTime?
+  refundNote        String?
+  /// Bumped on every status change, for compare-and-swap like team payments.
+  version           Int       @default(0)
+
+  assignments       SoloDrawAssignment[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([eventId, userId])
+  @@unique([eventId, uidKey])
+  @@unique([eventId, id])
+  @@index([eventId, slotGroup, status, createdAt])
+  @@index([userId])
+  @@index([approvedById])
+}
+
+/// One run of the random draw for a solo event.
+model SoloDraw {
+  id               String     @id @default(cuid())
+  eventId          String
+  event            Event      @relation("EventSoloDraws", fields: [eventId], references: [id], onDelete: Cascade)
+  /// 1, 2, 3 ... goes up with every re-draw.
+  version          Int
+  /// draft | locked | superseded
+  status           String     @default("draft")
+  seed             String
+  /// Version of the draw rules, so an old draw can still be explained after the rules change.
+  algorithmVersion String
+  /// SHA-256 of the approved registrations at draw time. Compared again when locking.
+  inputHash        String
+  /// Settings used for this draw: team size, required positions, captain rule.
+  config           Json
+  teamCount        Int
+  /// Approved players who did not make a team (the refund list).
+  unplacedCount    Int        @default(0)
+  warnings         Json       @default("[]")
+
+  createdById      String?
+  createdBy        User?      @relation("SoloDrawCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  lockedById       String?
+  lockedBy         User?      @relation("SoloDrawLocker", fields: [lockedById], references: [id], onDelete: SetNull)
+  lockedAt         DateTime?
+
+  assignments      SoloDrawAssignment[]
+  activeForEvent   Event?     @relation("ActiveSoloDraw")
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@unique([eventId, version])
+  @@unique([eventId, id])
+  @@index([eventId, status])
+  @@index([createdById])
+  @@index([lockedById])
+}
+
+/// Where each registration landed in one draw.
+model SoloDrawAssignment {
+  id               String           @id @default(cuid())
+  drawId           String
+  eventId          String
+  draw             SoloDraw         @relation(fields: [eventId, drawId], references: [eventId, id], onDelete: Cascade)
+  registrationId   String
+  registration     SoloRegistration @relation(fields: [eventId, registrationId], references: [eventId, id], onDelete: Cascade)
+
+  /// 1-based team number. Null for players who did not make a team.
+  teamIndex        Int?
+  /// starter | unplaced
+  role             String
+  /// The position held in the team. Null for unplaced players.
+  assignedPosition String?
+  isCaptain        Boolean          @default(false)
+
+  /// Filled in when the draw is locked. No foreign key: a Team or Player can be removed without breaking the draw history.
+  teamId           String?
+  playerId         String?
+  createdAt        DateTime         @default(now())
+
+  @@unique([drawId, registrationId])
+  @@index([drawId, teamIndex])
+  @@index([registrationId])
 }

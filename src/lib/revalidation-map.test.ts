@@ -55,6 +55,13 @@ const EXPECTED: Record<string, string[]> = {
   captainUploadTeamLogoAction: ['path(/captain)', 'tag(teams)'],
   uploadEventLogo: ['path(/, layout)', 'tag(events)'],
   uploadEventVisual: ['path(/, layout)', 'tag(events)'],
+  // lib/actions/{solo-registration,solo-organizer,player-profile}-actions.ts
+  perform: ['tag(tag)'],
+  performOn: ['tag(tag)'],
+  register: ['path(registerPath(event.slug))'],
+  uploadProof: ['path(registerPath(own.slug))'],
+  withdraw: ['path(registerPath(own.slug))'],
+  updateProfile: ['path(PROFILE_PATH)'],
   // lib/actions/captain-roster-change-actions.ts
   captainCancelRosterChangeAction: ['path(/captain)'],
   captainRequestRosterChangeAction: ['path(/captain)'],

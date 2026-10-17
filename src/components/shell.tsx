@@ -31,6 +31,7 @@ function ExistingAppShell({ children }: { children: React.ReactNode }) {
       <MobileMenuToggle
         eventsLabel={t("events")}
         captainLabel={t("captain")}
+        playerLabel={t("player")}
         adminLabel={t("admin")}
         loginLabel={t("login")}
         matchStatsLabel={t("matchStats")}
@@ -60,6 +61,7 @@ function ExistingAppShell({ children }: { children: React.ReactNode }) {
           { href: "/organizer/profile", label: "Organizer profile", roles: ["organizer"] },
           { href: "/captain", label: t("captain"), roles: ["captain"] },
           { href: "/captain/stats", label: t("matchStats"), roles: ["captain"] },
+          { href: "/player", label: t("player"), roles: ["player"] },
           { href: "/admin", label: t("admin"), roles: ["platform_admin", "admin"] },
           ...(isFeatureEnabled("organizer_master_shell_v3") && isFeatureEnabled("organizer_workspace_v3")
             ? [

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { prisma } = vi.hoisted(() => ({
   prisma: {
@@ -35,6 +35,41 @@ describe("evaluatePublishReadiness", () => {
         { code: "organizer_contact", field: "organizerContact", section: "organizer" },
       ],
       notices: [],
+    });
+  });
+
+  describe("solo events", () => {
+    const solo = { ...completeEvent, gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", entryMode: "solo" };
+
+    it("are ready when the game has solo rules and the feature is on", () => {
+      expect(evaluatePublishReadiness(solo, { soloEnabled: true })).toMatchObject({ ready: true, incomplete: [] });
+    });
+
+    it("are blocked for a game without a required position", () => {
+      expect(evaluatePublishReadiness({ ...solo, gameModeId: "mode-mlbb-5v5" }, { soloEnabled: true })).toMatchObject({
+        ready: false,
+        incomplete: [{ code: "solo_unsupported_game", field: "entryMode", section: "registration" }],
+      });
+    });
+
+    it("are blocked while the feature is off", () => {
+      expect(evaluatePublishReadiness(solo)).toMatchObject({
+        ready: false,
+        incomplete: [{ code: "solo_disabled", field: "entryMode", section: "registration" }],
+      });
+    });
+
+    it("reports both problems when both apply", () => {
+      const codes = evaluatePublishReadiness({ ...solo, gameModeId: "mode-mlbb-5v5" }).incomplete.map((item) => item.code);
+      expect(codes).toEqual(["solo_unsupported_game", "solo_disabled"]);
+    });
+
+    it("do not change anything for team events, with the feature on or off", () => {
+      for (const entryMode of [undefined, "team"]) {
+        for (const soloEnabled of [true, false]) {
+          expect(evaluatePublishReadiness({ ...completeEvent, entryMode }, { soloEnabled })).toMatchObject({ ready: true });
+        }
+      }
     });
   });
 
@@ -166,6 +201,29 @@ describe("publishEvent", () => {
     });
     expect(prisma.eventPreviewToken.updateMany).toHaveBeenCalledWith({
       where: { eventId: "event-1", revokedAt: null }, data: { revokedAt: expect.any(Date) },
+    });
+  });
+
+  describe("a solo event", () => {
+    const soloRow = () => ({
+      id: "event-1", status: "Draft", organizerUserId: "organizer-1", draftRevision: 7, ...completeEvent,
+      gameId: "game-flashpeak", gameModeId: "mode-flashpeak-5v5", entryMode: "solo",
+    });
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("cannot be published while solo tournaments are off", async () => {
+      prisma.event.findUnique.mockResolvedValue(soloRow());
+      await expect(publishEvent("event-1", { id: "organizer-1", role: "organizer" })).resolves.toMatchObject({
+        status: "blocked", readiness: { incomplete: [{ code: "solo_disabled" }] },
+      });
+      expect(prisma.event.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("is published once the feature is on and the game supports it", async () => {
+      vi.stubEnv("FEATURE_FLAG_SOLO_TOURNAMENT_V1", "true");
+      prisma.event.findUnique.mockResolvedValue(soloRow());
+      prisma.event.updateMany.mockResolvedValue({ count: 1 });
+      await expect(publishEvent("event-1", { id: "organizer-1", role: "organizer" })).resolves.toMatchObject({ status: "published" });
     });
   });
 

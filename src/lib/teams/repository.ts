@@ -5,7 +5,7 @@ import { prisma } from "@/lib/platform/db";
 import { assertUserCanManageTeam } from "@/lib/platform/shared/authz";
 import { CACHE_TAGS } from "@/lib/platform/shared/constants";
 import { mapPlayer, mapTeam } from "@/lib/platform/shared/mappers";
-import { assertEventRosterMutable, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
+import { assertEventRosterMutable, assertRosterMayBeEditedDirectly, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
 import type { AppUser, Player, Team } from "@/lib/platform/types";
 import { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
@@ -125,9 +125,10 @@ export async function addPlayer(input: {
     return await runSerializableRegistrationTransaction(async (tx) => {
       const team = await tx.team.findFirst({
         where: { id: input.teamId, ...(input.captainId ? { captainId: input.captainId } : {}) },
-        select: { eventId: true },
+        select: { eventId: true, source: true },
       });
       if (!team) throw new Error("Tim tidak ditemukan untuk akun ini.");
+      assertRosterMayBeEditedDirectly(team);
       if (input.eventId && team.eventId && input.eventId !== team.eventId) {
         throw new Error("Data event pemain tidak cocok dengan tim.");
       }
@@ -164,11 +165,12 @@ export async function updatePlayer(
   return runSerializableRegistrationTransaction(async (tx) => {
     const player = await tx.player.findUnique({
       where: { id },
-      include: { team: { select: { captainId: true, eventId: true } } },
+      include: { team: { select: { captainId: true, eventId: true, source: true } } },
     });
     if (!player || player.team.captainId !== captainUserId) {
       throw new Error("Not authorized to edit this player.");
     }
+    assertRosterMayBeEditedDirectly(player.team);
     if (player.team.eventId) await assertEventRosterMutable(tx, player.team.eventId);
     return mapPlayer(await tx.player.update({ where: { id }, data }));
   });
@@ -183,11 +185,12 @@ export async function deletePlayer(id: string, captainUserId: string): Promise<v
   await runSerializableRegistrationTransaction(async (tx) => {
     const player = await tx.player.findUnique({
       where: { id },
-      include: { team: { select: { captainId: true, eventId: true } } },
+      include: { team: { select: { captainId: true, eventId: true, source: true } } },
     });
     if (!player || player.team.captainId !== captainUserId) {
       throw new Error("Not authorized to delete this player.");
     }
+    assertRosterMayBeEditedDirectly(player.team);
     if (player.team.eventId) await assertEventRosterMutable(tx, player.team.eventId);
     await tx.player.delete({ where: { id } });
   });

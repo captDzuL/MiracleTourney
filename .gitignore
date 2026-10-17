@@ -40,6 +40,9 @@ test-results/
 
 .vercel
 
+# Certificates written by the end-to-end release journey
+public/certificates/e2e-*/
+
 # Playwright output
 playwright-report/
 playwright-release-report/

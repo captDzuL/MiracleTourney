@@ -7,10 +7,23 @@ import { PublicV3DetailFrame } from "@/components/v3/public-event/PublicV3Detail
 import { DataTable, Section } from "@/components/ui";
 import { TeamIdentity } from "@/components/TeamAvatar";
 import { PublicParticipantsDirectory } from "@/components/v3/public-event/PublicParticipantsDirectory";
+import { SoloPendingTeamsNote } from "@/components/solo/SoloPendingTeamsNote";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getPublicEventBySlug } from "@/lib/events/repository";
 import { getPlayersForTeams, getTeamsForEvent } from "@/lib/teams/repository";
+import { soloTotals } from "@/lib/solo/labels";
+import type { SlotCounts } from "@/lib/solo/registration-types";
 import { getCaptainDisplayName } from "@/lib/team-display";
+
+/** Player counts for a solo event that has no teams yet. Never fails the page. */
+async function loadSoloTotals(eventId: string): Promise<SlotCounts | null> {
+  try {
+    const { getSoloQuotaSnapshot } = await import("@/lib/solo/registration-repository");
+    return soloTotals(await getSoloQuotaSnapshot(eventId));
+  } catch {
+    return null;
+  }
+}
 
 function V3ParticipantsTable({ columns, rows }: { columns: string[]; rows: Array<Array<React.ReactNode>> }) {
   return (
@@ -39,6 +52,9 @@ export async function renderParticipantsPage(slug: string, locale?: "id" | "en")
     captain: getCaptainDisplayName(team),
     players: team.players.map(({ id, nickname, displayName, position }) => ({ id, nickname, displayName, position })),
   }));
+  const soloPending = event.entryMode === "solo" && teams.length === 0
+    ? <SoloPendingTeamsNote locale={locale ?? "id"} totals={await loadSoloTotals(event.id)} />
+    : null;
   const title = t("sectionTitle", { name: event.name });
   const description = t("sectionDescription");
   const adaptive = isFeatureEnabled("adaptive_public_event_v3");
@@ -56,7 +72,7 @@ export async function renderParticipantsPage(slug: string, locale?: "id" | "en")
     return (
       <PublicV3DetailFrame backLabel={t("backToEvent")} description={description} event={event} locale={locale} title={title}>
         <section className="mpv3-section" aria-label={title}>
-          {adaptive ? <PublicParticipantsDirectory teams={directoryTeams} locale={locale ?? "id"} /> : <V3ParticipantsTable columns={columns} rows={rows} />}
+          {soloPending ?? (adaptive ? <PublicParticipantsDirectory teams={directoryTeams} locale={locale ?? "id"} /> : <V3ParticipantsTable columns={columns} rows={rows} />)}
         </section>
       </PublicV3DetailFrame>
     );
@@ -69,7 +85,7 @@ export async function renderParticipantsPage(slug: string, locale?: "id" | "en")
         title={title}
         description={description}
       >
-      {adaptive ? <PublicParticipantsDirectory teams={directoryTeams} locale={locale ?? "id"} /> : <DataTable columns={columns} rows={rows} />}
+      {soloPending ?? (adaptive ? <PublicParticipantsDirectory teams={directoryTeams} locale={locale ?? "id"} /> : <DataTable columns={columns} rows={rows} />)}
       </Section>
     </>
   );

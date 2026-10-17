@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { routing } from "./i18n/routing";
+import { roleAreaOf, roleMayEnter } from "./lib/auth/route-access";
 import { checkLocalRateLimit } from "./lib/rate-limit-local";
 
 const JWT_COOKIE = "mfl_token";
@@ -169,14 +170,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // Route protection — verify JWT and check role
-  if (normalizedPath.startsWith("/captain") || normalizedPath.startsWith("/admin")) {
-    const role = await getRole(request);
-    const canAccessAdmin = role === "platform_admin" || role === "organizer" || role === "admin";
-    const canAccessCaptain = role === "captain";
-
-    if ((normalizedPath.startsWith("/admin") && !canAccessAdmin) || (normalizedPath.startsWith("/captain") && !canAccessCaptain)) {
-      return NextResponse.redirect(new URL(`/${activeLocale}/login`, request.url));
-    }
+  const area = roleAreaOf(normalizedPath);
+  if (area && !roleMayEnter(area, await getRole(request))) {
+    return NextResponse.redirect(new URL(`/${activeLocale}/login`, request.url));
   }
 
   // Locale detection + cookie management (sets NEXT_LOCALE cookie)

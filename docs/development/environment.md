@@ -40,6 +40,7 @@ Sumber kebenarannya adalah [`.env.example`](../../.env.example). Tabel ini meran
 | `SEED_ADMIN_PASSWORD` | Password akun admin hasil seed. |
 | `SEED_ORGANIZER_PASSWORD` | Password akun organizer hasil seed. |
 | `SEED_CAPTAIN_PASSWORD` | Password akun captain hasil seed. |
+| `SEED_PLAYER_PASSWORD` | Password 14 akun pemain solo hasil seed (`solo-player-NN@miraclefc.gg`). |
 
 Kalau kosong, semuanya memakai `Miracle2026!`.
 

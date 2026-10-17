@@ -1,8 +1,10 @@
 // Registration state and call to action of a public V3 event.
 // Moved out of public-v3-read.ts without changes (refactor Phase 4, 4c-v3read).
 
-import { buildRegistrationCta, getRegistrationAvailability } from "@/lib/events/adaptive-public-event";
+import { buildRegistrationCta, buildSoloRegistrationCta, getRegistrationAvailability } from "@/lib/events/adaptive-public-event";
 import type { RegistrationAvailability, RegistrationCta, RegistrationViewerState } from "@/lib/events/adaptive-public-event";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { getSoloDrawRules } from "@/lib/platform/config";
 import { publicV3LocalizedHref } from "@/lib/events/public-v3-types";
 import type { CompatiblePublicEventInput, CompatiblePublicEventRecord, PublicV3Cta, PublicV3DataSource, PublicV3EventViewModel, PublicV3Match, PublicV3Team } from "@/lib/events/public-v3-types";
 import { dateText, nonNegative, record, text } from "@/lib/events/public-v3/basics";
@@ -69,7 +71,10 @@ export function registrationInput(event: CompatiblePublicEventRecord, input: Com
   const rosterLimits = getRosterLimits(text(event.gameModeId));
   const opensAt = dateText(rawRegistration.opensAt, dateText(event.registrationOpensAt));
   const closesAt = dateText(rawRegistration.closesAt, dateText(event.registrationClosesAt));
-  const availability = getRegistrationAvailability({
+  const isSolo = event.entryMode === "solo";
+  // A solo event is only joinable while the solo flag is on; with it off the page behind the button is a 404.
+  const soloOpen = isSolo && getSoloDrawRules(text(event.gameModeId)) !== null && isFeatureEnabled("solo_tournament_v1");
+  const windowAvailability = getRegistrationAvailability({
     status: event.status === "Registration Closed" ? "Registration Closed" : event.status === "Ongoing" ? "Ongoing" : "Published",
     opensAt: opensAt ? new Date(opensAt) : null,
     closesAt: closesAt ? new Date(closesAt) : null,
@@ -77,8 +82,9 @@ export function registrationInput(event: CompatiblePublicEventRecord, input: Com
     participantCap,
     now,
   });
+  const availability: RegistrationAvailability = isSolo && !soloOpen ? "legacy" : windowAvailability;
   const sharedView = shared(event, mode, source, teams, compatibleUpdates(input), activeTeamCount);
-  const fallbackCta = buildRegistrationCta({
+  const fallbackCta = (isSolo ? buildSoloRegistrationCta : buildRegistrationCta)({
     state: "anonymous",
     availability,
     href: sharedView.identity.cta.href ?? "/events/" + encodeURIComponent(sharedView.identity.slug) + "/register",

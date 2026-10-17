@@ -13,6 +13,7 @@ import { isNewRegistrationWindowOpen } from "@/lib/platform/shared/tx";
 import type { AppUser, Event, EventStatus } from "@/lib/platform/types";
 import { getLiveStreamPresentation } from "@/lib/tournament/engine";
 import { tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
+import type { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { unstable_cache } from "next/cache";
 import { cache } from "react";
@@ -79,12 +80,12 @@ export async function getManageableEventDraft(user: AppUser, eventId: string) {
     select: {
       id: true, slug: true, name: true, description: true, gameId: true, gameModeId: true,
       organizerUserId: true, organizerName: true, organizerVerified: true,
-      format: true, formatConfig: true, participantCap: true,
+      format: true, formatConfig: true, participantCap: true, entryMode: true,
       registrationOpensAt: true, registrationClosesAt: true, eventStartsAt: true,
       timezone: true, venue: true, venueAddress: true,
       registrationFeeRequired: true, registrationFeeAmount: true, prizePoolLabel: true,
       logoUrl: true, gameImageUrl: true, draftRevision: true, publishedRevision: true, status: true,
-      _count: { select: { matches: true } },
+      _count: { select: { matches: true, soloRegistrations: { where: { status: { notIn: ["withdrawn", "expired"] } } } } },
       organizer: { select: { organizerProfile: { select: { contactChannel: true, contactValue: true } } } },
     },
   });
@@ -389,10 +390,26 @@ export async function createEvent(input: {
   return mapEvent(row);
 }
 
+/**
+ * A solo event closes registration from its own draw panel, which settles open payments and refunds first,
+ * and once its teams are locked it does not go back to taking registrations.
+ */
+async function assertSoloStatusChangeAllowed(tx: Prisma.TransactionClient, eventId: string, status: Event["status"]): Promise<void> {
+  const current = await tx.event.findUnique({ where: { id: eventId }, select: { entryMode: true, status: true, activeSoloDrawId: true } });
+  if (current?.entryMode !== "solo") return;
+  if (status === "Registration Closed" && current.status !== "Registration Closed") {
+    throw new UserFacingError("Event solo ditutup dari tab Acak tim di halaman registrasi.");
+  }
+  if (current.activeSoloDrawId !== null && (status === "Draft" || status === "Published")) {
+    throw new UserFacingError("Tim sudah dikunci. Event tidak bisa dibuka lagi untuk pendaftaran.");
+  }
+}
+
 /** Updates an event's lifecycle status. Use `autoTransitionEventToOngoing` for the match-triggered transition. */
 export async function setEventStatus(eventId: string, status: Event["status"]): Promise<Event | null> {
   const now = new Date();
   const row = await prisma.$transaction(async (tx) => {
+    await assertSoloStatusChangeAllowed(tx, eventId, status);
     const updatedEvent = await tx.event.update({ where: { id: eventId }, data: { status }, include: eventPublicInclude });
     await applyEventLifecycleSideEffects(tx, eventId, status, now);
     return updatedEvent;

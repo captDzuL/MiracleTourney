@@ -23,6 +23,13 @@ describe("event draft validation", () => {
     });
   });
 
+  it("accepts the two ways to register and nothing else", () => {
+    expect(eventDraftSchema.parse({ entryMode: "solo" })).toEqual({ entryMode: "solo" });
+    expect(eventDraftSchema.parse({ entryMode: "team" })).toEqual({ entryMode: "team" });
+    expect(() => eventDraftSchema.parse({ entryMode: "duo" })).toThrow();
+    expect(() => eventDraftSchema.parse({ entryMode: "" })).toThrow();
+  });
+
   it("rejects a blank submitted slug while allowing it to be omitted", () => {
     expect(eventDraftSchema.parse({ description: "Still incomplete" })).toEqual({ description: "Still incomplete" });
     expect(() => eventDraftSchema.parse({ slug: "   " })).toThrow();
@@ -46,6 +53,74 @@ describe("event draft validation", () => {
 
 describe("saveEventDraft", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  describe("registration mode", () => {
+    const organizer = { id: "organizer-1", role: "organizer" as const };
+    const save = (draft: Record<string, unknown>) => saveEventDraft({ eventId: "event-1", actor: organizer, expectedRevision: 4, mutationId, draft });
+
+    beforeEach(() => prisma.event.updateMany.mockResolvedValue({ count: 1 }));
+
+    it("saves solo for a game that has a required position", async () => {
+      prisma.event.findFirst.mockResolvedValue({ entryMode: "team", gameModeId: "mode-flashpeak-5v5" });
+      await expect(save({ entryMode: "solo" })).resolves.toMatchObject({ status: "saved" });
+      expect(prisma.event.findFirst).toHaveBeenCalledWith({
+        where: { id: "event-1", organizerUserId: "organizer-1" },
+        select: { entryMode: true, gameModeId: true },
+      });
+      expect(prisma.event.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ entryMode: "solo" }),
+      }));
+    });
+
+    it("changes the mode only while the event is a draft: the update is scoped to Draft status", async () => {
+      prisma.event.findFirst.mockResolvedValue({ entryMode: "team", gameModeId: "mode-flashpeak-5v5" });
+      await save({ entryMode: "solo" });
+      expect(prisma.event.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ id: "event-1", status: "Draft" }),
+      }));
+    });
+
+    it("reports a published event as not editable and does not claim the mode changed", async () => {
+      prisma.event.updateMany.mockResolvedValue({ count: 0 });
+      prisma.event.findFirst.mockResolvedValue({ entryMode: "team", gameModeId: "mode-flashpeak-5v5", draftRevision: 4, lastDraftMutationId: null, status: "Published" });
+      await expect(save({ entryMode: "solo" })).resolves.toEqual({
+        status: "not_editable", revision: 4, fields: { entryMode: { state: "conflict" } },
+      });
+    });
+
+    it("refuses solo for a game without solo rules and writes nothing", async () => {
+      prisma.event.findFirst.mockResolvedValue({ entryMode: "team", gameModeId: "mode-mlbb-5v5" });
+      await expect(save({ entryMode: "solo" })).rejects.toThrow("Game ini belum mendukung event solo.");
+      expect(prisma.event.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("looks at the game sent in the same save, not only the stored one", async () => {
+      prisma.event.findFirst.mockResolvedValue({ entryMode: "team", gameModeId: "mode-mlbb-5v5" });
+      await expect(save({ entryMode: "solo", gameModeId: "mode-flashpeak-5v5" })).resolves.toMatchObject({ status: "saved" });
+    });
+
+    it("refuses to move a solo event to a game without solo rules", async () => {
+      prisma.event.findFirst.mockResolvedValue({ entryMode: "solo", gameModeId: "mode-flashpeak-5v5" });
+      await expect(save({ gameModeId: "mode-mlbb-5v5" })).rejects.toThrow("Game ini belum mendukung event solo.");
+      expect(prisma.event.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("lets a team event use any game", async () => {
+      prisma.event.findFirst.mockResolvedValue({ entryMode: "team", gameModeId: "mode-flashpeak-5v5" });
+      await expect(save({ gameModeId: "mode-mlbb-5v5" })).resolves.toMatchObject({ status: "saved" });
+      await expect(save({ entryMode: "team" })).resolves.toMatchObject({ status: "saved" });
+    });
+
+    it("does not read the event when neither the mode nor the game is touched", async () => {
+      await save({ name: "Miracle Open" });
+      expect(prisma.event.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("refuses an event that does not exist", async () => {
+      prisma.event.findFirst.mockResolvedValue(null);
+      await expect(save({ entryMode: "solo" })).rejects.toThrow("Event not found");
+    });
+  });
 
   it("atomically saves only submitted fields and records the client mutation", async () => {
     prisma.event.updateMany.mockResolvedValue({ count: 1 });

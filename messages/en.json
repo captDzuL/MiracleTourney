@@ -471,6 +471,104 @@
     ]
   },
   "registrationWorkspace": {
+    "solo": {
+      "badge": "Solo",
+      "queueTitle": "Player registrations",
+      "search": "Search IGN or UID",
+      "player": "Player",
+      "uid": "UID",
+      "position": "Position",
+      "backupPosition": "Backup: {position}",
+      "emptyQueue": "No players match these filters.",
+      "quota": {
+        "title": "Player slots",
+        "field": "Field players",
+        "held": "{held} of {quota} filled",
+        "queued": "{count} in the queue"
+      },
+      "draw": {
+        "title": "Team draw",
+        "description": "Close registration, draw, check the result, then lock it. Once locked, the teams run like any other event's teams.",
+        "ready": {
+          "title": "Ready to draw",
+          "keepers": "{position} accepted",
+          "emergency": "Emergency {position} used",
+          "field": "Field players in a team",
+          "teams": "Teams that will form",
+          "teamsValue": "{teams} of {cap}",
+          "unplaced": "Left out"
+        },
+        "warnings": {
+          "too_few_teams": "There are not enough players to form 2 teams.",
+          "required_short": "{position} short by {missing}.",
+          "open_short": "Field players short by {missing}.",
+          "team_count_below_cap": "Only {teamCount} of {participantCap} teams can form. Check the competition format.",
+          "unplaced": "{count} players are left out.",
+          "ign_collision": "Team {team} has two players with the same IGN."
+        },
+        "close": {
+          "button": "Close registration",
+          "title": "Close registration?",
+          "intro": "Once closed, players cannot sign up or withdraw by themselves.",
+          "blockers": "Settle {count} payments first: approve, reject, or wait for their deadline.",
+          "blockersLink": "Open payment review",
+          "queue": "{count} players in the queue will be released without paying.",
+          "unplacedTitle": "These players are left out",
+          "unplacedHelp": "Refund them by hand, then tick them to continue.",
+          "unplacedHelpFree": "Tick them to continue.",
+          "confirm": "Close registration",
+          "cancel": "Cancel",
+          "working": "Closing…",
+          "done": "Registration closed."
+        },
+        "run": {
+          "button": "Draw teams",
+          "again": "Draw again",
+          "working": "Drawing…",
+          "done": "Teams drawn.",
+          "closeFirst": "Close registration first.",
+          "tooFew": "At least 2 teams are needed.",
+          "locked": "Teams are locked.",
+          "started": "The event started without locked teams."
+        },
+        "result": {
+          "title": "Draw version {version}",
+          "seed": "Seed: {seed}",
+          "team": "Team {index}",
+          "captain": "Captain",
+          "swapHint": "Pick two players from different teams to swap.",
+          "swapSelected": "{count} of 2 selected",
+          "swap": "Swap players",
+          "swapDone": "Players swapped."
+        },
+        "lock": {
+          "button": "Lock teams",
+          "title": "Lock teams?",
+          "body": "The teams and players are created for real. After this the draw cannot be changed.",
+          "confirm": "Lock teams",
+          "working": "Locking…",
+          "done": "Teams locked.",
+          "blocked": "Settle the warnings above first."
+        },
+        "redraw": {
+          "title": "Draw again?",
+          "body": "The current draw is replaced by a new one. Any swaps you made are lost.",
+          "confirm": "Draw again"
+        },
+        "refund": {
+          "title": "Refund needed",
+          "empty": "Every player is in a team.",
+          "mark": "Mark as refunded",
+          "done": "Refunded",
+          "free": "No refund needed, this event is free."
+        },
+        "locked": {
+          "title": "Teams are locked",
+          "body": "{teams} teams were created from draw version {version}.",
+          "link": "Open competition"
+        }
+      }
+    },
     "issues": {
       "formula": "Mapped cells must not contain formulas.",
       "locked": "This event’s roster is locked.",
@@ -494,6 +592,7 @@
     "acceptedCapacity": "Accepted / capacity",
     "views": "Registration views",
     "viewsLabels": {
+      "draw": "Team draw",
       "queue": "Participant list",
       "import": "XLSX / CSV import",
       "payments": "Payment verification",
@@ -537,6 +636,8 @@
     "loadErrorHelp": "Your event remains available. Reload this section to try again.",
     "reload": "Reload",
     "statuses": {
+      "queued": "Queue",
+      "withdrawn": "Withdrawn",
       "pending_payment": "Awaiting payment",
       "pending_review": "Awaiting review",
       "accepted": "Accepted",
@@ -548,6 +649,7 @@
       "expired": "Expired"
     },
     "sources": {
+      "solo_registration": "Solo player",
       "captain_registration": "Captain registration",
       "import_xlsx": "XLSX import",
       "import_csv": "CSV import",
@@ -652,6 +754,7 @@
     "tagline": "Community tournament platform",
     "events": "Events",
     "captain": "Captain",
+    "player": "Player",
     "matchStats": "Match Stats",
     "admin": "Admin",
     "login": "Sign In",
@@ -877,7 +980,19 @@
     "errorFullName": "Full name must be at least 2 characters.",
     "errorEmail": "Invalid email format.",
     "errorPassword": "Password must be at least 8 characters.",
-    "errorConfirm": "Passwords do not match."
+    "errorConfirm": "Passwords do not match.",
+    "roleQuestion": "Which are you signing up as?",
+    "roleCaptain": "Captain",
+    "rolePlayer": "Player",
+    "roleCaptainHint": "Register one full team.",
+    "rolePlayerHint": "Sign up alone. Teams are made by a random draw.",
+    "roleChange": "← Change role",
+    "playerTitle": "Create Player Account",
+    "playerDesc": "Create an account first. Then you can sign up for solo events.",
+    "whatsapp": "WhatsApp number",
+    "whatsappPlaceholder": "0812 3456 7890",
+    "whatsappHint": "Seen by your teammates once teams are locked.",
+    "errorWhatsapp": "Invalid WhatsApp number."
   },
   "captain": {
     "tempPasswordWarning": "You are still using a temporary password.",
@@ -904,6 +1019,8 @@
     "teamTagPlaceholder": "MFC",
     "rosterManagementTitle": "Roster Management",
     "rosterManagementDescription": "Prepare a team draft and UID/IGN roster, then use it when an event opens.",
+    "rosterManagementOwnerDescription": "Manage the players of the team the draw made.",
+    "soloRosterNote": "This team's players come from the draw. Contact the organizer if somebody has to be replaced.",
     "noRegisteredTeams": "No draft or registered team for this account yet.",
     "accountSettings": "Account settings",
     "submitStats": "Submit match stats →",
@@ -1011,6 +1128,105 @@
         "rate_limited": "Too many tries. Wait a few minutes and try again.",
         "unknown": "The request could not be sent. Try again."
       }
+    }
+  },
+  "player": {
+    "navLabel": "Player menu",
+    "nav": {
+      "summary": "Overview",
+      "registrations": "Registrations",
+      "profile": "Profile",
+      "settings": "Settings"
+    },
+    "greeting": "Hi, {name}",
+    "greetingHint": "Your solo registrations, team and schedule are here.",
+    "notices": {
+      "passwordChanged": "Password changed.",
+      "saved": "Profile saved.",
+      "invalidWhatsapp": "That WhatsApp number is not valid. Example: 0812 3456 7890.",
+      "tooMany": "Too many attempts. Try again in 15 minutes.",
+      "saveFailed": "The profile could not be saved. Try again."
+    },
+    "active": {
+      "title": "Active registrations",
+      "empty": "You have not signed up for a solo event.",
+      "browse": "Browse events"
+    },
+    "history": {
+      "title": "History",
+      "empty": "No history yet."
+    },
+    "teams": {
+      "title": "Your teams",
+      "members": "{count} players",
+      "view": "View team",
+      "manage": "Manage team"
+    },
+    "nextMatch": {
+      "title": "Next match",
+      "empty": "No match is scheduled yet.",
+      "versus": "{team} vs {opponent}",
+      "noOpponent": "Opponent not decided yet",
+      "noTime": "Time not decided yet",
+      "live": "Live now"
+    },
+    "registration": {
+      "details": "IGN {ign} · UID {uid}",
+      "backup": "Backup: {position}",
+      "open": "Open sign-up page",
+      "viewTeam": "View team"
+    },
+    "stage": {
+      "queued": "Queue",
+      "pay": "Pay",
+      "review": "In review",
+      "rejected": "Rejected",
+      "waiting": "Waiting for teams",
+      "in_team": "In a team",
+      "out_of_teams": "Not in a team",
+      "lost": "Closed"
+    },
+    "stageText": {
+      "queued": "You are number {position} in the queue. You do not need to pay yet.",
+      "queuedUnknown": "You are in the queue. You do not need to pay yet.",
+      "pay": "Pay before {deadline} to keep your slot.",
+      "payNoDeadline": "Pay to keep your slot.",
+      "review": "The organizer is checking your payment proof.",
+      "rejected": "Your payment proof was rejected: {reason}. Upload a new one before {deadline}.",
+      "rejectedNoReason": "Your payment proof was rejected. Upload a new one before {deadline}.",
+      "waiting": "Your slot is safe. Teams are drawn after registration closes.",
+      "in_team": "You are in {team}.",
+      "out_of_teams": "You are not in a team this time.",
+      "expired": "The payment time ran out, so the slot went to another player.",
+      "withdrawn": "You withdrew your registration.",
+      "refund": {
+        "owed": "The organizer will pay your fee back.",
+        "done": "Your fee has been paid back."
+      }
+    },
+    "team": {
+      "event": "Event {name}",
+      "members": "Team members",
+      "ign": "IGN",
+      "uid": "UID",
+      "position": "Position",
+      "contact": "WhatsApp",
+      "captain": "Captain",
+      "you": "You",
+      "chat": "Chat",
+      "noContact": "None",
+      "privacy": "WhatsApp numbers are only visible to your teammates.",
+      "matches": "Matches",
+      "noMatches": "No match is scheduled yet.",
+      "manage": "Manage the team on the captain page",
+      "back": "Back"
+    },
+    "profile": {
+      "title": "Profile",
+      "description": "Your WhatsApp number.",
+      "whatsapp": "WhatsApp number",
+      "hint": "Used for your next sign-ups. Registrations you already made keep the old number.",
+      "submit": "Save"
     }
   },
   "captainSettings": {
@@ -1460,6 +1676,14 @@
       "closes": "Registration closes",
       "paid": "Paid registration",
       "fee": "Registration fee",
+      "entryModeLabel": "How players register",
+      "entryModeTeam": "Teams only",
+      "entryModeSolo": "Solo players",
+      "entryModeTeamHint": "A captain registers one full team. Solo players cannot join.",
+      "entryModeSoloHint": "Players sign up alone, then the organizer draws them into teams. Captains cannot register a team.",
+      "entryModeSoloUnsupported": "This game does not support solo registration yet.",
+      "soloQuota": "Total slots: {required} {position} and {open} other players.",
+      "soloFeeHint": "The fee applies to each player.",
       "publicTitle": "Prepare the public page.",
       "publicDescription": "Add a poster for the event page and a logo for its identity.",
       "prize": "Prize information",
@@ -1512,6 +1736,9 @@
       "lock_registration_closed": "Registration is closed; dates and fees are locked.",
       "lock_matches_exist": "Matches exist; the competition structure is locked.",
       "lock_slug_published": "Organizers cannot change the public URL after publication.",
+      "lock_entry_mode_fixed": "How players register cannot change after the event is published.",
+      "lock_solo_game_fixed": "A solo event cannot switch games after it is published.",
+      "lock_solo_registrations_exist": "Players have already signed up; the number of teams cannot change.",
       "lockedField": "This field is locked.",
       "previewDraftOnly": "Private preview is available only while this event is a draft.",
       "previewCreateError": "Could not create the private preview.",
@@ -1548,6 +1775,8 @@
       "requiredVenue": "Add a venue or online location",
       "requiredPaid": "Choose whether registration is paid",
       "requiredFee": "Add the registration fee amount",
+      "requiredSoloGame": "Choose a game that supports solo registration",
+      "requiredSoloOff": "Solo registration is not open yet",
       "requiredContact": "Add an organizer contact channel",
       "published": "Published",
       "publicationChanged": "Event details changed. Review the remaining requirements.",

@@ -483,6 +483,122 @@ describe("EventDraftForm", () => {
     }));
   });
 
+  describe("how players register", () => {
+    const soloModes = [{ id: "mode-flashpeak-5v5", teamSize: 5, requiredPosition: "Goalkeeper" }];
+    const radio = (value: string) => container.querySelector<HTMLInputElement>(`input[name="entryMode"][value="${value}"]`);
+
+    function renderForm(props: Partial<React.ComponentProps<typeof EventDraftForm>> = {}) {
+      const saveDraft = vi.fn().mockResolvedValue({ status: "saved", revision: 4, fields: {} });
+      act(() => root.render(<EventDraftForm
+        eventId="event-1"
+        initialDraft={{ name: "Miracle Cup", participantCap: 8, formatConfig: null }}
+        initialRevision={3}
+        saveDraft={saveDraft}
+        {...props}
+      />));
+      return saveDraft;
+    }
+
+    it("offers no choice while solo tournaments are off", () => {
+      renderForm();
+      expect(radio("solo")).toBeNull();
+      expect(container.textContent).not.toContain("Solo");
+    });
+
+    it("offers team and solo, with team chosen for an existing event", () => {
+      renderForm({ soloModes, gameModeId: "mode-flashpeak-5v5" });
+      expect(radio("team")?.checked).toBe(true);
+      expect(radio("solo")?.checked).toBe(false);
+      expect(container.querySelector("fieldset legend")?.textContent).toBe("How players register");
+    });
+
+    it("names both choices by who may join, so an organizer knows what the event accepts", () => {
+      renderForm({ soloModes, gameModeId: "mode-flashpeak-5v5" });
+      const text = container.querySelector("fieldset[data-entry-mode]")?.textContent ?? "";
+      expect(text).toContain("Teams only");
+      expect(text).toContain("Solo players cannot join.");
+      expect(text).toContain("Solo players");
+      expect(text).toContain("Captains cannot register a team.");
+    });
+
+    it("shows the choice locked, with the reason, once the event is published", () => {
+      renderForm({ soloModes, gameModeId: "mode-flashpeak-5v5", fieldLocks: { entryMode: "entry_mode_fixed" }, initialDraft: { name: "Miracle Cup", participantCap: 8, formatConfig: null, entryMode: "solo" } });
+      expect(radio("solo")?.checked).toBe(true);
+      expect(radio("solo")?.disabled).toBe(true);
+      expect(radio("team")?.disabled).toBe(true);
+      expect(container.querySelector('[data-field-lock="entryMode"]')?.textContent).toBe("How players register cannot change after the event is published.");
+    });
+
+    it("saves solo when it is chosen and shows the slots the event will have", async () => {
+      const saveDraft = renderForm({ soloModes, gameModeId: "mode-flashpeak-5v5" });
+      act(() => radio("solo")!.click());
+
+      expect(radio("solo")?.checked).toBe(true);
+      expect(container.textContent).toContain("Total slots: 8 Goalkeeper and 32 other players.");
+      await act(async () => vi.advanceTimersByTimeAsync(600));
+      expect(saveDraft).toHaveBeenCalledWith(expect.objectContaining({ draft: { entryMode: "solo" } }));
+    });
+
+    it("works out the slots from the chosen capacity and the game's team size", () => {
+      renderForm({
+        soloModes: [{ id: "mode-kuroko-3v3", teamSize: 3, requiredPosition: "Center" }],
+        gameModeId: "mode-kuroko-3v3",
+        initialDraft: { name: "Kuroko Cup", participantCap: 16, entryMode: "solo", formatConfig: null },
+      });
+      expect(container.textContent).toContain("Total slots: 16 Center and 32 other players.");
+    });
+
+    it("says the fee is per player once solo is chosen on a paid event", () => {
+      renderForm({
+        soloModes, gameModeId: "mode-flashpeak-5v5",
+        initialDraft: { name: "Miracle Cup", participantCap: 8, entryMode: "solo", registrationFeeRequired: true, registrationFeeAmount: 25000, formatConfig: null },
+      });
+      expect(container.textContent).toContain("The fee applies to each player.");
+    });
+
+    it("blocks solo for a game that has no required position, and says why", () => {
+      renderForm({ soloModes, gameModeId: "mode-mlbb-5v5" });
+      expect(radio("solo")?.disabled).toBe(true);
+      expect(radio("team")?.disabled).toBe(false);
+      expect(container.textContent).toContain("This game does not support solo registration yet.");
+    });
+
+    it("keeps a solo event that now sits on an unsupported game visible and warned", () => {
+      renderForm({
+        soloModes, gameModeId: "mode-mlbb-5v5",
+        initialDraft: { name: "Miracle Cup", participantCap: 8, entryMode: "solo", formatConfig: null },
+      });
+      expect(radio("solo")?.checked).toBe(true);
+      expect(container.textContent).toContain("This game does not support solo registration yet.");
+      expect(container.textContent).not.toContain("Total slots");
+    });
+
+    it("locks the choice when the event no longer allows it", () => {
+      renderForm({ soloModes, gameModeId: "mode-flashpeak-5v5", fieldLocks: { entryMode: "registration_closed" } });
+      expect(radio("team")?.disabled).toBe(true);
+      expect(radio("solo")?.disabled).toBe(true);
+    });
+
+    it("speaks Indonesian on the Indonesian page", () => {
+      renderForm({ soloModes, gameModeId: "mode-flashpeak-5v5", locale: "id" });
+      expect(container.querySelector("fieldset legend")?.textContent).toBe("Cara daftar");
+      act(() => radio("solo")!.click());
+      expect(container.textContent).toContain("Total slot: 8 Goalkeeper dan 32 pemain lain.");
+    });
+
+    it("restores a solo choice that was waiting to be saved", () => {
+      localStorage.setItem("miracle:event-draft:event-1", JSON.stringify({ revision: 3, patch: { entryMode: "solo" } }));
+      renderForm({ soloModes, gameModeId: "mode-flashpeak-5v5" });
+      expect(radio("solo")?.checked).toBe(true);
+    });
+
+    it("ignores a stored choice that is not one of the two", () => {
+      localStorage.setItem("miracle:event-draft:event-1", JSON.stringify({ revision: 3, patch: { name: "Kept", entryMode: "duo" } }));
+      renderForm({ soloModes, gameModeId: "mode-flashpeak-5v5" });
+      expect(radio("team")?.checked).toBe(true);
+    });
+  });
+
   it("disables locked revision fields and explains why", () => {
     act(() => root.render(<EventDraftForm
       editorLabel="Revisi privat"

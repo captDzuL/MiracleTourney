@@ -6,7 +6,7 @@
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { MAX_LOGO_IMAGE_BYTES, MAX_LOGO_IMAGE_DIMENSION } from "@/lib/actions/shared/limits";
 import { actionEntityId } from "@/lib/actions/shared/request";
-import { assertWorkspaceEventAction, requireAdminSession, requireCaptainSession } from "@/lib/actions/shared/session";
+import { assertWorkspaceEventAction, requireAdminSession, requireCaptainOrOwnerSession } from "@/lib/actions/shared/session";
 import { uploadImageAsset } from "@/lib/actions/shared/uploads";
 import { assertUserCanManageTeam } from "@/lib/platform/shared/authz";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -16,7 +16,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 
 export async function captainUploadTeamLogoAction(formData: FormData) {
-  const captain = await requireCaptainSession();
+  const captain = await requireCaptainOrOwnerSession();
 
   let team: { id: string; eventId: string | null } | null = null;
   let teamId = "";
@@ -56,7 +56,7 @@ export async function captainUploadTeamLogoAction(formData: FormData) {
 
 /** Adds a player to the captain's team. UID and IGN are required; position is optional. */
 export async function captainAddPlayerAction(formData: FormData) {
-  const captain = await requireCaptainSession();
+  const captain = await requireCaptainOrOwnerSession();
 
   const input = z.object({
     teamId: actionEntityId,
@@ -92,7 +92,7 @@ export async function captainAddPlayerAction(formData: FormData) {
  * the action redirects with an error if the player does not belong to the authenticated captain.
  */
 export async function captainUpdatePlayerAction(formData: FormData) {
-  const user = await requireCaptainSession();
+  const user = await requireCaptainOrOwnerSession();
 
   const id = actionEntityId.parse(formData.get("playerId"));
   const jerseyRaw = formData.get("jerseyNumber");
@@ -123,7 +123,7 @@ export async function captainUpdatePlayerAction(formData: FormData) {
  * any exception redirects to /captain with an error message.
  */
 export async function captainDeletePlayerAction(formData: FormData) {
-  const user = await requireCaptainSession();
+  const user = await requireCaptainOrOwnerSession();
   const id = actionEntityId.parse(formData.get("playerId"));
 
   try {
@@ -137,7 +137,7 @@ export async function captainDeletePlayerAction(formData: FormData) {
 }
 
 export async function captainSetDisplayCaptainAction(formData: FormData) {
-  const user = await requireCaptainSession();
+  const user = await requireCaptainOrOwnerSession();
   const teamId = actionEntityId.parse(formData.get("teamId"));
   const playerId = actionEntityId.parse(formData.get("playerId"));
 

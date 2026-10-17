@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getPlayersForTeam: vi.fn(),
   getTeamCountsForEvents: vi.fn(),
   getCaptainPaymentSettings: vi.fn(),
+  renderSoloRegistrationPage: vi.fn(),
 }));
 
 vi.mock("@/lib/events/repository", () => ({
@@ -35,6 +36,7 @@ vi.mock("@/components/registration/CaptainRegistrationWizard", () => ({
 }));
 vi.mock("@/i18n/navigation", () => ({ Link: ({ children }: { children?: unknown }) => children }));
 vi.mock("next/navigation", () => ({ notFound: vi.fn() }));
+vi.mock("./solo-registration-page", () => ({ renderSoloRegistrationPage: mocks.renderSoloRegistrationPage }));
 
 import { renderEventRegistrationPage } from "./event-registration-page";
 
@@ -110,6 +112,38 @@ describe("native event registration route", () => {
     logSpy.mockRestore();
     warnSpy.mockRestore();
     errorSpy.mockRestore();
+  });
+
+  describe("a solo event", () => {
+    const soloEvent = { id: "event-1", slug: "event-one", name: "Event One", gameModeId: "mode-1", entryMode: "solo", participantCap: 16, format: "Single Elimination", registrationWindow: "Open" };
+
+    beforeEach(() => {
+      mocks.getPublicEventBySlug.mockResolvedValue(soloEvent);
+      mocks.renderSoloRegistrationPage.mockResolvedValue("SOLO-PAGE");
+    });
+
+    it("is handed to the solo page with the visitor, language and last message, and reads nothing about teams", async () => {
+      const user = { id: "player-1", role: "player", name: "Bima" };
+      mocks.getSessionUser.mockResolvedValue(user);
+      const page = await renderEventRegistrationPage("event-one", "en", Promise.resolve({ success: "queued" }));
+
+      expect(page).toBe("SOLO-PAGE");
+      expect(mocks.renderSoloRegistrationPage).toHaveBeenCalledWith({ event: soloEvent, user, locale: "en", search: { success: "queued" } });
+      expect(mocks.getTeamCountsForEvents).not.toHaveBeenCalled();
+      expect(mocks.getCaptainTeams).not.toHaveBeenCalled();
+      expect(mocks.getCaptainPaymentSettings).not.toHaveBeenCalled();
+    });
+
+    it("is shown to a visitor who is not signed in", async () => {
+      mocks.getSessionUser.mockResolvedValue(null);
+      await renderEventRegistrationPage("event-one", "id");
+      expect(mocks.renderSoloRegistrationPage).toHaveBeenCalledWith(expect.objectContaining({ user: null, locale: "id" }));
+    });
+  });
+
+  it("never opens the solo page for a team event", async () => {
+    await renderEventRegistrationPage("event-one");
+    expect(mocks.renderSoloRegistrationPage).not.toHaveBeenCalled();
   });
 
   it("has a localized wrapper", () => {
