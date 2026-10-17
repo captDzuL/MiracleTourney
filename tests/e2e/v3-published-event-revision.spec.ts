@@ -40,9 +40,12 @@ test.describe.serial("Published Event Revision V3", () => {
     await expect(publicContent.getByText(updatedDescription)).toHaveCount(0);
 
     await page.getByRole("link", { name: "Tinjau & Terbitkan" }).click();
-    await page.getByRole("button", { name: "Buat pratinjau privat" }).click();
     const previewLink = page.getByRole("link", { name: "Buka pratinjau" });
-    await expect(previewLink).toBeVisible({ timeout: 20_000 });
+    // A click before the page has hydrated does nothing, so click again until the link shows up.
+    await expect(async () => {
+      await page.getByRole("button", { name: "Buat pratinjau privat" }).click();
+      await expect(previewLink).toBeVisible({ timeout: 10_000 });
+    }).toPass({ timeout: 60_000 });
     const previewUrl = await previewLink.getAttribute("href");
     expect(previewUrl).toMatch(/^\/id\/preview\/events\//);
     const previewPage = await guest.newPage();
