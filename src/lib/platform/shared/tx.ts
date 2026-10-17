@@ -26,6 +26,21 @@ export function assertNewRegistrationWindowOpen(event: RegistrationWindowEvent, 
   }
 }
 
+/**
+ * The roster of a team made by a solo draw is the organizer's draw of players who each paid for a slot, so its
+ * captain cannot add, rename or remove players directly. Changes go through a request the organizer approves.
+ */
+export function assertRosterMayBeEditedDirectly(team: { source?: string | null }): void {
+  if (team.source === "solo-draw") {
+    throw new UserFacingError("Pemain tim ini dari hasil acak. Minta organizer menggantinya.");
+  }
+}
+
+/** A solo event forms its teams from the player draw, so teams cannot register or be imported into it. */
+export function assertEventAcceptsTeams(event: { entryMode?: string | null }): void {
+  if (event.entryMode === "solo") throw new UserFacingError("Event ini untuk pemain solo. Pendaftaran tim tidak dibuka.");
+}
+
 export async function runSerializableRegistrationTransaction<T>(
   operation: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {

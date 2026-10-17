@@ -2,7 +2,7 @@ import { writeServerLog } from "@/lib/observability/logger";
 
 export type WorkspaceActor = Readonly<{
   id: string;
-  role: "captain" | "organizer" | "admin" | "platform_admin";
+  role: "captain" | "player" | "organizer" | "admin" | "platform_admin";
 }>;
 
 export type WorkspaceResource = Readonly<{
@@ -69,6 +69,10 @@ export function authorizeWorkspaceResource(
   }
 
   if (actor.role === "admin") return { ok: true, platformAdminException: false };
+
+  // A player account has no event access of its own. The captain of a solo team gets
+  // access to that team through ownership, which is added together with the captain pages.
+  if (actor.role === "player") return forbidden();
 
   if (actor.role === "captain") {
     return resource.ownerUserId === actor.id

@@ -2,6 +2,7 @@ import { getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import { redirectToActiveLocale } from "@/i18n/redirect";
+import { getCaptainOrTeamOwner } from "@/lib/auth/captain-access";
 import { requireRole } from "@/lib/auth/session";
 import { getCertificatesForEvents } from "@/lib/certificate/repository";
 import { getEventsByIds, getOpenRegistrationEventsForCaptain } from "@/lib/events/repository";
@@ -26,10 +27,13 @@ export default async function CaptainPage({
 }: {
   searchParams?: Promise<{ edit?: string; confirm?: string; success?: string; error?: string; tab?: string; eventId?: string }>;
 }) {
-  const user = await requireRole("captain");
+  const user = await getCaptainOrTeamOwner();
   if (!user) {
-    return redirectToActiveLocale("/login");
+    // A player who captains no team has nothing to run here.
+    return redirectToActiveLocale((await requireRole("player")) ? "/player" : "/login");
   }
+  // A player who captains a solo team only manages that team: no registering teams, no reusable draft.
+  const ownerOnly = user.role === "player";
 
   const t = await getTranslations("captain");
   const params = await searchParams;
@@ -39,14 +43,14 @@ export default async function CaptainPage({
   const error = params?.error;
   const requestedEventId = params?.eventId && /^[A-Za-z0-9_-]+$/.test(params.eventId) ? params.eventId : undefined;
   const rosterSignals = new Set(["player-added", "player-updated", "player-deleted", "captain-display-updated", "draft-team-saved", "team-logo-updated", "roster-change-requested", "roster-change-cancelled"]);
-  const activeTab = params?.tab === "roster" || editPlayerId || confirmDeleteId || (success && rosterSignals.has(success)) ? "roster" : "registration";
+  const activeTab = ownerOnly || params?.tab === "roster" || editPlayerId || confirmDeleteId || (success && rosterSignals.has(success)) ? "roster" : "registration";
 
   const [teams, usingTempPassword, openRegistrationEvents, paymentRequests, completionNotices] = await Promise.all([
     getCaptainTeams(user.id),
     hasTempPassword(user.id),
-    getOpenRegistrationEventsForCaptain(user.id),
-    getCaptainRegistrationRequests(user.id),
-    getCaptainCompletionNotices(user.id),
+    ownerOnly ? Promise.resolve([]) : getOpenRegistrationEventsForCaptain(user.id),
+    ownerOnly ? Promise.resolve([]) : getCaptainRegistrationRequests(user.id),
+    ownerOnly ? Promise.resolve([]) : getCaptainCompletionNotices(user.id),
   ]);
   const paymentEventIds = [...new Set(paymentRequests.map((request) => request.eventId))];
   const paymentSettingsByEvent = new Map<string, PaymentSettings>(
@@ -74,7 +78,7 @@ export default async function CaptainPage({
     players: allPlayers.filter((player) => player.teamId === team.id),
   }));
   // Only the reusable draft qualifies: "registration-intake" copies also have no event but the server rejects them as a draft.
-  const draftTeamWithPlayers = teamsWithPlayers.find(({ team }) => !team.eventId && team.source === "draft") ?? null;
+  const draftTeamWithPlayers = ownerOnly ? null : teamsWithPlayers.find(({ team }) => !team.eventId && team.source === "draft") ?? null;
 
   const requestedEvent = requestedEventId
     ? openRegistrationEvents.find((event) => event.id === requestedEventId)
@@ -99,7 +103,7 @@ export default async function CaptainPage({
       {usingTempPassword ? (
         <Notice tone="warning">
           {t("tempPasswordWarning")}{" "}
-          <Link href="/captain/settings" className="font-semibold underline hover:text-amber-900">
+          <Link href={(ownerOnly ? "/player/settings" : "/captain/settings") as never} className="font-semibold underline hover:text-amber-900">
             {t("changeNow")}
           </Link>
         </Notice>
@@ -118,7 +122,7 @@ export default async function CaptainPage({
       {success === "captain-display-updated" ? <Notice tone="success">Tampilan kapten berhasil diperbarui.</Notice> : null}
       {success === "roster-change-requested" ? <Notice tone="success">{t("rosterChange.requestedNotice")}</Notice> : null}
       {success === "roster-change-cancelled" ? <Notice tone="success">{t("rosterChange.cancelledNotice")}</Notice> : null}
-      {error ? <Notice tone="danger">{decodeURIComponent(error)}</Notice> : null}
+      {error ? <Notice tone="danger">{error}</Notice> : null}
       <CompletionNotices notices={completionNotices} t={t as TFn} />
 
       {requestedEvent ? (
@@ -130,7 +134,7 @@ export default async function CaptainPage({
           <span data-testid="registration-flow-event-name" className="font-medium">{requestedEvent.name}</span>
         </div>
       ) : null}
-      <CaptainDashboardTabs activeTab={activeTab} t={t as TFn} />
+      {ownerOnly ? null : <CaptainDashboardTabs activeTab={activeTab} t={t as TFn} />}
 
       {activeTab === "registration" ? (
         <div className="grid gap-6">
@@ -151,6 +155,7 @@ export default async function CaptainPage({
           rosterOverviews={rosterOverviews}
           editPlayerId={editPlayerId}
           confirmDeleteId={confirmDeleteId}
+          canDraft={!ownerOnly}
           t={t as TFn}
         />
       )}

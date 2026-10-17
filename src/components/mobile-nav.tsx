@@ -10,6 +10,7 @@ import { logoutAction } from "@/lib/session-actions";
 export function MobileMenuToggle({
   eventsLabel,
   captainLabel,
+  playerLabel,
   adminLabel,
   loginLabel,
   matchStatsLabel,
@@ -17,6 +18,7 @@ export function MobileMenuToggle({
 }: {
   eventsLabel: string;
   captainLabel: string;
+  playerLabel?: string;
   adminLabel: string;
   loginLabel: string;
   matchStatsLabel: string;
@@ -90,6 +92,15 @@ export function MobileMenuToggle({
                   {matchStatsLabel}
                 </Link>
               </>
+            )}
+            {user?.role === "player" && playerLabel && (
+              <Link
+                href="/player"
+                onClick={() => setOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                {playerLabel}
+              </Link>
             )}
             {(user?.role === "platform_admin" || user?.role === "organizer" || user?.role === "admin") && (
               <Link

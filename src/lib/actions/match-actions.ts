@@ -6,7 +6,7 @@
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { actionEntityId, redirectToRequestedLocale } from "@/lib/actions/shared/request";
 import { assertWorkspaceEventAction, requireAdminSession } from "@/lib/actions/shared/session";
-import { requireRole } from "@/lib/auth/session";
+import { getCaptainOrTeamOwner } from "@/lib/auth/captain-access";
 import { setMatchResult } from "@/lib/bracket/repository";
 import { setMatchGames, upsertRoundConfig } from "@/lib/bracket/rounds-repository";
 import { autoTransitionEventToOngoing } from "@/lib/events/repository";
@@ -100,7 +100,7 @@ export async function adminUpdateMatchResultAction(formData: FormData) {
  * Non-numeric values default to 0.
  */
 export async function captainSubmitStatsAction(formData: FormData) {
-  const user = await requireRole("captain");
+  const user = await getCaptainOrTeamOwner();
   if (!user) {
     return redirectToActiveLocale("/login");
   }

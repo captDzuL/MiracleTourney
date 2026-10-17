@@ -4,6 +4,7 @@ import { completeTournament } from "../src/lib/completion/complete";
 import { createPrismaCompletionDependencies } from "../src/lib/completion/prisma-adapter";
 import { createCompetitionOperations, type OperationCommand } from "../src/lib/tournament/operations";
 import { TOURNAMENT_FORMAT_PRESETS, type TournamentFormatConfig } from "../src/lib/tournament/formats/types";
+import { seedSoloTournament } from "./seed-solo";
 
 const prisma = new PrismaClient();
 const isTestMode = process.argv.includes("--test");
@@ -940,6 +941,8 @@ async function main() {
       },
     });
   }
+
+  await seedSoloTournament(prisma, organizerA.id);
 
   console.log("Seeded admin, captain, organizer users, and organizer demo events.");
 }

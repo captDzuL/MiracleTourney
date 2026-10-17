@@ -134,6 +134,12 @@ async function assertDrawingMutable(tx: Prisma.TransactionClient, eventId: strin
   }
 }
 
+/** A solo event has no teams until the organizer locks the player draw, so there is nothing to draw groups from. */
+async function assertSoloTeamsLocked(tx: Prisma.TransactionClient, eventId: string) {
+  const event = await tx.event.findUnique({ where: { id: eventId }, select: { entryMode: true, activeSoloDrawId: true } });
+  if (event?.entryMode === "solo" && !event.activeSoloDrawId) throw new Error("Kunci tim dulu sebelum mengacak grup.");
+}
+
 async function clearDrawingDraft(tx: Prisma.TransactionClient, eventId: string) {
   await tx.scheduleRevision.deleteMany({ where: { eventId, status: "draft" } });
   await tx.matchReadiness.deleteMany({ where: { eventId } });
@@ -187,6 +193,7 @@ export async function applyCommand(tx: Prisma.TransactionClient, eventId: string
     case "result_correct":
       return applyResult(tx, eventId, actorId, command, version, idempotencyKey, now);
     case "drawing_save": {
+      await assertSoloTeamsLocked(tx, eventId);
       await withOperationStage(reporter, "drawing_assert_mutable", undefined, () => assertDrawingMutable(tx, eventId));
       await withOperationStage(reporter, "drawing_clear_draft", undefined, () => clearDrawingDraft(tx, eventId));
       return persistDrawing(tx, eventId, command, "draft", reporter);

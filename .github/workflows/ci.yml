@@ -197,3 +197,9 @@ jobs:
           name: catalog-reference-pg18
           path: catalog-reference-pg18.json
           retention-days: 30
+      - name: Solo registration against the migrated database
+        # Slot counting, the queue and the race for the last slot need real transactions. This runs after the
+        # catalog snapshot so its test rows can never end up in the reference. The tests clean up after themselves.
+        env:
+          SOLO_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/miracle_schema
+        run: pnpm exec vitest run src/lib/solo/registration-repository.integration.test.ts

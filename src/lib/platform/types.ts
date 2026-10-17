@@ -1,4 +1,4 @@
-export type UserRole = "public" | "captain" | "organizer" | "platform_admin" | "admin";
+export type UserRole = "public" | "captain" | "player" | "organizer" | "platform_admin" | "admin";
 
 export type AppUser = {
   id: string;
@@ -41,6 +41,15 @@ export type GameMode = {
   maxRosterSize: number;
   positions: string[];
   statKeys: string[];
+  /**
+   * Present only for modes that can run a solo tournament. Each team must hold
+   * exactly the listed number of players in every required position.
+   */
+  soloDraw?: SoloDrawConfig;
+};
+
+export type SoloDrawConfig = {
+  requiredPositions: Readonly<Record<string, number>>;
 };
 
 export type EventStatus =
@@ -114,6 +123,8 @@ export type Event = {
   formatConfig?: TournamentFormatConfig;
   status: EventStatus;
   participantCap: 8 | 12 | 16 | 24 | 32 | 64 | 128 | 256;
+  /** Set to "solo" when players join one by one and are drawn into teams. Absent for team events. */
+  entryMode?: "solo";
   registrationWindow: string;
   startsAt: string;
   venue: string;
@@ -160,7 +171,7 @@ export type Team = {
   captainUid?: string;
   captainIsPlayer?: boolean;
   captain?: { id: string; name: string } | null;
-  source?: "demo" | "csv-import" | "registration" | "registration-intake" | "draft";
+  source?: "demo" | "csv-import" | "registration" | "registration-intake" | "draft" | "solo-draw";
 };
 
 export type TeamRegistrationRequestStatus = "pending_payment" | "pending_review" | "approved" | "rejected" | "expired";

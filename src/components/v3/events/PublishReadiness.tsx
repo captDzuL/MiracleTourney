@@ -41,6 +41,8 @@ const blockerLabels: Record<string, string> = {
   venue: t("requiredVenue"),
   registrationFeeRequired: t("requiredPaid"),
   registration_fee_amount: t("requiredFee"),
+  solo_unsupported_game: t("requiredSoloGame"),
+  solo_disabled: t("requiredSoloOff"),
   organizer_contact: t("requiredContact"),
 };
 

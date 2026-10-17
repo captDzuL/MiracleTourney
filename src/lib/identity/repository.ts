@@ -101,11 +101,16 @@ export async function hasTempPassword(userId: string): Promise<boolean> {
   return row?.tempPassword != null;
 }
 
-/** Updates a password hash and clears any first-login lock without retaining the temporary secret. */
+/**
+ * Sets a new password and ends every session of the account that was opened before it: the session
+ * version goes up, and a token carries the version it was made with. The caller re-issues the cookie of
+ * the session that made the change, so that one stays signed in. Also clears any first-login lock and
+ * temporary secret.
+ */
 export async function updateUserPassword(userId: string, newHash: string): Promise<void> {
   await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash: newHash, tempPassword: null, mustChangePassword: false } as never,
+    data: { passwordHash: newHash, tempPassword: null, mustChangePassword: false, sessionVersion: { increment: 1 } } as never,
   });
 }
 
@@ -138,6 +143,25 @@ export async function createCaptainAccount(input: {
     if (code === "P2002") throw new UserFacingError(EMAIL_ALREADY_REGISTERED_MESSAGE);
     throw error;
   }
+}
+
+/** Creates a player account together with its contact profile, in one statement. */
+export async function createPlayerAccount(input: {
+  email: string;
+  name: string;
+  passwordHash: string;
+  whatsapp: string;
+}): Promise<{ userId: string }> {
+  const user = await prisma.user.create({
+    data: {
+      email: input.email,
+      name: input.name,
+      role: "player",
+      passwordHash: input.passwordHash,
+      playerProfile: { create: { whatsapp: input.whatsapp } },
+    },
+  });
+  return { userId: user.id };
 }
 
 /** Id and role of a user, or null when the user does not exist. */

@@ -200,7 +200,7 @@ export function TeamSection({
 
             <Link
 
-              href="/captain/settings"
+              href={(team.source === "solo-draw" ? "/player/settings" : "/captain/settings") as never}
 
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
 

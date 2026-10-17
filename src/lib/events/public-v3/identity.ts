@@ -113,6 +113,7 @@ export function shared(
 export function identityEvent(event: AnyRecord): CompatiblePublicEventRecord {
   return {
     id: text(event.id),
+    entryMode: typeof event.entryMode === "string" ? event.entryMode : null,
     slug: text(event.slug),
     name: text(event.name),
     title: text(event.title),

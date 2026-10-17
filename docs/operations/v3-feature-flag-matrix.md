@@ -30,6 +30,7 @@ evidence.
 | `organizer_workspace_v3` | `FEATURE_FLAG_ORGANIZER_WORKSPACE_V3` | false | true | true | organizer profile/password/new-event/overview/edit/match pages, admin workspace, `lib/actions.ts`, player-stats actions | Legacy organizer workspace |
 | `public_visual_v2` | `FEATURE_FLAG_PUBLIC_VISUAL_V2` | false | false | false | shell, home page, `/events`, legacy event detail | The V2 public visual is off; legacy visuals |
 | `email_password_reset` | `FEATURE_FLAG_EMAIL_PASSWORD_RESET` | false | false | false | `lib/email/send.ts` only | **Reset emails are suppressed** (a stub log line is the only effect), also when `RESEND_API_KEY` is set |
+| `solo_tournament_v1` | `FEATURE_FLAG_SOLO_TOURNAMENT_V1` | false | not set | not set | player sign-up and `/player` pages, solo registration page and actions, organizer draw actions and registration workspace, event setup and publish readiness, public event CTA (adaptive, ordinary and legacy detail pages) | No player role at sign-up, no solo option in the event wizard, solo pages and `/player` answer 404, a solo event shows a switched-off join button; locked solo teams stay ordinary teams. See `solo-tournament-rollout.md` |
 
 ## Findings
 
@@ -66,7 +67,7 @@ stop and turn the last flag off at the first failure.
 
 ## Flags-off verification
 
-With all ten flags unset or `false`, the application must render the legacy UI. The
+With all eleven flags unset or `false`, the application must render the legacy UI. The
 E2E legacy profile (`playwright.legacy.config.ts`) runs the suite in that state; run it
 locally against a reset database before the first deployment that carries the V3 code,
 because the staged-off production deployment is the first time those pages meet the

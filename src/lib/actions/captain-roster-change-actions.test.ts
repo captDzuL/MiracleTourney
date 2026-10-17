@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requireRole, checkRateLimit, requestRosterChange, cancelRosterChangeRequest, revalidatePath, redirectToActiveLocale, FakeRosterChangeError } = vi.hoisted(() => {
+const { requireRole, checkRateLimit, requestRosterChange, cancelRosterChangeRequest, revalidatePath, redirectToActiveLocale, FakeRosterChangeError, teamCount } = vi.hoisted(() => {
   class FakeRosterChangeError extends Error {
     constructor(readonly code: string) { super(code); this.name = "RosterChangeError"; }
   }
@@ -12,10 +12,12 @@ const { requireRole, checkRateLimit, requestRosterChange, cancelRosterChangeRequ
     revalidatePath: vi.fn(),
     redirectToActiveLocale: vi.fn(async (path: string) => { throw new Error(`REDIRECT:${path}`); }),
     FakeRosterChangeError,
+    teamCount: vi.fn(),
   };
 });
 
 vi.mock("@/lib/auth/session", () => ({ requireRole }));
+vi.mock("@/lib/platform/db", () => ({ prisma: { team: { count: teamCount } } }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
 vi.mock("@/lib/platform/roster-change-requests", () => ({
   requestRosterChange, cancelRosterChangeRequest, RosterChangeError: FakeRosterChangeError,
@@ -43,6 +45,32 @@ beforeEach(() => {
   checkRateLimit.mockResolvedValue(true);
   requestRosterChange.mockResolvedValue({ requestId: "request-1", remaining: 1 });
   redirectToActiveLocale.mockImplementation(async (path: string) => { throw new Error(`REDIRECT:${path}`); });
+});
+
+describe("a player who captains a solo team", () => {
+  const player = { id: "player-1", role: "player", email: "p@test.com", name: "Bima" };
+  const signedInAs = (user: { id: string; role: string } | null, ownsTeam: boolean) => {
+    requireRole.mockImplementation(async (role: string) => (user && user.role === role ? user : null));
+    teamCount.mockResolvedValue(ownsTeam ? 1 : 0);
+  };
+
+  it("files and cancels requests for their own team", async () => {
+    signedInAs(player, true);
+    await expect(captainRequestRosterChangeAction(form(swapForm))).rejects.toThrow("success=roster-change-requested");
+    expect(requestRosterChange).toHaveBeenCalledWith(expect.objectContaining({ captainId: "player-1", teamId: "team-1" }));
+    await expect(captainCancelRosterChangeAction(form({ requestId: "request-1" }))).rejects.toThrow("REDIRECT:");
+    expect(cancelRosterChangeRequest).toHaveBeenCalledWith(expect.objectContaining({ captainId: "player-1" }));
+  });
+
+  it("is sent to sign in when they captain no team, or are somebody else", async () => {
+    for (const [user, ownsTeam] of [[player, false], [{ id: "o1", role: "organizer" }, true], [null, true]] as const) {
+      signedInAs(user, ownsTeam);
+      await expect(captainRequestRosterChangeAction(form(swapForm))).rejects.toThrow("REDIRECT:/login");
+      await expect(captainCancelRosterChangeAction(form({ requestId: "request-1" }))).rejects.toThrow("REDIRECT:/login");
+    }
+    expect(requestRosterChange).not.toHaveBeenCalled();
+    expect(cancelRosterChangeRequest).not.toHaveBeenCalled();
+  });
 });
 
 describe("captainRequestRosterChangeAction", () => {

@@ -50,7 +50,7 @@ Password awalnya `Miracle2026!`. Ganti lewat `SEED_ADMIN_PASSWORD`, `SEED_ORGANI
 | Organizer | `test-organizer@miraclefc.gg` |
 | Captain | `test-captain@miraclefc.gg` |
 
-`pnpm db:seed` (tanpa `:test`) membuat akun lain, misalnya `admin@miraclefc.gg` dan `captain@miraclefc.gg`, lengkap dengan event contoh.
+`pnpm db:seed` (tanpa `:test`) membuat akun lain, misalnya `admin@miraclefc.gg` dan `captain@miraclefc.gg`, lengkap dengan event contoh. Seed ini juga membuat 14 akun pemain `solo-player-01@miraclefc.gg` sampai `solo-player-14@miraclefc.gg` (password dari `SEED_PLAYER_PASSWORD`) dan event solo `flashpeak-solo-cup` (2 tim, tanpa pendaftaran awal) untuk fitur turnamen solo. Rancangan fitur: `docs/handoff/2026-10-12-solo-tournament/`, rollout: `docs/operations/solo-tournament-rollout.md`.
 
 **Jangan jalankan seed di database produksi.**
 

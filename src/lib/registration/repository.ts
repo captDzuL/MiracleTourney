@@ -7,7 +7,7 @@ import { graphFromPhaseConfiguration, resolveRosterChangeWindow } from "@/lib/pl
 import type { RosterChangeWindow } from "@/lib/platform/roster-change-window";
 import { ACTIVE_REGISTRATION_REQUEST_STATUSES, PAYMENT_REQUEST_TTL_MS, RESERVED_REGISTRATION_REQUEST_STATUSES, ROSTER_LOCKED_MESSAGE } from "@/lib/platform/shared/constants";
 import { mapTeam, mapTeamRegistrationRequest, registrationRequestInclude } from "@/lib/platform/shared/mappers";
-import { assertEventRosterMutable, assertNewRegistrationWindowOpen, expireStaleRegistrationRequests, readEventRosterLocked, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
+import { assertEventAcceptsTeams, assertEventRosterMutable, assertNewRegistrationWindowOpen, expireStaleRegistrationRequests, readEventRosterLocked, runSerializableRegistrationTransaction } from "@/lib/platform/shared/tx";
 import type { RosterLockReader } from "@/lib/platform/shared/tx";
 import type { AppUser, Team, TeamRegistrationRequest, TeamRegistrationRequestStatus } from "@/lib/platform/types";
 import { UserFacingError } from "@/lib/security/public-error";
@@ -188,9 +188,11 @@ export async function registerTeam(input: {
           gameModeId: true,
           registrationOpensAt: true,
           registrationClosesAt: true,
+          entryMode: true,
         },
       });
       if (!event) throw new UserFacingError("Event tidak valid atau sudah tidak membuka pendaftaran.");
+      assertEventAcceptsTeams(event);
       assertNewRegistrationWindowOpen(event);
       assertDraftRosterFitsGameMode(draftTeam, event.gameModeId);
       if (event.registrationFeeRequired) {
@@ -289,9 +291,11 @@ export async function createTeamRegistrationRequest(input: {
           gameModeId: true,
           registrationOpensAt: true,
           registrationClosesAt: true,
+          entryMode: true,
         },
       });
       if (!event) throw new UserFacingError("Event tidak valid atau sudah tidak membuka pendaftaran.");
+      assertEventAcceptsTeams(event);
       assertNewRegistrationWindowOpen(event);
       if (!event.registrationFeeRequired) {
         throw new UserFacingError("Event ini tidak membutuhkan verifikasi pembayaran.");

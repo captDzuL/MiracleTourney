@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 Object.assign(globalThis, { React });
 
 const mocks = vi.hoisted(() => ({
-  flag: vi.fn(), event: vi.fn(), teams: vi.fn(), players: vi.fn(), notFound: vi.fn(), directoryProps: vi.fn(),
+  flag: vi.fn(), event: vi.fn(), teams: vi.fn(), players: vi.fn(), notFound: vi.fn(), directoryProps: vi.fn(), snapshot: vi.fn(),
 }));
 
 vi.mock("@/lib/feature-flags", () => ({ isFeatureEnabled: mocks.flag }));
@@ -17,6 +17,7 @@ vi.mock("@/lib/teams/repository", () => ({
   getPlayersForTeams: mocks.players,
 }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
+vi.mock("@/lib/solo/registration-repository", () => ({ getSoloQuotaSnapshot: mocks.snapshot }));
 vi.mock("next-intl/server", () => ({ getTranslations: async () => (key: string) => key }));
 vi.mock("@/components/public-v2/BackToEvent", () => ({ BackToEvent: () => <div>Back to event</div> }));
 vi.mock("@/components/v3/public-event/PublicV3DetailFrame", () => ({
@@ -65,6 +66,57 @@ describe("renderParticipantsPage", () => {
     expect(html).toContain("Player11 (Forward)");
     expect(html).not.toContain("Team directory");
     expect(mocks.directoryProps).not.toHaveBeenCalled();
+  });
+
+  describe("a solo event", () => {
+    const snapshot = { required: { quota: 8, held: 5, queued: 0 }, open: { quota: 32, held: 30, queued: 6 } };
+
+    beforeEach(() => {
+      mocks.event.mockResolvedValue({ id: "event-1", name: "Solo Cup", entryMode: "solo" });
+      mocks.teams.mockResolvedValue([]);
+      mocks.players.mockResolvedValue([]);
+      mocks.snapshot.mockResolvedValue(snapshot);
+    });
+
+    it.each([false, true])("shows that teams are not formed yet, with player counts and no names (foundation %j)", async (foundation) => {
+      mocks.flag.mockImplementation((flag: string) => flag === "adaptive_public_event_v3" || (foundation && flag === "ui_v3_foundation"));
+      const html = renderToStaticMarkup(await renderParticipantsPage("solo-cup"));
+      expect(html).toContain("Tim belum dibentuk");
+      expect(html).toContain("35 dari 40 slot pemain terisi");
+      expect(html).toContain("6 di antrean");
+      expect(html).not.toContain("Team directory");
+      expect(mocks.directoryProps).not.toHaveBeenCalled();
+      expect(mocks.snapshot).toHaveBeenCalledWith("event-1");
+    });
+
+    it("speaks English on the English page", async () => {
+      const html = renderToStaticMarkup(await renderParticipantsPage("solo-cup", "en"));
+      expect(html).toContain("Teams are not formed yet");
+    });
+
+    it("still shows the note when the counts cannot be read", async () => {
+      mocks.snapshot.mockRejectedValue(new Error("db down"));
+      const html = renderToStaticMarkup(await renderParticipantsPage("solo-cup"));
+      expect(html).toContain("Tim belum dibentuk");
+      expect(html).not.toContain("slot pemain terisi");
+    });
+
+    it("shows the normal directory once the teams exist", async () => {
+      mocks.teams.mockResolvedValue([team]);
+      mocks.players.mockResolvedValue([player]);
+      const html = renderToStaticMarkup(await renderParticipantsPage("solo-cup"));
+      expect(html).toContain("Team directory");
+      expect(html).not.toContain("Tim belum dibentuk");
+      expect(mocks.snapshot).not.toHaveBeenCalled();
+    });
+  });
+
+  it("does not read slot counts or show the note for a team event with no teams yet", async () => {
+    mocks.teams.mockResolvedValue([]);
+    mocks.players.mockResolvedValue([]);
+    const html = renderToStaticMarkup(await renderParticipantsPage("test-event"));
+    expect(html).not.toContain("Tim belum dibentuk");
+    expect(mocks.snapshot).not.toHaveBeenCalled();
   });
 
   it("preserves missing-event handling without loading teams or players", async () => {

@@ -7,6 +7,7 @@ const { prisma } = vi.hoisted(() => ({
       findFirst: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
+      create: vi.fn(),
     },
     team: { update: vi.fn() },
   },
@@ -15,6 +16,7 @@ const { prisma } = vi.hoisted(() => ({
 vi.mock("@/lib/platform/db", () => ({ prisma }));
 
 import {
+  createPlayerAccount,
   findAssignableCaptain,
   getCaptainById,
   getCaptainUsersForAdmin,
@@ -366,7 +368,7 @@ describe("updateUserPassword", () => {
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: { passwordHash: NEW_HASH, tempPassword: null, mustChangePassword: false },
+      data: { passwordHash: NEW_HASH, tempPassword: null, mustChangePassword: false, sessionVersion: { increment: 1 } },
     });
     expect(result).toBeUndefined();
   });
@@ -387,7 +389,7 @@ describe("updateCaptainPassword", () => {
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: { passwordHash: NEW_HASH, tempPassword: null, mustChangePassword: false },
+      data: { passwordHash: NEW_HASH, tempPassword: null, mustChangePassword: false, sessionVersion: { increment: 1 } },
     });
     expect(result).toBeUndefined();
   });
@@ -396,5 +398,38 @@ describe("updateCaptainPassword", () => {
     prisma.user.update.mockRejectedValue(new Error("write failed"));
 
     await expect(updateCaptainPassword("user-1", NEW_HASH)).rejects.toThrow("write failed");
+  });
+});
+
+describe("createPlayerAccount", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.user.create.mockResolvedValue({ id: "player-1" });
+  });
+
+  it("creates a player user with its contact profile in a single write", async () => {
+    await expect(createPlayerAccount({
+      email: "bima@example.com",
+      name: "Bima",
+      passwordHash: "$hash",
+      whatsapp: "6281234567890",
+    })).resolves.toEqual({ userId: "player-1" });
+
+    expect(prisma.user.create).toHaveBeenCalledTimes(1);
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: {
+        email: "bima@example.com",
+        name: "Bima",
+        role: "player",
+        passwordHash: "$hash",
+        playerProfile: { create: { whatsapp: "6281234567890" } },
+      },
+    });
+  });
+
+  it("lets a database failure through so no half-made account is reported as created", async () => {
+    prisma.user.create.mockRejectedValue(new Error("unique violation"));
+    await expect(createPlayerAccount({ email: "a@b.co", name: "A B", passwordHash: "$h", whatsapp: "6281234567890" }))
+      .rejects.toThrow("unique violation");
   });
 });

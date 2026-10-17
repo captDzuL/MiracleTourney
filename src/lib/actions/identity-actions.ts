@@ -6,9 +6,10 @@
 import { redirectToActiveLocale } from "@/i18n/redirect";
 import { isSafeEntityId } from "@/lib/actions/shared/ids";
 import { actionEntityId, redirectToRequestedLocale } from "@/lib/actions/shared/request";
-import { assertWorkspaceEventAction, requireAdminSession, requireCaptainSession } from "@/lib/actions/shared/session";
+import { assertWorkspaceEventAction, requireAdminSession } from "@/lib/actions/shared/session";
 import { resolvePostLoginPath } from "@/lib/auth/post-login-path";
-import { requireRole, signIn } from "@/lib/auth/session";
+import { getCaptainOrPlayer } from "@/lib/auth/captain-access";
+import { reissueSession, requireRole, signIn } from "@/lib/auth/session";
 import { sendEmail } from "@/lib/email/send";
 import { getEventsByIds } from "@/lib/events/repository";
 import { createCaptainAccount, deactivateUser, findAssignableCaptain, getUserByEmail, getUserPasswordHashById, getUserRoleRef, setTeamCaptain, updateCaptainPassword } from "@/lib/identity/repository";
@@ -19,6 +20,7 @@ import { consumePasswordResetToken, createPasswordResetToken, equalizePasswordRe
 import { assertUserCanManageEvent } from "@/lib/platform/shared/authz";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { toSafeActionMessage } from "@/lib/security/public-error";
+import { emailConflictMessage } from "@/lib/player/signup";
 import { isDisposableEmail } from "@/lib/validation/email";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
@@ -78,7 +80,7 @@ export async function captainSignUpAction(formData: FormData) {
   }
 
   const existingUser = await getUserByEmail(email);
-  if (existingUser) await signUpError("Email ini sudah terdaftar. Coba login.");
+  if (existingUser) await signUpError(emailConflictMessage(existingUser.role, "captain"));
 
   const passwordHash = await bcrypt.hash(password, 10);
 
@@ -152,14 +154,17 @@ export async function loginAction(formData: FormData) {
  * Validates that new and confirm passwords match and meet the 8-character minimum.
  */
 export async function changePasswordAction(formData: FormData) {
-  const user = await requireCaptainSession();
+  const user = await getCaptainOrPlayer();
+  if (!user) return redirectToActiveLocale("/login");
+  // A player (including the captain of a solo team) changes the password on the player pages.
+  const home = user.role === "player" ? "/player" : "/captain";
 
   const currentPassword = String(formData.get("currentPassword") ?? "");
   const newPassword = String(formData.get("newPassword") ?? "");
   const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
   const settingsError = async (msg: string) =>
-    redirectToActiveLocale(`/captain/settings?error=${encodeURIComponent(msg)}` as never);
+    redirectToActiveLocale(`${home}/settings?error=${encodeURIComponent(msg)}` as never);
 
   if (!currentPassword || !newPassword || !confirmPassword) {
     await settingsError("Semua field harus diisi.");
@@ -176,13 +181,22 @@ export async function changePasswordAction(formData: FormData) {
     return settingsError("Terjadi kesalahan. Coba lagi.");
   }
 
+  // Somebody holding a session cookie must not be able to guess the current password without limit.
+  if (!(await checkRateLimit(`change-password:${user.id}`, 5, 15 * 60 * 1000))) {
+    return settingsError("Terlalu banyak percobaan. Coba lagi dalam 15 menit.");
+  }
   const valid = await bcrypt.compare(currentPassword, currentHash);
   if (!valid) {
     return settingsError("Password saat ini tidak tepat.");
   }
 
   await updateCaptainPassword(user.id, await bcrypt.hash(newPassword, 10));
-  await redirectToActiveLocale("/captain?success=password-changed");
+  // Other devices are signed out by the new password; this one gets a fresh session.
+  if (!(await reissueSession(user.id).catch(() => false))) {
+    // The password did change. Ask for the new one rather than leave this device half signed in.
+    return redirectToActiveLocale("/login");
+  }
+  await redirectToActiveLocale(`${home}?success=password-changed` as never);
 }
 
 /** Assigns or clears the captain user for an imported team. */

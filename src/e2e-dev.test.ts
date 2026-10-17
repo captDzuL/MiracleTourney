@@ -50,6 +50,7 @@ describe("E2E development server", () => {
       FEATURE_FLAG_COMPLETION_WORKSPACE_V3: "false",
       FEATURE_FLAG_PUBLIC_DISCOVERY_V3: "false",
       FEATURE_FLAG_ORGANIZER_WORKSPACE_V3: "true",
+      FEATURE_FLAG_SOLO_TOURNAMENT_V1: "false",
     });
   });
   it("starts Next locally with .env.test database settings and all V3 flags", async () => {
@@ -93,6 +94,7 @@ describe("E2E development server", () => {
         FEATURE_FLAG_COMPLETION_WORKSPACE_V3: "true",
         FEATURE_FLAG_ADAPTIVE_PUBLIC_EVENT_V3: "true",
         FEATURE_FLAG_PUBLIC_DISCOVERY_V3: "true",
+        FEATURE_FLAG_SOLO_TOURNAMENT_V1: "true",
         NODE_OPTIONS: "--max-old-space-size=5120",
       },
     });

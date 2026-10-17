@@ -62,6 +62,27 @@ describe("event V3 actions", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
+  it("saves the solo registration mode only while solo tournaments are on", async () => {
+    saveEventDraft.mockResolvedValue({ status: "saved", revision: 3, fields: {} });
+    const save = (draft: object) => saveEventDraftAction({ eventId: "event-1", expectedRevision: 2, mutationId: "11111111-1111-4111-8111-111111111111", draft });
+
+    await expect(save({ entryMode: "solo" })).resolves.toMatchObject({ status: "saved" });
+    expect(isFeatureEnabled).toHaveBeenCalledWith("solo_tournament_v1");
+
+    isFeatureEnabled.mockImplementation((flag: string) => flag !== "solo_tournament_v1");
+    saveEventDraft.mockClear();
+    await expect(save({ entryMode: "solo" })).rejects.toThrow("Solo tournaments are unavailable");
+    expect(saveEventDraft).not.toHaveBeenCalled();
+  });
+
+  it("lets team events be saved whether or not solo tournaments are on", async () => {
+    saveEventDraft.mockResolvedValue({ status: "saved", revision: 3, fields: {} });
+    isFeatureEnabled.mockImplementation((flag: string) => flag !== "solo_tournament_v1");
+    const save = (draft: object) => saveEventDraftAction({ eventId: "event-1", expectedRevision: 2, mutationId: "11111111-1111-4111-8111-111111111111", draft });
+    await expect(save({ entryMode: "team" })).resolves.toMatchObject({ status: "saved" });
+    await expect(save({ name: "Miracle Open" })).resolves.toMatchObject({ status: "saved" });
+  });
+
   it("rejects traversal event ids before workspace access", async () => {
     await expect(publishEventV3Action({ eventId: "../secrets" })).rejects.toThrow();
     expect(assertUserCanManageEvent).not.toHaveBeenCalled();

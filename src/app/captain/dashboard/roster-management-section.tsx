@@ -25,6 +25,8 @@ export function RosterManagementSection({
 
   confirmDeleteId,
 
+  canDraft,
+
   t,
 
 }: {
@@ -41,6 +43,9 @@ export function RosterManagementSection({
 
   confirmDeleteId?: string;
 
+  /** False for a player who captains a solo team: only captain accounts keep a reusable draft team. */
+  canDraft: boolean;
+
   t: TFn;
 
 }) {
@@ -56,12 +61,12 @@ export function RosterManagementSection({
 
         <h2 className="text-lg font-semibold text-slate-950">{t("rosterManagementTitle")}</h2>
 
-        <p className="mt-1 text-sm text-slate-500">{t("rosterManagementDescription")}</p>
+        <p className="mt-1 text-sm text-slate-500">{t(canDraft ? "rosterManagementDescription" : "rosterManagementOwnerDescription")}</p>
 
       </div>
 
 
-      <DraftTeamForm team={draftTeamWithPlayers?.team ?? null} t={t} />
+      {canDraft ? <DraftTeamForm team={draftTeamWithPlayers?.team ?? null} t={t} /> : null}
 
 
       {registeredTeamsWithPlayers.length === 0 && !draftTeamWithPlayers ? (
@@ -107,7 +112,8 @@ export function RosterManagementSection({
 
             const cert = certificates.get(team.id) ?? null;
             const rosterOverview = rosterOverviews.get(team.id) ?? null;
-            const rosterEditable = !rosterOverview || rosterOverview.window === "free";
+            const drawn = team.source === "solo-draw";
+            const rosterEditable = !drawn && (!rosterOverview || rosterOverview.window === "free");
 
 
             return (
@@ -135,6 +141,9 @@ export function RosterManagementSection({
 
                   t={t}
                 />
+                {drawn && (!rosterOverview || rosterOverview.window === "free") ? (
+                  <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{t("soloRosterNote")}</p>
+                ) : null}
                 {rosterOverview ? (
                   <RosterChangePanel team={team} players={players} positionOptions={mode?.positions ?? []} overview={rosterOverview} t={t} />
                 ) : null}

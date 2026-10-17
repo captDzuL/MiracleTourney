@@ -1,7 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { getSoloDrawRules } from "@/lib/platform/config";
 import { prisma } from "@/lib/platform/db";
+import { UserFacingError } from "@/lib/security/public-error";
 import { getLegacyTournamentFormat, tournamentFormatConfigSchema } from "@/lib/tournament/formats/types";
 
 const trimmedString = z.string().transform((value) => value.trim()).optional();
@@ -18,6 +20,8 @@ export const eventDraftSchema = z.object({
   name: trimmedString, slug: nonemptyTrimmedString, description: trimmedString, gameId: trimmedString, gameModeId: trimmedString,
   format: z.enum(["Single Elimination", "League"]).optional(), formatConfig: tournamentFormatConfigSchema.optional(),
   participantCap: participantCap.optional(),
+  /** How players join: as ready-made teams, or one by one and drawn into teams later. */
+  entryMode: z.enum(["team", "solo"]).optional(),
   registrationOpensAt: nullableDate, registrationClosesAt: nullableDate, eventStartsAt: nullableDate,
   timezone: eventTimezone.optional(), venue: trimmedString, venueAddress: nullableTrimmedString,
   prizePoolLabel: nullableTrimmedString, registrationFeeRequired: z.boolean().optional(),
@@ -62,6 +66,16 @@ function valuesMatch(current: Record<string, unknown>, patch: NormalizedEventDra
   return event.organizerUserId;
 }
 
+/** A solo event needs a game with a required position; check the mode and game as they will be after this save. */
+async function assertRegistrationModeAllowed(eventId: string, organizerUserId: string | null, draft: EventDraftPatch) {
+  if (draft.entryMode === undefined && draft.gameModeId === undefined) return;
+  const current = await prisma.event.findFirst({ where: { id: eventId, organizerUserId }, select: { entryMode: true, gameModeId: true } });
+  if (!current) throw new Error("Event not found");
+  const entryMode = draft.entryMode ?? current.entryMode;
+  const gameModeId = draft.gameModeId ?? current.gameModeId;
+  if (entryMode === "solo" && !getSoloDrawRules(gameModeId)) throw new UserFacingError("Game ini belum mendukung event solo.");
+}
+
 export async function saveEventDraft(input: {
   eventId: string; actor: EventDraftActor; expectedRevision: number; mutationId: string; draft: unknown;
 }): Promise<SaveEventDraftResult> {
@@ -74,6 +88,7 @@ export async function saveEventDraft(input: {
   const mutationId = z.string().uuid().parse(input.mutationId);
   const fields = fieldStates(parsedDraft, "saved");
   const organizerUserId = await ownerIdForActor(input.eventId, input.actor);
+  await assertRegistrationModeAllowed(input.eventId, organizerUserId, parsedDraft);
   const { formatConfig, ...draftFields } = draft;
   const persistedDraft: Prisma.EventUpdateManyMutationInput = {
     ...draftFields,
