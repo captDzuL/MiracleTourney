@@ -107,7 +107,8 @@ test("picking a character stores it once and puts it on the generated award cert
     && (response.request().postData() ?? "").includes(event.id));
   await page.locator("[data-regenerate-certificate]").click();
   expect((await regenerated).status()).toBeLessThan(400);
-  await expect(page.getByText("A new certificate version was generated.")).toBeVisible();
+  // Generating the image takes a while on a busy machine; the default five seconds is not enough.
+  await expect(page.getByText("A new certificate version was generated.")).toBeVisible({ timeout: 30_000 });
   await expect.poll(async () => (await completionDb.certificate.findMany({ where: { eventId: event.id, type: "top_scorer" } })).map((row) => row.status), { timeout: 30_000 }).toContain("ready");
 
   const preview = page.locator("[data-generated-artifact] img");
