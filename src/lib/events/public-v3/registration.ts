@@ -12,7 +12,7 @@ import type { AnyRecord } from "@/lib/events/public-v3/basics";
 import { shared } from "@/lib/events/public-v3/identity";
 import { leaderboardFor, registrationTemplateSlots } from "@/lib/events/public-v3/parts";
 import { compatibleUpdates } from "@/lib/events/public-v3/updates";
-import { findGameModeConfig } from "@/lib/platform/config";
+import { getRosterLimits } from "@/lib/events/roster-limits";
 
 export const REGISTRATION_STATES: RegistrationViewerState[] = [
   "anonymous", "wrong_role", "eligible_without_team", "eligible_with_team",
@@ -68,6 +68,7 @@ export function registrationInput(event: CompatiblePublicEventRecord, input: Com
   const activeTeamCount = Math.floor(nonNegative(rawRegistration.activeTeamCount, teams.length));
   const pendingReviewCount = Math.floor(nonNegative(rawRegistration.pendingReviewCount, (Array.isArray(input.registrations) ? input.registrations : []).filter((row) => text(row.status).toLowerCase() === "pending_review").length));
   const participantCap = Math.floor(nonNegative(rawRegistration.participantCap, nonNegative(event.participantCap)));
+  const rosterLimits = getRosterLimits(text(event.gameModeId));
   const opensAt = dateText(rawRegistration.opensAt, dateText(event.registrationOpensAt));
   const closesAt = dateText(rawRegistration.closesAt, dateText(event.registrationClosesAt));
   const isSolo = event.entryMode === "solo";
@@ -110,8 +111,8 @@ export function registrationInput(event: CompatiblePublicEventRecord, input: Com
       feeRequired: typeof rawRegistration.feeRequired === "boolean" ? rawRegistration.feeRequired : Boolean(event.registrationFeeRequired),
       feeAmount: typeof rawRegistration.feeAmount === "number" ? rawRegistration.feeAmount : typeof event.registrationFeeAmount === "number" ? event.registrationFeeAmount : null,
       feeLabel: text(rawRegistration.feeLabel, text(event.registrationFeeLabel, "")),
-      minimumRoster: Math.max(1, Math.floor(nonNegative(rawRegistration.minimumRoster, 1))),
-      maximumRoster: Math.max(1, Math.floor(nonNegative(rawRegistration.maximumRoster, nonNegative(findGameModeConfig(text(event.gameModeId))?.maxRosterSize, 1)))),
+      minimumRoster: Math.max(1, Math.floor(nonNegative(rawRegistration.minimumRoster, rosterLimits.minimumRoster))),
+      maximumRoster: Math.max(1, Math.floor(nonNegative(rawRegistration.maximumRoster, rosterLimits.maximumRoster))),
       bracket: { status: "tbd", slots: registrationTemplateSlots(participantCap) },
     },
     viewer: { state: registrationState((input as AnyRecord).viewerState), cta: registrationCta },

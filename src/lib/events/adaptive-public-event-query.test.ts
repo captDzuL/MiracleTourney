@@ -140,6 +140,11 @@ describe("getAdaptivePublicEventView", () => {
     expect(view?.registration.availability).toBe("legacy");
   });
 
+  it("tells captains the roster size the registration form really requires, not a minimum of 1", async () => {
+    const view = await getAdaptivePublicEventView("miracle-cup", null, new Date("2026-09-12T00:00:00Z"));
+    expect(view?.registration).toMatchObject({ minimumRoster: 5, maximumRoster: 7 });
+  });
+
   it("leaves an absent fee label for the localized renderer to describe", async () => {
     mocks.eventFindFirst.mockResolvedValue({
       ...baseEvent,

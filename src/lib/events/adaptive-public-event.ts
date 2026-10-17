@@ -1,6 +1,7 @@
 import type { AppUser, EventStatus } from "@/lib/platform/types";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { findGameConfig, findGameModeConfig, getSoloDrawRules } from "@/lib/platform/config";
+import { getRosterLimits } from "@/lib/events/roster-limits";
 import { prisma } from "@/lib/platform/db";
 import { getSoloQuotaSnapshot } from "@/lib/solo/registration-repository";
 import type { SoloQuotaSnapshot } from "@/lib/solo/registration-types";
@@ -411,8 +412,7 @@ export async function getAdaptivePublicEventView(
       feeRequired: row.registrationFeeRequired,
       feeAmount: row.registrationFeeAmount,
       feeLabel: row.registrationFeeLabel ?? "",
-      minimumRoster: 1,
-      maximumRoster: mode?.maxRosterSize ?? 1,
+      ...getRosterLimits(row.gameModeId),
     },
     viewer: {
       state,
