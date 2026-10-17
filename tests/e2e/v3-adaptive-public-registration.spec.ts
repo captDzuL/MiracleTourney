@@ -99,7 +99,7 @@ test.describe.serial("Adaptive Public Event V3 registration phase", () => {
         name: "Adaptive Draft " + fixture.suffix,
         tag: "ADT",
         logoText: "AD",
-        source: "captain-draft",
+        source: "draft",
       },
     });
     await prisma.player.create({

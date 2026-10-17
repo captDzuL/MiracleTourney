@@ -77,6 +77,8 @@ export async function loginWithCredentials(
   // address keeps this suite from intentionally triggering the production per-IP
   // brute-force limit while preserving that middleware protection in every environment.
   loginClientSequence += 1;
+  // The login page sends a signed-in visitor on to their dashboard, so a second login in the same browser starts clean.
+  await page.context().clearCookies();
   await normalizeReleasePage(page);
   await page.setExtraHTTPHeaders({
     "x-forwarded-for": `198.18.0.${(loginClientSequence % 250) + 1}`,

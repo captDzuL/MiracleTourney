@@ -980,7 +980,7 @@ test.describe("V3 organizer lifecycle", () => {
       const guestPage = await guest.newPage();
       await guestPage.goto(previewUrl!);
       await expect(guestPage.getByLabel(/pratinjau privat|private preview/i)).toBeVisible();
-      await expect(guestPage.getByText(event.name)).toBeVisible();
+      await expect(guestPage.getByRole("heading", { name: event.name })).toBeVisible();
 
       await review.getByRole("button", { name: "Cabut tautan", exact: true }).click();
       await expect(review.getByRole("button", { name: "Buat pratinjau", exact: true })).toBeVisible({ timeout: 20_000 });

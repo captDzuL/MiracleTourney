@@ -3,7 +3,6 @@ import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 import { loginAsAdmin } from "./helpers/auth";
 import { runAndSettleServerActionRedirect } from "./helpers/server-action";
-import { waitForServerActionResult } from "./helpers/server-action";
 import { TOURNAMENT_FORMAT_PRESETS } from "../../src/lib/tournament/formats/types";
 
 const prisma = new PrismaClient();
@@ -313,20 +312,19 @@ overnightTest("registration order stays private and imports stop after drawing p
     data: { status: "Registration Closed" },
   });
   await page.goto(`/en/organizer/events/${eventId}/competition`);
-  const drawingResponsePromise = waitForServerActionResult<{ status: string; code?: string; correlationId?: string }>(page, (request, requestUrl) => {
+  // The workspace calls router.refresh() as soon as the action's result is read, which cancels the rest of the
+  // response stream. So wait for the response to start, not to finish, and check the outcome in the database.
+  const drawingResponsePromise = page.waitForResponse((response) => {
+    const request = response.request();
     const postData = request.postData() ?? "";
     return request.method() === "POST"
-      && requestUrl.pathname === `/en/organizer/events/${encodeURIComponent(eventId)}/competition`
+      && new URL(request.url()).pathname === `/en/organizer/events/${encodeURIComponent(eventId)}/competition`
       && Boolean(request.headers()["next-action"])
       && postData.includes(eventId)
       && postData.includes('"drawing_save"');
   });
   await page.getByRole("button", { name: "Save drawing draft", exact: true }).click();
-  const drawingResponse = await drawingResponsePromise;
-  if (drawingResponse.result.status !== "saved") {
-    throw new Error(`Save drawing failed with ${drawingResponse.result.code ?? "unknown"} (correlation ${drawingResponse.result.correlationId ?? "missing"}).`);
-  }
-  expect(drawingResponse.result.status, "Save drawing action result").toBe("saved");
+  expect((await drawingResponsePromise).status(), "Save drawing action response").toBeLessThan(400);
   await expect.poll(
     async () => (await prisma.competitionPhase.findFirst({ where: { eventId, sequence: 1 } }))?.status,
     { timeout: 60_000 },
